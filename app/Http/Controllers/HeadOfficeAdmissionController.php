@@ -1,0 +1,470 @@
+<?php
+
+namespace App\Http\Controllers;
+
+use App\Models\MemberAdmission;
+use App\Models\MemberAdmissionIssue;
+use App\Models\Zone;
+use App\Models\Area;
+use App\Models\Branch;
+use Illuminate\Http\Request;
+use Inertia\Inertia;
+use Illuminate\Support\Facades\DB;
+use Carbon\Carbon;
+
+class HeadOfficeAdmissionController extends Controller
+{
+    /**
+     * Display all admissions from all branches
+     */
+    public function index(Request $request)
+    {
+        $query = MemberAdmission::with([
+            'branch.area.zone',
+            'samity',
+            'memberCategory',
+            'submittedBy'
+        ]);
+
+        // Default date filter - current date
+        $dateFrom = $request->date_from ?? now()->toDateString();
+        $dateTo = $request->date_to ?? now()->toDateString();
+
+        // Date range filter
+        if ($dateFrom && $dateTo) {
+            $query->whereBetween('created_at', [
+                Carbon::parse($dateFrom)->startOfDay(),
+                Carbon::parse($dateTo)->endOfDay()
+            ]);
+        } elseif ($dateFrom) {
+            $query->whereDate('created_at', '>=', $dateFrom);
+        } elseif ($dateTo) {
+            $query->whereDate('created_at', '<=', $dateTo);
+        }
+
+        // Zone filter
+        if ($request->has('zone_id') && $request->zone_id) {
+            $query->whereHas('branch.area', function($q) use ($request) {
+                $q->where('zone_id', $request->zone_id);
+            });
+        }
+
+        // Area filter
+        if ($request->has('area_id') && $request->area_id) {
+            $query->whereHas('branch', function($q) use ($request) {
+                $q->where('area_id', $request->area_id);
+            });
+        }
+
+        // Branch filter
+        if ($request->has('branch_id') && $request->branch_id) {
+            $query->where('branch_id', $request->branch_id);
+        }
+
+        // Status filter
+        if ($request->has('status') && $request->status) {
+            $query->where('status', $request->status);
+        }
+
+        // Search filter
+        if ($request->has('search') && $request->search) {
+            $search = $request->search;
+            $query->where(function($q) use ($search) {
+                $q->where('application_no', 'like', "%{$search}%")
+                  ->orWhere('applicant_name_en', 'like', "%{$search}%")
+                  ->orWhere('applicant_name_bn', 'like', "%{$search}%")
+                  ->orWhere('mobile_number', 'like', "%{$search}%")
+                  ->orWhere('nid_number', 'like', "%{$search}%");
+            });
+        }
+
+        // Had issues filter (for admissions that went through revision)
+        if ($request->has('had_issues') && $request->had_issues) {
+            if ($request->had_issues === 'yes') {
+                $query->where('revision_count', '>', 0);
+            } elseif ($request->had_issues === 'no') {
+                $query->where(function($q) {
+                    $q->whereNull('revision_count')->orWhere('revision_count', 0);
+                });
+            }
+        }
+
+        // Calculate stats based on current filters (excluding status filter for stats)
+        $statsQuery = MemberAdmission::query();
+
+        // Apply same date filter to stats
+        if ($dateFrom && $dateTo) {
+            $statsQuery->whereBetween('created_at', [
+                Carbon::parse($dateFrom)->startOfDay(),
+                Carbon::parse($dateTo)->endOfDay()
+            ]);
+        }
+
+        // Apply zone/area/branch filters to stats
+        if ($request->has('zone_id') && $request->zone_id) {
+            $statsQuery->whereHas('branch.area', function($q) use ($request) {
+                $q->where('zone_id', $request->zone_id);
+            });
+        }
+
+        if ($request->has('area_id') && $request->area_id) {
+            $statsQuery->whereHas('branch', function($q) use ($request) {
+                $q->where('area_id', $request->area_id);
+            });
+        }
+
+        if ($request->has('branch_id') && $request->branch_id) {
+            $statsQuery->where('branch_id', $request->branch_id);
+        }
+
+        if ($request->has('had_issues') && $request->had_issues) {
+            if ($request->had_issues === 'yes') {
+                $statsQuery->where('revision_count', '>', 0);
+            } elseif ($request->had_issues === 'no') {
+                $statsQuery->where(function($q) {
+                    $q->whereNull('revision_count')->orWhere('revision_count', 0);
+                });
+            }
+        }
+
+        $stats = [
+            'total' => (clone $statsQuery)->count(),
+            'draft' => (clone $statsQuery)->where('status', 'draft')->count(),
+            'submitted' => (clone $statsQuery)->where('status', 'submitted')->count(),
+            'under_review' => (clone $statsQuery)->where('status', 'under_review')->count(),
+            'pending_head_office' => (clone $statsQuery)->where('status', 'pending_head_office')->count(),
+            'approved' => (clone $statsQuery)->where('status', 'approved')->count(),
+            'rejected' => (clone $statsQuery)->where('status', 'rejected')->count(),
+            'needs_revision' => (clone $statsQuery)->where('status', 'needs_revision')->count(),
+        ];
+
+        $admissions = $query->orderBy('created_at', 'desc')->paginate(20);
+
+        // Get zones, areas, and branches for filters
+        $zones = Zone::active()->orderBy('name')->get();
+        $areas = Area::active()->with('zone')->orderBy('name')->get();
+        $branches = Branch::active()->with('area.zone')->orderBy('name')->get();
+
+        return Inertia::render('HeadOffice/AdmissionMembers', [
+            'admissions' => $admissions,
+            'filters' => array_merge(
+                $request->only(['status', 'search', 'zone_id', 'area_id', 'branch_id', 'date_from', 'date_to', 'had_issues']),
+                [
+                    'date_from' => $dateFrom,
+                    'date_to' => $dateTo,
+                ]
+            ),
+            'stats' => $stats,
+            'zones' => $zones,
+            'areas' => $areas,
+            'branches' => $branches,
+        ]);
+    }
+
+    /**
+     * Print view for admissions (no layout, optimized for printing)
+     */
+    public function print(Request $request)
+    {
+        $query = MemberAdmission::with([
+            'branch.area.zone',
+            'samity',
+            'memberCategory',
+            'submittedBy'
+        ]);
+
+        // Apply same filters as index
+        $dateFrom = $request->date_from ?? now()->toDateString();
+        $dateTo = $request->date_to ?? now()->toDateString();
+
+        if ($dateFrom && $dateTo) {
+            $query->whereBetween('created_at', [
+                Carbon::parse($dateFrom)->startOfDay(),
+                Carbon::parse($dateTo)->endOfDay()
+            ]);
+        }
+
+        if ($request->zone_id) {
+            $query->whereHas('branch.area', function($q) use ($request) {
+                $q->where('zone_id', $request->zone_id);
+            });
+        }
+
+        if ($request->area_id) {
+            $query->whereHas('branch', function($q) use ($request) {
+                $q->where('area_id', $request->area_id);
+            });
+        }
+
+        if ($request->branch_id) {
+            $query->where('branch_id', $request->branch_id);
+        }
+
+        if ($request->status) {
+            $query->where('status', $request->status);
+        }
+
+        if ($request->search) {
+            $search = $request->search;
+            $query->where(function($q) use ($search) {
+                $q->where('application_no', 'like', "%{$search}%")
+                  ->orWhere('applicant_name_en', 'like', "%{$search}%")
+                  ->orWhere('applicant_name_bn', 'like', "%{$search}%")
+                  ->orWhere('mobile_number', 'like', "%{$search}%")
+                  ->orWhere('nid_number', 'like', "%{$search}%");
+            });
+        }
+
+        if ($request->had_issues) {
+            if ($request->had_issues === 'yes') {
+                $query->where('revision_count', '>', 0);
+            } elseif ($request->had_issues === 'no') {
+                $query->where(function($q) {
+                    $q->whereNull('revision_count')->orWhere('revision_count', 0);
+                });
+            }
+        }
+
+        // Get all matching records (no pagination for print)
+        $admissions = $query->orderBy('created_at', 'desc')->get();
+
+        // Get zones, areas, and branches for filter display
+        $zones = Zone::active()->orderBy('name')->get();
+        $areas = Area::active()->with('zone')->orderBy('name')->get();
+        $branches = Branch::active()->with('area.zone')->orderBy('name')->get();
+
+        return Inertia::render('HeadOffice/AdmissionMembersPrint', [
+            'admissions' => $admissions,
+            'filters' => $request->only(['status', 'search', 'zone_id', 'area_id', 'branch_id', 'date_from', 'date_to', 'had_issues']),
+            'zones' => $zones,
+            'areas' => $areas,
+            'branches' => $branches,
+        ]);
+    }
+
+    /**
+     * Display pending Head Office admissions for processing
+     */
+    public function process(Request $request)
+    {
+        $query = MemberAdmission::with([
+            'branch',
+            'samity',
+            'memberCategory',
+            'submittedBy',
+            'issues' => function($q) {
+                $q->where('status', 'pending')->with('reporter');
+            }
+        ])
+        ->where('status', 'pending_head_office');
+
+        // Date filter (default: today)
+        $date = $request->input('date', now()->toDateString());
+        if ($date) {
+            $query->whereDate('submitted_at', $date);
+        }
+
+        // Search filter
+        $search = $request->input('search');
+        if ($search) {
+            $query->where(function ($q) use ($search) {
+                $q->where('applicant_name_en', 'like', "%{$search}%")
+                  ->orWhere('applicant_name_bn', 'like', "%{$search}%")
+                  ->orWhere('nid_number', 'like', "%{$search}%")
+                  ->orWhere('mobile_number', 'like', "%{$search}%")
+                  ->orWhere('application_no', 'like', "%{$search}%");
+            });
+        }
+
+        $admissions = $query->orderBy('submitted_at', 'desc')->paginate(20);
+
+        return Inertia::render('HeadOffice/ProcessAdmissions', [
+            'admissions' => $admissions,
+            'filters' => [
+                'date' => $date,
+                'search' => $search,
+            ],
+        ]);
+    }
+
+    /**
+     * Show single admission for Head Office
+     */
+    public function show(MemberAdmission $admission)
+    {
+        $admission->load([
+            'branch.area.zone',
+            'samity',
+            'memberCategory',
+            'submittedBy',
+            'reviewedBy',
+            'approvals.user',
+            'familyMembers',
+            'otherAssets',
+            'issues' => function($q) {
+                $q->with(['reporter', 'resolver']);
+            }
+        ]);
+
+        return Inertia::render('MemberAdmission/Show', [
+            'admission' => $admission,
+            'auth' => [
+                'user' => [
+                    'has_all_access' => auth()->user()->has_all_access,
+                ],
+            ],
+        ]);
+    }
+
+    /**
+     * Print single admission profile
+     */
+    public function printSingle(MemberAdmission $admission)
+    {
+        $admission->load([
+            'branch.area.zone',
+            'samity',
+            'memberCategory',
+            'submittedBy',
+            'reviewedBy',
+            'familyMembers',
+            'otherAssets',
+        ]);
+
+        return Inertia::render('HeadOffice/AdmissionPrintSingle', [
+            'admission' => $admission,
+        ]);
+    }
+
+    /**
+     * Store issue/report for an admission
+     */
+    public function storeIssue(Request $request, MemberAdmission $admission)
+    {
+        $validated = $request->validate([
+            'issue_description' => 'required|string|max:2000',
+        ]);
+
+        MemberAdmissionIssue::create([
+            'member_admission_id' => $admission->id,
+            'reported_by' => auth()->id(),
+            'issue_description' => $validated['issue_description'],
+            'status' => 'pending',
+        ]);
+
+        return back()->with('success', 'Issue reported successfully!');
+    }
+
+    /**
+     * Approve single admission
+     */
+    public function approveSingle(MemberAdmission $admission)
+    {
+        // Check if has pending issues
+        if ($admission->issues()->where('status', 'pending')->exists()) {
+            return back()->with('error', 'Cannot approve admission with pending issues!');
+        }
+
+        $admission->update([
+            'status' => 'approved',
+            'reviewed_at' => now(),
+            'reviewed_by' => auth()->id(),
+        ]);
+
+        return back()->with('success', 'Admission approved successfully!');
+    }
+
+    /**
+     * Reject single admission
+     */
+    public function rejectSingle(Request $request, MemberAdmission $admission)
+    {
+        $validated = $request->validate([
+            'rejection_reason' => 'required|string|max:2000',
+        ]);
+
+        $admission->update([
+            'status' => 'rejected',
+            'rejection_reason' => $validated['rejection_reason'],
+            'reviewed_at' => now(),
+            'reviewed_by' => auth()->id(),
+        ]);
+
+        return back()->with('success', 'Admission rejected successfully!');
+    }
+
+    /**
+     * Approve all admissions without issues
+     */
+    public function approveAll(Request $request)
+    {
+        $date = $request->input('date', now()->toDateString());
+
+        DB::beginTransaction();
+        try {
+            // Get all pending_head_office admissions for the date
+            $admissions = MemberAdmission::where('status', 'pending_head_office')
+                ->whereDate('submitted_at', $date)
+                ->get();
+
+            $approvedCount = 0;
+            $returnedCount = 0;
+
+            foreach ($admissions as $admission) {
+                $pendingIssues = $admission->issues()->where('status', 'pending')->get();
+
+                if ($pendingIssues->count() > 0) {
+                    // Has issues - return to branch
+                    $admission->update([
+                        'status' => 'needs_revision',
+                        'revision_count' => ($admission->revision_count ?? 0) + 1,
+                        'revision_comments' => $pendingIssues->pluck('issue_description')->implode("\n\n"),
+                        'returned_at' => now(),
+                        'returned_by' => auth()->id(),
+                    ]);
+                    $returnedCount++;
+                } else {
+                    // No issues - approve
+                    $admission->update([
+                        'status' => 'approved',
+                        'reviewed_at' => now(),
+                        'reviewed_by' => auth()->id(),
+                    ]);
+                    $approvedCount++;
+                }
+            }
+
+            DB::commit();
+
+            return back()->with('success', "Approved: {$approvedCount}, Returned to Branch: {$returnedCount}");
+
+        } catch (\Exception $e) {
+            DB::rollBack();
+            return back()->with('error', 'Failed to process admissions: ' . $e->getMessage());
+        }
+    }
+
+    /**
+     * Delete an issue
+     */
+    public function deleteIssue(MemberAdmissionIssue $issue)
+    {
+        $issue->delete();
+        return back()->with('success', 'Issue deleted successfully!');
+    }
+
+    /**
+     * Delete admission (only draft and submitted status)
+     */
+    public function destroy(MemberAdmission $admission)
+    {
+        // Only draft and submitted admissions can be deleted
+        if (!in_array($admission->status, ['draft', 'submitted'])) {
+            return back()->with('error', 'Only draft and submitted admissions can be deleted!');
+        }
+
+        $admission->delete();
+
+        return back()->with('success', 'Member admission deleted successfully!');
+    }
+}

@@ -54,17 +54,6 @@ class ApplicationIssue extends Model
     }
 
     /**
-     * Get related admission member
-     */
-    public function admissionMember()
-    {
-        if ($this->application_type === 'admission') {
-            return $this->belongsTo(AdmissionMember::class, 'member_id');
-        }
-        return null;
-    }
-
-    /**
      * Get related loan member
      */
     public function loanMember()

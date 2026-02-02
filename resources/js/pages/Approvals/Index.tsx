@@ -1,0 +1,251 @@
+import React, { useState } from 'react';
+import { Head, router } from '@inertiajs/react';
+import AdminLayout from '@/layouts/admin-layout';
+import { CheckCircle, XCircle, RotateCcw, Eye, MessageSquare } from 'lucide-react';
+
+interface Approval {
+    id: number;
+    member_admission_id: number;
+    application_no: string;
+    applicant_name: string;
+    applicant_name_bn: string;
+    branch_name: string;
+    samity_name: string;
+    submitted_at: string;
+    level: string;
+    sequence: number;
+    revision_count: number;
+    revision_comments: string | null;
+    status: string;
+}
+
+interface Props {
+    approvals: Approval[];
+}
+
+export default function Index({ approvals }: Props) {
+    const [selectedApproval, setSelectedApproval] = useState<Approval | null>(null);
+    const [action, setAction] = useState<'approve' | 'reject' | 'return' | null>(null);
+    const [comments, setComments] = useState('');
+    const [showModal, setShowModal] = useState(false);
+
+    const handleAction = (approval: Approval, actionType: 'approve' | 'reject' | 'return') => {
+        setSelectedApproval(approval);
+        setAction(actionType);
+        setComments('');
+        setShowModal(true);
+    };
+
+    const submitAction = () => {
+        if (!selectedApproval || !action) return;
+
+        const routes = {
+            approve: `/approvals/${selectedApproval.id}/approve`,
+            reject: `/approvals/${selectedApproval.id}/reject`,
+            return: `/approvals/${selectedApproval.id}/return-to-branch`,
+        };
+
+        router.patch(routes[action], { comments }, {
+            preserveScroll: true,
+            onSuccess: () => {
+                setShowModal(false);
+                setSelectedApproval(null);
+                setAction(null);
+                setComments('');
+            },
+        });
+    };
+
+    const getLevelBadge = (level: string) => {
+        const colors = {
+            branch: 'bg-blue-100 text-blue-800',
+            area: 'bg-green-100 text-green-800',
+            zone: 'bg-purple-100 text-purple-800',
+            head_office: 'bg-red-100 text-red-800',
+        };
+        return colors[level as keyof typeof colors] || 'bg-gray-100 text-gray-800';
+    };
+
+    const isHeadOffice = (level: string) => level === 'head_office';
+
+    return (
+        <AdminLayout>
+            <Head title="Pending Approvals" />
+
+            <div className="p-6">
+                <div className="mb-6">
+                    <h1 className="text-2xl font-bold text-gray-900">Pending Approvals (অপেক্ষমান অনুমোদন)</h1>
+                    <p className="text-gray-600 mt-1">Review and approve member admission applications</p>
+                </div>
+
+                {approvals.length === 0 ? (
+                    <div className="bg-white rounded-lg shadow p-8 text-center">
+                        <CheckCircle className="w-16 h-16 text-green-500 mx-auto mb-4" />
+                        <h3 className="text-lg font-semibold text-gray-900 mb-2">No Pending Approvals</h3>
+                        <p className="text-gray-600">You have no applications waiting for your approval.</p>
+                    </div>
+                ) : (
+                    <div className="bg-white rounded-lg shadow overflow-hidden">
+                        <table className="min-w-full divide-y divide-gray-200">
+                            <thead className="bg-gray-50">
+                                <tr>
+                                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                                        Application No
+                                    </th>
+                                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                                        Applicant (আবেদনকারী)
+                                    </th>
+                                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                                        Branch (শাখা)
+                                    </th>
+                                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                                        Samity (সমিতি)
+                                    </th>
+                                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                                        Level
+                                    </th>
+                                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                                        Revision
+                                    </th>
+                                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                                        Submitted
+                                    </th>
+                                    <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
+                                        Actions
+                                    </th>
+                                </tr>
+                            </thead>
+                            <tbody className="bg-white divide-y divide-gray-200">
+                                {approvals.map((approval) => (
+                                    <tr key={approval.id} className="hover:bg-gray-50">
+                                        <td className="px-6 py-4 whitespace-nowrap">
+                                            <div className="text-sm font-medium text-gray-900">{approval.application_no}</div>
+                                        </td>
+                                        <td className="px-6 py-4 whitespace-nowrap">
+                                            <div className="text-sm text-gray-900">{approval.applicant_name}</div>
+                                            <div className="text-sm text-gray-500">{approval.applicant_name_bn}</div>
+                                        </td>
+                                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                                            {approval.branch_name}
+                                        </td>
+                                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                                            {approval.samity_name}
+                                        </td>
+                                        <td className="px-6 py-4 whitespace-nowrap">
+                                            <span className={`px-2 py-1 inline-flex text-xs leading-5 font-semibold rounded-full ${getLevelBadge(approval.level)}`}>
+                                                {approval.level}
+                                            </span>
+                                        </td>
+                                        <td className="px-6 py-4 whitespace-nowrap">
+                                            {approval.revision_count > 0 ? (
+                                                <div className="flex items-center gap-1">
+                                                    <span className="px-2 py-1 text-xs bg-yellow-100 text-yellow-800 rounded">
+                                                        Rev: {approval.revision_count}
+                                                    </span>
+                                                    {approval.revision_comments && (
+                                                        <button
+                                                            onClick={() => alert(approval.revision_comments)}
+                                                            className="text-blue-600 hover:text-blue-800"
+                                                            title="View comments"
+                                                        >
+                                                            <MessageSquare className="w-4 h-4" />
+                                                        </button>
+                                                    )}
+                                                </div>
+                                            ) : (
+                                                <span className="text-xs text-gray-500">-</span>
+                                            )}
+                                        </td>
+                                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                                            {new Date(approval.submitted_at).toLocaleDateString()}
+                                        </td>
+                                        <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
+                                            <div className="flex items-center justify-end gap-2">
+                                                <button
+                                                    onClick={() => router.visit(`/member-admissions/${approval.member_admission_id}`)}
+                                                    className="text-blue-600 hover:text-blue-900"
+                                                    title="View Details"
+                                                >
+                                                    <Eye className="w-4 h-4" />
+                                                </button>
+                                                <button
+                                                    onClick={() => handleAction(approval, 'approve')}
+                                                    className="text-green-600 hover:text-green-900"
+                                                    title="Approve"
+                                                >
+                                                    <CheckCircle className="w-4 h-4" />
+                                                </button>
+                                                <button
+                                                    onClick={() => handleAction(approval, 'reject')}
+                                                    className="text-red-600 hover:text-red-900"
+                                                    title="Reject"
+                                                >
+                                                    <XCircle className="w-4 h-4" />
+                                                </button>
+                                                {isHeadOffice(approval.level) && (
+                                                    <button
+                                                        onClick={() => handleAction(approval, 'return')}
+                                                        className="text-yellow-600 hover:text-yellow-900"
+                                                        title="Return to Branch"
+                                                    >
+                                                        <RotateCcw className="w-4 h-4" />
+                                                    </button>
+                                                )}
+                                            </div>
+                                        </td>
+                                    </tr>
+                                ))}
+                            </tbody>
+                        </table>
+                    </div>
+                )}
+            </div>
+
+            {/* Action Modal */}
+            {showModal && selectedApproval && (
+                <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+                    <div className="bg-white rounded-lg p-6 max-w-md w-full mx-4">
+                        <h3 className="text-lg font-semibold mb-4">
+                            {action === 'approve' && 'Approve Application'}
+                            {action === 'reject' && 'Reject Application'}
+                            {action === 'return' && 'Return to Branch'}
+                        </h3>
+                        <p className="text-sm text-gray-600 mb-4">
+                            Application: <strong>{selectedApproval.application_no}</strong>
+                            <br />
+                            Applicant: <strong>{selectedApproval.applicant_name}</strong>
+                        </p>
+                        <div className="mb-4">
+                            <label className="block text-sm font-medium text-gray-700 mb-2">
+                                Comments {action !== 'approve' && <span className="text-red-500">*</span>}
+                            </label>
+                            <textarea
+                                value={comments}
+                                onChange={(e) => setComments(e.target.value)}
+                                rows={4}
+                                className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                placeholder="Add your comments..."
+                                required={action !== 'approve'}
+                            />
+                        </div>
+                        <div className="flex justify-end gap-3">
+                            <button
+                                onClick={() => setShowModal(false)}
+                                className="px-4 py-2 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50"
+                            >
+                                Cancel
+                            </button>
+                            <button
+                                onClick={submitAction}
+                                disabled={action !== 'approve' && !comments.trim()}
+                                className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                            >
+                                Confirm
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+        </AdminLayout>
+    );
+}

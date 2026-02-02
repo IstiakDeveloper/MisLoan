@@ -2,46 +2,171 @@
 
 namespace App\Models;
 
-use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
-use Illuminate\Database\Eloquent\SoftDeletes;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
-use Illuminate\Database\Eloquent\Relations\MorphMany;
 
 class MemberAdmission extends Model
 {
-    use HasFactory, SoftDeletes;
-
     protected $fillable = [
         'application_no',
         'branch_id',
-        'submitted_by',
-        'excel_file_path',
-        'excel_file_name',
-        'total_members',
+        'samity_id',
+        'member_category_id',
+        'survey_date',
+        'admission_date',
+
+        // Personal Information - English
+        'applicant_name_en',
+        'father_name_en',
+        'mother_name_en',
+        'spouse_name_en',
+
+        // Personal Information - Bangla
+        'applicant_name_bn',
+        'father_name_bn',
+        'mother_name_bn',
+        'spouse_name_bn',
+
+        // Contact & Status
+        'marital_status',
+        'mobile_number',
+        'alternative_mobile',
+
+        // Present Address
+        'present_division',
+        'present_district',
+        'present_upazila',
+        'present_union',
+        'present_village_road',
+        'present_post_code',
+
+        // Permanent Address
+        'permanent_address_same',
+        'permanent_division',
+        'permanent_district',
+        'permanent_upazila',
+        'permanent_union',
+        'permanent_village_road',
+        'permanent_post_code',
+
+        // Identity Information
+        'nid_number',
+        'smart_card_number',
+        'birth_certificate_number',
+        'date_of_birth',
+        'gender',
+        'family_member_mobile',
+
+        // Co-Applicant/Guarantor
+        'guarantor_name',
+        'guarantor_mobile',
+        'tin_number',
+        'want_sms_service',
+
+        // Economic Activities
+        'business_details',
+        'job_details',
+        'other_income_details',
+        'total_asset_value',
+        'house_type',
+
+        // Property Information
+        'mud_house_count',
+        'tin_house_count',
+        'brick_house_count',
+        'semi_brick_house_count',
+
+        // Livestock Information
+        'cow_buffalo_count',
+        'goat_sheep_count',
+        'duck_chicken_count',
+        'other_livestock',
+        'other_livestock_count',
+
+        // Land Information
+        'cultivable_land_amount',
+        'cultivable_land_value',
+        'non_cultivable_land_amount',
+        'non_cultivable_land_value',
+
+        // Financial Information
+        'monthly_income',
+        'monthly_expense',
+        'monthly_savings',
+
+        // Additional Information
+        'interviewer_name',
+        'employee_name',
+        'other_loan_info',
+        'collector_comment',
+        'applicant_signature',
+
+        // Signatures and Documents
+        'applicant_signature_path',
+        'customer_photo_path',
+        'customer_nid_photo_path',
+        'guardian_name',
+        'guardian_signature_path',
+        'guardian_photo_path',
+        'guardian_nid_photo_path',
+
+        // Status & Workflow
         'status',
+        'submitted_by',
         'submitted_at',
-        'reviewed_at',
         'reviewed_by',
-        'head_office_remarks',
-        'branch_remarks',
+        'reviewed_at',
+        'rejection_reason',
+        'selected_approvers',
+        'revision_count',
+        'revision_comments',
+        'returned_at',
+        'returned_by',
     ];
 
     protected $casts = [
+        'survey_date' => 'date',
+        'admission_date' => 'date',
+        'date_of_birth' => 'date',
+        'permanent_address_same' => 'boolean',
+        'want_sms_service' => 'boolean',
+        'total_asset_value' => 'decimal:2',
+        'mud_house_count' => 'integer',
+        'tin_house_count' => 'integer',
+        'brick_house_count' => 'integer',
+        'semi_brick_house_count' => 'integer',
+        'cow_buffalo_count' => 'integer',
+        'goat_sheep_count' => 'integer',
+        'duck_chicken_count' => 'integer',
+        'other_livestock_count' => 'integer',
+        'cultivable_land_amount' => 'decimal:2',
+        'cultivable_land_value' => 'decimal:2',
+        'non_cultivable_land_amount' => 'decimal:2',
+        'non_cultivable_land_value' => 'decimal:2',
+        'monthly_income' => 'decimal:2',
+        'monthly_expense' => 'decimal:2',
+        'monthly_savings' => 'decimal:2',
         'submitted_at' => 'datetime',
         'reviewed_at' => 'datetime',
+        'returned_at' => 'datetime',
+        'selected_approvers' => 'array',
     ];
 
-    const STATUS_PENDING = 'pending';
-    const STATUS_UNDER_REVIEW = 'under_review';
-    const STATUS_APPROVED = 'approved';
-    const STATUS_REJECTED = 'rejected';
-    const STATUS_NEEDS_CORRECTION = 'needs_correction';
-
+    // Relationships
     public function branch(): BelongsTo
     {
         return $this->belongsTo(Branch::class);
+    }
+
+    public function samity(): BelongsTo
+    {
+        return $this->belongsTo(Samity::class);
+    }
+
+    public function memberCategory(): BelongsTo
+    {
+        return $this->belongsTo(MemberCategory::class);
     }
 
     public function submittedBy(): BelongsTo
@@ -54,63 +179,132 @@ class MemberAdmission extends Model
         return $this->belongsTo(User::class, 'reviewed_by');
     }
 
-    public function admissionMembers(): HasMany
+    public function familyMembers(): HasMany
     {
-        return $this->hasMany(AdmissionMember::class);
+        return $this->hasMany(MemberFamilyMember::class)->orderBy('sl_no');
     }
 
-    public function approvedMembers(): HasMany
+    public function otherAssets(): HasMany
     {
-        return $this->admissionMembers()->where('status', 'approved');
+        return $this->hasMany(MemberOtherAsset::class)->orderBy('sl_no');
     }
 
-    public function rejectedMembers(): HasMany
+    public function approvals(): HasMany
     {
-        return $this->admissionMembers()->where('status', 'rejected');
+        return $this->hasMany(MemberAdmissionApproval::class)->orderBy('sequence');
     }
 
-    public function pendingMembers(): HasMany
+    public function issues(): HasMany
     {
-        return $this->admissionMembers()->where('status', 'pending');
+        return $this->hasMany(MemberAdmissionIssue::class);
     }
 
-    public function history(): MorphMany
+    public function currentPendingApproval()
     {
-        return $this->morphMany(ApplicationHistory::class, 'application');
+        return $this->approvals()
+            ->where('status', 'pending')
+            ->whereNotExists(function ($query) {
+                $query->selectRaw(1)
+                    ->from('member_admission_approvals as prev')
+                    ->whereColumn('prev.member_admission_id', 'member_admission_approvals.member_admission_id')
+                    ->whereColumn('prev.sequence', '<', 'member_admission_approvals.sequence')
+                    ->where('prev.status', '!=', 'approved');
+            })
+            ->with('user')
+            ->first();
     }
 
-    public function notifications(): MorphMany
+    // Scopes
+    public function scopeDraft($query)
     {
-        return $this->morphMany(Notification::class, 'notifiable');
+        return $query->where('status', 'draft');
     }
 
-    public function comments(): MorphMany
+    public function scopeSubmitted($query)
     {
-        return $this->morphMany(Comment::class, 'commentable');
+        return $query->where('status', 'submitted');
     }
 
-    public static function generateApplicationNo(): string
+    public function scopeUnderReview($query)
     {
-        $prefix = 'MA';
+        return $query->where('status', 'under_review');
+    }
+
+    public function scopeApproved($query)
+    {
+        return $query->where('status', 'approved');
+    }
+
+    public function scopeRejected($query)
+    {
+        return $query->where('status', 'rejected');
+    }
+
+    // Helper Methods
+    public function isDraft(): bool
+    {
+        return $this->status === 'draft';
+    }
+
+    public function isSubmitted(): bool
+    {
+        return $this->status === 'submitted';
+    }
+
+    public function isApproved(): bool
+    {
+        return $this->status === 'approved';
+    }
+
+    public function isRejected(): bool
+    {
+        return $this->status === 'rejected';
+    }
+
+    public function canBeEdited(): bool
+    {
+        return in_array($this->status, ['draft', 'rejected']);
+    }
+
+    public function getFullNameAttribute(): string
+    {
+        return $this->applicant_name_en;
+    }
+
+    public function getFullNameBnAttribute(): string
+    {
+        return $this->applicant_name_bn;
+    }
+
+    // Boot method to generate application number
+    protected static function boot()
+    {
+        parent::boot();
+
+        static::creating(function ($admission) {
+            if (empty($admission->application_no)) {
+                $admission->application_no = self::generateApplicationNumber();
+            }
+        });
+    }
+
+    private static function generateApplicationNumber(): string
+    {
         $year = date('Y');
         $month = date('m');
-        $lastApplication = self::whereYear('created_at', $year)
-            ->whereMonth('created_at', $month)
-            ->orderBy('id', 'desc')
+        $prefix = "MEM-{$year}{$month}-";
+
+        $lastAdmission = self::where('application_no', 'like', "{$prefix}%")
+            ->orderBy('application_no', 'desc')
             ->first();
 
-        $sequence = $lastApplication ? (int)substr($lastApplication->application_no, -5) + 1 : 1;
+        if ($lastAdmission) {
+            $lastNumber = intval(substr($lastAdmission->application_no, -6));
+            $newNumber = $lastNumber + 1;
+        } else {
+            $newNumber = 1;
+        }
 
-        return sprintf('%s%s%s%05d', $prefix, $year, $month, $sequence);
-    }
-
-    public function scopeStatus($query, string $status)
-    {
-        return $query->where('status', $status);
-    }
-
-    public function scopeForBranch($query, int $branchId)
-    {
-        return $query->where('branch_id', $branchId);
+        return $prefix . str_pad($newNumber, 6, '0', STR_PAD_LEFT);
     }
 }

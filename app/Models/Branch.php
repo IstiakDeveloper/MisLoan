@@ -51,6 +51,11 @@ class Branch extends Model
         return $this->hasMany(LoanApplication::class);
     }
 
+    public function samities(): HasMany
+    {
+        return $this->hasMany(Samity::class);
+    }
+
     public function memberAdmissions(): HasMany
     {
         return $this->hasMany(MemberAdmission::class);

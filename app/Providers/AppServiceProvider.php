@@ -7,7 +7,6 @@ use Illuminate\Http\Resources\Json\JsonResource;
 use Illuminate\Http\JsonResponse;
 use Inertia\Inertia;
 use App\Models\LoanApplication;
-use App\Models\MemberAdmission;
 
 class AppServiceProvider extends ServiceProvider
 {
@@ -41,14 +40,6 @@ class AppServiceProvider extends ServiceProvider
             'unreadSubmissionsCount' => function () {
                 if (auth()->check() && auth()->user()->has_all_access) {
                     return LoanApplication::whereNull('reviewed_at')->count();
-                }
-                return 0;
-            },
-            'unreadAdmissionsCount' => function () {
-                if (auth()->check() && auth()->user()->has_all_access) {
-                    return MemberAdmission::whereNotNull('submitted_at')
-                        ->whereNull('reviewed_at')
-                        ->count();
                 }
                 return 0;
             },

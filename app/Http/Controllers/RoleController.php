@@ -51,15 +51,6 @@ class RoleController extends Controller
                 'loan_applications.reject' => 'Reject Loan Application',
                 'loan_applications.delete' => 'Delete Loan Application',
             ],
-            'member_admissions' => [
-                'member_admissions.view' => 'View Member Admissions',
-                'member_admissions.create' => 'Submit Member Admission',
-                'member_admissions.edit' => 'Edit Member Admission',
-                'member_admissions.review' => 'Review Member Admission',
-                'member_admissions.approve' => 'Approve Member Admission',
-                'member_admissions.reject' => 'Reject Member Admission',
-                'member_admissions.delete' => 'Delete Member Admission',
-            ],
             'reports' => [
                 'reports.view' => 'View Reports',
                 'reports.generate' => 'Generate Reports',

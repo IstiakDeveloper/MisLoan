@@ -7,8 +7,13 @@ use App\Http\Controllers\RoleController;
 use App\Http\Controllers\UserController;
 use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\LoanApplicationController;
-use App\Http\Controllers\AdmissionController;
 use App\Http\Controllers\IssueProcessingController;
+use App\Http\Controllers\SamityController;
+use App\Http\Controllers\MemberCategoryController;
+use App\Http\Controllers\MemberAdmissionController;
+use App\Http\Controllers\ApprovalController;
+use App\Http\Controllers\ProfileController;
+use App\Http\Controllers\HeadOfficeAdmissionController;
 
 Route::get('/', function () {
     if (auth()->check()) {
@@ -19,6 +24,10 @@ Route::get('/', function () {
 
 Route::middleware(['auth', 'verified'])->group(function () {
     Route::get('dashboard', [DashboardController::class, 'index'])->name('dashboard');
+
+    // Profile Routes
+    Route::get('profile', [ProfileController::class, 'edit'])->name('profile.edit');
+    Route::post('profile', [ProfileController::class, 'update'])->name('profile.update');
 
     // Organization Management Routes - Only for SuperAdmin/Head Office
     Route::prefix('organizations')->name('organizations.')->middleware('head.office')->group(function () {
@@ -66,6 +75,70 @@ Route::middleware(['auth', 'verified'])->group(function () {
     Route::post('users/{user}/reset-password', [UserController::class, 'resetPassword'])->name('users.reset-password');
     });
 
+    // Samity Management Routes - Only for SuperAdmin/Head Office
+    Route::prefix('samities')->name('samities.')->middleware('head.office')->group(function () {
+        Route::get('/', [SamityController::class, 'index'])->name('index');
+        Route::get('create', [SamityController::class, 'create'])->name('create');
+        Route::post('/', [SamityController::class, 'store'])->name('store');
+        Route::get('{samity}/edit', [SamityController::class, 'edit'])->name('edit');
+        Route::put('{samity}', [SamityController::class, 'update'])->name('update');
+        Route::delete('{samity}', [SamityController::class, 'destroy'])->name('destroy');
+
+        // API Route
+        Route::get('branch/{branch}/samities', [SamityController::class, 'getByBranch'])->name('by-branch');
+    });
+
+    // Member Category Management Routes - Only for SuperAdmin/Head Office
+    Route::prefix('member-categories')->name('member-categories.')->middleware('head.office')->group(function () {
+        Route::get('/', [MemberCategoryController::class, 'index'])->name('index');
+        Route::get('create', [MemberCategoryController::class, 'create'])->name('create');
+        Route::post('/', [MemberCategoryController::class, 'store'])->name('store');
+        Route::get('{memberCategory}/edit', [MemberCategoryController::class, 'edit'])->name('edit');
+        Route::put('{memberCategory}', [MemberCategoryController::class, 'update'])->name('update');
+        Route::delete('{memberCategory}', [MemberCategoryController::class, 'destroy'])->name('destroy');
+
+        // API Route
+        Route::get('active', [MemberCategoryController::class, 'getActive'])->name('active');
+    });
+
+    // Member Admission Routes - For Branch Users
+    Route::prefix('member-admissions')->name('member-admissions.')->middleware('branch.user')->group(function () {
+        Route::get('/', [MemberAdmissionController::class, 'index'])->name('index');
+        Route::get('create', [MemberAdmissionController::class, 'create'])->name('create');
+        Route::post('/', [MemberAdmissionController::class, 'store'])->name('store');
+        Route::get('{memberAdmission}', [MemberAdmissionController::class, 'show'])->name('show');
+        Route::get('{memberAdmission}/print', [MemberAdmissionController::class, 'printSingle'])->name('print');
+        Route::get('{memberAdmission}/edit', [MemberAdmissionController::class, 'edit'])->name('edit');
+        Route::put('{memberAdmission}', [MemberAdmissionController::class, 'update'])->name('update');
+        Route::delete('{memberAdmission}', [MemberAdmissionController::class, 'destroy'])->name('destroy');
+        Route::patch('{memberAdmission}/submit', [MemberAdmissionController::class, 'submit'])->name('submit');
+        Route::patch('{memberAdmission}/resubmit', [MemberAdmissionController::class, 'resubmit'])->name('resubmit');
+        Route::patch('{memberAdmission}/reject', [MemberAdmissionController::class, 'reject'])->name('reject');
+    });
+
+    // Approval Routes - For all authenticated users
+    Route::prefix('approvals')->name('approvals.')->middleware('auth')->group(function () {
+        Route::get('/', [ApprovalController::class, 'index'])->name('index');
+        Route::patch('{approval}/approve', [ApprovalController::class, 'approve'])->name('approve');
+        Route::patch('{approval}/reject', [ApprovalController::class, 'reject'])->name('reject');
+        Route::patch('{approval}/return-to-branch', [ApprovalController::class, 'returnToBranch'])->name('return-to-branch');
+    });
+
+    // Head Office Admission Members Management
+    Route::prefix('head-office')->name('head-office.')->middleware('head.office')->group(function () {
+        Route::get('admission-members', [HeadOfficeAdmissionController::class, 'index'])->name('admission-members');
+        Route::get('admission-members/print', [HeadOfficeAdmissionController::class, 'print'])->name('admission-members.print');
+        Route::get('process-admissions', [HeadOfficeAdmissionController::class, 'process'])->name('process-admissions');
+        Route::get('admissions/{admission}', [HeadOfficeAdmissionController::class, 'show'])->name('admissions.show');
+        Route::get('admissions/{admission}/print', [HeadOfficeAdmissionController::class, 'printSingle'])->name('admissions.print');
+        Route::delete('admissions/{admission}', [HeadOfficeAdmissionController::class, 'destroy'])->name('admissions.destroy');
+        Route::post('admissions/{admission}/issue', [HeadOfficeAdmissionController::class, 'storeIssue'])->name('admissions.issue');
+        Route::patch('admissions/{admission}/approve', [HeadOfficeAdmissionController::class, 'approveSingle'])->name('admissions.approve');
+        Route::patch('admissions/{admission}/reject', [HeadOfficeAdmissionController::class, 'rejectSingle'])->name('admissions.reject');
+        Route::post('admissions/approve-all', [HeadOfficeAdmissionController::class, 'approveAll'])->name('admissions.approve-all');
+        Route::delete('issues/{issue}', [HeadOfficeAdmissionController::class, 'deleteIssue'])->name('issues.delete');
+    });
+
     // Loan Submissions Management - Only for SuperAdmin/Head Office
     Route::prefix('submissions')->name('submissions.')->middleware('head.office')->group(function () {
         Route::get('/', [LoanApplicationController::class, 'submissions'])->name('index');
@@ -75,23 +148,7 @@ Route::middleware(['auth', 'verified'])->group(function () {
         Route::get('export/pdf', [LoanApplicationController::class, 'exportPdf'])->name('export.pdf');
     });
 
-    // Member Admission Submissions - Only for SuperAdmin/Head Office
-    Route::prefix('admission-submissions')->name('admission-submissions.')->middleware('head.office')->group(function () {
-        Route::get('/', [AdmissionController::class, 'headOfficeSubmissions'])->name('index');
-        Route::post('mark-all-read', [AdmissionController::class, 'markAllAsRead'])->name('mark-all-read');
-        Route::get('export/excel', [AdmissionController::class, 'exportExcel'])->name('export.excel');
-        Route::get('export/pdf', [AdmissionController::class, 'exportPdf'])->name('export.pdf');
-        Route::get('{admission}', [AdmissionController::class, 'headOfficeShow'])->name('show');
-        Route::patch('{admission}/mark-read', [AdmissionController::class, 'markAsRead'])->name('mark-read');
 
-        // Issue management
-        Route::post('{admission}/detect-issues', [AdmissionController::class, 'detectIssues'])->name('detect-issues');
-        Route::get('{admission}/issues', [AdmissionController::class, 'getAdmissionIssues'])->name('issues');
-        Route::post('issue/{issue}/message', [AdmissionController::class, 'addIssueMessage'])->name('issue.message');
-        Route::patch('issue/{issue}/resolve', [AdmissionController::class, 'resolveIssue'])->name('issue.resolve');
-        Route::patch('issue/{issue}/reject', [AdmissionController::class, 'rejectIssue'])->name('issue.reject');
-        Route::post('{admission}/approve-all', [AdmissionController::class, 'approveAllMembers'])->name('approve-all');
-    });
 
     // Issue Processing Workflow - Only for Head Office
     Route::prefix('issue-processing')->name('issue-processing.')->middleware('head.office')->group(function () {
@@ -123,39 +180,7 @@ Route::middleware(['auth', 'verified'])->group(function () {
         Route::get('application/{id}/issues', [IssueProcessingController::class, 'getUpdatedIssues'])->name('api.application.issues');
     });
 
-    // Member Admission Routes - Only for Branch Users
-    Route::prefix('admissions')->name('admissions.')->middleware('branch.user')->group(function () {
-        Route::get('/', [AdmissionController::class, 'index'])->name('index');
-        Route::get('create', [AdmissionController::class, 'create'])->name('create');
-        Route::post('/', [AdmissionController::class, 'store'])->name('store');
-        Route::post('analyze-excel', [AdmissionController::class, 'analyzeExcel'])->name('analyze-excel');
-        Route::get('template/download', [AdmissionController::class, 'downloadTemplate'])->name('template.download');
-        Route::patch('{admission}/submit', [AdmissionController::class, 'submit'])->name('submit');
-        // Show page removed - list view has built-in detail panel
-        // Route::get('{admission}', [AdmissionController::class, 'show'])->name('show');
 
-        // API Routes for date grouping and status tracking
-        Route::get('api/by-date', [AdmissionController::class, 'getAdmissionsByDate'])->name('api.by-date');
-        Route::get('api/data', [AdmissionController::class, 'getUpdatedData'])->name('api.data');
-        Route::get('api/member/{member}/review-status', [AdmissionController::class, 'getMemberWithReviewStatus'])->name('api.member.review-status');
-
-        // Branch issue response routes
-        Route::post('member/{member}/resolve-issue', [AdmissionController::class, 'memberResolveIssue'])->name('member.resolve-issue');
-        Route::post('member/{member}/reject-issue', [AdmissionController::class, 'memberRejectIssue'])->name('member.reject-issue');
-    });
-
-    // Head Office Admission Review Routes
-    Route::prefix('head-office/admissions')->name('head-office.admissions.')->middleware('head.office')->group(function () {
-        Route::get('submissions', [AdmissionController::class, 'headOfficeSubmissions'])->name('submissions');
-        Route::get('{admission}', [AdmissionController::class, 'headOfficeShow'])->name('show');
-        Route::get('{admission}/detail', [AdmissionController::class, 'headOfficeAdmissionDetail'])->name('detail');
-        Route::get('member/{member}/review', [AdmissionController::class, 'headOfficeMemberReviewPage'])->name('member.review');
-
-        // Member review actions
-        Route::post('member/{member}/approve', [AdmissionController::class, 'headOfficeApproveMember'])->name('member.approve');
-        Route::post('member/{member}/request-correction', [AdmissionController::class, 'headOfficeRequestCorrection'])->name('member.request-correction');
-        Route::post('member/{member}/reject', [AdmissionController::class, 'headOfficeRejectMember'])->name('member.reject');
-    });
 
     // Loan Application Routes - Only for Branch Users (not SuperAdmin/Head Office)
     Route::prefix('loan')->name('loan.')->middleware('branch.user')->group(function () {

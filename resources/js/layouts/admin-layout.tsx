@@ -17,7 +17,9 @@ import {
     Info,
     FileSpreadsheet,
     Inbox,
-    UserPlus
+    UserPlus,
+    ClipboardCheck,
+    Landmark
 } from 'lucide-react';
 
 interface User {
@@ -39,7 +41,6 @@ interface PageProps extends Record<string, unknown> {
     auth: { user: User };
     flash: Flash;
     unreadSubmissionsCount?: number;
-    unreadAdmissionsCount?: number;
 }
 
 interface AdminLayoutProps {
@@ -47,7 +48,7 @@ interface AdminLayoutProps {
 }
 
 export default function AdminLayout({ children }: AdminLayoutProps) {
-    const { auth, flash, unreadSubmissionsCount = 0, unreadAdmissionsCount = 0 } = usePage<PageProps>().props;
+    const { auth, flash, unreadSubmissionsCount = 0 } = usePage<PageProps>().props;
     const [sidebarOpen, setSidebarOpen] = useState(true);
     const [profileDropdownOpen, setProfileDropdownOpen] = useState(false);
     const [flashMessage, setFlashMessage] = useState<{ type: string; message: string } | null>(null);
@@ -77,14 +78,18 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
         ? [
             { name: 'Dashboard', href: '/dashboard', icon: LayoutDashboard },
             { name: 'Loan Applications', href: '/loan', icon: FileSpreadsheet },
-            { name: 'Member Admissions', href: '/admissions', icon: UserPlus },
+            { name: 'Member Admissions', href: '/member-admissions', icon: UserPlus },
+            { name: 'Pending Approvals', href: '/approvals', icon: ClipboardCheck },
           ]
         : [
             { name: 'Dashboard', href: '/dashboard', icon: LayoutDashboard },
             { name: '📋 Check & Process', href: '/issue-processing', icon: CheckCircle, highlight: true },
             { name: 'Loan Submissions', href: '/submissions', icon: Inbox, badge: unreadSubmissionsCount },
-            { name: 'Admission Submissions', href: '/admission-submissions', icon: UserPlus, badge: unreadAdmissionsCount },
-            { name: 'Organizations', href: '/organizations', icon: Building2 },
+            { name: 'Admission Members', href: '/head-office/admission-members', icon: UserPlus },
+            { name: 'Pending Approvals', href: '/approvals', icon: ClipboardCheck },
+            { name: 'Organizations', href: '/organizations', icon: Landmark },
+            { name: 'Samities', href: '/samities', icon: Building2 },
+            { name: 'Member Categories', href: '/member-categories', icon: Users },
             { name: 'Users', href: '/users', icon: Users },
             { name: 'Roles', href: '/roles', icon: Shield },
           ];
@@ -193,20 +198,20 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
                         {sidebarOpen ? (
                             <div className="flex items-center gap-3">
                                 <div className="w-10 h-10 rounded-full bg-blue-100 flex items-center justify-center text-blue-600 font-semibold">
-                                    {auth.user.name.charAt(0).toUpperCase()}
+                                    {auth.user?.name?.charAt(0)?.toUpperCase() || 'U'}
                                 </div>
                                 <div className="flex-1 min-w-0">
                                     <p className="text-sm font-medium text-gray-900 truncate">
-                                        {auth.user.name}
+                                        {auth.user?.name || 'User'}
                                     </p>
                                     <p className="text-xs text-gray-500 truncate">
-                                        {auth.user.role?.name || 'Admin'}
+                                        {auth.user?.role?.name || 'Admin'}
                                     </p>
                                 </div>
                             </div>
                         ) : (
                             <div className="w-10 h-10 rounded-full bg-blue-100 flex items-center justify-center text-blue-600 font-semibold mx-auto">
-                                {auth.user.name.charAt(0).toUpperCase()}
+                                {auth.user?.name?.charAt(0)?.toUpperCase() || 'U'}
                             </div>
                         )}
                     </div>
@@ -224,7 +229,7 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
                     <div className="flex items-center justify-between h-16 px-6">
                         <div className="flex items-center gap-4">
                             <h2 className="text-lg font-semibold text-gray-800">
-                                Welcome back, {auth.user.name.split(' ')[0]}!
+                                Welcome back, {auth.user?.name?.split(' ')[0] || 'User'}!
                             </h2>
                         </div>
 
@@ -242,7 +247,7 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
                                     className="flex items-center gap-2 p-2 rounded-lg hover:bg-gray-100 transition-colors"
                                 >
                                     <div className="w-8 h-8 rounded-full bg-blue-100 flex items-center justify-center text-blue-600 font-semibold text-sm">
-                                        {auth.user.name.charAt(0).toUpperCase()}
+                                        {auth.user?.name?.charAt(0)?.toUpperCase() || 'U'}
                                     </div>
                                     <ChevronDown className="w-4 h-4 text-gray-600" />
                                 </button>
@@ -281,7 +286,7 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
             {/* Overlay for mobile */}
             {sidebarOpen && (
                 <div
-                    className="fixed inset-0 bg-black bg-opacity-50 z-30 lg:hidden"
+                    className="fixed inset-0 bg-black/50 z-30 lg:hidden"
                     onClick={() => setSidebarOpen(false)}
                 />
             )}

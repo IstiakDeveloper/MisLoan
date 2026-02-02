@@ -1,0 +1,279 @@
+{
+  "divisions": [
+    "Dhaka",
+    "Chittagong",
+    "Rajshahi",
+    "Khulna",
+    "Barisal",
+    "Sylhet",
+    "Rangpur",
+    "Mymensingh"
+  ],
+  "districtsByDivision": {
+    "Rajshahi": [
+      "Naogaon",
+      "Rajshahi",
+      "Chapainawabganj",
+      "Natore",
+      "Pabna",
+      "Bogra",
+      "Sirajganj",
+      "Joypurhat"
+    ],
+    "Dhaka": [
+      "Dhaka",
+      "Gazipur",
+      "Narayanganj",
+      "Tangail",
+      "Kishoreganj",
+      "Manikganj",
+      "Munshiganj",
+      "Narsingdi",
+      "Rajbari",
+      "Faridpur",
+      "Gopalganj",
+      "Madaripur",
+      "Shariatpur"
+    ],
+    "Chittagong": [
+      "Chittagong",
+      "Cox's Bazar",
+      "Rangamati",
+      "Bandarban",
+      "Khagrachari",
+      "Feni",
+      "Lakshmipur",
+      "Comilla",
+      "Noakhali",
+      "Brahmanbaria",
+      "Chandpur"
+    ],
+    "Khulna": [
+      "Khulna",
+      "Jessore",
+      "Satkhira",
+      "Bagerhat",
+      "Jhenaidah",
+      "Magura",
+      "Kushtia",
+      "Chuadanga",
+      "Meherpur",
+      "Narail"
+    ],
+    "Barisal": [
+      "Barisal",
+      "Patuakhali",
+      "Bhola",
+      "Pirojpur",
+      "Jhalokati",
+      "Barguna"
+    ],
+    "Sylhet": [
+      "Sylhet",
+      "Moulvibazar",
+      "Habiganj",
+      "Sunamganj"
+    ],
+    "Rangpur": [
+      "Rangpur",
+      "Dinajpur",
+      "Gaibandha",
+      "Kurigram",
+      "Lalmonirhat",
+      "Nilphamari",
+      "Panchagarh",
+      "Thakurgaon"
+    ],
+    "Mymensingh": [
+      "Mymensingh",
+      "Jamalpur",
+      "Netrokona",
+      "Sherpur"
+    ]
+  },
+  "upazilasByDistrict": {
+    "Naogaon": [
+      "Naogaon Sadar",
+      "Mohadevpur",
+      "Manda",
+      "Niamatpur",
+      "Atrai",
+      "Raninagar",
+      "Patnitala",
+      "Dhamoirhat",
+      "Sapahar",
+      "Porsha",
+      "Badalgachhi"
+    ],
+    "Rajshahi": [
+      "Rajshahi Sadar",
+      "Paba",
+      "Godagari",
+      "Tanore",
+      "Mohanpur",
+      "Charghat",
+      "Puthia",
+      "Bagha",
+      "Durgapur"
+    ],
+    "Dhaka": [
+      "Dhanmondi",
+      "Mohammadpur",
+      "Mirpur",
+      "Gulshan",
+      "Uttara",
+      "Savar",
+      "Keraniganj",
+      "Nawabganj",
+      "Dohar"
+    ],
+    "Chapainawabganj": [
+      "Chapainawabganj Sadar",
+      "Gomastapur",
+      "Nachole",
+      "Bholahat",
+      "Shibganj"
+    ],
+    "Natore": [
+      "Natore Sadar",
+      "Baraigram",
+      "Bagatipara",
+      "Lalpur",
+      "Naldanga",
+      "Gurudaspur",
+      "Singra"
+    ],
+    "Pabna": [
+      "Pabna Sadar",
+      "Ishwardi",
+      "Chatmohar",
+      "Santhia",
+      "Bera",
+      "Faridpur",
+      "Sujanagar",
+      "Atgharia",
+      "Bhangura"
+    ],
+    "Bogra": [
+      "Bogra Sadar",
+      "Sherpur",
+      "Adamdighi",
+      "Kahaloo",
+      "Sariakandi",
+      "Shajahanpur",
+      "Dupchanchia",
+      "Gabtali",
+      "Shibganj",
+      "Sonatola",
+      "Dhunat",
+      "Nandigram"
+    ],
+    "Sirajganj": [
+      "Sirajganj Sadar",
+      "Belkuchi",
+      "Chauhali",
+      "Kamarkhanda",
+      "Kazipur",
+      "Raiganj",
+      "Shahjadpur",
+      "Tarash",
+      "Ullahpara"
+    ],
+    "Joypurhat": [
+      "Joypurhat Sadar",
+      "Akkelpur",
+      "Kalai",
+      "Khetlal",
+      "Panchbibi"
+    ],
+    "Gazipur": [
+      "Gazipur Sadar",
+      "Kaliakair",
+      "Kapasia",
+      "Sreepur",
+      "Tongi"
+    ],
+    "Tangail": [
+      "Tangail Sadar",
+      "Basail",
+      "Bhuapur",
+      "Delduar",
+      "Ghatail",
+      "Gopalpur",
+      "Kalihati",
+      "Madhupur",
+      "Mirzapur",
+      "Nagarpur",
+      "Sakhipur",
+      "Dhanbari"
+    ],
+    "Chittagong": [
+      "Anwara",
+      "Banshkhali",
+      "Boalkhali",
+      "Chandanaish",
+      "Fatikchhari",
+      "Hathazari",
+      "Lohagara",
+      "Mirsharai",
+      "Patiya",
+      "Rangunia",
+      "Raozan",
+      "Sandwip",
+      "Satkania",
+      "Sitakunda"
+    ],
+    "Cox's Bazar": [
+      "Cox's Bazar Sadar",
+      "Chakaria",
+      "Kutubdia",
+      "Maheshkhali",
+      "Ramu",
+      "Teknaf",
+      "Ukhia",
+      "Pekua"
+    ],
+    "Comilla": [
+      "Comilla Sadar",
+      "Barura",
+      "Brahmanpara",
+      "Burichang",
+      "Chandina",
+      "Chauddagram",
+      "Daudkandi",
+      "Debidwar",
+      "Homna",
+      "Laksam",
+      "Muradnagar",
+      "Nangalkot",
+      "Meghna",
+      "Titas"
+    ]
+  },
+  "religions": [
+    "Islam",
+    "Hinduism",
+    "Buddhism",
+    "Christianity",
+    "Other"
+  ],
+  "bloodGroups": [
+    "A+",
+    "A-",
+    "B+",
+    "B-",
+    "O+",
+    "O-",
+    "AB+",
+    "AB-"
+  ],
+  "guardianRelations": [
+    "father",
+    "mother",
+    "uncle",
+    "aunt",
+    "grandfather",
+    "grandmother",
+    "other"
+  ]
+}

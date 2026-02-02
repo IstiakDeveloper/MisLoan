@@ -27,6 +27,7 @@ class User extends Authenticatable
         'zone_id',
         'has_all_access',
         'profile_photo',
+        'signature',
         'is_active',
         'email_verified_at',
     ];
@@ -168,14 +169,6 @@ class User extends Authenticatable
     public function loanApplications(): HasMany
     {
         return $this->hasMany(LoanApplication::class, 'submitted_by');
-    }
-
-    /**
-     * Get submitted member admissions
-     */
-    public function memberAdmissions(): HasMany
-    {
-        return $this->hasMany(MemberAdmission::class, 'submitted_by');
     }
 
     /**

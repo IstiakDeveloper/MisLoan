@@ -14,9 +14,17 @@ class DatabaseSeeder extends Seeder
         $this->call([
             RoleSeeder::class,
             SuperAdminSeeder::class,
+            ZoneSeeder::class,
+            AreaSeeder::class,
+            BranchSeeder::class,
+            UserSeeder::class,
         ]);
 
         $this->command->info('Database seeding completed!');
-        $this->command->info('Run with --class=DemoDataSeeder to add demo zones, areas, branches, and users');
+        $this->command->info('✓ Roles and Super Admin created');
+        $this->command->info('✓ 3 Zones created');
+        $this->command->info('✓ 9 Areas created');
+        $this->command->info('✓ 42 Branches created');
+        $this->command->info('✓ 43 Users created');
     }
 }

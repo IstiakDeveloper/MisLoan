@@ -18,10 +18,7 @@ return new class extends Migration
      */
     public function up(): void
     {
-        // Update admission_members status enum
-        DB::statement("ALTER TABLE admission_members MODIFY COLUMN status ENUM('pending', 'issue', 'approved', 'rejected') DEFAULT 'pending'");
-
-        // Update loan_members status enum
+        // Update loan_members status enum only
         DB::statement("ALTER TABLE loan_members MODIFY COLUMN status ENUM('pending', 'issue', 'approved', 'rejected') DEFAULT 'pending'");
     }
 
@@ -31,11 +28,9 @@ return new class extends Migration
     public function down(): void
     {
         // First update any 'issue' status back to 'pending'
-        DB::table('admission_members')->where('status', 'issue')->update(['status' => 'pending']);
         DB::table('loan_members')->where('status', 'issue')->update(['status' => 'pending']);
 
         // Revert enum
-        DB::statement("ALTER TABLE admission_members MODIFY COLUMN status ENUM('pending', 'approved', 'rejected') DEFAULT 'pending'");
         DB::statement("ALTER TABLE loan_members MODIFY COLUMN status ENUM('pending', 'approved', 'rejected') DEFAULT 'pending'");
     }
 };

@@ -2,7 +2,6 @@
 
 namespace App\Mail;
 
-use App\Models\MemberAdmission;
 use App\Models\LoanApplication;
 use Illuminate\Bus\Queueable;
 use Illuminate\Mail\Mailable;
@@ -28,10 +27,8 @@ class IssueReportNotification extends Mailable
 
     public function envelope(): Envelope
     {
-        $type = $this->applicationType === 'admission' ? 'ভর্তি' : 'ঋণ';
-
         return new Envelope(
-            subject: "⚠️ নতুন সমস্যা রিপোর্ট - {$type} আবেদন #{$this->applicationId}",
+            subject: "⚠️ নতুন সমস্যা রিপোর্ট - ঋণ আবেদন #{$this->applicationId}",
         );
     }
 
@@ -55,12 +52,7 @@ class IssueReportNotification extends Mailable
 
     private function getApplicationNo(): string
     {
-        if ($this->applicationType === 'admission') {
-            $app = MemberAdmission::find($this->applicationId);
-            return $app?->application_no ?? 'N/A';
-        } else {
-            $app = LoanApplication::find($this->applicationId);
-            return $app?->application_no ?? 'N/A';
-        }
+        $app = LoanApplication::find($this->applicationId);
+        return $app?->application_no ?? 'N/A';
     }
 }
