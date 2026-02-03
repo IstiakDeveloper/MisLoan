@@ -153,4 +153,5 @@ class ImageCompressionService
         }
         return false;
     }
+
 }
