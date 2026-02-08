@@ -26,8 +26,11 @@ interface LoanApplication {
         id: number;
         name: string;
     };
+    member_admission?: {
+        member_name_bn: string;
+    };
     status: string;
-    total_members: number;
+    requested_amount: number;
     submitted_at: string;
 }
 
@@ -154,10 +157,10 @@ export default function BranchDashboard({ stats, recentApplications, accessibleD
                                 <FileSpreadsheet size={48} className="mx-auto text-gray-400 mb-3" />
                                 <p className="text-gray-600 mb-3">No applications yet</p>
                                 <Link
-                                    href="/loan/upload"
+                                    href="/member/loan-applications/create"
                                     className="inline-flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
                                 >
-                                    Upload First Application
+                                    Create First Application
                                 </Link>
                             </div>
                         ) : (
@@ -165,7 +168,7 @@ export default function BranchDashboard({ stats, recentApplications, accessibleD
                                 {recentApplications.map((app) => (
                                     <Link
                                         key={app.id}
-                                        href={`/loan/${app.id}`}
+                                        href={`/member/loan-applications/${app.id}`}
                                         className="block p-4 border border-gray-200 rounded-lg hover:border-blue-300 hover:bg-blue-50 transition-all"
                                     >
                                         <div className="flex items-start justify-between mb-2">
@@ -185,8 +188,9 @@ export default function BranchDashboard({ stats, recentApplications, accessibleD
                                             {getStatusBadge(app.status)}
                                         </div>
                                         <div className="flex items-center justify-between text-sm">
-                                            <span className="text-gray-600">
-                                                {app.total_members} Members
+                                            <span className="flex items-center gap-1 text-gray-600">
+                                                <DollarSign size={14} />
+                                                ৳{app.requested_amount.toLocaleString()}
                                             </span>
                                             <span className="flex items-center gap-1 text-gray-500">
                                                 <Calendar size={14} />
@@ -196,7 +200,7 @@ export default function BranchDashboard({ stats, recentApplications, accessibleD
                                     </Link>
                                 ))}
                                 <Link
-                                    href="/loan"
+                                    href="/member/loan-applications"
                                     className="block text-center py-2 text-blue-600 hover:text-blue-700 font-medium"
                                 >
                                     View All Applications →

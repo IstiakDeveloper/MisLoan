@@ -19,7 +19,10 @@ import {
     Inbox,
     UserPlus,
     ClipboardCheck,
-    Landmark
+    Landmark,
+    Banknote,
+    ListTree,
+    Package
 } from 'lucide-react';
 
 interface User {
@@ -70,23 +73,26 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
         }
     }, [flash]);
 
-    // Branch users: Only Dashboard + Loan Applications
-    // SuperAdmin/Head Office: Full access to all modules
+    // Branch users: Only Dashboard + Loan Applications + Member Admissions
+    // SuperAdmin/Head Office: Full access to all modules including loan categories
     const isBranchUser = !auth.user.has_all_access;
 
     const menuItems = isBranchUser
         ? [
             { name: 'Dashboard', href: '/dashboard', icon: LayoutDashboard },
-            { name: 'Loan Applications', href: '/loan', icon: FileSpreadsheet },
+            { name: 'Loan Applications', href: '/member/loan-applications', icon: Banknote },
+            { name: 'Savings Applications', href: '/member/savings-applications', icon: Landmark },
+            { name: 'Loan Applications (Excel)', href: '/loan', icon: FileSpreadsheet },
             { name: 'Member Admissions', href: '/member-admissions', icon: UserPlus },
             { name: 'Pending Approvals', href: '/approvals', icon: ClipboardCheck },
           ]
         : [
             { name: 'Dashboard', href: '/dashboard', icon: LayoutDashboard },
-            { name: '📋 Check & Process', href: '/issue-processing', icon: CheckCircle, highlight: true },
             { name: 'Loan Submissions', href: '/submissions', icon: Inbox, badge: unreadSubmissionsCount },
             { name: 'Admission Members', href: '/head-office/admission-members', icon: UserPlus },
             { name: 'Pending Approvals', href: '/approvals', icon: ClipboardCheck },
+            { name: 'Loan Categories', href: '/loan-categories', icon: ListTree },
+            { name: 'Loan Products', href: '/loan-products', icon: Package },
             { name: 'Organizations', href: '/organizations', icon: Landmark },
             { name: 'Samities', href: '/samities', icon: Building2 },
             { name: 'Member Categories', href: '/member-categories', icon: Users },

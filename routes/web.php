@@ -14,6 +14,8 @@ use App\Http\Controllers\MemberAdmissionController;
 use App\Http\Controllers\ApprovalController;
 use App\Http\Controllers\ProfileController;
 use App\Http\Controllers\HeadOfficeAdmissionController;
+use App\Http\Controllers\LoanCategoryController;
+use App\Http\Controllers\LoanProductController;
 
 Route::get('/', function () {
     if (auth()->check()) {
@@ -101,6 +103,24 @@ Route::middleware(['auth', 'verified'])->group(function () {
         Route::get('active', [MemberCategoryController::class, 'getActive'])->name('active');
     });
 
+    // Loan Category Management Routes - Only for SuperAdmin/Head Office
+    Route::prefix('loan-categories')->name('loan-categories.')->middleware('head.office')->group(function () {
+        Route::get('/', [LoanCategoryController::class, 'index'])->name('index');
+        Route::post('/', [LoanCategoryController::class, 'store'])->name('store');
+        Route::put('{loanCategory}', [LoanCategoryController::class, 'update'])->name('update');
+        Route::delete('{loanCategory}', [LoanCategoryController::class, 'destroy'])->name('destroy');
+        Route::patch('{loanCategory}/toggle-status', [LoanCategoryController::class, 'toggleStatus'])->name('toggle-status');
+    });
+
+    // Loan Product Management Routes - Only for SuperAdmin/Head Office
+    Route::prefix('loan-products')->name('loan-products.')->middleware('head.office')->group(function () {
+        Route::get('/', [LoanProductController::class, 'index'])->name('index');
+        Route::post('/', [LoanProductController::class, 'store'])->name('store');
+        Route::put('{loanProduct}', [LoanProductController::class, 'update'])->name('update');
+        Route::delete('{loanProduct}', [LoanProductController::class, 'destroy'])->name('destroy');
+        Route::patch('{loanProduct}/toggle-status', [LoanProductController::class, 'toggleStatus'])->name('toggle-status');
+    });
+
     // Member Admission Routes - For Branch Users
     Route::prefix('member-admissions')->name('member-admissions.')->middleware('branch.user')->group(function () {
         Route::get('/', [MemberAdmissionController::class, 'index'])->name('index');
@@ -122,6 +142,39 @@ Route::middleware(['auth', 'verified'])->group(function () {
         Route::patch('{approval}/approve', [ApprovalController::class, 'approve'])->name('approve');
         Route::patch('{approval}/reject', [ApprovalController::class, 'reject'])->name('reject');
         Route::patch('{approval}/return-to-branch', [ApprovalController::class, 'returnToBranch'])->name('return-to-branch');
+    });
+
+    // Member Loan & Savings Application Routes - For members/branch users
+    Route::prefix('member')->name('member.')->middleware('auth')->group(function () {
+        // Loan Applications
+        Route::prefix('loan-applications')->name('loan-applications.')->group(function () {
+            Route::get('/', [\App\Http\Controllers\Member\LoanApplicationController::class, 'index'])->name('index');
+            Route::get('products', [\App\Http\Controllers\Member\LoanApplicationController::class, 'getProducts'])->name('products');
+            Route::get('search-members', [\App\Http\Controllers\Member\LoanApplicationController::class, 'searchMembers'])->name('search-members');
+            Route::get('form-selection', [\App\Http\Controllers\Member\LoanApplicationController::class, 'formSelection'])->name('form-selection');
+
+            // Form routes
+            Route::prefix('forms')->name('forms.')->group(function () {
+                Route::get('loan-agreement', [\App\Http\Controllers\Member\LoanApplicationController::class, 'loanAgreement'])->name('loan-agreement');
+            });
+
+            Route::get('create/{productId?}', [\App\Http\Controllers\Member\LoanApplicationController::class, 'create'])->name('create');
+            Route::post('/', [\App\Http\Controllers\Member\LoanApplicationController::class, 'store'])->name('store');
+            Route::get('{id}', [\App\Http\Controllers\Member\LoanApplicationController::class, 'show'])->name('show');
+            Route::get('{id}/edit', [\App\Http\Controllers\Member\LoanApplicationController::class, 'edit'])->name('edit');
+            Route::put('{id}', [\App\Http\Controllers\Member\LoanApplicationController::class, 'update'])->name('update');
+            Route::patch('{id}/submit', [\App\Http\Controllers\Member\LoanApplicationController::class, 'submit'])->name('submit');
+            Route::get('{id}/print', [\App\Http\Controllers\Member\LoanApplicationController::class, 'print'])->name('print');
+        });
+
+        // Savings Applications
+        Route::prefix('savings-applications')->name('savings-applications.')->group(function () {
+            Route::get('/', [\App\Http\Controllers\Member\SavingsApplicationController::class, 'index'])->name('index');
+            Route::get('create/{productId}', [\App\Http\Controllers\Member\SavingsApplicationController::class, 'create'])->name('create');
+            Route::post('/', [\App\Http\Controllers\Member\SavingsApplicationController::class, 'store'])->name('store');
+            Route::get('{id}', [\App\Http\Controllers\Member\SavingsApplicationController::class, 'show'])->name('show');
+            Route::patch('{id}/submit', [\App\Http\Controllers\Member\SavingsApplicationController::class, 'submit'])->name('submit');
+        });
     });
 
     // Head Office Admission Members Management

@@ -2,46 +2,155 @@
 
 namespace App\Models;
 
-use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
-use Illuminate\Database\Eloquent\SoftDeletes;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
-use Illuminate\Database\Eloquent\Relations\HasMany;
-use Illuminate\Database\Eloquent\Relations\MorphMany;
 
 class LoanApplication extends Model
 {
-    use HasFactory, SoftDeletes;
-
     protected $fillable = [
         'application_no',
+        'member_admission_id',
+        'loan_product_id',
+        'loan_category_id',
         'branch_id',
-        'submitted_by',
-        'excel_file_path',
-        'excel_file_name',
-        'total_members',
+        'samity_id',
+        'form_type',
+        'requested_amount',
+        'approved_amount',
+        'installment_amount',
+        'number_of_installments',
+        'proposed_start_date',
+        'approved_start_date',
+        'expected_end_date',
+        'purpose_of_loan',
+        'loan_usage_plan',
+        'loan_usage_breakdown',
+        'business_plan',
+        'business_type',
+        'business_description',
+        'business_capital',
+        'business_income',
+        'repayment_source',
+        'repayment_frequency',
+        'loan_term_months',
+        'guarantor_info',
+        'guarantors_list',
+        'family_members',
+        'nominee_info',
+        'monthly_income',
+        'monthly_income_breakdown',
+        'monthly_expense',
+        'monthly_expense_breakdown',
+        'income_sources',
+        'other_loan_amount',
+        'collateral_info',
+        'asset_info',
+        'asset_details',
+        'liability_details',
+        'applicant_education',
+        'spouse_education',
+        'employment_details',
+        'risk_measures',
+        'has_savings_account',
+        'savings_amount',
+        'savings_account_type',
+        'signatures',
+        'conditions_met',
+        'documents_submitted',
+        'officer_recommendation',
+        'manager_recommendation',
+        'committee_recommendation',
+        'applicant_photo',
+        'guarantor_photo',
         'status',
+        'submitted_by',
         'submitted_at',
-        'reviewed_at',
         'reviewed_by',
-        'head_office_remarks',
-        'branch_remarks',
+        'reviewed_at',
+        'rejection_reason',
+        'remarks',
+        'disbursed_by',
+        'disbursed_at',
+        'disbursement_method',
+        'disbursement_reference',
+        'officer_reviewed_at',
+        'manager_reviewed_at',
+        'committee_reviewed_at',
     ];
 
     protected $casts = [
+        'requested_amount' => 'decimal:2',
+        'approved_amount' => 'decimal:2',
+        'installment_amount' => 'decimal:2',
+        'number_of_installments' => 'integer',
+        'loan_term_months' => 'integer',
+        'proposed_start_date' => 'date',
+        'approved_start_date' => 'date',
+        'expected_end_date' => 'date',
+        'guarantor_info' => 'array',
+        'guarantors_list' => 'array',
+        'family_members' => 'array',
+        'nominee_info' => 'array',
+        'income_sources' => 'array',
+        'asset_info' => 'array',
+        'employment_details' => 'array',
+        'loan_usage_breakdown' => 'array',
+        'monthly_income' => 'decimal:2',
+        'monthly_expense' => 'decimal:2',
+        'business_capital' => 'decimal:2',
+        'business_income' => 'decimal:2',
+        'savings_amount' => 'decimal:2',
+        'monthly_income_breakdown' => 'array',
+        'monthly_expense_breakdown' => 'array',
+        'asset_details' => 'array',
+        'liability_details' => 'array',
+        'risk_measures' => 'array',
+        'signatures' => 'array',
+        'conditions_met' => 'array',
+        'documents_submitted' => 'array',
+        'has_savings_account' => 'boolean',
+        'other_loan_amount' => 'decimal:2',
         'submitted_at' => 'datetime',
         'reviewed_at' => 'datetime',
+        'disbursed_at' => 'datetime',
+        'officer_reviewed_at' => 'datetime',
+        'manager_reviewed_at' => 'datetime',
+        'committee_reviewed_at' => 'datetime',
     ];
 
-    const STATUS_PENDING = 'pending';
+    // Status constants
+    const STATUS_DRAFT = 'draft';
+    const STATUS_SUBMITTED = 'submitted';
     const STATUS_UNDER_REVIEW = 'under_review';
     const STATUS_APPROVED = 'approved';
     const STATUS_REJECTED = 'rejected';
-    const STATUS_NEEDS_CORRECTION = 'needs_correction';
+    const STATUS_DISBURSED = 'disbursed';
+    const STATUS_CANCELLED = 'cancelled';
+
+    // Relationships
+    public function memberAdmission(): BelongsTo
+    {
+        return $this->belongsTo(MemberAdmission::class);
+    }
+
+    public function loanProduct(): BelongsTo
+    {
+        return $this->belongsTo(LoanProduct::class);
+    }
+
+    public function loanCategory(): BelongsTo
+    {
+        return $this->belongsTo(LoanCategory::class);
+    }
 
     public function branch(): BelongsTo
     {
         return $this->belongsTo(Branch::class);
+    }
+
+    public function samity(): BelongsTo
+    {
+        return $this->belongsTo(Samity::class);
     }
 
     public function submittedBy(): BelongsTo
@@ -54,44 +163,15 @@ class LoanApplication extends Model
         return $this->belongsTo(User::class, 'reviewed_by');
     }
 
-    public function loanMembers(): HasMany
+    public function disbursedBy(): BelongsTo
     {
-        return $this->hasMany(LoanMember::class);
+        return $this->belongsTo(User::class, 'disbursed_by');
     }
 
-    public function approvedMembers(): HasMany
-    {
-        return $this->loanMembers()->where('status', 'approved');
-    }
-
-    public function rejectedMembers(): HasMany
-    {
-        return $this->loanMembers()->where('status', 'rejected');
-    }
-
-    public function pendingMembers(): HasMany
-    {
-        return $this->loanMembers()->where('status', 'pending');
-    }
-
-    public function history(): MorphMany
-    {
-        return $this->morphMany(ApplicationHistory::class, 'application');
-    }
-
-    public function notifications(): MorphMany
-    {
-        return $this->morphMany(Notification::class, 'notifiable');
-    }
-
-    public function comments(): MorphMany
-    {
-        return $this->morphMany(Comment::class, 'commentable');
-    }
-
+    // Helper methods
     public static function generateApplicationNo(): string
     {
-        $prefix = 'LA';
+        $prefix = 'LN';
         $year = date('Y');
         $month = date('m');
         $lastApplication = self::whereYear('created_at', $year)
@@ -104,13 +184,40 @@ class LoanApplication extends Model
         return sprintf('%s%s%s%05d', $prefix, $year, $month, $sequence);
     }
 
-    public function scopeStatus($query, string $status)
+    public function isDraft(): bool
     {
-        return $query->where('status', $status);
+        return $this->status === self::STATUS_DRAFT;
     }
 
+    public function canBeEdited(): bool
+    {
+        return in_array($this->status, [self::STATUS_DRAFT, self::STATUS_REJECTED]);
+    }
+
+    public function canBeApproved(): bool
+    {
+        return $this->status === self::STATUS_UNDER_REVIEW;
+    }
+
+    public function canBeDisbursed(): bool
+    {
+        return $this->status === self::STATUS_APPROVED;
+    }
+
+    // Scopes
     public function scopeForBranch($query, int $branchId)
     {
         return $query->where('branch_id', $branchId);
     }
+
+    public function scopeByStatus($query, string $status)
+    {
+        return $query->where('status', $status);
+    }
+
+    public function scopePending($query)
+    {
+        return $query->whereIn('status', [self::STATUS_SUBMITTED, self::STATUS_UNDER_REVIEW]);
+    }
+
 }

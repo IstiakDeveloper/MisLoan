@@ -42,7 +42,7 @@ class DashboardController extends Controller
             'total_branches' => Branch::where('is_active', true)->count(),
             'total_roles' => Role::count(),
             'total_applications' => LoanApplication::count(),
-            'pending_applications' => LoanApplication::where('status', 'pending')->count(),
+            'pending_applications' => LoanApplication::where('status', 'submitted')->count(),
             'approved_applications' => LoanApplication::where('status', 'approved')->count(),
         ];
 
@@ -117,22 +117,21 @@ class DashboardController extends Controller
         $stats = [
             'my_branches' => count($branchIds),
             'total_applications' => LoanApplication::whereIn('branch_id', $branchIds)->count(),
-            'pending_applications' => LoanApplication::whereIn('branch_id', $branchIds)->where('status', 'pending')->count(),
+            'pending_applications' => LoanApplication::whereIn('branch_id', $branchIds)->where('status', 'submitted')->count(),
             'approved_applications' => LoanApplication::whereIn('branch_id', $branchIds)->where('status', 'approved')->count(),
             'rejected_applications' => LoanApplication::whereIn('branch_id', $branchIds)->where('status', 'rejected')->count(),
             'under_review_applications' => LoanApplication::whereIn('branch_id', $branchIds)->where('status', 'under_review')->count(),
             'total_loan_amount' => LoanApplication::whereIn('branch_id', $branchIds)
-                ->where('loan_applications.status', 'approved')
-                ->join('loan_members', 'loan_applications.id', '=', 'loan_members.loan_application_id')
-                ->sum('loan_members.approved_loan_amount'),
+                ->where('status', 'approved')
+                ->sum('approved_amount'),
         ];
 
         // Recent loan applications from user's branches
-        $recentApplications = LoanApplication::with(['branch', 'submittedBy'])
+        $recentApplications = LoanApplication::with(['branch', 'submittedBy', 'memberAdmission'])
             ->whereIn('branch_id', $branchIds)
             ->latest()
             ->take(5)
-            ->get(['id', 'application_no', 'branch_id', 'submitted_by', 'status', 'total_members', 'submitted_at']);
+            ->get(['id', 'application_no', 'branch_id', 'member_admission_id', 'submitted_by', 'status', 'requested_amount', 'submitted_at']);
 
         // User's accessible branches
         $accessibleData = [
