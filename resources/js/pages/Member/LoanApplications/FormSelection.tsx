@@ -7,6 +7,11 @@ interface Props {
     loanProduct: any;
     loanCategory: any;
     requestedAmount: number;
+    hasLoanAgreementDraft?: boolean;
+    hasGuarantorCommitmentDraft?: boolean;
+    hasDeathRiskFundDraft?: boolean;
+    hasFieldInvestigationDraft?: boolean;
+    hasLoanApplicationApprovalDraft?: boolean;
 }
 
 const forms = [
@@ -52,7 +57,7 @@ const forms = [
     }
 ];
 
-export default function FormSelection({ member, loanProduct, loanCategory, requestedAmount }: Props) {
+export default function FormSelection({ member, loanProduct, loanCategory, requestedAmount, hasLoanAgreementDraft, hasGuarantorCommitmentDraft, hasDeathRiskFundDraft, hasFieldInvestigationDraft, hasLoanApplicationApprovalDraft }: Props) {
     const handleFormClick = (formRoute: string) => {
         router.visit(`/member/loan-applications/forms/${formRoute}?member_id=${member.id}&product_id=${loanProduct.id}&category_id=${loanCategory.id}&amount=${requestedAmount}`);
     };
@@ -99,11 +104,27 @@ export default function FormSelection({ member, loanProduct, loanCategory, reque
                         প্রয়োজনীয় ফর্মসমূহ <span className="text-sm font-normal text-gray-600">(Required Forms)</span>
                     </h2>
 
-                    {forms.map((form) => (
+                    {forms.map((form) => {
+                        const isLoanAgreement = form.route === 'loan-agreement';
+                        const isGuarantorCommitment = form.route === 'guarantor-commitment';
+                        const isDeathRiskFund = form.route === 'death-risk-fund';
+                        const isFieldInvestigation = form.route === 'field-investigation';
+                        const isLoanApplicationApproval = form.route === 'loan-application-approval';
+                        const isCompleted =
+                            (isLoanAgreement && hasLoanAgreementDraft) ||
+                            (isGuarantorCommitment && hasGuarantorCommitmentDraft) ||
+                            (isDeathRiskFund && hasDeathRiskFundDraft) ||
+                            (isFieldInvestigation && hasFieldInvestigationDraft) ||
+                            (isLoanApplicationApproval && hasLoanApplicationApprovalDraft);
+                        return (
                         <div
                             key={form.id}
                             onClick={() => handleFormClick(form.route)}
-                            className="bg-white border-2 border-gray-200 hover:border-blue-400 rounded-lg p-5 cursor-pointer transition-all duration-200 hover:shadow-md group"
+                            className={`bg-white border-2 rounded-lg p-5 cursor-pointer transition-all duration-200 group ${
+                                isCompleted
+                                    ? 'border-green-400 hover:border-green-500 hover:shadow-md'
+                                    : 'border-gray-200 hover:border-blue-400 hover:shadow-md'
+                            }`}
                         >
                             <div className="flex items-start gap-4">
                                 <div className="p-3 bg-blue-50 rounded-lg group-hover:bg-blue-100 transition-colors">
@@ -118,23 +139,35 @@ export default function FormSelection({ member, loanProduct, loanCategory, reque
                                             </h3>
                                             <p className="text-xs text-gray-600 mb-2">{form.name_en}</p>
                                         </div>
-                                        {form.required && (
+                                        <div className="flex flex-col items-end gap-1">
+                                            {form.required && (
                                             <span className="px-2 py-1 bg-red-100 text-red-700 text-xs font-semibold rounded">
                                                 Required
                                             </span>
-                                        )}
+                                            )}
+                                            {isCompleted && (
+                                                <span className="inline-flex items-center gap-1 px-2 py-1 bg-green-100 text-green-700 text-[11px] font-semibold rounded">
+                                                    <CheckCircle2 className="w-3 h-3" />
+                                                    Saved
+                                                </span>
+                                            )}
+                                        </div>
                                     </div>
                                     <p className="text-sm text-gray-600 mb-3">{form.description}</p>
 
                                     <div className="flex items-center gap-2">
-                                        <button className="text-sm text-blue-600 font-medium group-hover:text-blue-700">
-                                            ফর্মটি পূরণ করুন (Fill Form) →
+                                        <button className={`text-sm font-medium ${
+                                            isCompleted
+                                                ? 'text-green-700 group-hover:text-green-800'
+                                                : 'text-blue-600 group-hover:text-blue-700'
+                                        }`}>
+                                            {isCompleted ? 'ফর্মটি সম্পাদনা / প্রিন্ট করুন (Edit / Print)' : 'ফর্মটি পূরণ করুন (Fill Form) →'}
                                         </button>
                                     </div>
                                 </div>
                             </div>
                         </div>
-                    ))}
+                    );})}
                 </div>
 
                 {/* Info Box */}

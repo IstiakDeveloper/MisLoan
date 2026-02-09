@@ -156,6 +156,15 @@ Route::middleware(['auth', 'verified'])->group(function () {
             // Form routes
             Route::prefix('forms')->name('forms.')->group(function () {
                 Route::get('loan-agreement', [\App\Http\Controllers\Member\LoanApplicationController::class, 'loanAgreement'])->name('loan-agreement');
+                Route::post('loan-agreement/save-draft', [\App\Http\Controllers\Member\LoanApplicationController::class, 'saveLoanAgreementDraft'])->name('loan-agreement.save-draft');
+                Route::get('guarantor-commitment', [\App\Http\Controllers\Member\LoanApplicationController::class, 'guarantorCommitment'])->name('guarantor-commitment');
+                Route::post('guarantor-commitment/save-draft', [\App\Http\Controllers\Member\LoanApplicationController::class, 'saveGuarantorCommitmentDraft'])->name('guarantor-commitment.save-draft');
+                Route::get('death-risk-fund', [\App\Http\Controllers\Member\LoanApplicationController::class, 'deathRiskFund'])->name('death-risk-fund');
+                Route::post('death-risk-fund/save-draft', [\App\Http\Controllers\Member\LoanApplicationController::class, 'saveDeathRiskFundDraft'])->name('death-risk-fund.save-draft');
+                Route::get('field-investigation', [\App\Http\Controllers\Member\LoanApplicationController::class, 'fieldInvestigation'])->name('field-investigation');
+                Route::post('field-investigation/save-draft', [\App\Http\Controllers\Member\LoanApplicationController::class, 'saveFieldInvestigationDraft'])->name('field-investigation.save-draft');
+                Route::get('loan-application-approval', [\App\Http\Controllers\Member\LoanApplicationController::class, 'loanApplicationApproval'])->name('loan-application-approval');
+                Route::post('loan-application-approval/save-draft', [\App\Http\Controllers\Member\LoanApplicationController::class, 'saveLoanApplicationApprovalDraft'])->name('loan-application-approval.save-draft');
             });
 
             Route::get('create/{productId?}', [\App\Http\Controllers\Member\LoanApplicationController::class, 'create'])->name('create');

@@ -1,0 +1,1343 @@
+import { useEffect, useState } from 'react';
+import { Head, useForm, router } from '@inertiajs/react';
+import AdminLayout from '@/layouts/admin-layout';
+import { Save, Printer, Eye, Upload, X, ArrowLeft } from 'lucide-react';
+
+interface DeathRiskFundData {
+    // Branch & Date
+    branch_name: string;
+    date: string;
+    
+    // Photos
+    loan_recipient_photo: string | null;
+    guardian_photo: string | null;
+    
+    // Section 1: Loan Recipient Information (from MemberAdmission)
+    loan_recipient_name: string;
+    loan_recipient_code1: string; // Member code
+    loan_recipient_code2: string; // Loan code (external)
+    samity_name: string;
+    village: string;
+    post_office: string;
+    upazila: string;
+    district: string;
+    age: number;
+    nid_number: string;
+    mobile_number: string;
+    component_name: string; // External
+    loan_sanction_date: string; // External
+    loan_amount_received: number; // External
+    loan_amount_words: string; // External
+    loan_term: string; // External
+    
+    // Section 2: Guardian/Family Primary Earner Information (External)
+    guardian_name: string;
+    guardian_age: number;
+    relationship_with_recipient: string;
+    guardian_village: string;
+    guardian_post_office: string;
+    guardian_upazila: string;
+    guardian_district: string;
+    guardian_nid: string;
+    guardian_mobile: string;
+    guardian_profession: string;
+    
+    // Signatures
+    loan_recipient_signature: string | null;
+    guardian_signature: string | null;
+    officer_signature: string | null;
+    accountant_signature: string | null;
+    branch_manager_signature: string | null;
+}
+
+interface Props {
+    member: any;
+    loanProduct: any;
+    loanCategory: any;
+    requestedAmount: number;
+    branch?: any;
+    existingApplication?: any;
+    savedData?: DeathRiskFundData;
+}
+
+const formatDateBangla = (dateString: string) => {
+    if (!dateString) return '';
+    const date = new Date(dateString);
+    return `${date.getDate()}/${date.getMonth() + 1}/${date.getFullYear()}`;
+};
+
+const calculateAge = (dateOfBirth: string | null): number => {
+    if (!dateOfBirth) return 0;
+    const birth = new Date(dateOfBirth);
+    const today = new Date();
+    let age = today.getFullYear() - birth.getFullYear();
+    const monthDiff = today.getMonth() - birth.getMonth();
+    if (monthDiff < 0 || (monthDiff === 0 && today.getDate() < birth.getDate())) {
+        age--;
+    }
+    return age;
+};
+
+const numberToWords = (num: number): string => {
+    // Simple implementation - can be enhanced
+    const ones = ['', 'এক', 'দুই', 'তিন', 'চার', 'পাঁচ', 'ছয়', 'সাত', 'আট', 'নয়', 'দশ'];
+    const tens = ['', '', 'বিশ', 'ত্রিশ', 'চল্লিশ', 'পঞ্চাশ', 'ষাট', 'সত্তর', 'আশি', 'নব্বই'];
+    
+    if (num === 0) return 'শূন্য';
+    if (num < 11) return ones[num];
+    if (num < 20) return ones[num % 10] + 'শ';
+    if (num < 100) return tens[Math.floor(num / 10)] + (num % 10 ? ' ' + ones[num % 10] : '');
+    if (num < 1000) {
+        const hundred = Math.floor(num / 100);
+        const remainder = num % 100;
+        return ones[hundred] + 'শ' + (remainder ? ' ' + numberToWords(remainder) : '');
+    }
+    if (num < 100000) {
+        const thousand = Math.floor(num / 1000);
+        const remainder = num % 1000;
+        return numberToWords(thousand) + ' হাজার' + (remainder ? ' ' + numberToWords(remainder) : '');
+    }
+    return num.toString() + ' টাকা';
+};
+
+export default function DeathRiskFund({
+    member,
+    loanProduct,
+    loanCategory,
+    requestedAmount,
+    branch,
+    existingApplication,
+    savedData,
+}: Props) {
+    const [errors, setErrors] = useState<Record<string, string>>({});
+
+    const memberAge = calculateAge(member?.date_of_birth);
+
+    // Load photos from MemberAdmission if available
+    const memberPhotoUrl = member?.customer_photo_path 
+        ? (member.customer_photo_path.startsWith('http') ? member.customer_photo_path : `/storage/${member.customer_photo_path}`)
+        : null;
+    const guardianPhotoUrl = member?.guardian_photo_path 
+        ? (member.guardian_photo_path.startsWith('http') ? member.guardian_photo_path : `/storage/${member.guardian_photo_path}`)
+        : null;
+
+    const { data, setData, processing } = useForm<DeathRiskFundData>({
+        branch_name: branch?.name || '',
+        date: new Date().toISOString().split('T')[0],
+        
+        // Photos - prioritize savedData, then MemberAdmission, then null
+        loan_recipient_photo: savedData?.loan_recipient_photo || memberPhotoUrl || null,
+        guardian_photo: savedData?.guardian_photo || guardianPhotoUrl || null,
+        
+        // Loan Recipient Info (auto-filled from MemberAdmission)
+        loan_recipient_name: member?.applicant_name_bn || '',
+        loan_recipient_code1: member?.application_no || '',
+        loan_recipient_code2: '', // Loan code - external
+        samity_name: member?.samity?.samity_name_bn || member?.samity?.samity_name || '',
+        village: member?.present_village_road || '',
+        post_office: '', // External
+        upazila: member?.present_upazila || '',
+        district: member?.present_district || '',
+        age: memberAge,
+        nid_number: member?.nid_number || '',
+        mobile_number: member?.mobile_number || '',
+        component_name: loanCategory?.category_name_bn || loanCategory?.category_name || '', // External
+        loan_sanction_date: new Date().toISOString().split('T')[0], // External
+        loan_amount_received: requestedAmount || 0, // External
+        loan_amount_words: '', // Will be auto-calculated
+        loan_term: loanProduct?.duration_months ? `${loanProduct.duration_months} মাস` : '', // External
+        
+        // Guardian Info (External)
+        guardian_name: member?.guardian_name || '',
+        guardian_age: 0,
+        relationship_with_recipient: '',
+        guardian_village: '',
+        guardian_post_office: '',
+        guardian_upazila: '',
+        guardian_district: '',
+        guardian_nid: '',
+        guardian_mobile: member?.guarantor_mobile || '',
+        guardian_profession: '',
+        
+        // Signatures
+        loan_recipient_signature: null,
+        guardian_signature: null,
+        officer_signature: null,
+        accountant_signature: null,
+        branch_manager_signature: null,
+    });
+
+    // Auto-calculate loan amount in words
+    useEffect(() => {
+        if (data.loan_amount_received > 0) {
+            setData('loan_amount_words', numberToWords(data.loan_amount_received) + ' টাকা');
+        }
+    }, [data.loan_amount_received]);
+
+    // Load saved data if exists, but preserve photos from MemberAdmission if not in savedData
+    useEffect(() => {
+        if (savedData) {
+            setData(prev => ({
+                ...prev,
+                ...savedData,
+                // Keep photos from MemberAdmission if not in savedData
+                loan_recipient_photo: savedData.loan_recipient_photo || memberPhotoUrl || prev.loan_recipient_photo,
+                guardian_photo: savedData.guardian_photo || guardianPhotoUrl || prev.guardian_photo,
+            }));
+        } else if (memberPhotoUrl || guardianPhotoUrl) {
+            // If no saved data but photos exist in MemberAdmission, load them
+            setData(prev => ({
+                ...prev,
+                loan_recipient_photo: memberPhotoUrl || prev.loan_recipient_photo,
+                guardian_photo: guardianPhotoUrl || prev.guardian_photo,
+            }));
+        }
+    }, [savedData, memberPhotoUrl, guardianPhotoUrl]);
+
+    const handleImageUpload = (field: string, file: File | null) => {
+        if (!file) return;
+
+        if (!file.type.match(/image\/(png|jpg|jpeg)/)) {
+            alert('শুধুমাত্র PNG, JPG বা JPEG ফাইল আপলোড করুন');
+            return;
+        }
+
+        const reader = new FileReader();
+        reader.onloadend = () => {
+            setData(field as any, reader.result as string);
+        };
+        reader.readAsDataURL(file);
+    };
+
+    const removeImage = (field: string) => {
+        setData(field as any, null);
+    };
+
+    const validateForm = (): boolean => {
+        const newErrors: Record<string, string> = {};
+        
+        // Required fields validation
+        if (!data.loan_recipient_code2?.trim()) {
+            newErrors.loan_recipient_code2 = 'ঋণ কোড নম্বর আবশ্যক';
+        }
+        if (!data.post_office?.trim()) {
+            newErrors.post_office = 'ডাকঘর আবশ্যক';
+        }
+        if (!data.component_name?.trim()) {
+            newErrors.component_name = 'কম্পোনেন্টের নাম আবশ্যক';
+        }
+        if (!data.loan_sanction_date) {
+            newErrors.loan_sanction_date = 'ঋণ গ্রহণের তারিখ আবশ্যক';
+        }
+        if (!data.loan_amount_received || data.loan_amount_received <= 0) {
+            newErrors.loan_amount_received = 'গ্রহণকৃত ঋণের পরিমাণ আবশ্যক';
+        }
+        if (!data.loan_term?.trim()) {
+            newErrors.loan_term = 'ঋণের মেয়াদ আবশ্যক';
+        }
+        if (!data.guardian_name?.trim()) {
+            newErrors.guardian_name = 'অভিভাবকের নাম আবশ্যক';
+        }
+        if (!data.guardian_age || data.guardian_age <= 0) {
+            newErrors.guardian_age = 'অভিভাবকের বয়স আবশ্যক';
+        }
+        if (!data.relationship_with_recipient?.trim()) {
+            newErrors.relationship_with_recipient = 'সম্পর্ক আবশ্যক';
+        }
+        if (!data.guardian_village?.trim()) {
+            newErrors.guardian_village = 'অভিভাবকের গ্রাম আবশ্যক';
+        }
+        if (!data.guardian_post_office?.trim()) {
+            newErrors.guardian_post_office = 'অভিভাবকের ডাকঘর আবশ্যক';
+        }
+        if (!data.guardian_upazila?.trim()) {
+            newErrors.guardian_upazila = 'অভিভাবকের উপজেলা আবশ্যক';
+        }
+        if (!data.guardian_district?.trim()) {
+            newErrors.guardian_district = 'অভিভাবকের জেলা আবশ্যক';
+        }
+        if (!data.guardian_nid?.trim()) {
+            newErrors.guardian_nid = 'অভিভাবকের NID আবশ্যক';
+        }
+        if (!data.guardian_mobile?.trim()) {
+            newErrors.guardian_mobile = 'অভিভাবকের মোবাইল আবশ্যক';
+        }
+        if (!data.guardian_profession?.trim()) {
+            newErrors.guardian_profession = 'প্রধান পেশা আবশ্যক';
+        }
+        
+        setErrors(newErrors);
+        return Object.keys(newErrors).length === 0;
+    };
+
+    const handleSaveDraft = () => {
+        if (!validateForm()) {
+            alert('অনুগ্রহ করে সকল আবশ্যক ক্ষেত্র পূরণ করুন');
+            return;
+        }
+        
+        router.post(
+            '/member/loan-applications/forms/death-risk-fund/save-draft',
+            {
+                member_id: member.id,
+                loan_product_id: loanProduct.id,
+                loan_category_id: loanCategory.id,
+                requested_amount: requestedAmount,
+                form_data: data,
+            },
+            {
+                onSuccess: () => {
+                    alert('মৃত্যুজনিত ঋণঝুঁকি তহবিলে অন্তর্ভুক্তির আবেদন পত্র ড্রাফট হিসেবে সংরক্ষিত হয়েছে।');
+                    router.visit(`/member/loan-applications/form-selection?member_id=${member.id}&loan_product_id=${loanProduct.id}&loan_category_id=${loanCategory.id}&requested_amount=${requestedAmount}`);
+                },
+                onError: (errors) => {
+                    console.error('Save draft error:', errors);
+                    alert('ড্রাফট সংরক্ষণে ত্রুটি হয়েছে');
+                },
+            }
+        );
+    };
+
+    const handlePrint = () => {
+        const printWindow = window.open('', '_blank', 'width=900,height=1200');
+        if (!printWindow) {
+            window.print();
+            return;
+        }
+
+        const headHtml = document.head.innerHTML;
+        const printContainer = document.querySelector('.print-container') as HTMLElement | null;
+
+        if (!printContainer) {
+            window.print();
+            return;
+        }
+
+        printWindow.document.open();
+        printWindow.document.write(`
+            <html>
+                <head>
+                    ${headHtml}
+                    <style>
+                        @page {
+                            size: A4;
+                            margin: 1cm;
+                        }
+                        @media print {
+                            html, body {
+                                margin: 0;
+                                padding: 0;
+                                background: white;
+                            }
+                            .page-break {
+                                page-break-before: always;
+                            }
+                        }
+                    </style>
+                </head>
+                <body>
+                    <div class="print-container">
+                        ${printContainer.innerHTML}
+                    </div>
+                </body>
+            </html>
+        `);
+        printWindow.document.close();
+        printWindow.focus();
+        setTimeout(() => {
+            printWindow.print();
+        }, 300);
+    };
+
+    const renderPreviewPart = (partNumber: 1 | 2) => {
+        const isPart1 = partNumber === 1;
+        const showDeclaration = isPart1;
+
+        return (
+            <div className={`half-page-form bg-white border border-gray-300 p-1.5 ${isPart1 ? 'mb-0.5' : ''}`} style={{ minHeight: '48vh', fontSize: '11px' }}>
+                {/* Header Section */}
+                <div className="mb-1 border-b-2 border-gray-400 pb-0.5">
+                    {/* Centered Logo and Title */}
+                    <div className="flex flex-col items-center justify-center mb-1">
+                        <div className="flex items-center gap-2">
+                            <img 
+                                src="/logo.png" 
+                                alt="Logo" 
+                                className="h-12 w-12 object-contain print:h-10 print:w-10"
+                                onError={(e) => {
+                                    (e.target as HTMLImageElement).style.display = 'none';
+                                }}
+                            />
+                            <div className="text-center">
+                                <h1 className="text-base font-bold leading-tight print:text-sm">মৌসুমী</h1>
+                                <p className="text-[9px] leading-tight print:text-[8px]">মৃত্যুজনিত ঋণঝুঁকি তহবিলে অন্তর্ভুক্তির আবেদনপত্র</p>
+                                <p className="text-[9px] font-semibold mt-0.5 text-gray-700 print:text-[8px]">
+                                    {isPart1 ? 'প্রথম অংশ (প্রোফাইলে সংযুক্ত করতে হবে)' : 'দ্বিতীয় অংশ (পাশবইয়ে সংযুক্ত করতে হবে)'}
+                                </p>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    {/* Bottom: Photos (only Part 1), Branch, Date */}
+                    <div className="flex items-center justify-between">
+                        {isPart1 && (
+                            <div className="flex gap-1">
+                                <div className="border border-gray-400 p-0.5">
+                                    {data.loan_recipient_photo ? (
+                                        <img src={data.loan_recipient_photo} alt="Loan Recipient" className="w-14 h-18 object-cover" />
+                                    ) : (
+                                        <div className="w-14 h-18 bg-gray-100 border border-dashed"></div>
+                                    )}
+                                </div>
+                                <div className="border border-gray-400 p-0.5">
+                                    {data.guardian_photo ? (
+                                        <img src={data.guardian_photo} alt="Guardian" className="w-14 h-18 object-cover" />
+                                    ) : (
+                                        <div className="w-14 h-18 bg-gray-100 border border-dashed"></div>
+                                    )}
+                                </div>
+                            </div>
+                        )}
+                        {!isPart1 && <div></div>}
+                        <div className="text-[9px] text-right">
+                            <p className="mb-0.5">শাখা: <span className="border-b border-dotted border-gray-600 inline-block min-w-[70px]">{data.branch_name}</span></p>
+                            <p>তারিখ: <span className="border-b border-dotted border-gray-600 inline-block min-w-[60px]">{formatDateBangla(data.date)}</span></p>
+                        </div>
+                    </div>
+                </div>
+
+                {/* Section 1: Loan Recipient Information */}
+                <div className="mb-1" style={{ fontSize: '10px' }}>
+                    <h3 className="font-bold mb-0.5" style={{ fontSize: '10px' }}>১। ঋণ গ্রহীতার তথ্য:</h3>
+                    <div className="space-y-0.5">
+                        <div className="flex gap-1 items-baseline">
+                            <span className="w-28 flex-shrink-0">ঋণ গ্রহীতার নাম:</span>
+                            <span className="border-b border-dotted border-gray-600 flex-1 min-h-[12px]">{data.loan_recipient_name || ''}</span>
+                        </div>
+                        <div className="flex gap-1 items-baseline">
+                            <span className="w-28 flex-shrink-0">কোড নম্বর:</span>
+                            <span className="border-b border-dotted border-gray-600 flex-1 min-h-[12px]">{data.loan_recipient_code1 || ''}</span>
+                            <span className="w-28 flex-shrink-0 ml-1.5">কোড নম্বর:</span>
+                            <span className="border-b border-dotted border-gray-600 flex-1 min-h-[12px]">{data.loan_recipient_code2 || ''}</span>
+                        </div>
+                        <div className="flex gap-1 items-baseline">
+                            <span className="w-28 flex-shrink-0">সমিতির নাম:</span>
+                            <span className="border-b border-dotted border-gray-600 flex-1 min-h-[12px]">{data.samity_name || ''}</span>
+                        </div>
+                        <div className="flex gap-1 items-baseline">
+                            <span className="w-28 flex-shrink-0">গ্রাম:</span>
+                            <span className="border-b border-dotted border-gray-600 flex-1 min-h-[12px]">{data.village || ''}</span>
+                            <span className="w-20 flex-shrink-0 ml-1.5">ডাকঘর:</span>
+                            <span className="border-b border-dotted border-gray-600 flex-1 min-h-[12px]">{data.post_office || ''}</span>
+                        </div>
+                        <div className="flex gap-1 items-baseline">
+                            <span className="w-20 flex-shrink-0">উপজেলা:</span>
+                            <span className="border-b border-dotted border-gray-600 flex-1 min-h-[12px]">{data.upazila || ''}</span>
+                            <span className="w-20 flex-shrink-0 ml-1.5">জেলা:</span>
+                            <span className="border-b border-dotted border-gray-600 flex-1 min-h-[12px]">{data.district || ''}</span>
+                        </div>
+                        <div className="flex gap-1 items-baseline">
+                            <span className="w-28 flex-shrink-0">বয়স:</span>
+                            <span className="border-b border-dotted border-gray-600 flex-1 min-h-[12px]">{data.age || ''}</span>
+                            <span className="w-36 flex-shrink-0 ml-1.5">জাতীয় পরিচয়পত্র নম্বর:</span>
+                            <span className="border-b border-dotted border-gray-600 flex-1 min-h-[12px]">{data.nid_number || ''}</span>
+                        </div>
+                        <div className="flex gap-1 items-baseline">
+                            <span className="w-28 flex-shrink-0">মোবাইল নম্বর:</span>
+                            <span className="border-b border-dotted border-gray-600 flex-1 min-h-[12px]">{data.mobile_number || ''}</span>
+                        </div>
+                        <div className="flex gap-1 items-baseline">
+                            <span className="w-28 flex-shrink-0">কম্পোনেন্টের নাম:</span>
+                            <span className="border-b border-dotted border-gray-600 flex-1 min-h-[12px]">{data.component_name || ''}</span>
+                        </div>
+                        <div className="flex gap-1 items-baseline">
+                            <span className="w-28 flex-shrink-0">ঋণ গ্রহণের তারিখ:</span>
+                            <span className="border-b border-dotted border-gray-600 flex-1 min-h-[12px]">{formatDateBangla(data.loan_sanction_date) || ''}</span>
+                        </div>
+                        <div className="flex gap-1 items-baseline">
+                            <span className="w-36 flex-shrink-0">গ্রহণকৃত ঋণের পরিমাণ:</span>
+                            <span className="border-b border-dotted border-gray-600 flex-1 min-h-[12px]">{data.loan_amount_received || ''}</span>
+                            <span className="w-16 flex-shrink-0 ml-1.5">কথায়:</span>
+                            <span className="border-b border-dotted border-gray-600 flex-1 min-h-[12px]">{data.loan_amount_words || ''}</span>
+                        </div>
+                        <div className="flex gap-1 items-baseline">
+                            <span className="w-28 flex-shrink-0">ঋণের মেয়াদ:</span>
+                            <span className="border-b border-dotted border-gray-600 flex-1 min-h-[12px]">{data.loan_term || ''}</span>
+                        </div>
+                    </div>
+                </div>
+
+                {/* Section 2: Guardian Information */}
+                <div className="mb-1" style={{ fontSize: '10px' }}>
+                    <h3 className="font-bold mb-0.5" style={{ fontSize: '10px' }}>২। অভিভাবক/পরিবারের প্রধান উপার্জনকারী ব্যক্তির তথ্য:</h3>
+                    <div className="space-y-0.5">
+                        <div className="flex gap-1 items-baseline">
+                            <span className="w-44 flex-shrink-0">অভিভাবক/পরিবারের প্রধান উপার্জনকারী ব্যক্তির নাম:</span>
+                            <span className="border-b border-dotted border-gray-600 flex-1 min-h-[12px]">{data.guardian_name || ''}</span>
+                        </div>
+                        <div className="flex gap-1 items-baseline">
+                            <span className="w-20 flex-shrink-0">বয়স:</span>
+                            <span className="border-b border-dotted border-gray-600 flex-1 min-h-[12px]">{data.guardian_age || ''}</span>
+                            <span className="w-36 flex-shrink-0 ml-1.5">ঋণ গ্রহীতার সাথে সম্পর্ক:</span>
+                            <span className="border-b border-dotted border-gray-600 flex-1 min-h-[12px]">{data.relationship_with_recipient || ''}</span>
+                        </div>
+                        <div className="flex gap-1 items-baseline">
+                            <span className="w-20 flex-shrink-0">গ্রাম:</span>
+                            <span className="border-b border-dotted border-gray-600 flex-1 min-h-[12px]">{data.guardian_village || ''}</span>
+                            <span className="w-20 flex-shrink-0 ml-1.5">ডাকঘর:</span>
+                            <span className="border-b border-dotted border-gray-600 flex-1 min-h-[12px]">{data.guardian_post_office || ''}</span>
+                        </div>
+                        <div className="flex gap-1 items-baseline">
+                            <span className="w-20 flex-shrink-0">উপজেলা:</span>
+                            <span className="border-b border-dotted border-gray-600 flex-1 min-h-[12px]">{data.guardian_upazila || ''}</span>
+                            <span className="w-20 flex-shrink-0 ml-1.5">জেলা:</span>
+                            <span className="border-b border-dotted border-gray-600 flex-1 min-h-[12px]">{data.guardian_district || ''}</span>
+                        </div>
+                        <div className="flex gap-1 items-baseline">
+                            <span className="w-36 flex-shrink-0">জাতীয় পরিচয়পত্র নম্বর:</span>
+                            <span className="border-b border-dotted border-gray-600 flex-1 min-h-[12px]">{data.guardian_nid || ''}</span>
+                        </div>
+                        <div className="flex gap-1 items-baseline">
+                            <span className="w-28 flex-shrink-0">মোবাইল নম্বর:</span>
+                            <span className="border-b border-dotted border-gray-600 flex-1 min-h-[12px]">{data.guardian_mobile || ''}</span>
+                        </div>
+                        <div className="flex gap-1 items-baseline">
+                            <span className="w-28 flex-shrink-0">প্রধান পেশা:</span>
+                            <span className="border-b border-dotted border-gray-600 flex-1 min-h-[12px]">{data.guardian_profession || ''}</span>
+                        </div>
+                    </div>
+                </div>
+
+                {/* Declaration (only Part 1) */}
+                {showDeclaration && (
+                    <div className="mb-1 leading-relaxed p-0.5 bg-gray-50 border border-gray-300" style={{ fontSize: '9px' }}>
+                        <p className="font-semibold mb-0.5" style={{ fontSize: '10px' }}>ঘোষণা:</p>
+                        <p>আমরা এই মর্মে ঘোষণা করছি যে, উপরিল্লিখিত সকল তথ্য সঠিক ও সত্য। আমরা ঋণঝুঁকি তহবিলের সকল নিয়মাবলি ও শর্তাবলি মেনে এবং বুঝে স্বাক্ষর করছি। অনুগ্রহপূর্বক আমাদেরকে ঋণঝুঁকি তহবিলের সদস্য হিসেবে অর্ন্তভুক্ত করলে বাধিত হব।</p>
+                    </div>
+                )}
+
+                {/* Signatures */}
+                <div className="mt-1 space-y-0.5" style={{ fontSize: '9px' }}>
+                    <div className="flex gap-1.5">
+                        <div className="flex-1">
+                            <p className="mb-0.5">ঋণ গ্রহীতার স্বাক্ষর:</p>
+                            <div className="border-b border-dotted border-gray-600 h-4">
+                                {data.loan_recipient_signature && (
+                                    <img src={data.loan_recipient_signature} alt="Signature" className="h-3.5 object-contain" />
+                                )}
+                            </div>
+                        </div>
+                        {isPart1 && (
+                            <div className="flex-1">
+                                <p className="mb-0.5">অভিভাবক/পরিবারের প্রধান উপার্জনকারীর স্বাক্ষর:</p>
+                                <div className="border-b border-dotted border-gray-600 h-4">
+                                    {data.guardian_signature && (
+                                        <img src={data.guardian_signature} alt="Signature" className="h-3.5 object-contain" />
+                                    )}
+                                </div>
+                            </div>
+                        )}
+                    </div>
+                    <div className="flex gap-1.5">
+                        <div className="flex-1">
+                            <p className="mb-0.5">অফিসারের স্বাক্ষর ও সিল:</p>
+                            <div className="border-b border-dotted border-gray-600 h-4">
+                                {data.officer_signature && (
+                                    <img src={data.officer_signature} alt="Signature" className="h-3.5 object-contain" />
+                                )}
+                            </div>
+                        </div>
+                        <div className="flex-1">
+                            <p className="mb-0.5">হিসাবরক্ষকের স্বাক্ষর ও সিল:</p>
+                            <div className="border-b border-dotted border-gray-600 h-4">
+                                {data.accountant_signature && (
+                                    <img src={data.accountant_signature} alt="Signature" className="h-3.5 object-contain" />
+                                )}
+                            </div>
+                        </div>
+                    </div>
+                    <div>
+                        <p className="mb-0.5">অনুমোদনকারী শাখাব্যবস্থাপকের স্বাক্ষর ও সিল:</p>
+                        <div className="border-b border-dotted border-gray-600 h-4 w-1/2">
+                            {data.branch_manager_signature && (
+                                <img src={data.branch_manager_signature} alt="Signature" className="h-3.5 object-contain" />
+                            )}
+                        </div>
+                    </div>
+                </div>
+            </div>
+        );
+    };
+
+    const renderFormPart = (partNumber: 1 | 2) => {
+        const isPart1 = partNumber === 1;
+        const showDeclaration = isPart1;
+
+        return (
+            <div className="bg-white rounded-lg shadow-sm p-4 border">
+                <h2 className="text-lg font-bold mb-4 text-center print:hidden">
+                    ফর্ম পূরণ করুন (একবার পূরণ করলে ২টি কপিতে একই তথ্য যাবে)
+                </h2>
+
+                {/* Header Section */}
+                <div className="mb-4 border-b pb-3">
+                    <div className="flex flex-col items-center justify-center mb-3">
+                        <div className="flex items-center gap-3">
+                            <img 
+                                src="/logo.png" 
+                                alt="Logo" 
+                                className="h-16 w-16 object-contain"
+                                onError={(e) => {
+                                    (e.target as HTMLImageElement).style.display = 'none';
+                                }}
+                            />
+                            <div className="text-center">
+                                <h1 className="text-xl font-bold">মৌসুমী</h1>
+                                <p className="text-sm">মৃত্যুজনিত ঋণঝুঁকি তহবিলে অন্তর্ভুক্তির আবেদনপত্র</p>
+                            </div>
+                        </div>
+                    </div>
+                    <div className="flex items-center justify-between">
+                        <div className="flex gap-2">
+                            {data.loan_recipient_photo && (
+                                <div className="relative">
+                                    <img src={data.loan_recipient_photo} alt="Loan Recipient" className="w-20 h-24 object-cover border rounded" />
+                                    <button onClick={() => removeImage('loan_recipient_photo')} className="absolute -top-1 -right-1 bg-red-500 text-white rounded-full p-1">
+                                        <X className="w-3 h-3" />
+                                    </button>
+                                </div>
+                            )}
+                            {data.guardian_photo && (
+                                <div className="relative">
+                                    <img src={data.guardian_photo} alt="Guardian" className="w-20 h-24 object-cover border rounded" />
+                                    <button onClick={() => removeImage('guardian_photo')} className="absolute -top-1 -right-1 bg-red-500 text-white rounded-full p-1">
+                                        <X className="w-3 h-3" />
+                                    </button>
+                                </div>
+                            )}
+                        </div>
+                        <div className="text-sm text-right">
+                            <p>শাখা: <span className="border-b border-dotted border-gray-600 inline-block min-w-[100px]">{data.branch_name}</span></p>
+                            <p className="mt-1">তারিখ: <span className="border-b border-dotted border-gray-600 inline-block min-w-[80px]">{formatDateBangla(data.date)}</span></p>
+                        </div>
+                    </div>
+                </div>
+
+                {/* Section 1: Loan Recipient Information */}
+                <div className="mb-4">
+                    <h3 className="font-bold mb-2">১। ঋণ গ্রহীতার তথ্য:</h3>
+                    <div className="grid grid-cols-2 gap-3 text-sm">
+                        <div>
+                            <label className="block text-xs mb-1">ঋণ গ্রহীতার নাম:</label>
+                            <input
+                                type="text"
+                                value={data.loan_recipient_name}
+                                onChange={(e) => setData('loan_recipient_name', e.target.value)}
+                                className="w-full px-2 py-1 border rounded"
+                                disabled
+                            />
+                        </div>
+                        <div>
+                            <label className="block text-xs mb-1">কোড নম্বর (সদস্য):</label>
+                            <input
+                                type="text"
+                                value={data.loan_recipient_code1}
+                                onChange={(e) => setData('loan_recipient_code1', e.target.value)}
+                                className="w-full px-2 py-1 border rounded"
+                                disabled
+                            />
+                        </div>
+                        <div>
+                            <label className="block text-xs mb-1">
+                                কোড নম্বর (ঋণ): <span className="text-red-600">*</span>
+                            </label>
+                            <input
+                                type="text"
+                                value={data.loan_recipient_code2}
+                                onChange={(e) => {
+                                    setData('loan_recipient_code2', e.target.value);
+                                    if (errors.loan_recipient_code2) {
+                                        setErrors(prev => {
+                                            const newErrors = { ...prev };
+                                            delete newErrors.loan_recipient_code2;
+                                            return newErrors;
+                                        });
+                                    }
+                                }}
+                                placeholder="ঋণ আবেদন নম্বর"
+                                className={`w-full px-2 py-1 border rounded ${errors.loan_recipient_code2 ? 'border-red-500 bg-red-50' : ''}`}
+                            />
+                            {errors.loan_recipient_code2 && (
+                                <p className="text-xs text-red-600 mt-0.5">{errors.loan_recipient_code2}</p>
+                            )}
+                        </div>
+                        <div>
+                            <label className="block text-xs mb-1">সমিতির নাম:</label>
+                            <input
+                                type="text"
+                                value={data.samity_name}
+                                onChange={(e) => setData('samity_name', e.target.value)}
+                                className="w-full px-2 py-1 border rounded"
+                                disabled
+                            />
+                        </div>
+                        <div>
+                            <label className="block text-xs mb-1">গ্রাম:</label>
+                            <input
+                                type="text"
+                                value={data.village}
+                                onChange={(e) => setData('village', e.target.value)}
+                                className="w-full px-2 py-1 border rounded"
+                                disabled
+                            />
+                        </div>
+                        <div>
+                            <label className="block text-xs mb-1">
+                                ডাকঘর: <span className="text-red-600">*</span>
+                            </label>
+                            <input
+                                type="text"
+                                value={data.post_office}
+                                onChange={(e) => {
+                                    setData('post_office', e.target.value);
+                                    if (errors.post_office) {
+                                        setErrors(prev => {
+                                            const newErrors = { ...prev };
+                                            delete newErrors.post_office;
+                                            return newErrors;
+                                        });
+                                    }
+                                }}
+                                placeholder="ডাকঘরের নাম"
+                                className={`w-full px-2 py-1 border rounded ${errors.post_office ? 'border-red-500 bg-red-50' : ''}`}
+                            />
+                            {errors.post_office && (
+                                <p className="text-xs text-red-600 mt-0.5">{errors.post_office}</p>
+                            )}
+                        </div>
+                        <div>
+                            <label className="block text-xs mb-1">উপজেলা:</label>
+                            <input
+                                type="text"
+                                value={data.upazila}
+                                onChange={(e) => setData('upazila', e.target.value)}
+                                className="w-full px-2 py-1 border rounded"
+                                disabled
+                            />
+                        </div>
+                        <div>
+                            <label className="block text-xs mb-1">জেলা:</label>
+                            <input
+                                type="text"
+                                value={data.district}
+                                onChange={(e) => setData('district', e.target.value)}
+                                className="w-full px-2 py-1 border rounded"
+                                disabled
+                            />
+                        </div>
+                        <div>
+                            <label className="block text-xs mb-1">বয়স:</label>
+                            <input
+                                type="number"
+                                value={data.age}
+                                onChange={(e) => setData('age', parseInt(e.target.value))}
+                                className="w-full px-2 py-1 border rounded"
+                                disabled
+                            />
+                        </div>
+                        <div>
+                            <label className="block text-xs mb-1">জাতীয় পরিচয়পত্র নম্বর:</label>
+                            <input
+                                type="text"
+                                value={data.nid_number}
+                                onChange={(e) => setData('nid_number', e.target.value)}
+                                className="w-full px-2 py-1 border rounded"
+                                disabled
+                            />
+                        </div>
+                        <div>
+                            <label className="block text-xs mb-1">মোবাইল নম্বর:</label>
+                            <input
+                                type="text"
+                                value={data.mobile_number}
+                                onChange={(e) => setData('mobile_number', e.target.value)}
+                                className="w-full px-2 py-1 border rounded"
+                                disabled
+                            />
+                        </div>
+                        <div>
+                            <label className="block text-xs mb-1">
+                                কম্পোনেন্টের নাম: <span className="text-red-600">*</span>
+                            </label>
+                            <input
+                                type="text"
+                                value={data.component_name}
+                                onChange={(e) => {
+                                    setData('component_name', e.target.value);
+                                    if (errors.component_name) {
+                                        setErrors(prev => {
+                                            const newErrors = { ...prev };
+                                            delete newErrors.component_name;
+                                            return newErrors;
+                                        });
+                                    }
+                                }}
+                                className={`w-full px-2 py-1 border rounded ${errors.component_name ? 'border-red-500 bg-red-50' : ''}`}
+                            />
+                            {errors.component_name && (
+                                <p className="text-xs text-red-600 mt-0.5">{errors.component_name}</p>
+                            )}
+                        </div>
+                        <div>
+                            <label className="block text-xs mb-1">
+                                ঋণ গ্রহণের তারিখ: <span className="text-red-600">*</span>
+                            </label>
+                            <input
+                                type="date"
+                                value={data.loan_sanction_date}
+                                onChange={(e) => {
+                                    setData('loan_sanction_date', e.target.value);
+                                    if (errors.loan_sanction_date) {
+                                        setErrors(prev => {
+                                            const newErrors = { ...prev };
+                                            delete newErrors.loan_sanction_date;
+                                            return newErrors;
+                                        });
+                                    }
+                                }}
+                                className={`w-full px-2 py-1 border rounded ${errors.loan_sanction_date ? 'border-red-500 bg-red-50' : ''}`}
+                            />
+                            {errors.loan_sanction_date && (
+                                <p className="text-xs text-red-600 mt-0.5">{errors.loan_sanction_date}</p>
+                            )}
+                        </div>
+                        <div>
+                            <label className="block text-xs mb-1">
+                                গ্রহণকৃত ঋণের পরিমাণ: <span className="text-red-600">*</span>
+                            </label>
+                            <input
+                                type="number"
+                                value={data.loan_amount_received}
+                                onChange={(e) => {
+                                    setData('loan_amount_received', parseFloat(e.target.value));
+                                    if (errors.loan_amount_received) {
+                                        setErrors(prev => {
+                                            const newErrors = { ...prev };
+                                            delete newErrors.loan_amount_received;
+                                            return newErrors;
+                                        });
+                                    }
+                                }}
+                                className={`w-full px-2 py-1 border rounded ${errors.loan_amount_received ? 'border-red-500 bg-red-50' : ''}`}
+                            />
+                            {errors.loan_amount_received && (
+                                <p className="text-xs text-red-600 mt-0.5">{errors.loan_amount_received}</p>
+                            )}
+                        </div>
+                        <div>
+                            <label className="block text-xs mb-1">কথায়:</label>
+                            <input
+                                type="text"
+                                value={data.loan_amount_words}
+                                onChange={(e) => setData('loan_amount_words', e.target.value)}
+                                className="w-full px-2 py-1 border rounded"
+                                readOnly
+                            />
+                        </div>
+                        <div>
+                            <label className="block text-xs mb-1">
+                                ঋণের মেয়াদ: <span className="text-red-600">*</span>
+                            </label>
+                            <input
+                                type="text"
+                                value={data.loan_term}
+                                onChange={(e) => {
+                                    setData('loan_term', e.target.value);
+                                    if (errors.loan_term) {
+                                        setErrors(prev => {
+                                            const newErrors = { ...prev };
+                                            delete newErrors.loan_term;
+                                            return newErrors;
+                                        });
+                                    }
+                                }}
+                                placeholder="যেমন: ১২ মাস"
+                                className={`w-full px-2 py-1 border rounded ${errors.loan_term ? 'border-red-500 bg-red-50' : ''}`}
+                            />
+                            {errors.loan_term && (
+                                <p className="text-xs text-red-600 mt-0.5">{errors.loan_term}</p>
+                            )}
+                        </div>
+                    </div>
+                </div>
+
+                {/* Section 2: Guardian Information */}
+                <div className="mb-4">
+                    <h3 className="font-bold mb-2">২। অভিভাবক/পরিবারের প্রধান উপার্জনকারী ব্যক্তির তথ্য:</h3>
+                    <div className="grid grid-cols-2 gap-3 text-sm">
+                        <div>
+                            <label className="block text-xs mb-1">
+                                নাম: <span className="text-red-600">*</span>
+                            </label>
+                            <input
+                                type="text"
+                                value={data.guardian_name}
+                                onChange={(e) => {
+                                    setData('guardian_name', e.target.value);
+                                    if (errors.guardian_name) {
+                                        setErrors(prev => {
+                                            const newErrors = { ...prev };
+                                            delete newErrors.guardian_name;
+                                            return newErrors;
+                                        });
+                                    }
+                                }}
+                                placeholder="অভিভাবকের নাম"
+                                className={`w-full px-2 py-1 border rounded ${errors.guardian_name ? 'border-red-500 bg-red-50' : ''}`}
+                            />
+                            {errors.guardian_name && (
+                                <p className="text-xs text-red-600 mt-0.5">{errors.guardian_name}</p>
+                            )}
+                        </div>
+                        <div>
+                            <label className="block text-xs mb-1">
+                                বয়স: <span className="text-red-600">*</span>
+                            </label>
+                            <input
+                                type="number"
+                                value={data.guardian_age}
+                                onChange={(e) => {
+                                    setData('guardian_age', parseInt(e.target.value));
+                                    if (errors.guardian_age) {
+                                        setErrors(prev => {
+                                            const newErrors = { ...prev };
+                                            delete newErrors.guardian_age;
+                                            return newErrors;
+                                        });
+                                    }
+                                }}
+                                className={`w-full px-2 py-1 border rounded ${errors.guardian_age ? 'border-red-500 bg-red-50' : ''}`}
+                            />
+                            {errors.guardian_age && (
+                                <p className="text-xs text-red-600 mt-0.5">{errors.guardian_age}</p>
+                            )}
+                        </div>
+                        <div>
+                            <label className="block text-xs mb-1">
+                                ঋণ গ্রহীতার সাথে সম্পর্ক: <span className="text-red-600">*</span>
+                            </label>
+                            <input
+                                type="text"
+                                value={data.relationship_with_recipient}
+                                onChange={(e) => {
+                                    setData('relationship_with_recipient', e.target.value);
+                                    if (errors.relationship_with_recipient) {
+                                        setErrors(prev => {
+                                            const newErrors = { ...prev };
+                                            delete newErrors.relationship_with_recipient;
+                                            return newErrors;
+                                        });
+                                    }
+                                }}
+                                placeholder="যেমন: পিতা, স্বামী"
+                                className={`w-full px-2 py-1 border rounded ${errors.relationship_with_recipient ? 'border-red-500 bg-red-50' : ''}`}
+                            />
+                            {errors.relationship_with_recipient && (
+                                <p className="text-xs text-red-600 mt-0.5">{errors.relationship_with_recipient}</p>
+                            )}
+                        </div>
+                        <div>
+                            <label className="block text-xs mb-1">
+                                গ্রাম: <span className="text-red-600">*</span>
+                            </label>
+                            <input
+                                type="text"
+                                value={data.guardian_village}
+                                onChange={(e) => {
+                                    setData('guardian_village', e.target.value);
+                                    if (errors.guardian_village) {
+                                        setErrors(prev => {
+                                            const newErrors = { ...prev };
+                                            delete newErrors.guardian_village;
+                                            return newErrors;
+                                        });
+                                    }
+                                }}
+                                className={`w-full px-2 py-1 border rounded ${errors.guardian_village ? 'border-red-500 bg-red-50' : ''}`}
+                            />
+                            {errors.guardian_village && (
+                                <p className="text-xs text-red-600 mt-0.5">{errors.guardian_village}</p>
+                            )}
+                        </div>
+                        <div>
+                            <label className="block text-xs mb-1">
+                                ডাকঘর: <span className="text-red-600">*</span>
+                            </label>
+                            <input
+                                type="text"
+                                value={data.guardian_post_office}
+                                onChange={(e) => {
+                                    setData('guardian_post_office', e.target.value);
+                                    if (errors.guardian_post_office) {
+                                        setErrors(prev => {
+                                            const newErrors = { ...prev };
+                                            delete newErrors.guardian_post_office;
+                                            return newErrors;
+                                        });
+                                    }
+                                }}
+                                className={`w-full px-2 py-1 border rounded ${errors.guardian_post_office ? 'border-red-500 bg-red-50' : ''}`}
+                            />
+                            {errors.guardian_post_office && (
+                                <p className="text-xs text-red-600 mt-0.5">{errors.guardian_post_office}</p>
+                            )}
+                        </div>
+                        <div>
+                            <label className="block text-xs mb-1">
+                                উপজেলা: <span className="text-red-600">*</span>
+                            </label>
+                            <input
+                                type="text"
+                                value={data.guardian_upazila}
+                                onChange={(e) => {
+                                    setData('guardian_upazila', e.target.value);
+                                    if (errors.guardian_upazila) {
+                                        setErrors(prev => {
+                                            const newErrors = { ...prev };
+                                            delete newErrors.guardian_upazila;
+                                            return newErrors;
+                                        });
+                                    }
+                                }}
+                                className={`w-full px-2 py-1 border rounded ${errors.guardian_upazila ? 'border-red-500 bg-red-50' : ''}`}
+                            />
+                            {errors.guardian_upazila && (
+                                <p className="text-xs text-red-600 mt-0.5">{errors.guardian_upazila}</p>
+                            )}
+                        </div>
+                        <div>
+                            <label className="block text-xs mb-1">
+                                জেলা: <span className="text-red-600">*</span>
+                            </label>
+                            <input
+                                type="text"
+                                value={data.guardian_district}
+                                onChange={(e) => {
+                                    setData('guardian_district', e.target.value);
+                                    if (errors.guardian_district) {
+                                        setErrors(prev => {
+                                            const newErrors = { ...prev };
+                                            delete newErrors.guardian_district;
+                                            return newErrors;
+                                        });
+                                    }
+                                }}
+                                className={`w-full px-2 py-1 border rounded ${errors.guardian_district ? 'border-red-500 bg-red-50' : ''}`}
+                            />
+                            {errors.guardian_district && (
+                                <p className="text-xs text-red-600 mt-0.5">{errors.guardian_district}</p>
+                            )}
+                        </div>
+                        <div>
+                            <label className="block text-xs mb-1">
+                                জাতীয় পরিচয়পত্র নম্বর: <span className="text-red-600">*</span>
+                            </label>
+                            <input
+                                type="text"
+                                value={data.guardian_nid}
+                                onChange={(e) => {
+                                    setData('guardian_nid', e.target.value);
+                                    if (errors.guardian_nid) {
+                                        setErrors(prev => {
+                                            const newErrors = { ...prev };
+                                            delete newErrors.guardian_nid;
+                                            return newErrors;
+                                        });
+                                    }
+                                }}
+                                className={`w-full px-2 py-1 border rounded ${errors.guardian_nid ? 'border-red-500 bg-red-50' : ''}`}
+                            />
+                            {errors.guardian_nid && (
+                                <p className="text-xs text-red-600 mt-0.5">{errors.guardian_nid}</p>
+                            )}
+                        </div>
+                        <div>
+                            <label className="block text-xs mb-1">
+                                মোবাইল নম্বর: <span className="text-red-600">*</span>
+                            </label>
+                            <input
+                                type="text"
+                                value={data.guardian_mobile}
+                                onChange={(e) => {
+                                    setData('guardian_mobile', e.target.value);
+                                    if (errors.guardian_mobile) {
+                                        setErrors(prev => {
+                                            const newErrors = { ...prev };
+                                            delete newErrors.guardian_mobile;
+                                            return newErrors;
+                                        });
+                                    }
+                                }}
+                                className={`w-full px-2 py-1 border rounded ${errors.guardian_mobile ? 'border-red-500 bg-red-50' : ''}`}
+                            />
+                            {errors.guardian_mobile && (
+                                <p className="text-xs text-red-600 mt-0.5">{errors.guardian_mobile}</p>
+                            )}
+                        </div>
+                        <div>
+                            <label className="block text-xs mb-1">
+                                প্রধান পেশা: <span className="text-red-600">*</span>
+                            </label>
+                            <input
+                                type="text"
+                                value={data.guardian_profession}
+                                onChange={(e) => {
+                                    setData('guardian_profession', e.target.value);
+                                    if (errors.guardian_profession) {
+                                        setErrors(prev => {
+                                            const newErrors = { ...prev };
+                                            delete newErrors.guardian_profession;
+                                            return newErrors;
+                                        });
+                                    }
+                                }}
+                                placeholder="যেমন: কৃষি, ব্যবসা"
+                                className={`w-full px-2 py-1 border rounded ${errors.guardian_profession ? 'border-red-500 bg-red-50' : ''}`}
+                            />
+                            {errors.guardian_profession && (
+                                <p className="text-xs text-red-600 mt-0.5">{errors.guardian_profession}</p>
+                            )}
+                        </div>
+                    </div>
+                </div>
+
+                {/* Declaration (only in Part 1) */}
+                {showDeclaration && (
+                    <div className="mb-4 p-3 bg-gray-50 border rounded">
+                        <p className="text-sm leading-relaxed">
+                            <strong>ঘোষণা:</strong> আমরা এই মর্মে ঘোষণা করছি যে, উপরিল্লিখিত সকল তথ্য সঠিক ও সত্য। আমরা ঋণঝুঁকি তহবিলের সকল নিয়মাবলি ও শর্তাবলি মেনে এবং বুঝে স্বাক্ষর করছি। অনুগ্রহপূর্বক আমাদেরকে ঋণঝুঁকি তহবিলের সদস্য হিসেবে অর্ন্তভুক্ত করলে বাধিত হব।
+                        </p>
+                    </div>
+                )}
+
+                {/* Signatures */}
+                <div className="grid grid-cols-2 gap-4 mt-4">
+                    <div>
+                        <label className="block text-xs mb-1">ঋণ গ্রহীতার স্বাক্ষর:</label>
+                        {data.loan_recipient_signature ? (
+                            <div className="relative">
+                                <img src={data.loan_recipient_signature} alt="Signature" className="h-16 w-32 object-contain border rounded" />
+                                <button onClick={() => removeImage('loan_recipient_signature')} className="absolute -top-2 -right-2 bg-red-500 text-white rounded-full p-1">
+                                    <X className="w-3 h-3" />
+                                </button>
+                            </div>
+                        ) : (
+                            <label className="flex items-center gap-2 px-3 py-2 bg-gray-100 border border-dashed rounded cursor-pointer hover:bg-gray-200 w-fit">
+                                <Upload className="w-4 h-4" />
+                                <span className="text-xs">Upload</span>
+                                <input type="file" accept="image/png,image/jpg,image/jpeg" onChange={(e) => handleImageUpload('loan_recipient_signature', e.target.files?.[0] || null)} className="hidden" />
+                            </label>
+                        )}
+                    </div>
+                    {isPart1 && (
+                        <div>
+                            <label className="block text-xs mb-1">অভিভাবক/পরিবারের প্রধান উপার্জনকারীর স্বাক্ষর:</label>
+                            {data.guardian_signature ? (
+                                <div className="relative">
+                                    <img src={data.guardian_signature} alt="Signature" className="h-16 w-32 object-contain border rounded" />
+                                    <button onClick={() => removeImage('guardian_signature')} className="absolute -top-2 -right-2 bg-red-500 text-white rounded-full p-1">
+                                        <X className="w-3 h-3" />
+                                    </button>
+                                </div>
+                            ) : (
+                                <label className="flex items-center gap-2 px-3 py-2 bg-gray-100 border border-dashed rounded cursor-pointer hover:bg-gray-200 w-fit">
+                                    <Upload className="w-4 h-4" />
+                                    <span className="text-xs">Upload</span>
+                                    <input type="file" accept="image/png,image/jpg,image/jpeg" onChange={(e) => handleImageUpload('guardian_signature', e.target.files?.[0] || null)} className="hidden" />
+                                </label>
+                            )}
+                        </div>
+                    )}
+                    <div>
+                        <label className="block text-xs mb-1">অফিসারের স্বাক্ষর ও সিল:</label>
+                        {data.officer_signature ? (
+                            <div className="relative">
+                                <img src={data.officer_signature} alt="Signature" className="h-16 w-32 object-contain border rounded" />
+                                <button onClick={() => removeImage('officer_signature')} className="absolute -top-2 -right-2 bg-red-500 text-white rounded-full p-1">
+                                    <X className="w-3 h-3" />
+                                </button>
+                            </div>
+                        ) : (
+                            <label className="flex items-center gap-2 px-3 py-2 bg-gray-100 border border-dashed rounded cursor-pointer hover:bg-gray-200 w-fit">
+                                <Upload className="w-4 h-4" />
+                                <span className="text-xs">Upload</span>
+                                <input type="file" accept="image/png,image/jpg,image/jpeg" onChange={(e) => handleImageUpload('officer_signature', e.target.files?.[0] || null)} className="hidden" />
+                            </label>
+                        )}
+                    </div>
+                    <div>
+                        <label className="block text-xs mb-1">হিসাবরক্ষকের স্বাক্ষর ও সিল:</label>
+                        {data.accountant_signature ? (
+                            <div className="relative">
+                                <img src={data.accountant_signature} alt="Signature" className="h-16 w-32 object-contain border rounded" />
+                                <button onClick={() => removeImage('accountant_signature')} className="absolute -top-2 -right-2 bg-red-500 text-white rounded-full p-1">
+                                    <X className="w-3 h-3" />
+                                </button>
+                            </div>
+                        ) : (
+                            <label className="flex items-center gap-2 px-3 py-2 bg-gray-100 border border-dashed rounded cursor-pointer hover:bg-gray-200 w-fit">
+                                <Upload className="w-4 h-4" />
+                                <span className="text-xs">Upload</span>
+                                <input type="file" accept="image/png,image/jpg,image/jpeg" onChange={(e) => handleImageUpload('accountant_signature', e.target.files?.[0] || null)} className="hidden" />
+                            </label>
+                        )}
+                    </div>
+                    <div className="col-span-2">
+                        <label className="block text-xs mb-1">অনুমোদনকারী শাখাব্যবস্থাপকের স্বাক্ষর ও সিল:</label>
+                        {data.branch_manager_signature ? (
+                            <div className="relative">
+                                <img src={data.branch_manager_signature} alt="Signature" className="h-16 w-32 object-contain border rounded" />
+                                <button onClick={() => removeImage('branch_manager_signature')} className="absolute -top-2 -right-2 bg-red-500 text-white rounded-full p-1">
+                                    <X className="w-3 h-3" />
+                                </button>
+                            </div>
+                        ) : (
+                            <label className="flex items-center gap-2 px-3 py-2 bg-gray-100 border border-dashed rounded cursor-pointer hover:bg-gray-200 w-fit">
+                                <Upload className="w-4 h-4" />
+                                <span className="text-xs">Upload</span>
+                                <input type="file" accept="image/png,image/jpg,image/jpeg" onChange={(e) => handleImageUpload('branch_manager_signature', e.target.files?.[0] || null)} className="hidden" />
+                            </label>
+                        )}
+                    </div>
+                </div>
+            </div>
+        );
+    };
+
+    return (
+        <AdminLayout>
+            <Head title="মৃত্যুজনিত ঋণঝুঁকি তহবিলে অন্তর্ভুক্তির আবেদন পত্র">
+                <style>{`
+                    @media print {
+                        @page {
+                            size: A4;
+                            margin: 1cm;
+                        }
+                        html, body, #app {
+                            margin: 0 !important;
+                            padding: 0 !important;
+                            background: white !important;
+                        }
+                        body * {
+                            visibility: hidden !important;
+                        }
+                        .print-container,
+                        .print-container * {
+                            visibility: visible !important;
+                        }
+                        nav, header, aside, .sidebar, [role="navigation"],
+                        .print\\:hidden {
+                            display: none !important;
+                        }
+                        .print-container {
+                            position: absolute !important;
+                            left: 0 !important;
+                            top: 0 !important;
+                            width: 100% !important;
+                            margin: 0 !important;
+                            padding: 0 !important;
+                        }
+                        /* Two copies in one A4 page (top & bottom) - each using half height */
+                        .half-page-form {
+                            height: 48vh;
+                            max-height: 48vh;
+                            overflow: hidden;
+                            page-break-inside: avoid;
+                            break-inside: avoid;
+                            margin-bottom: 2mm;
+                        }
+                        .half-page-form + .half-page-form {
+                            margin-top: 2mm;
+                        }
+                        /* Dotted separator between two copies */
+                        .border-dotted {
+                            border-style: dotted !important;
+                        }
+                        /* Ensure proper spacing for print */
+                        .print-container {
+                            display: flex;
+                            flex-direction: column;
+                        }
+                        .page-break {
+                            page-break-before: auto !important;
+                            break-before: auto !important;
+                        }
+                    }
+                `}</style>
+            </Head>
+
+            <div className="max-w-[1600px] mx-auto p-4">
+                {/* Header */}
+                <div className="flex items-center justify-between mb-4 print:hidden">
+                    <div className="flex items-center gap-3">
+                        <button
+                            onClick={() => router.visit(`/member/loan-applications/form-selection?member_id=${member.id}&loan_product_id=${loanProduct.id}&loan_category_id=${loanCategory.id}&requested_amount=${requestedAmount}`)}
+                            className="flex items-center gap-2 px-3 py-2 bg-gray-200 text-gray-700 text-sm rounded-md hover:bg-gray-300"
+                        >
+                            <ArrowLeft className="w-4 h-4" />
+                            Back
+                        </button>
+                        <div>
+                            <h1 className="text-lg font-bold">মৃত্যুজনিত ঋণঝুঁকি তহবিলে অন্তর্ভুক্তির আবেদন পত্র</h1>
+                            <p className="text-xs text-gray-600">Form পূরণ করুন এবং সংরক্ষণ করুন।</p>
+                            {existingApplication && (
+                                <p className="text-xs text-blue-600 mt-1">
+                                    ✓ Draft সংরক্ষিত আছে - Application No: {existingApplication.application_no || 'Pending'}
+                                </p>
+                            )}
+                        </div>
+                    </div>
+                    <div className="flex gap-2">
+                        <button
+                            onClick={handleSaveDraft}
+                            disabled={processing}
+                            className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white text-sm rounded-md hover:bg-blue-700 disabled:opacity-50"
+                        >
+                            <Save className="w-4 h-4" />
+                            {processing ? 'সংরক্ষণ হচ্ছে...' : 'সংরক্ষণ করুন'}
+                        </button>
+                        <button
+                            onClick={handlePrint}
+                            className="flex items-center gap-2 px-4 py-2 bg-purple-600 text-white text-sm rounded-md hover:bg-purple-700"
+                        >
+                            <Printer className="w-4 h-4" />
+                            Print
+                        </button>
+                    </div>
+                </div>
+
+                {/* Form Content - Left: Input, Right: Preview */}
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 print:grid-cols-1">
+                    {/* LEFT SIDE: INPUT FORM (Common for both copies) */}
+                    <div className="space-y-4 print:hidden">
+                        {/* Single Input Form - same data for both copies */}
+                        {renderFormPart(1)}
+                    </div>
+
+                    {/* RIGHT SIDE: PREVIEW */}
+                    <div className="lg:sticky lg:top-4 lg:h-fit print:block print-container">
+                        <div className="bg-white rounded-lg shadow-lg p-4 print:shadow-none print:p-2 print:rounded-none print:bg-white">
+                            <h3 className="text-sm font-bold mb-3 print:hidden">Preview (2 Copies on A4)</h3>
+                        <div className="space-y-0.5 print:space-y-0">
+                            {/* Same A4 page e 2 copy (top & bottom) - Preview mode with dotted lines */}
+                            {renderPreviewPart(1)}
+                            <div className="border-t-2 border-dotted border-gray-400 my-1 print:my-0.5"></div>
+                            {renderPreviewPart(2)}
+                        </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </AdminLayout>
+    );
+}

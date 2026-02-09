@@ -36,12 +36,27 @@ class LoanApplicationController extends Controller
         });
 
         // Get user's loan applications for selected date
-        $applications = LoanApplication::with(['loanProduct', 'loanCategory', 'memberAdmission', 'branch'])
+        // Use date range instead of whereDate() to allow index usage and prevent memory issues
+        $startOfDay = \Carbon\Carbon::parse($selectedDate)->startOfDay();
+        $endOfDay = \Carbon\Carbon::parse($selectedDate)->endOfDay();
+        
+        $applications = LoanApplication::with([
+                'loanProduct:id,product_name,product_name_bn,product_code',
+                'loanCategory:id,category_name,category_name_bn',
+                'memberAdmission:id,applicant_name_bn,application_no',
+                'branch:id,name,code'
+            ])
             ->when($user->branch_id, function ($query) use ($user) {
                 $query->where('branch_id', $user->branch_id);
             })
-            ->whereDate('created_at', $selectedDate)
+            ->whereBetween('created_at', [$startOfDay, $endOfDay])
             ->orderBy('created_at', 'desc')
+            ->select([
+                'id', 'application_no', 'member_admission_id', 'loan_product_id', 
+                'loan_category_id', 'branch_id', 'form_type', 'status', 
+                'requested_amount', 'approved_amount', 'created_at', 'updated_at',
+                'submitted_at', 'reviewed_at', 'purpose_of_loan'
+            ])
             ->get();
 
         // Calculate stats for the selected date
@@ -377,7 +392,7 @@ class LoanApplicationController extends Controller
         $application = LoanApplication::with([
             'loanProduct',
             'loanCategory',
-            'memberAdmission',
+            'memberAdmission.samity',
             'branch',
             'samity'
         ])->findOrFail($id);
@@ -385,6 +400,17 @@ class LoanApplicationController extends Controller
         if (!$application->canBeEdited()) {
             return redirect()->route('member.loan-applications.show', $application->id)
                 ->withErrors(['error' => 'This application cannot be edited']);
+        }
+
+        // If this is a member-side form-based application (loan agreement, guarantor commitment, death risk fund, field investigation, or loan application approval),
+        // always send user back to the form selection screen instead of a generic edit page.
+        if (in_array($application->form_type, ['loan_agreement', 'guarantor_commitment', 'death_risk_fund', 'field_investigation', 'loan_application_approval'], true)) {
+            return redirect()->route('member.loan-applications.form-selection', [
+                'member_id' => $application->member_admission_id,
+                'loan_product_id' => $application->loan_product_id,
+                'loan_category_id' => $application->loan_category_id,
+                'requested_amount' => $application->requested_amount,
+            ]);
         }
 
         $categories = LoanCategory::where('is_active', true)
@@ -456,13 +482,44 @@ class LoanApplicationController extends Controller
         $loanProduct = LoanProduct::findOrFail($loanProductId);
         $loanCategory = LoanCategory::findOrFail($loanCategoryId);
 
+        // Get the draft application (if exists) - same draft for all forms
+        $draftApplication = LoanApplication::where('member_admission_id', $memberId)
+            ->where('loan_product_id', $loanProductId)
+            ->where('loan_category_id', $loanCategoryId)
+            ->where('status', LoanApplication::STATUS_DRAFT)
+            ->first();
+
+        // Check if loan agreement data exists (check loan_agreement_data field)
+        $hasLoanAgreementDraft = $draftApplication && !empty($draftApplication->loan_agreement_data);
+
+        // Check if guarantor commitment data exists (check guarantor_info field)
+        $hasGuarantorCommitmentDraft = $draftApplication && !empty($draftApplication->guarantor_info);
+
+        // Check if death risk fund data exists (check nominee_info field)
+        $hasDeathRiskFundDraft = $draftApplication && !empty($draftApplication->nominee_info);
+
+        // Check if field investigation data exists (check asset_info field)
+        $hasFieldInvestigationDraft = $draftApplication && !empty($draftApplication->asset_info);
+
+        // Check if loan application approval data exists (check business_plan field)
+        $hasLoanApplicationApprovalDraft = $draftApplication && !empty($draftApplication->business_plan) && $draftApplication->form_type === 'loan_application_approval';
+
         return Inertia::render('Member/LoanApplications/FormSelection', [
             'member' => $member,
             'loanProduct' => $loanProduct,
             'loanCategory' => $loanCategory,
             'requestedAmount' => (float) $requestedAmount,
+            'hasLoanAgreementDraft' => $hasLoanAgreementDraft,
+            'hasGuarantorCommitmentDraft' => $hasGuarantorCommitmentDraft,
+            'hasDeathRiskFundDraft' => $hasDeathRiskFundDraft,
+            'hasFieldInvestigationDraft' => $hasFieldInvestigationDraft,
+            'hasLoanApplicationApprovalDraft' => $hasLoanApplicationApprovalDraft,
         ]);
     }
+
+    /**
+     * Show loan agreement form
+     */
 
     /**
      * Show loan agreement form
@@ -481,13 +538,447 @@ class LoanApplicationController extends Controller
         $user = $request->user();
         $branch = $user->branch;
 
+        // Check if there's existing draft
+        $existingApplication = LoanApplication::where('member_admission_id', $memberId)
+            ->where('loan_product_id', $loanProductId)
+            ->where('loan_category_id', $loanCategoryId)
+            ->where('status', LoanApplication::STATUS_DRAFT)
+            ->first();
+
         return Inertia::render('Member/LoanApplications/Forms/LoanAgreement', [
             'member' => $member,
             'loanProduct' => $loanProduct,
             'loanCategory' => $loanCategory,
             'requestedAmount' => (float) $requestedAmount,
             'branch' => $branch,
+            'existingApplication' => $existingApplication,
+            'savedData' => $existingApplication?->loan_agreement_data,
         ]);
+    }
+
+    /**
+     * Show guarantor commitment form
+     */
+    public function guarantorCommitment(Request $request)
+    {
+        $memberId = $request->input('member_id');
+        $loanProductId = $request->input('product_id');
+        $loanCategoryId = $request->input('category_id');
+        $requestedAmount = $request->input('amount', 0);
+
+        $member = MemberAdmission::with('samity')->findOrFail($memberId);
+        $loanProduct = LoanProduct::findOrFail($loanProductId);
+        $loanCategory = LoanCategory::findOrFail($loanCategoryId);
+
+        $user = $request->user();
+        $branch = $user->branch;
+
+        // Existing draft application for this member/product/category (any form)
+        $existingApplication = LoanApplication::where('member_admission_id', $memberId)
+            ->where('loan_product_id', $loanProductId)
+            ->where('loan_category_id', $loanCategoryId)
+            ->where('status', LoanApplication::STATUS_DRAFT)
+            ->first();
+
+        return Inertia::render('Member/LoanApplications/Forms/GuarantorCommitment', [
+            'member' => $member,
+            'loanProduct' => $loanProduct,
+            'loanCategory' => $loanCategory,
+            'requestedAmount' => (float) $requestedAmount,
+            'branch' => $branch,
+            'existingApplication' => $existingApplication,
+            // reuse guarantor_info array field to store this form's data
+            'savedData' => $existingApplication?->guarantor_info,
+        ]);
+    }
+
+    public function saveLoanAgreementDraft(Request $request)
+    {
+        $validated = $request->validate([
+            'member_id' => 'required|exists:member_admissions,id',
+            'loan_product_id' => 'required|exists:loan_products,id',
+            'loan_category_id' => 'required|exists:loan_categories,id',
+            'requested_amount' => 'required|numeric|min:0',
+            'agreement_data' => 'required|array',
+        ]);
+
+        $user = $request->user();
+        $member = MemberAdmission::find($validated['member_id']);
+        $agreementData = $validated['agreement_data'];
+
+        // Ensure required fields have values
+        $purposeOfLoan = $agreementData['loan_purpose'] ?? 'খান চুক্তিপত্র অনুযায়ী';
+        $numberOfInstallments = $agreementData['number_of_installments'] ?? 1;
+
+        // Find existing draft or create new without violating NOT NULL constraints
+        $loanApplication = LoanApplication::firstOrNew([
+            'member_admission_id' => $validated['member_id'],
+            'loan_product_id' => $validated['loan_product_id'],
+            'loan_category_id' => $validated['loan_category_id'],
+            'status' => LoanApplication::STATUS_DRAFT,
+        ]);
+
+        // Only generate application_no when creating first time
+        if (!$loanApplication->exists || !$loanApplication->application_no) {
+            $loanApplication->application_no = LoanApplication::generateApplicationNo();
+        }
+
+        // Always update the rest of the fields for this draft
+        $loanApplication->branch_id = $user->branch_id;
+        $loanApplication->samity_id = $member->samity_id;
+        $loanApplication->requested_amount = $validated['requested_amount'];
+        $loanApplication->loan_agreement_data = $agreementData;
+        $loanApplication->form_type = 'loan_agreement';
+        $loanApplication->purpose_of_loan = $purposeOfLoan;
+        $loanApplication->number_of_installments = $numberOfInstallments;
+        $loanApplication->submitted_by = $user->id;
+
+        $loanApplication->save();
+
+        return redirect()->route('member.loan-applications.index')
+            ->with('success', 'খান চুক্তিপত্র সংরক্ষিত হয়েছে। Loan Application ড্রাফট হিসেবে সংরক্ষিত আছে।');
+    }
+
+    /**
+     * Save guarantor commitment draft
+     */
+    public function saveGuarantorCommitmentDraft(Request $request)
+    {
+        $validated = $request->validate([
+            'member_id' => 'required|exists:member_admissions,id',
+            'loan_product_id' => 'required|exists:loan_products,id',
+            'loan_category_id' => 'required|exists:loan_categories,id',
+            'requested_amount' => 'required|numeric|min:0',
+            'agreement_data' => 'required|array',
+        ]);
+
+        $user = $request->user();
+        $member = MemberAdmission::find($validated['member_id']);
+        $agreementData = $validated['agreement_data'];
+        $loanProduct = LoanProduct::find($validated['loan_product_id']);
+
+        // Ensure required fields have values
+        $purposeOfLoan = $agreementData['loan_purpose'] ?? $agreementData['purpose_of_loan'] ?? 'জামিনদার/দায়িত্ব গ্রহণকারীর অঙ্গীকার নামা অনুযায়ী';
+
+        // Calculate number_of_installments from loan product
+        $numberOfInstallments = $loanProduct->number_of_installments ?? 1;
+        if ($loanProduct->installment_type === 'weekly' && $loanProduct->duration_months) {
+            $numberOfInstallments = ceil(($loanProduct->duration_months * 30) / 7);
+        } elseif ($loanProduct->duration_months) {
+            $numberOfInstallments = $loanProduct->duration_months;
+        }
+
+        // Find existing draft or create new (shared draft for all member forms)
+        $loanApplication = LoanApplication::firstOrNew([
+            'member_admission_id' => $validated['member_id'],
+            'loan_product_id' => $validated['loan_product_id'],
+            'loan_category_id' => $validated['loan_category_id'],
+            'status' => LoanApplication::STATUS_DRAFT,
+        ]);
+
+        // Only generate application_no when creating first time
+        if (!$loanApplication->exists || !$loanApplication->application_no) {
+            $loanApplication->application_no = LoanApplication::generateApplicationNo();
+        }
+
+        $loanApplication->branch_id = $user->branch_id;
+        $loanApplication->samity_id = $member->samity_id;
+        $loanApplication->requested_amount = $validated['requested_amount'];
+        // store full form data in guarantor_info array field
+        $loanApplication->guarantor_info = $agreementData;
+        $loanApplication->form_type = 'guarantor_commitment'; // Set form_type for tracking
+        $loanApplication->purpose_of_loan = $purposeOfLoan;
+        $loanApplication->number_of_installments = $numberOfInstallments;
+        $loanApplication->submitted_by = $user->id;
+
+        $loanApplication->save();
+
+        return redirect()->route('member.loan-applications.index')
+            ->with('success', 'জামিনদার/দায়িত্ব গ্রহণকারীর অঙ্গীকার নামা ড্রাফট হিসেবে সংরক্ষিত হয়েছে।');
+    }
+
+    /**
+     * Show death risk fund form
+     */
+    public function deathRiskFund(Request $request)
+    {
+        $memberId = $request->input('member_id');
+        $loanProductId = $request->input('product_id');
+        $loanCategoryId = $request->input('category_id');
+        $requestedAmount = $request->input('amount', 0);
+
+        $member = MemberAdmission::with('samity')->findOrFail($memberId);
+        $loanProduct = LoanProduct::findOrFail($loanProductId);
+        $loanCategory = LoanCategory::findOrFail($loanCategoryId);
+
+        $user = $request->user();
+        $branch = $user->branch;
+
+        // Existing draft application for this member/product/category (any form)
+        $existingApplication = LoanApplication::where('member_admission_id', $memberId)
+            ->where('loan_product_id', $loanProductId)
+            ->where('loan_category_id', $loanCategoryId)
+            ->where('status', LoanApplication::STATUS_DRAFT)
+            ->first();
+
+        return Inertia::render('Member/LoanApplications/Forms/DeathRiskFund', [
+            'member' => $member,
+            'loanProduct' => $loanProduct,
+            'loanCategory' => $loanCategory,
+            'requestedAmount' => (float) $requestedAmount,
+            'branch' => $branch,
+            'existingApplication' => $existingApplication,
+            // Store form data in nominee_info field (reusing existing JSON field)
+            'savedData' => $existingApplication?->nominee_info,
+        ]);
+    }
+
+    /**
+     * Save death risk fund draft
+     */
+    public function saveDeathRiskFundDraft(Request $request)
+    {
+        $validated = $request->validate([
+            'member_id' => 'required|exists:member_admissions,id',
+            'loan_product_id' => 'required|exists:loan_products,id',
+            'loan_category_id' => 'required|exists:loan_categories,id',
+            'requested_amount' => 'required|numeric|min:0',
+            'form_data' => 'required|array',
+        ]);
+
+        $user = $request->user();
+        $member = MemberAdmission::find($validated['member_id']);
+        $formData = $validated['form_data'];
+        $loanProduct = LoanProduct::find($validated['loan_product_id']);
+
+        // Ensure required fields have values
+        $purposeOfLoan = $formData['component_name'] ?? 'মৃত্যুজনিত ঋণঝুঁকি তহবিলে অন্তর্ভুক্তি';
+
+        // Calculate number_of_installments from loan product
+        $numberOfInstallments = $loanProduct->number_of_installments ?? 1;
+        if ($loanProduct->installment_type === 'weekly' && $loanProduct->duration_months) {
+            $numberOfInstallments = ceil(($loanProduct->duration_months * 30) / 7);
+        } elseif ($loanProduct->duration_months) {
+            $numberOfInstallments = $loanProduct->duration_months;
+        }
+
+        // Find existing draft or create new (shared draft for all member forms)
+        $loanApplication = LoanApplication::firstOrNew([
+            'member_admission_id' => $validated['member_id'],
+            'loan_product_id' => $validated['loan_product_id'],
+            'loan_category_id' => $validated['loan_category_id'],
+            'status' => LoanApplication::STATUS_DRAFT,
+        ]);
+
+        // Only generate application_no when creating first time
+        if (!$loanApplication->exists || !$loanApplication->application_no) {
+            $loanApplication->application_no = LoanApplication::generateApplicationNo();
+        }
+
+        $loanApplication->branch_id = $user->branch_id;
+        $loanApplication->samity_id = $member->samity_id;
+        $loanApplication->requested_amount = $validated['requested_amount'];
+        // Store form data in nominee_info field (reusing existing JSON field)
+        $loanApplication->nominee_info = $formData;
+        $loanApplication->form_type = 'death_risk_fund'; // Set form_type for tracking
+        $loanApplication->purpose_of_loan = $purposeOfLoan;
+        $loanApplication->number_of_installments = $numberOfInstallments;
+        $loanApplication->submitted_by = $user->id;
+
+        $loanApplication->save();
+
+        return redirect()->route('member.loan-applications.index')
+            ->with('success', 'মৃত্যুজনিত ঋণঝুঁকি তহবিলে অন্তর্ভুক্তির আবেদন পত্র ড্রাফট হিসেবে সংরক্ষিত হয়েছে।');
+    }
+
+    /**
+     * Show field investigation form
+     */
+    public function fieldInvestigation(Request $request)
+    {
+        $memberId = $request->input('member_id');
+        $loanProductId = $request->input('product_id');
+        $loanCategoryId = $request->input('category_id');
+        $requestedAmount = $request->input('amount', 0);
+
+        $member = MemberAdmission::with('samity')->findOrFail($memberId);
+        $loanProduct = LoanProduct::findOrFail($loanProductId);
+        $loanCategory = LoanCategory::findOrFail($loanCategoryId);
+
+        $user = $request->user();
+        $branch = $user->branch;
+
+        // Existing draft application for this member/product/category (any form)
+        $existingApplication = LoanApplication::where('member_admission_id', $memberId)
+            ->where('loan_product_id', $loanProductId)
+            ->where('loan_category_id', $loanCategoryId)
+            ->where('status', LoanApplication::STATUS_DRAFT)
+            ->first();
+
+        return Inertia::render('Member/LoanApplications/Forms/FieldInvestigation', [
+            'member' => $member,
+            'loanProduct' => $loanProduct,
+            'loanCategory' => $loanCategory,
+            'requestedAmount' => (float) $requestedAmount,
+            'branch' => $branch,
+            'existingApplication' => $existingApplication,
+            // Store form data in asset_info field (reusing existing JSON field)
+            'savedData' => $existingApplication?->asset_info,
+        ]);
+    }
+
+    /**
+     * Save field investigation draft
+     */
+    public function saveFieldInvestigationDraft(Request $request)
+    {
+        $validated = $request->validate([
+            'member_id' => 'required|exists:member_admissions,id',
+            'loan_product_id' => 'required|exists:loan_products,id',
+            'loan_category_id' => 'required|exists:loan_categories,id',
+            'requested_amount' => 'required|numeric|min:0',
+            'form_data' => 'required|array',
+        ]);
+
+        $user = $request->user();
+        $member = MemberAdmission::find($validated['member_id']);
+        $formData = $validated['form_data'];
+        $loanProduct = LoanProduct::find($validated['loan_product_id']);
+
+        // Ensure required fields have values
+        $purposeOfLoan = 'সরেজমিনে তদন্ত প্রতিবেদন';
+
+        // Calculate number_of_installments from loan product
+        $numberOfInstallments = $loanProduct->number_of_installments ?? 1;
+        if ($loanProduct->installment_type === 'weekly' && $loanProduct->duration_months) {
+            $numberOfInstallments = ceil(($loanProduct->duration_months * 30) / 7);
+        } elseif ($loanProduct->duration_months) {
+            $numberOfInstallments = $loanProduct->duration_months;
+        }
+
+        // Find existing draft or create new (shared draft for all member forms)
+        $loanApplication = LoanApplication::firstOrNew([
+            'member_admission_id' => $validated['member_id'],
+            'loan_product_id' => $validated['loan_product_id'],
+            'loan_category_id' => $validated['loan_category_id'],
+            'status' => LoanApplication::STATUS_DRAFT,
+        ]);
+
+        // Only generate application_no when creating first time
+        if (!$loanApplication->exists || !$loanApplication->application_no) {
+            $loanApplication->application_no = LoanApplication::generateApplicationNo();
+        }
+
+        $loanApplication->branch_id = $user->branch_id;
+        $loanApplication->samity_id = $member->samity_id;
+        $loanApplication->requested_amount = $validated['requested_amount'];
+        // Store form data in asset_info field (reusing existing JSON field)
+        $loanApplication->asset_info = $formData;
+        $loanApplication->form_type = 'field_investigation'; // Set form_type for tracking
+        $loanApplication->purpose_of_loan = $purposeOfLoan;
+        $loanApplication->number_of_installments = $numberOfInstallments;
+        $loanApplication->submitted_by = $user->id;
+
+        $loanApplication->save();
+
+        return redirect()->route('member.loan-applications.index')
+            ->with('success', 'সরেজমিনে তদন্ত প্রতিবেদন ড্রাফট হিসেবে সংরক্ষিত হয়েছে।');
+    }
+
+    /**
+     * Show loan application approval form (Jagoron/Buniad/Agrosor)
+     */
+    public function loanApplicationApproval(Request $request)
+    {
+        $memberId = $request->input('member_id');
+        $loanProductId = $request->input('product_id');
+        $loanCategoryId = $request->input('category_id');
+        $requestedAmount = $request->input('amount', 0);
+
+        // Load member with all relationships
+        $member = MemberAdmission::with([
+            'samity',
+            'familyMembers',
+            'otherAssets',
+            'branch'
+        ])->findOrFail($memberId);
+        
+        $loanProduct = LoanProduct::findOrFail($loanProductId);
+        $loanCategory = LoanCategory::findOrFail($loanCategoryId);
+
+        $user = $request->user();
+        $branch = $user->branch;
+
+        // Existing draft application for this member/product/category (any form)
+        $existingApplication = LoanApplication::where('member_admission_id', $memberId)
+            ->where('loan_product_id', $loanProductId)
+            ->where('loan_category_id', $loanCategoryId)
+            ->where('status', LoanApplication::STATUS_DRAFT)
+            ->first();
+
+        return Inertia::render('Member/LoanApplications/Forms/LoanApplicationApproval', [
+            'member' => $member,
+            'loanProduct' => $loanProduct,
+            'loanCategory' => $loanCategory,
+            'requestedAmount' => (float) $requestedAmount,
+            'branch' => $branch,
+            'existingApplication' => $existingApplication,
+            // Store form data in business_plan JSON field (reusing existing JSON field)
+            'savedData' => $existingApplication?->business_plan,
+        ]);
+    }
+
+    /**
+     * Save loan application approval draft
+     */
+    public function saveLoanApplicationApprovalDraft(Request $request)
+    {
+        $validated = $request->validate([
+            'member_id' => 'required|exists:member_admissions,id',
+            'loan_product_id' => 'required|exists:loan_products,id',
+            'loan_category_id' => 'required|exists:loan_categories,id',
+            'requested_amount' => 'required|numeric|min:0',
+            'form_data' => 'required|array',
+        ]);
+
+        $user = $request->user();
+        $member = MemberAdmission::find($validated['member_id']);
+        $formData = $validated['form_data'];
+        $loanProduct = LoanProduct::find($validated['loan_product_id']);
+
+        $purposeOfLoan = $formData['loan_purpose'] ?? 'জাগরণ/বুনিয়াদ/আগ্রসর ঋণ আবেদন';
+
+        $numberOfInstallments = $loanProduct->number_of_installments ?? 1;
+        if ($loanProduct->installment_type === 'weekly' && $loanProduct->duration_months) {
+            $numberOfInstallments = ceil(($loanProduct->duration_months * 30) / 7);
+        } elseif ($loanProduct->duration_months) {
+            $numberOfInstallments = $loanProduct->duration_months;
+        }
+
+        $loanApplication = LoanApplication::firstOrNew([
+            'member_admission_id' => $validated['member_id'],
+            'loan_product_id' => $validated['loan_product_id'],
+            'loan_category_id' => $validated['loan_category_id'],
+            'status' => LoanApplication::STATUS_DRAFT,
+        ]);
+
+        if (!$loanApplication->exists || !$loanApplication->application_no) {
+            $loanApplication->application_no = LoanApplication::generateApplicationNo();
+        }
+
+        $loanApplication->branch_id = $user->branch_id;
+        $loanApplication->samity_id = $member->samity_id;
+        $loanApplication->requested_amount = $validated['requested_amount'];
+        $loanApplication->business_plan = $formData; // Storing in business_plan JSON field
+        $loanApplication->form_type = 'loan_application_approval';
+        $loanApplication->purpose_of_loan = $purposeOfLoan;
+        $loanApplication->number_of_installments = $numberOfInstallments;
+        $loanApplication->submitted_by = $user->id;
+
+        $loanApplication->save();
+
+        return redirect()->route('member.loan-applications.index')
+            ->with('success', 'জাগরণ/বুনিয়াদ/আগ্রসর ঋণ আবেদন ও অনুমোদনপত্র ড্রাফট হিসেবে সংরক্ষিত হয়েছে।');
     }
 
 }

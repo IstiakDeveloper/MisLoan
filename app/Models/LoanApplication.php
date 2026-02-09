@@ -76,6 +76,7 @@ class LoanApplication extends Model
         'officer_reviewed_at',
         'manager_reviewed_at',
         'committee_reviewed_at',
+        'loan_agreement_data',
     ];
 
     protected $casts = [
@@ -116,6 +117,7 @@ class LoanApplication extends Model
         'officer_reviewed_at' => 'datetime',
         'manager_reviewed_at' => 'datetime',
         'committee_reviewed_at' => 'datetime',
+        'loan_agreement_data' => 'array',
     ];
 
     // Status constants

@@ -54,6 +54,10 @@ interface Props {
     applications: LoanApplication[];
     stats: Stats;
     selectedDate: string;
+    flash?: {
+        success?: string;
+        error?: string;
+    };
 }
 
 const statusLabels: Record<string, { label: string; color: string }> = {
@@ -82,12 +86,21 @@ interface Member {
     status: string;
 }
 
-export default function Index({ categories, applications, stats, selectedDate }: Props) {
+export default function Index({ categories, applications, stats, selectedDate, flash }: Props) {
     const [currentDate, setCurrentDate] = useState(selectedDate);
     const [searchQuery, setSearchQuery] = useState('');
     const [showNewModal, setShowNewModal] = useState(false);
     const [selectedCategory, setSelectedCategory] = useState<number | null>(null);
     const [selectedProduct, setSelectedProduct] = useState<number | null>(null);
+    const [showSuccessMessage, setShowSuccessMessage] = useState(!!flash?.success);
+
+    useEffect(() => {
+        if (flash?.success) {
+            setShowSuccessMessage(true);
+            const timer = setTimeout(() => setShowSuccessMessage(false), 5000);
+            return () => clearTimeout(timer);
+        }
+    }, [flash?.success]);
     const [products, setProducts] = useState<LoanProduct[]>([]);
 
     // New states for modal
@@ -177,6 +190,22 @@ export default function Index({ categories, applications, stats, selectedDate }:
             <Head title="Loan Applications (ঋণ আবেদন)" />
 
             <div className="space-y-4">
+                {/* Success Message */}
+                {showSuccessMessage && flash?.success && (
+                    <div className="bg-green-50 border border-green-200 rounded-lg p-4 flex items-start gap-3">
+                        <CheckCircle className="w-5 h-5 text-green-600 flex-shrink-0 mt-0.5" />
+                        <div className="flex-1">
+                            <p className="text-sm font-medium text-green-800">{flash.success}</p>
+                        </div>
+                        <button
+                            onClick={() => setShowSuccessMessage(false)}
+                            className="text-green-600 hover:text-green-800"
+                        >
+                            <X className="w-4 h-4" />
+                        </button>
+                    </div>
+                )}
+
                 {/* Header */}
                 <div className="flex items-center justify-between">
                     <div>
@@ -297,6 +326,9 @@ export default function Index({ categories, applications, stats, selectedDate }:
                                         <tr key={app.id} className="hover:bg-gray-50">
                                             <td className="px-3 py-2">
                                                 <div className="font-medium text-gray-900">{app.application_no}</div>
+                                                {app.status === 'draft' && (
+                                                    <div className="text-[10px] text-blue-600 mt-0.5">খান চুক্তিপত্র ফর্ম</div>
+                                                )}
                                             </td>
                                             <td className="px-3 py-2 text-gray-600">
                                                 {new Date(app.created_at).toLocaleDateString('en-GB')}
