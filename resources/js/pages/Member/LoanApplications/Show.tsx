@@ -1,5 +1,6 @@
 import AdminLayout from '@/layouts/admin-layout';
-import { Head, Link } from '@inertiajs/react';
+import { Head, Link, router } from '@inertiajs/react';
+import { useState } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -19,7 +20,8 @@ import {
     AlertCircle,
     Printer,
     Edit,
-    ArrowLeft
+    ArrowLeft,
+    Send
 } from 'lucide-react';
 
 interface LoanApplication {
@@ -54,14 +56,23 @@ interface LoanApplication {
     member_admission: {
         id: number;
         application_no: string;
-        member_name_en: string;
-        member_name_bn: string;
-        father_name_en: string;
-        mother_name_en: string;
-        nid_no: string;
-        mobile_no: string;
-        present_address_en: string;
+        applicant_name_en?: string;
+        applicant_name_bn?: string;
+        member_name_en?: string;
+        member_name_bn?: string;
+        father_name_en?: string;
+        mother_name_en?: string;
+        nid_number?: string;
+        nid_no?: string;
+        mobile_number?: string;
+        mobile_no?: string;
+        present_village_road?: string;
+        present_address_en?: string;
     };
+    visible_form_ids?: number[];
+    form_saved?: Record<number, boolean>;
+    all_forms_complete?: boolean;
+    availableApprovers?: Array<{ id: number; name: string; email: string; level?: string; role?: { name: string } }>;
     loan_product: {
         product_name: string;
         product_name_bn: string;
@@ -75,8 +86,10 @@ interface LoanApplication {
         category_code: string;
     };
     branch: {
-        branch_name: string;
-        branch_name_bn: string;
+        name: string;
+        code?: string;
+        branch_name?: string;
+        branch_name_bn?: string;
     };
     samity: {
         samity_name: string;
@@ -84,21 +97,47 @@ interface LoanApplication {
     } | null;
 }
 
+const FORM_NAMES: Record<number, string> = {
+    1: 'ঋণ চুক্তি পত্র',
+    2: 'জামিনদার/দায়িত্ব গ্রহণকারীর অঙ্গীকার নামা',
+    3: 'মৃত্যুঝুঁকি তহবিল আবেদন',
+    4: 'সরেজমিন তদন্ত প্রতিবেদন',
+    5: 'আবেদন ও অনুমোদনপত্র',
+};
+
 interface Props {
     application: LoanApplication;
+    availableApprovers?: Array<{ id: number; name: string; email: string; level?: string; role?: { name: string } }>;
+    routes: {
+        index: string;
+        edit: string;
+        print: string;
+        submit: string;
+    };
 }
 
 const statusConfig = {
     draft: { label: 'খসড়া', color: 'bg-gray-100 text-gray-800', icon: AlertCircle },
     submitted: { label: 'জমা হয়েছে', color: 'bg-blue-100 text-blue-800', icon: Clock },
     under_review: { label: 'পর্যালোচনা', color: 'bg-yellow-100 text-yellow-800', icon: Clock },
+    pending_head_office: { label: 'হেড অফিসে প্রেরিত', color: 'bg-indigo-100 text-indigo-800', icon: Clock },
     approved: { label: 'অনুমোদিত', color: 'bg-green-100 text-green-800', icon: CheckCircle2 },
     rejected: { label: 'প্রত্যাখ্যাত', color: 'bg-red-100 text-red-800', icon: XCircle },
     disbursed: { label: 'বিতরণ হয়েছে', color: 'bg-emerald-100 text-emerald-800', icon: CheckCircle2 },
     cancelled: { label: 'বাতিল', color: 'bg-gray-100 text-gray-800', icon: XCircle },
 };
 
-export default function Show({ application }: Props) {
+export default function Show({ application, availableApprovers = [], routes }: Props) {
+    const [showSubmitModal, setShowSubmitModal] = useState(false);
+    const [selectedApprovers, setSelectedApprovers] = useState<number[]>([]);
+    const [submitting, setSubmitting] = useState(false);
+
+    const ma = application.member_admission;
+    const memberNameEn = ma?.applicant_name_en ?? ma?.member_name_en ?? '';
+    const memberNameBn = ma?.applicant_name_bn ?? ma?.member_name_bn ?? '';
+    const nid = ma?.nid_number ?? ma?.nid_no ?? '';
+    const mobile = ma?.mobile_number ?? ma?.mobile_no ?? '';
+    const address = ma?.present_village_road ?? ma?.present_address_en ?? '';
     const formatAmount = (amount: number | null) => {
         if (!amount) return 'N/A';
         return new Intl.NumberFormat('bn-BD', {
@@ -126,10 +165,10 @@ export default function Show({ application }: Props) {
 
             <div className="py-6">
                 <div className="mx-auto max-w-6xl sm:px-6 lg:px-8">
-                    {/* Header */}
-                    <div className="mb-6 flex items-center justify-between">
-                        <div className="flex items-center gap-4">
-                            <Link href={route('member.loan-applications.index')}>
+                    {/* Header - hide actions when printing */}
+                    <div className="mb-6 flex items-center justify-between print:flex print:justify-center">
+                        <div className="flex items-center gap-4 print:gap-0">
+                            <Link href={routes.index} className="print:hidden">
                                 <Button variant="outline" size="icon">
                                     <ArrowLeft className="w-4 h-4" />
                                 </Button>
@@ -139,16 +178,24 @@ export default function Show({ application }: Props) {
                                 <p className="text-gray-600">আবেদন নং: {application.application_no}</p>
                             </div>
                         </div>
-                        <div className="flex gap-2">
+                        <div className="flex gap-2 print:hidden">
                             {application.status === 'draft' && (
-                                <Link href={route('member.loan-applications.edit', application.id)}>
-                                    <Button variant="outline">
-                                        <Edit className="w-4 h-4 mr-2" />
-                                        সম্পাদনা
-                                    </Button>
-                                </Link>
+                                <>
+                                    <Link href={routes.edit}>
+                                        <Button variant="outline">
+                                            <Edit className="w-4 h-4 mr-2" />
+                                            সম্পাদনা
+                                        </Button>
+                                    </Link>
+                                    {application.all_forms_complete && (
+                                        <Button onClick={() => setShowSubmitModal(true)}>
+                                            <Send className="w-4 h-4 mr-2" />
+                                            সাবমিট করুন
+                                        </Button>
+                                    )}
+                                </>
                             )}
-                            <Button variant="outline">
+                            <Button variant="outline" onClick={() => window.print()}>
                                 <Printer className="w-4 h-4 mr-2" />
                                 প্রিন্ট
                             </Button>
@@ -188,6 +235,37 @@ export default function Show({ application }: Props) {
                         </CardContent>
                     </Card>
 
+                    {/* Form completion status (for draft) */}
+                    {application.status === 'draft' && application.visible_form_ids && (
+                        <Card className="mb-6 border-l-4 border-l-blue-500">
+                            <CardHeader>
+                                <CardTitle className="text-base">ফর্মের অবস্থা</CardTitle>
+                                <CardDescription>
+                                    {application.all_forms_complete
+                                        ? 'সব প্রয়োজনীয় ফর্ম সেভ আছে। সাবমিট করতে পারবেন।'
+                                        : 'নিচের ফর্মগুলো পূরণ ও সেভ করুন তারপর সাবমিট করতে পারবেন।'}
+                                </CardDescription>
+                            </CardHeader>
+                            <CardContent>
+                                <div className="flex flex-wrap gap-2">
+                                    {application.visible_form_ids.map((formId) => {
+                                        const saved = application.form_saved?.[formId];
+                                        return (
+                                            <Badge
+                                                key={formId}
+                                                variant={saved ? 'default' : 'secondary'}
+                                                className={saved ? 'bg-green-600' : 'bg-amber-100 text-amber-800'}
+                                            >
+                                                {saved && <CheckCircle2 className="w-3 h-3 mr-1" />}
+                                                {FORM_NAMES[formId] || `ফর্ম ${formId}`}: {saved ? 'সেভ আছে' : 'বাকি'}
+                                            </Badge>
+                                        );
+                                    })}
+                                </div>
+                            </CardContent>
+                        </Card>
+                    )}
+
                     <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
                         {/* Main Content */}
                         <div className="lg:col-span-2 space-y-6">
@@ -203,31 +281,31 @@ export default function Show({ application }: Props) {
                                     <div className="grid grid-cols-2 gap-4">
                                         <div>
                                             <p className="text-sm text-gray-600">নাম (বাংলা)</p>
-                                            <p className="font-semibold">{application.member_admission.member_name_bn}</p>
+                                            <p className="font-semibold">{memberNameBn}</p>
                                         </div>
                                         <div>
                                             <p className="text-sm text-gray-600">Name (English)</p>
-                                            <p className="font-semibold">{application.member_admission.member_name_en}</p>
+                                            <p className="font-semibold">{memberNameEn}</p>
                                         </div>
                                         <div>
                                             <p className="text-sm text-gray-600">পিতার নাম</p>
-                                            <p className="font-semibold">{application.member_admission.father_name_en}</p>
+                                            <p className="font-semibold">{ma?.father_name_en ?? ''}</p>
                                         </div>
                                         <div>
                                             <p className="text-sm text-gray-600">মাতার নাম</p>
-                                            <p className="font-semibold">{application.member_admission.mother_name_en}</p>
+                                            <p className="font-semibold">{ma?.mother_name_en ?? ''}</p>
                                         </div>
                                         <div>
                                             <p className="text-sm text-gray-600">NID নং</p>
-                                            <p className="font-semibold font-mono">{application.member_admission.nid_no}</p>
+                                            <p className="font-semibold font-mono">{nid}</p>
                                         </div>
                                         <div>
                                             <p className="text-sm text-gray-600">মোবাইল নং</p>
-                                            <p className="font-semibold font-mono">{application.member_admission.mobile_no}</p>
+                                            <p className="font-semibold font-mono">{mobile}</p>
                                         </div>
                                         <div className="col-span-2">
                                             <p className="text-sm text-gray-600">ঠিকানা</p>
-                                            <p className="font-semibold">{application.member_admission.present_address_en}</p>
+                                            <p className="font-semibold">{address}</p>
                                         </div>
                                     </div>
                                 </CardContent>
@@ -490,7 +568,7 @@ export default function Show({ application }: Props) {
                                 <CardContent className="space-y-3">
                                     <div>
                                         <p className="text-sm text-gray-600">শাখা</p>
-                                        <p className="font-semibold">{application.branch.branch_name_bn}</p>
+                                        <p className="font-semibold">{application.branch.branch_name_bn ?? application.branch.name}</p>
                                     </div>
                                     {application.samity && (
                                         <div>
@@ -548,6 +626,62 @@ export default function Show({ application }: Props) {
                     </div>
                 </div>
             </div>
+
+            {/* Submit modal: approver selection */}
+            {showSubmitModal && (
+                <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+                    <div className="bg-white rounded-lg shadow-xl w-full max-w-md">
+                        <div className="px-6 py-4 border-b">
+                            <h3 className="text-lg font-bold">সাবমিট করুন</h3>
+                            <p className="text-sm text-gray-600">এই এরিয়া/জোনের যেকোনো অ্যাপ্রুভার সিলেক্ট করুন। সাবমিটের পর আর সম্পাদনা করা যাবে না।</p>
+                        </div>
+                        <div className="p-6 space-y-4 max-h-80 overflow-y-auto">
+                            {availableApprovers.length === 0 ? (
+                                <p className="text-sm text-amber-600">কোন অ্যাপ্রুভার পাওয়া যাচ্ছে না। দয়া করে অ্যাডমিনের সাথে যোগাযোগ করুন।</p>
+                            ) : (
+                                availableApprovers.map((user) => (
+                                    <label key={user.id} className="flex items-center gap-3 p-2 rounded border hover:bg-gray-50 cursor-pointer">
+                                        <input
+                                            type="checkbox"
+                                            checked={selectedApprovers.includes(user.id)}
+                                            onChange={(e) => {
+                                                if (e.target.checked) {
+                                                    setSelectedApprovers((prev) => [...prev, user.id]);
+                                                } else {
+                                                    setSelectedApprovers((prev) => prev.filter((id) => id !== user.id));
+                                                }
+                                            }}
+                                            className="w-4 h-4 rounded border-gray-300"
+                                        />
+                                        <div>
+                                            <p className="font-medium">{user.name}</p>
+                                            <p className="text-xs text-gray-500">{user.role?.name ?? user.level ?? ''} {user.email}</p>
+                                        </div>
+                                    </label>
+                                ))
+                            )}
+                        </div>
+                        <div className="px-6 py-4 border-t flex justify-end gap-2">
+                            <Button variant="outline" onClick={() => setShowSubmitModal(false)}>বাতিল</Button>
+                            <Button
+                                disabled={selectedApprovers.length === 0 || submitting}
+                                onClick={() => {
+                                    setSubmitting(true);
+                                    router.patch(routes.submit, {
+                                        selected_approvers: selectedApprovers,
+                                    }, {
+                                        preserveScroll: true,
+                                        onFinish: () => setSubmitting(false),
+                                        onSuccess: () => setShowSubmitModal(false),
+                                    });
+                                }}
+                            >
+                                {submitting ? 'সাবমিট হচ্ছে...' : 'সাবমিট করুন'}
+                            </Button>
+                        </div>
+                    </div>
+                </div>
+            )}
         </AdminLayout>
     );
 }

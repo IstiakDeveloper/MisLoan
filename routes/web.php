@@ -14,6 +14,7 @@ use App\Http\Controllers\MemberAdmissionController;
 use App\Http\Controllers\ApprovalController;
 use App\Http\Controllers\ProfileController;
 use App\Http\Controllers\HeadOfficeAdmissionController;
+use App\Http\Controllers\HeadOfficeLoanController;
 use App\Http\Controllers\LoanCategoryController;
 use App\Http\Controllers\LoanProductController;
 
@@ -142,6 +143,8 @@ Route::middleware(['auth', 'verified'])->group(function () {
         Route::patch('{approval}/approve', [ApprovalController::class, 'approve'])->name('approve');
         Route::patch('{approval}/reject', [ApprovalController::class, 'reject'])->name('reject');
         Route::patch('{approval}/return-to-branch', [ApprovalController::class, 'returnToBranch'])->name('return-to-branch');
+        Route::patch('loan/{loanApproval}/approve', [ApprovalController::class, 'approveLoan'])->name('loan.approve');
+        Route::patch('loan/{loanApproval}/reject', [ApprovalController::class, 'rejectLoan'])->name('loan.reject');
     });
 
     // Member Loan & Savings Application Routes - For members/branch users
@@ -199,6 +202,13 @@ Route::middleware(['auth', 'verified'])->group(function () {
         Route::patch('admissions/{admission}/reject', [HeadOfficeAdmissionController::class, 'rejectSingle'])->name('admissions.reject');
         Route::post('admissions/approve-all', [HeadOfficeAdmissionController::class, 'approveAll'])->name('admissions.approve-all');
         Route::delete('issues/{issue}', [HeadOfficeAdmissionController::class, 'deleteIssue'])->name('issues.delete');
+
+        // Head Office Loan Applications (member form-based loans)
+        Route::get('process-loans', [HeadOfficeLoanController::class, 'process'])->name('process-loans');
+        Route::get('loans/{loanApplication}', [HeadOfficeLoanController::class, 'show'])->name('loans.show');
+        Route::post('loans/{loanApplication}/issue', [HeadOfficeLoanController::class, 'storeIssue'])->name('loans.issue');
+        Route::patch('loans/{loanApplication}/approve', [HeadOfficeLoanController::class, 'approveSingle'])->name('loans.approve');
+        Route::patch('loans/{loanApplication}/reject', [HeadOfficeLoanController::class, 'rejectSingle'])->name('loans.reject');
     });
 
     // Loan Submissions Management - Only for SuperAdmin/Head Office

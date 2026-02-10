@@ -568,6 +568,9 @@ export default function LoanApplicationApproval({
     existingApplication,
     savedData,
 }: Props) {
+    // সিলেক্টেড লোন ক্যাটাগরির নাম (জাগরণ/বুনিয়াদ/অগ্রসর এর বদলে)
+    const categoryName = loanCategory?.category_name_bn || 'জাগরণ/বুনিয়াদ/অগ্রসর';
+
     const [activePage, setActivePage] = useState(1);
     const [errors, setErrors] = useState<Record<string, string>>({});
 
@@ -1217,7 +1220,7 @@ export default function LoanApplicationApproval({
             },
             {
                 onSuccess: () => {
-                    alert('জাগরণ/বুনিয়াদ/আগ্রসর ঋণ আবেদন ও অনুমোদনপত্র ড্রাফট হিসেবে সংরক্ষিত হয়েছে।');
+                    alert(`${categoryName} ঋণ আবেদন ও অনুমোদনপত্র ড্রাফট হিসেবে সংরক্ষিত হয়েছে।`);
                     router.visit(`/member/loan-applications/form-selection?member_id=${member.id}&loan_product_id=${loanProduct.id}&loan_category_id=${loanCategory.id}&requested_amount=${requestedAmount}`);
                 },
                 onError: (errors) => {
@@ -1255,7 +1258,7 @@ export default function LoanApplicationApproval({
 
                 {/* Form Title in rounded box */}
                 <div className="text-center mb-3 rounded-lg border-2 border-gray-600 p-2">
-                    <h2 className="text-base font-bold print:text-sm">(জাগরণ/বুনিয়াদ/অগ্রসর ঋণ আবেদন ও অনুমোদনপত্র)</h2>
+                    <h2 className="text-base font-bold print:text-sm">({categoryName} ঋণ আবেদন ও অনুমোদনপত্র)</h2>
                 </div>
 
                 {/* Dates row: আবেদনের তারিখ | ঋণ অনুমোদনের তারিখ | ঋণ বিতরণের তারিখ | ঋণ পরিশোধের তারিখ (each DD MM YYYY) */}
@@ -1290,7 +1293,7 @@ export default function LoanApplicationApproval({
                 <div className="mb-3 text-xs leading-relaxed">
                     <p>
                         জনাব,<br />
-                        আমি নিম্নস্বাক্ষরকারী অত্র সংস্থার আওতাধীন <span className="border-b border-dotted border-gray-600 inline-block min-w-[100px] align-bottom">{data.committee_name || ''}</span> সমিতির (সমিতি কোড <span className="border-b border-dotted border-gray-600 inline-block min-w-[80px] align-bottom">{data.committee_code || ''}</span>) একজন নতুন/পুরাতন সদস্য। আমি গত <span className="border-b border-dotted border-gray-600 inline-block min-w-[40px] align-bottom">{data.years_involved || ''}</span> বছর যাবৎ জাগরণ/বুনিয়াদ/অগ্রসর কার্যক্রমের সাথে সম্পৃক্ত। বর্তমানে আমার ব্যবসা পরিচালনা ও পরিধি বৃদ্ধির লক্ষ্যে জাগরণ/বুনিয়াদ/অগ্রসর কর্মসূচির আওতায় ঋণ গ্রহণ করতে ইচ্ছুক। এমতাবস্থায় ঋণ গ্রহণার্থে আমার প্রয়োজনীয় তথ্যাবলি নিম্নে প্রদান করলাম:
+                        আমি নিম্নস্বাক্ষরকারী অত্র সংস্থার আওতাধীন <span className="border-b border-dotted border-gray-600 inline-block min-w-[100px] align-bottom">{data.committee_name || ''}</span> সমিতির (সমিতি কোড <span className="border-b border-dotted border-gray-600 inline-block min-w-[80px] align-bottom">{data.committee_code || ''}</span>) একজন নতুন/পুরাতন সদস্য। আমি গত <span className="border-b border-dotted border-gray-600 inline-block min-w-[40px] align-bottom">{data.years_involved || ''}</span> বছর যাবৎ {categoryName} কার্যক্রমের সাথে সম্পৃক্ত। বর্তমানে আমার ব্যবসা পরিচালনা ও পরিধি বৃদ্ধির লক্ষ্যে {categoryName} কর্মসূচির আওতায় ঋণ গ্রহণ করতে ইচ্ছুক। এমতাবস্থায় ঋণ গ্রহণার্থে আমার প্রয়োজনীয় তথ্যাবলি নিম্নে প্রদান করলাম:
                     </p>
                 </div>
 
@@ -1436,7 +1439,7 @@ export default function LoanApplicationApproval({
                 {/* Final declaration + amount in digits & words */}
                 <div className="mb-2 text-xs leading-relaxed">
                     <p>
-                        উল্লিখিত তথ্যাবলি সঠিক। আমার আবেদনকৃত <span className="border-b border-dotted border-gray-600 inline-block min-w-[80px] align-bottom">{data.approval_amount_digits || ''}</span> টাকা জাগরণ/বুনিয়াদ/অগ্রসর কর্মসূচির আওতায় ঋণ প্রদান করলে সংস্থার যাবতীয় নিয়ম-কানুন মেনে নির্ধারিত তারিখে ঋণের কিস্তি পরিশোধ করবো।
+                        উল্লিখিত তথ্যাবলি সঠিক। আমার আবেদনকৃত <span className="border-b border-dotted border-gray-600 inline-block min-w-[80px] align-bottom">{data.approval_amount_digits || ''}</span> টাকা {categoryName} কর্মসূচির আওতায় ঋণ প্রদান করলে সংস্থার যাবতীয় নিয়ম-কানুন মেনে নির্ধারিত তারিখে ঋণের কিস্তি পরিশোধ করবো।
                     </p>
                 </div>
 
@@ -1485,7 +1488,7 @@ export default function LoanApplicationApproval({
             <div className="bg-white border border-gray-300 p-4 print:p-2" style={{ fontSize: '11px', pageBreakAfter: 'always' }}>
                 {/* Form Title in rounded box (no header/logo on Page 2) */}
                 <div className="text-center mb-3 rounded-lg border-2 border-gray-600 p-2">
-                    <h2 className="text-base font-bold print:text-sm">জাগরণ/বুনিয়াদ/অগ্রসর ঋণের প্রোফাইল</h2>
+                    <h2 className="text-base font-bold print:text-sm">{categoryName} ঋণের প্রোফাইল</h2>
                 </div>
 
                 {/* ক. উদ্যোগ বিষয়ক সাধারণ তথ্যাবলী */}
@@ -2248,7 +2251,7 @@ export default function LoanApplicationApproval({
 
     return (
         <AdminLayout>
-            <Head title="জাগরণ/বুনিয়াদ/আগ্রসর ঋণ আবেদন ও অনুমোদনপত্র">
+            <Head title={`${categoryName} ঋণ আবেদন ও অনুমোদনপত্র`}>
                 <style>{`
                     @media print {
                         @page {
@@ -2295,7 +2298,7 @@ export default function LoanApplicationApproval({
                             Back
                         </button>
                         <div>
-                            <h1 className="text-lg font-bold">জাগরণ/বুনিয়াদ/আগ্রসর ঋণ আবেদন ও অনুমোদনপত্র</h1>
+                            <h1 className="text-lg font-bold">{categoryName} ঋণ আবেদন ও অনুমোদনপত্র</h1>
                             <p className="text-xs text-gray-600">Form পূরণ করুন এবং সংরক্ষণ করুন।</p>
                             {existingApplication && (
                                 <p className="text-xs text-blue-600 mt-1">
@@ -2348,7 +2351,7 @@ export default function LoanApplicationApproval({
                             <>
                                 {/* Page 1: জাগরণ/বুনিয়াদ/অগ্রসর - Basic & Dates */}
                                 <div className="bg-white rounded-lg shadow-sm p-4 border">
-                                    <h3 className="text-sm font-bold mb-3">পেজ ১: জাগরণ/বুনিয়াদ/অগ্রসর ঋণ আবেদন ও অনুমোদনপত্র</h3>
+                                    <h3 className="text-sm font-bold mb-3">পেজ ১: {categoryName} ঋণ আবেদন ও অনুমোদনপত্র</h3>
                                     <div className="space-y-3 text-sm">
                                         <div className="grid grid-cols-2 gap-3">
                                             <div>
@@ -2393,7 +2396,7 @@ export default function LoanApplicationApproval({
                                                 <input type="text" value={data.committee_code} onChange={(e) => setData('committee_code', e.target.value)} className="w-full px-2 py-1.5 text-sm border rounded-md" />
                                             </div>
                                             <div>
-                                                <label className="block text-xs font-medium mb-1">গত ... বছর (জাগরণ/বুনিয়াদ/অগ্রসর সাথে)</label>
+                                                <label className="block text-xs font-medium mb-1">গত ... বছর ({categoryName} সাথে)</label>
                                                 <input type="text" value={data.years_involved} onChange={(e) => setData('years_involved', e.target.value)} placeholder="বছর" className="w-full px-2 py-1.5 text-sm border rounded-md" />
                                             </div>
                                             <div>
@@ -3000,7 +3003,7 @@ export default function LoanApplicationApproval({
                             </>
                         )}
 
-                        {/* Page 2: জাগরণ/বুনিয়াদ/অগ্রসর ঋণের প্রোফাইল */}
+                        {/* Page 2: ক্যাটাগরি ঋণের প্রোফাইল */}
                         {activePage === 2 && (
                             <>
                                 {/* ক. উদ্যোগ বিষয়ক সাধারণ তথ্যাবলী */}

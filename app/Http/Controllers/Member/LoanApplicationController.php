@@ -7,6 +7,7 @@ use App\Models\LoanApplication;
 use App\Models\LoanCategory;
 use App\Models\LoanProduct;
 use App\Models\MemberAdmission;
+use App\Services\ApprovalService;
 use Illuminate\Http\Request;
 use Inertia\Inertia;
 use Illuminate\Support\Facades\DB;
@@ -40,8 +41,9 @@ class LoanApplicationController extends Controller
         $startOfDay = \Carbon\Carbon::parse($selectedDate)->startOfDay();
         $endOfDay = \Carbon\Carbon::parse($selectedDate)->endOfDay();
         
+        // Main query: only small columns (no LOBs) so ORDER BY uses minimal sort buffer.
         $applications = LoanApplication::with([
-                'loanProduct:id,product_name,product_name_bn,product_code',
+                'loanProduct:id,product_name,product_name_bn,product_code,installment_type',
                 'loanCategory:id,category_name,category_name_bn',
                 'memberAdmission:id,applicant_name_bn,application_no',
                 'branch:id,name,code'
@@ -52,12 +54,62 @@ class LoanApplicationController extends Controller
             ->whereBetween('created_at', [$startOfDay, $endOfDay])
             ->orderBy('created_at', 'desc')
             ->select([
-                'id', 'application_no', 'member_admission_id', 'loan_product_id', 
-                'loan_category_id', 'branch_id', 'form_type', 'status', 
+                'id', 'application_no', 'member_admission_id', 'loan_product_id',
+                'loan_category_id', 'branch_id', 'form_type', 'status',
                 'requested_amount', 'approved_amount', 'created_at', 'updated_at',
-                'submitted_at', 'reviewed_at', 'purpose_of_loan'
+                'submitted_at', 'reviewed_at', 'purpose_of_loan',
             ])
             ->get();
+
+        // Form completion flags in a separate query (no ORDER BY = no sort buffer).
+        $formFlags = collect();
+        if ($applications->isNotEmpty()) {
+            $formFlags = DB::table('loan_applications')
+                ->whereIn('id', $applications->pluck('id'))
+                ->selectRaw('id, (CASE WHEN loan_agreement_data IS NOT NULL AND LENGTH(TRIM(COALESCE(loan_agreement_data, ""))) > 2 THEN 1 ELSE 0 END) as has_form_1')
+                ->selectRaw('(CASE WHEN guarantor_info IS NOT NULL AND LENGTH(TRIM(COALESCE(guarantor_info, ""))) > 2 THEN 1 ELSE 0 END) as has_form_2')
+                ->selectRaw('(CASE WHEN nominee_info IS NOT NULL AND LENGTH(TRIM(COALESCE(nominee_info, ""))) > 2 THEN 1 ELSE 0 END) as has_form_3')
+                ->selectRaw('(CASE WHEN asset_info IS NOT NULL AND LENGTH(TRIM(COALESCE(asset_info, ""))) > 2 THEN 1 ELSE 0 END) as has_form_4')
+                ->selectRaw('(CASE WHEN business_plan IS NOT NULL AND LENGTH(TRIM(COALESCE(business_plan, ""))) > 2 THEN 1 ELSE 0 END) as has_form_5')
+                ->get()
+                ->keyBy('id');
+        }
+
+        // ফর্ম অনুযায়ী কমপ্লিশন: প্রতিটি আবেদনের জন্য visibleFormIds + কোন ফর্ম সেভ আছে
+        $oneLakh = 100000.0;
+        $applications = $applications->map(function ($app) use ($oneLakh, $formFlags) {
+            $product = $app->loanProduct;
+            $installmentType = $product->installment_type ?? 'monthly';
+            $amount = (float) $app->requested_amount;
+
+            if (strtolower((string) $installmentType) === 'weekly') {
+                $visibleFormIds = [1, 2, 3, 4];
+            } else {
+                $visibleFormIds = $amount < $oneLakh ? [5, 2, 3, 4] : [5, 3];
+            }
+
+            $flags = $formFlags->get($app->id);
+            $hasForm1 = $flags ? (bool) $flags->has_form_1 : false;
+            $hasForm2 = $flags ? (bool) $flags->has_form_2 : false;
+            $hasForm3 = $flags ? (bool) $flags->has_form_3 : false;
+            $hasForm4 = $flags ? (bool) $flags->has_form_4 : false;
+            $hasForm5 = $flags ? (bool) $flags->has_form_5 : false;
+
+            $formSaved = [
+                1 => $hasForm1,
+                2 => $hasForm2,
+                3 => $hasForm3,
+                4 => $hasForm4,
+                5 => $hasForm5,
+            ];
+
+            $allRequiredSaved = collect($visibleFormIds)->every(fn ($id) => $formSaved[$id] ?? false);
+
+            $app->visible_form_ids = $visibleFormIds;
+            $app->form_saved = $formSaved;
+            $app->all_forms_complete = $allRequiredSaved;
+            return $app;
+        });
 
         // Calculate stats for the selected date
         $stats = [
@@ -356,32 +408,110 @@ class LoanApplicationController extends Controller
             'samity',
             'submittedBy',
             'reviewedBy',
-            'disbursedBy'
+            'disbursedBy',
+            'approvals.user',
         ])->findOrFail($id);
+
+        $oneLakh = 100000.0;
+        $product = $application->loanProduct;
+        $installmentType = $product->installment_type ?? 'monthly';
+        $amount = (float) $application->requested_amount;
+
+        if (strtolower((string) $installmentType) === 'weekly') {
+            $visibleFormIds = [1, 2, 3, 4];
+        } else {
+            $visibleFormIds = $amount < $oneLakh ? [5, 2, 3, 4] : [5, 3];
+        }
+
+        $formSaved = [
+            1 => !empty($application->loan_agreement_data),
+            2 => !empty($application->guarantor_info),
+            3 => !empty($application->nominee_info),
+            4 => !empty($application->asset_info),
+            5 => !empty($application->business_plan),
+        ];
+        $allFormsComplete = collect($visibleFormIds)->every(fn ($id) => $formSaved[$id] ?? false);
+
+        $application->visible_form_ids = $visibleFormIds;
+        $application->form_saved = $formSaved;
+        $application->all_forms_complete = $allFormsComplete;
+
+        $availableApprovers = [];
+        if ($application->branch_id) {
+            $availableApprovers = app(ApprovalService::class)->getAvailableApprovers($application->branch_id);
+        }
 
         return Inertia::render('Member/LoanApplications/Show', [
             'application' => $application,
+            'availableApprovers' => $availableApprovers,
+            'routes' => [
+                'index' => route('member.loan-applications.index'),
+                'edit' => route('member.loan-applications.edit', $application->id),
+                'print' => route('member.loan-applications.print', $application->id),
+                'submit' => route('member.loan-applications.submit', $application->id),
+            ],
         ]);
     }
 
     /**
-     * Submit loan application for review
+     * Submit loan application for review (with approver selection)
      */
-    public function submit($id)
+    public function submit(Request $request, $id)
     {
-        $application = LoanApplication::findOrFail($id);
+        $application = LoanApplication::with('loanProduct')->findOrFail($id);
 
         if (!$application->canBeEdited()) {
             return back()->withErrors(['error' => 'This application cannot be submitted']);
         }
 
-        $application->update([
-            'status' => 'submitted',
-            'submitted_at' => now(),
+        $request->validate([
+            'selected_approvers' => 'required|array|min:1',
+            'selected_approvers.*' => 'exists:users,id',
+        ], [
+            'selected_approvers.required' => 'কমপক্ষে একজন অ্যাপ্রুভার সিলেক্ট করুন।',
         ]);
 
+        $oneLakh = 100000.0;
+        $product = $application->loanProduct;
+        $installmentType = $product->installment_type ?? 'monthly';
+        $amount = (float) $application->requested_amount;
+        if (strtolower((string) $installmentType) === 'weekly') {
+            $visibleFormIds = [1, 2, 3, 4];
+        } else {
+            $visibleFormIds = $amount < $oneLakh ? [5, 2, 3, 4] : [5, 3];
+        }
+
+        $formSaved = [
+            1 => !empty($application->loan_agreement_data),
+            2 => !empty($application->guarantor_info),
+            3 => !empty($application->nominee_info),
+            4 => !empty($application->asset_info),
+            5 => !empty($application->business_plan),
+        ];
+        $allRequiredSaved = collect($visibleFormIds)->every(fn ($id) => $formSaved[$id] ?? false);
+
+        if (!$allRequiredSaved) {
+            return back()->withErrors(['error' => 'সব প্রয়োজনীয় ফর্ম পূরণ করে তারপর সাবমিট করুন।']);
+        }
+
+        DB::beginTransaction();
+        try {
+            $application->update([
+                'selected_approvers' => $request->selected_approvers,
+                'status' => LoanApplication::STATUS_SUBMITTED,
+                'submitted_at' => now(),
+                'submitted_by' => $request->user()->id,
+            ]);
+
+            app(ApprovalService::class)->createLoanApprovalWorkflow($application);
+            DB::commit();
+        } catch (\Exception $e) {
+            DB::rollBack();
+            return back()->withErrors(['error' => $e->getMessage()]);
+        }
+
         return redirect()->route('member.loan-applications.show', $application->id)
-            ->with('success', 'Loan application submitted for review');
+            ->with('success', 'ঋণ আবেদন সাবমিট হয়েছে। এরিয়া/জোন অ্যাপ্রুভার অনুমোদন করলে হেড অফিসে যাবে।');
     }
 
     /**
@@ -504,11 +634,32 @@ class LoanApplicationController extends Controller
         // Check if loan application approval data exists (check business_plan field)
         $hasLoanApplicationApprovalDraft = $draftApplication && !empty($draftApplication->business_plan) && $draftApplication->form_type === 'loan_application_approval';
 
+        // Loan product অনুযায়ী শুধু প্রয়োজনীয় ফর্ম দেখানো হবে:
+        // ঋণ চুক্তিপত্র (১ নং) শুধু সাপ্তাহিকের ক্ষেত্রে; মাসিকের ক্ষেত্রে থাকবে না।
+        // সাপ্তাহিক (weekly): ১, ২, ৩, ৪ নং ফর্ম
+        // মাসিক (monthly) ১ লাখের নিচে: ৫ নং ১ নাম্বারে (ঋণ চুক্তির বদলে), তারপর ২, ৩, ৪
+        // মাসিক ১ লাখ বা তার উপরে: শুধু ৫ নং ও ৩ নং ফর্ম
+        $installmentType = $loanProduct->installment_type ?? 'monthly';
+        $amount = (float) $requestedAmount;
+        $oneLakh = 100000.0;
+
+        if (strtolower((string) $installmentType) === 'weekly') {
+            $visibleFormIds = [1, 2, 3, 4];
+        } else {
+            // monthly (অথবা lump_sum / অন্য যেকোনো) — ঋণ চুক্তিপত্র (১ নং) নাই
+            if ($amount < $oneLakh) {
+                $visibleFormIds = [5, 2, 3, 4]; // ৫ নং প্রথমে, তারপর ২, ৩, ৪
+            } else {
+                $visibleFormIds = [5, 3]; // শুধু ৫ ও ৩ নং
+            }
+        }
+
         return Inertia::render('Member/LoanApplications/FormSelection', [
             'member' => $member,
             'loanProduct' => $loanProduct,
             'loanCategory' => $loanCategory,
-            'requestedAmount' => (float) $requestedAmount,
+            'requestedAmount' => $amount,
+            'visibleFormIds' => $visibleFormIds,
             'hasLoanAgreementDraft' => $hasLoanAgreementDraft,
             'hasGuarantorCommitmentDraft' => $hasGuarantorCommitmentDraft,
             'hasDeathRiskFundDraft' => $hasDeathRiskFundDraft,

@@ -4,6 +4,8 @@ namespace App\Services;
 
 use App\Models\MemberAdmission;
 use App\Models\MemberAdmissionApproval;
+use App\Models\LoanApplication;
+use App\Models\LoanApplicationApproval;
 use App\Models\User;
 use Illuminate\Support\Facades\DB;
 
@@ -342,5 +344,100 @@ class ApprovalService
 
         // Remove duplicates and return
         return $approvers->unique('id')->values();
+    }
+
+    /**
+     * Create approval workflow when loan application is submitted
+     */
+    public function createLoanApprovalWorkflow(LoanApplication $loan): void
+    {
+        DB::transaction(function () use ($loan) {
+            $loan->approvals()->delete();
+
+            $selectedApproverIds = $loan->selected_approvers ?? [];
+            if (empty($selectedApproverIds)) {
+                throw new \Exception('No approvers selected. Please select at least one approver.');
+            }
+
+            $sequence = 1;
+            foreach ($selectedApproverIds as $userId) {
+                LoanApplicationApproval::create([
+                    'loan_application_id' => $loan->id,
+                    'user_id' => $userId,
+                    'level' => 'branch',
+                    'sequence' => $sequence,
+                    'status' => 'pending',
+                ]);
+                $sequence++;
+            }
+        });
+    }
+
+    /**
+     * Approve a loan application approval step
+     */
+    public function approveLoan(LoanApplicationApproval $approval, ?string $comments = null): bool
+    {
+        if ($approval->status !== 'pending' || !$approval->isCurrentPending()) {
+            return false;
+        }
+
+        DB::transaction(function () use ($approval, $comments) {
+            $approval->update([
+                'status' => 'approved',
+                'comments' => $comments,
+                'approved_at' => now(),
+                'approver_signature' => $approval->user->signature ?? null,
+            ]);
+
+            $loan = $approval->loanApplication;
+            $pendingCount = $loan->approvals()->where('status', 'pending')->count();
+
+            if ($pendingCount === 0) {
+                $loan->update(['status' => LoanApplication::STATUS_PENDING_HEAD_OFFICE]);
+            } elseif ($loan->status === LoanApplication::STATUS_SUBMITTED) {
+                $loan->update(['status' => 'under_review']);
+            }
+        });
+
+        return true;
+    }
+
+    /**
+     * Reject a loan application approval step
+     */
+    public function rejectLoan(LoanApplicationApproval $approval, string $comments): bool
+    {
+        if ($approval->status !== 'pending' || !$approval->isCurrentPending()) {
+            return false;
+        }
+
+        DB::transaction(function () use ($approval, $comments) {
+            $approval->update([
+                'status' => 'rejected',
+                'comments' => $comments,
+                'approved_at' => now(),
+            ]);
+            $approval->loanApplication->update(['status' => LoanApplication::STATUS_REJECTED]);
+        });
+
+        return true;
+    }
+
+    /**
+     * Get pending loan approvals for a user (area/zone approvers)
+     */
+    public function getPendingLoanApprovalsForUser(User $user)
+    {
+        return LoanApplicationApproval::where('user_id', $user->id)
+            ->where('status', 'pending')
+            ->whereHas('loanApplication', function ($query) {
+                $query->whereIn('status', [LoanApplication::STATUS_SUBMITTED, 'under_review']);
+            })
+            ->with(['loanApplication.memberAdmission', 'loanApplication.branch', 'loanApplication.loanProduct', 'loanApplication.loanCategory'])
+            ->get()
+            ->filter(function ($approval) {
+                return $approval->isCurrentPending();
+            });
     }
 }

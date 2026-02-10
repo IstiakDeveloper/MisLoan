@@ -25,20 +25,31 @@ interface LoanCategory {
     loan_products: LoanProduct[];
 }
 
+const FORM_NAMES: Record<number, string> = {
+    1: 'ঋণ চুক্তি',
+    2: 'জামিনদার অঙ্গীকার',
+    3: 'মৃত্যুঝুঁকি তহবিল',
+    4: 'সরেজমিন তদন্ত',
+    5: 'আবেদন ও অনুমোদন',
+};
+
 interface LoanApplication {
     id: number;
     application_no: string;
     status: string;
     requested_amount: number;
     approved_amount?: number;
-    loan_product: LoanProduct;
+    loan_product: LoanProduct & { installment_type?: string };
     loan_category: LoanCategory;
     created_at: string;
     member_admission?: {
         id: number;
-        name: string;
-        member_code: string;
+        applicant_name_bn?: string;
+        application_no?: string;
     };
+    visible_form_ids?: number[];
+    form_saved?: Record<number, boolean>;
+    all_forms_complete?: boolean;
 }
 
 interface Stats {
@@ -326,8 +337,19 @@ export default function Index({ categories, applications, stats, selectedDate, f
                                         <tr key={app.id} className="hover:bg-gray-50">
                                             <td className="px-3 py-2">
                                                 <div className="font-medium text-gray-900">{app.application_no}</div>
-                                                {app.status === 'draft' && (
-                                                    <div className="text-[10px] text-blue-600 mt-0.5">খান চুক্তিপত্র ফর্ম</div>
+                                                {app.member_admission?.applicant_name_bn && (
+                                                    <div className="text-[10px] text-gray-500">{app.member_admission.applicant_name_bn}</div>
+                                                )}
+                                                {app.status === 'draft' && app.visible_form_ids && (
+                                                    <div className="text-[10px] mt-0.5">
+                                                        {app.all_forms_complete ? (
+                                                            <span className="text-green-600">সব ফর্ম সেভ আছে</span>
+                                                        ) : (
+                                                            <span className="text-amber-600">
+                                                                বাকি: {(app.visible_form_ids || []).filter((id) => !app.form_saved?.[id]).map((id) => FORM_NAMES[id] || id).join(', ')}
+                                                            </span>
+                                                        )}
+                                                    </div>
                                                 )}
                                             </td>
                                             <td className="px-3 py-2 text-gray-600">
@@ -376,6 +398,15 @@ export default function Index({ categories, applications, stats, selectedDate, f
                                                                 <Trash2 className="w-3.5 h-3.5 text-red-600" />
                                                             </button>
                                                         </>
+                                                    )}
+                                                    {app.status === 'draft' && app.all_forms_complete && (
+                                                        <button
+                                                            onClick={() => router.get(`/member/loan-applications/${app.id}`)}
+                                                            className="text-[10px] px-1.5 py-0.5 bg-green-100 text-green-700 rounded"
+                                                            title="Submit"
+                                                        >
+                                                            সাবমিট
+                                                        </button>
                                                     )}
                                                 </div>
                                             </td>

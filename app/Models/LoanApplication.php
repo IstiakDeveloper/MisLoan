@@ -4,6 +4,7 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class LoanApplication extends Model
 {
@@ -77,6 +78,7 @@ class LoanApplication extends Model
         'manager_reviewed_at',
         'committee_reviewed_at',
         'loan_agreement_data',
+        'selected_approvers',
     ];
 
     protected $casts = [
@@ -118,12 +120,14 @@ class LoanApplication extends Model
         'manager_reviewed_at' => 'datetime',
         'committee_reviewed_at' => 'datetime',
         'loan_agreement_data' => 'array',
+        'selected_approvers' => 'array',
     ];
 
     // Status constants
     const STATUS_DRAFT = 'draft';
     const STATUS_SUBMITTED = 'submitted';
     const STATUS_UNDER_REVIEW = 'under_review';
+    const STATUS_PENDING_HEAD_OFFICE = 'pending_head_office';
     const STATUS_APPROVED = 'approved';
     const STATUS_REJECTED = 'rejected';
     const STATUS_DISBURSED = 'disbursed';
@@ -168,6 +172,16 @@ class LoanApplication extends Model
     public function disbursedBy(): BelongsTo
     {
         return $this->belongsTo(User::class, 'disbursed_by');
+    }
+
+    public function approvals(): HasMany
+    {
+        return $this->hasMany(LoanApplicationApproval::class)->orderBy('sequence');
+    }
+
+    public function issues(): HasMany
+    {
+        return $this->hasMany(LoanApplicationIssue::class);
     }
 
     // Helper methods

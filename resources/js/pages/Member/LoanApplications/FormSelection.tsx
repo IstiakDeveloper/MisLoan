@@ -7,6 +7,8 @@ interface Props {
     loanProduct: any;
     loanCategory: any;
     requestedAmount: number;
+    /** Backend sends which form IDs to show based on product (weekly/monthly) and amount */
+    visibleFormIds: number[];
     hasLoanAgreementDraft?: boolean;
     hasGuarantorCommitmentDraft?: boolean;
     hasDeathRiskFundDraft?: boolean;
@@ -57,7 +59,12 @@ const forms = [
     }
 ];
 
-export default function FormSelection({ member, loanProduct, loanCategory, requestedAmount, hasLoanAgreementDraft, hasGuarantorCommitmentDraft, hasDeathRiskFundDraft, hasFieldInvestigationDraft, hasLoanApplicationApprovalDraft }: Props) {
+export default function FormSelection({ member, loanProduct, loanCategory, requestedAmount, visibleFormIds = [1, 2, 3, 4, 5], hasLoanAgreementDraft, hasGuarantorCommitmentDraft, hasDeathRiskFundDraft, hasFieldInvestigationDraft, hasLoanApplicationApprovalDraft }: Props) {
+    // Backend-এর visibleFormIds অনুযায়ী ফর্ম ফিল্টার ও সাজানো (যেমন মাসিকের ক্ষেত্রে ৫ নং ১ নাম্বারে)
+    const visibleForms = forms
+        .filter((f) => visibleFormIds.includes(f.id))
+        .sort((a, b) => visibleFormIds.indexOf(a.id) - visibleFormIds.indexOf(b.id));
+
     const handleFormClick = (formRoute: string) => {
         router.visit(`/member/loan-applications/forms/${formRoute}?member_id=${member.id}&product_id=${loanProduct.id}&category_id=${loanCategory.id}&amount=${requestedAmount}`);
     };
@@ -104,7 +111,7 @@ export default function FormSelection({ member, loanProduct, loanCategory, reque
                         প্রয়োজনীয় ফর্মসমূহ <span className="text-sm font-normal text-gray-600">(Required Forms)</span>
                     </h2>
 
-                    {forms.map((form) => {
+                    {visibleForms.map((form) => {
                         const isLoanAgreement = form.route === 'loan-agreement';
                         const isGuarantorCommitment = form.route === 'guarantor-commitment';
                         const isDeathRiskFund = form.route === 'death-risk-fund';
@@ -135,7 +142,9 @@ export default function FormSelection({ member, loanProduct, loanCategory, reque
                                     <div className="flex items-start justify-between mb-2">
                                         <div>
                                             <h3 className="text-base font-bold text-gray-900 mb-1">
-                                                {form.name_bn}
+                                                {form.id === 5 && loanCategory?.category_name_bn
+                                                    ? `${loanCategory.category_name_bn} ঋণ আবেদন ও অনুমোদনপত্র`
+                                                    : form.name_bn}
                                             </h3>
                                             <p className="text-xs text-gray-600 mb-2">{form.name_en}</p>
                                         </div>
@@ -153,7 +162,11 @@ export default function FormSelection({ member, loanProduct, loanCategory, reque
                                             )}
                                         </div>
                                     </div>
-                                    <p className="text-sm text-gray-600 mb-3">{form.description}</p>
+                                    <p className="text-sm text-gray-600 mb-3">
+                                        {form.id === 5 && loanCategory?.category_name_bn
+                                            ? `${loanCategory.category_name_bn} ক্যাটাগরির ঋণ আবেদন ও অনুমোদন ফরম`
+                                            : form.description}
+                                    </p>
 
                                     <div className="flex items-center gap-2">
                                         <button className={`text-sm font-medium ${

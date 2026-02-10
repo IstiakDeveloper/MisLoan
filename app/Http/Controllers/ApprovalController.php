@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Models\LoanApplicationApproval;
 use App\Models\MemberAdmissionApproval;
 use App\Services\ApprovalService;
 use Illuminate\Http\Request;
@@ -21,7 +22,25 @@ class ApprovalController extends Controller
      */
     public function index()
     {
-        $pendingApprovals = $this->approvalService->getPendingApprovalsForUser(auth()->user());
+        $user = auth()->user();
+        $pendingApprovals = $this->approvalService->getPendingApprovalsForUser($user);
+        $pendingLoanApprovals = $this->approvalService->getPendingLoanApprovalsForUser($user);
+
+        $loanApprovalsData = $pendingLoanApprovals->map(function ($approval) {
+            $loan = $approval->loanApplication;
+            $member = $loan->memberAdmission;
+            return [
+                'id' => $approval->id,
+                'loan_application_id' => $loan->id,
+                'application_no' => $loan->application_no,
+                'applicant_name' => $member ? ($member->applicant_name_en ?? $member->applicant_name_bn ?? '') : '',
+                'applicant_name_bn' => $member ? ($member->applicant_name_bn ?? '') : '',
+                'branch_name' => $loan->branch ? $loan->branch->name : '',
+                'requested_amount' => $loan->requested_amount,
+                'submitted_at' => $loan->submitted_at,
+                'level' => $approval->level,
+            ];
+        });
 
         return Inertia::render('Approvals/Index', [
             'approvals' => $pendingApprovals->map(function ($approval) {
@@ -41,6 +60,7 @@ class ApprovalController extends Controller
                     'status' => $approval->memberAdmission->status,
                 ];
             }),
+            'loanApprovals' => $loanApprovalsData,
         ]);
     }
 
@@ -99,5 +119,31 @@ class ApprovalController extends Controller
         }
 
         return back()->with('error', 'Unable to return this application.');
+    }
+
+    /**
+     * Approve a loan application (area/zone approver)
+     */
+    public function approveLoan(Request $request, LoanApplicationApproval $loanApproval)
+    {
+        $request->validate(['comments' => 'nullable|string|max:1000']);
+        $success = $this->approvalService->approveLoan($loanApproval, $request->comments);
+        if ($success) {
+            return redirect()->route('approvals.index')->with('success', 'ঋণ আবেদন অনুমোদিত হয়েছে।');
+        }
+        return back()->with('error', 'অনুমোদন করা যাচ্ছে না।');
+    }
+
+    /**
+     * Reject a loan application (area/zone approver)
+     */
+    public function rejectLoan(Request $request, LoanApplicationApproval $loanApproval)
+    {
+        $request->validate(['comments' => 'required|string|max:1000']);
+        $success = $this->approvalService->rejectLoan($loanApproval, $request->comments);
+        if ($success) {
+            return redirect()->route('approvals.index')->with('success', 'ঋণ আবেদন প্রত্যাখ্যান হয়েছে।');
+        }
+        return back()->with('error', 'প্রত্যাখ্যান করা যাচ্ছে না।');
     }
 }

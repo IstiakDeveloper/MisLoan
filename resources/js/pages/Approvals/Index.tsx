@@ -19,15 +19,33 @@ interface Approval {
     status: string;
 }
 
-interface Props {
-    approvals: Approval[];
+interface LoanApproval {
+    id: number;
+    loan_application_id: number;
+    application_no: string;
+    applicant_name: string;
+    applicant_name_bn: string;
+    branch_name: string;
+    requested_amount: number;
+    submitted_at: string;
+    level: string;
 }
 
-export default function Index({ approvals }: Props) {
+interface Props {
+    approvals: Approval[];
+    loanApprovals?: LoanApproval[];
+}
+
+export default function Index({ approvals, loanApprovals = [] }: Props) {
     const [selectedApproval, setSelectedApproval] = useState<Approval | null>(null);
     const [action, setAction] = useState<'approve' | 'reject' | 'return' | null>(null);
     const [comments, setComments] = useState('');
     const [showModal, setShowModal] = useState(false);
+
+    const [selectedLoanApproval, setSelectedLoanApproval] = useState<LoanApproval | null>(null);
+    const [loanAction, setLoanAction] = useState<'approve' | 'reject' | null>(null);
+    const [loanComments, setLoanComments] = useState('');
+    const [showLoanModal, setShowLoanModal] = useState(false);
 
     const handleAction = (approval: Approval, actionType: 'approve' | 'reject' | 'return') => {
         setSelectedApproval(approval);
@@ -52,6 +70,30 @@ export default function Index({ approvals }: Props) {
                 setSelectedApproval(null);
                 setAction(null);
                 setComments('');
+            },
+        });
+    };
+
+    const handleLoanAction = (loanApproval: LoanApproval, actionType: 'approve' | 'reject') => {
+        setSelectedLoanApproval(loanApproval);
+        setLoanAction(actionType);
+        setLoanComments('');
+        setShowLoanModal(true);
+    };
+
+    const submitLoanAction = () => {
+        if (!selectedLoanApproval || !loanAction) return;
+        if (loanAction === 'reject' && !loanComments.trim()) {
+            alert('প্রত্যাখ্যানের জন্য মন্তব্য দিন।');
+            return;
+        }
+        router.patch(`/approvals/loan/${selectedLoanApproval.id}/${loanAction}`, { comments: loanComments }, {
+            preserveScroll: true,
+            onSuccess: () => {
+                setShowLoanModal(false);
+                setSelectedLoanApproval(null);
+                setLoanAction(null);
+                setLoanComments('');
             },
         });
     };
@@ -199,6 +241,67 @@ export default function Index({ approvals }: Props) {
                         </table>
                     </div>
                 )}
+
+                {/* Loan Approvals Section */}
+                {loanApprovals.length > 0 && (
+                    <div className="mt-8">
+                        <h2 className="text-lg font-bold text-gray-900 mb-3">ঋণ আবেদন অনুমোদন (Loan Approvals)</h2>
+                        <div className="bg-white rounded-lg shadow overflow-hidden">
+                            <table className="min-w-full divide-y divide-gray-200">
+                                <thead className="bg-gray-50">
+                                    <tr>
+                                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">আবেদন নং</th>
+                                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">আবেদনকারী</th>
+                                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">শাখা</th>
+                                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">পরিমাণ</th>
+                                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">জমার তারিখ</th>
+                                        <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase">অ্যাকশন</th>
+                                    </tr>
+                                </thead>
+                                <tbody className="divide-y divide-gray-200">
+                                    {loanApprovals.map((la) => (
+                                        <tr key={la.id} className="hover:bg-gray-50">
+                                            <td className="px-6 py-4 text-sm font-medium text-gray-900">{la.application_no}</td>
+                                            <td className="px-6 py-4 text-sm">
+                                                <div>{la.applicant_name_bn || la.applicant_name}</div>
+                                            </td>
+                                            <td className="px-6 py-4 text-sm text-gray-900">{la.branch_name}</td>
+                                            <td className="px-6 py-4 text-sm">৳{Number(la.requested_amount).toLocaleString()}</td>
+                                            <td className="px-6 py-4 text-sm text-gray-500">
+                                                {la.submitted_at ? new Date(la.submitted_at).toLocaleDateString('bn-BD') : '-'}
+                                            </td>
+                                            <td className="px-6 py-4 text-right">
+                                                <div className="flex items-center justify-end gap-2">
+                                                    <button
+                                                        onClick={() => router.visit(`/member/loan-applications/${la.loan_application_id}`)}
+                                                        className="text-blue-600 hover:text-blue-900"
+                                                        title="View"
+                                                    >
+                                                        <Eye className="w-4 h-4" />
+                                                    </button>
+                                                    <button
+                                                        onClick={() => handleLoanAction(la, 'approve')}
+                                                        className="text-green-600 hover:text-green-900"
+                                                        title="অনুমোদন"
+                                                    >
+                                                        <CheckCircle className="w-4 h-4" />
+                                                    </button>
+                                                    <button
+                                                        onClick={() => handleLoanAction(la, 'reject')}
+                                                        className="text-red-600 hover:text-red-900"
+                                                        title="প্রত্যাখ্যান"
+                                                    >
+                                                        <XCircle className="w-4 h-4" />
+                                                    </button>
+                                                </div>
+                                            </td>
+                                        </tr>
+                                    ))}
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                )}
             </div>
 
             {/* Action Modal */}
@@ -241,6 +344,49 @@ export default function Index({ approvals }: Props) {
                                 className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
                             >
                                 Confirm
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* Loan Action Modal */}
+            {showLoanModal && selectedLoanApproval && loanAction && (
+                <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+                    <div className="bg-white rounded-lg p-6 max-w-md w-full mx-4">
+                        <h3 className="text-lg font-semibold mb-4">
+                            {loanAction === 'approve' ? 'ঋণ আবেদন অনুমোদন' : 'ঋণ আবেদন প্রত্যাখ্যান'}
+                        </h3>
+                        <p className="text-sm text-gray-600 mb-4">
+                            আবেদন নং: <strong>{selectedLoanApproval.application_no}</strong>
+                            <br />
+                            আবেদনকারী: <strong>{selectedLoanApproval.applicant_name_bn || selectedLoanApproval.applicant_name}</strong>
+                        </p>
+                        <div className="mb-4">
+                            <label className="block text-sm font-medium text-gray-700 mb-2">
+                                মন্তব্য {loanAction === 'reject' && <span className="text-red-500">*</span>}
+                            </label>
+                            <textarea
+                                value={loanComments}
+                                onChange={(e) => setLoanComments(e.target.value)}
+                                rows={4}
+                                className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                placeholder={loanAction === 'approve' ? 'ঐচ্ছিক মন্তব্য...' : 'প্রত্যাখ্যানের কারণ লিখুন...'}
+                                required={loanAction === 'reject'}
+                            />
+                        </div>
+                        <div className="flex justify-end gap-3">
+                            <button
+                                onClick={() => setShowLoanModal(false)}
+                                className="px-4 py-2 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50"
+                            >
+                                বাতিল
+                            </button>
+                            <button
+                                onClick={submitLoanAction}
+                                className={`px-4 py-2 rounded-lg text-white ${loanAction === 'approve' ? 'bg-green-600 hover:bg-green-700' : 'bg-red-600 hover:bg-red-700'}`}
+                            >
+                                {loanAction === 'approve' ? 'অনুমোদন' : 'প্রত্যাখ্যান'}
                             </button>
                         </div>
                     </div>

@@ -22,7 +22,8 @@ import {
     Landmark,
     Banknote,
     ListTree,
-    Package
+    Package,
+    FileText
 } from 'lucide-react';
 
 interface User {
@@ -90,6 +91,8 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
             { name: 'Dashboard', href: '/dashboard', icon: LayoutDashboard },
             { name: 'Loan Submissions', href: '/submissions', icon: Inbox, badge: unreadSubmissionsCount },
             { name: 'Admission Members', href: '/head-office/admission-members', icon: UserPlus },
+            { name: 'Process Admissions', href: '/head-office/process-admissions', icon: ClipboardCheck },
+            { name: 'Process Loans', href: '/head-office/process-loans', icon: FileText },
             { name: 'Pending Approvals', href: '/approvals', icon: ClipboardCheck },
             { name: 'Loan Categories', href: '/loan-categories', icon: ListTree },
             { name: 'Loan Products', href: '/loan-products', icon: Package },
@@ -126,10 +129,10 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
 
     return (
         <div className="min-h-screen bg-gray-50">
-            {/* Flash Message */}
+            {/* Flash Message - hidden when printing */}
             {flashMessage && (
                 <div
-                    className={`fixed top-4 right-4 z-50 flex items-center gap-3 px-4 py-3 rounded-lg border shadow-lg transition-all duration-300 animate-in slide-in-from-top ${getFlashColor(flashMessage.type)}`}
+                    className={`print:hidden fixed top-4 right-4 z-50 flex items-center gap-3 px-4 py-3 rounded-lg border shadow-lg transition-all duration-300 animate-in slide-in-from-top ${getFlashColor(flashMessage.type)}`}
                 >
                     {getFlashIcon(flashMessage.type)}
                     <span className="font-medium">{flashMessage.message}</span>
@@ -142,9 +145,9 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
                 </div>
             )}
 
-            {/* Sidebar */}
+            {/* Sidebar - hidden when printing */}
             <aside
-                className={`fixed left-0 top-0 h-full bg-white border-r border-gray-200 transition-all duration-300 z-40 ${
+                className={`fixed left-0 top-0 h-full bg-white border-r border-gray-200 transition-all duration-300 z-40 print:hidden ${
                     sidebarOpen ? 'w-64' : 'w-20'
                 }`}
             >
@@ -224,14 +227,14 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
                 </div>
             </aside>
 
-            {/* Main Content */}
+            {/* Main Content - full width when printing (sidebar hidden) */}
             <div
-                className={`transition-all duration-300 ${
+                className={`transition-all duration-300 print:ml-0 ${
                     sidebarOpen ? 'ml-64' : 'ml-20'
                 }`}
             >
-                {/* Header */}
-                <header className="bg-white border-b border-gray-200 sticky top-0 z-30">
+                {/* Header - hidden when printing */}
+                <header className="print:hidden bg-white border-b border-gray-200 sticky top-0 z-30">
                     <div className="flex items-center justify-between h-16 px-6">
                         <div className="flex items-center gap-4">
                             <h2 className="text-lg font-semibold text-gray-800">
