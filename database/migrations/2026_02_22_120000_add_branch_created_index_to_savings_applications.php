@@ -8,11 +8,12 @@ return new class extends Migration
 {
     /**
      * Run the migrations.
+     * Composite index so list-by-branch + date range + order by created_at uses index (avoids sort buffer).
      */
     public function up(): void
     {
-        Schema::table('loan_applications', function (Blueprint $table) {
-            $table->json('loan_agreement_data')->nullable()->after('remarks');
+        Schema::table('savings_applications', function (Blueprint $table) {
+            $table->index(['branch_id', 'created_at']);
         });
     }
 
@@ -21,8 +22,8 @@ return new class extends Migration
      */
     public function down(): void
     {
-        Schema::table('loan_applications', function (Blueprint $table) {
-            $table->dropColumn('loan_agreement_data');
+        Schema::table('savings_applications', function (Blueprint $table) {
+            $table->dropIndex(['branch_id', 'created_at']);
         });
     }
 };

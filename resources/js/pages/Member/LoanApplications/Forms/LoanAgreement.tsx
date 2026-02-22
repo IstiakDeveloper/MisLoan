@@ -64,9 +64,125 @@ interface Props {
     auth?: any;
     existingApplication?: any;
     savedData?: any;
+    onlyPreview?: boolean;
+    isLegacy?: boolean;
 }
 
-export default function LoanAgreement({ member, loanProduct, loanCategory, requestedAmount, branch, auth, existingApplication, savedData }: Props) {
+const formatDateBanglaModule = (dateString: string) => {
+    if (!dateString) return '';
+    const date = new Date(dateString);
+    return `${date.getDate()}/${date.getMonth() + 1}/${date.getFullYear()}`;
+};
+
+/** Show/Print view only – matches Show page (compact logo + sizes for view/print). */
+export function LoanAgreementPrintView({ data }: { data: any }) {
+    const d = data || {};
+    const fmt = formatDateBanglaModule;
+    const num = (v: any) => (v != null && v !== '' ? Number(v) : 0);
+    const str = (v: any) => (v != null && v !== '' ? String(v) : '');
+    return (
+        <div className="bg-white border border-gray-300 p-4 rounded-lg" style={{ fontFamily: 'system-ui, Arial, sans-serif', fontSize: '13px', maxWidth: '100%' }}>
+            <div className="mb-3 pb-2 border-b-2 border-gray-400">
+                <div className="flex items-center justify-center gap-2 mb-1">
+                    <img src="/logo.png" alt="Logo" style={{ height: '40px', width: '40px', objectFit: 'contain' }} onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }} />
+                    <div className="text-center">
+                        <p className="font-bold mb-0" style={{ fontSize: '18px', fontWeight: 'bold' }}>মৌসুমী</p>
+                        <p className="leading-tight" style={{ fontSize: '12px' }}>{str(d.branch_address)}</p>
+                        <p className="font-semibold" style={{ fontSize: '14px', fontWeight: '600' }}>(খান চুক্তিপত্র)</p>
+                    </div>
+                </div>
+                <div className="text-right" style={{ fontSize: '12px' }}>
+                    <p>খান কর্মসূচির নাম: <span className="border-b border-dotted border-gray-600 inline-block min-w-[180px]">{str(d.loan_category_name)}</span></p>
+                </div>
+            </div>
+            <div className="mb-2 leading-relaxed" style={{ fontSize: '12px', lineHeight: '1.5' }}>
+                <p className="font-bold mb-1">১ম পক্ষ (খান দাতা)</p>
+                <p className="mb-1">শাখার নাম: <span className="border-b border-dotted border-gray-600 inline-block min-w-[240px]">{str(d.branch_name)}</span></p>
+                <p>ঠিকানা: <span className="border-b border-dotted border-gray-600 inline-block min-w-[240px]">{str(d.branch_address)}</span></p>
+            </div>
+            <div className="mb-2 leading-relaxed" style={{ fontSize: '12px', lineHeight: '1.5' }}>
+                <div className="flex justify-between items-center mb-1">
+                    <p className="font-bold">২য় পক্ষ (খান গ্রহীতা)</p>
+                    <p>তারিখ: {fmt(d.disbursement_date)}</p>
+                </div>
+                <p className="mb-1">নাম: <span className="border-b border-dotted border-gray-600 inline-block min-w-[120px]">{str(d.member_name_bn)}</span> পিতা/স্বামী: <span className="border-b border-dotted border-gray-600 inline-block min-w-[100px]">{str(d.father_husband_name)}</span> সদস্য নং: <span className="border-b border-dotted border-gray-600 inline-block min-w-[60px]">{str(d.member_code)}</span> সমিতির কোড নং: <span className="border-b border-dotted border-gray-600 inline-block min-w-[60px]">{str(d.samity_code)}</span></p>
+                <p className="mb-1">সমিতির নাম: <span className="border-b border-dotted border-gray-600 inline-block min-w-[120px]">{str(d.samity_name)}</span> মোবাইল নং: <span className="border-b border-dotted border-gray-600 inline-block min-w-[80px]">{str(d.mobile_number)}</span> গ্রাম: <span className="border-b border-dotted border-gray-600 inline-block min-w-[80px]">{str(d.village)}</span> ডাকঘর: <span className="border-b border-dotted border-gray-600 inline-block min-w-[80px]"></span></p>
+                <p className="mb-2">ইউনিয়ন: <span className="border-b border-dotted border-gray-600 inline-block min-w-[80px]">{str(d.union)}</span> থানা: <span className="border-b border-dotted border-gray-600 inline-block min-w-[80px]">{str(d.upazila)}</span> জেলা: <span className="border-b border-dotted border-gray-600 inline-block min-w-[80px]">{str(d.district)}</span></p>
+                <p className="mt-2">(১) ১ম পক্ষ ২য় পক্ষকে খান বাবদ <span className="font-semibold">{num(d.loan_amount).toLocaleString('bn-BD')}</span> টাকা নিম্নে উল্লেখিত মেয়াদে এবং চুক্তিতে প্রদান করবেন।</p>
+            </div>
+            <div className="mb-2">
+                <h3 className="text-center font-bold mb-1" style={{ fontSize: '13px' }}>খানের বিবরণ</h3>
+                <table className="w-full border-collapse border border-gray-600" style={{ fontSize: '11px' }}>
+                    <thead>
+                        <tr className="text-center">
+                            <th className="border border-gray-600 px-1 py-0.5">প্রকল্পের নাম</th>
+                            <th className="border border-gray-600 px-1 py-0.5">খানের মেয়াদ</th>
+                            <th className="border border-gray-600 px-1 py-0.5">খান গ্রহীতার নাম</th>
+                            <th className="border border-gray-600 px-1 py-0.5">টাকার পরিমাণ:<br/>মূল টাকা</th>
+                            <th className="border border-gray-600 px-1 py-0.5">সা. চা. সহ</th>
+                            <th className="border border-gray-600 px-1 py-0.5">প্রদানের তারিখ</th>
+                            <th className="border border-gray-600 px-1 py-0.5">পরিশোধের শেষ তারিখ</th>
+                            <th className="border border-gray-600 px-1 py-0.5">কিস্তির সংখ্যা</th>
+                            <th className="border border-gray-600 px-1 py-0.5">কিস্তির পরিমাণ</th>
+                            <th className="border border-gray-600 px-1 py-0.5">শেষ কিস্তি</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td className="border border-gray-600 px-1 py-1 text-center">{str(d.loan_product_name)}</td>
+                            <td className="border border-gray-600 px-1 py-1 text-center">{str(d.loan_duration_months)}</td>
+                            <td className="border border-gray-600 px-1 py-1">{str(d.member_name_bn)}</td>
+                            <td className="border border-gray-600 px-1 py-1 text-center">{num(d.loan_amount).toLocaleString('bn-BD')}</td>
+                            <td className="border border-gray-600 px-1 py-1 text-center">{num(d.service_charge).toLocaleString('bn-BD')}</td>
+                            <td className="border border-gray-600 px-1 py-1 text-center">{fmt(d.disbursement_date)}</td>
+                            <td className="border border-gray-600 px-1 py-1 text-center">{fmt(d.last_installment_date)}</td>
+                            <td className="border border-gray-600 px-1 py-1 text-center">{str(d.number_of_installments)}</td>
+                            <td className="border border-gray-600 px-1 py-1 text-center">{num(d.installment_amount).toLocaleString('bn-BD')}</td>
+                            <td className="border border-gray-600 px-1 py-1 text-center">{num(d.last_installment_amount).toLocaleString('bn-BD')}</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+            <div className="space-y-0.5 mb-2 leading-tight" style={{ fontSize: '12px', lineHeight: '1.45' }}>
+                <p>(১) ২য় পক্ষ চুক্তিপত্রে উল্লেখিত উদ্দেশ্য ছাড়া অন্য কোন প্রকারে খানের টাকা ব্যবহার করতে পারবেন না।</p>
+                <p>(২) পূর্বিত খানের শর্তানুযায়ী ব্যবহার নিশ্চিত করার জন্য খান গ্রহীতাগণ মৌসুমীর দায়িত্বপ্রাপ্ত অফিসারের নিকট আয়-ব্যয়ের হিসাব দেখাতে বাধ্য থাকবেন।</p>
+                <p>(৩) খান ফেরত দেওয়ার নিয়ম অনুযায়ী ২য় পক্ষ ১ম পক্ষের নিকট {str(d.service_charge)}% হারে সেবাগ্রহণসহ খানের টাকা ফেরত দিতে বাধ্য থাকবেন।</p>
+                <p>(৪) সমিতির খান গ্রহীতাগণ প্রতিটি বছরের মুনাফা সমিতির নির্ধারিত হার অনুযায়ী সঞ্চয় তহবিল জমা করবেন।</p>
+                <p>(৫) যদি কোন বিশেষ কারণে ২য় পক্ষ নিরিখ সময়ে খানের বিহিত পরিশোধে বাধ্য হন, সেক্ষেত্রে অবশ্যই লিখিতভাবে যথাযথমূলক কারণ দর্শানো সাপেক্ষে ২য় পক্ষ ১ম পক্ষ ব্যবহার নির্ধারিত জরিমানা সহ সংশ্লিষ্ট খানের কিস্তির টাকা প্রদান করতে বাধ্য থাকবেন।</p>
+                <p>(৬) বর্তমান পর্যন্ত উপরোক্ত খানের টাকা ও তার উপর ধার্যকৃত সেবাগ্রহণ পরিশোধ না হলে, তৎনির্দিন পর্যন্ত উক্ত খানের টাকা ঘামা অতিরিক্ত সম্পদ্দি ১ম পক্ষের সম্পদ্দি হিসাবে বিবেচিত হবে।</p>
+                <p>(৭) ২য় পক্ষ খান পরিশোধের ১ম পক্ষ আইনগত ব্যবস্থা গ্রহণের অধিকার সংরক্ষণ করবেন।</p>
+                <p>(৮) কোন প্রকারে ব্যবহৃত টাকার লোকসান হলেও তার দায় দায়িত্ব গ্রহীতার থাকবে। তাকে খানের সম্পূর্ণ টাকা সেবাগ্রহণসহ পরিশোধ করতে হবে।</p>
+                <p>(১০) খানের টাকা সম্পূর্ণ পরিশোধ না হওয়া পর্যন্ত খান গ্রহীতা তার ব্যক্তিগত সম্পদ ফেরত নিতে পারবে না।</p>
+                <p>(১১) খান গ্রহীতার মৃত্যু হলে বা দেশ ত্যাগ করলে সেক্ষেত্রে ১ম পক্ষ উক্ত খানের টাকা পরিশোধ বিষয়ে যে সিদ্ধান্ত গ্রহণ করবে তা কার্যকর যথা বিবেচিত হবে।</p>
+            </div>
+            <p className="mb-3 leading-tight" style={{ fontSize: '12px' }}>এতদ্বারা আমরা ১ম ও ২য় পক্ষ স্বেচ্ছায়, স্বজ্ঞানে ও সুস্থ শরীরে কারুক্ত দাতা প্রেরোদিত না হয়ে নিম্নলিখিত স্বাক্ষীগণের সামনে এই চুক্তিপত্রে স্বাক্ষর সম্পাদন করলাম।</p>
+            <div className="mb-2 leading-tight" style={{ fontSize: '12px' }}>
+                <p className="font-bold mb-1">২য় পক্ষের স্বাক্ষর:</p>
+                <p className="mb-1">খান গ্রহীতার স্বাক্ষর: <span className="border-b border-dotted border-gray-600 inline-block min-w-[160px]"></span></p>
+                {d.applicant_signature_image && <img src={d.applicant_signature_image} alt="Signature" style={{ height: '28px', width: '56px', objectFit: 'contain', marginBottom: '2px', marginLeft: '48px' }} />}
+                <p className="mb-2">নাম: <span className="border-b border-dotted border-gray-600 inline-block min-w-[180px]">{str(d.applicant_signature_name) || str(d.member_name_bn)}</span></p>
+                <p className="mb-1">অভিভাবকের স্বাক্ষর: <span className="border-b border-dotted border-gray-600 inline-block min-w-[160px]"></span></p>
+                {d.guardian_signature_image && <img src={d.guardian_signature_image} alt="Signature" style={{ height: '28px', width: '56px', objectFit: 'contain', marginBottom: '2px', marginLeft: '48px' }} />}
+                <p className="mb-2">নাম: <span className="border-b border-dotted border-gray-600 inline-block min-w-[180px]">{str(d.guardian_name)}</span></p>
+            </div>
+        </div>
+    );
+}
+
+function formSelectionUrl(isLegacy: boolean, member: any, loanProduct: any, loanCategory: any, requestedAmount: number) {
+    const params = new URLSearchParams({ loan_product_id: String(loanProduct.id), loan_category_id: String(loanCategory.id), requested_amount: String(requestedAmount) });
+    if (isLegacy) params.set('legacy', '1'); else params.set('member_id', String(member?.id ?? ''));
+    return `/member/loan-applications/form-selection?${params.toString()}`;
+}
+
+export default function LoanAgreement({ member, loanProduct, loanCategory, requestedAmount, branch, auth, existingApplication, savedData, onlyPreview, isLegacy = false }: Props) {
+    if (onlyPreview && savedData) {
+        return (
+            <div className="print-container">
+                <LoanAgreementPrintView data={savedData} />
+            </div>
+        );
+    }
     const [showPreview, setShowPreview] = useState(false);
 
     const { data, setData, post, processing } = useForm<LoanAgreementData>({
@@ -230,16 +346,17 @@ export default function LoanAgreement({ member, loanProduct, loanCategory, reque
     };
 
     const handleSaveDraft = () => {
-        router.post('/member/loan-applications/forms/loan-agreement/save-draft', {
-            member_id: member.id,
+        const payload: any = {
             loan_product_id: loanProduct.id,
             loan_category_id: loanCategory.id,
             requested_amount: requestedAmount,
             agreement_data: data as any,
-        }, {
+        };
+        if (isLegacy) payload.legacy = 1; else payload.member_id = member?.id;
+        router.post('/member/loan-applications/forms/loan-agreement/save-draft', payload, {
             onSuccess: () => {
                 alert('খান চুক্তিপত্র সংরক্ষিত হয়েছে।');
-                            router.visit(`/member/loan-applications/form-selection?member_id=${member.id}&loan_product_id=${loanProduct.id}&loan_category_id=${loanCategory.id}&requested_amount=${requestedAmount}`);
+                router.visit(formSelectionUrl(isLegacy, member, loanProduct, loanCategory, requestedAmount));
             },
             onError: (errors) => {
                 console.error('Save draft error:', errors);
@@ -410,7 +527,7 @@ export default function LoanAgreement({ member, loanProduct, loanCategory, reque
                 <div className="flex items-center justify-between mb-4 print:hidden">
                     <div className="flex items-center gap-3">
                         <button
-                            onClick={() => router.visit(`/member/loan-applications/form-selection?member_id=${member.id}&loan_product_id=${loanProduct.id}&loan_category_id=${loanCategory.id}&requested_amount=${requestedAmount}`)}
+                            onClick={() => router.visit(formSelectionUrl(isLegacy, member, loanProduct, loanCategory, requestedAmount))}
                             className="flex items-center gap-2 px-3 py-2 bg-gray-200 text-gray-700 text-sm rounded-md hover:bg-gray-300"
                         >
                             <ArrowLeft className="w-4 h-4" />

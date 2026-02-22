@@ -1,27 +1,106 @@
-import React, { useState } from 'react';
+import React, { useState, useRef } from 'react';
 import { Head, router, useForm } from '@inertiajs/react';
 import AdminLayout from '@/layouts/admin-layout';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { ArrowLeft, FileText, User, Banknote, AlertCircle, CheckCircle, XCircle } from 'lucide-react';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Badge } from '@/components/ui/badge';
+import { ArrowLeft, FileText, User, Banknote, AlertCircle, CheckCircle, XCircle, Printer, Clock, MessageSquare } from 'lucide-react';
+import GuarantorCommitment from '../Member/LoanApplications/Forms/GuarantorCommitment';
+import DeathRiskFund from '../Member/LoanApplications/Forms/DeathRiskFund';
+import LoanAgreement from '../Member/LoanApplications/Forms/LoanAgreement';
+import FieldInvestigation from '../Member/LoanApplications/Forms/FieldInvestigation';
+import LoanApplicationApproval from '../Member/LoanApplications/Forms/LoanApplicationApproval';
 
 interface Loan {
     id: number;
     application_no: string;
+    form_type: number;
     status: string;
     requested_amount: number;
-    purpose_of_loan?: string;
-    member_admission: any;
-    loan_product: any;
-    loan_category: any;
-    branch: { name: string };
-    submitted_at: string;
+    approved_amount: number | null;
+    installment_amount: number | null;
+    number_of_installments: number;
+    repayment_frequency: string;
+    loan_term_months: number;
+    proposed_start_date: string;
+    approved_start_date: string | null;
+    purpose_of_loan: string;
+    repayment_source: string | null;
+    monthly_income: number | null;
+    monthly_expense: number | null;
+    family_members: Array<any> | null;
+    guarantor_info: any | null;
+    guarantors_list: Array<any> | null;
+    nominee_info: any | null;
+    income_sources: Array<any> | null;
+    has_savings_account: boolean;
+    savings_amount: number | null;
+    savings_account_type: string | null;
+    other_loan_amount: number;
+    created_at: string;
+    submitted_at: string | null;
+    reviewed_at: string | null;
+    member_admission: {
+        id: number;
+        application_no: string;
+        applicant_name_en?: string;
+        applicant_name_bn?: string;
+        member_name_en?: string;
+        member_name_bn?: string;
+        father_name_en?: string;
+        mother_name_en?: string;
+        nid_number?: string;
+        nid_no?: string;
+        mobile_number?: string;
+        mobile_no?: string;
+        present_village_road?: string;
+        present_address_en?: string;
+    };
+    visible_form_ids?: number[];
+    form_saved?: Record<number, boolean>;
+    loan_agreement_data?: any;
+    asset_info?: any;
+    business_plan?: any;
+    loan_product: {
+        product_name: string;
+        product_name_bn: string;
+        product_code: string;
+        interest_rate: number;
+        installment_type: string;
+    };
+    loan_category: {
+        category_name: string;
+        category_name_bn: string;
+        category_code: string;
+    };
+    branch: {
+        name: string;
+        code?: string;
+        branch_name?: string;
+        branch_name_bn?: string;
+    };
+    samity: {
+        samity_name: string;
+        samity_name_bn: string;
+    } | null;
+    submittedBy: {
+        id: number;
+        name: string;
+    };
     issues: Array<{
         id: number;
         issue_description: string;
         reporter: { name: string };
         created_at: string;
+        status: string;
+        response_message?: string;
+        responded_at?: string;
+        responder?: {
+            id: number;
+            name: string;
+        };
     }>;
+    approvals?: Array<any>;
 }
 
 interface Props {
@@ -29,16 +108,110 @@ interface Props {
     flash?: { success?: string; error?: string };
 }
 
+const FORM_NAMES: Record<number, string> = {
+    1: 'ঋণ চুক্তি পত্র',
+    2: 'জামিনদার/দায়িত্ব গ্রহণকারীর অঙ্গীকার নামা',
+    3: 'মৃত্যুঝুঁকি তহবিল আবেদন',
+    4: 'সরেজমিন তদন্ত প্রতিবেদন',
+    5: 'আবেদন ও অনুমোদনপত্র',
+};
+
+const statusConfig = {
+    draft: { label: 'খসড়া', color: 'bg-gray-100 text-gray-800', icon: AlertCircle },
+    submitted: { label: 'জমা হয়েছে', color: 'bg-blue-100 text-blue-800', icon: Clock },
+    under_review: { label: 'পর্যালোচনা', color: 'bg-yellow-100 text-yellow-800', icon: Clock },
+    pending_head_office: { label: 'হেড অফিসে প্রেরিত', color: 'bg-indigo-100 text-indigo-800', icon: Clock },
+    approved: { label: 'অনুমোদিত', color: 'bg-green-100 text-green-800', icon: CheckCircle },
+    rejected: { label: 'প্রত্যাখ্যাত', color: 'bg-red-100 text-red-800', icon: XCircle },
+    disbursed: { label: 'বিতরণ হয়েছে', color: 'bg-emerald-100 text-emerald-800', icon: CheckCircle },
+    cancelled: { label: 'বাতিল', color: 'bg-gray-100 text-gray-800', icon: XCircle },
+};
+
 export default function LoanApplicationShow({ loan, flash }: Props) {
     const [showIssueModal, setShowIssueModal] = useState(false);
     const [showRejectModal, setShowRejectModal] = useState(false);
+    const [selectedFormId, setSelectedFormId] = useState<number | null>(null);
+    const formPrintRef = useRef<HTMLDivElement>(null);
 
     const { data, setData, post, processing, reset } = useForm({
         issue_description: '',
     });
 
-    const ma = loan.member_admission || {};
-    const memberName = ma.applicant_name_bn || ma.applicant_name_en || '';
+    // Helper function to recursively check if data has meaningful content
+    const hasMeaningfulData = (data: any): boolean => {
+        if (data === null || data === undefined || data === '') return false;
+        
+        if (typeof data === 'string') {
+            const trimmed = data.trim();
+            return trimmed !== '' && trimmed !== 'null' && trimmed !== '{}' && trimmed !== '[]' && trimmed.length >= 3;
+        }
+        
+        if (Array.isArray(data)) {
+            if (data.length === 0) return false;
+            return data.some(item => hasMeaningfulData(item));
+        }
+        
+        if (typeof data === 'object') {
+            const keys = Object.keys(data);
+            if (keys.length === 0) return false;
+            // Check if at least one value has meaningful content
+            return keys.some(key => {
+                const value = data[key];
+                if (value === null || value === undefined || value === '') return false;
+                if (typeof value === 'string' && value.trim() === '') return false;
+                if (Array.isArray(value) && value.length === 0) return false;
+                if (typeof value === 'object' && Object.keys(value).length === 0) return false;
+                // Recursively check nested structures
+                return hasMeaningfulData(value);
+            });
+        }
+        
+        // For other types (numbers, booleans), consider them meaningful
+        return true;
+    };
+
+    // শুধু সেই ফর্মগুলো দেখাও যেগুলো এই loan application এর জন্য required (visible_form_ids)
+    // এবং সেভ করা হয়েছে (form_saved flag + meaningful data)
+    // Branch account-এর মতোই same logic
+    const visibleFormIds = loan.visible_form_ids || [1, 2, 3, 4, 5]; // Fallback to all if not provided
+    
+    const savedFormIds = visibleFormIds.filter((id) => {
+        // First check: form must be in visible_form_ids (required for this loan)
+        if (!visibleFormIds.includes(id)) return false;
+        
+        // Second check: backend flag must be true
+        if (loan.form_saved?.[id] !== true) return false;
+        
+        // Third check: verify actual data exists with meaningful content
+        switch (id) {
+            case 1:
+                return hasMeaningfulData(loan.loan_agreement_data);
+            case 2:
+                return hasMeaningfulData(loan.guarantor_info);
+            case 3:
+                return hasMeaningfulData(loan.nominee_info);
+            case 4:
+                return hasMeaningfulData(loan.asset_info);
+            case 5:
+                return hasMeaningfulData(loan.business_plan);
+            default:
+                return false;
+        }
+    });
+
+    const printFormContent = () => {
+        if (!formPrintRef.current || !selectedFormId) return;
+        window.print();
+    };
+
+    const formatDate = (date: string | null) => {
+        if (!date) return 'N/A';
+        return new Date(date).toLocaleDateString('bn-BD', {
+            year: 'numeric',
+            month: 'long',
+            day: 'numeric'
+        });
+    };
 
     const handleSubmitIssue = (e: React.FormEvent) => {
         e.preventDefault();
@@ -52,7 +225,8 @@ export default function LoanApplicationShow({ loan, flash }: Props) {
     };
 
     const handleApprove = () => {
-        if (loan.issues?.length > 0) {
+        const pendingIssues = loan.issues?.filter(issue => issue.status === 'pending') || [];
+        if (pendingIssues.length > 0) {
             alert('পেন্ডিং সমস্যা থাকলে অনুমোদন করা যাবে না।');
             return;
         }
@@ -74,105 +248,429 @@ export default function LoanApplicationShow({ loan, flash }: Props) {
         });
     };
 
+    const StatusIcon = statusConfig[loan.status as keyof typeof statusConfig]?.icon || AlertCircle;
+    const statusInfo = statusConfig[loan.status as keyof typeof statusConfig];
+
     return (
         <AdminLayout>
-            <Head title={`ঋণ আবেদন - ${loan.application_no}`} />
+            <Head title={`ঋণ আবেদন - ${loan.application_no}`}>
+                <style>{`
+                    @media print {
+                        @page { size: A4; margin: 1cm; }
+                        body * { visibility: hidden !important; }
+                        .form-print-area, .form-print-area * { visibility: visible !important; }
+                        #issues-print-area, #issues-print-area * { visibility: visible !important; }
+                        .form-print-area, #issues-print-area {
+                            position: absolute !important;
+                            left: 0 !important;
+                            top: 0 !important;
+                            width: 100% !important;
+                            max-width: 100% !important;
+                            padding: 0 !important;
+                            margin: 0 !important;
+                            background: white !important;
+                            box-shadow: none !important;
+                        }
+                        .print\\:hidden { display: none !important; }
+                    }
+                `}</style>
+            </Head>
 
-            {flash?.success && (
-                <div className="mb-4 p-4 bg-green-50 border border-green-200 rounded-lg text-green-800 text-sm">
-                    {flash.success}
-                </div>
-            )}
-            {flash?.error && (
-                <div className="mb-4 p-4 bg-red-50 border border-red-200 rounded-lg text-red-800 text-sm">
-                    {flash.error}
-                </div>
-            )}
+            <div className="py-6">
+                <div className="mx-auto max-w-6xl sm:px-6 lg:px-8">
+                    {/* Flash Messages */}
+                    {flash?.success && (
+                        <div className="mb-4 p-4 bg-green-50 border border-green-200 rounded-lg text-green-800 text-sm">
+                            {flash.success}
+                        </div>
+                    )}
+                    {flash?.error && (
+                        <div className="mb-4 p-4 bg-red-50 border border-red-200 rounded-lg text-red-800 text-sm">
+                            {flash.error}
+                        </div>
+                    )}
 
-            <div className="p-6 space-y-6">
-                <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-4">
-                        <Button variant="outline" size="icon" onClick={() => router.visit('/head-office/process-loans')}>
-                            <ArrowLeft className="w-4 h-4" />
-                        </Button>
-                        <div>
-                            <h1 className="text-xl font-bold text-gray-900">ঋণ আবেদন বিবরণ</h1>
-                            <p className="text-gray-600">আবেদন নং: {loan.application_no}</p>
+                    {/* Header */}
+                    <div className="mb-6 flex items-center justify-between print:flex print:justify-center">
+                        <div className="flex items-center gap-4 print:gap-0">
+                            <Button variant="outline" size="icon" onClick={() => router.visit('/head-office/loan-applications')} className="print:hidden">
+                                <ArrowLeft className="w-4 h-4" />
+                            </Button>
+                            <div>
+                                <h2 className="text-2xl font-bold text-gray-900">ঋণ আবেদন বিবরণ</h2>
+                                <p className="text-gray-600">আবেদন নং: {loan.application_no}</p>
+                            </div>
+                        </div>
+                        <div className="flex gap-2 print:hidden">
+                            <Button 
+                                variant="outline" 
+                                onClick={() => setShowIssueModal(true)}
+                                disabled={loan.status === 'approved' || loan.status === 'disbursed'}
+                                title={loan.status === 'approved' || loan.status === 'disbursed' ? 'অনুমোদিত আবেদনে সমস্যা পাঠানো যাবে না' : ''}
+                            >
+                                <AlertCircle className="w-4 h-4 mr-2" />
+                                সমস্যা লিখে পাঠান
+                            </Button>
+                            {loan.issues?.filter(issue => issue.status === 'pending').length === 0 && loan.status === 'pending_head_office' && (
+                                <Button onClick={handleApprove} className="bg-green-600 hover:bg-green-700">
+                                    <CheckCircle className="w-4 h-4 mr-2" />
+                                    অনুমোদন
+                                </Button>
+                            )}
+                            {loan.status === 'pending_head_office' && (
+                                <Button variant="destructive" onClick={() => setShowRejectModal(true)}>
+                                    <XCircle className="w-4 h-4 mr-2" />
+                                    প্রত্যাখ্যান
+                                </Button>
+                            )}
+                            <Button variant="outline" onClick={() => window.print()}>
+                                <Printer className="w-4 h-4 mr-2" />
+                                প্রিন্ট
+                            </Button>
                         </div>
                     </div>
-                    <div className="flex gap-2">
-                        <Button variant="outline" onClick={() => setShowIssueModal(true)}>
-                            <AlertCircle className="w-4 h-4 mr-2" />
-                            সমস্যা লিখে পাঠান
-                        </Button>
-                        {loan.issues?.length === 0 && (
-                            <Button onClick={handleApprove} className="bg-green-600 hover:bg-green-700">
-                                <CheckCircle className="w-4 h-4 mr-2" />
-                                অনুমোদন
-                            </Button>
-                        )}
-                        <Button variant="destructive" onClick={() => setShowRejectModal(true)}>
-                            <XCircle className="w-4 h-4 mr-2" />
-                            প্রত্যাখ্যান
-                        </Button>
+
+                    {/* Status Card */}
+                    <Card className="mb-6 border-l-4 border-l-primary">
+                        <CardContent className="p-6">
+                            <div className="flex items-center justify-between">
+                                <div className="flex items-center gap-4">
+                                    <div className="p-3 bg-primary/10 rounded-full">
+                                        <StatusIcon className="w-6 h-6 text-primary" />
+                                    </div>
+                                    <div>
+                                        <Badge className={statusInfo.color + ' mb-2'}>
+                                            <StatusIcon className="w-3 h-3 mr-1" />
+                                            {statusInfo.label}
+                                        </Badge>
+                                        <p className="text-sm text-gray-600">
+                                            আবেদনের তারিখ: {formatDate(loan.created_at)}
+                                        </p>
+                                        {loan.submitted_at && (
+                                            <p className="text-sm text-gray-600">
+                                                জমা দেওয়ার তারিখ: {formatDate(loan.submitted_at)}
+                                            </p>
+                                        )}
+                                        {loan.reviewed_at && (
+                                            <p className="text-sm text-gray-600">
+                                                পর্যালোচনার তারিখ: {formatDate(loan.reviewed_at)}
+                                            </p>
+                                        )}
+                                    </div>
+                                </div>
+                                <div className="text-right">
+                                    <p className="text-sm text-gray-600">ফর্ম টাইপ</p>
+                                    <Badge variant="outline" className="text-lg">
+                                        {loan.form_type === 1 ? 'সাপ্তাহিক/সুফলন' : 'বড় ঋণ'}
+                                    </Badge>
+                                </div>
+                            </div>
+                        </CardContent>
+                    </Card>
+
+                    {/* Basic Info Cards */}
+                    <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
+                        <Card>
+                            <CardHeader>
+                                <CardTitle className="flex items-center gap-2">
+                                    <User className="w-5 h-5" /> সদস্যের তথ্য
+                                </CardTitle>
+                            </CardHeader>
+                            <CardContent className="space-y-2 text-sm">
+                                <p><span className="text-gray-600">নাম:</span> {loan.member_admission?.applicant_name_bn || loan.member_admission?.applicant_name_en || '-'}</p>
+                                <p><span className="text-gray-600">NID:</span> {loan.member_admission?.nid_number || loan.member_admission?.nid_no || '-'}</p>
+                                <p><span className="text-gray-600">মোবাইল:</span> {loan.member_admission?.mobile_number || loan.member_admission?.mobile_no || '-'}</p>
+                                <p><span className="text-gray-600">ঠিকানা:</span> {loan.member_admission?.present_village_road || loan.member_admission?.present_address_en || '-'}</p>
+                            </CardContent>
+                        </Card>
+
+                        <Card>
+                            <CardHeader>
+                                <CardTitle className="flex items-center gap-2">
+                                    <Banknote className="w-5 h-5" /> ঋণ বিবরণ
+                                </CardTitle>
+                            </CardHeader>
+                            <CardContent className="space-y-2 text-sm">
+                                <p><span className="text-gray-600">ক্যাটাগরি:</span> {loan.loan_category?.category_name_bn || loan.loan_category?.category_name || '-'}</p>
+                                <p><span className="text-gray-600">পণ্য:</span> {loan.loan_product?.product_name_bn || loan.loan_product?.product_name || '-'}</p>
+                                <p><span className="text-gray-600">আবেদিত পরিমাণ:</span> ৳{Number(loan.requested_amount).toLocaleString('bn-BD')}</p>
+                                {loan.approved_amount && (
+                                    <p><span className="text-gray-600">অনুমোদিত পরিমাণ:</span> ৳{Number(loan.approved_amount).toLocaleString('bn-BD')}</p>
+                                )}
+                                <p><span className="text-gray-600">শাখা:</span> {loan.branch?.name || '-'}</p>
+                                {loan.samity && (
+                                    <p><span className="text-gray-600">সমিতি:</span> {loan.samity.samity_name_bn || loan.samity.samity_name || '-'}</p>
+                                )}
+                                <p><span className="text-gray-600">জমার তারিখ:</span> {loan.submitted_at ? formatDate(loan.submitted_at) : '-'}</p>
+                                {loan.purpose_of_loan && (
+                                    <p><span className="text-gray-600">ঋণের উদ্দেশ্য:</span> {loan.purpose_of_loan}</p>
+                                )}
+                            </CardContent>
+                        </Card>
                     </div>
+
+                    {/* Issues Card */}
+                    {loan.issues && loan.issues.length > 0 && (
+                        <Card className="mb-6 border-amber-200 print:border-gray-300">
+                            <CardHeader className="print:border-b print:pb-3">
+                                <div className="flex items-center justify-between">
+                                    <CardTitle className="flex items-center gap-2 text-amber-800 print:text-gray-900">
+                                        <AlertCircle className="w-5 h-5" /> হেড অফিস থেকে পাঠানো সমস্যা ও শাখার উত্তর
+                                    </CardTitle>
+                                    <Button 
+                                        variant="outline" 
+                                        size="sm" 
+                                        onClick={() => {
+                                            const printContent = document.getElementById('issues-print-area');
+                                            if (printContent) {
+                                                const printWindow = window.open('', '_blank');
+                                                if (printWindow) {
+                                                    printWindow.document.write(`
+                                                        <html>
+                                                            <head>
+                                                                <title>সমস্যা ও উত্তর - ${loan.application_no}</title>
+                                                                <style>
+                                                                    body { font-family: 'Kalpurush', Arial, sans-serif; padding: 20px; }
+                                                                    .header { text-align: center; margin-bottom: 30px; border-bottom: 2px solid #333; padding-bottom: 15px; }
+                                                                    .issue-item { margin-bottom: 25px; padding: 15px; border: 1px solid #ddd; border-radius: 5px; }
+                                                                    .issue-question { background: #fef3c7; padding: 12px; border-radius: 5px; margin-bottom: 10px; }
+                                                                    .issue-response { background: #d1fae5; padding: 12px; border-radius: 5px; margin-top: 10px; }
+                                                                    .status-badge { display: inline-block; padding: 4px 8px; border-radius: 3px; font-size: 12px; margin-left: 10px; }
+                                                                    .pending { background: #fef3c7; color: #92400e; }
+                                                                    .resolved { background: #d1fae5; color: #065f46; }
+                                                                    .rejected { background: #fee2e2; color: #991b1b; }
+                                                                    .meta { font-size: 11px; color: #666; margin-top: 5px; }
+                                                                </style>
+                                                            </head>
+                                                            <body>
+                                                                <div class="header">
+                                                                    <h1>ঋণ আবেদন সমস্যা ও উত্তর</h1>
+                                                                    <p>আবেদন নং: ${loan.application_no}</p>
+                                                                    <p>তারিখ: ${new Date().toLocaleDateString('bn-BD')}</p>
+                                                                </div>
+                                                                ${Array.from(printContent.children).map((item: any) => item.outerHTML).join('')}
+                                                            </body>
+                                                        </html>
+                                                    `);
+                                                    printWindow.document.close();
+                                                    printWindow.print();
+                                                }
+                                            }
+                                        }}
+                                        className="print:hidden"
+                                    >
+                                        <Printer className="w-4 h-4 mr-2" />
+                                        প্রিন্ট
+                                    </Button>
+                                </div>
+                            </CardHeader>
+                            <CardContent>
+                                <div id="issues-print-area" className="space-y-4">
+                                    {loan.issues.map((issue) => (
+                                        <div 
+                                            key={issue.id} 
+                                            className={`p-4 border rounded-lg text-sm print:break-inside-avoid ${
+                                                issue.status === 'pending' 
+                                                    ? 'bg-amber-50 border-amber-200' 
+                                                    : issue.status === 'resolved'
+                                                    ? 'bg-green-50 border-green-200'
+                                                    : 'bg-red-50 border-red-200'
+                                            }`}
+                                        >
+                                            {/* Issue Question */}
+                                            <div className={`p-3 rounded mb-3 ${
+                                                issue.status === 'pending' 
+                                                    ? 'bg-amber-100' 
+                                                    : issue.status === 'resolved'
+                                                    ? 'bg-green-100'
+                                                    : 'bg-red-100'
+                                            }`}>
+                                                <div className="flex items-start justify-between gap-2">
+                                                    <div className="flex-1">
+                                                        <div className="flex items-center gap-2 mb-2">
+                                                            <AlertCircle className={`w-4 h-4 ${
+                                                                issue.status === 'pending' 
+                                                                    ? 'text-amber-700' 
+                                                                    : issue.status === 'resolved'
+                                                                    ? 'text-green-700'
+                                                                    : 'text-red-700'
+                                                            }`} />
+                                                            <span className={`font-semibold ${
+                                                                issue.status === 'pending' 
+                                                                    ? 'text-amber-900' 
+                                                                    : issue.status === 'resolved'
+                                                                    ? 'text-green-900'
+                                                                    : 'text-red-900'
+                                                            }`}>
+                                                                হেড অফিস থেকে পাঠানো সমস্যা
+                                                            </span>
+                                                            <Badge className={`${
+                                                                issue.status === 'pending' 
+                                                                    ? 'bg-amber-200 text-amber-800' 
+                                                                    : issue.status === 'resolved'
+                                                                    ? 'bg-green-200 text-green-800'
+                                                                    : 'bg-red-200 text-red-800'
+                                                            }`}>
+                                                                {issue.status === 'pending' ? 'পেন্ডিং' : issue.status === 'resolved' ? 'সমাধান করা হয়েছে' : 'প্রত্যাখ্যান করা হয়েছে'}
+                                                            </Badge>
+                                                        </div>
+                                                        <p className={`${
+                                                            issue.status === 'pending' 
+                                                                ? 'text-amber-900' 
+                                                                : issue.status === 'resolved'
+                                                                ? 'text-green-900'
+                                                                : 'text-red-900'
+                                                        }`}>
+                                                            {issue.issue_description}
+                                                        </p>
+                                                        <p className={`text-xs mt-2 ${
+                                                            issue.status === 'pending' 
+                                                                ? 'text-amber-700' 
+                                                                : issue.status === 'resolved'
+                                                                ? 'text-green-700'
+                                                                : 'text-red-700'
+                                                        }`}>
+                                                            — {issue.reporter?.name}, {new Date(issue.created_at).toLocaleString('bn-BD')}
+                                                        </p>
+                                                    </div>
+                                                </div>
+                                            </div>
+
+                                            {/* Branch Response */}
+                                            {issue.response_message && (
+                                                <div className="p-3 rounded bg-blue-50 border border-blue-200">
+                                                    <div className="flex items-center gap-2 mb-2">
+                                                        <MessageSquare className="w-4 h-4 text-blue-700" />
+                                                        <span className="font-semibold text-blue-900">শাখার উত্তর</span>
+                                                    </div>
+                                                    <p className="text-blue-900 whitespace-pre-wrap">{issue.response_message}</p>
+                                                    {issue.responder && (
+                                                        <p className="text-xs text-blue-700 mt-2">
+                                                            — {issue.responder.name}
+                                                            {issue.responded_at && `, ${new Date(issue.responded_at).toLocaleString('bn-BD')}`}
+                                                        </p>
+                                                    )}
+                                                </div>
+                                            )}
+
+                                            {/* No Response Message */}
+                                            {!issue.response_message && issue.status === 'pending' && (
+                                                <div className="p-2 bg-gray-100 rounded text-xs text-gray-600 italic">
+                                                    শাখা থেকে এখনও উত্তর পাওয়া যায়নি
+                                                </div>
+                                            )}
+                                        </div>
+                                    ))}
+                                </div>
+                            </CardContent>
+                        </Card>
+                    )}
+
+                    {/* Forms Section */}
+                    {savedFormIds.length > 0 && (
+                        <Card className="mb-6 border-l-4 border-l-green-600">
+                            <CardHeader>
+                                <CardTitle className="text-base">সেভকৃত ফর্ম</CardTitle>
+                                <CardDescription>যে ফর্মে ডেটা সেভ আছে সেটা বাটনে ক্লিক করে দেখুন ও প্রিন্ট করুন</CardDescription>
+                            </CardHeader>
+                            <CardContent className="space-y-4">
+                                <div className="flex flex-wrap gap-2">
+                                    {savedFormIds.map((id) => (
+                                        <Button
+                                            key={id}
+                                            variant={selectedFormId === id ? 'default' : 'outline'}
+                                            onClick={() => setSelectedFormId(selectedFormId === id ? null : id)}
+                                        >
+                                            <FileText className="w-4 h-4 mr-2" />
+                                            {FORM_NAMES[id] || `ফর্ম ${id}`}
+                                        </Button>
+                                    ))}
+                                </div>
+                                {selectedFormId !== null && (
+                                    <div className="rounded-lg border bg-gray-50/50 p-4">
+                                        <div className="mb-3 flex items-center justify-between print:hidden">
+                                            <span className="font-semibold text-gray-700">{FORM_NAMES[selectedFormId]}</span>
+                                            <Button variant="outline" size="sm" onClick={printFormContent}>
+                                                <Printer className="w-4 h-4 mr-2" />
+                                                প্রিন্ট
+                                            </Button>
+                                        </div>
+                                        <div ref={formPrintRef} className="form-print-area space-y-3 text-sm">
+                                            {selectedFormId === 1 && loan.loan_agreement_data && (
+                                                <LoanAgreement
+                                                    onlyPreview
+                                                    savedData={loan.loan_agreement_data}
+                                                    member={loan.member_admission}
+                                                    loanProduct={loan.loan_product}
+                                                    loanCategory={loan.loan_category}
+                                                    requestedAmount={loan.requested_amount}
+                                                    branch={loan.branch}
+                                                />
+                                            )}
+                                            {selectedFormId === 2 && loan.guarantor_info && (
+                                                <GuarantorCommitment
+                                                    onlyPreview
+                                                    savedData={loan.guarantor_info}
+                                                    member={loan.member_admission}
+                                                    loanProduct={loan.loan_product}
+                                                    loanCategory={loan.loan_category}
+                                                    requestedAmount={loan.requested_amount}
+                                                    branch={loan.branch}
+                                                />
+                                            )}
+                                            {selectedFormId === 3 && loan.nominee_info && (
+                                                <DeathRiskFund
+                                                    onlyPreview
+                                                    savedData={loan.nominee_info}
+                                                    member={loan.member_admission}
+                                                    loanProduct={loan.loan_product}
+                                                    loanCategory={loan.loan_category}
+                                                    requestedAmount={loan.requested_amount}
+                                                    branch={loan.branch}
+                                                />
+                                            )}
+                                            {selectedFormId === 4 && loan.asset_info && (
+                                                <FieldInvestigation
+                                                    onlyPreview
+                                                    savedData={loan.asset_info}
+                                                    member={loan.member_admission}
+                                                    loanProduct={loan.loan_product}
+                                                    loanCategory={loan.loan_category}
+                                                    requestedAmount={loan.requested_amount}
+                                                    branch={loan.branch}
+                                                />
+                                            )}
+                                            {selectedFormId === 5 && loan.business_plan && (
+                                                <LoanApplicationApproval
+                                                    onlyPreview
+                                                    savedData={loan.business_plan}
+                                                    member={loan.member_admission}
+                                                    loanProduct={loan.loan_product}
+                                                    loanCategory={loan.loan_category}
+                                                    requestedAmount={loan.requested_amount}
+                                                    branch={loan.branch}
+                                                />
+                                            )}
+                                        </div>
+                                    </div>
+                                )}
+                            </CardContent>
+                        </Card>
+                    )}
+
+                    {savedFormIds.length === 0 && (
+                        <Card className="mb-6">
+                            <CardContent className="p-6">
+                                <p className="text-sm text-gray-500 text-center">
+                                    এই আবেদনের জন্য এখনও কোন ফর্ম সেভ নেই।
+                                </p>
+                            </CardContent>
+                        </Card>
+                    )}
                 </div>
-
-                <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                    <Card>
-                        <CardHeader>
-                            <CardTitle className="flex items-center gap-2">
-                                <User className="w-5 h-5" /> সদস্যের তথ্য
-                            </CardTitle>
-                        </CardHeader>
-                        <CardContent className="space-y-2 text-sm">
-                            <p><span className="text-gray-600">নাম:</span> {memberName}</p>
-                            <p><span className="text-gray-600">NID:</span> {ma.nid_number || '-'}</p>
-                            <p><span className="text-gray-600">মোবাইল:</span> {ma.mobile_number || '-'}</p>
-                        </CardContent>
-                    </Card>
-
-                    <Card>
-                        <CardHeader>
-                            <CardTitle className="flex items-center gap-2">
-                                <Banknote className="w-5 h-5" /> ঋণ বিবরণ
-                            </CardTitle>
-                        </CardHeader>
-                        <CardContent className="space-y-2 text-sm">
-                            <p><span className="text-gray-600">ক্যাটাগরি:</span> {loan.loan_category?.category_name_bn}</p>
-                            <p><span className="text-gray-600">পণ্য:</span> {loan.loan_product?.product_name_bn}</p>
-                            <p><span className="text-gray-600">আবেদিত পরিমাণ:</span> ৳{Number(loan.requested_amount).toLocaleString()}</p>
-                            <p><span className="text-gray-600">শাখা:</span> {loan.branch?.name}</p>
-                            <p><span className="text-gray-600">জমার তারিখ:</span> {loan.submitted_at ? new Date(loan.submitted_at).toLocaleDateString('bn-BD') : '-'}</p>
-                            {loan.purpose_of_loan && (
-                                <p><span className="text-gray-600">ঋণের উদ্দেশ্য:</span> {loan.purpose_of_loan}</p>
-                            )}
-                        </CardContent>
-                    </Card>
-                </div>
-
-                {loan.issues && loan.issues.length > 0 && (
-                    <Card className="border-amber-200">
-                        <CardHeader>
-                            <CardTitle className="flex items-center gap-2 text-amber-800">
-                                <AlertCircle className="w-5 h-5" /> হেড অফিস থেকে পাঠানো সমস্যা
-                            </CardTitle>
-                        </CardHeader>
-                        <CardContent>
-                            <ul className="space-y-3">
-                                {loan.issues.map((issue) => (
-                                    <li key={issue.id} className="p-3 bg-amber-50 border border-amber-200 rounded-lg text-sm">
-                                        <p className="text-amber-900">{issue.issue_description}</p>
-                                        <p className="text-xs text-amber-700 mt-1">— {issue.reporter?.name}, {new Date(issue.created_at).toLocaleString('bn-BD')}</p>
-                                    </li>
-                                ))}
-                            </ul>
-                        </CardContent>
-                    </Card>
-                )}
             </div>
 
-            {/* Issue modal */}
+            {/* Issue Modal */}
             {showIssueModal && (
                 <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
                     <div className="bg-white rounded-lg shadow-xl w-full max-w-lg">
@@ -202,7 +700,7 @@ export default function LoanApplicationShow({ loan, flash }: Props) {
                 </div>
             )}
 
-            {/* Reject modal */}
+            {/* Reject Modal */}
             {showRejectModal && (
                 <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
                     <RejectModal

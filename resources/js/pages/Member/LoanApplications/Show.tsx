@@ -1,19 +1,11 @@
 import AdminLayout from '@/layouts/admin-layout';
 import { Head, Link, router } from '@inertiajs/react';
-import { useState } from 'react';
+import { useState, useRef } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { Separator } from '@/components/ui/separator';
 import {
-    User,
-    Banknote,
-    Calendar,
     FileText,
-    Users,
-    Shield,
-    Heart,
-    TrendingUp,
     CheckCircle2,
     Clock,
     XCircle,
@@ -23,6 +15,11 @@ import {
     ArrowLeft,
     Send
 } from 'lucide-react';
+import GuarantorCommitment from './Forms/GuarantorCommitment';
+import DeathRiskFund from './Forms/DeathRiskFund';
+import LoanAgreement from './Forms/LoanAgreement';
+import FieldInvestigation from './Forms/FieldInvestigation';
+import LoanApplicationApproval from './Forms/LoanApplicationApproval';
 
 interface LoanApplication {
     id: number;
@@ -95,6 +92,9 @@ interface LoanApplication {
         samity_name: string;
         samity_name_bn: string;
     } | null;
+    loan_agreement_data?: any;
+    asset_info?: any;
+    business_plan?: any;
 }
 
 const FORM_NAMES: Record<number, string> = {
@@ -131,20 +131,75 @@ export default function Show({ application, availableApprovers = [], routes }: P
     const [showSubmitModal, setShowSubmitModal] = useState(false);
     const [selectedApprovers, setSelectedApprovers] = useState<number[]>([]);
     const [submitting, setSubmitting] = useState(false);
+    const [selectedFormId, setSelectedFormId] = useState<number | null>(null);
+    const formPrintRef = useRef<HTMLDivElement>(null);
 
-    const ma = application.member_admission;
-    const memberNameEn = ma?.applicant_name_en ?? ma?.member_name_en ?? '';
-    const memberNameBn = ma?.applicant_name_bn ?? ma?.member_name_bn ?? '';
-    const nid = ma?.nid_number ?? ma?.nid_no ?? '';
-    const mobile = ma?.mobile_number ?? ma?.mobile_no ?? '';
-    const address = ma?.present_village_road ?? ma?.present_address_en ?? '';
-    const formatAmount = (amount: number | null) => {
-        if (!amount) return 'N/A';
-        return new Intl.NumberFormat('bn-BD', {
-            style: 'currency',
-            currency: 'BDT',
-            minimumFractionDigits: 0,
-        }).format(amount);
+    // Helper function to recursively check if data has meaningful content
+    const hasMeaningfulData = (data: any): boolean => {
+        if (data === null || data === undefined || data === '') return false;
+        
+        if (typeof data === 'string') {
+            const trimmed = data.trim();
+            return trimmed !== '' && trimmed !== 'null' && trimmed !== '{}' && trimmed !== '[]' && trimmed.length >= 3;
+        }
+        
+        if (Array.isArray(data)) {
+            if (data.length === 0) return false;
+            return data.some(item => hasMeaningfulData(item));
+        }
+        
+        if (typeof data === 'object') {
+            const keys = Object.keys(data);
+            if (keys.length === 0) return false;
+            // Check if at least one value has meaningful content
+            return keys.some(key => {
+                const value = data[key];
+                if (value === null || value === undefined || value === '') return false;
+                if (typeof value === 'string' && value.trim() === '') return false;
+                if (Array.isArray(value) && value.length === 0) return false;
+                if (typeof value === 'object' && Object.keys(value).length === 0) return false;
+                // Recursively check nested structures
+                return hasMeaningfulData(value);
+            });
+        }
+        
+        // For other types (numbers, booleans), consider them meaningful
+        return true;
+    };
+
+    // শুধু সেই ফর্মগুলো দেখাও যেগুলো এই loan application এর জন্য required (visible_form_ids)
+    // এবং সেভ করা হয়েছে (form_saved flag + meaningful data)
+    // Create page-এ যেভাবে visible forms নির্ধারণ করা হয়, Show page-এও একইভাবে
+    const visibleFormIds = application.visible_form_ids || [1, 2, 3, 4, 5]; // Fallback to all if not provided
+    
+    const savedFormIds = visibleFormIds.filter((id) => {
+        // First check: form must be in visible_form_ids (required for this loan)
+        if (!visibleFormIds.includes(id)) return false;
+        
+        // Second check: backend flag must be true
+        if (application.form_saved?.[id] !== true) return false;
+        
+        // Third check: verify actual data exists with meaningful content
+        switch (id) {
+            case 1:
+                return hasMeaningfulData(application.loan_agreement_data);
+            case 2:
+                return hasMeaningfulData(application.guarantor_info);
+            case 3:
+                return hasMeaningfulData(application.nominee_info);
+            case 4:
+                return hasMeaningfulData(application.asset_info);
+            case 5:
+                return hasMeaningfulData(application.business_plan);
+            default:
+                return false;
+        }
+    });
+
+    const printFormContent = () => {
+        if (!formPrintRef.current || !selectedFormId) return;
+        // একই পেজ থেকে প্রিন্ট = দেখতে যেমন, প্রিন্টও তেমন (WYSIWYG)। প্রিন্ট CSS শুধু ফর্মটুকু দেখায়।
+        window.print();
     };
 
     const formatDate = (date: string | null) => {
@@ -161,7 +216,26 @@ export default function Show({ application, availableApprovers = [], routes }: P
 
     return (
         <AdminLayout>
-            <Head title={`ঋণ আবেদন - ${application.application_no}`} />
+            <Head title={`ঋণ আবেদন - ${application.application_no}`}>
+                <style>{`
+                    @media print {
+                        @page { size: A4; margin: 1cm; }
+                        body * { visibility: hidden !important; }
+                        .form-print-area, .form-print-area * { visibility: visible !important; }
+                        .form-print-area {
+                            position: absolute !important;
+                            left: 0 !important;
+                            top: 0 !important;
+                            width: 100% !important;
+                            max-width: 100% !important;
+                            padding: 0 !important;
+                            margin: 0 !important;
+                            background: white !important;
+                            box-shadow: none !important;
+                        }
+                    }
+                `}</style>
+            </Head>
 
             <div className="py-6">
                 <div className="mx-auto max-w-6xl sm:px-6 lg:px-8">
@@ -235,395 +309,103 @@ export default function Show({ application, availableApprovers = [], routes }: P
                         </CardContent>
                     </Card>
 
-                    {/* Form completion status (for draft) */}
-                    {application.status === 'draft' && application.visible_form_ids && (
-                        <Card className="mb-6 border-l-4 border-l-blue-500">
+                    {/* শুধু সেভকৃত ফর্ম - সাবমিটের আগে/অ্যাপ্রুভার/সুপার অ্যাডমিন সবার জন্য একই ভিউ */}
+                    {savedFormIds.length > 0 && (
+                        <Card className="mb-6 border-l-4 border-l-green-600">
                             <CardHeader>
-                                <CardTitle className="text-base">ফর্মের অবস্থা</CardTitle>
-                                <CardDescription>
-                                    {application.all_forms_complete
-                                        ? 'সব প্রয়োজনীয় ফর্ম সেভ আছে। সাবমিট করতে পারবেন।'
-                                        : 'নিচের ফর্মগুলো পূরণ ও সেভ করুন তারপর সাবমিট করতে পারবেন।'}
-                                </CardDescription>
+                                <CardTitle className="text-base">সেভকৃত ফর্ম</CardTitle>
+                                <CardDescription>যে ফর্মে ডেটা সেভ আছে সেটা বাটনে ক্লিক করে দেখুন ও প্রিন্ট করুন</CardDescription>
                             </CardHeader>
-                            <CardContent>
+                            <CardContent className="space-y-4">
                                 <div className="flex flex-wrap gap-2">
-                                    {application.visible_form_ids.map((formId) => {
-                                        const saved = application.form_saved?.[formId];
-                                        return (
-                                            <Badge
-                                                key={formId}
-                                                variant={saved ? 'default' : 'secondary'}
-                                                className={saved ? 'bg-green-600' : 'bg-amber-100 text-amber-800'}
-                                            >
-                                                {saved && <CheckCircle2 className="w-3 h-3 mr-1" />}
-                                                {FORM_NAMES[formId] || `ফর্ম ${formId}`}: {saved ? 'সেভ আছে' : 'বাকি'}
-                                            </Badge>
-                                        );
-                                    })}
+                                    {savedFormIds.map((id) => (
+                                        <Button
+                                            key={id}
+                                            variant={selectedFormId === id ? 'default' : 'outline'}
+                                            onClick={() => setSelectedFormId(selectedFormId === id ? null : id)}
+                                        >
+                                            <FileText className="w-4 h-4 mr-2" />
+                                            {FORM_NAMES[id] || `ফর্ম ${id}`}
+                                        </Button>
+                                    ))}
                                 </div>
+                                {selectedFormId !== null && (
+                                    <div className="rounded-lg border bg-gray-50/50 p-4">
+                                        <div className="mb-3 flex items-center justify-between print:hidden">
+                                            <span className="font-semibold text-gray-700">{FORM_NAMES[selectedFormId]}</span>
+                                            <Button variant="outline" size="sm" onClick={printFormContent}>
+                                                <Printer className="w-4 h-4 mr-2" />
+                                                প্রিন্ট
+                                            </Button>
+                                        </div>
+                                        <div ref={formPrintRef} className="form-print-area space-y-3 text-sm">
+                                            {selectedFormId === 1 && application.loan_agreement_data && (
+                                                <LoanAgreement
+                                                    onlyPreview
+                                                    savedData={application.loan_agreement_data}
+                                                    member={application.member_admission}
+                                                    loanProduct={application.loan_product}
+                                                    loanCategory={application.loan_category}
+                                                    requestedAmount={application.requested_amount}
+                                                    branch={application.branch}
+                                                />
+                                            )}
+                                            {selectedFormId === 2 && application.guarantor_info && (
+                                                <GuarantorCommitment
+                                                    onlyPreview
+                                                    savedData={application.guarantor_info}
+                                                    member={application.member_admission}
+                                                    loanProduct={application.loan_product}
+                                                    loanCategory={application.loan_category}
+                                                    requestedAmount={application.requested_amount}
+                                                    branch={application.branch}
+                                                />
+                                            )}
+                                            {selectedFormId === 3 && application.nominee_info && (
+                                                <DeathRiskFund
+                                                    onlyPreview
+                                                    savedData={application.nominee_info}
+                                                    member={application.member_admission}
+                                                    loanProduct={application.loan_product}
+                                                    loanCategory={application.loan_category}
+                                                    requestedAmount={application.requested_amount}
+                                                    branch={application.branch}
+                                                />
+                                            )}
+                                            {selectedFormId === 4 && application.asset_info && (
+                                                <FieldInvestigation
+                                                    onlyPreview
+                                                    savedData={application.asset_info}
+                                                    member={application.member_admission}
+                                                    loanProduct={application.loan_product}
+                                                    loanCategory={application.loan_category}
+                                                    requestedAmount={application.requested_amount}
+                                                    branch={application.branch}
+                                                />
+                                            )}
+                                            {selectedFormId === 5 && application.business_plan && (
+                                                <LoanApplicationApproval
+                                                    onlyPreview
+                                                    savedData={application.business_plan}
+                                                    member={application.member_admission}
+                                                    loanProduct={application.loan_product}
+                                                    loanCategory={application.loan_category}
+                                                    requestedAmount={application.requested_amount}
+                                                    branch={application.branch}
+                                                />
+                                            )}
+                                        </div>
+                                    </div>
+                                )}
                             </CardContent>
                         </Card>
                     )}
 
-                    <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-                        {/* Main Content */}
-                        <div className="lg:col-span-2 space-y-6">
-                            {/* Member Information */}
-                            <Card>
-                                <CardHeader>
-                                    <CardTitle className="flex items-center gap-2">
-                                        <User className="w-5 h-5" />
-                                        সদস্যের তথ্য
-                                    </CardTitle>
-                                </CardHeader>
-                                <CardContent className="space-y-4">
-                                    <div className="grid grid-cols-2 gap-4">
-                                        <div>
-                                            <p className="text-sm text-gray-600">নাম (বাংলা)</p>
-                                            <p className="font-semibold">{memberNameBn}</p>
-                                        </div>
-                                        <div>
-                                            <p className="text-sm text-gray-600">Name (English)</p>
-                                            <p className="font-semibold">{memberNameEn}</p>
-                                        </div>
-                                        <div>
-                                            <p className="text-sm text-gray-600">পিতার নাম</p>
-                                            <p className="font-semibold">{ma?.father_name_en ?? ''}</p>
-                                        </div>
-                                        <div>
-                                            <p className="text-sm text-gray-600">মাতার নাম</p>
-                                            <p className="font-semibold">{ma?.mother_name_en ?? ''}</p>
-                                        </div>
-                                        <div>
-                                            <p className="text-sm text-gray-600">NID নং</p>
-                                            <p className="font-semibold font-mono">{nid}</p>
-                                        </div>
-                                        <div>
-                                            <p className="text-sm text-gray-600">মোবাইল নং</p>
-                                            <p className="font-semibold font-mono">{mobile}</p>
-                                        </div>
-                                        <div className="col-span-2">
-                                            <p className="text-sm text-gray-600">ঠিকানা</p>
-                                            <p className="font-semibold">{address}</p>
-                                        </div>
-                                    </div>
-                                </CardContent>
-                            </Card>
-
-                            {/* Loan Details */}
-                            <Card>
-                                <CardHeader>
-                                    <CardTitle className="flex items-center gap-2">
-                                        <Banknote className="w-5 h-5" />
-                                        ঋণ বিবরণ
-                                    </CardTitle>
-                                </CardHeader>
-                                <CardContent className="space-y-4">
-                                    <div className="grid grid-cols-2 gap-4">
-                                        <div>
-                                            <p className="text-sm text-gray-600">ঋণ ক্যাটেগরি</p>
-                                            <p className="font-semibold">{application.loan_category.category_name_bn}</p>
-                                            <p className="text-xs text-gray-500">{application.loan_category.category_code}</p>
-                                        </div>
-                                        <div>
-                                            <p className="text-sm text-gray-600">ঋণ পণ্য</p>
-                                            <p className="font-semibold">{application.loan_product.product_name_bn}</p>
-                                            <p className="text-xs text-gray-500">{application.loan_product.product_code}</p>
-                                        </div>
-                                        <div>
-                                            <p className="text-sm text-gray-600">আবেদিত পরিমাণ</p>
-                                            <p className="font-semibold text-lg text-primary">
-                                                {formatAmount(application.requested_amount)}
-                                            </p>
-                                        </div>
-                                        {application.approved_amount && (
-                                            <div>
-                                                <p className="text-sm text-gray-600">অনুমোদিত পরিমাণ</p>
-                                                <p className="font-semibold text-lg text-green-600">
-                                                    {formatAmount(application.approved_amount)}
-                                                </p>
-                                            </div>
-                                        )}
-                                        <div>
-                                            <p className="text-sm text-gray-600">কিস্তির ধরন</p>
-                                            <p className="font-semibold">
-                                                {application.repayment_frequency === 'weekly' ? 'সাপ্তাহিক' : 'মাসিক'}
-                                            </p>
-                                        </div>
-                                        <div>
-                                            <p className="text-sm text-gray-600">কিস্তি সংখ্যা</p>
-                                            <p className="font-semibold">{application.number_of_installments} টি</p>
-                                        </div>
-                                        <div>
-                                            <p className="text-sm text-gray-600">ঋণের মেয়াদ</p>
-                                            <p className="font-semibold">{application.loan_term_months} মাস</p>
-                                        </div>
-                                        <div>
-                                            <p className="text-sm text-gray-600">সুদের হার</p>
-                                            <p className="font-semibold">{application.loan_product.interest_rate}%</p>
-                                        </div>
-                                        {application.installment_amount && (
-                                            <div>
-                                                <p className="text-sm text-gray-600">কিস্তির পরিমাণ</p>
-                                                <p className="font-semibold">{formatAmount(application.installment_amount)}</p>
-                                            </div>
-                                        )}
-                                        <div>
-                                            <p className="text-sm text-gray-600">প্রস্তাবিত শুরুর তারিখ</p>
-                                            <p className="font-semibold">{formatDate(application.proposed_start_date)}</p>
-                                        </div>
-                                    </div>
-
-                                    <Separator />
-
-                                    <div>
-                                        <p className="text-sm text-gray-600 mb-2">ঋণের উদ্দেশ্য</p>
-                                        <p className="text-sm bg-gray-50 p-3 rounded">{application.purpose_of_loan}</p>
-                                    </div>
-
-                                    {application.repayment_source && (
-                                        <div>
-                                            <p className="text-sm text-gray-600 mb-2">পরিশোধের উৎস</p>
-                                            <p className="text-sm bg-gray-50 p-3 rounded">{application.repayment_source}</p>
-                                        </div>
-                                    )}
-                                </CardContent>
-                            </Card>
-
-                            {/* Financial Information */}
-                            {(application.monthly_income || application.monthly_expense) && (
-                                <Card>
-                                    <CardHeader>
-                                        <CardTitle className="flex items-center gap-2">
-                                            <TrendingUp className="w-5 h-5" />
-                                            আর্থিক তথ্য
-                                        </CardTitle>
-                                    </CardHeader>
-                                    <CardContent>
-                                        <div className="grid grid-cols-3 gap-4">
-                                            {application.monthly_income && (
-                                                <div>
-                                                    <p className="text-sm text-gray-600">মাসিক আয়</p>
-                                                    <p className="font-semibold text-green-600">
-                                                        {formatAmount(application.monthly_income)}
-                                                    </p>
-                                                </div>
-                                            )}
-                                            {application.monthly_expense && (
-                                                <div>
-                                                    <p className="text-sm text-gray-600">মাসিক ব্যয়</p>
-                                                    <p className="font-semibold text-red-600">
-                                                        {formatAmount(application.monthly_expense)}
-                                                    </p>
-                                                </div>
-                                            )}
-                                            {application.monthly_income && application.monthly_expense && (
-                                                <div>
-                                                    <p className="text-sm text-gray-600">উদ্বৃত্ত</p>
-                                                    <p className="font-semibold text-blue-600">
-                                                        {formatAmount(application.monthly_income - application.monthly_expense)}
-                                                    </p>
-                                                </div>
-                                            )}
-                                        </div>
-
-                                        {application.income_sources && application.income_sources.length > 0 && (
-                                            <div className="mt-4">
-                                                <p className="text-sm text-gray-600 mb-2">আয়ের উৎস</p>
-                                                <div className="space-y-2">
-                                                    {application.income_sources.map((source: any, index: number) => (
-                                                        <div key={index} className="flex justify-between text-sm bg-gray-50 p-2 rounded">
-                                                            <span>{source.source}</span>
-                                                            <span className="font-semibold">{formatAmount(source.amount)}</span>
-                                                        </div>
-                                                    ))}
-                                                </div>
-                                            </div>
-                                        )}
-                                    </CardContent>
-                                </Card>
-                            )}
-
-                            {/* Family Members */}
-                            {application.family_members && application.family_members.length > 0 && (
-                                <Card>
-                                    <CardHeader>
-                                        <CardTitle className="flex items-center gap-2">
-                                            <Users className="w-5 h-5" />
-                                            পরিবারের সদস্য
-                                        </CardTitle>
-                                    </CardHeader>
-                                    <CardContent>
-                                        <div className="overflow-x-auto">
-                                            <table className="w-full text-sm">
-                                                <thead className="bg-gray-50">
-                                                    <tr>
-                                                        <th className="p-2 text-left">নাম</th>
-                                                        <th className="p-2 text-left">সম্পর্ক</th>
-                                                        <th className="p-2 text-left">বয়স</th>
-                                                        <th className="p-2 text-left">পেশা</th>
-                                                    </tr>
-                                                </thead>
-                                                <tbody className="divide-y">
-                                                    {application.family_members.map((member: any, index: number) => (
-                                                        <tr key={index}>
-                                                            <td className="p-2">{member.name}</td>
-                                                            <td className="p-2">{member.relation}</td>
-                                                            <td className="p-2">{member.age}</td>
-                                                            <td className="p-2">{member.occupation}</td>
-                                                        </tr>
-                                                    ))}
-                                                </tbody>
-                                            </table>
-                                        </div>
-                                    </CardContent>
-                                </Card>
-                            )}
-
-                            {/* Guarantor Information */}
-                            {application.guarantor_info && (
-                                <Card>
-                                    <CardHeader>
-                                        <CardTitle className="flex items-center gap-2">
-                                            <Shield className="w-5 h-5" />
-                                            জামিনদারের তথ্য
-                                        </CardTitle>
-                                    </CardHeader>
-                                    <CardContent>
-                                        <div className="grid grid-cols-2 gap-4">
-                                            <div>
-                                                <p className="text-sm text-gray-600">নাম</p>
-                                                <p className="font-semibold">{application.guarantor_info.name}</p>
-                                            </div>
-                                            <div>
-                                                <p className="text-sm text-gray-600">পিতার নাম</p>
-                                                <p className="font-semibold">{application.guarantor_info.father_name}</p>
-                                            </div>
-                                            <div>
-                                                <p className="text-sm text-gray-600">NID নং</p>
-                                                <p className="font-semibold font-mono">{application.guarantor_info.nid}</p>
-                                            </div>
-                                            <div>
-                                                <p className="text-sm text-gray-600">মোবাইল নং</p>
-                                                <p className="font-semibold font-mono">{application.guarantor_info.mobile}</p>
-                                            </div>
-                                            <div>
-                                                <p className="text-sm text-gray-600">সম্পর্ক</p>
-                                                <p className="font-semibold">{application.guarantor_info.relation}</p>
-                                            </div>
-                                            <div className="col-span-2">
-                                                <p className="text-sm text-gray-600">ঠিকানা</p>
-                                                <p className="font-semibold">{application.guarantor_info.address}</p>
-                                            </div>
-                                        </div>
-                                    </CardContent>
-                                </Card>
-                            )}
-
-                            {/* Nominee Information */}
-                            {application.nominee_info && (
-                                <Card>
-                                    <CardHeader>
-                                        <CardTitle className="flex items-center gap-2">
-                                            <Heart className="w-5 h-5" />
-                                            মনোনীত ব্যক্তির তথ্য
-                                        </CardTitle>
-                                    </CardHeader>
-                                    <CardContent>
-                                        <div className="grid grid-cols-2 gap-4">
-                                            <div>
-                                                <p className="text-sm text-gray-600">নাম</p>
-                                                <p className="font-semibold">{application.nominee_info.name}</p>
-                                            </div>
-                                            <div>
-                                                <p className="text-sm text-gray-600">পিতার নাম</p>
-                                                <p className="font-semibold">{application.nominee_info.father_name}</p>
-                                            </div>
-                                            <div>
-                                                <p className="text-sm text-gray-600">মোবাইল নং</p>
-                                                <p className="font-semibold font-mono">{application.nominee_info.mobile}</p>
-                                            </div>
-                                            <div>
-                                                <p className="text-sm text-gray-600">সম্পর্ক</p>
-                                                <p className="font-semibold">{application.nominee_info.relation}</p>
-                                            </div>
-                                            <div className="col-span-2">
-                                                <p className="text-sm text-gray-600">ঠিকানা</p>
-                                                <p className="font-semibold">{application.nominee_info.address}</p>
-                                            </div>
-                                        </div>
-                                    </CardContent>
-                                </Card>
-                            )}
-                        </div>
-
-                        {/* Sidebar */}
-                        <div className="space-y-6">
-                            {/* Branch & Samity */}
-                            <Card>
-                                <CardHeader>
-                                    <CardTitle className="text-base">শাখা ও সমিতি</CardTitle>
-                                </CardHeader>
-                                <CardContent className="space-y-3">
-                                    <div>
-                                        <p className="text-sm text-gray-600">শাখা</p>
-                                        <p className="font-semibold">{application.branch.branch_name_bn ?? application.branch.name}</p>
-                                    </div>
-                                    {application.samity && (
-                                        <div>
-                                            <p className="text-sm text-gray-600">সমিতি</p>
-                                            <p className="font-semibold">{application.samity.samity_name_bn}</p>
-                                        </div>
-                                    )}
-                                </CardContent>
-                            </Card>
-
-                            {/* Savings Information */}
-                            {application.has_savings_account && (
-                                <Card>
-                                    <CardHeader>
-                                        <CardTitle className="text-base">সঞ্চয় হিসাব</CardTitle>
-                                    </CardHeader>
-                                    <CardContent className="space-y-2">
-                                        <div className="flex items-center gap-2 text-green-600">
-                                            <CheckCircle2 className="w-4 h-4" />
-                                            <span className="font-semibold">হ্যাঁ, সঞ্চয় হিসাব আছে</span>
-                                        </div>
-                                        {application.savings_amount && (
-                                            <div>
-                                                <p className="text-sm text-gray-600">সঞ্চয়ের পরিমাণ</p>
-                                                <p className="font-semibold">{formatAmount(application.savings_amount)}</p>
-                                            </div>
-                                        )}
-                                        {application.savings_account_type && (
-                                            <div>
-                                                <p className="text-sm text-gray-600">হিসাবের ধরন</p>
-                                                <p className="font-semibold">{application.savings_account_type}</p>
-                                            </div>
-                                        )}
-                                    </CardContent>
-                                </Card>
-                            )}
-
-                            {/* Other Loans */}
-                            {application.other_loan_amount > 0 && (
-                                <Card>
-                                    <CardHeader>
-                                        <CardTitle className="text-base">অন্যান্য ঋণ</CardTitle>
-                                    </CardHeader>
-                                    <CardContent>
-                                        <div>
-                                            <p className="text-sm text-gray-600">বর্তমান ঋণের পরিমাণ</p>
-                                            <p className="font-semibold text-orange-600">
-                                                {formatAmount(application.other_loan_amount)}
-                                            </p>
-                                        </div>
-                                    </CardContent>
-                                </Card>
-                            )}
-                        </div>
-                    </div>
+                    {savedFormIds.length === 0 && (
+                        <p className="text-sm text-gray-500 text-center py-6">
+                            এই আবেদনের জন্য এখনও কোন ফর্ম সেভ নেই। সম্পাদনা থেকে ফর্ম পূরণ ও সেভ করুন।
+                        </p>
+                    )}
                 </div>
             </div>
 

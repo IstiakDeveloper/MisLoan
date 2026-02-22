@@ -7,6 +7,13 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Inertia\Middleware;
+use App\Models\LoanApplication;
+use App\Models\LoanApplicationIssue;
+use App\Models\MemberAdmission;
+use App\Models\MemberAdmissionIssue;
+use App\Models\LoanApplicationApproval;
+use App\Models\MemberAdmissionApproval;
+use Carbon\Carbon;
 
 class HandleInertiaRequests extends Middleware
 {
@@ -147,6 +154,66 @@ class HandleInertiaRequests extends Middleware
             }
         }
 
+        // Calculate badge counts for Head Office users only
+        $badgeCounts = [
+            'pendingLoanApplications' => 0,
+            'pendingAdmissions' => 0,
+            'pendingApprovals' => 0,
+        ];
+
+        if ($userData && $userData['has_all_access']) {
+            $today = Carbon::today();
+
+            // Pending Loan Applications: status = pending_head_office, submitted_at = today, no pending issues
+            // Note: Only pending applications are counted, approved applications are excluded
+            $pendingLoanIds = LoanApplication::where('status', 'pending_head_office')
+                ->whereDate('submitted_at', $today)
+                ->pluck('id');
+
+            if ($pendingLoanIds->isNotEmpty()) {
+                // Get loan IDs that have pending issues
+                $loansWithIssues = LoanApplicationIssue::whereIn('loan_application_id', $pendingLoanIds)
+                    ->where('status', 'pending')
+                    ->pluck('loan_application_id')
+                    ->unique();
+
+                // Count loans without pending issues
+                $badgeCounts['pendingLoanApplications'] = $pendingLoanIds->diff($loansWithIssues)->count();
+            }
+
+            // Pending Member Admissions: status = pending_head_office, submitted_at = today, no pending issues
+            // Note: Only pending admissions are counted, approved admissions are excluded
+            $pendingAdmissionIds = MemberAdmission::where('status', 'pending_head_office')
+                ->whereDate('submitted_at', $today)
+                ->pluck('id');
+
+            if ($pendingAdmissionIds->isNotEmpty()) {
+                // Get admission IDs that have pending issues
+                $admissionsWithIssues = MemberAdmissionIssue::whereIn('member_admission_id', $pendingAdmissionIds)
+                    ->where('status', 'pending')
+                    ->pluck('member_admission_id')
+                    ->unique();
+
+                // Count admissions without pending issues
+                $badgeCounts['pendingAdmissions'] = $pendingAdmissionIds->diff($admissionsWithIssues)->count();
+            }
+
+            // Pending Approvals: LoanApplicationApproval + MemberAdmissionApproval where status = pending
+            $pendingLoanApprovals = LoanApplicationApproval::where('status', 'pending')
+                ->whereHas('loanApplication', function ($query) {
+                    $query->whereIn('status', ['submitted', 'under_review']);
+                })
+                ->count();
+
+            $pendingMemberApprovals = MemberAdmissionApproval::where('status', 'pending')
+                ->whereHas('memberAdmission', function ($query) {
+                    $query->whereIn('status', ['submitted', 'under_review']);
+                })
+                ->count();
+
+            $badgeCounts['pendingApprovals'] = $pendingLoanApprovals + $pendingMemberApprovals;
+        }
+
         return array_merge(parent::share($request), [
             'name' => 'MIS Loan',
             'quote' => ['message' => $message, 'author' => $author],
@@ -160,6 +227,7 @@ class HandleInertiaRequests extends Middleware
                 'info' => $request->session()->get('info'),
             ],
             'sidebarOpen' => ! $request->hasCookie('sidebar_state') || $request->cookie('sidebar_state') === 'true',
+            'badgeCounts' => $badgeCounts,
         ]);
     }
 }

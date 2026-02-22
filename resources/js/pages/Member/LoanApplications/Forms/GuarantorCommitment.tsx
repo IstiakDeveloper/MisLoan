@@ -48,8 +48,11 @@ interface Props {
     loanCategory: any;
     requestedAmount: number;
     branch?: any;
+    isLegacy?: boolean;
     existingApplication?: any;
     savedData?: GuarantorCommitmentData;
+    /** Show page: only render print view with this data (no layout/inputs) */
+    onlyPreview?: boolean;
 }
 
 const formatDateBangla = (dateString: string) => {
@@ -57,6 +60,12 @@ const formatDateBangla = (dateString: string) => {
     const date = new Date(dateString);
     return `${date.getDate()}/${date.getMonth() + 1}/${date.getFullYear()}`;
 };
+
+function formSelectionUrl(isLegacy: boolean, member: any, loanProduct: any, loanCategory: any, requestedAmount: number) {
+    const params = new URLSearchParams({ loan_product_id: String(loanProduct.id), loan_category_id: String(loanCategory.id), requested_amount: String(requestedAmount) });
+    if (isLegacy) params.set('legacy', '1'); else params.set('member_id', String(member?.id ?? ''));
+    return `/member/loan-applications/form-selection?${params.toString()}`;
+}
 
 export default function GuarantorCommitment({
     member,
@@ -66,7 +75,12 @@ export default function GuarantorCommitment({
     branch,
     existingApplication,
     savedData,
+    onlyPreview,
+    isLegacy = false,
 }: Props) {
+    if (onlyPreview && savedData) {
+        return <GuarantorCommitmentPrintView data={savedData} />;
+    }
     const [showPreview, setShowPreview] = useState(false);
 
     const { data, setData, processing } = useForm<GuarantorCommitmentData>({
@@ -139,19 +153,15 @@ export default function GuarantorCommitment({
     };
 
     const handleSaveDraft = () => {
+        const payload: any = { loan_product_id: loanProduct.id, loan_category_id: loanCategory.id, requested_amount: requestedAmount, agreement_data: data };
+        if (isLegacy) payload.legacy = 1; else payload.member_id = member?.id;
         router.post(
             '/member/loan-applications/forms/guarantor-commitment/save-draft',
-            {
-                member_id: member.id,
-                loan_product_id: loanProduct.id,
-                loan_category_id: loanCategory.id,
-                requested_amount: requestedAmount,
-                agreement_data: data,
-            },
+            payload,
             {
                 onSuccess: () => {
                     alert('জামিনদার/দায়িত্ব গ্রহণকারীর অঙ্গীকার নামা ড্রাফট হিসেবে সংরক্ষিত হয়েছে।');
-                    router.visit(`/member/loan-applications/form-selection?member_id=${member.id}&loan_product_id=${loanProduct.id}&loan_category_id=${loanCategory.id}&requested_amount=${requestedAmount}`);
+                    router.visit(formSelectionUrl(isLegacy, member, loanProduct, loanCategory, requestedAmount));
                 },
                 onError: (errors) => {
                     console.error('Save draft error:', errors);
@@ -225,7 +235,7 @@ export default function GuarantorCommitment({
                 <div className="flex items-center justify-between mb-4 print:hidden">
                     <div className="flex items-center gap-3">
                         <button
-                            onClick={() => router.visit(`/member/loan-applications/form-selection?member_id=${member.id}&loan_product_id=${loanProduct.id}&loan_category_id=${loanCategory.id}&requested_amount=${requestedAmount}`)}
+                            onClick={() => router.visit(formSelectionUrl(isLegacy, member, loanProduct, loanCategory, requestedAmount))}
                             className="flex items-center gap-2 px-3 py-2 bg-gray-200 text-gray-700 text-sm rounded-md hover:bg-gray-300"
                         >
                             <ArrowLeft className="w-4 h-4" />
@@ -696,5 +706,69 @@ export default function GuarantorCommitment({
                 </div>
             </div>
         </AdminLayout>
+    );
+}
+
+/** Show/Print view – font/size tuned for 1 page (scaled up ~40% from compact). */
+export function GuarantorCommitmentPrintView({ data }: { data: any }) {
+    const formatDateBangla = (dateString: string) => {
+        if (!dateString) return '';
+        const date = new Date(dateString);
+        return `${date.getDate()}/${date.getMonth() + 1}/${date.getFullYear()}`;
+    };
+    const d = data || {};
+    const s = { fontSize: '15px', lineHeight: 1.4 } as const;
+    const sTitle = { fontSize: '17px', fontWeight: 'bold' as const };
+    return (
+        <div className="print-container bg-white rounded-lg border border-gray-300 p-6" style={{ ...s, maxWidth: '100%' }}>
+            <div className="mb-3 pb-2 border-b border-gray-400">
+                <div className="flex items-center justify-center gap-3">
+                    <img src="/logo.png" alt="Logo" style={{ height: '50px', width: '50px', objectFit: 'contain' }} onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }} />
+                    <div className="text-center">
+                        <p className="font-bold mb-0" style={{ fontSize: '22px' }}>মৌসুমী</p>
+                        <p className="mb-1" style={{ fontSize: '14px' }}>শাখা: <span className="border-b border-dotted border-gray-600 inline-block min-w-[168px]">{d.branch_name}</span></p>
+                        <p className="font-semibold" style={{ fontSize: '15px' }}>ঋণের জামিনদার/দায়িত্ব গ্রহণকারীর অঙ্গীকার নামা</p>
+                    </div>
+                </div>
+            </div>
+            <div className="space-y-1.5" style={s}>
+                <p>আমি মো./মোছা./শ্রী <span className="border-b border-dotted border-gray-600 inline-block min-w-[196px]">{d.guarantor_name || ''}</span>, স্বামী/পিতা: <span className="border-b border-dotted border-gray-600 inline-block min-w-[196px]">{d.guarantor_father_or_spouse || ''}</span></p>
+                <p>জাতীয় পরিচয়পত্র নং: <span className="border-b border-dotted border-gray-600 inline-block min-w-[168px]">{d.guarantor_nid || ''}</span> গ্রাম: <span className="border-b border-dotted border-gray-600 inline-block min-w-[140px]">{d.guarantor_village || ''}</span> ডাকঘর: <span className="border-b border-dotted border-gray-600 inline-block min-w-[112px]">{d.guarantor_post_office || ''}</span></p>
+                <p>উপজেলা: <span className="border-b border-dotted border-gray-600 inline-block min-w-[112px]">{d.guarantor_upazila || ''}</span> জেলা: <span className="border-b border-dotted border-gray-600 inline-block min-w-[112px]">{d.guarantor_district || ''}</span> মোবাইল: <span className="border-b border-dotted border-gray-600 inline-block min-w-[112px]">{d.guarantor_mobile || ''}</span></p>
+                <p className="mt-1.5">এই মর্মে অঙ্গীকার করছি যে, মৌসুমী সংস্থার <span className="border-b border-dotted border-gray-600 inline-block min-w-[140px]">{d.branch_name || ''}</span> শাখার সদস্য মো./মোছা./শ্রী <span className="border-b border-dotted border-gray-600 inline-block min-w-[196px]">{d.member_name || ''}</span></p>
+                <p>স্বামী/পিতা: <span className="border-b border-dotted border-gray-600 inline-block min-w-[168px]">{d.member_father_or_spouse || ''}</span> জাতীয় পরিচয়পত্র নং: <span className="border-b border-dotted border-gray-600 inline-block min-w-[140px]">{d.member_nid || ''}</span></p>
+                <p>গ্রাম: <span className="border-b border-dotted border-gray-600 inline-block min-w-[112px]">{d.member_village || ''}</span> ডাকঘর: <span className="border-b border-dotted border-gray-600 inline-block min-w-[112px]">{d.member_post_office || ''}</span></p>
+                <p>উপজেলা: <span className="border-b border-dotted border-gray-600 inline-block min-w-[112px]">{d.member_upazila || ''}</span> জেলা: <span className="border-b border-dotted border-gray-600 inline-block min-w-[112px]">{d.member_district || ''}</span> মোবাইল: <span className="border-b border-dotted border-gray-600 inline-block min-w-[112px]">{d.member_mobile || ''}</span></p>
+                <p>অদ্য/গত <span className="border-b border-dotted border-gray-600 inline-block min-w-[98px]">{d.loan_date ? formatDateBangla(d.loan_date) : ''}</span> তারিখে সংস্থার <span className="border-b border-dotted border-gray-600 inline-block min-w-[112px]">{d.branch_name || ''}</span> শাখা থেকে সার্ভিস চার্জ সহ <span className="border-b border-dotted border-gray-600 inline-block min-w-[112px]">{d.loan_amount ? `৳${Number(d.loan_amount).toLocaleString('bn-BD')}` : ''}</span> টাকা, (কথায় <span className="border-b border-dotted border-gray-600 inline-block min-w-[252px]">{d.loan_amount_words || ''}</span>) টাকা ঋণ গ্রহণ করেছেন।</p>
+                <p>উক্ত শাখায় তার সদস্য নং: <span className="border-b border-dotted border-gray-600 inline-block min-w-[84px]">{d.member_code || ''}</span> এবং সমিতির নাম: <span className="border-b border-dotted border-gray-600 inline-block min-w-[140px]">{d.samity_name || ''}</span> সমিতি নং: <span className="border-b border-dotted border-gray-600 inline-block min-w-[84px]">{d.samity_code || ''}</span></p>
+                <p className="mt-1.5">। ঋণ গ্রহণকারী ব্যক্তি আমার পরিচিত এবং আমি তাকে চিনি ও জানি। আমি আরও অঙ্গীকার করছি যে উক্ত ঋণের টাকা তিনি পরিশোধ করতে ব্যর্থ হলে বা অপারগতা প্রকাশ করলে ঋণের সমুদয় টাকা আমি নিম্নোক্ত শর্তে পরিশোধ করবো।</p>
+                <p className="mt-3 font-semibold" style={sTitle}>শর্তাবলী:</p>
+                <ol className="list-decimal list-inside space-y-1 ml-2" style={{ paddingLeft: '6px' }}>
+                    <li>ঋণ গ্রহীতা নিয়মিত ঋণের কিস্তি প্রদানের মাধ্যমে ঋণ পরিশোধ করিবেন। যদি ঋণ গ্রহীতা ঋণ ও সেবামূল্য সময় মতো ও নিয়ম অনুযায়ী পরিশোধ করতে ব্যর্থ হন সেক্ষেত্রে আমি ঋণ গ্রহীতার পক্ষে জামিনদার হিসেবে ঋণের টাকা পরিশোধ করতে বাধ্য থাকবো। যদি আমি পরিশোধ না করি সেক্ষেত্রে ঋণ দাতা আমার বিরুদ্ধে আইনানুগ ব্যবস্থা গ্রহণের অধিকার সংরক্ষণ করেন।</li>
+                    <li>ঋণের টাকা সম্পূর্ণ পরিশোধ না হওয়া পর্যন্ত এই অঙ্গীকারনামার মেয়াদ বজায় থাকবে।</li>
+                    <li>জামিনদার হিসেবে ঋণের সমুদয় টাকা আমি পরিশোধে ব্যর্থ হইলে বা টাকা প্রদানে অনিহা প্রকাশ করিলে আমার বিরুদ্ধে দেশে প্রচলিত আইন অনুযায়ী আইনানুগ ব্যবস্থা গ্রহণ করিতে পারবেন।</li>
+                </ol>
+                <p className="mt-3">উক্ত ব্যাপারে আমাকে কেহ বা কাহারা প্রলোভন, কোন প্রকার ভয়ভীতি দেখায় নাই বা চাপ সৃষ্টি করে নাই। এতদার্থে স্বেচ্ছায়, সজ্ঞানে অন্যের বিনা প্ররোচনায় অত্র অঙ্গীকারনামা পড়ে, শুনে, বুঝে স্বাক্ষীগণের সম্মুখে সহি স্বাক্ষর সম্পাদন করলাম।</p>
+                <div className="mt-5 flex justify-between items-start gap-6" style={{ marginTop: '18px' }}>
+                    <div className="flex-1">
+                        <p className="font-bold mb-2" style={sTitle}>স্বাক্ষীর স্বাক্ষর:</p>
+                        <div className="space-y-1.5">
+                            {[1, 2, 3].map((num) => (
+                                <div key={num}>
+                                    <span style={{ fontSize: '14px' }}>{num}.</span>
+                                    {d[`witness${num}_signature_image`] && <img src={d[`witness${num}_signature_image`]} alt={`Witness ${num}`} style={{ height: '39px', width: '67px', objectFit: 'contain', display: 'block' }} />}
+                                    <span className="border-b border-dotted border-gray-600 inline-block w-32" style={{ fontSize: '14px' }}></span>
+                                </div>
+                            ))}
+                        </div>
+                    </div>
+                    <div className="flex-1 text-right">
+                        <p className="font-bold mb-2" style={sTitle}>ঋণের জামিনদার/দায়িত্ব গ্রহণকারীর স্বাক্ষর</p>
+                        {d.guarantor_signature_image && <img src={d.guarantor_signature_image} alt="Guarantor" style={{ height: '45px', width: '78px', objectFit: 'contain', marginLeft: 'auto', marginBottom: '6px' }} />}
+                        <span className="border-b border-dotted border-gray-600 inline-block w-44"></span>
+                    </div>
+                </div>
+            </div>
+        </div>
     );
 }

@@ -14,6 +14,8 @@ interface Props {
     hasDeathRiskFundDraft?: boolean;
     hasFieldInvestigationDraft?: boolean;
     hasLoanApplicationApprovalDraft?: boolean;
+    /** true when applicant is legacy/old member (no member admission) */
+    isLegacy?: boolean;
 }
 
 const forms = [
@@ -59,14 +61,24 @@ const forms = [
     }
 ];
 
-export default function FormSelection({ member, loanProduct, loanCategory, requestedAmount, visibleFormIds = [1, 2, 3, 4, 5], hasLoanAgreementDraft, hasGuarantorCommitmentDraft, hasDeathRiskFundDraft, hasFieldInvestigationDraft, hasLoanApplicationApprovalDraft }: Props) {
+export default function FormSelection({ member, loanProduct, loanCategory, requestedAmount, visibleFormIds = [1, 2, 3, 4, 5], hasLoanAgreementDraft, hasGuarantorCommitmentDraft, hasDeathRiskFundDraft, hasFieldInvestigationDraft, hasLoanApplicationApprovalDraft, isLegacy = false }: Props) {
     // Backend-এর visibleFormIds অনুযায়ী ফর্ম ফিল্টার ও সাজানো (যেমন মাসিকের ক্ষেত্রে ৫ নং ১ নাম্বারে)
     const visibleForms = forms
         .filter((f) => visibleFormIds.includes(f.id))
         .sort((a, b) => visibleFormIds.indexOf(a.id) - visibleFormIds.indexOf(b.id));
 
     const handleFormClick = (formRoute: string) => {
-        router.visit(`/member/loan-applications/forms/${formRoute}?member_id=${member.id}&product_id=${loanProduct.id}&category_id=${loanCategory.id}&amount=${requestedAmount}`);
+        const params = new URLSearchParams({
+            product_id: String(loanProduct.id),
+            category_id: String(loanCategory.id),
+            amount: String(requestedAmount),
+        });
+        if (isLegacy) {
+            params.set('legacy', '1');
+        } else {
+            params.set('member_id', String(member?.id ?? ''));
+        }
+        router.visit(`/member/loan-applications/forms/${formRoute}?${params.toString()}`);
     };
 
     return (
@@ -84,7 +96,8 @@ export default function FormSelection({ member, loanProduct, loanCategory, reque
                     <div className="grid grid-cols-2 gap-4 text-sm bg-gray-50 p-4 rounded">
                         <div>
                             <p className="text-gray-600">সদস্যের নাম (Member Name)</p>
-                            <p className="font-semibold">{member.applicant_name_bn} ({member.applicant_name_en})</p>
+                            <p className="font-semibold">{member?.applicant_name_bn ?? ''} {member?.applicant_name_en ? `(${member.applicant_name_en})` : ''}</p>
+                            {isLegacy && <span className="text-xs text-amber-600">আগের সদস্য (অ্যাডমিশন ছাড়া)</span>}
                         </div>
                         <div>
                             <p className="text-gray-600">NID / Mobile</p>

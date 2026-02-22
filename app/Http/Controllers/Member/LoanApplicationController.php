@@ -4,13 +4,17 @@ namespace App\Http\Controllers\Member;
 
 use App\Http\Controllers\Controller;
 use App\Models\LoanApplication;
+use App\Models\LoanApplicationIssue;
 use App\Models\LoanCategory;
 use App\Models\LoanProduct;
 use App\Models\MemberAdmission;
+use App\Models\SavingsProduct;
+use App\Models\Samity;
 use App\Services\ApprovalService;
 use Illuminate\Http\Request;
 use Inertia\Inertia;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Str;
 
 class LoanApplicationController extends Controller
 {
@@ -20,7 +24,9 @@ class LoanApplicationController extends Controller
     public function index(Request $request)
     {
         $user = $request->user();
-        $selectedDate = $request->input('date', now()->toDateString());
+        $dateFrom = $request->input('date_from', now()->toDateString());
+        $dateTo = $request->input('date_to', now()->toDateString());
+        $statusFilter = $request->input('status', ''); // Empty means all statuses
 
         // Get loan categories with active products using the correct relationship name
         $categories = LoanCategory::with(['loanProducts' => function ($query) {
@@ -36,28 +42,37 @@ class LoanApplicationController extends Controller
             return $category;
         });
 
-        // Get user's loan applications for selected date
+        // Get user's loan applications for date range
         // Use date range instead of whereDate() to allow index usage and prevent memory issues
-        $startOfDay = \Carbon\Carbon::parse($selectedDate)->startOfDay();
-        $endOfDay = \Carbon\Carbon::parse($selectedDate)->endOfDay();
+        $startOfDay = \Carbon\Carbon::parse($dateFrom)->startOfDay();
+        $endOfDay = \Carbon\Carbon::parse($dateTo)->endOfDay();
         
         // Main query: only small columns (no LOBs) so ORDER BY uses minimal sort buffer.
         $applications = LoanApplication::with([
                 'loanProduct:id,product_name,product_name_bn,product_code,installment_type',
                 'loanCategory:id,category_name,category_name_bn',
-                'memberAdmission:id,applicant_name_bn,application_no',
-                'branch:id,name,code'
+                'memberAdmission:id,applicant_name_en,applicant_name_bn,application_no,nid_number,mobile_number',
+                'branch:id,name,code',
+                'issues' => function ($query) {
+                    $query->select('id', 'loan_application_id', 'issue_description', 'status', 'reported_by', 'created_at')
+                        ->with('reporter:id,name')
+                        ->orderBy('created_at', 'desc');
+                }
             ])
             ->when($user->branch_id, function ($query) use ($user) {
                 $query->where('branch_id', $user->branch_id);
             })
             ->whereBetween('created_at', [$startOfDay, $endOfDay])
+            ->when($statusFilter, function ($query) use ($statusFilter) {
+                $query->where('status', $statusFilter);
+            })
             ->orderBy('created_at', 'desc')
+            ->with('samity:id,samity_name,samity_name_bn,samity_code')
             ->select([
                 'id', 'application_no', 'member_admission_id', 'loan_product_id',
-                'loan_category_id', 'branch_id', 'form_type', 'status',
+                'loan_category_id', 'branch_id', 'samity_id', 'form_type', 'status',
                 'requested_amount', 'approved_amount', 'created_at', 'updated_at',
-                'submitted_at', 'reviewed_at', 'purpose_of_loan',
+                'submitted_at', 'reviewed_at', 'purpose_of_loan', 'legacy_member_snapshot',
             ])
             ->get();
 
@@ -124,7 +139,10 @@ class LoanApplicationController extends Controller
             'categories' => $categories,
             'applications' => $applications,
             'stats' => $stats,
-            'selectedDate' => $selectedDate,
+            'selectedDate' => $dateFrom, // Keep for backward compatibility
+            'dateFrom' => $dateFrom,
+            'dateTo' => $dateTo,
+            'statusFilter' => $statusFilter,
         ]);
     }
 
@@ -183,36 +201,29 @@ class LoanApplicationController extends Controller
                 ->get();
         }
 
-        // Determine form type based on:
-        // Form 1: weekly product AND requested amount < 100,000
-        // Form 2: monthly product OR requested amount >= 100,000
-        $formType = 1; // Default to Form 1
-
-        if ($loanProduct) {
-            $isWeekly = $loanProduct->installment_type === 'weekly';
-            $isSmallLoan = $requestedAmount < 100000;
-
-            // Form 1 only if weekly AND small loan
-            // Otherwise Form 2
-            $formType = ($isWeekly && $isSmallLoan) ? 1 : 2;
+        // If member_id, product_id, category_id, and amount are provided, redirect to form selection
+        // Otherwise, show the basic create page (for selecting member/product first)
+        if ($memberId && $loanProductId && $loanCategoryId && $requestedAmount > 0) {
+            return redirect()->route('member.loan-applications.form-selection', [
+                'member_id' => $memberId,
+                'loan_product_id' => $loanProductId,
+                'loan_category_id' => $loanCategoryId,
+                'requested_amount' => $requestedAmount,
+            ]);
         }
 
-        $props = [
+        // If not all required params, show basic create page (placeholder for now)
+        // In future, this could be a page to select member/product/category/amount first
+        return Inertia::render('Member/LoanApplications/Create', [
             'loanProduct' => $loanProduct,
             'branch' => $branch,
             'categories' => $categories,
             'products' => $products,
-            'formType' => $formType,
+            'formType' => $loanProduct ? ($loanProduct->installment_type === 'weekly' ? 1 : 2) : 1,
             'requestedAmount' => $requestedAmount,
-            'memberId' => $memberId,
-        ];
-
-        // Route to the correct form component based on form type
-        $component = $formType === 2
-            ? 'Member/LoanApplications/CreateType2'
-            : 'Member/LoanApplications/CreateType1';
-
-        return Inertia::render($component, $props);
+            'memberAdmission' => $memberId ? MemberAdmission::find($memberId) : null,
+            'samity' => null,
+        ]);
     }
 
     /**
@@ -237,7 +248,156 @@ class LoanApplicationController extends Controller
             ->limit(20)
             ->get();
 
+        // Check for active loans for each member (ANY product)
+        $memberIds = $members->pluck('id');
+        
+        if ($memberIds->isNotEmpty()) {
+            // Get all active loans (not expired) for these members
+            $activeLoans = LoanApplication::whereIn('member_admission_id', $memberIds)
+                ->whereIn('status', [
+                    LoanApplication::STATUS_SUBMITTED,
+                    LoanApplication::STATUS_UNDER_REVIEW,
+                    LoanApplication::STATUS_PENDING_HEAD_OFFICE,
+                    LoanApplication::STATUS_APPROVED,
+                    LoanApplication::STATUS_DISBURSED
+                ])
+                ->with(['loanProduct:id,product_name,product_name_bn,duration_months', 'loanCategory:id,category_name,category_name_bn'])
+                ->get()
+                ->filter(function ($loan) {
+                    // Check if loan hasn't expired
+                    $today = now()->toDateString();
+                    
+                    // If expected_end_date exists, use it
+                    if ($loan->expected_end_date) {
+                        return $loan->expected_end_date >= $today;
+                    }
+                    
+                    // If loan_term_months exists, calculate from created_at
+                    if ($loan->loan_term_months) {
+                        $endDate = \Carbon\Carbon::parse($loan->created_at)->addMonths($loan->loan_term_months)->toDateString();
+                        return $endDate >= $today;
+                    }
+                    
+                    // If approved_start_date and product duration exists, calculate from there
+                    if ($loan->approved_start_date && $loan->loanProduct && $loan->loanProduct->duration_months) {
+                        $endDate = \Carbon\Carbon::parse($loan->approved_start_date)->addMonths($loan->loanProduct->duration_months)->toDateString();
+                        return $endDate >= $today;
+                    }
+                    
+                    // If none of the above, consider it active (conservative approach)
+                    return true;
+                })
+                ->groupBy('member_admission_id');
+
+            // Add active loan info to members
+            $members = $members->map(function ($member) use ($activeLoans) {
+                $memberLoans = $activeLoans->get($member->id, collect());
+                if ($memberLoans->isNotEmpty()) {
+                    $member->has_active_loan = true;
+                    $member->active_loans = $memberLoans->map(function ($loan) {
+                        // Calculate end date if not available
+                        $endDate = $loan->expected_end_date;
+                        if (!$endDate && $loan->loan_term_months) {
+                            $endDate = \Carbon\Carbon::parse($loan->created_at)->addMonths($loan->loan_term_months)->toDateString();
+                        } elseif (!$endDate && $loan->approved_start_date && $loan->loanProduct && $loan->loanProduct->duration_months) {
+                            $endDate = \Carbon\Carbon::parse($loan->approved_start_date)->addMonths($loan->loanProduct->duration_months)->toDateString();
+                        }
+                        
+                        return [
+                            'id' => $loan->id,
+                            'application_no' => $loan->application_no,
+                            'status' => $loan->status,
+                            'product_name' => $loan->loanProduct->product_name ?? '',
+                            'product_name_bn' => $loan->loanProduct->product_name_bn ?? '',
+                            'category_name' => $loan->loanCategory->category_name ?? '',
+                            'requested_amount' => $loan->requested_amount,
+                            'expected_end_date' => $endDate,
+                            'created_at' => $loan->created_at,
+                            'loan_term_months' => $loan->loan_term_months ?? $loan->loanProduct->duration_months ?? null,
+                        ];
+                    });
+                } else {
+                    $member->has_active_loan = false;
+                    $member->active_loans = [];
+                }
+                return $member;
+            });
+        } else {
+            // If no members, just mark as no active loan
+            $members = $members->map(function ($member) {
+                $member->has_active_loan = false;
+                $member->active_loans = [];
+                return $member;
+            });
+        }
+
         return response()->json($members);
+    }
+
+    /**
+     * Get samities for current user's branch (for legacy member form).
+     */
+    public function samitiesForBranch(Request $request)
+    {
+        $branchId = $request->user()->branch_id;
+        if (!$branchId) {
+            return response()->json([]);
+        }
+        $samities = Samity::where('branch_id', $branchId)
+            ->where('is_active', true)
+            ->orderBy('samity_name')
+            ->get(['id', 'samity_code', 'samity_name', 'samity_name_bn']);
+        return response()->json($samities);
+    }
+
+    /**
+     * Start loan application for legacy/old member (no member admission).
+     * Stores legacy member data in session and redirects to form-selection.
+     */
+    public function startLegacyApplication(Request $request)
+    {
+        $validated = $request->validate([
+            'applicant_name_bn' => 'required|string|max:255',
+            'applicant_name_en' => 'nullable|string|max:255',
+            'nid_number' => 'required|string|max:100',
+            'mobile_number' => 'required|string|max:20',
+            'present_village_road' => 'nullable|string|max:500',
+            'present_upazila' => 'nullable|string|max:100',
+            'present_district' => 'nullable|string|max:100',
+            'samity_id' => 'required|exists:samities,id',
+            'loan_category_id' => 'required|exists:loan_categories,id',
+            'loan_product_id' => 'required|exists:loan_products,id',
+            'requested_amount' => 'required|numeric|min:1',
+        ]);
+
+        $user = $request->user();
+        $samity = Samity::find($validated['samity_id']);
+        if (!$samity || $samity->branch_id != $user->branch_id) {
+            return back()->withErrors(['samity_id' => 'সমিতি এই শাখার নয়।']);
+        }
+
+        $legacyMember = [
+            'id' => null,
+            'applicant_name_bn' => $validated['applicant_name_bn'],
+            'applicant_name_en' => $validated['applicant_name_en'] ?: $validated['applicant_name_bn'],
+            'nid_number' => $validated['nid_number'],
+            'mobile_number' => $validated['mobile_number'],
+            'present_village_road' => $validated['present_village_road'] ?? '',
+            'present_upazila' => $validated['present_upazila'] ?? '',
+            'present_district' => $validated['present_district'] ?? '',
+            'samity_id' => (int) $validated['samity_id'],
+            'application_no' => 'আগের সদস্য',
+        ];
+
+        $request->session()->put('loan_legacy_member', $legacyMember);
+        $request->session()->put('loan_legacy_key', Str::uuid()->toString());
+
+        return redirect()->route('member.loan-applications.form-selection', [
+            'legacy' => 1,
+            'loan_category_id' => $validated['loan_category_id'],
+            'loan_product_id' => $validated['loan_product_id'],
+            'requested_amount' => $validated['requested_amount'],
+        ]);
     }
 
     /**
@@ -245,6 +405,46 @@ class LoanApplicationController extends Controller
      */
     public function store(Request $request)
     {
+        // Check if member has active loan
+        $memberId = $request->input('member_admission_id');
+        if ($memberId) {
+            $activeLoans = LoanApplication::where('member_admission_id', $memberId)
+                ->whereIn('status', [
+                    LoanApplication::STATUS_SUBMITTED,
+                    LoanApplication::STATUS_UNDER_REVIEW,
+                    LoanApplication::STATUS_PENDING_HEAD_OFFICE,
+                    LoanApplication::STATUS_APPROVED,
+                    LoanApplication::STATUS_DISBURSED
+                ])
+                ->with('loanProduct:id,duration_months')
+                ->get()
+                ->filter(function ($loan) {
+                    $today = now()->toDateString();
+                    
+                    if ($loan->expected_end_date) {
+                        return $loan->expected_end_date >= $today;
+                    }
+                    
+                    if ($loan->loan_term_months) {
+                        $endDate = \Carbon\Carbon::parse($loan->created_at)->addMonths($loan->loan_term_months)->toDateString();
+                        return $endDate >= $today;
+                    }
+                    
+                    if ($loan->approved_start_date && $loan->loanProduct && $loan->loanProduct->duration_months) {
+                        $endDate = \Carbon\Carbon::parse($loan->approved_start_date)->addMonths($loan->loanProduct->duration_months)->toDateString();
+                        return $endDate >= $today;
+                    }
+                    
+                    return true; // Conservative: consider active if no expiry info
+                });
+
+            if ($activeLoans->isNotEmpty()) {
+                return back()->withErrors([
+                    'member_admission_id' => 'এই সদস্যের জন্য সক্রিয় ঋণ আছে। মেয়াদ শেষ হওয়ার আগে নতুন ঋণ আবেদন করা যাবে না।'
+                ])->withInput();
+            }
+        }
+
         $validated = $request->validate([
             // Basic Info
             'form_type' => 'required|in:1,2',
@@ -423,12 +623,79 @@ class LoanApplicationController extends Controller
             $visibleFormIds = $amount < $oneLakh ? [5, 2, 3, 4] : [5, 3];
         }
 
+        // Check if form data exists and is not empty/null/empty JSON - only show forms that were actually saved
+        // Recursive function to check if data has meaningful content
+        $checkFormData = function($data) use (&$checkFormData) {
+            // If null or empty, definitely not saved
+            if ($data === null || $data === '') return false;
+            
+            // If array, check if it has meaningful content recursively
+            if (is_array($data)) {
+                if (count($data) === 0) return false;
+                // Check if array has at least one non-empty, meaningful value
+                $hasMeaningfulData = false;
+                foreach ($data as $key => $value) {
+                    // Skip null values, empty strings, and empty arrays/objects
+                    if ($value === null || $value === '') continue;
+                    if (is_array($value) && count($value) === 0) continue;
+                    if (is_string($value) && trim($value) === '') continue;
+                    // Recursively check nested structures
+                    if (is_array($value) || is_object($value)) {
+                        if ($checkFormData($value)) {
+                            $hasMeaningfulData = true;
+                            break;
+                        }
+                    } else {
+                        // For primitive values, check if they're meaningful
+                        $trimmed = is_string($value) ? trim($value) : $value;
+                        if ($trimmed !== null && $trimmed !== '' && $trimmed !== 'null') {
+                            $hasMeaningfulData = true;
+                            break;
+                        }
+                    }
+                }
+                return $hasMeaningfulData;
+            }
+            
+            // If string, check if it's meaningful
+            if (is_string($data)) {
+                $trimmed = trim($data);
+                // Check for empty, null string, empty JSON objects/arrays
+                if ($trimmed === '' || 
+                    $trimmed === 'null' || 
+                    $trimmed === '{}' || 
+                    $trimmed === '[]' ||
+                    strlen($trimmed) < 3) {
+                    return false;
+                }
+                // Try to decode JSON and check if it's meaningful
+                $decoded = json_decode($trimmed, true);
+                if (json_last_error() === JSON_ERROR_NONE) {
+                    // Recursively check decoded structure
+                    return $checkFormData($decoded);
+                }
+                // If not JSON, check if it's a meaningful string
+                return strlen($trimmed) >= 3;
+            }
+            
+            // For objects, check if they have properties
+            if (is_object($data)) {
+                $array = (array) $data;
+                if (count($array) === 0) return false;
+                // Recursively check object properties
+                return $checkFormData($array);
+            }
+            
+            // For other types (numbers, booleans), consider them meaningful if not null
+            return $data !== null;
+        };
+        
         $formSaved = [
-            1 => !empty($application->loan_agreement_data),
-            2 => !empty($application->guarantor_info),
-            3 => !empty($application->nominee_info),
-            4 => !empty($application->asset_info),
-            5 => !empty($application->business_plan),
+            1 => $checkFormData($application->loan_agreement_data),
+            2 => $checkFormData($application->guarantor_info),
+            3 => $checkFormData($application->nominee_info),
+            4 => $checkFormData($application->asset_info),
+            5 => $checkFormData($application->business_plan),
         ];
         $allFormsComplete = collect($visibleFormIds)->every(fn ($id) => $formSaved[$id] ?? false);
 
@@ -481,12 +748,23 @@ class LoanApplicationController extends Controller
             $visibleFormIds = $amount < $oneLakh ? [5, 2, 3, 4] : [5, 3];
         }
 
+        // Check if form data exists and is not empty/null/empty JSON - only check forms that were actually saved
+        $checkFormData = function($data) {
+            if (empty($data)) return false;
+            if (is_array($data)) return count($data) > 0;
+            if (is_string($data)) {
+                $trimmed = trim($data);
+                return $trimmed !== '' && $trimmed !== 'null' && $trimmed !== '{}';
+            }
+            return true; // object or other non-empty value
+        };
+        
         $formSaved = [
-            1 => !empty($application->loan_agreement_data),
-            2 => !empty($application->guarantor_info),
-            3 => !empty($application->nominee_info),
-            4 => !empty($application->asset_info),
-            5 => !empty($application->business_plan),
+            1 => $checkFormData($application->loan_agreement_data),
+            2 => $checkFormData($application->guarantor_info),
+            3 => $checkFormData($application->nominee_info),
+            4 => $checkFormData($application->asset_info),
+            5 => $checkFormData($application->business_plan),
         ];
         $allRequiredSaved = collect($visibleFormIds)->every(fn ($id) => $formSaved[$id] ?? false);
 
@@ -535,12 +813,25 @@ class LoanApplicationController extends Controller
         // If this is a member-side form-based application (loan agreement, guarantor commitment, death risk fund, field investigation, or loan application approval),
         // always send user back to the form selection screen instead of a generic edit page.
         if (in_array($application->form_type, ['loan_agreement', 'guarantor_commitment', 'death_risk_fund', 'field_investigation', 'loan_application_approval'], true)) {
-            return redirect()->route('member.loan-applications.form-selection', [
-                'member_id' => $application->member_admission_id,
+            $params = [
                 'loan_product_id' => $application->loan_product_id,
                 'loan_category_id' => $application->loan_category_id,
                 'requested_amount' => $application->requested_amount,
-            ]);
+            ];
+            // Legacy member: restore session from stored snapshot so form-selection does not ask for member again
+            if ($application->legacy_application_key && $application->legacy_member_snapshot) {
+                request()->session()->put('loan_legacy_member', $application->legacy_member_snapshot);
+                request()->session()->put('loan_legacy_key', $application->legacy_application_key);
+                $params['legacy'] = 1;
+            } else {
+                // Regular member: must have member_admission_id so form-selection can load member
+                if (!$application->member_admission_id) {
+                    return redirect()->route('member.loan-applications.index')
+                        ->with('error', 'এই খসড়া আবেদনে সদস্য তথ্য নেই। নতুন করে আবেদন করুন।');
+                }
+                $params['member_id'] = $application->member_admission_id;
+            }
+            return redirect()->route('member.loan-applications.form-selection', $params);
         }
 
         $categories = LoanCategory::where('is_active', true)
@@ -599,25 +890,51 @@ class LoanApplicationController extends Controller
     }
 
     /**
-     * Show form selection page
+     * Show form selection page (supports legacy/old member via session).
      */
     public function formSelection(Request $request)
     {
-        $memberId = $request->input('member_id');
+        $isLegacy = $request->boolean('legacy');
         $loanProductId = $request->input('loan_product_id');
         $loanCategoryId = $request->input('loan_category_id');
         $requestedAmount = $request->input('requested_amount', 0);
 
-        $member = MemberAdmission::with('samity')->findOrFail($memberId);
+        if ($isLegacy) {
+            $legacySnapshot = $request->session()->get('loan_legacy_member');
+            $legacyKey = $request->session()->get('loan_legacy_key');
+            if (!$legacySnapshot || !$legacyKey) {
+                return redirect()->route('member.loan-applications.index')
+                    ->with('error', 'আগের সদস্যের সেশন শেষ হয়ে গেছে। আবার সদস্য তথ্য দিন।');
+            }
+            $samity = Samity::find($legacySnapshot['samity_id'] ?? 0);
+            $member = (object) array_merge($legacySnapshot, [
+                'samity' => $samity ? (object) ['id' => $samity->id, 'samity_name' => $samity->samity_name, 'samity_name_bn' => $samity->samity_name_bn, 'samity_code' => $samity->samity_code] : null,
+            ]);
+        } else {
+            $memberId = $request->input('member_id');
+            if (!$memberId) {
+                return redirect()->route('member.loan-applications.index')->with('error', 'সদস্য নির্বাচন করুন।');
+            }
+            $member = MemberAdmission::with('samity')->findOrFail($memberId);
+        }
+
         $loanProduct = LoanProduct::findOrFail($loanProductId);
         $loanCategory = LoanCategory::findOrFail($loanCategoryId);
 
-        // Get the draft application (if exists) - same draft for all forms
-        $draftApplication = LoanApplication::where('member_admission_id', $memberId)
-            ->where('loan_product_id', $loanProductId)
-            ->where('loan_category_id', $loanCategoryId)
-            ->where('status', LoanApplication::STATUS_DRAFT)
-            ->first();
+        // Get the draft application (if exists)
+        if ($isLegacy) {
+            $draftApplication = LoanApplication::where('legacy_application_key', $request->session()->get('loan_legacy_key'))
+                ->where('loan_product_id', $loanProductId)
+                ->where('loan_category_id', $loanCategoryId)
+                ->where('status', LoanApplication::STATUS_DRAFT)
+                ->first();
+        } else {
+            $draftApplication = LoanApplication::where('member_admission_id', $member->id)
+                ->where('loan_product_id', $loanProductId)
+                ->where('loan_category_id', $loanCategoryId)
+                ->where('status', LoanApplication::STATUS_DRAFT)
+                ->first();
+        }
 
         // Check if loan agreement data exists (check loan_agreement_data field)
         $hasLoanAgreementDraft = $draftApplication && !empty($draftApplication->loan_agreement_data);
@@ -665,45 +982,117 @@ class LoanApplicationController extends Controller
             'hasDeathRiskFundDraft' => $hasDeathRiskFundDraft,
             'hasFieldInvestigationDraft' => $hasFieldInvestigationDraft,
             'hasLoanApplicationApprovalDraft' => $hasLoanApplicationApprovalDraft,
+            'isLegacy' => $isLegacy,
         ]);
     }
 
     /**
-     * Show loan agreement form
+     * Resolve member for a form (from member_id or legacy session).
      */
+    private function resolveMemberForForm(Request $request, int $loanProductId, int $loanCategoryId): array
+    {
+        $isLegacy = $request->boolean('legacy');
+        if ($isLegacy) {
+            $legacySnapshot = $request->session()->get('loan_legacy_member');
+            $legacyKey = $request->session()->get('loan_legacy_key');
+            if (!$legacySnapshot || !$legacyKey) {
+                return [null, null, null]; // will redirect
+            }
+            $samity = Samity::find($legacySnapshot['samity_id'] ?? 0);
+            $member = (object) array_merge($legacySnapshot, [
+                'samity' => $samity ? (object) ['id' => $samity->id, 'samity_name' => $samity->samity_name, 'samity_name_bn' => $samity->samity_name_bn, 'samity_code' => $samity->samity_code] : null,
+            ]);
+            $existingApplication = LoanApplication::where('legacy_application_key', $legacyKey)
+                ->where('loan_product_id', $loanProductId)
+                ->where('loan_category_id', $loanCategoryId)
+                ->where('status', LoanApplication::STATUS_DRAFT)
+                ->first();
+            return [$member, $existingApplication, $legacyKey];
+        }
+        $memberId = $request->input('member_id');
+        $member = MemberAdmission::with('samity')->find($memberId);
+        $existingApplication = $memberId ? LoanApplication::where('member_admission_id', $memberId)
+            ->where('loan_product_id', $loanProductId)
+            ->where('loan_category_id', $loanCategoryId)
+            ->where('status', LoanApplication::STATUS_DRAFT)
+            ->first() : null;
+        return [$member, $existingApplication, null];
+    }
+
+    /**
+     * Get or create draft for save (supports legacy and normal member).
+     * Returns [LoanApplication $draft, int $samityId, ?array $legacySnapshot].
+     */
+    private function getOrCreateDraftForSave(Request $request, int $loanProductId, int $loanCategoryId, float $requestedAmount, ?int $memberId, ?string $legacyKey, ?array $legacySnapshot): ?LoanApplication
+    {
+        $user = $request->user();
+        if ($legacyKey && $legacySnapshot !== null) {
+            $draft = LoanApplication::firstOrNew([
+                'legacy_application_key' => $legacyKey,
+                'loan_product_id' => $loanProductId,
+                'loan_category_id' => $loanCategoryId,
+                'status' => LoanApplication::STATUS_DRAFT,
+            ]);
+            if (!$draft->exists || !$draft->application_no) {
+                $draft->application_no = LoanApplication::generateApplicationNo();
+            }
+            $draft->member_admission_id = null;
+            $draft->legacy_application_key = $legacyKey;
+            $draft->legacy_member_snapshot = $legacySnapshot;
+            $draft->branch_id = $user->branch_id;
+            $draft->samity_id = (int) ($legacySnapshot['samity_id'] ?? 0);
+            $draft->requested_amount = $requestedAmount;
+            $draft->submitted_by = $user->id;
+            return $draft;
+        }
+        $member = MemberAdmission::find($memberId);
+        if (!$member) {
+            return null;
+        }
+        $draft = LoanApplication::firstOrNew([
+            'member_admission_id' => $memberId,
+            'loan_product_id' => $loanProductId,
+            'loan_category_id' => $loanCategoryId,
+            'status' => LoanApplication::STATUS_DRAFT,
+        ]);
+        if (!$draft->exists || !$draft->application_no) {
+            $draft->application_no = LoanApplication::generateApplicationNo();
+        }
+        $draft->branch_id = $user->branch_id;
+        $draft->samity_id = $member->samity_id;
+        $draft->requested_amount = $requestedAmount;
+        $draft->submitted_by = $user->id;
+        return $draft;
+    }
 
     /**
      * Show loan agreement form
      */
     public function loanAgreement(Request $request)
     {
-        $memberId = $request->input('member_id');
-        $loanProductId = $request->input('product_id');
-        $loanCategoryId = $request->input('category_id');
-        $requestedAmount = $request->input('amount', 0);
+        $loanProductId = (int) $request->input('product_id');
+        $loanCategoryId = (int) $request->input('category_id');
+        $requestedAmount = (float) $request->input('amount', 0);
 
-        $member = MemberAdmission::with('samity')->findOrFail($memberId);
+        [$member, $existingApplication, $legacyKey] = $this->resolveMemberForForm($request, $loanProductId, $loanCategoryId);
+        if (!$member) {
+            return redirect()->route('member.loan-applications.index')->with('error', 'সদস্য তথ্য পাওয়া যাচ্ছে না।');
+        }
+
         $loanProduct = LoanProduct::findOrFail($loanProductId);
         $loanCategory = LoanCategory::findOrFail($loanCategoryId);
-
         $user = $request->user();
         $branch = $user->branch;
-
-        // Check if there's existing draft
-        $existingApplication = LoanApplication::where('member_admission_id', $memberId)
-            ->where('loan_product_id', $loanProductId)
-            ->where('loan_category_id', $loanCategoryId)
-            ->where('status', LoanApplication::STATUS_DRAFT)
-            ->first();
 
         return Inertia::render('Member/LoanApplications/Forms/LoanAgreement', [
             'member' => $member,
             'loanProduct' => $loanProduct,
             'loanCategory' => $loanCategory,
-            'requestedAmount' => (float) $requestedAmount,
+            'requestedAmount' => $requestedAmount,
             'branch' => $branch,
             'existingApplication' => $existingApplication,
             'savedData' => $existingApplication?->loan_agreement_data,
+            'isLegacy' => $request->boolean('legacy'),
         ]);
     }
 
@@ -712,78 +1101,71 @@ class LoanApplicationController extends Controller
      */
     public function guarantorCommitment(Request $request)
     {
-        $memberId = $request->input('member_id');
-        $loanProductId = $request->input('product_id');
-        $loanCategoryId = $request->input('category_id');
-        $requestedAmount = $request->input('amount', 0);
+        $loanProductId = (int) $request->input('product_id');
+        $loanCategoryId = (int) $request->input('category_id');
+        $requestedAmount = (float) $request->input('amount', 0);
 
-        $member = MemberAdmission::with('samity')->findOrFail($memberId);
+        [$member, $existingApplication, $legacyKey] = $this->resolveMemberForForm($request, $loanProductId, $loanCategoryId);
+        if (!$member) {
+            return redirect()->route('member.loan-applications.index')->with('error', 'সদস্য তথ্য পাওয়া যাচ্ছে না।');
+        }
+
         $loanProduct = LoanProduct::findOrFail($loanProductId);
         $loanCategory = LoanCategory::findOrFail($loanCategoryId);
-
         $user = $request->user();
         $branch = $user->branch;
-
-        // Existing draft application for this member/product/category (any form)
-        $existingApplication = LoanApplication::where('member_admission_id', $memberId)
-            ->where('loan_product_id', $loanProductId)
-            ->where('loan_category_id', $loanCategoryId)
-            ->where('status', LoanApplication::STATUS_DRAFT)
-            ->first();
 
         return Inertia::render('Member/LoanApplications/Forms/GuarantorCommitment', [
             'member' => $member,
             'loanProduct' => $loanProduct,
             'loanCategory' => $loanCategory,
-            'requestedAmount' => (float) $requestedAmount,
+            'requestedAmount' => $requestedAmount,
             'branch' => $branch,
             'existingApplication' => $existingApplication,
-            // reuse guarantor_info array field to store this form's data
             'savedData' => $existingApplication?->guarantor_info,
+            'isLegacy' => $request->boolean('legacy'),
         ]);
     }
 
     public function saveLoanAgreementDraft(Request $request)
     {
-        $validated = $request->validate([
-            'member_id' => 'required|exists:member_admissions,id',
+        $isLegacy = $request->boolean('legacy');
+        $rules = [
             'loan_product_id' => 'required|exists:loan_products,id',
             'loan_category_id' => 'required|exists:loan_categories,id',
             'requested_amount' => 'required|numeric|min:0',
             'agreement_data' => 'required|array',
-        ]);
+        ];
+        if (!$isLegacy) {
+            $rules['member_id'] = 'required|exists:member_admissions,id';
+        }
+        $validated = $request->validate($rules);
 
-        $user = $request->user();
-        $member = MemberAdmission::find($validated['member_id']);
-        $agreementData = $validated['agreement_data'];
-
-        // Ensure required fields have values
-        $purposeOfLoan = $agreementData['loan_purpose'] ?? 'খান চুক্তিপত্র অনুযায়ী';
-        $numberOfInstallments = $agreementData['number_of_installments'] ?? 1;
-
-        // Find existing draft or create new without violating NOT NULL constraints
-        $loanApplication = LoanApplication::firstOrNew([
-            'member_admission_id' => $validated['member_id'],
-            'loan_product_id' => $validated['loan_product_id'],
-            'loan_category_id' => $validated['loan_category_id'],
-            'status' => LoanApplication::STATUS_DRAFT,
-        ]);
-
-        // Only generate application_no when creating first time
-        if (!$loanApplication->exists || !$loanApplication->application_no) {
-            $loanApplication->application_no = LoanApplication::generateApplicationNo();
+        $memberId = $isLegacy ? null : (int) $validated['member_id'];
+        $legacyKey = $isLegacy ? $request->session()->get('loan_legacy_key') : null;
+        $legacySnapshot = $isLegacy ? $request->session()->get('loan_legacy_member') : null;
+        if ($isLegacy && (!$legacyKey || !$legacySnapshot)) {
+            return redirect()->route('member.loan-applications.index')->with('error', 'আগের সদস্যের সেশন শেষ। আবার সদস্য তথ্য দিন।');
         }
 
-        // Always update the rest of the fields for this draft
-        $loanApplication->branch_id = $user->branch_id;
-        $loanApplication->samity_id = $member->samity_id;
-        $loanApplication->requested_amount = $validated['requested_amount'];
+        $loanApplication = $this->getOrCreateDraftForSave(
+            $request,
+            (int) $validated['loan_product_id'],
+            (int) $validated['loan_category_id'],
+            (float) $validated['requested_amount'],
+            $memberId,
+            $legacyKey,
+            $legacySnapshot
+        );
+        if (!$loanApplication) {
+            return redirect()->back()->withErrors(['member_id' => 'সদস্য পাওয়া যাচ্ছে না।']);
+        }
+
+        $agreementData = $validated['agreement_data'];
         $loanApplication->loan_agreement_data = $agreementData;
         $loanApplication->form_type = 'loan_agreement';
-        $loanApplication->purpose_of_loan = $purposeOfLoan;
-        $loanApplication->number_of_installments = $numberOfInstallments;
-        $loanApplication->submitted_by = $user->id;
-
+        $loanApplication->purpose_of_loan = $agreementData['loan_purpose'] ?? 'খান চুক্তিপত্র অনুযায়ী';
+        $loanApplication->number_of_installments = (int) ($agreementData['number_of_installments'] ?? 1);
         $loanApplication->save();
 
         return redirect()->route('member.loan-applications.index')
@@ -795,53 +1177,52 @@ class LoanApplicationController extends Controller
      */
     public function saveGuarantorCommitmentDraft(Request $request)
     {
-        $validated = $request->validate([
-            'member_id' => 'required|exists:member_admissions,id',
+        $isLegacy = $request->boolean('legacy');
+        $rules = [
             'loan_product_id' => 'required|exists:loan_products,id',
             'loan_category_id' => 'required|exists:loan_categories,id',
             'requested_amount' => 'required|numeric|min:0',
             'agreement_data' => 'required|array',
-        ]);
+        ];
+        if (!$isLegacy) {
+            $rules['member_id'] = 'required|exists:member_admissions,id';
+        }
+        $validated = $request->validate($rules);
 
-        $user = $request->user();
-        $member = MemberAdmission::find($validated['member_id']);
-        $agreementData = $validated['agreement_data'];
+        $memberId = $isLegacy ? null : (int) $validated['member_id'];
+        $legacyKey = $isLegacy ? $request->session()->get('loan_legacy_key') : null;
+        $legacySnapshot = $isLegacy ? $request->session()->get('loan_legacy_member') : null;
+        if ($isLegacy && (!$legacyKey || !$legacySnapshot)) {
+            return redirect()->route('member.loan-applications.index')->with('error', 'আগের সদস্যের সেশন শেষ। আবার সদস্য তথ্য দিন।');
+        }
+
+        $loanApplication = $this->getOrCreateDraftForSave(
+            $request,
+            (int) $validated['loan_product_id'],
+            (int) $validated['loan_category_id'],
+            (float) $validated['requested_amount'],
+            $memberId,
+            $legacyKey,
+            $legacySnapshot
+        );
+        if (!$loanApplication) {
+            return redirect()->back()->withErrors(['member_id' => 'সদস্য পাওয়া যাচ্ছে না।']);
+        }
+
         $loanProduct = LoanProduct::find($validated['loan_product_id']);
-
-        // Ensure required fields have values
+        $agreementData = $validated['agreement_data'];
         $purposeOfLoan = $agreementData['loan_purpose'] ?? $agreementData['purpose_of_loan'] ?? 'জামিনদার/দায়িত্ব গ্রহণকারীর অঙ্গীকার নামা অনুযায়ী';
-
-        // Calculate number_of_installments from loan product
         $numberOfInstallments = $loanProduct->number_of_installments ?? 1;
-        if ($loanProduct->installment_type === 'weekly' && $loanProduct->duration_months) {
-            $numberOfInstallments = ceil(($loanProduct->duration_months * 30) / 7);
-        } elseif ($loanProduct->duration_months) {
-            $numberOfInstallments = $loanProduct->duration_months;
+        if ($loanProduct && $loanProduct->installment_type === 'weekly' && $loanProduct->duration_months) {
+            $numberOfInstallments = (int) ceil(($loanProduct->duration_months * 30) / 7);
+        } elseif ($loanProduct && $loanProduct->duration_months) {
+            $numberOfInstallments = (int) $loanProduct->duration_months;
         }
 
-        // Find existing draft or create new (shared draft for all member forms)
-        $loanApplication = LoanApplication::firstOrNew([
-            'member_admission_id' => $validated['member_id'],
-            'loan_product_id' => $validated['loan_product_id'],
-            'loan_category_id' => $validated['loan_category_id'],
-            'status' => LoanApplication::STATUS_DRAFT,
-        ]);
-
-        // Only generate application_no when creating first time
-        if (!$loanApplication->exists || !$loanApplication->application_no) {
-            $loanApplication->application_no = LoanApplication::generateApplicationNo();
-        }
-
-        $loanApplication->branch_id = $user->branch_id;
-        $loanApplication->samity_id = $member->samity_id;
-        $loanApplication->requested_amount = $validated['requested_amount'];
-        // store full form data in guarantor_info array field
         $loanApplication->guarantor_info = $agreementData;
-        $loanApplication->form_type = 'guarantor_commitment'; // Set form_type for tracking
+        $loanApplication->form_type = 'guarantor_commitment';
         $loanApplication->purpose_of_loan = $purposeOfLoan;
         $loanApplication->number_of_installments = $numberOfInstallments;
-        $loanApplication->submitted_by = $user->id;
-
         $loanApplication->save();
 
         return redirect()->route('member.loan-applications.index')
@@ -853,34 +1234,29 @@ class LoanApplicationController extends Controller
      */
     public function deathRiskFund(Request $request)
     {
-        $memberId = $request->input('member_id');
-        $loanProductId = $request->input('product_id');
-        $loanCategoryId = $request->input('category_id');
-        $requestedAmount = $request->input('amount', 0);
+        $loanProductId = (int) $request->input('product_id');
+        $loanCategoryId = (int) $request->input('category_id');
+        $requestedAmount = (float) $request->input('amount', 0);
 
-        $member = MemberAdmission::with('samity')->findOrFail($memberId);
+        [$member, $existingApplication, $legacyKey] = $this->resolveMemberForForm($request, $loanProductId, $loanCategoryId);
+        if (!$member) {
+            return redirect()->route('member.loan-applications.index')->with('error', 'সদস্য তথ্য পাওয়া যাচ্ছে না।');
+        }
+
         $loanProduct = LoanProduct::findOrFail($loanProductId);
         $loanCategory = LoanCategory::findOrFail($loanCategoryId);
-
         $user = $request->user();
         $branch = $user->branch;
-
-        // Existing draft application for this member/product/category (any form)
-        $existingApplication = LoanApplication::where('member_admission_id', $memberId)
-            ->where('loan_product_id', $loanProductId)
-            ->where('loan_category_id', $loanCategoryId)
-            ->where('status', LoanApplication::STATUS_DRAFT)
-            ->first();
 
         return Inertia::render('Member/LoanApplications/Forms/DeathRiskFund', [
             'member' => $member,
             'loanProduct' => $loanProduct,
             'loanCategory' => $loanCategory,
-            'requestedAmount' => (float) $requestedAmount,
+            'requestedAmount' => $requestedAmount,
             'branch' => $branch,
             'existingApplication' => $existingApplication,
-            // Store form data in nominee_info field (reusing existing JSON field)
             'savedData' => $existingApplication?->nominee_info,
+            'isLegacy' => $request->boolean('legacy'),
         ]);
     }
 
@@ -889,53 +1265,51 @@ class LoanApplicationController extends Controller
      */
     public function saveDeathRiskFundDraft(Request $request)
     {
-        $validated = $request->validate([
-            'member_id' => 'required|exists:member_admissions,id',
+        $isLegacy = $request->boolean('legacy');
+        $rules = [
             'loan_product_id' => 'required|exists:loan_products,id',
             'loan_category_id' => 'required|exists:loan_categories,id',
             'requested_amount' => 'required|numeric|min:0',
             'form_data' => 'required|array',
-        ]);
+        ];
+        if (!$isLegacy) {
+            $rules['member_id'] = 'required|exists:member_admissions,id';
+        }
+        $validated = $request->validate($rules);
 
-        $user = $request->user();
-        $member = MemberAdmission::find($validated['member_id']);
+        $memberId = $isLegacy ? null : (int) $validated['member_id'];
+        $legacyKey = $isLegacy ? $request->session()->get('loan_legacy_key') : null;
+        $legacySnapshot = $isLegacy ? $request->session()->get('loan_legacy_member') : null;
+        if ($isLegacy && (!$legacyKey || !$legacySnapshot)) {
+            return redirect()->route('member.loan-applications.index')->with('error', 'আগের সদস্যের সেশন শেষ। আবার সদস্য তথ্য দিন।');
+        }
+
+        $loanApplication = $this->getOrCreateDraftForSave(
+            $request,
+            (int) $validated['loan_product_id'],
+            (int) $validated['loan_category_id'],
+            (float) $validated['requested_amount'],
+            $memberId,
+            $legacyKey,
+            $legacySnapshot
+        );
+        if (!$loanApplication) {
+            return redirect()->back()->withErrors(['member_id' => 'সদস্য পাওয়া যাচ্ছে না।']);
+        }
+
         $formData = $validated['form_data'];
         $loanProduct = LoanProduct::find($validated['loan_product_id']);
-
-        // Ensure required fields have values
-        $purposeOfLoan = $formData['component_name'] ?? 'মৃত্যুজনিত ঋণঝুঁকি তহবিলে অন্তর্ভুক্তি';
-
-        // Calculate number_of_installments from loan product
         $numberOfInstallments = $loanProduct->number_of_installments ?? 1;
-        if ($loanProduct->installment_type === 'weekly' && $loanProduct->duration_months) {
-            $numberOfInstallments = ceil(($loanProduct->duration_months * 30) / 7);
-        } elseif ($loanProduct->duration_months) {
-            $numberOfInstallments = $loanProduct->duration_months;
+        if ($loanProduct && $loanProduct->installment_type === 'weekly' && $loanProduct->duration_months) {
+            $numberOfInstallments = (int) ceil(($loanProduct->duration_months * 30) / 7);
+        } elseif ($loanProduct && $loanProduct->duration_months) {
+            $numberOfInstallments = (int) $loanProduct->duration_months;
         }
 
-        // Find existing draft or create new (shared draft for all member forms)
-        $loanApplication = LoanApplication::firstOrNew([
-            'member_admission_id' => $validated['member_id'],
-            'loan_product_id' => $validated['loan_product_id'],
-            'loan_category_id' => $validated['loan_category_id'],
-            'status' => LoanApplication::STATUS_DRAFT,
-        ]);
-
-        // Only generate application_no when creating first time
-        if (!$loanApplication->exists || !$loanApplication->application_no) {
-            $loanApplication->application_no = LoanApplication::generateApplicationNo();
-        }
-
-        $loanApplication->branch_id = $user->branch_id;
-        $loanApplication->samity_id = $member->samity_id;
-        $loanApplication->requested_amount = $validated['requested_amount'];
-        // Store form data in nominee_info field (reusing existing JSON field)
         $loanApplication->nominee_info = $formData;
-        $loanApplication->form_type = 'death_risk_fund'; // Set form_type for tracking
-        $loanApplication->purpose_of_loan = $purposeOfLoan;
+        $loanApplication->form_type = 'death_risk_fund';
+        $loanApplication->purpose_of_loan = $formData['component_name'] ?? 'মৃত্যুজনিত ঋণঝুঁকি তহবিলে অন্তর্ভুক্তি';
         $loanApplication->number_of_installments = $numberOfInstallments;
-        $loanApplication->submitted_by = $user->id;
-
         $loanApplication->save();
 
         return redirect()->route('member.loan-applications.index')
@@ -947,34 +1321,43 @@ class LoanApplicationController extends Controller
      */
     public function fieldInvestigation(Request $request)
     {
-        $memberId = $request->input('member_id');
-        $loanProductId = $request->input('product_id');
-        $loanCategoryId = $request->input('category_id');
-        $requestedAmount = $request->input('amount', 0);
+        $loanProductId = (int) $request->input('product_id');
+        $loanCategoryId = (int) $request->input('category_id');
+        $requestedAmount = (float) $request->input('amount', 0);
 
-        $member = MemberAdmission::with('samity')->findOrFail($memberId);
+        [$member, $existingApplication, $legacyKey] = $this->resolveMemberForForm($request, $loanProductId, $loanCategoryId);
+        if (!$member) {
+            return redirect()->route('member.loan-applications.index')->with('error', 'সদস্য তথ্য পাওয়া যাচ্ছে না।');
+        }
+
         $loanProduct = LoanProduct::findOrFail($loanProductId);
         $loanCategory = LoanCategory::findOrFail($loanCategoryId);
-
         $user = $request->user();
         $branch = $user->branch;
 
-        // Existing draft application for this member/product/category (any form)
-        $existingApplication = LoanApplication::where('member_admission_id', $memberId)
-            ->where('loan_product_id', $loanProductId)
-            ->where('loan_category_id', $loanCategoryId)
-            ->where('status', LoanApplication::STATUS_DRAFT)
-            ->first();
+        // Loan round (দফা): for legacy treat as 1; for member count approved/disbursed + 1
+        $loanRound = 1;
+        if (!$request->boolean('legacy') && isset($member->id)) {
+            $loanRound = LoanApplication::where('member_admission_id', $member->id)
+                ->whereIn('status', [LoanApplication::STATUS_APPROVED, LoanApplication::STATUS_DISBURSED])
+                ->count() + 1;
+        }
+        $savingsProducts = SavingsProduct::where('is_active', true)
+            ->orderBy('display_order')
+            ->orderBy('product_code')
+            ->get(['id', 'product_code', 'product_name', 'product_name_bn']);
 
         return Inertia::render('Member/LoanApplications/Forms/FieldInvestigation', [
             'member' => $member,
             'loanProduct' => $loanProduct,
             'loanCategory' => $loanCategory,
-            'requestedAmount' => (float) $requestedAmount,
+            'requestedAmount' => $requestedAmount,
             'branch' => $branch,
             'existingApplication' => $existingApplication,
-            // Store form data in asset_info field (reusing existing JSON field)
+            'savingsProducts' => $savingsProducts,
+            'loanRound' => $loanRound,
             'savedData' => $existingApplication?->asset_info,
+            'isLegacy' => $request->boolean('legacy'),
         ]);
     }
 
@@ -983,53 +1366,51 @@ class LoanApplicationController extends Controller
      */
     public function saveFieldInvestigationDraft(Request $request)
     {
-        $validated = $request->validate([
-            'member_id' => 'required|exists:member_admissions,id',
+        $isLegacy = $request->boolean('legacy');
+        $rules = [
             'loan_product_id' => 'required|exists:loan_products,id',
             'loan_category_id' => 'required|exists:loan_categories,id',
             'requested_amount' => 'required|numeric|min:0',
             'form_data' => 'required|array',
-        ]);
+        ];
+        if (!$isLegacy) {
+            $rules['member_id'] = 'required|exists:member_admissions,id';
+        }
+        $validated = $request->validate($rules);
 
-        $user = $request->user();
-        $member = MemberAdmission::find($validated['member_id']);
+        $memberId = $isLegacy ? null : (int) $validated['member_id'];
+        $legacyKey = $isLegacy ? $request->session()->get('loan_legacy_key') : null;
+        $legacySnapshot = $isLegacy ? $request->session()->get('loan_legacy_member') : null;
+        if ($isLegacy && (!$legacyKey || !$legacySnapshot)) {
+            return redirect()->route('member.loan-applications.index')->with('error', 'আগের সদস্যের সেশন শেষ। আবার সদস্য তথ্য দিন।');
+        }
+
+        $loanApplication = $this->getOrCreateDraftForSave(
+            $request,
+            (int) $validated['loan_product_id'],
+            (int) $validated['loan_category_id'],
+            (float) $validated['requested_amount'],
+            $memberId,
+            $legacyKey,
+            $legacySnapshot
+        );
+        if (!$loanApplication) {
+            return redirect()->back()->withErrors(['member_id' => 'সদস্য পাওয়া যাচ্ছে না।']);
+        }
+
         $formData = $validated['form_data'];
         $loanProduct = LoanProduct::find($validated['loan_product_id']);
-
-        // Ensure required fields have values
-        $purposeOfLoan = 'সরেজমিনে তদন্ত প্রতিবেদন';
-
-        // Calculate number_of_installments from loan product
         $numberOfInstallments = $loanProduct->number_of_installments ?? 1;
-        if ($loanProduct->installment_type === 'weekly' && $loanProduct->duration_months) {
-            $numberOfInstallments = ceil(($loanProduct->duration_months * 30) / 7);
-        } elseif ($loanProduct->duration_months) {
-            $numberOfInstallments = $loanProduct->duration_months;
+        if ($loanProduct && $loanProduct->installment_type === 'weekly' && $loanProduct->duration_months) {
+            $numberOfInstallments = (int) ceil(($loanProduct->duration_months * 30) / 7);
+        } elseif ($loanProduct && $loanProduct->duration_months) {
+            $numberOfInstallments = (int) $loanProduct->duration_months;
         }
 
-        // Find existing draft or create new (shared draft for all member forms)
-        $loanApplication = LoanApplication::firstOrNew([
-            'member_admission_id' => $validated['member_id'],
-            'loan_product_id' => $validated['loan_product_id'],
-            'loan_category_id' => $validated['loan_category_id'],
-            'status' => LoanApplication::STATUS_DRAFT,
-        ]);
-
-        // Only generate application_no when creating first time
-        if (!$loanApplication->exists || !$loanApplication->application_no) {
-            $loanApplication->application_no = LoanApplication::generateApplicationNo();
-        }
-
-        $loanApplication->branch_id = $user->branch_id;
-        $loanApplication->samity_id = $member->samity_id;
-        $loanApplication->requested_amount = $validated['requested_amount'];
-        // Store form data in asset_info field (reusing existing JSON field)
         $loanApplication->asset_info = $formData;
-        $loanApplication->form_type = 'field_investigation'; // Set form_type for tracking
-        $loanApplication->purpose_of_loan = $purposeOfLoan;
+        $loanApplication->form_type = 'field_investigation';
+        $loanApplication->purpose_of_loan = 'সরেজমিনে তদন্ত প্রতিবেদন';
         $loanApplication->number_of_installments = $numberOfInstallments;
-        $loanApplication->submitted_by = $user->id;
-
         $loanApplication->save();
 
         return redirect()->route('member.loan-applications.index')
@@ -1041,41 +1422,45 @@ class LoanApplicationController extends Controller
      */
     public function loanApplicationApproval(Request $request)
     {
-        $memberId = $request->input('member_id');
-        $loanProductId = $request->input('product_id');
-        $loanCategoryId = $request->input('category_id');
-        $requestedAmount = $request->input('amount', 0);
+        $loanProductId = (int) $request->input('product_id');
+        $loanCategoryId = (int) $request->input('category_id');
+        $requestedAmount = (float) $request->input('amount', 0);
 
-        // Load member with all relationships
-        $member = MemberAdmission::with([
-            'samity',
-            'familyMembers',
-            'otherAssets',
-            'branch'
-        ])->findOrFail($memberId);
-        
+        [$member, $existingApplication, $legacyKey] = $this->resolveMemberForForm($request, $loanProductId, $loanCategoryId);
+        if (!$member) {
+            return redirect()->route('member.loan-applications.index')->with('error', 'সদস্য তথ্য পাওয়া যাচ্ছে না।');
+        }
+
+        if (!$request->boolean('legacy')) {
+            $member = MemberAdmission::with(['samity', 'familyMembers', 'otherAssets', 'branch'])->find($member->id);
+        }
         $loanProduct = LoanProduct::findOrFail($loanProductId);
         $loanCategory = LoanCategory::findOrFail($loanCategoryId);
-
         $user = $request->user();
         $branch = $user->branch;
 
-        // Existing draft application for this member/product/category (any form)
-        $existingApplication = LoanApplication::where('member_admission_id', $memberId)
-            ->where('loan_product_id', $loanProductId)
-            ->where('loan_category_id', $loanCategoryId)
-            ->where('status', LoanApplication::STATUS_DRAFT)
-            ->first();
+        $loanRound = 1;
+        if (!$request->boolean('legacy') && isset($member->id)) {
+            $loanRound = LoanApplication::where('member_admission_id', $member->id)
+                ->whereIn('status', [LoanApplication::STATUS_APPROVED, LoanApplication::STATUS_DISBURSED])
+                ->count() + 1;
+        }
+        $savingsProducts = SavingsProduct::where('is_active', true)
+            ->orderBy('display_order')
+            ->orderBy('product_code')
+            ->get(['id', 'product_code', 'product_name', 'product_name_bn']);
 
         return Inertia::render('Member/LoanApplications/Forms/LoanApplicationApproval', [
             'member' => $member,
             'loanProduct' => $loanProduct,
             'loanCategory' => $loanCategory,
-            'requestedAmount' => (float) $requestedAmount,
+            'requestedAmount' => $requestedAmount,
             'branch' => $branch,
             'existingApplication' => $existingApplication,
-            // Store form data in business_plan JSON field (reusing existing JSON field)
+            'savingsProducts' => $savingsProducts,
+            'loanRound' => $loanRound,
             'savedData' => $existingApplication?->business_plan,
+            'isLegacy' => $request->boolean('legacy'),
         ]);
     }
 
@@ -1084,52 +1469,115 @@ class LoanApplicationController extends Controller
      */
     public function saveLoanApplicationApprovalDraft(Request $request)
     {
-        $validated = $request->validate([
-            'member_id' => 'required|exists:member_admissions,id',
+        $isLegacy = $request->boolean('legacy');
+        $rules = [
             'loan_product_id' => 'required|exists:loan_products,id',
             'loan_category_id' => 'required|exists:loan_categories,id',
             'requested_amount' => 'required|numeric|min:0',
             'form_data' => 'required|array',
-        ]);
+        ];
+        if (!$isLegacy) {
+            $rules['member_id'] = 'required|exists:member_admissions,id';
+        }
+        $validated = $request->validate($rules);
 
-        $user = $request->user();
-        $member = MemberAdmission::find($validated['member_id']);
+        $memberId = $isLegacy ? null : (int) $validated['member_id'];
+        $legacyKey = $isLegacy ? $request->session()->get('loan_legacy_key') : null;
+        $legacySnapshot = $isLegacy ? $request->session()->get('loan_legacy_member') : null;
+        if ($isLegacy && (!$legacyKey || !$legacySnapshot)) {
+            return redirect()->route('member.loan-applications.index')->with('error', 'আগের সদস্যের সেশন শেষ। আবার সদস্য তথ্য দিন।');
+        }
+
+        $loanApplication = $this->getOrCreateDraftForSave(
+            $request,
+            (int) $validated['loan_product_id'],
+            (int) $validated['loan_category_id'],
+            (float) $validated['requested_amount'],
+            $memberId,
+            $legacyKey,
+            $legacySnapshot
+        );
+        if (!$loanApplication) {
+            return redirect()->back()->withErrors(['member_id' => 'সদস্য পাওয়া যাচ্ছে না।']);
+        }
+
         $formData = $validated['form_data'];
         $loanProduct = LoanProduct::find($validated['loan_product_id']);
-
-        $purposeOfLoan = $formData['loan_purpose'] ?? 'জাগরণ/বুনিয়াদ/আগ্রসর ঋণ আবেদন';
-
         $numberOfInstallments = $loanProduct->number_of_installments ?? 1;
-        if ($loanProduct->installment_type === 'weekly' && $loanProduct->duration_months) {
-            $numberOfInstallments = ceil(($loanProduct->duration_months * 30) / 7);
-        } elseif ($loanProduct->duration_months) {
-            $numberOfInstallments = $loanProduct->duration_months;
+        if ($loanProduct && $loanProduct->installment_type === 'weekly' && $loanProduct->duration_months) {
+            $numberOfInstallments = (int) ceil(($loanProduct->duration_months * 30) / 7);
+        } elseif ($loanProduct && $loanProduct->duration_months) {
+            $numberOfInstallments = (int) $loanProduct->duration_months;
         }
 
-        $loanApplication = LoanApplication::firstOrNew([
-            'member_admission_id' => $validated['member_id'],
-            'loan_product_id' => $validated['loan_product_id'],
-            'loan_category_id' => $validated['loan_category_id'],
-            'status' => LoanApplication::STATUS_DRAFT,
-        ]);
-
-        if (!$loanApplication->exists || !$loanApplication->application_no) {
-            $loanApplication->application_no = LoanApplication::generateApplicationNo();
-        }
-
-        $loanApplication->branch_id = $user->branch_id;
-        $loanApplication->samity_id = $member->samity_id;
-        $loanApplication->requested_amount = $validated['requested_amount'];
-        $loanApplication->business_plan = $formData; // Storing in business_plan JSON field
+        $loanApplication->business_plan = $formData;
         $loanApplication->form_type = 'loan_application_approval';
-        $loanApplication->purpose_of_loan = $purposeOfLoan;
+        $loanApplication->purpose_of_loan = $formData['loan_purpose'] ?? 'জাগরণ/বুনিয়াদ/আগ্রসর ঋণ আবেদন';
         $loanApplication->number_of_installments = $numberOfInstallments;
-        $loanApplication->submitted_by = $user->id;
-
         $loanApplication->save();
 
         return redirect()->route('member.loan-applications.index')
             ->with('success', 'জাগরণ/বুনিয়াদ/আগ্রসর ঋণ আবেদন ও অনুমোদনপত্র ড্রাফট হিসেবে সংরক্ষিত হয়েছে।');
+    }
+
+    /**
+     * Resolve an issue (mark as resolved with response)
+     */
+    public function resolveIssue(Request $request, $applicationId, $issueId)
+    {
+        $issue = LoanApplicationIssue::where('loan_application_id', $applicationId)
+            ->where('id', $issueId)
+            ->firstOrFail();
+
+        $validated = $request->validate([
+            'response_message' => 'required|string|min:10|max:2000',
+        ]);
+
+        $issue->markResolved(auth()->id(), $validated['response_message']);
+
+        return back()->with('success', 'সমস্যা সমাধান করা হয়েছে।');
+    }
+
+    /**
+     * Reject an issue (dispute it)
+     */
+    public function rejectIssue(Request $request, $applicationId, $issueId)
+    {
+        $issue = LoanApplicationIssue::where('loan_application_id', $applicationId)
+            ->where('id', $issueId)
+            ->firstOrFail();
+
+        $validated = $request->validate([
+            'response_message' => 'required|string|min:10|max:2000',
+        ]);
+
+        $issue->markRejected(auth()->id(), $validated['response_message']);
+
+        return back()->with('success', 'সমস্যা প্রত্যাখ্যান করা হয়েছে।');
+    }
+
+    /**
+     * Delete loan application (only if draft)
+     */
+    public function destroy($id)
+    {
+        $application = LoanApplication::findOrFail($id);
+        
+        // Check if user owns this application
+        $user = auth()->user();
+        if ($user->branch_id && $application->branch_id !== $user->branch_id) {
+            return back()->withErrors(['error' => 'আপনার এই আবেদনটি মুছে ফেলার অনুমতি নেই।']);
+        }
+        
+        // Only allow deletion if status is draft
+        if ($application->status !== LoanApplication::STATUS_DRAFT) {
+            return back()->withErrors(['error' => 'শুধুমাত্র খসড়া (Draft) অবস্থার আবেদন মুছে ফেলা যাবে।']);
+        }
+        
+        $application->delete();
+        
+        return redirect()->route('member.loan-applications.index')
+            ->with('success', 'ঋণ আবেদন সফলভাবে মুছে ফেলা হয়েছে।');
     }
 
 }

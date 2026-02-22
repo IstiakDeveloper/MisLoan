@@ -3,11 +3,13 @@
 namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\SoftDeletes;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class LoanApplication extends Model
 {
+    use SoftDeletes;
     protected $fillable = [
         'application_no',
         'member_admission_id',
@@ -63,6 +65,9 @@ class LoanApplication extends Model
         'committee_recommendation',
         'applicant_photo',
         'guarantor_photo',
+        'excel_file_path',
+        'excel_file_name',
+        'total_members',
         'status',
         'submitted_by',
         'submitted_at',
@@ -70,6 +75,8 @@ class LoanApplication extends Model
         'reviewed_at',
         'rejection_reason',
         'remarks',
+        'head_office_remarks',
+        'branch_remarks',
         'disbursed_by',
         'disbursed_at',
         'disbursement_method',
@@ -79,6 +86,8 @@ class LoanApplication extends Model
         'committee_reviewed_at',
         'loan_agreement_data',
         'selected_approvers',
+        'legacy_application_key',
+        'legacy_member_snapshot',
     ];
 
     protected $casts = [
@@ -121,10 +130,35 @@ class LoanApplication extends Model
         'committee_reviewed_at' => 'datetime',
         'loan_agreement_data' => 'array',
         'selected_approvers' => 'array',
+        'business_plan' => 'array', // JSON column - cast to array for Laravel
+        'legacy_member_snapshot' => 'array',
     ];
+
+    protected $appends = ['member_display'];
+
+    /**
+     * For show/print: member from memberAdmission or built from legacy_member_snapshot.
+     */
+    public function getMemberDisplayAttribute(): ?object
+    {
+        if ($this->member_admission_id) {
+            $m = $this->memberAdmission ?? MemberAdmission::with('samity')->find($this->member_admission_id);
+            return $m ? (object) $m->toArray() : null;
+        }
+        $snap = $this->legacy_member_snapshot;
+        if (!$snap || !is_array($snap)) {
+            return null;
+        }
+        $samity = $this->samity;
+        return (object) array_merge($snap, [
+            'id' => null,
+            'samity' => $samity ? (object) ['id' => $samity->id, 'samity_name' => $samity->samity_name, 'samity_name_bn' => $samity->samity_name_bn, 'samity_code' => $samity->samity_code] : null,
+        ]);
+    }
 
     // Status constants
     const STATUS_DRAFT = 'draft';
+    const STATUS_PENDING = 'pending';
     const STATUS_SUBMITTED = 'submitted';
     const STATUS_UNDER_REVIEW = 'under_review';
     const STATUS_PENDING_HEAD_OFFICE = 'pending_head_office';
@@ -132,6 +166,7 @@ class LoanApplication extends Model
     const STATUS_REJECTED = 'rejected';
     const STATUS_DISBURSED = 'disbursed';
     const STATUS_CANCELLED = 'cancelled';
+    const STATUS_NEEDS_CORRECTION = 'needs_correction';
 
     // Relationships
     public function memberAdmission(): BelongsTo

@@ -6,17 +6,24 @@ use Illuminate\Support\Facades\Schema;
 
 return new class extends Migration
 {
+    /**
+     * Run the migrations.
+     */
     public function up(): void
     {
         Schema::table('loan_applications', function (Blueprint $table) {
-            $table->json('selected_approvers')->nullable()->after('submitted_at');
+            // Add composite index for status and submitted_at to optimize queries
+            $table->index(['status', 'submitted_at'], 'idx_status_submitted_at');
         });
     }
 
+    /**
+     * Reverse the migrations.
+     */
     public function down(): void
     {
         Schema::table('loan_applications', function (Blueprint $table) {
-            $table->dropColumn('selected_approvers');
+            $table->dropIndex('idx_status_submitted_at');
         });
     }
 };

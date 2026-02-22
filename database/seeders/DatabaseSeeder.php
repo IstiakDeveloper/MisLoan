@@ -18,6 +18,11 @@ class DatabaseSeeder extends Seeder
             AreaSeeder::class,
             BranchSeeder::class,
             UserSeeder::class,
+            MemberCategorySeeder::class,
+            LoanCategorySeeder::class,
+            SavingsProductAutomationSeeder::class,
+            SavingsProductSeeder::class,
+
         ]);
 
         $this->command->info('Database seeding completed!');
@@ -26,5 +31,6 @@ class DatabaseSeeder extends Seeder
         $this->command->info('✓ 9 Areas created');
         $this->command->info('✓ 42 Branches created');
         $this->command->info('✓ 43 Users created');
+        $this->command->info('✓ 7 Member Categories created');
     }
 }

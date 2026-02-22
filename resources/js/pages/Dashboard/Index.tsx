@@ -1,37 +1,24 @@
-import { Head } from '@inertiajs/react';
+import React, { useState, useEffect } from 'react';
+import { Head, router } from '@inertiajs/react';
 import AdminLayout from '@/layouts/admin-layout';
 import {
-    Users,
     Building2,
     MapPin,
-    Globe,
-    Shield,
     FileText,
     Clock,
     CheckCircle,
-    TrendingUp,
-    Calendar
+    XCircle,
+    AlertCircle,
+    Calendar,
+    UserPlus,
 } from 'lucide-react';
-
-interface Role {
-    id: number;
-    name: string;
-    display_name: string;
-}
 
 interface Branch {
     id: number;
     name: string;
     code: string;
-}
-
-interface User {
-    id: number;
-    name: string;
-    email: string;
-    role: Role;
-    branch: Branch | null;
-    created_at: string;
+    area_id?: number;
+    area?: { id: number; name: string; zone_id: number; zone?: { id: number; name: string } };
 }
 
 interface Zone {
@@ -44,6 +31,7 @@ interface Area {
     id: number;
     name: string;
     code: string;
+    zone_id?: number;
 }
 
 interface Stats {
@@ -57,6 +45,22 @@ interface Stats {
     approved_applications: number;
 }
 
+interface PeriodStats {
+    loan_applications_submitted: number;
+    member_admissions_submitted: number;
+    approved: number;
+    rejected: number;
+    issues_pending: number;
+}
+
+interface BranchSummary {
+    total_branches: number;
+    submitted_in_period: number;
+    pending_in_period: number;
+    submitted_branches: Branch[];
+    missing_branches: Branch[];
+}
+
 interface AccessibleData {
     zones?: Zone[];
     areas?: Area[];
@@ -65,243 +69,292 @@ interface AccessibleData {
 
 interface Props {
     stats: Stats;
-    recentUsers: User[];
+    periodStats: PeriodStats;
+    period: 'today' | 'monthly' | 'date_to_date';
+    dateFrom: string | null;
+    dateTo: string | null;
+    branchSummary: BranchSummary;
     accessibleData: AccessibleData;
+    dashboardType: string;
 }
 
-export default function Dashboard({ stats, recentUsers, accessibleData }: Props) {
-    const statCards = [
-        {
-            title: 'Total Users',
-            value: stats.total_users,
-            icon: Users,
-            color: 'blue',
-            bgColor: 'bg-blue-50',
-            iconColor: 'text-blue-600',
-            borderColor: 'border-blue-200'
-        },
-        {
-            title: 'Total Zones',
-            value: stats.total_zones,
-            icon: Globe,
-            color: 'purple',
-            bgColor: 'bg-purple-50',
-            iconColor: 'text-purple-600',
-            borderColor: 'border-purple-200'
-        },
-        {
-            title: 'Total Areas',
-            value: stats.total_areas,
-            icon: MapPin,
-            color: 'green',
-            bgColor: 'bg-green-50',
-            iconColor: 'text-green-600',
-            borderColor: 'border-green-200'
-        },
-        {
-            title: 'Total Branches',
-            value: stats.total_branches,
-            icon: Building2,
-            color: 'orange',
-            bgColor: 'bg-orange-50',
-            iconColor: 'text-orange-600',
-            borderColor: 'border-orange-200'
-        },
-        {
-            title: 'System Roles',
-            value: stats.total_roles,
-            icon: Shield,
-            color: 'pink',
-            bgColor: 'bg-pink-50',
-            iconColor: 'text-pink-600',
-            borderColor: 'border-pink-200'
-        },
-        {
-            title: 'Total Applications',
-            value: stats.total_applications,
-            icon: FileText,
-            color: 'indigo',
-            bgColor: 'bg-indigo-50',
-            iconColor: 'text-indigo-600',
-            borderColor: 'border-indigo-200'
-        },
-        {
-            title: 'Pending',
-            value: stats.pending_applications,
-            icon: Clock,
-            color: 'yellow',
-            bgColor: 'bg-yellow-50',
-            iconColor: 'text-yellow-600',
-            borderColor: 'border-yellow-200'
-        },
-        {
-            title: 'Approved',
-            value: stats.approved_applications,
-            icon: CheckCircle,
-            color: 'emerald',
-            bgColor: 'bg-emerald-50',
-            iconColor: 'text-emerald-600',
-            borderColor: 'border-emerald-200'
-        },
-    ];
+export default function Dashboard({
+    stats,
+    periodStats,
+    period,
+    dateFrom,
+    dateTo,
+    branchSummary,
+    accessibleData,
+}: Props) {
+    const [periodSelect, setPeriodSelect] = useState<'today' | 'monthly' | 'date_to_date'>(period);
+    const [fromDate, setFromDate] = useState(dateFrom ?? '');
+    const [toDate, setToDate] = useState(dateTo ?? '');
 
-    const formatDate = (dateString: string) => {
-        const date = new Date(dateString);
-        return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+    useEffect(() => {
+        setPeriodSelect(period);
+        setFromDate(dateFrom ?? '');
+        setToDate(dateTo ?? '');
+    }, [period, dateFrom, dateTo]);
+
+    const applyFilter = () => {
+        const params: Record<string, string> = { period: periodSelect };
+        if (periodSelect === 'date_to_date' && fromDate && toDate) {
+            params.from_date = fromDate;
+            params.to_date = toDate;
+        }
+        const query = new URLSearchParams(params).toString();
+        const url = query ? `/dashboard?${query}` : '/dashboard';
+        router.get(url);
     };
+
+    const periodLabel =
+        period === 'today'
+            ? 'Today (আজ)'
+            : period === 'monthly'
+              ? 'This month (এই মাসে)'
+              : dateFrom && dateTo
+                ? `${dateFrom} – ${dateTo}`
+                : 'Period';
 
     return (
         <AdminLayout>
-            <Head title="Dashboard" />
+            <Head title="Head Office Dashboard" />
 
-            <div className="space-y-6">
-                {/* Header */}
-                <div>
-                    <h1 className="text-2xl font-bold text-gray-900">Dashboard</h1>
-                    <p className="text-sm text-gray-600 mt-1">
-                        Welcome back! Here's an overview of your system.
-                    </p>
-                </div>
-
-                {/* Statistics Grid */}
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-                    {statCards.map((stat) => {
-                        const Icon = stat.icon;
-                        return (
-                            <div
-                                key={stat.title}
-                                className={`bg-white rounded-lg border ${stat.borderColor} p-5 shadow-sm hover:shadow-md transition-shadow`}
+            <div className="max-w-6xl mx-auto space-y-6">
+                {/* Header + Period filter (same as Branch) */}
+                <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+                    <div>
+                        <h1 className="text-xl font-semibold text-gray-900">Head Office Dashboard</h1>
+                        <p className="text-sm text-gray-500 mt-0.5">System overview and branch submission status</p>
+                    </div>
+                    <div className="flex flex-wrap items-end gap-3">
+                        <div className="flex items-center gap-2">
+                            <label className="text-sm text-gray-600 whitespace-nowrap">Period (পিরিয়ড):</label>
+                            <select
+                                value={periodSelect}
+                                onChange={(e) => setPeriodSelect(e.target.value as 'today' | 'monthly' | 'date_to_date')}
+                                className="rounded-lg border border-gray-300 text-sm py-2 pl-3 pr-8 focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                             >
-                                <div className="flex items-center justify-between">
-                                    <div className="flex-1">
-                                        <p className="text-sm font-medium text-gray-600">{stat.title}</p>
-                                        <p className="text-3xl font-bold text-gray-900 mt-2">{stat.value}</p>
-                                    </div>
-                                    <div className={`${stat.bgColor} p-3 rounded-lg`}>
-                                        <Icon className={`w-6 h-6 ${stat.iconColor}`} />
-                                    </div>
-                                </div>
-                            </div>
-                        );
-                    })}
+                                <option value="today">Today (আজ)</option>
+                                <option value="monthly">Monthly (মাসিক)</option>
+                                <option value="date_to_date">Date to date (তারিখ থেকে তারিখ)</option>
+                            </select>
+                        </div>
+                        {periodSelect === 'date_to_date' && (
+                            <>
+                                <input
+                                    type="date"
+                                    value={fromDate}
+                                    onChange={(e) => setFromDate(e.target.value)}
+                                    className="rounded-lg border border-gray-300 text-sm py-2 px-3 focus:ring-2 focus:ring-blue-500"
+                                />
+                                <span className="text-gray-400">–</span>
+                                <input
+                                    type="date"
+                                    value={toDate}
+                                    onChange={(e) => setToDate(e.target.value)}
+                                    className="rounded-lg border border-gray-300 text-sm py-2 px-3 focus:ring-2 focus:ring-blue-500"
+                                />
+                            </>
+                        )}
+                        <button
+                            type="button"
+                            onClick={applyFilter}
+                            className="inline-flex items-center gap-2 px-4 py-2 bg-blue-600 text-white text-sm font-medium rounded-lg hover:bg-blue-700 focus:ring-2 focus:ring-blue-500 focus:ring-offset-2"
+                        >
+                            <Calendar size={16} />
+                            Apply (দেখুন)
+                        </button>
+                    </div>
                 </div>
 
-                {/* Two Column Layout */}
+                {/* Branch submission summary: কত শাখা আজকে submit করছে, কত বাকি */}
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                    <div className="bg-white rounded-xl border border-gray-200 p-5 shadow-sm">
+                        <div className="flex items-center gap-3">
+                            <div className="w-10 h-10 rounded-lg bg-slate-100 flex items-center justify-center">
+                                <Building2 size={20} className="text-slate-600" />
+                            </div>
+                            <div>
+                                <p className="text-2xl font-semibold text-gray-900">{branchSummary.total_branches}</p>
+                                <p className="text-xs text-gray-500">Total branches (মোট শাখা)</p>
+                            </div>
+                        </div>
+                    </div>
+                    <div className="rounded-xl border border-emerald-200 p-5 shadow-sm bg-emerald-50/50">
+                        <div className="flex items-center gap-3">
+                            <div className="w-10 h-10 rounded-lg bg-emerald-100 flex items-center justify-center">
+                                <CheckCircle size={20} className="text-emerald-600" />
+                            </div>
+                            <div>
+                                <p className="text-2xl font-semibold text-gray-900">{branchSummary.submitted_in_period}</p>
+                                <p className="text-xs text-gray-500">Submitted in period (পিরিয়ডে পঠানো)</p>
+                            </div>
+                        </div>
+                    </div>
+                    <div className="rounded-xl border border-amber-200 p-5 shadow-sm bg-amber-50/50">
+                        <div className="flex items-center gap-3">
+                            <div className="w-10 h-10 rounded-lg bg-amber-100 flex items-center justify-center">
+                                <Clock size={20} className="text-amber-600" />
+                            </div>
+                            <div>
+                                <p className="text-2xl font-semibold text-gray-900">{branchSummary.pending_in_period}</p>
+                                <p className="text-xs text-gray-500">Pending (বাকি)</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <p className="text-sm text-gray-500">
+                    Statistics below for: <strong>{periodLabel}</strong>
+                </p>
+
+                {/* Period stats: loan apps, admissions, approved, rejected, issues */}
+                <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4">
+                    <div className="bg-white rounded-xl border border-gray-200 p-5 shadow-sm">
+                        <div className="flex items-center gap-3">
+                            <div className="w-10 h-10 rounded-lg bg-blue-50 flex items-center justify-center">
+                                <FileText size={20} className="text-blue-600" />
+                            </div>
+                            <div>
+                                <p className="text-2xl font-semibold text-gray-900">{periodStats.loan_applications_submitted}</p>
+                                <p className="text-xs text-gray-500">Loan applications submitted</p>
+                            </div>
+                        </div>
+                    </div>
+                    <div className="bg-white rounded-xl border border-gray-200 p-5 shadow-sm">
+                        <div className="flex items-center gap-3">
+                            <div className="w-10 h-10 rounded-lg bg-violet-50 flex items-center justify-center">
+                                <UserPlus size={20} className="text-violet-600" />
+                            </div>
+                            <div>
+                                <p className="text-2xl font-semibold text-gray-900">{periodStats.member_admissions_submitted}</p>
+                                <p className="text-xs text-gray-500">Member admissions submitted</p>
+                            </div>
+                        </div>
+                    </div>
+                    <div className="bg-white rounded-xl border border-gray-200 p-5 shadow-sm">
+                        <div className="flex items-center gap-3">
+                            <div className="w-10 h-10 rounded-lg bg-emerald-50 flex items-center justify-center">
+                                <CheckCircle size={20} className="text-emerald-600" />
+                            </div>
+                            <div>
+                                <p className="text-2xl font-semibold text-gray-900">{periodStats.approved}</p>
+                                <p className="text-xs text-gray-500">Approved</p>
+                            </div>
+                        </div>
+                    </div>
+                    <div className="bg-white rounded-xl border border-gray-200 p-5 shadow-sm">
+                        <div className="flex items-center gap-3">
+                            <div className="w-10 h-10 rounded-lg bg-red-50 flex items-center justify-center">
+                                <XCircle size={20} className="text-red-600" />
+                            </div>
+                            <div>
+                                <p className="text-2xl font-semibold text-gray-900">{periodStats.rejected}</p>
+                                <p className="text-xs text-gray-500">Rejected</p>
+                            </div>
+                        </div>
+                    </div>
+                    <div className="bg-white rounded-xl border border-gray-200 p-5 shadow-sm">
+                        <div className="flex items-center gap-3">
+                            <div className="w-10 h-10 rounded-lg bg-amber-50 flex items-center justify-center">
+                                <AlertCircle size={20} className="text-amber-600" />
+                            </div>
+                            <div>
+                                <p className="text-2xl font-semibold text-gray-900">{periodStats.issues_pending}</p>
+                                <p className="text-xs text-gray-500">Issues pending</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                {/* Two columns: Branch lists + System summary */}
                 <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-                    {/* Recent Users */}
-                    <div className="lg:col-span-2 bg-white rounded-lg border border-gray-200 shadow-sm">
-                        <div className="px-6 py-4 border-b border-gray-200">
-                            <div className="flex items-center justify-between">
-                                <h2 className="text-lg font-semibold text-gray-900">Recent Users</h2>
-                                <TrendingUp className="w-5 h-5 text-gray-400" />
+                    {/* Branches submitted vs missing */}
+                    <div className="lg:col-span-2 space-y-4">
+                        <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
+                            <div className="px-5 py-4 border-b border-gray-100">
+                                <h2 className="text-sm font-semibold text-gray-900">Branches submitted in period (পিরিয়ডে পঠানো শাখা)</h2>
+                            </div>
+                            <div className="p-5 max-h-48 overflow-y-auto">
+                                {branchSummary.submitted_branches.length === 0 ? (
+                                    <p className="text-sm text-gray-500">None in this period.</p>
+                                ) : (
+                                    <ul className="space-y-1.5">
+                                        {branchSummary.submitted_branches.map((b) => (
+                                            <li key={b.id} className="flex items-center gap-2 text-sm">
+                                                <CheckCircle size={14} className="text-emerald-600 flex-shrink-0" />
+                                                <span className="font-medium text-gray-900">{b.name}</span>
+                                                {b.area?.name && (
+                                                    <span className="text-gray-500">· {b.area.name}</span>
+                                                )}
+                                                {b.area?.zone?.name && (
+                                                    <span className="text-gray-400">· {b.area.zone.name}</span>
+                                                )}
+                                            </li>
+                                        ))}
+                                    </ul>
+                                )}
                             </div>
                         </div>
-                        <div className="p-6">
-                            {recentUsers.length > 0 ? (
-                                <div className="space-y-4">
-                                    {recentUsers.map((user) => (
-                                        <div
-                                            key={user.id}
-                                            className="flex items-center gap-4 p-3 rounded-lg hover:bg-gray-50 transition-colors"
-                                        >
-                                            <div className="w-10 h-10 rounded-full bg-blue-100 flex items-center justify-center text-blue-600 font-semibold">
-                                                {user.name.charAt(0).toUpperCase()}
-                                            </div>
-                                            <div className="flex-1 min-w-0">
-                                                <p className="text-sm font-medium text-gray-900 truncate">
-                                                    {user.name}
-                                                </p>
-                                                <p className="text-xs text-gray-500 truncate">{user.email}</p>
-                                            </div>
-                                            <div className="flex flex-col items-end gap-1">
-                                                <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-blue-100 text-blue-800">
-                                                    {user.role.display_name}
-                                                </span>
-                                                <div className="flex items-center gap-1 text-xs text-gray-500">
-                                                    <Calendar className="w-3 h-3" />
-                                                    {formatDate(user.created_at)}
-                                                </div>
-                                            </div>
-                                        </div>
-                                    ))}
-                                </div>
-                            ) : (
-                                <div className="text-center py-8 text-gray-500">
-                                    No recent users
-                                </div>
-                            )}
+                        <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
+                            <div className="px-5 py-4 border-b border-gray-100">
+                                <h2 className="text-sm font-semibold text-gray-900">Branches not submitted (পঠানো হয়নি)</h2>
+                            </div>
+                            <div className="p-5 max-h-48 overflow-y-auto">
+                                {branchSummary.missing_branches.length === 0 ? (
+                                    <p className="text-sm text-emerald-600">All branches submitted.</p>
+                                ) : (
+                                    <ul className="space-y-1.5">
+                                        {branchSummary.missing_branches.map((b) => (
+                                            <li key={b.id} className="flex items-center gap-2 text-sm text-gray-600">
+                                                <Clock size={14} className="text-amber-500 flex-shrink-0" />
+                                                <span className="font-medium text-gray-800">{b.name}</span>
+                                                {b.area?.name && (
+                                                    <span className="text-gray-500">· {b.area.name}</span>
+                                                )}
+                                                {b.area?.zone?.name && (
+                                                    <span className="text-gray-400">· {b.area.zone.name}</span>
+                                                )}
+                                            </li>
+                                        ))}
+                                    </ul>
+                                )}
+                            </div>
                         </div>
                     </div>
 
-                    {/* Accessible Data Summary */}
-                    <div className="bg-white rounded-lg border border-gray-200 shadow-sm">
-                        <div className="px-6 py-4 border-b border-gray-200">
-                            <h2 className="text-lg font-semibold text-gray-900">Your Access</h2>
-                        </div>
-                        <div className="p-6 space-y-4">
-                            {accessibleData.zones && accessibleData.zones.length > 0 && (
-                                <div className="p-4 bg-purple-50 border border-purple-200 rounded-lg">
-                                    <div className="flex items-center gap-2 mb-2">
-                                        <Globe className="w-5 h-5 text-purple-600" />
-                                        <span className="font-semibold text-purple-900">Zones</span>
-                                    </div>
-                                    <p className="text-2xl font-bold text-purple-600">
-                                        {accessibleData.zones.length}
-                                    </p>
-                                    <p className="text-xs text-purple-700 mt-1">
-                                        {accessibleData.zones.map(z => z.name).join(', ')}
-                                    </p>
+                    {/* Right column: System summary */}
+                    <div>
+                        <div className="bg-white rounded-xl border border-gray-200 shadow-sm">
+                            <div className="px-5 py-4 border-b border-gray-100">
+                                <h2 className="text-sm font-semibold text-gray-900">System summary</h2>
+                            </div>
+                            <div className="p-5 space-y-3">
+                                <div className="flex justify-between text-sm">
+                                    <span className="text-gray-600">Total users</span>
+                                    <span className="font-medium text-gray-900">{stats.total_users}</span>
                                 </div>
-                            )}
-
-                            {accessibleData.areas && accessibleData.areas.length > 0 && (
-                                <div className="p-4 bg-green-50 border border-green-200 rounded-lg">
-                                    <div className="flex items-center gap-2 mb-2">
-                                        <MapPin className="w-5 h-5 text-green-600" />
-                                        <span className="font-semibold text-green-900">Areas</span>
-                                    </div>
-                                    <p className="text-2xl font-bold text-green-600">
-                                        {accessibleData.areas.length}
-                                    </p>
-                                    <p className="text-xs text-green-700 mt-1 truncate">
-                                        {accessibleData.areas.slice(0, 3).map(a => a.name).join(', ')}
-                                        {accessibleData.areas.length > 3 && ` +${accessibleData.areas.length - 3} more`}
-                                    </p>
+                                <div className="flex justify-between text-sm">
+                                    <span className="text-gray-600">Zones / Areas</span>
+                                    <span className="font-medium text-gray-900">{stats.total_zones} / {stats.total_areas}</span>
                                 </div>
-                            )}
-
-                            {accessibleData.branches && accessibleData.branches.length > 0 && (
-                                <div className="p-4 bg-blue-50 border border-blue-200 rounded-lg">
-                                    <div className="flex items-center gap-2 mb-2">
-                                        <Building2 className="w-5 h-5 text-blue-600" />
-                                        <span className="font-semibold text-blue-900">Branches</span>
-                                    </div>
-                                    <p className="text-2xl font-bold text-blue-600">
-                                        {accessibleData.branches.length}
-                                    </p>
-                                    <p className="text-xs text-blue-700 mt-1 truncate">
-                                        {accessibleData.branches.slice(0, 3).map(b => b.name).join(', ')}
-                                        {accessibleData.branches.length > 3 && ` +${accessibleData.branches.length - 3} more`}
-                                    </p>
+                                <div className="flex justify-between text-sm">
+                                    <span className="text-gray-600">Total applications</span>
+                                    <span className="font-medium text-gray-900">{stats.total_applications}</span>
                                 </div>
-                            )}
-
-                            {!accessibleData.zones?.length && !accessibleData.areas?.length && !accessibleData.branches?.length && (
-                                <div className="text-center py-8 text-gray-500">
-                                    <Shield className="w-12 h-12 mx-auto text-gray-400 mb-2" />
-                                    <p className="text-sm">Role-based access</p>
+                                <div className="flex justify-between text-sm">
+                                    <span className="text-gray-600">Pending (all time)</span>
+                                    <span className="font-medium text-amber-600">{stats.pending_applications}</span>
                                 </div>
-                            )}
+                                <div className="flex justify-between text-sm">
+                                    <span className="text-gray-600">Approved (all time)</span>
+                                    <span className="font-medium text-emerald-600">{stats.approved_applications}</span>
+                                </div>
+                            </div>
                         </div>
                     </div>
-                </div>
-
-                {/* Quick Actions (Optional for future) */}
-                <div className="bg-gradient-to-r from-blue-50 to-purple-50 border border-blue-200 rounded-lg p-6">
-                    <h3 className="text-lg font-semibold text-gray-900 mb-2">System Status</h3>
-                    <p className="text-sm text-gray-600">
-                        All systems operational. {stats.total_users} active users across {stats.total_branches} branches.
-                    </p>
                 </div>
             </div>
         </AdminLayout>

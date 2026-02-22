@@ -15,8 +15,10 @@ use App\Http\Controllers\ApprovalController;
 use App\Http\Controllers\ProfileController;
 use App\Http\Controllers\HeadOfficeAdmissionController;
 use App\Http\Controllers\HeadOfficeLoanController;
+use App\Http\Controllers\HeadOfficeSavingsController;
 use App\Http\Controllers\LoanCategoryController;
 use App\Http\Controllers\LoanProductController;
+use App\Http\Controllers\SavingsProductController;
 
 Route::get('/', function () {
     if (auth()->check()) {
@@ -122,6 +124,15 @@ Route::middleware(['auth', 'verified'])->group(function () {
         Route::patch('{loanProduct}/toggle-status', [LoanProductController::class, 'toggleStatus'])->name('toggle-status');
     });
 
+    // Savings Product Management Routes - Only for SuperAdmin/Head Office
+    Route::prefix('savings-products')->name('savings-products.')->middleware('head.office')->group(function () {
+        Route::get('/', [SavingsProductController::class, 'index'])->name('index');
+        Route::post('/', [SavingsProductController::class, 'store'])->name('store');
+        Route::put('{savingsProduct}', [SavingsProductController::class, 'update'])->name('update');
+        Route::delete('{savingsProduct}', [SavingsProductController::class, 'destroy'])->name('destroy');
+        Route::patch('{savingsProduct}/toggle-status', [SavingsProductController::class, 'toggleStatus'])->name('toggle-status');
+    });
+
     // Member Admission Routes - For Branch Users
     Route::prefix('member-admissions')->name('member-admissions.')->middleware('branch.user')->group(function () {
         Route::get('/', [MemberAdmissionController::class, 'index'])->name('index');
@@ -154,6 +165,8 @@ Route::middleware(['auth', 'verified'])->group(function () {
             Route::get('/', [\App\Http\Controllers\Member\LoanApplicationController::class, 'index'])->name('index');
             Route::get('products', [\App\Http\Controllers\Member\LoanApplicationController::class, 'getProducts'])->name('products');
             Route::get('search-members', [\App\Http\Controllers\Member\LoanApplicationController::class, 'searchMembers'])->name('search-members');
+            Route::get('samities-for-branch', [\App\Http\Controllers\Member\LoanApplicationController::class, 'samitiesForBranch'])->name('samities-for-branch');
+            Route::post('start-legacy-application', [\App\Http\Controllers\Member\LoanApplicationController::class, 'startLegacyApplication'])->name('start-legacy-application');
             Route::get('form-selection', [\App\Http\Controllers\Member\LoanApplicationController::class, 'formSelection'])->name('form-selection');
 
             // Form routes
@@ -177,15 +190,25 @@ Route::middleware(['auth', 'verified'])->group(function () {
             Route::put('{id}', [\App\Http\Controllers\Member\LoanApplicationController::class, 'update'])->name('update');
             Route::patch('{id}/submit', [\App\Http\Controllers\Member\LoanApplicationController::class, 'submit'])->name('submit');
             Route::get('{id}/print', [\App\Http\Controllers\Member\LoanApplicationController::class, 'print'])->name('print');
+            Route::delete('{id}', [\App\Http\Controllers\Member\LoanApplicationController::class, 'destroy'])->name('destroy');
+
+            // Issue resolution routes
+            Route::post('{applicationId}/issues/{issueId}/resolve', [\App\Http\Controllers\Member\LoanApplicationController::class, 'resolveIssue'])->name('issues.resolve');
+            Route::post('{applicationId}/issues/{issueId}/reject', [\App\Http\Controllers\Member\LoanApplicationController::class, 'rejectIssue'])->name('issues.reject');
         });
 
         // Savings Applications
         Route::prefix('savings-applications')->name('savings-applications.')->group(function () {
             Route::get('/', [\App\Http\Controllers\Member\SavingsApplicationController::class, 'index'])->name('index');
+            Route::get('search-members', [\App\Http\Controllers\Member\SavingsApplicationController::class, 'searchMembers'])->name('search-members');
             Route::get('create/{productId}', [\App\Http\Controllers\Member\SavingsApplicationController::class, 'create'])->name('create');
             Route::post('/', [\App\Http\Controllers\Member\SavingsApplicationController::class, 'store'])->name('store');
+            Route::post('{id}/save-form', [\App\Http\Controllers\Member\SavingsApplicationController::class, 'saveForm'])->name('save-form');
             Route::get('{id}', [\App\Http\Controllers\Member\SavingsApplicationController::class, 'show'])->name('show');
+            Route::delete('{id}', [\App\Http\Controllers\Member\SavingsApplicationController::class, 'destroy'])->name('destroy');
             Route::patch('{id}/submit', [\App\Http\Controllers\Member\SavingsApplicationController::class, 'submit'])->name('submit');
+            Route::patch('{id}/approve', [\App\Http\Controllers\Member\SavingsApplicationController::class, 'approve'])->name('approve');
+            Route::patch('{id}/reject', [\App\Http\Controllers\Member\SavingsApplicationController::class, 'reject'])->name('reject');
         });
     });
 
@@ -204,11 +227,19 @@ Route::middleware(['auth', 'verified'])->group(function () {
         Route::delete('issues/{issue}', [HeadOfficeAdmissionController::class, 'deleteIssue'])->name('issues.delete');
 
         // Head Office Loan Applications (member form-based loans)
+        Route::get('loan-applications', [HeadOfficeLoanController::class, 'index'])->name('loan-applications');
+        Route::get('loan-applications/print', [HeadOfficeLoanController::class, 'print'])->name('loan-applications.print');
         Route::get('process-loans', [HeadOfficeLoanController::class, 'process'])->name('process-loans');
         Route::get('loans/{loanApplication}', [HeadOfficeLoanController::class, 'show'])->name('loans.show');
         Route::post('loans/{loanApplication}/issue', [HeadOfficeLoanController::class, 'storeIssue'])->name('loans.issue');
         Route::patch('loans/{loanApplication}/approve', [HeadOfficeLoanController::class, 'approveSingle'])->name('loans.approve');
+        Route::post('loans/approve-all', [HeadOfficeLoanController::class, 'approveAll'])->name('loans.approve-all');
         Route::patch('loans/{loanApplication}/reject', [HeadOfficeLoanController::class, 'rejectSingle'])->name('loans.reject');
+        Route::delete('loans/{loanApplication}', [HeadOfficeLoanController::class, 'destroy'])->name('loans.destroy');
+
+        // Head Office Savings Applications (view only; no HO approval)
+        Route::get('savings-applications', [HeadOfficeSavingsController::class, 'index'])->name('savings-applications');
+        Route::get('savings-applications/{id}', [HeadOfficeSavingsController::class, 'show'])->name('savings-applications.show');
     });
 
     // Loan Submissions Management - Only for SuperAdmin/Head Office
@@ -273,5 +304,81 @@ Route::middleware(['auth', 'verified'])->group(function () {
         Route::post('member/{member}/resolve-issue', [LoanApplicationController::class, 'memberResolveIssue'])->name('member.resolve-issue');
         Route::post('member/{member}/reject-issue', [LoanApplicationController::class, 'memberRejectIssue'])->name('member.reject-issue');
     });
-});require __DIR__.'/settings.php';
+});
+
+// Utility Routes - Only in local/development environment
+if (app()->environment('local', 'development')) {
+    Route::get('/storage-link', function () {
+        try {
+            \Illuminate\Support\Facades\Artisan::call('storage:link');
+            return response()->json([
+                'success' => true,
+                'message' => 'Storage link created successfully!',
+                'output' => \Illuminate\Support\Facades\Artisan::output()
+            ]);
+        } catch (\Exception $e) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to create storage link',
+                'error' => $e->getMessage()
+            ], 500);
+        }
+    })->name('utility.storage-link');
+
+    Route::get('/migrate', function () {
+        try {
+            \Illuminate\Support\Facades\Artisan::call('migrate', ['--force' => true]);
+            return response()->json([
+                'success' => true,
+                'message' => 'Migration completed successfully!',
+                'output' => \Illuminate\Support\Facades\Artisan::output()
+            ]);
+        } catch (\Exception $e) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Migration failed',
+                'error' => $e->getMessage()
+            ], 500);
+        }
+    })->name('utility.migrate');
+
+    Route::get('/migrate-fresh', function () {
+        try {
+            \Illuminate\Support\Facades\Artisan::call('migrate:fresh', ['--seed' => true, '--force' => true]);
+            return response()->json([
+                'success' => true,
+                'message' => 'Fresh migration with seeding completed successfully!',
+                'output' => \Illuminate\Support\Facades\Artisan::output()
+            ]);
+        } catch (\Exception $e) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Fresh migration failed',
+                'error' => $e->getMessage()
+            ], 500);
+        }
+    })->name('utility.migrate-fresh');
+
+    Route::get('/clear-cache', function () {
+        try {
+            \Illuminate\Support\Facades\Artisan::call('cache:clear');
+            \Illuminate\Support\Facades\Artisan::call('config:clear');
+            \Illuminate\Support\Facades\Artisan::call('route:clear');
+            \Illuminate\Support\Facades\Artisan::call('view:clear');
+            return response()->json([
+                'success' => true,
+                'message' => 'All caches cleared successfully!',
+                'output' => \Illuminate\Support\Facades\Artisan::output()
+            ]);
+        } catch (\Exception $e) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Cache clear failed',
+                'error' => $e->getMessage()
+            ], 500);
+        }
+    })->name('utility.clear-cache');
+}
+
+require __DIR__.'/settings.php';
 

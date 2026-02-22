@@ -1,7 +1,7 @@
 import React from 'react';
 import { Head, router } from '@inertiajs/react';
 import AdminLayout from '@/layouts/admin-layout';
-import { Search, Calendar, FileText, Eye, AlertCircle } from 'lucide-react';
+import { Search, Calendar, FileText, Eye, AlertCircle, CheckCircle } from 'lucide-react';
 
 interface Issue {
     id: number;
@@ -48,24 +48,42 @@ export default function ProcessLoans({ loans, filters }: Props) {
         }, { preserveState: true });
     };
 
+    const handleApproveAll = () => {
+        if (confirm(`Approve all loan applications for ${filters.date}?\n\nOnly applications with no issues will be approved. Those with issues will remain pending.`)) {
+            router.post('/head-office/loans/approve-all', {
+                date: filters.date,
+            }, { preserveScroll: true });
+        }
+    };
+
     return (
         <AdminLayout>
-            <Head title="হেড অফিস - ঋণ আবেদন প্রসেস" />
+            <Head title="Head Office - Process Loan Applications (হেড অফিস - ঋণ আবেদন প্রসেস)" />
 
             <div className="p-6 space-y-6">
-                <div className="flex items-center gap-3">
-                    <FileText className="w-8 h-8 text-blue-600" />
-                    <div>
-                        <h1 className="text-2xl font-bold text-gray-900">ঋণ আবেদন (হেড অফিস)</h1>
-                        <p className="text-sm text-gray-600">শাখা/এরিয়া/জোন থেকে প্রেরিত ঋণ আবেদন তালিকা। সমস্যা থাকলে লিখে পাঠান, নাহলে অনুমোদন দিন।</p>
+                <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-3">
+                        <FileText className="w-8 h-8 text-blue-600" />
+                        <div>
+                            <h1 className="text-2xl font-bold text-gray-900">Loan Applications (Head Office)</h1>
+                            <p className="text-sm text-gray-600">Review loan applications sent from branch/area/zone. Add issues if needed, otherwise approve.</p>
+                        </div>
                     </div>
+                    <button
+                        type="button"
+                        onClick={handleApproveAll}
+                        className="flex items-center gap-2 px-5 py-2.5 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors"
+                    >
+                        <CheckCircle className="w-5 h-5" />
+                        Approve All
+                    </button>
                 </div>
 
                 <div className="bg-white rounded-lg shadow border p-4">
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                         <div>
                             <label className="block text-sm font-medium text-gray-700 mb-2">
-                                <Calendar className="w-4 h-4 inline mr-2" /> তারিখ
+                                <Calendar className="w-4 h-4 inline mr-2" /> Date (তারিখ)
                             </label>
                             <input
                                 type="date"
@@ -76,42 +94,42 @@ export default function ProcessLoans({ loans, filters }: Props) {
                         </div>
                         <div>
                             <label className="block text-sm font-medium text-gray-700 mb-2">
-                                <Search className="w-4 h-4 inline mr-2" /> খুঁজুন
+                                <Search className="w-4 h-4 inline mr-2" /> Search (খুঁজুন)
                             </label>
                             <form onSubmit={handleSearch}>
                                 <input
                                     type="text"
                                     name="search"
                                     defaultValue={filters.search}
-                                    placeholder="নাম, NID, মোবাইল, আবেদন নং..."
+                                    placeholder="Name, NID, Mobile, Application No... (নাম, NID, মোবাইল, আবেদন নং)"
                                     className="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500"
                                 />
                             </form>
                         </div>
                     </div>
-                    <p className="mt-2 text-sm text-gray-600">মোট: {loans.total} টি আবেদন</p>
+                    <p className="mt-2 text-sm text-gray-600">Total: {loans.total} application(s) (মোট: {loans.total} টি আবেদন)</p>
                 </div>
 
                 <div className="bg-white rounded-lg shadow border overflow-hidden">
                     {loans.data.length === 0 ? (
                         <div className="p-12 text-center text-gray-500">
                             <FileText className="w-16 h-16 mx-auto mb-4 text-gray-400" />
-                            <p className="text-lg font-medium">কোন ঋণ আবেদন নেই</p>
-                            <p className="text-sm">তারিখ বা খুঁজুন পরিবর্তন করুন</p>
+                            <p className="text-lg font-medium">No loan applications (কোন ঋণ আবেদন নেই)</p>
+                            <p className="text-sm">Change date or search (তারিখ বা খুঁজুন পরিবর্তন করুন)</p>
                         </div>
                     ) : (
                         <div className="overflow-x-auto">
                             <table className="min-w-full divide-y divide-gray-200">
                                 <thead className="bg-gray-50">
                                     <tr>
-                                        <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">আবেদন নং</th>
-                                        <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">সদস্য</th>
-                                        <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">ক্যাটাগরি/পণ্য</th>
-                                        <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">পরিমাণ</th>
-                                        <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">শাখা</th>
-                                        <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">জমার তারিখ</th>
-                                        <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">সমস্যা</th>
-                                        <th className="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase">অ্যাকশন</th>
+                                        <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Application No. (আবেদন নং)</th>
+                                        <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Member (সদস্য)</th>
+                                        <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Category / Product (ক্যাটাগরি/পণ্য)</th>
+                                        <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Amount (পরিমাণ)</th>
+                                        <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Branch (শাখা)</th>
+                                        <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Submitted Date (জমার তারিখ)</th>
+                                        <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Issues (সমস্যা)</th>
+                                        <th className="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase">Action (অ্যাকশন)</th>
                                     </tr>
                                 </thead>
                                 <tbody className="divide-y divide-gray-200">
@@ -138,7 +156,7 @@ export default function ProcessLoans({ loans, filters }: Props) {
                                                         {loan.issues.length}
                                                     </span>
                                                 ) : (
-                                                    <span className="text-green-600 text-xs">কোন সমস্যা নেই</span>
+                                                    <span className="text-green-600 text-xs">No issues (কোন সমস্যা নেই)</span>
                                                 )}
                                             </td>
                                             <td className="px-4 py-3 text-center">
@@ -147,7 +165,7 @@ export default function ProcessLoans({ loans, filters }: Props) {
                                                     className="inline-flex items-center gap-1 px-3 py-1.5 bg-blue-600 text-white text-sm rounded hover:bg-blue-700"
                                                 >
                                                     <Eye className="w-4 h-4" />
-                                                    দেখুন
+                                                    View (দেখুন)
                                                 </button>
                                             </td>
                                         </tr>

@@ -1,4 +1,4 @@
-import { useState, useEffect, ReactNode } from 'react';
+import { useState, useEffect, ReactNode, useMemo } from 'react';
 import { Link, usePage, router } from '@inertiajs/react';
 import {
     LayoutDashboard,
@@ -8,6 +8,7 @@ import {
     Menu,
     X,
     ChevronDown,
+    ChevronRight,
     LogOut,
     User,
     Bell,
@@ -15,16 +16,17 @@ import {
     XCircle,
     AlertCircle,
     Info,
-    FileSpreadsheet,
-    Inbox,
     UserPlus,
     ClipboardCheck,
     Landmark,
     Banknote,
     ListTree,
     Package,
-    FileText
+    FileText,
+    Wallet,
+    Settings
 } from 'lucide-react';
+import { useIsMobile } from '@/hooks/use-mobile';
 
 interface User {
     id: number;
@@ -45,17 +47,35 @@ interface PageProps extends Record<string, unknown> {
     auth: { user: User };
     flash: Flash;
     unreadSubmissionsCount?: number;
+    badgeCounts?: {
+        pendingLoanApplications?: number;
+        pendingAdmissions?: number;
+        pendingApprovals?: number;
+    };
 }
 
 interface AdminLayoutProps {
     children: ReactNode;
 }
 
+const SETUP_PATHS = ['/loan-categories', '/loan-products', '/savings-products', '/organizations', '/samities', '/member-categories', '/users', '/roles'];
+
 export default function AdminLayout({ children }: AdminLayoutProps) {
-    const { auth, flash, unreadSubmissionsCount = 0 } = usePage<PageProps>().props;
-    const [sidebarOpen, setSidebarOpen] = useState(true);
+    const page = usePage<PageProps>();
+    const { auth, flash, badgeCounts = {} } = page.props;
+    const path = (() => {
+        try {
+            return new URL(page.url).pathname;
+        } catch {
+            return typeof window !== 'undefined' ? window.location.pathname : '';
+        }
+    })();
+    const isMobile = useIsMobile();
+    const [sidebarOpen, setSidebarOpen] = useState(!isMobile);
     const [profileDropdownOpen, setProfileDropdownOpen] = useState(false);
     const [flashMessage, setFlashMessage] = useState<{ type: string; message: string } | null>(null);
+    const setupOpenDefault = useMemo(() => SETUP_PATHS.some(p => path.startsWith(p)), [path]);
+    const [setupExpanded, setSetupExpanded] = useState(setupOpenDefault);
 
     useEffect(() => {
         if (flash.success) {
@@ -67,41 +87,45 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
         } else if (flash.info) {
             setFlashMessage({ type: 'info', message: flash.info });
         }
-
-        if (flashMessage) {
-            const timer = setTimeout(() => setFlashMessage(null), 5000);
-            return () => clearTimeout(timer);
-        }
     }, [flash]);
 
-    // Branch users: Only Dashboard + Loan Applications + Member Admissions
-    // SuperAdmin/Head Office: Full access to all modules including loan categories
+    useEffect(() => {
+        if (!flashMessage) return;
+        const timer = setTimeout(() => setFlashMessage(null), 5000);
+        return () => clearTimeout(timer);
+    }, [flashMessage]);
+
+    useEffect(() => {
+        setSetupExpanded(prev => (SETUP_PATHS.some(p => path.startsWith(p)) ? true : prev));
+    }, [path]);
+
     const isBranchUser = !auth.user.has_all_access;
 
-    const menuItems = isBranchUser
-        ? [
-            { name: 'Dashboard', href: '/dashboard', icon: LayoutDashboard },
-            { name: 'Loan Applications', href: '/member/loan-applications', icon: Banknote },
-            { name: 'Savings Applications', href: '/member/savings-applications', icon: Landmark },
-            { name: 'Loan Applications (Excel)', href: '/loan', icon: FileSpreadsheet },
-            { name: 'Member Admissions', href: '/member-admissions', icon: UserPlus },
-            { name: 'Pending Approvals', href: '/approvals', icon: ClipboardCheck },
-          ]
-        : [
-            { name: 'Dashboard', href: '/dashboard', icon: LayoutDashboard },
-            { name: 'Loan Submissions', href: '/submissions', icon: Inbox, badge: unreadSubmissionsCount },
-            { name: 'Admission Members', href: '/head-office/admission-members', icon: UserPlus },
-            { name: 'Process Admissions', href: '/head-office/process-admissions', icon: ClipboardCheck },
-            { name: 'Process Loans', href: '/head-office/process-loans', icon: FileText },
-            { name: 'Pending Approvals', href: '/approvals', icon: ClipboardCheck },
-            { name: 'Loan Categories', href: '/loan-categories', icon: ListTree },
-            { name: 'Loan Products', href: '/loan-products', icon: Package },
-            { name: 'Organizations', href: '/organizations', icon: Landmark },
-            { name: 'Samities', href: '/samities', icon: Building2 },
-            { name: 'Member Categories', href: '/member-categories', icon: Users },
-            { name: 'Users', href: '/users', icon: Users },
-            { name: 'Roles', href: '/roles', icon: Shield },
-          ];
+    const branchMenuItems = [
+        { name: 'Dashboard', href: '/dashboard', icon: LayoutDashboard },
+        { name: 'Member Admissions', href: '/member-admissions', icon: UserPlus },
+        { name: 'Loan Applications', href: '/member/loan-applications', icon: Banknote },
+        { name: 'Savings Applications', href: '/member/savings-applications', icon: Landmark },
+        { name: 'Pending Approvals', href: '/approvals', icon: ClipboardCheck },
+    ];
+
+    const headOfficeMainItems = [
+        { name: 'Dashboard', href: '/dashboard', icon: LayoutDashboard },
+        { name: 'Admission Members', href: '/head-office/admission-members', icon: UserPlus, badge: badgeCounts.pendingAdmissions || 0 },
+        { name: 'Loan Applications', href: '/head-office/loan-applications', icon: FileText, badge: badgeCounts.pendingLoanApplications || 0 },
+        { name: 'Savings Applications', href: '/head-office/savings-applications', icon: Landmark },
+    ];
+
+    const headOfficeSetupItems = [
+        { name: 'Loan Categories', href: '/loan-categories', icon: ListTree },
+        { name: 'Loan Products', href: '/loan-products', icon: Package },
+        { name: 'Savings Products', href: '/savings-products', icon: Wallet },
+        { name: 'Organizations', href: '/organizations', icon: Landmark },
+        { name: 'Samities', href: '/samities', icon: Building2 },
+        { name: 'Member Categories', href: '/member-categories', icon: Users },
+        { name: 'Users', href: '/users', icon: Users },
+        { name: 'Roles', href: '/roles', icon: Shield },
+    ];
 
     const handleLogout = () => {
         router.post('/logout');
@@ -145,81 +169,147 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
                 </div>
             )}
 
-            {/* Sidebar - hidden when printing */}
+            {/* Sidebar - hidden when printing; drawer on mobile */}
             <aside
-                className={`fixed left-0 top-0 h-full bg-white border-r border-gray-200 transition-all duration-300 z-40 print:hidden ${
-                    sidebarOpen ? 'w-64' : 'w-20'
-                }`}
+                className={`fixed left-0 top-0 h-full bg-white border-r border-gray-200/80 shadow-sm transition-[width,transform] duration-200 ease-out z-40 print:hidden
+                    ${sidebarOpen ? 'w-56 md:w-52' : 'w-14'}
+                    ${isMobile ? (sidebarOpen ? 'translate-x-0' : '-translate-x-full') : ''}`}
             >
                 <div className="flex flex-col h-full">
-                    {/* Logo */}
-                    <div className="flex items-center justify-between h-16 px-4 border-b border-gray-200">
+                    {/* Logo bar */}
+                    <div className="flex items-center justify-between h-12 min-h-12 px-2.5 border-b border-gray-100">
                         {sidebarOpen && (
-                            <h1 className="text-xl font-bold text-gray-800 transition-opacity duration-300">
+                            <span className="text-sm font-semibold text-gray-800 tracking-tight truncate">
                                 MIS Loan
-                            </h1>
+                            </span>
                         )}
                         <button
+                            type="button"
                             onClick={() => setSidebarOpen(!sidebarOpen)}
-                            className="p-2 rounded-lg hover:bg-gray-100 transition-colors"
+                            className="p-1.5 rounded-md hover:bg-gray-100 text-gray-500 transition-colors"
+                            aria-label={sidebarOpen ? 'Collapse sidebar' : 'Expand sidebar'}
                         >
-                            {sidebarOpen ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
+                            {sidebarOpen ? <X className="w-4 h-4" /> : <Menu className="w-4 h-4" />}
                         </button>
                     </div>
 
                     {/* Navigation */}
-                    <nav className="flex-1 px-3 py-4 space-y-1">
-                        {menuItems.map((item) => {
-                            const isActive = window.location.pathname.startsWith(item.href);
-                            const isHighlight = (item as any).highlight;
-                            return (
-                                <Link
-                                    key={item.name}
-                                    href={item.href}
-                                    className={`flex items-center justify-between gap-3 px-3 py-2.5 rounded-lg transition-all duration-200 ${
-                                        isHighlight
-                                            ? 'bg-gradient-to-r from-green-50 to-emerald-50 text-green-600 font-semibold border-l-4 border-green-500 hover:from-green-100 hover:to-emerald-100'
-                                            : isActive
-                                            ? 'bg-blue-50 text-blue-600 font-medium'
-                                            : 'text-gray-700 hover:bg-gray-100'
-                                    }`}
-                                >
-                                    <div className="flex items-center gap-3">
-                                        <item.icon className="w-5 h-5 flex-shrink-0" />
-                                        {sidebarOpen && (
-                                            <span className="transition-opacity duration-300">
-                                                {item.name}
-                                            </span>
-                                        )}
+                    <nav className="flex-1 overflow-y-auto overflow-x-hidden py-2 px-2">
+                        {isBranchUser ? (
+                            <ul className="space-y-0.5">
+                                <li className="px-1.5 py-1 text-[10px] font-medium uppercase tracking-wider text-gray-400">
+                                    {sidebarOpen && 'Main'}
+                                </li>
+                                {branchMenuItems.map((item) => {
+                                    const isActive = path === item.href || (item.href !== '/dashboard' && path.startsWith(item.href));
+                                    return (
+                                        <li key={item.name}>
+                                            <Link
+                                                href={item.href}
+                                                onClick={() => isMobile && setSidebarOpen(false)}
+                                                className={`flex items-center gap-2.5 px-2.5 py-1.5 rounded-md text-[13px] transition-colors ${
+                                                    isActive ? 'bg-blue-50 text-blue-600 font-medium' : 'text-gray-600 hover:bg-gray-100'
+                                                }`}
+                                            >
+                                                <item.icon className="w-4 h-4 flex-shrink-0 opacity-80" />
+                                                {sidebarOpen && <span className="truncate">{item.name}</span>}
+                                            </Link>
+                                        </li>
+                                    );
+                                })}
+                            </ul>
+                        ) : (
+                            <>
+                                <ul className="space-y-0.5">
+                                    <li className="px-1.5 py-1 text-[10px] font-medium uppercase tracking-wider text-gray-400">
+                                        {sidebarOpen && 'Operations'}
+                                    </li>
+                                    {headOfficeMainItems.map((item) => {
+                                        const isActive = path === item.href || (item.href !== '/dashboard' && path.startsWith(item.href));
+                                        const badge = (item as { badge?: number }).badge;
+                                        return (
+                                            <li key={item.name}>
+                                                <Link
+                                                    href={item.href}
+                                                    onClick={() => isMobile && setSidebarOpen(false)}
+                                                    className={`flex items-center justify-between gap-2 px-2.5 py-1.5 rounded-md text-[13px] transition-colors ${
+                                                        isActive ? 'bg-blue-50 text-blue-600 font-medium' : 'text-gray-600 hover:bg-gray-100'
+                                                    }`}
+                                                >
+                                                    <div className="flex items-center gap-2.5 min-w-0">
+                                                        <item.icon className="w-4 h-4 flex-shrink-0 opacity-80" />
+                                                        {sidebarOpen && <span className="truncate">{item.name}</span>}
+                                                    </div>
+                                                    {sidebarOpen && badge !== undefined && badge > 0 && (
+                                                        <span className="flex-shrink-0 bg-red-500 text-white text-[10px] font-medium px-1.5 py-0.5 rounded min-w-[18px] text-center">
+                                                            {badge}
+                                                        </span>
+                                                    )}
+                                                </Link>
+                                            </li>
+                                        );
+                                    })}
+                                </ul>
+                                {/* Setup section with sub-nav */}
+                                <div className="mt-3 pt-2 border-t border-gray-100">
+                                    <div className="px-1.5 py-1 text-[10px] font-medium uppercase tracking-wider text-gray-400">
+                                        {sidebarOpen && 'Setup'}
                                     </div>
-                                    {sidebarOpen && item.badge && item.badge > 0 && (
-                                        <span className="bg-red-500 text-white text-xs font-semibold px-2 py-0.5 rounded-full">
-                                            {item.badge}
-                                        </span>
+                                    <button
+                                        type="button"
+                                        onClick={() => setSetupExpanded(!setupExpanded)}
+                                        className={`flex w-full items-center gap-2.5 px-2.5 py-1.5 rounded-md text-[13px] text-gray-600 hover:bg-gray-100 transition-colors ${
+                                            SETUP_PATHS.some(p => path.startsWith(p)) ? 'bg-gray-50 font-medium text-gray-700' : ''
+                                        }`}
+                                    >
+                                        <Settings className="w-4 h-4 flex-shrink-0 opacity-80" />
+                                        {sidebarOpen && (
+                                            <>
+                                                <span className="flex-1 text-left truncate">Configuration</span>
+                                                {setupExpanded ? <ChevronDown className="w-3.5 h-3.5 flex-shrink-0" /> : <ChevronRight className="w-3.5 h-3.5 flex-shrink-0" />}
+                                            </>
+                                        )}
+                                    </button>
+                                    {setupExpanded && sidebarOpen && (
+                                        <ul className="mt-0.5 ml-1 border-l border-gray-200 pl-2.5 space-y-0.5">
+                                            {headOfficeSetupItems.map((item) => {
+                                                const isActive = path.startsWith(item.href);
+                                                return (
+                                                    <li key={item.name}>
+                                                        <Link
+                                                            href={item.href}
+                                                            onClick={() => isMobile && setSidebarOpen(false)}
+                                                            className={`flex items-center gap-2 px-2 py-1 rounded text-[12px] transition-colors ${
+                                                                isActive ? 'text-blue-600 font-medium bg-blue-50/80' : 'text-gray-500 hover:text-gray-700 hover:bg-gray-50'
+                                                            }`}
+                                                        >
+                                                            <item.icon className="w-3.5 h-3.5 flex-shrink-0 opacity-70" />
+                                                            <span className="truncate">{item.name}</span>
+                                                        </Link>
+                                                    </li>
+                                                );
+                                            })}
+                                        </ul>
                                     )}
-                                </Link>
-                            );
-                        })}
+                                </div>
+                            </>
+                        )}
                     </nav>
 
-                    {/* User Info */}
-                    <div className="border-t border-gray-200 p-3">
+                    {/* User footer */}
+                    <div className="border-t border-gray-100 p-2">
                         {sidebarOpen ? (
-                            <div className="flex items-center gap-3">
-                                <div className="w-10 h-10 rounded-full bg-blue-100 flex items-center justify-center text-blue-600 font-semibold">
+                            <div className="flex items-center gap-2 min-w-0">
+                                <div className="w-8 h-8 rounded-full bg-slate-100 flex items-center justify-center text-slate-600 text-xs font-medium flex-shrink-0">
                                     {auth.user?.name?.charAt(0)?.toUpperCase() || 'U'}
                                 </div>
-                                <div className="flex-1 min-w-0">
-                                    <p className="text-sm font-medium text-gray-900 truncate">
-                                        {auth.user?.name || 'User'}
-                                    </p>
-                                    <p className="text-xs text-gray-500 truncate">
-                                        {auth.user?.role?.name || 'Admin'}
-                                    </p>
+                                <div className="min-w-0 flex-1">
+                                    <p className="text-[12px] font-medium text-gray-800 truncate">{auth.user?.name || 'User'}</p>
+                                    <p className="text-[11px] text-gray-500 truncate">{auth.user?.role?.name || 'Admin'}</p>
                                 </div>
                             </div>
                         ) : (
-                            <div className="w-10 h-10 rounded-full bg-blue-100 flex items-center justify-center text-blue-600 font-semibold mx-auto">
+                            <div className="w-8 h-8 rounded-full bg-slate-100 flex items-center justify-center text-slate-600 text-xs font-medium mx-auto">
                                 {auth.user?.name?.charAt(0)?.toUpperCase() || 'U'}
                             </div>
                         )}
@@ -227,76 +317,88 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
                 </div>
             </aside>
 
-            {/* Main Content - full width when printing (sidebar hidden) */}
+            {/* Main Content - responsive margin; full width when printing */}
             <div
-                className={`transition-all duration-300 print:ml-0 ${
-                    sidebarOpen ? 'ml-64' : 'ml-20'
+                className={`transition-[margin] duration-200 ease-out print:ml-0 ${
+                    isMobile ? 'ml-0' : sidebarOpen ? 'md:ml-52' : 'md:ml-14'
                 }`}
             >
                 {/* Header - hidden when printing */}
-                <header className="print:hidden bg-white border-b border-gray-200 sticky top-0 z-30">
-                    <div className="flex items-center justify-between h-16 px-6">
-                        <div className="flex items-center gap-4">
-                            <h2 className="text-lg font-semibold text-gray-800">
-                                Welcome back, {auth.user?.name?.split(' ')[0] || 'User'}!
+                <header className="print:hidden bg-white border-b border-gray-100 sticky top-0 z-30 shadow-sm/30">
+                    <div className="flex items-center justify-between h-12 min-h-12 px-4 md:px-5">
+                        <div className="flex items-center gap-3">
+                            {isMobile && (
+                                <button
+                                    type="button"
+                                    onClick={() => setSidebarOpen(true)}
+                                    className="p-1.5 rounded-md hover:bg-gray-100 text-gray-600"
+                                    aria-label="Open menu"
+                                >
+                                    <Menu className="w-5 h-5" />
+                                </button>
+                            )}
+                            <h2 className="text-sm font-semibold text-gray-800 truncate">
+                                {auth.user?.name?.split(' ')[0] || 'User'}
                             </h2>
                         </div>
 
-                        <div className="flex items-center gap-4">
-                            {/* Notifications */}
-                            <button className="relative p-2 rounded-lg hover:bg-gray-100 transition-colors">
-                                <Bell className="w-5 h-5 text-gray-600" />
-                                <span className="absolute top-1 right-1 w-2 h-2 bg-red-500 rounded-full"></span>
+                        <div className="flex items-center gap-1">
+                            <button type="button" className="relative p-1.5 rounded-md hover:bg-gray-100 text-gray-500 transition-colors" aria-label="Notifications">
+                                <Bell className="w-4 h-4" />
+                                <span className="absolute top-1 right-1 w-1.5 h-1.5 bg-red-500 rounded-full" />
                             </button>
-
-                            {/* Profile Dropdown */}
                             <div className="relative">
                                 <button
+                                    type="button"
                                     onClick={() => setProfileDropdownOpen(!profileDropdownOpen)}
-                                    className="flex items-center gap-2 p-2 rounded-lg hover:bg-gray-100 transition-colors"
+                                    className="flex items-center gap-1.5 p-1.5 rounded-md hover:bg-gray-100 text-gray-600 transition-colors"
                                 >
-                                    <div className="w-8 h-8 rounded-full bg-blue-100 flex items-center justify-center text-blue-600 font-semibold text-sm">
+                                    <div className="w-7 h-7 rounded-full bg-slate-100 flex items-center justify-center text-slate-600 text-xs font-medium">
                                         {auth.user?.name?.charAt(0)?.toUpperCase() || 'U'}
                                     </div>
-                                    <ChevronDown className="w-4 h-4 text-gray-600" />
+                                    <ChevronDown className="w-3.5 h-3.5 hidden sm:block" />
                                 </button>
-
                                 {profileDropdownOpen && (
-                                    <div className="absolute right-0 mt-2 w-48 bg-white rounded-lg shadow-lg border border-gray-200 py-1 animate-in fade-in slide-in-from-top-2 duration-200">
-                                        <Link
-                                            href="/profile"
-                                            className="flex items-center gap-2 px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 transition-colors"
-                                        >
-                                            <User className="w-4 h-4" />
-                                            Profile
-                                        </Link>
-                                        <button
-                                            onClick={handleLogout}
-                                            className="w-full flex items-center gap-2 px-4 py-2 text-sm text-red-600 hover:bg-red-50 transition-colors"
-                                        >
-                                            <LogOut className="w-4 h-4" />
-                                            Logout
-                                        </button>
-                                    </div>
+                                    <>
+                                        <div className="fixed inset-0 z-40" aria-hidden onClick={() => setProfileDropdownOpen(false)} />
+                                        <div className="absolute right-0 mt-1 w-44 bg-white rounded-lg shadow-lg border border-gray-100 py-1 z-50 text-[13px]">
+                                            <Link
+                                                href="/profile"
+                                                className="flex items-center gap-2 px-3 py-2 text-gray-700 hover:bg-gray-50"
+                                                onClick={() => setProfileDropdownOpen(false)}
+                                            >
+                                                <User className="w-3.5 h-3.5" />
+                                                Profile
+                                            </Link>
+                                            <button
+                                                type="button"
+                                                onClick={handleLogout}
+                                                className="w-full flex items-center gap-2 px-3 py-2 text-red-600 hover:bg-red-50"
+                                            >
+                                                <LogOut className="w-3.5 h-3.5" />
+                                                Logout
+                                            </button>
+                                        </div>
+                                    </>
                                 )}
                             </div>
                         </div>
                     </div>
                 </header>
 
-                {/* Page Content */}
-                <main className="p-6">
+                <main className="p-4 md:p-5 min-h-[calc(100vh-3rem)]">
                     <div className="max-w-7xl mx-auto">
                         {children}
                     </div>
                 </main>
             </div>
 
-            {/* Overlay for mobile */}
-            {sidebarOpen && (
+            {/* Mobile overlay when sidebar open */}
+            {isMobile && sidebarOpen && (
                 <div
-                    className="fixed inset-0 bg-black/50 z-30 lg:hidden"
+                    className="fixed inset-0 bg-black/40 z-30 md:hidden backdrop-blur-[1px]"
                     onClick={() => setSidebarOpen(false)}
+                    aria-hidden
                 />
             )}
         </div>
