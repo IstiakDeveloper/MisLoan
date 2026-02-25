@@ -159,13 +159,48 @@ export default function TeamBasedApprovalIndex({ approvals, filters, draftCount,
     return (
         <AdminLayout>
             <Head title="Team Based Loan Approvals">
-                <style>{`@page { size: A4 landscape; margin: 10mm; }`}</style>
+                <style>{`
+                    .approval-index-table-wrapper table { table-layout: fixed; }
+                    .approval-index-table-wrapper th,
+                    .approval-index-table-wrapper td {
+                        overflow: hidden;
+                        line-height: 1.25;
+                        padding: 1px 1px;
+                        font-size: 9px;
+                        vertical-align: middle;
+                        text-align: center;
+                    }
+                    .approval-index-table-wrapper thead th {
+                        font-weight: 600;
+                        white-space: normal;
+                        padding: 1px 2px;
+                    }
+                    .approval-index-table-wrapper tbody td {
+                        padding: 0 0;
+                    }
+                    @page { size: A4 landscape; margin: 6mm; }
+                    @media print {
+                        body { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+                        .approval-index-table-wrapper { overflow: visible !important; }
+                        .approval-index-table-wrapper table { width: 100% !important; table-layout: fixed !important; font-size: 7pt !important; }
+                        .approval-index-table-wrapper th,
+                        .approval-index-table-wrapper td {
+                            padding: 1px 2px !important;
+                            font-size: 7pt !important;
+                            line-height: 1.2 !important;
+                        }
+                        .approval-index-print-page { width: 100%; max-width: 100%; }
+                        .approval-index-print-header .text-lg { font-size: 10pt !important; }
+                        .approval-index-print-header .text-xs { font-size: 7pt !important; }
+                        .approval-index-print-header .text-sm { font-size: 8pt !important; }
+                    }
+                `}</style>
             </Head>
 
             <div className="max-w-8xl mx-auto py-6 px-4">
                 {/* Print header - organization + branch info */}
-                <div className="mb-4">
-                    <div className="flex items-center justify-between mb-2 print:flex">
+                <div className="mb-4 approval-index-print-header">
+                    <div className="flex items-center justify-between mb-2 print:flex print:mb-1">
                         <div className="flex items-center gap-3">
                             <img
                                 src="/logo.png"
@@ -284,122 +319,66 @@ export default function TeamBasedApprovalIndex({ approvals, filters, draftCount,
                     </div>
                 </div>
 
-                <div className="bg-white shadow-sm border border-gray-200 rounded-lg overflow-hidden">
-                    <table className="min-w-full text-[11px] border-collapse">
+                <div className="bg-white shadow-sm border border-gray-200 rounded-lg overflow-hidden approval-index-table-wrapper w-full approval-index-print-page">
+                    <table className="w-full border-collapse table-fixed" style={{ tableLayout: 'fixed' }}>
                         <thead className="bg-gray-50">
                             <tr>
-                                <th className="px-2 py-2 border text-left" rowSpan={2}>
-                                    ক্রম
-                                </th>
-                                <th className="px-2 py-2 border text-left" rowSpan={2}>
-                                    তারিখ
-                                </th>
-                                <th className="px-2 py-2 border text-left" rowSpan={2}>
-                                    অনুমোদনকারী
-                                </th>
-                                <th className="px-2 py-2 border text-left" rowSpan={2}>
-                                    সদস্যের নাম
-                                </th>
-                                <th className="px-2 py-2 border text-left" rowSpan={2}>
-                                    সদস্য নম্বর
-                                </th>
-                                <th className="px-2 py-2 border text-left" rowSpan={2}>
-                                    সমিতি নম্বর
-                                </th>
-                                <th className="px-2 py-2 border text-center" colSpan={3}>
-                                    সঞ্চয়ের পরিমাণ
-                                </th>
-                                <th className="px-2 py-2 border text-right" rowSpan={2}>
-                                    পরিশোধিত ঋণ
-                                </th>
-                                <th className="px-2 py-2 border text-center" rowSpan={2}>
-                                    পরিশোধিত দফা
-                                </th>
-                                <th className="px-2 py-2 border text-right" rowSpan={2}>
-                                    অন্যান্য সংস্থায় ঋণ
-                                </th>
-                                <th className="px-2 py-2 border text-right" rowSpan={2}>
-                                    প্রস্তাবিত ঋণ
-                                </th>
-                                <th className="px-2 py-2 border text-center" rowSpan={2}>
-                                    মেয়াদ (বছর)
-                                </th>
-                                <th className="px-2 py-2 border text-left" rowSpan={2}>
-                                    ঋণের ধরন
-                                </th>
-                                <th className="px-2 py-2 border text-left" rowSpan={2}>
-                                    প্রকল্পের নাম
-                                </th>
-                                <th className="px-2 py-2 border text-right" rowSpan={2}>
-                                    অনুমোদিত ঋণ
-                                </th>
-                                <th className="px-2 py-2 border text-left" rowSpan={2}>
-                                    মন্তব্য
-                                </th>
-                                <th className="px-2 py-2 border text-left" rowSpan={2}>
-                                    অনুমোদনকারীর স্বাক্ষর / তারিখ
-                                </th>
-                                <th className="px-2 py-2 border text-left print:hidden" rowSpan={2}>
-                                    Status
-                                </th>
+                                <th className="border" rowSpan={2}>ক্রম</th>
+                                <th className="border" rowSpan={2}>তারিখ</th>
+                                <th className="border" rowSpan={2}>অনুমোদনকারী</th>
+                                <th className="border" rowSpan={2}>সদস্যের নাম</th>
+                                <th className="border" rowSpan={2}>সদস্য নম্বর</th>
+                                <th className="border" rowSpan={2}>সমিতি নম্বর</th>
+                                <th className="border text-center" colSpan={3}>সঞ্চয়ের পরিমাণ</th>
+                                <th className="border" rowSpan={2}>পরিশোধিত ঋণ</th>
+                                <th className="border" rowSpan={2}>পরিশোধিত দফা</th>
+                                <th className="border" rowSpan={2}>অন্যান্য সংস্থায় ঋণ</th>
+                                <th className="border" rowSpan={2}>প্রস্তাবিত ঋণ</th>
+                                <th className="border" rowSpan={2}>মেয়াদ (বছর)</th>
+                                <th className="border" rowSpan={2}>ঋণের ধরন</th>
+                                <th className="border" rowSpan={2}>প্রকল্পের নাম</th>
+                                <th className="border" rowSpan={2}>অনুমোদিত ঋণ</th>
+                                <th className="border" rowSpan={2}>মন্তব্য</th>
+                                <th className="border" rowSpan={2}>অনুমোদনকারীর স্বাক্ষর / তারিখ</th>
+                                <th className="border print:hidden" rowSpan={2}>Status</th>
                             </tr>
                             <tr>
-                                <th className="px-2 py-1 border text-right">সাধারণ</th>
-                                <th className="px-2 py-1 border text-right">অন্যান্য</th>
-                                <th className="px-2 py-1 border text-right">মোট</th>
+                                <th className="border">সাধারণ</th>
+                                <th className="border">অন্যান্য</th>
+                                <th className="border">মোট</th>
                             </tr>
                         </thead>
                         <tbody>
                             {flatRows.length === 0 && (
                                 <tr>
-                                    <td colSpan={18} className="px-4 py-6 text-center text-gray-500 text-sm">
+                                    <td colSpan={18} className="border text-center text-gray-500 py-4">
                                         কোনো Team Based তথ্য পাওয়া যায়নি।
                                     </td>
                                 </tr>
                             )}
                             {flatRows.map((row, idx) => (
                                 <tr key={`${row.sheet_id}-${idx}`} className="hover:bg-gray-50">
-                                    <td className="px-2 py-1 border align-middle">{idx + 1}</td>
-                                    <td className="px-2 py-1 border align-middle">{row.sheet_date || '-'}</td>
-                                    <td className="px-2 py-1 border align-middle">{row.approver_name || '-'}</td>
-                                    <td className="px-2 py-1 border align-middle">{row.member_name}</td>
-                                    <td className="px-2 py-1 border align-middle">{row.member_code || ''}</td>
-                                    <td className="px-2 py-1 border align-middle">{row.samity_number || ''}</td>
-                                    <td className="px-2 py-1 border align-middle text-right">
-                                        {row.savings_general ?? ''}
-                                    </td>
-                                    <td className="px-2 py-1 border align-middle text-right">
-                                        {row.savings_other ?? ''}
-                                    </td>
-                                    <td className="px-2 py-1 border align-middle text-right">
-                                        {row.savings_total ?? ''}
-                                    </td>
-                                    <td className="px-2 py-1 border align-middle text-right">
-                                        {row.repaid_loan_amount ?? ''}
-                                    </td>
-                                    <td className="px-2 py-1 border align-middle text-center">
-                                        {row.repaid_installment_no ?? ''}
-                                    </td>
-                                    <td className="px-2 py-1 border align-middle text-right">
-                                        {row.other_institution_loan_amount ?? ''}
-                                    </td>
-                                    <td className="px-2 py-1 border align-middle text-right">
-                                        {row.proposed_loan_amount ?? ''}
-                                    </td>
-                                    <td className="px-2 py-1 border align-middle text-center">
-                                        {row.loan_term_years ?? ''}
-                                    </td>
-                                    <td className="px-2 py-1 border align-middle">{row.loan_type || ''}</td>
-                                    <td className="px-2 py-1 border align-middle">{row.project_name || ''}</td>
-                                    <td className="px-2 py-1 border align-middle text-right">
-                                        {row.approved_amount ?? ''}
-                                    </td>
-                                    <td className="px-2 py-1 border align-middle">
-                                        {row.review_comments || ''}
-                                    </td>
-                                    <td className="px-2 py-1 border align-middle">
+                                    <td className="border">{idx + 1}</td>
+                                    <td className="border">{row.sheet_date || '-'}</td>
+                                    <td className="border">{row.approver_name || '-'}</td>
+                                    <td className="border">{row.member_name}</td>
+                                    <td className="border">{row.member_code || ''}</td>
+                                    <td className="border">{row.samity_number || ''}</td>
+                                    <td className="border">{row.savings_general ?? ''}</td>
+                                    <td className="border">{row.savings_other ?? ''}</td>
+                                    <td className="border">{row.savings_total ?? ''}</td>
+                                    <td className="border">{row.repaid_loan_amount ?? ''}</td>
+                                    <td className="border">{row.repaid_installment_no ?? ''}</td>
+                                    <td className="border">{row.other_institution_loan_amount ?? ''}</td>
+                                    <td className="border">{row.proposed_loan_amount ?? ''}</td>
+                                    <td className="border">{row.loan_term_years ?? ''}</td>
+                                    <td className="border">{row.loan_type || ''}</td>
+                                    <td className="border">{row.project_name || ''}</td>
+                                    <td className="border">{row.approved_amount ?? ''}</td>
+                                    <td className="border">{row.review_comments || ''}</td>
+                                    <td className="border">
                                         {row.approver_signature && (
-                                            <div className="flex flex-col items-center gap-0.5">
+                                            <div className="flex flex-col items-center gap-0">
                                                 <img
                                                     src={
                                                         row.approver_signature.startsWith('http')
@@ -409,23 +388,21 @@ export default function TeamBasedApprovalIndex({ approvals, filters, draftCount,
                                                             : `/storage/${row.approver_signature}`
                                                     }
                                                     alt="Signature"
-                                                    className="h-12 object-contain"
+                                                    className="h-4 max-h-4 object-contain print:!h-3 print:!max-h-3"
                                                     onError={(e) => {
                                                         (e.target as HTMLImageElement).style.display = 'none';
                                                     }}
                                                 />
-                                                <span className="text-[9px] text-gray-700 leading-tight">
-                                                    {row.decided_at || ''}
-                                                </span>
+                                                <span className="text-gray-700 leading-tight">{row.decided_at || ''}</span>
                                             </div>
                                         )}
                                         {!row.approver_signature && (
-                                            <span className="text-[9px] text-gray-500">{row.decided_at || ''}</span>
+                                            <span className="text-gray-500">{row.decided_at || ''}</span>
                                         )}
                                     </td>
-                                    <td className="px-2 py-1 border align-middle print:hidden">
+                                    <td className="border print:hidden">
                                         <span
-                                            className={`inline-flex items-center px-2 py-0.5 rounded-full border text-[10px] ${
+                                            className={`inline-flex items-center px-1.5 py-0.5 rounded border ${
                                                 statusClass[row.status] || statusClass.draft
                                             }`}
                                         >

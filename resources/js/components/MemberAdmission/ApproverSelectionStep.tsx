@@ -12,6 +12,8 @@ interface Props {
     approvers: Approver[];
     selectedApprovers: number[];
     onApproverToggle: (approverId: number) => void;
+    /** When true, only show additional info and documents (no approver selection). Used when submit goes to branch manager only. */
+    hideApproverSelection?: boolean;
     interviewerName: string;
     employeeName: string;
     guardianName: string;
@@ -30,6 +32,7 @@ export default function ApproverSelectionStep({
     approvers,
     selectedApprovers,
     onApproverToggle,
+    hideApproverSelection = false,
     interviewerName,
     employeeName,
     guardianName,
@@ -66,68 +69,74 @@ export default function ApproverSelectionStep({
 
     return (
         <div className="space-y-6">
-            <div>
-                <h3 className="text-lg font-semibold text-gray-900 mb-2">
-                    Select Approvers (অনুমোদনকারী নির্বাচন)
-                </h3>
-                <p className="text-sm text-gray-600 mb-4">
-                    Select one or more approvers who will review and approve this application before it goes to Head Office.
-                    <br />
-                    একাধিক অনুমোদনকারী নির্বাচন করুন যারা হেড অফিসে যাওয়ার আগে এই আবেদনটি পর্যালোচনা এবং অনুমোদন করবে।
-                </p>
-            </div>
+            {!hideApproverSelection && (
+                <>
+                    <div>
+                        <h3 className="text-lg font-semibold text-gray-900 mb-2">
+                            Select Approvers (অনুমোদনকারী নির্বাচন)
+                        </h3>
+                        <p className="text-sm text-gray-600 mb-4">
+                            Select one or more approvers who will review and approve this application before it goes to Head Office.
+                            <br />
+                            একাধিক অনুমোদনকারী নির্বাচন করুন যারা হেড অফিসে যাওয়ার আগে এই আবেদনটি পর্যালোচনা এবং অনুমোদন করবে।
+                        </p>
+                    </div>
 
-            {approvers.length === 0 ? (
-                <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4">
-                    <p className="text-yellow-800">No approvers available for your branch. Please contact administrator.</p>
-                </div>
-            ) : (
-                <div className="space-y-2">
-                    {approvers.map((approver) => (
-                        <label
-                            key={approver.id}
-                            className="flex items-start p-4 border border-gray-200 rounded-lg hover:bg-gray-50 cursor-pointer"
-                        >
-                            <input
-                                type="checkbox"
-                                checked={selectedApprovers.includes(approver.id)}
-                                onChange={() => onApproverToggle(approver.id)}
-                                className="mt-1 h-4 w-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
-                            />
-                            <div className="ml-3 flex-1">
-                                <div className="text-sm font-medium text-gray-900">{approver.name}</div>
-                                <div className="text-sm text-gray-500">{approver.email}</div>
-                                <div className="flex gap-2 mt-1">
-                                    <span className="inline-flex items-center px-2 py-0.5 rounded text-xs bg-blue-100 text-blue-800">
-                                        {approver.role.name}
-                                    </span>
-                                    {approver.level && (
-                                        <span className={`inline-flex items-center px-2 py-0.5 rounded text-xs ${
-                                            approver.level === 'Branch' ? 'bg-green-100 text-green-800' :
-                                            approver.level === 'Area' ? 'bg-purple-100 text-purple-800' :
-                                            'bg-orange-100 text-orange-800'
-                                        }`}>
-                                            {approver.level}
-                                        </span>
-                                    )}
-                                </div>
-                            </div>
-                        </label>
-                    ))}
-                </div>
-            )}
+                    {approvers.length === 0 ? (
+                        <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4">
+                            <p className="text-yellow-800">No approvers available for your branch. Please contact administrator.</p>
+                        </div>
+                    ) : (
+                        <div className="space-y-2">
+                            {approvers.map((approver) => (
+                                <label
+                                    key={approver.id}
+                                    className="flex items-start p-4 border border-gray-200 rounded-lg hover:bg-gray-50 cursor-pointer"
+                                >
+                                    <input
+                                        type="checkbox"
+                                        checked={selectedApprovers.includes(approver.id)}
+                                        onChange={() => onApproverToggle(approver.id)}
+                                        className="mt-1 h-4 w-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
+                                    />
+                                    <div className="ml-3 flex-1">
+                                        <div className="text-sm font-medium text-gray-900">{approver.name}</div>
+                                        <div className="text-sm text-gray-500">{approver.email}</div>
+                                        <div className="flex gap-2 mt-1">
+                                            <span className="inline-flex items-center px-2 py-0.5 rounded text-xs bg-blue-100 text-blue-800">
+                                                {approver.role.name}
+                                            </span>
+                                            {approver.level && (
+                                                <span className={`inline-flex items-center px-2 py-0.5 rounded text-xs ${
+                                                    approver.level === 'Branch' ? 'bg-green-100 text-green-800' :
+                                                    approver.level === 'Area' ? 'bg-purple-100 text-purple-800' :
+                                                    'bg-orange-100 text-orange-800'
+                                                }`}>
+                                                    {approver.level}
+                                                </span>
+                                            )}
+                                        </div>
+                                    </div>
+                                </label>
+                            ))}
+                        </div>
+                    )}
 
-            {errors.selected_approvers && (
-                <p className="text-sm text-red-600 mt-1">{errors.selected_approvers}</p>
-            )}
+                    {errors.selected_approvers && (
+                        <p className="text-sm text-red-600 mt-1">{errors.selected_approvers}</p>
+                    )}
 
-            {selectedApprovers.length > 0 && (
-                <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
-                    <p className="text-sm text-blue-800">
-                        <strong>{selectedApprovers.length}</strong> approver(s) selected.
-                        They will review in sequence before sending to Head Office.
-                    </p>
-                </div>
+                    {selectedApprovers.length > 0 && (
+                        <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+                            <p className="text-sm text-blue-800">
+                                <strong>{selectedApprovers.length}</strong> approver(s) selected.
+                                They will review in sequence before sending to Head Office.
+                            </p>
+                        </div>
+                    )}
+
+                    <div className="border-t pt-6 mt-6" />
+                </>
             )}
 
             {/* Additional Information Fields */}

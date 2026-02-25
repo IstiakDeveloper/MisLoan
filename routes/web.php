@@ -175,6 +175,7 @@ Route::middleware(['auth', 'verified'])->group(function () {
         Route::get('/', [ApprovalController::class, 'index'])->name('index');
         Route::patch('{approval}/approve', [ApprovalController::class, 'approve'])->name('approve');
         Route::patch('{approval}/reject', [ApprovalController::class, 'reject'])->name('reject');
+        Route::patch('{approval}/forward', [ApprovalController::class, 'forward'])->name('forward');
         Route::patch('{approval}/return-to-branch', [ApprovalController::class, 'returnToBranch'])->name('return-to-branch');
         Route::patch('loan/{loanApproval}/approve', [ApprovalController::class, 'approveLoan'])->name('loan.approve');
         Route::patch('loan/{loanApproval}/reject', [ApprovalController::class, 'rejectLoan'])->name('loan.reject');

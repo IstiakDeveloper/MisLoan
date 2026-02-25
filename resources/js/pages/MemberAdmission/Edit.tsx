@@ -251,19 +251,11 @@ export default function Edit({ admission, branches, samities, categories, availa
                 },
             });
         } else {
-            // Validate approvers before submitting
-            if (!data.selected_approvers || data.selected_approvers.length === 0) {
-                alert('No approvers selected. Please select at least one approver.');
-                setCurrentStep(10); // Go to approver selection step
-                return;
-            }
-
-            // Final submit - update first, then submit
+            // Submit goes to branch manager automatically; no approver selection needed
             put(`/member-admissions/${admission.id}`, {
                 preserveScroll: true,
                 onSuccess: () => {
-                    // After successful update, submit the application
-                    router.patch(`/member-admissions/${admission.id}/submit`, data, {
+                    router.patch(`/member-admissions/${admission.id}/submit`, {}, {
                         preserveScroll: true,
                         onSuccess: () => {
                             router.visit('/member-admissions');
@@ -336,7 +328,7 @@ export default function Edit({ admission, branches, samities, categories, availa
         { id: 7, title: 'Financial Information (আর্থিক তথ্য)' },
         { id: 8, title: 'Family Members (পরিবারের সদস্য)' },
         { id: 9, title: 'Other Assets (অন্যান্য সম্পদ)' },
-        { id: 10, title: 'Select Approvers (অনুমোদনকারী নির্বাচন)' },
+        { id: 10, title: 'Additional Information & Documents (অতিরিক্ত তথ্য ও ডকুমেন্ট)' },
     ];
 
     return (
@@ -1523,19 +1515,13 @@ export default function Edit({ admission, branches, samities, categories, availa
                             </div>
                         )}
 
-                        {/* Step 10: Select Approvers */}
+                        {/* Step 10: Additional Information & Documents — submit goes to branch manager */}
                         {currentStep === 10 && (
                             <ApproverSelectionStep
-                                approvers={availableApprovers}
-                                selectedApprovers={data.selected_approvers || []}
-                                onApproverToggle={(approverId) => {
-                                    const currentApprovers = data.selected_approvers || [];
-                                    if (currentApprovers.includes(approverId)) {
-                                        setData('selected_approvers', currentApprovers.filter(id => id !== approverId));
-                                    } else {
-                                        setData('selected_approvers', [...currentApprovers, approverId]);
-                                    }
-                                }}
+                                approvers={[]}
+                                selectedApprovers={[]}
+                                onApproverToggle={() => {}}
+                                hideApproverSelection
                                 interviewerName={data.interviewer_name || ''}
                                 employeeName={data.employee_name || ''}
                                 guardianName={data.guardian_name || ''}

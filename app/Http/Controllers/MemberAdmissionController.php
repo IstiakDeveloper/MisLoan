@@ -225,8 +225,8 @@ class MemberAdmissionController extends Controller
             'other_assets.*.quantity_amount' => 'nullable|string',
             'other_assets.*.estimated_value' => 'nullable|numeric',
 
-            // Selected Approvers (required only when not draft)
-            'selected_approvers' => $request->has('draft') ? 'nullable|array' : 'required|array|min:1',
+            // Selected Approvers — no longer used; submit goes to branch manager only
+            'selected_approvers' => 'nullable|array',
             'selected_approvers.*' => 'exists:users,id',
         ]);
 
@@ -441,8 +441,8 @@ class MemberAdmissionController extends Controller
             // Other Assets
             'other_assets' => 'nullable|array',
 
-            // Selected Approvers (required only when not draft)
-            'selected_approvers' => $request->has('draft') ? 'nullable|array' : 'required|array|min:1',
+            // Selected Approvers — no longer used; submit goes to branch manager only
+            'selected_approvers' => 'nullable|array',
             'selected_approvers.*' => 'exists:users,id',
             // ... (all other fields same as store)
         ]);

@@ -1,7 +1,15 @@
 import React, { useState } from 'react';
 import { Head, router } from '@inertiajs/react';
 import AdminLayout from '@/layouts/admin-layout';
-import { CheckCircle, XCircle, RotateCcw, Eye, MessageSquare } from 'lucide-react';
+import { CheckCircle, XCircle, RotateCcw, Eye, MessageSquare, Share2 } from 'lucide-react';
+
+interface EscalationApprover {
+    id: number;
+    name: string;
+    email: string;
+    level: string;
+    role_name: string;
+}
 
 interface Approval {
     id: number;
@@ -10,6 +18,7 @@ interface Approval {
     applicant_name: string;
     applicant_name_bn: string;
     branch_name: string;
+    branch_id?: number;
     samity_name: string;
     submitted_at: string;
     level: string;
@@ -17,6 +26,7 @@ interface Approval {
     revision_count: number;
     revision_comments: string | null;
     status: string;
+    escalation_approvers?: EscalationApprover[];
 }
 
 interface LoanApproval {
@@ -38,8 +48,9 @@ interface Props {
 
 export default function Index({ approvals, loanApprovals = [] }: Props) {
     const [selectedApproval, setSelectedApproval] = useState<Approval | null>(null);
-    const [action, setAction] = useState<'approve' | 'reject' | 'return' | null>(null);
+    const [action, setAction] = useState<'approve' | 'reject' | 'return' | 'forward' | null>(null);
     const [comments, setComments] = useState('');
+    const [forwardToUserId, setForwardToUserId] = useState<string>('');
     const [showModal, setShowModal] = useState(false);
 
     const [selectedLoanApproval, setSelectedLoanApproval] = useState<LoanApproval | null>(null);
@@ -47,15 +58,37 @@ export default function Index({ approvals, loanApprovals = [] }: Props) {
     const [loanComments, setLoanComments] = useState('');
     const [showLoanModal, setShowLoanModal] = useState(false);
 
-    const handleAction = (approval: Approval, actionType: 'approve' | 'reject' | 'return') => {
+    const handleAction = (approval: Approval, actionType: 'approve' | 'reject' | 'return' | 'forward') => {
         setSelectedApproval(approval);
         setAction(actionType);
         setComments('');
+        setForwardToUserId('');
         setShowModal(true);
     };
 
     const submitAction = () => {
         if (!selectedApproval || !action) return;
+        if (action === 'forward' && !forwardToUserId) {
+            alert('Please select an approver to forward to.');
+            return;
+        }
+
+        if (action === 'forward') {
+            router.patch(`/approvals/${selectedApproval.id}/forward`, {
+                forward_to_user_id: forwardToUserId,
+                comments,
+            }, {
+                preserveScroll: true,
+                onSuccess: () => {
+                    setShowModal(false);
+                    setSelectedApproval(null);
+                    setAction(null);
+                    setComments('');
+                    setForwardToUserId('');
+                },
+            });
+            return;
+        }
 
         const routes = {
             approve: `/approvals/${selectedApproval.id}/approve`,
@@ -63,7 +96,7 @@ export default function Index({ approvals, loanApprovals = [] }: Props) {
             return: `/approvals/${selectedApproval.id}/return-to-branch`,
         };
 
-        router.patch(routes[action], { comments }, {
+        router.patch(routes[action as keyof typeof routes], { comments }, {
             preserveScroll: true,
             onSuccess: () => {
                 setShowModal(false);
@@ -109,6 +142,7 @@ export default function Index({ approvals, loanApprovals = [] }: Props) {
     };
 
     const isHeadOffice = (level: string) => level === 'head_office';
+    const isBranchLevel = (level: string) => level === 'branch';
 
     return (
         <AdminLayout>
@@ -224,6 +258,15 @@ export default function Index({ approvals, loanApprovals = [] }: Props) {
                                                 >
                                                     <XCircle className="w-4 h-4" />
                                                 </button>
+                                                {isBranchLevel(approval.level) && (approval.escalation_approvers?.length ?? 0) > 0 && (
+                                                    <button
+                                                        onClick={() => handleAction(approval, 'forward')}
+                                                        className="text-indigo-600 hover:text-indigo-900"
+                                                        title="Forward to Area/Zone/ADMF/DMF/ED"
+                                                    >
+                                                        <Share2 className="w-4 h-4" />
+                                                    </button>
+                                                )}
                                                 {isHeadOffice(approval.level) && (
                                                     <button
                                                         onClick={() => handleAction(approval, 'return')}
@@ -312,23 +355,43 @@ export default function Index({ approvals, loanApprovals = [] }: Props) {
                             {action === 'approve' && 'Approve Application'}
                             {action === 'reject' && 'Reject Application'}
                             {action === 'return' && 'Return to Branch'}
+                            {action === 'forward' && 'Forward to Approver'}
                         </h3>
                         <p className="text-sm text-gray-600 mb-4">
                             Application: <strong>{selectedApproval.application_no}</strong>
                             <br />
                             Applicant: <strong>{selectedApproval.applicant_name}</strong>
                         </p>
+                        {action === 'forward' && (
+                            <div className="mb-4">
+                                <label className="block text-sm font-medium text-gray-700 mb-2">
+                                    Select approver (Area Manager, Zone Manager, ADMF, DMF, ED)
+                                </label>
+                                <select
+                                    value={forwardToUserId}
+                                    onChange={(e) => setForwardToUserId(e.target.value)}
+                                    className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                >
+                                    <option value="">-- Select approver --</option>
+                                    {(selectedApproval.escalation_approvers ?? []).map((u) => (
+                                        <option key={u.id} value={u.id}>
+                                            {u.name} ({u.role_name || u.level})
+                                        </option>
+                                    ))}
+                                </select>
+                            </div>
+                        )}
                         <div className="mb-4">
                             <label className="block text-sm font-medium text-gray-700 mb-2">
-                                Comments {action !== 'approve' && <span className="text-red-500">*</span>}
+                                Comments {action !== 'approve' && action !== 'forward' && <span className="text-red-500">*</span>}
                             </label>
                             <textarea
                                 value={comments}
                                 onChange={(e) => setComments(e.target.value)}
                                 rows={4}
                                 className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
-                                placeholder="Add your comments..."
-                                required={action !== 'approve'}
+                                placeholder={action === 'forward' ? 'Optional comment...' : 'Add your comments...'}
+                                required={action !== 'approve' && action !== 'forward'}
                             />
                         </div>
                         <div className="flex justify-end gap-3">
@@ -340,7 +403,10 @@ export default function Index({ approvals, loanApprovals = [] }: Props) {
                             </button>
                             <button
                                 onClick={submitAction}
-                                disabled={action !== 'approve' && !comments.trim()}
+                                disabled={
+                                    (action !== 'approve' && action !== 'forward' && !comments.trim()) ||
+                                    (action === 'forward' && !forwardToUserId)
+                                }
                                 className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
                             >
                                 Confirm

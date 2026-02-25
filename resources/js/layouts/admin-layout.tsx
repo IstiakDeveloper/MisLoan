@@ -51,6 +51,7 @@ interface PageProps extends Record<string, unknown> {
         pendingLoanApplications?: number;
         pendingAdmissions?: number;
         pendingApprovals?: number;
+        pendingTeamBasedApprovals?: number;
     };
 }
 
@@ -125,8 +126,18 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
 
     const approverMenuItems = [
         // Team Based Approval list for approver (area/zone/ADMF/DMF/ED)
-        { name: 'Team Based Approval', href: '/team-based-approvals/for-approver', icon: FileText },
-        { name: 'Pending Approvals', href: '/approvals', icon: ClipboardCheck },
+        {
+            name: 'Team Based Approval',
+            href: '/team-based-approvals/for-approver',
+            icon: FileText,
+            badge: badgeCounts.pendingTeamBasedApprovals || 0,
+        },
+        {
+            name: 'Pending Approvals',
+            href: '/approvals',
+            icon: ClipboardCheck,
+            badge: badgeCounts.pendingApprovals || 0,
+        },
     ];
 
     const headOfficeMainItems = [
@@ -245,17 +256,25 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
                                 </li>
                                 {approverMenuItems.map((item) => {
                                     const isActive = path === item.href || (item.href !== '/dashboard' && path.startsWith(item.href));
+                                    const badge = (item as { badge?: number }).badge;
                                     return (
                                         <li key={item.name}>
                                             <Link
                                                 href={item.href}
                                                 onClick={() => isMobile && setSidebarOpen(false)}
-                                                className={`flex items-center gap-2.5 px-2.5 py-1.5 rounded-md text-[13px] transition-colors ${
+                                                className={`flex items-center justify-between gap-2 px-2.5 py-1.5 rounded-md text-[13px] transition-colors ${
                                                     isActive ? 'bg-blue-50 text-blue-600 font-medium' : 'text-gray-600 hover:bg-gray-100'
                                                 }`}
                                             >
-                                                <item.icon className="w-4 h-4 flex-shrink-0 opacity-80" />
-                                                {sidebarOpen && <span className="truncate">{item.name}</span>}
+                                                <div className="flex items-center gap-2.5 min-w-0">
+                                                    <item.icon className="w-4 h-4 flex-shrink-0 opacity-80" />
+                                                    {sidebarOpen && <span className="truncate">{item.name}</span>}
+                                                </div>
+                                                {sidebarOpen && badge !== undefined && badge > 0 && (
+                                                    <span className="flex-shrink-0 bg-red-500 text-white text-[10px] font-medium px-1.5 py-0.5 rounded min-w-[18px] text-center">
+                                                        {badge}
+                                                    </span>
+                                                )}
                                             </Link>
                                         </li>
                                     );

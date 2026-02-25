@@ -266,12 +266,7 @@ export default function Create({ branches, samities, categories, availableApprov
     };
 
     const handleSubmit = (saveAsDraft: boolean) => {
-        // Validate approver selection if not a draft
-        if (!saveAsDraft && (!data.selected_approvers || data.selected_approvers.length === 0)) {
-            alert('Please select at least one approver before submitting.');
-            return;
-        }
-
+        // Submit goes to branch manager automatically; no approver selection needed
         post(`/member-admissions${saveAsDraft ? '?draft=1' : ''}`, {
             preserveScroll: true,
             onSuccess: () => {
@@ -1433,19 +1428,13 @@ export default function Create({ branches, samities, categories, availableApprov
                             </div>
                         )}
 
-                        {/* Step 8: Additional (২১–২৩) + Approver Selection */}
+                        {/* Step 8: Additional (২১–২৩) + Documents — approver selection removed; submit goes to branch manager */}
                         {currentStep === 8 && (
                             <ApproverSelectionStep
-                                approvers={availableApprovers}
-                                selectedApprovers={data.selected_approvers || []}
-                                onApproverToggle={(approverId) => {
-                                    const currentApprovers = data.selected_approvers || [];
-                                    if (currentApprovers.includes(approverId)) {
-                                        setData('selected_approvers', currentApprovers.filter(id => id !== approverId));
-                                    } else {
-                                        setData('selected_approvers', [...currentApprovers, approverId]);
-                                    }
-                                }}
+                                approvers={[]}
+                                selectedApprovers={[]}
+                                onApproverToggle={() => {}}
+                                hideApproverSelection
                                 interviewerName={data.interviewer_name || ''}
                                 employeeName={data.employee_name || ''}
                                 guardianName={data.guardian_name || ''}

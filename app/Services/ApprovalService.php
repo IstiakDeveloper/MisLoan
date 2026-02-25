@@ -12,52 +12,40 @@ use Illuminate\Support\Facades\DB;
 class ApprovalService
 {
     /**
-     * Create approval workflow when member admission is submitted
-     * Uses manually selected approvers from admission->selected_approvers
+     * Create approval workflow when member admission is submitted.
+     * Branch user submit goes to branch manager only. Branch manager can then approve or forward to Area/Zone/ADMF/DMF/ED.
      */
     public function createApprovalWorkflow(MemberAdmission $admission): void
     {
         DB::transaction(function () use ($admission) {
-            // Clear any existing approvals (in case of resubmission)
             $admission->approvals()->delete();
 
-            // Get selected approvers (already cast as array in model)
-            $selectedApproverIds = $admission->selected_approvers ?? [];
-
-            if (empty($selectedApproverIds)) {
-                throw new \Exception('No approvers selected. Please select at least one approver.');
+            $branch = $admission->branch;
+            if (!$branch) {
+                throw new \Exception('Admission must have a branch.');
             }
 
-            // Create approvals for selected users with sequential order
-            $sequence = 1;
-            foreach ($selectedApproverIds as $userId) {
-                MemberAdmissionApproval::create([
-                    'member_admission_id' => $admission->id,
-                    'user_id' => $userId,
-                    'level' => 'branch', // All selected are branch level
-                    'sequence' => $sequence,
-                    'status' => 'pending',
-                ]);
-                $sequence++;
-            }
-
-            // Add head office approval as final step
-            $headOfficeUsers = User::where('has_all_access', 1)
+            // First step: Branch Manager(s) only — any Branch Manager of this branch can approve or forward
+            $branchManagers = User::where('branch_id', $branch->id)
                 ->where('is_active', 1)
                 ->whereHas('role', function ($query) {
-                    $query->whereIn('name', ['Super Admin', 'Admin', 'Head Office']);
+                    $query->where('name', 'branch_manager');
                 })
                 ->get();
 
-            foreach ($headOfficeUsers as $user) {
-                MemberAdmissionApproval::create([
-                    'member_admission_id' => $admission->id,
-                    'user_id' => $user->id,
-                    'level' => 'head_office',
-                    'sequence' => $sequence,
-                    'status' => 'pending',
-                ]);
+            if ($branchManagers->isEmpty()) {
+                throw new \Exception('No Branch Manager found for this branch. Please assign a Branch Manager.');
             }
+
+            // One approval row for first branch manager (any BM can take it; first in list gets the task)
+            $firstBranchManager = $branchManagers->first();
+            MemberAdmissionApproval::create([
+                'member_admission_id' => $admission->id,
+                'user_id' => $firstBranchManager->id,
+                'level' => 'branch',
+                'sequence' => 1,
+                'status' => 'pending',
+            ]);
         });
     }
 
@@ -178,10 +166,9 @@ class ApprovalService
             $pendingCount = $admission->approvals()->where('status', 'pending')->count();
 
             if ($pendingCount === 0) {
-                // All branch approvals done, send to Head Office
-                $admission->update(['status' => 'pending_head_office']);
+                // No more steps: admission is fully approved (branch manager approved or escalation approver approved)
+                $admission->update(['status' => 'approved']);
             } else {
-                // Move to under_review
                 if ($admission->status === 'submitted') {
                     $admission->update(['status' => 'under_review']);
                 }
@@ -344,6 +331,113 @@ class ApprovalService
 
         // Remove duplicates and return
         return $approvers->unique('id')->values();
+    }
+
+    /**
+     * Get escalation approvers for member admission (Area Manager, Zone Manager, ADMF, DMF, ED).
+     * Used when branch manager forwards an admission to a higher-level approver.
+     */
+    public function getEscalationApprovers(int $branchId)
+    {
+        $branch = \App\Models\Branch::with('area.zone')->find($branchId);
+        if (!$branch) {
+            return collect();
+        }
+
+        $approvers = collect();
+
+        // Area-level users (Area Manager)
+        if ($branch->area_id) {
+            $areaUsers = User::where('area_id', $branch->area_id)
+                ->where('is_active', 1)
+                ->whereHas('role', function ($q) {
+                    $q->where('name', 'area_manager');
+                })
+                ->select('id', 'name', 'email', 'role_id', 'branch_id', 'area_id', 'zone_id')
+                ->with('role:id,name')
+                ->get()
+                ->map(function ($user) {
+                    $user->level = 'area';
+                    return $user;
+                });
+            $approvers = $approvers->merge($areaUsers);
+        }
+
+        // Zone-level users (Zone Manager)
+        if ($branch->area && $branch->area->zone_id) {
+            $zoneUsers = User::where('zone_id', $branch->area->zone_id)
+                ->where('is_active', 1)
+                ->whereHas('role', function ($q) {
+                    $q->where('name', 'zone_manager');
+                })
+                ->select('id', 'name', 'email', 'role_id', 'branch_id', 'area_id', 'zone_id')
+                ->with('role:id,name')
+                ->get()
+                ->map(function ($user) {
+                    $user->level = 'zone';
+                    return $user;
+                });
+            $approvers = $approvers->merge($zoneUsers);
+        }
+
+        // ADMF, DMF, ED (escalation level) - users who can access this branch
+        $escalationUsers = User::getApproversSelectableByBranch($branchId)
+            ->map(function ($user) {
+                $user->level = 'escalation';
+                return $user;
+            });
+        $approvers = $approvers->merge($escalationUsers);
+
+        return $approvers->unique('id')->values();
+    }
+
+    /**
+     * Branch manager forwards admission to selected approver (Area/Zone/ADMF/DMF/ED).
+     * Creates next approval step for that user; they can then approve or reject.
+     */
+    public function forwardToApprover(MemberAdmissionApproval $approval, int $userId, ?string $comments = null): bool
+    {
+        if ($approval->status !== 'pending' || !$approval->isCurrentPending()) {
+            return false;
+        }
+        if ($approval->level !== 'branch') {
+            return false;
+        }
+
+        $targetUser = User::with('role')->find($userId);
+        if (!$targetUser || !$targetUser->is_active) {
+            return false;
+        }
+        $roleName = $targetUser->role->name ?? '';
+        $level = 'escalation';
+        if ($roleName === 'area_manager') {
+            $level = 'area';
+        } elseif ($roleName === 'zone_manager') {
+            $level = 'zone';
+        } elseif (in_array($roleName, ['admf', 'dmf', 'ed'], true)) {
+            $level = 'escalation';
+        }
+
+        DB::transaction(function () use ($approval, $userId, $comments, $level) {
+            $admission = $approval->memberAdmission;
+            $approval->update([
+                'status' => 'approved',
+                'comments' => $comments ?? 'Forwarded to higher-level approver',
+                'approved_at' => now(),
+                'approver_signature' => $approval->user->signature ?? null,
+            ]);
+            $nextSequence = $admission->approvals()->max('sequence') + 1;
+            MemberAdmissionApproval::create([
+                'member_admission_id' => $admission->id,
+                'user_id' => $userId,
+                'level' => $level,
+                'sequence' => $nextSequence,
+                'status' => 'pending',
+            ]);
+            $admission->update(['status' => 'under_review']);
+        });
+
+        return true;
     }
 
     /**
