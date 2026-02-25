@@ -16,6 +16,8 @@ use App\Http\Controllers\ProfileController;
 use App\Http\Controllers\HeadOfficeAdmissionController;
 use App\Http\Controllers\HeadOfficeLoanController;
 use App\Http\Controllers\HeadOfficeSavingsController;
+use App\Http\Controllers\TeamBasedApprovalController;
+use App\Http\Controllers\TeamBasedApprovalPrintController;
 use App\Http\Controllers\LoanCategoryController;
 use App\Http\Controllers\LoanProductController;
 use App\Http\Controllers\SavingsProductController;
@@ -146,6 +148,26 @@ Route::middleware(['auth', 'verified'])->group(function () {
         Route::patch('{memberAdmission}/submit', [MemberAdmissionController::class, 'submit'])->name('submit');
         Route::patch('{memberAdmission}/resubmit', [MemberAdmissionController::class, 'resubmit'])->name('resubmit');
         Route::patch('{memberAdmission}/reject', [MemberAdmissionController::class, 'reject'])->name('reject');
+    });
+
+    // Team Based Approval Routes - Branch users + Approver roles
+    Route::prefix('team-based-approvals')->name('team-based-approvals.')->middleware('auth')->group(function () {
+        // Branch-side: all applications + drafts + form
+        Route::get('/', [TeamBasedApprovalController::class, 'index'])->name('index');
+        Route::get('drafts', [TeamBasedApprovalController::class, 'drafts'])->name('drafts');
+        Route::get('create', [TeamBasedApprovalController::class, 'create'])->name('create');
+        Route::post('save-draft', [TeamBasedApprovalController::class, 'saveDraft'])->name('save-draft');
+        Route::get('{teamBasedApproval}/edit', [TeamBasedApprovalController::class, 'edit'])->name('edit');
+        Route::put('{teamBasedApproval}', [TeamBasedApprovalController::class, 'updateDraft'])->name('update');
+        Route::delete('{teamBasedApproval}', [TeamBasedApprovalController::class, 'destroy'])->name('destroy');
+        Route::post('{teamBasedApproval}/submit', [TeamBasedApprovalController::class, 'submit'])->name('submit');
+
+        // Approver-side: list & decision
+        Route::get('for-approver', [TeamBasedApprovalController::class, 'approverIndex'])->name('approver-index');
+        Route::post('reviews/{review}/decide', [TeamBasedApprovalController::class, 'decide'])->name('reviews.decide');
+
+        // Shared print view
+        Route::get('{teamBasedApproval}/print', [TeamBasedApprovalPrintController::class, 'show'])->name('print');
     });
 
     // Approval Routes - For all authenticated users

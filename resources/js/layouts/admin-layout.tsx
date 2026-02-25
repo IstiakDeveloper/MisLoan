@@ -99,13 +99,33 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
         setSetupExpanded(prev => (SETUP_PATHS.some(p => path.startsWith(p)) ? true : prev));
     }, [path]);
 
-    const isBranchUser = !auth.user.has_all_access;
+    const roleName = auth.user.role?.name || '';
+
+    const isBranchRole =
+        roleName === 'branch_manager' ||
+        roleName === 'branch_user' ||
+        roleName === 'field_officer';
+
+    const isTeamApproverRole =
+        roleName === 'area_manager' ||
+        roleName === 'zone_manager' ||
+        roleName === 'admf' ||
+        roleName === 'dmf' ||
+        roleName === 'ed';
 
     const branchMenuItems = [
         { name: 'Dashboard', href: '/dashboard', icon: LayoutDashboard },
         { name: 'Member Admissions', href: '/member-admissions', icon: UserPlus },
         { name: 'Loan Applications', href: '/member/loan-applications', icon: Banknote },
         { name: 'Savings Applications', href: '/member/savings-applications', icon: Landmark },
+        // Team Based Approval - All Applications list
+        { name: 'Team Based Approval', href: '/team-based-approvals', icon: FileText },
+        { name: 'Pending Approvals', href: '/approvals', icon: ClipboardCheck },
+    ];
+
+    const approverMenuItems = [
+        // Team Based Approval list for approver (area/zone/ADMF/DMF/ED)
+        { name: 'Team Based Approval', href: '/team-based-approvals/for-approver', icon: FileText },
         { name: 'Pending Approvals', href: '/approvals', icon: ClipboardCheck },
     ];
 
@@ -195,12 +215,35 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
 
                     {/* Navigation */}
                     <nav className="flex-1 overflow-y-auto overflow-x-hidden py-2 px-2">
-                        {isBranchUser ? (
+                        {isBranchRole ? (
                             <ul className="space-y-0.5">
                                 <li className="px-1.5 py-1 text-[10px] font-medium uppercase tracking-wider text-gray-400">
                                     {sidebarOpen && 'Main'}
                                 </li>
                                 {branchMenuItems.map((item) => {
+                                    const isActive = path === item.href || (item.href !== '/dashboard' && path.startsWith(item.href));
+                                    return (
+                                        <li key={item.name}>
+                                            <Link
+                                                href={item.href}
+                                                onClick={() => isMobile && setSidebarOpen(false)}
+                                                className={`flex items-center gap-2.5 px-2.5 py-1.5 rounded-md text-[13px] transition-colors ${
+                                                    isActive ? 'bg-blue-50 text-blue-600 font-medium' : 'text-gray-600 hover:bg-gray-100'
+                                                }`}
+                                            >
+                                                <item.icon className="w-4 h-4 flex-shrink-0 opacity-80" />
+                                                {sidebarOpen && <span className="truncate">{item.name}</span>}
+                                            </Link>
+                                        </li>
+                                    );
+                                })}
+                            </ul>
+                        ) : isTeamApproverRole ? (
+                            <ul className="space-y-0.5">
+                                <li className="px-1.5 py-1 text-[10px] font-medium uppercase tracking-wider text-gray-400">
+                                    {sidebarOpen && 'Approvals'}
+                                </li>
+                                {approverMenuItems.map((item) => {
                                     const isActive = path === item.href || (item.href !== '/dashboard' && path.startsWith(item.href));
                                     return (
                                         <li key={item.name}>

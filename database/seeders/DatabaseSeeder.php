@@ -14,8 +14,10 @@ class DatabaseSeeder extends Seeder
         $this->call([
             RoleSeeder::class,
             SuperAdminSeeder::class,
+            ApproverUserSeeder::class,
             ZoneSeeder::class,
             AreaSeeder::class,
+            AreaZoneManagerSeeder::class,
             BranchSeeder::class,
             UserSeeder::class,
             MemberCategorySeeder::class,

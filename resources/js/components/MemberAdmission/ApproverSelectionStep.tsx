@@ -138,7 +138,7 @@ export default function ApproverSelectionStep({
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <div>
                         <label className="block text-sm font-medium text-gray-700 mb-1">
-                            Interviewer Name (সাক্ষাৎকারকারীর নাম)
+                            ২১. গ্রাহক অন্তর্ভূক্তিকালীন কর্মকর্তার নাম (Interviewer/Employee Name) (সাক্ষাৎকারকারীর নাম)
                         </label>
                         <input
                             type="text"
@@ -150,19 +150,20 @@ export default function ApproverSelectionStep({
 
                     <div>
                         <label className="block text-sm font-medium text-gray-700 mb-1">
-                            Employee Name (গ্রাহক অন্তর্ভুক্তিকালীন কর্মকর্তার নাম)
+                            পিন নং (প্রযোজ্য)
                         </label>
                         <input
                             type="text"
                             value={employeeName}
                             onChange={(e) => onFieldChange('employee_name', e.target.value)}
                             className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                            placeholder="কর্মকর্তার পিন"
                         />
                     </div>
 
                     <div className="md:col-span-2">
                         <label className="block text-sm font-medium text-gray-700 mb-1">
-                            Other Loan Information (অন্যান্য টাকার তথ্য)
+                            ২২. অন্যান্য সংস্থা হতে ঋণ গ্রহণের তথ্য
                         </label>
                         <textarea
                             value={otherLoanInfo}
@@ -174,7 +175,7 @@ export default function ApproverSelectionStep({
 
                     <div className="md:col-span-2">
                         <label className="block text-sm font-medium text-gray-700 mb-1">
-                            Collector Comment (কালেক্টর মন্তব্য)
+                            ২৩. তথ্য সংগ্রহকারীর মন্তব্য: উল্লিখিত পরিবার কি মৌসুমী ক্ষুদ্রঋণ কর্মসূচির গ্রাহক হওয়ার যোগ্য? (মন্তব্য লিখুন)
                         </label>
                         <textarea
                             value={collectorComment}
@@ -186,7 +187,7 @@ export default function ApproverSelectionStep({
 
                     <div>
                         <label className="block text-sm font-medium text-gray-700 mb-1">
-                            Guardian Name (অভিভাবকের নাম)
+                            অভিভাবকের নাম (Guardian Name)
                         </label>
                         <input
                             type="text"

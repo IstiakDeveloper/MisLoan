@@ -350,6 +350,11 @@ class MemberAdmissionController extends Controller
 
         return Inertia::render('MemberAdmission/Show', [
             'admission' => $memberAdmission,
+            'auth' => [
+                'user' => [
+                    'has_all_access' => auth()->user()->has_all_access ?? false,
+                ],
+            ],
         ]);
     }
 

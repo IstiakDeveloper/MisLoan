@@ -219,7 +219,7 @@ export default function Show({ application, availableApprovers = [], routes }: P
             <Head title={`ঋণ আবেদন - ${application.application_no}`}>
                 <style>{`
                     @media print {
-                        @page { size: A4; margin: 1cm; }
+                        @page { size: A4; margin: 15mm; }
                         body * { visibility: hidden !important; }
                         .form-print-area, .form-print-area * { visibility: visible !important; }
                         .form-print-area {
@@ -228,10 +228,12 @@ export default function Show({ application, availableApprovers = [], routes }: P
                             top: 0 !important;
                             width: 100% !important;
                             max-width: 100% !important;
-                            padding: 0 !important;
+                            padding: 12mm !important;
                             margin: 0 !important;
                             background: white !important;
                             box-shadow: none !important;
+                            font-size: 11pt !important;
+                            line-height: 1.35 !important;
                         }
                     }
                 `}</style>

@@ -333,16 +333,14 @@ export default function Create({ branches, samities, categories, availableApprov
     };
 
     const steps = [
-        { id: 1, title: 'Organization & Date (সংস্থা ও তারিখ)' },
-        { id: 2, title: 'Personal Information (ব্যক্তিগত তথ্য)' },
-        { id: 3, title: 'Address (ঠিকানা)' },
-        { id: 4, title: 'Identity (পরিচয়)' },
-        { id: 5, title: 'Guarantor Information (জামিনদার তথ্য)' },
-        { id: 6, title: 'Property Information (সম্পত্তি তথ্য)' },
-        { id: 7, title: 'Financial Information (আর্থিক তথ্য)' },
-        { id: 8, title: 'Family Members (পরিবারের সদস্য)' },
-        { id: 9, title: 'Other Assets (অন্যান্য সম্পদ)' },
-        { id: 10, title: 'Select Approvers (অনুমোদনকারী নির্বাচন)' },
+        { id: 1, title: '১. সংস্থা ও তারিখ' },
+        { id: 2, title: '২. ব্যক্তিগত তথ্য' },
+        { id: 3, title: '৩. ঠিকানা' },
+        { id: 4, title: '৪. ১২–১৫ পরিচয় ও জামিনদার' },
+        { id: 5, title: '৫. ১৬ পরিবার ও আর্থিক কর্মকাণ্ড' },
+        { id: 6, title: '৬. সম্পত্তি (১৭–১৯)' },
+        { id: 7, title: '৭. আর্থিক তথ্য (২০)' },
+        { id: 8, title: '৮. অন্যান্য তথ্য ও অনুমোদনকারী (২১–২৩)' },
     ];
 
     return (
@@ -424,7 +422,7 @@ export default function Create({ branches, samities, categories, availableApprov
 
                                     <div>
                                         <label className="block text-sm font-medium text-gray-700 mb-1">
-                                            Samity (সমিতি) <span className="text-red-500">*</span>
+                                            ১. Samity (সমিতি) <span className="text-red-500">*</span>
                                         </label>
                                         <select
                                             value={data.samity_id}
@@ -446,7 +444,7 @@ export default function Create({ branches, samities, categories, availableApprov
 
                                     <div>
                                         <label className="block text-sm font-medium text-gray-700 mb-1">
-                                            Member Category (সদস্য শ্রেণি) <span className="text-red-500">*</span>
+                                            ২. Member Category (সদস্য শ্রেণি) <span className="text-red-500">*</span>
                                         </label>
                                         <select
                                             value={data.member_category_id}
@@ -467,7 +465,7 @@ export default function Create({ branches, samities, categories, availableApprov
 
                                     <div>
                                         <label className="block text-sm font-medium text-gray-700 mb-1">
-                                            Survey Date (জরিপ তারিখ) <span className="text-red-500">*</span>
+                                            জরিপের তারিখ <span className="text-red-500">*</span>
                                         </label>
                                         <input
                                             type="date"
@@ -482,7 +480,7 @@ export default function Create({ branches, samities, categories, availableApprov
 
                                     <div>
                                         <label className="block text-sm font-medium text-gray-700 mb-1">
-                                            Admission Date (ভর্তি তারিখ) <span className="text-red-500">*</span>
+                                            ভর্তির তারিখ <span className="text-red-500">*</span>
                                         </label>
                                         <input
                                             type="date"
@@ -505,7 +503,7 @@ export default function Create({ branches, samities, categories, availableApprov
                                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                                     <div>
                                         <label className="block text-sm font-medium text-gray-700 mb-1">
-                                            Applicant Name - English (আবেদনকারীর নাম - ইংরেজি) <span className="text-red-500">*</span>
+                                            ৩. Applicant's Name (English) (আবেদনকারীর নাম - ইংরেজি) <span className="text-red-500">*</span>
                                         </label>
                                         <input
                                             type="text"
@@ -520,7 +518,7 @@ export default function Create({ branches, samities, categories, availableApprov
 
                                     <div>
                                         <label className="block text-sm font-medium text-gray-700 mb-1">
-                                            Applicant Name - Bangla (আবেদনকারীর নাম - বাংলা) <span className="text-red-500">*</span>
+                                            ৩. Applicant's Name (বাংলায়) (আবেদনকারীর নাম - বাংলা) <span className="text-red-500">*</span>
                                         </label>
                                         <input
                                             type="text"
@@ -535,7 +533,7 @@ export default function Create({ branches, samities, categories, availableApprov
 
                                     <div>
                                         <label className="block text-sm font-medium text-gray-700 mb-1">
-                                            Father's Name - English (পিতার নাম - ইংরেজি) <span className="text-red-500">*</span>
+                                            ৪. Father's Name (English) (পিতার নাম - ইংরেজি) <span className="text-red-500">*</span>
                                         </label>
                                         <input
                                             type="text"
@@ -550,7 +548,7 @@ export default function Create({ branches, samities, categories, availableApprov
 
                                     <div>
                                         <label className="block text-sm font-medium text-gray-700 mb-1">
-                                            Father's Name - Bangla (পিতার নাম - বাংলা) <span className="text-red-500">*</span>
+                                            ৪. Father's Name (বাংলায়) (পিতার নাম - বাংলা) <span className="text-red-500">*</span>
                                         </label>
                                         <input
                                             type="text"
@@ -565,7 +563,7 @@ export default function Create({ branches, samities, categories, availableApprov
 
                                     <div>
                                         <label className="block text-sm font-medium text-gray-700 mb-1">
-                                            Mother's Name - English (মাতার নাম - ইংরেজি) <span className="text-red-500">*</span>
+                                            ৫. Mother's Name (English) (মাতার নাম - ইংরেজি) <span className="text-red-500">*</span>
                                         </label>
                                         <input
                                             type="text"
@@ -580,7 +578,7 @@ export default function Create({ branches, samities, categories, availableApprov
 
                                     <div>
                                         <label className="block text-sm font-medium text-gray-700 mb-1">
-                                            Mother's Name - Bangla (মাতার নাম - বাংলা) <span className="text-red-500">*</span>
+                                            ৫. Mother's Name (বাংলায়) (মাতার নাম - বাংলা) <span className="text-red-500">*</span>
                                         </label>
                                         <input
                                             type="text"
@@ -595,7 +593,7 @@ export default function Create({ branches, samities, categories, availableApprov
 
                                     <div>
                                         <label className="block text-sm font-medium text-gray-700 mb-1">
-                                            Marital Status (বৈবাহিক অবস্থা) <span className="text-red-500">*</span>
+                                            ৭. বৈবাহিক অবস্থা (Marital Status) (বৈবাহিক অবস্থা) <span className="text-red-500">*</span>
                                         </label>
                                         <select
                                             value={data.marital_status}
@@ -616,7 +614,7 @@ export default function Create({ branches, samities, categories, availableApprov
                                         <>
                                             <div>
                                                 <label className="block text-sm font-medium text-gray-700 mb-1">
-                                                    Spouse Name - English (স্বামী/স্ত্রীর নাম - ইংরেজি)
+                                                    ৬. Spouse Name (English) (স্বামী/স্ত্রীর নাম - ইংরেজি)
                                                 </label>
                                                 <input
                                                     type="text"
@@ -628,7 +626,7 @@ export default function Create({ branches, samities, categories, availableApprov
 
                                             <div>
                                                 <label className="block text-sm font-medium text-gray-700 mb-1">
-                                                    Spouse Name - Bangla (স্বামী/স্ত্রীর নাম - বাংলা)
+                                                    ৬. Spouse Name (বাংলায়) (স্বামী/স্ত্রীর নাম - বাংলা)
                                                 </label>
                                                 <input
                                                     type="text"
@@ -642,7 +640,7 @@ export default function Create({ branches, samities, categories, availableApprov
 
                                     <div>
                                         <label className="block text-sm font-medium text-gray-700 mb-1">
-                                            Mobile Number (মোবাইল নম্বর) <span className="text-red-500">*</span>
+                                            ৮. মোবাইল নং (Mobile Number) (মোবাইল নং) <span className="text-red-500">*</span>
                                         </label>
                                         <input
                                             type="tel"
@@ -657,7 +655,7 @@ export default function Create({ branches, samities, categories, availableApprov
 
                                     <div>
                                         <label className="block text-sm font-medium text-gray-700 mb-1">
-                                            Alternative Mobile Number (বিকল্প মোবাইল নম্বর)
+                                            ৯. বিকল্প মোবাইল নং (Alternative Mobile) (বিকল্প মোবাইল নং)
                                         </label>
                                         <input
                                             type="tel"
@@ -674,7 +672,7 @@ export default function Create({ branches, samities, categories, availableApprov
                         {currentStep === 3 && (
                             <div className="space-y-6">
                                 <div>
-                                    <h3 className="text-lg font-semibold text-gray-900 mb-4">Present Address</h3>
+                                    <h3 className="text-lg font-semibold text-gray-900 mb-4">১০. Present Address (বর্তমান ঠিকানা)</h3>
                                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                                         <div>
                                             <label className="block text-sm font-medium text-gray-700 mb-1">
@@ -784,7 +782,7 @@ export default function Create({ branches, samities, categories, availableApprov
 
                                 {!data.permanent_address_same && (
                                     <div>
-                                        <h3 className="text-lg font-semibold text-gray-900 mb-4">Permanent Address</h3>
+                                        <h3 className="text-lg font-semibold text-gray-900 mb-4">১১. Permanent Address (স্থায়ী ঠিকানা)</h3>
                                         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                                             <div>
                                                 <label className="block text-sm font-medium text-gray-700 mb-1">Division (বিভাগ)</label>
@@ -867,13 +865,13 @@ export default function Create({ branches, samities, categories, availableApprov
                             </div>
                         )}
 
-                        {/* Step 4: Identity */}
+                        {/* Step 4: Identity - ১২, ১৩ (ফরম অনুযায়ী) */}
                         {currentStep === 4 && (
                             <div className="space-y-4">
-                                <h3 className="text-lg font-semibold text-gray-900">Identity Information</h3>
+                                <h3 className="text-lg font-semibold text-gray-900">১২. Identity Information (পরিচয় তথ্য)</h3>
                                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                                     <div>
-                                        <label className="block text-sm font-medium text-gray-700 mb-1">NID Number (এনআইডি নম্বর)</label>
+                                        <label className="block text-sm font-medium text-gray-700 mb-1">National ID No.</label>
                                         <input
                                             type="text"
                                             value={data.nid_number}
@@ -884,7 +882,7 @@ export default function Create({ branches, samities, categories, availableApprov
 
                                     <div>
                                         <label className="block text-sm font-medium text-gray-700 mb-1">
-                                            Smart Card Number (স্মার্ট কার্ড নম্বর)
+                                            Smart Card No.
                                         </label>
                                         <input
                                             type="text"
@@ -893,11 +891,11 @@ export default function Create({ branches, samities, categories, availableApprov
                                             className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                                         />
                                     </div>
-
+                                </div>
+                                <h3 className="text-lg font-semibold text-gray-900 mt-6">১৩. Other Identity Information (জন্ম সনদ নং, DOB, Gender, Family Mobile)</h3>
+                                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-2">
                                     <div>
-                                        <label className="block text-sm font-medium text-gray-700 mb-1">
-                                            Birth Certificate Number (জন্ম নিবন্ধন নম্বর)
-                                        </label>
+                                        <label className="block text-sm font-medium text-gray-700 mb-1">জন্ম সনদ নং (প্রযোজ্য ক্ষেত্রে)</label>
                                         <input
                                             type="text"
                                             value={data.birth_certificate_number}
@@ -905,9 +903,8 @@ export default function Create({ branches, samities, categories, availableApprov
                                             className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                                         />
                                     </div>
-
                                     <div>
-                                        <label className="block text-sm font-medium text-gray-700 mb-1">Date of Birth (জন্ম তারিখ)</label>
+                                        <label className="block text-sm font-medium text-gray-700 mb-1">Date of Birth</label>
                                         <input
                                             type="date"
                                             value={data.date_of_birth}
@@ -915,11 +912,8 @@ export default function Create({ branches, samities, categories, availableApprov
                                             className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                                         />
                                     </div>
-
                                     <div>
-                                        <label className="block text-sm font-medium text-gray-700 mb-1">
-                                            Gender (লিঙ্গ) <span className="text-red-500">*</span>
-                                        </label>
+                                        <label className="block text-sm font-medium text-gray-700 mb-1">Gender (লিঙ্গ) <span className="text-red-500">*</span></label>
                                         <select
                                             value={data.gender}
                                             onChange={(e) => setData('gender', e.target.value as any)}
@@ -931,11 +925,8 @@ export default function Create({ branches, samities, categories, availableApprov
                                         </select>
                                         {errors.gender && <p className="mt-1 text-sm text-red-600">{errors.gender}</p>}
                                     </div>
-
                                     <div>
-                                        <label className="block text-sm font-medium text-gray-700 mb-1">
-                                            Family Member Mobile (পরিবারের সদস্যের মোবাইল)
-                                        </label>
+                                        <label className="block text-sm font-medium text-gray-700 mb-1">Family Members Mobile Number</label>
                                         <input
                                             type="tel"
                                             value={data.family_member_mobile}
@@ -947,13 +938,13 @@ export default function Create({ branches, samities, categories, availableApprov
                             </div>
                         )}
 
-                        {/* Step 5: Guarantor */}
-                        {currentStep === 5 && (
+                        {/* Step 4 (cont.): Guarantor - ১৪, ১৫ (ফরম অনুযায়ী) */}
+                        {currentStep === 4 && (
                             <div className="space-y-4">
-                                <h3 className="text-lg font-semibold text-gray-900">Guarantor Information</h3>
+                                <h3 className="text-lg font-semibold text-gray-900">১৪. Co-Applicant/Guarantor Name, ১৫. TIN ও এসএমএস</h3>
                                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                                     <div>
-                                        <label className="block text-sm font-medium text-gray-700 mb-1">Guarantor Name (জামিনদারের নাম)</label>
+                                        <label className="block text-sm font-medium text-gray-700 mb-1">১৪. Co-Applicant/Guarantor Name</label>
                                         <input
                                             type="text"
                                             value={data.guarantor_name}
@@ -964,7 +955,7 @@ export default function Create({ branches, samities, categories, availableApprov
 
                                     <div>
                                         <label className="block text-sm font-medium text-gray-700 mb-1">
-                                            Guarantor Mobile (জামিনদারের মোবাইল)
+                                            Guarantor Mobile Number
                                         </label>
                                         <input
                                             type="tel"
@@ -975,7 +966,7 @@ export default function Create({ branches, samities, categories, availableApprov
                                     </div>
 
                                     <div>
-                                        <label className="block text-sm font-medium text-gray-700 mb-1">TIN Number (টিআইএন নম্বর)</label>
+                                        <label className="block text-sm font-medium text-gray-700 mb-1">১৫. TIN (ট্র্যাক্স সার্টিফিকেট নং)</label>
                                         <input
                                             type="text"
                                             value={data.tin_number}
@@ -993,20 +984,168 @@ export default function Create({ branches, samities, categories, availableApprov
                                             className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
                                         />
                                         <label htmlFor="want_sms" className="text-sm font-medium text-gray-700">
-                                            Want SMS Service (এসএমএস সেবা চান)
+                                            সদস্য কি এসএমএস সেবা নিতে চান?
                                         </label>
                                     </div>
                                 </div>
                             </div>
                         )}
 
-                        {/* Step 6: Property Info */}
+                        {/* Step 5: ১৬. পরিবারের তথ্য + আর্থিক কর্মকাণ্ড */}
+                        {currentStep === 5 && (
+                            <div className="space-y-6">
+                                <div className="flex items-center justify-between">
+                                    <h3 className="text-lg font-semibold text-gray-900">১৬. পরিবারের তথ্য / Family Members</h3>
+                                    <button
+                                        type="button"
+                                        onClick={addFamilyMember}
+                                        className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+                                    >
+                                        <Plus className="w-4 h-4" />
+                                        Add Member
+                                    </button>
+                                </div>
+
+                                {data.family_members && data.family_members.length > 0 ? (
+                                    <div className="space-y-4">
+                                        {data.family_members.map((member, index) => (
+                                            <div key={index} className="p-4 border border-gray-200 rounded-lg bg-gray-50">
+                                                <div className="flex items-center justify-between mb-4">
+                                                    <h4 className="font-medium text-gray-900">Member #{index + 1}</h4>
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => removeFamilyMember(index)}
+                                                        className="p-1 text-red-600 hover:bg-red-50 rounded"
+                                                    >
+                                                        <Trash2 className="w-4 h-4" />
+                                                    </button>
+                                                </div>
+                                                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+                                                    <div>
+                                                        <label className="block text-sm font-medium text-gray-700 mb-1">Name (নাম)</label>
+                                                        <input
+                                                            type="text"
+                                                            value={member.member_name}
+                                                            onChange={(e) => updateFamilyMember(index, 'member_name', e.target.value)}
+                                                            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                                                        />
+                                                    </div>
+                                                    <div>
+                                                        <label className="block text-sm font-medium text-gray-700 mb-1">Relationship (সম্পর্ক)</label>
+                                                        <input
+                                                            type="text"
+                                                            value={member.relation_with_head}
+                                                            onChange={(e) => updateFamilyMember(index, 'relation_with_head', e.target.value)}
+                                                            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                                                        />
+                                                    </div>
+                                                    <div>
+                                                        <label className="block text-sm font-medium text-gray-700 mb-1">Gender (লিঙ্গ)</label>
+                                                        <select
+                                                            value={member.gender}
+                                                            onChange={(e) => updateFamilyMember(index, 'gender', e.target.value)}
+                                                            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                                                        >
+                                                            <option value="male">Male</option>
+                                                            <option value="female">Female</option>
+                                                            <option value="other">Other</option>
+                                                        </select>
+                                                    </div>
+                                                    <div>
+                                                        <label className="block text-sm font-medium text-gray-700 mb-1">Age - Years (বয়স - বছর)</label>
+                                                        <input
+                                                            type="number"
+                                                            value={member.age_years}
+                                                            onChange={(e) => updateFamilyMember(index, 'age_years', Number(e.target.value))}
+                                                            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                                                        />
+                                                    </div>
+                                                    <div>
+                                                        <label className="block text-sm font-medium text-gray-700 mb-1">Age - Months (বয়স - মাস)</label>
+                                                        <input
+                                                            type="number"
+                                                            value={member.age_months}
+                                                            onChange={(e) => updateFamilyMember(index, 'age_months', Number(e.target.value))}
+                                                            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                                                        />
+                                                    </div>
+                                                    <div>
+                                                        <label className="block text-sm font-medium text-gray-700 mb-1">Education Level (শিক্ষাগত যোগ্যতা)</label>
+                                                        <input
+                                                            type="text"
+                                                            value={member.education_level}
+                                                            onChange={(e) => updateFamilyMember(index, 'education_level', e.target.value)}
+                                                            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                                                        />
+                                                    </div>
+                                                    <div>
+                                                        <label className="block text-sm font-medium text-gray-700 mb-1">Occupation (পেশা)</label>
+                                                        <input
+                                                            type="text"
+                                                            value={member.occupation}
+                                                            onChange={(e) => updateFamilyMember(index, 'occupation', e.target.value)}
+                                                            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                                                        />
+                                                    </div>
+                                                    <div>
+                                                        <label className="block text-sm font-medium text-gray-700 mb-1">Monthly Income (মাসিক আয়)</label>
+                                                        <input
+                                                            type="number"
+                                                            value={member.monthly_income}
+                                                            onChange={(e) => updateFamilyMember(index, 'monthly_income', Number(e.target.value))}
+                                                            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                                                        />
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        ))}
+                                    </div>
+                                ) : (
+                                    <div className="text-center py-8 text-gray-500">No family members added</div>
+                                )}
+
+                                <div className="p-4 bg-amber-50 border border-amber-200 rounded-lg">
+                                    <p className="font-medium text-sm text-gray-800 mb-2">আর্থিক কর্মকাণ্ড সম্পর্কিত (প্রযোজ্য ক্ষেত্রে ✓/লিখুন)</p>
+                                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                                        <div>
+                                            <label className="block text-sm font-medium text-gray-700 mb-1">ক. ব্যবসা</label>
+                                            <input
+                                                type="text"
+                                                value={data.business_details || ''}
+                                                onChange={(e) => setData('business_details', e.target.value)}
+                                                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                                            />
+                                        </div>
+                                        <div>
+                                            <label className="block text-sm font-medium text-gray-700 mb-1">খ. চাকরি</label>
+                                            <input
+                                                type="text"
+                                                value={data.job_details || ''}
+                                                onChange={(e) => setData('job_details', e.target.value)}
+                                                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                                            />
+                                        </div>
+                                        <div>
+                                            <label className="block text-sm font-medium text-gray-700 mb-1">গ. অন্যান্য</label>
+                                            <input
+                                                type="text"
+                                                value={data.other_income_details || ''}
+                                                onChange={(e) => setData('other_income_details', e.target.value)}
+                                                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                                            />
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        )}
+
+                        {/* Step 6: ১৭, ১৮, ১৯ Property Info (including ১৯(iv) other assets) */}
                         {currentStep === 6 && (
                             <div className="space-y-6">
                                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
                                     <div>
                                         <label className="block text-sm font-medium text-gray-700 mb-1">
-                                            Total Asset Value (মোট সম্পদের মূল্য)
+                                            ১৭. মোট সম্পদের পরিমাণ (Total Asset Value)
                                         </label>
                                         <input
                                             type="number"
@@ -1017,7 +1156,7 @@ export default function Create({ branches, samities, categories, availableApprov
                                     </div>
 
                                     <div>
-                                        <label className="block text-sm font-medium text-gray-700 mb-1">House Type (বাড়ির ধরন)</label>
+                                        <label className="block text-sm font-medium text-gray-700 mb-1">১৮. বাড়ীর ধরণ (House Type)</label>
                                         <input
                                             type="text"
                                             value={data.house_type}
@@ -1027,7 +1166,7 @@ export default function Create({ branches, samities, categories, availableApprov
                                     </div>
                                 </div>
                                 <div>
-                                    <h3 className="text-lg font-semibold text-gray-900 mb-4">House Property</h3>
+                                    <h3 className="text-lg font-semibold text-gray-900 mb-4">১৯. (i) মোট ঘরের সংখ্যা / House Property</h3>
                                     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
                                         <div>
                                             <label className="block text-sm font-medium text-gray-700 mb-1">Mud House (মাটির ঘর)</label>
@@ -1074,7 +1213,7 @@ export default function Create({ branches, samities, categories, availableApprov
                                 </div>
 
                                 <div>
-                                    <h3 className="text-lg font-semibold text-gray-900 mb-4">Livestock</h3>
+                                    <h3 className="text-lg font-semibold text-gray-900 mb-4">১৯. (ii) গবাদি পশু-পাখির তথ্য / Livestock</h3>
                                     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
                                         <div>
                                             <label className="block text-sm font-medium text-gray-700 mb-1">Cow/Buffalo (গরু/মহিষ)</label>
@@ -1133,7 +1272,7 @@ export default function Create({ branches, samities, categories, availableApprov
                                 </div>
 
                                 <div>
-                                    <h3 className="text-lg font-semibold text-gray-900 mb-4">Land Information</h3>
+                                    <h3 className="text-lg font-semibold text-gray-900 mb-4">১৯. (iii) জমির পরিমাণ ও মূল্য / Land Information</h3>
                                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                                         <div>
                                             <label className="block text-sm font-medium text-gray-700 mb-1">
@@ -1188,16 +1327,81 @@ export default function Create({ branches, samities, categories, availableApprov
                                         </div>
                                     </div>
                                 </div>
+
+                                {/* ১৯. (iv) অস্থায়ী সম্পদের তথ্য (ফরম অনুযায়ী ১৯-এর অংশ) */}
+                                <div className="space-y-4 pt-2">
+                                    <div className="flex items-center justify-between">
+                                        <h3 className="text-lg font-semibold text-gray-900">১৯. (iv) অস্থায়ী সম্পদের তথ্য</h3>
+                                        <button
+                                            type="button"
+                                            onClick={addOtherAsset}
+                                            className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+                                        >
+                                            <Plus className="w-4 h-4" />
+                                            Add Asset
+                                        </button>
+                                    </div>
+
+                                    {data.other_assets && data.other_assets.length > 0 ? (
+                                        <div className="space-y-4">
+                                            {data.other_assets.map((asset, index) => (
+                                                <div key={index} className="p-4 border border-gray-200 rounded-lg bg-gray-50">
+                                                    <div className="flex items-center justify-between mb-4">
+                                                        <h4 className="font-medium text-gray-900">Asset #{index + 1}</h4>
+                                                        <button
+                                                            type="button"
+                                                            onClick={() => removeOtherAsset(index)}
+                                                            className="p-1 text-red-600 hover:bg-red-50 rounded"
+                                                        >
+                                                            <Trash2 className="w-4 h-4" />
+                                                        </button>
+                                                    </div>
+                                                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                                                        <div>
+                                                            <label className="block text-sm font-medium text-gray-700 mb-1">অস্থায়ী সম্পদের বিবরণ</label>
+                                                            <input
+                                                                type="text"
+                                                                value={asset.asset_description}
+                                                                onChange={(e) => updateOtherAsset(index, 'asset_description', e.target.value)}
+                                                                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                                                            />
+                                                        </div>
+                                                        <div>
+                                                            <label className="block text-sm font-medium text-gray-700 mb-1">সংখ্যা/পরিমাণ</label>
+                                                            <input
+                                                                type="text"
+                                                                value={asset.quantity_amount}
+                                                                onChange={(e) => updateOtherAsset(index, 'quantity_amount', e.target.value)}
+                                                                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                                                            />
+                                                        </div>
+                                                        <div>
+                                                            <label className="block text-sm font-medium text-gray-700 mb-1">সম্ভাব্য মূল্য</label>
+                                                            <input
+                                                                type="number"
+                                                                value={asset.estimated_value}
+                                                                onChange={(e) => updateOtherAsset(index, 'estimated_value', Number(e.target.value))}
+                                                                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                                                            />
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                            ))}
+                                        </div>
+                                    ) : (
+                                        <div className="text-center py-8 text-gray-500">No assets added</div>
+                                    )}
+                                </div>
                             </div>
                         )}
 
-                        {/* Step 7: Financial Info */}
+                        {/* Step 7: Financial Info (২০) */}
                         {currentStep === 7 && (
                             <div className="space-y-4">
-                                <h3 className="text-lg font-semibold text-gray-900">Financial Information</h3>
+                                <h3 className="text-lg font-semibold text-gray-900">২০. পরিবারের মোট মাসিক আয়</h3>
                                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                                     <div>
-                                        <label className="block text-sm font-medium text-gray-700 mb-1">Monthly Income (মাসিক আয়)</label>
+                                        <label className="block text-sm font-medium text-gray-700 mb-1">মাসিক আয়</label>
                                         <input
                                             type="number"
                                             value={data.monthly_income}
@@ -1207,7 +1411,7 @@ export default function Create({ branches, samities, categories, availableApprov
                                     </div>
 
                                     <div>
-                                        <label className="block text-sm font-medium text-gray-700 mb-1">Monthly Expense (মাসিক ব্যয়)</label>
+                                        <label className="block text-sm font-medium text-gray-700 mb-1">মাসিক ব্যয়</label>
                                         <input
                                             type="number"
                                             value={data.monthly_expense}
@@ -1217,7 +1421,7 @@ export default function Create({ branches, samities, categories, availableApprov
                                     </div>
 
                                     <div>
-                                        <label className="block text-sm font-medium text-gray-700 mb-1">Monthly Savings (মাসিক সাশ্রয়)</label>
+                                        <label className="block text-sm font-medium text-gray-700 mb-1">সঞ্চয়</label>
                                         <input
                                             type="number"
                                             value={data.monthly_savings}
@@ -1229,301 +1433,8 @@ export default function Create({ branches, samities, categories, availableApprov
                             </div>
                         )}
 
-                        {/* Step 8: Family Members */}
+                        {/* Step 8: Additional (২১–২৩) + Approver Selection */}
                         {currentStep === 8 && (
-                            <div className="space-y-4">
-                                <div className="flex items-center justify-between">
-                                    <h3 className="text-lg font-semibold text-gray-900">Family Members</h3>
-                                    <button
-                                        type="button"
-                                        onClick={addFamilyMember}
-                                        className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
-                                    >
-                                        <Plus className="w-4 h-4" />
-                                        Add Member
-                                    </button>
-                                </div>
-
-                                {data.family_members && data.family_members.length > 0 ? (
-                                    <div className="space-y-4">
-                                        {data.family_members.map((member, index) => (
-                                            <div key={index} className="p-4 border border-gray-200 rounded-lg bg-gray-50">
-                                                <div className="flex items-center justify-between mb-4">
-                                                    <h4 className="font-medium text-gray-900">
-                                                        Member #{index + 1}
-                                                    </h4>
-                                                    <button
-                                                        type="button"
-                                                        onClick={() => removeFamilyMember(index)}
-                                                        className="p-1 text-red-600 hover:bg-red-50 rounded"
-                                                    >
-                                                        <Trash2 className="w-4 h-4" />
-                                                    </button>
-                                                </div>
-                                                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-                                                    <div>
-                                                        <label className="block text-sm font-medium text-gray-700 mb-1">
-                                                            Name (নাম)
-                                                        </label>
-                                                        <input
-                                                            type="text"
-                                                            value={member.member_name}
-                                                            onChange={(e) =>
-                                                                updateFamilyMember(index, 'member_name', e.target.value)
-                                                            }
-                                                            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
-                                                        />
-                                                    </div>
-                                                    <div>
-                                                        <label className="block text-sm font-medium text-gray-700 mb-1">
-                                                            Relationship (সম্পর্ক)
-                                                        </label>
-                                                        <input
-                                                            type="text"
-                                                            value={member.relation_with_head}
-                                                            onChange={(e) =>
-                                                                updateFamilyMember(
-                                                                    index,
-                                                                    'relation_with_head',
-                                                                    e.target.value
-                                                                )
-                                                            }
-                                                            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
-                                                        />
-                                                    </div>
-                                                    <div>
-                                                        <label className="block text-sm font-medium text-gray-700 mb-1">
-                                                            Gender (লিঙ্গ)
-                                                        </label>
-                                                        <select
-                                                            value={member.gender}
-                                                            onChange={(e) =>
-                                                                updateFamilyMember(index, 'gender', e.target.value)
-                                                            }
-                                                            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
-                                                        >
-                                                            <option value="male">Male</option>
-                                                            <option value="female">Female</option>
-                                                            <option value="other">Other</option>
-                                                        </select>
-                                                    </div>
-                                                    <div>
-                                                        <label className="block text-sm font-medium text-gray-700 mb-1">
-                                                            Age - Years (বয়স - বছর)
-                                                        </label>
-                                                        <input
-                                                            type="number"
-                                                            value={member.age_years}
-                                                            onChange={(e) =>
-                                                                updateFamilyMember(index, 'age_years', Number(e.target.value))
-                                                            }
-                                                            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
-                                                        />
-                                                    </div>
-                                                    <div>
-                                                        <label className="block text-sm font-medium text-gray-700 mb-1">
-                                                            Age - Months (বয়স - মাস)
-                                                        </label>
-                                                        <input
-                                                            type="number"
-                                                            value={member.age_months}
-                                                            onChange={(e) =>
-                                                                updateFamilyMember(
-                                                                    index,
-                                                                    'age_months',
-                                                                    Number(e.target.value)
-                                                                )
-                                                            }
-                                                            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
-                                                        />
-                                                    </div>
-                                                    <div>
-                                                        <label className="block text-sm font-medium text-gray-700 mb-1">
-                                                            Education Level (শিক্ষাগত যোগ্যতা)
-                                                        </label>
-                                                        <input
-                                                            type="text"
-                                                            value={member.education_level}
-                                                            onChange={(e) =>
-                                                                updateFamilyMember(
-                                                                    index,
-                                                                    'education_level',
-                                                                    e.target.value
-                                                                )
-                                                            }
-                                                            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
-                                                        />
-                                                    </div>
-                                                    <div>
-                                                        <label className="block text-sm font-medium text-gray-700 mb-1">
-                                                            Occupation (পেশা)
-                                                        </label>
-                                                        <input
-                                                            type="text"
-                                                            value={member.occupation}
-                                                            onChange={(e) =>
-                                                                updateFamilyMember(index, 'occupation', e.target.value)
-                                                            }
-                                                            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
-                                                        />
-                                                    </div>
-                                                    <div>
-                                                        <label className="block text-sm font-medium text-gray-700 mb-1">
-                                                            Monthly Income (মাসিক আয়)
-                                                        </label>
-                                                        <input
-                                                            type="number"
-                                                            value={member.monthly_income}
-                                                            onChange={(e) =>
-                                                                updateFamilyMember(
-                                                                    index,
-                                                                    'monthly_income',
-                                                                    Number(e.target.value)
-                                                                )
-                                                            }
-                                                            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
-                                                        />
-                                                    </div>
-                                                    <div className="md:col-span-2">
-                                                        <label className="block text-sm font-medium text-gray-700 mb-1">
-                                                            Business Details (ব্যবসা বিবরণ)
-                                                        </label>
-                                                        <textarea
-                                                            value={(member as any).business_details || ''}
-                                                            onChange={(e) =>
-                                                                updateFamilyMember(index, 'business_details' as any, e.target.value)
-                                                            }
-                                                            rows={2}
-                                                            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
-                                                        />
-                                                    </div>
-                                                    <div className="md:col-span-2">
-                                                        <label className="block text-sm font-medium text-gray-700 mb-1">
-                                                            Job Details (চাকরির বিবরণ)
-                                                        </label>
-                                                        <textarea
-                                                            value={(member as any).job_details || ''}
-                                                            onChange={(e) =>
-                                                                updateFamilyMember(index, 'job_details' as any, e.target.value)
-                                                            }
-                                                            rows={2}
-                                                            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
-                                                        />
-                                                    </div>
-                                                    <div className="md:col-span-4">
-                                                        <label className="block text-sm font-medium text-gray-700 mb-1">
-                                                            Other Income Details (অন্যান্য আয়ের বিবরণ)
-                                                        </label>
-                                                        <textarea
-                                                            value={(member as any).other_income_details || ''}
-                                                            onChange={(e) =>
-                                                                updateFamilyMember(index, 'other_income_details' as any, e.target.value)
-                                                            }
-                                                            rows={2}
-                                                            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
-                                                        />
-                                                    </div>
-                                                </div>
-                                            </div>
-                                        ))}
-                                    </div>
-                                ) : (
-                                    <div className="text-center py-8 text-gray-500">
-                                        No family members added
-                                    </div>
-                                )}
-                            </div>
-                        )}
-
-                        {/* Step 9: Other Assets */}
-                        {currentStep === 9 && (
-                            <div className="space-y-4">
-                                <div className="flex items-center justify-between">
-                                    <h3 className="text-lg font-semibold text-gray-900">Other Assets</h3>
-                                    <button
-                                        type="button"
-                                        onClick={addOtherAsset}
-                                        className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
-                                    >
-                                        <Plus className="w-4 h-4" />
-                                        Add Asset
-                                    </button>
-                                </div>
-
-                                {data.other_assets && data.other_assets.length > 0 ? (
-                                    <div className="space-y-4">
-                                        {data.other_assets.map((asset, index) => (
-                                            <div key={index} className="p-4 border border-gray-200 rounded-lg bg-gray-50">
-                                                <div className="flex items-center justify-between mb-4">
-                                                    <h4 className="font-medium text-gray-900">
-                                                        Asset #{index + 1}
-                                                    </h4>
-                                                    <button
-                                                        type="button"
-                                                        onClick={() => removeOtherAsset(index)}
-                                                        className="p-1 text-red-600 hover:bg-red-50 rounded"
-                                                    >
-                                                        <Trash2 className="w-4 h-4" />
-                                                    </button>
-                                                </div>
-                                                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                                                    <div>
-                                                        <label className="block text-sm font-medium text-gray-700 mb-1">
-                                                            Asset Description (সম্পদের বিবরণ)
-                                                        </label>
-                                                        <input
-                                                            type="text"
-                                                            value={asset.asset_description}
-                                                            onChange={(e) =>
-                                                                updateOtherAsset(index, 'asset_description', e.target.value)
-                                                            }
-                                                            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
-                                                        />
-                                                    </div>
-                                                    <div>
-                                                        <label className="block text-sm font-medium text-gray-700 mb-1">
-                                                            Quantity/Amount (পরিমাণ)
-                                                        </label>
-                                                        <input
-                                                            type="text"
-                                                            value={asset.quantity_amount}
-                                                            onChange={(e) =>
-                                                                updateOtherAsset(index, 'quantity_amount', e.target.value)
-                                                            }
-                                                            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
-                                                        />
-                                                    </div>
-                                                    <div>
-                                                        <label className="block text-sm font-medium text-gray-700 mb-1">
-                                                            Estimated Value (আনুমানিক মূল্য)
-                                                        </label>
-                                                        <input
-                                                            type="number"
-                                                            value={asset.estimated_value}
-                                                            onChange={(e) =>
-                                                                updateOtherAsset(
-                                                                    index,
-                                                                    'estimated_value',
-                                                                    Number(e.target.value)
-                                                                )
-                                                            }
-                                                            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
-                                                        />
-                                                    </div>
-                                                </div>
-                                            </div>
-                                        ))}
-                                    </div>
-                                ) : (
-                                    <div className="text-center py-8 text-gray-500">
-                                        No assets added
-                                    </div>
-                                )}
-                            </div>
-                        )}
-
-                        {/* Step 10: Approver Selection */}
-                        {currentStep === 10 && (
                             <ApproverSelectionStep
                                 approvers={availableApprovers}
                                 selectedApprovers={data.selected_approvers || []}

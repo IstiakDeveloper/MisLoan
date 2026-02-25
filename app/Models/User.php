@@ -226,4 +226,52 @@ class User extends Authenticatable
     {
         return $query->where('is_active', true);
     }
+
+    /**
+     * Scope: users with Team Vittik approver roles (ADMF, DMF, ED)
+     */
+    public function scopeApproverRole($query)
+    {
+        return $query->whereHas('role', function ($q) {
+            $q->whereIn('name', Role::approverRoleNames());
+        });
+    }
+
+    /**
+     * Scope: users who can access the given branch (by zone/area/branch assignment)
+     */
+    public function scopeCanAccessBranch($query, int $branchId)
+    {
+        $branch = Branch::with('area')->find($branchId);
+        if (! $branch) {
+            return $query->whereRaw('0 = 1');
+        }
+
+        $zoneId = $branch->area?->zone_id ?? 0;
+
+        return $query->where(function ($q) use ($branch, $zoneId) {
+            $q->where('has_all_access', true)
+                ->orWhere('branch_id', $branch->id)
+                ->orWhere('area_id', $branch->area_id)
+                ->orWhere('zone_id', $zoneId)
+                ->orWhereHas('branches', fn ($sq) => $sq->where('branches.id', $branch->id))
+                ->orWhereHas('areas', fn ($sq) => $sq->where('areas.id', $branch->area_id))
+                ->orWhereHas('zones', fn ($sq) => $sq->where('zones.id', $zoneId));
+        });
+    }
+
+    /**
+     * Get approver users (ADMF, DMF, ED) that a branch can select for Team Vittik Onumodon.
+     * Assign zone/area/branch when creating these users so they appear here.
+     */
+    public static function getApproversSelectableByBranch(int $branchId)
+    {
+        return self::query()
+            ->with('role')
+            ->active()
+            ->approverRole()
+            ->canAccessBranch($branchId)
+            ->orderBy('name')
+            ->get();
+    }
 }

@@ -1,0 +1,444 @@
+import { Head, Link, router } from '@inertiajs/react';
+import AdminLayout from '@/layouts/admin-layout';
+
+interface ItemRow {
+    serial_no: number;
+    member_name: string;
+    member_code?: string | null;
+    samity_number?: string | null;
+    savings_general?: number | null;
+    savings_other?: number | null;
+    savings_total?: number | null;
+    repaid_loan_amount?: number | null;
+    repaid_installment_no?: number | null;
+    other_institution_loan_amount?: number | null;
+    proposed_loan_amount?: number | null;
+    loan_term_years?: number | null;
+    loan_type?: string | null;
+    project_name?: string | null;
+    // Per-loan approval info (from review)
+    status?: string;
+    approved_amount?: number | null;
+    review_comments?: string | null;
+    approver_signature?: string | null;
+    decided_at?: string | null;
+}
+
+interface ApprovalRow {
+    id: number;
+    sheet_date: string | null;
+    status: string;
+    created_at?: string | null;
+    approver_name?: string | null;
+    items: ItemRow[];
+}
+
+interface PaginationLink {
+    url: string | null;
+    label: string;
+    active: boolean;
+}
+
+interface PaginatedApprovals {
+    data: ApprovalRow[];
+    current_page: number;
+    last_page: number;
+    links: PaginationLink[];
+}
+
+interface Props {
+    approvals: PaginatedApprovals;
+    filters: {
+        date_from: string;
+        date_to: string;
+        approver_id?: string;
+        status?: string;
+    };
+    draftCount: number;
+    approverOptions: { id: number; name: string; role_name: string }[];
+    branch: {
+        name: string;
+        code: string;
+        area_name?: string | null;
+        zone_name?: string | null;
+    };
+}
+
+const statusLabel: Record<string, string> = {
+    draft: 'Draft',
+    pending: 'Pending',
+    under_review: 'Under Review',
+    approved: 'Approved',
+    rejected: 'Rejected',
+};
+
+const statusClass: Record<string, string> = {
+    draft: 'bg-gray-100 text-gray-700 border-gray-200',
+    pending: 'bg-yellow-50 text-yellow-800 border-yellow-200',
+    under_review: 'bg-blue-50 text-blue-800 border-blue-200',
+    approved: 'bg-green-50 text-green-800 border-green-200',
+    rejected: 'bg-red-50 text-red-800 border-red-200',
+};
+
+const statusFilterOptions: { value: string; label: string }[] = [
+    { value: '', label: 'All Statuses' },
+    { value: 'pending', label: 'Pending' },
+    { value: 'under_review', label: 'Under Review' },
+    { value: 'approved', label: 'Approved' },
+    { value: 'rejected', label: 'Rejected' },
+];
+
+export default function TeamBasedApprovalIndex({ approvals, filters, draftCount, approverOptions, branch }: Props) {
+    const currentFrom = filters.date_from || '';
+    const currentTo = filters.date_to || '';
+    const currentApprover = filters.approver_id || '';
+    const currentStatus = filters.status || '';
+
+    const applyFilter = (from: string, to: string, approverId: string, status: string) => {
+        router.visit('/team-based-approvals', {
+            data: {
+                date_from: from,
+                date_to: to,
+                approver_id: approverId || undefined,
+                status: status || undefined,
+            },
+            preserveScroll: true,
+        });
+    };
+
+    const handleFromChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+        const newFrom = e.target.value;
+        applyFilter(newFrom, currentTo || newFrom, currentApprover, currentStatus);
+    };
+
+    const handleToChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+        const newTo = e.target.value;
+        applyFilter(currentFrom || newTo, newTo, currentApprover, currentStatus);
+    };
+
+    const handleApproverChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
+        const newApprover = e.target.value;
+        applyFilter(currentFrom, currentTo || currentFrom, newApprover, currentStatus);
+    };
+
+    const handleStatusChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
+        const newStatus = e.target.value;
+        applyFilter(currentFrom, currentTo || currentFrom, currentApprover, newStatus);
+    };
+
+    // Flatten all sheet items into a single list so that
+    // every loan row shows in index (ধলাও দেখাবে)
+    const flatRows: (ItemRow & {
+        sheet_id: number;
+        sheet_date: string | null;
+        approver_name?: string | null;
+        status: string;
+        created_at?: string | null;
+    })[] = [];
+
+    approvals.data.forEach((sheet) => {
+        sheet.items.forEach((item, idx) => {
+            flatRows.push({
+                ...item,
+                serial_no: item.serial_no || idx + 1,
+                sheet_id: sheet.id,
+                sheet_date: sheet.sheet_date,
+                approver_name: sheet.approver_name,
+                status: item.status || sheet.status,
+                created_at: sheet.created_at,
+            });
+        });
+    });
+
+    const handlePrintPage = () => {
+        if (typeof window !== 'undefined') {
+            window.print();
+        }
+    };
+
+    return (
+        <AdminLayout>
+            <Head title="Team Based Loan Approvals">
+                <style>{`@page { size: A4 landscape; margin: 10mm; }`}</style>
+            </Head>
+
+            <div className="max-w-8xl mx-auto py-6 px-4">
+                {/* Print header - organization + branch info */}
+                <div className="mb-4">
+                    <div className="flex items-center justify-between mb-2 print:flex">
+                        <div className="flex items-center gap-3">
+                            <img
+                                src="/logo.png"
+                                alt="Logo"
+                                className="w-12 h-12 object-contain"
+                                onError={(e) => {
+                                    (e.target as HTMLImageElement).style.display = 'none';
+                                }}
+                            />
+                            <div className="leading-tight">
+                                <h1 className="text-lg font-bold text-gray-900">মৌসুমী</h1>
+                                <p className="text-xs text-gray-700">উকিলপাড়া, নওগাঁ</p>
+                            </div>
+                        </div>
+                        <div className="text-right text-xs text-gray-700">
+                            <p>তারিখ: {currentTo || currentFrom || '-'}</p>
+                        </div>
+                    </div>
+                    <div className="text-center mb-3">
+                        <p className="text-sm font-semibold text-gray-900">
+                            মাসিক ঋণ বণ্টন ও অনুমোদন সংগ্রহ তথ্য
+                        </p>
+                    </div>
+                    <div className="grid grid-cols-2 gap-2 text-xs text-gray-700 mb-4">
+                        <div>
+                            <span className="font-semibold">শাখার নাম:</span>{' '}
+                            <span>
+                                {branch.name} ({branch.code})
+                            </span>
+                        </div>
+                        <div>
+                            <span className="font-semibold">জোনের নাম:</span>{' '}
+                            <span>{branch.zone_name || '-'}</span>
+                        </div>
+                        <div>
+                            <span className="font-semibold">অঞ্চলের নাম:</span>{' '}
+                            <span>{branch.area_name || '-'}</span>
+                        </div>
+                    </div>
+                </div>
+
+                {/* Filters - only visible on screen */}
+                <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3 mb-4 print:hidden">
+                    <div className="flex flex-wrap items-center gap-2">
+                        <div className="flex items-center gap-1">
+                            <span className="text-xs text-gray-600">From:</span>
+                            <input
+                                type="date"
+                                value={currentFrom}
+                                onChange={handleFromChange}
+                                className="border border-gray-300 rounded-md px-2 py-1 text-sm"
+                            />
+                        </div>
+                        <div className="flex items-center gap-1">
+                            <span className="text-xs text-gray-600">Approver:</span>
+                            <select
+                                value={currentApprover}
+                                onChange={handleApproverChange}
+                                className="border border-gray-300 rounded-md px-2 py-1 text-xs"
+                            >
+                                <option value="">All Approvers</option>
+                                {approverOptions.map((u) => (
+                                    <option key={u.id} value={u.id}>
+                                        {u.name} ({u.role_name})
+                                    </option>
+                                ))}
+                            </select>
+                        </div>
+                        <div className="flex items-center gap-1">
+                            <span className="text-xs text-gray-600">Status:</span>
+                            <select
+                                value={currentStatus}
+                                onChange={handleStatusChange}
+                                className="border border-gray-300 rounded-md px-2 py-1 text-xs"
+                            >
+                                {statusFilterOptions.map((s) => (
+                                    <option key={s.value} value={s.value}>
+                                        {s.label}
+                                    </option>
+                                ))}
+                            </select>
+                        </div>
+                        <div className="flex items-center gap-1">
+                            <span className="text-xs text-gray-600">To:</span>
+                            <input
+                                type="date"
+                                value={currentTo}
+                                onChange={handleToChange}
+                                className="border border-gray-300 rounded-md px-2 py-1 text-sm"
+                            />
+                        </div>
+                        <button
+                            type="button"
+                            onClick={handlePrintPage}
+                            className="px-3 py-1.5 rounded-md bg-gray-800 text-white text-xs font-medium hover:bg-black"
+                        >
+                            Print List
+                        </button>
+                        <Link
+                            href="/team-based-approvals/drafts"
+                            className="inline-flex items-center gap-1 px-3 py-1.5 rounded-md text-xs font-medium border border-amber-500 text-amber-700 hover:bg-amber-50"
+                        >
+                            <span>Draft List</span>
+                            {draftCount > 0 && (
+                                <span className="inline-flex items-center justify-center min-w-[18px] h-4 px-1 rounded-full bg-amber-600 text-white text-[10px] font-semibold">
+                                    {draftCount}
+                                </span>
+                            )}
+                        </Link>
+                        <Link
+                            href="/team-based-approvals/create"
+                            className="inline-flex items-center px-3 py-1.5 rounded-md bg-blue-600 text-white text-sm hover:bg-blue-700"
+                        >
+                            New Form
+                        </Link>
+                    </div>
+                </div>
+
+                <div className="bg-white shadow-sm border border-gray-200 rounded-lg overflow-hidden">
+                    <table className="min-w-full text-[11px] border-collapse">
+                        <thead className="bg-gray-50">
+                            <tr>
+                                <th className="px-2 py-2 border text-left" rowSpan={2}>
+                                    ক্রম
+                                </th>
+                                <th className="px-2 py-2 border text-left" rowSpan={2}>
+                                    তারিখ
+                                </th>
+                                <th className="px-2 py-2 border text-left" rowSpan={2}>
+                                    অনুমোদনকারী
+                                </th>
+                                <th className="px-2 py-2 border text-left" rowSpan={2}>
+                                    সদস্যের নাম
+                                </th>
+                                <th className="px-2 py-2 border text-left" rowSpan={2}>
+                                    সদস্য নম্বর
+                                </th>
+                                <th className="px-2 py-2 border text-left" rowSpan={2}>
+                                    সমিতি নম্বর
+                                </th>
+                                <th className="px-2 py-2 border text-center" colSpan={3}>
+                                    সঞ্চয়ের পরিমাণ
+                                </th>
+                                <th className="px-2 py-2 border text-right" rowSpan={2}>
+                                    পরিশোধিত ঋণ
+                                </th>
+                                <th className="px-2 py-2 border text-center" rowSpan={2}>
+                                    পরিশোধিত দফা
+                                </th>
+                                <th className="px-2 py-2 border text-right" rowSpan={2}>
+                                    অন্যান্য সংস্থায় ঋণ
+                                </th>
+                                <th className="px-2 py-2 border text-right" rowSpan={2}>
+                                    প্রস্তাবিত ঋণ
+                                </th>
+                                <th className="px-2 py-2 border text-center" rowSpan={2}>
+                                    মেয়াদ (বছর)
+                                </th>
+                                <th className="px-2 py-2 border text-left" rowSpan={2}>
+                                    ঋণের ধরন
+                                </th>
+                                <th className="px-2 py-2 border text-left" rowSpan={2}>
+                                    প্রকল্পের নাম
+                                </th>
+                                <th className="px-2 py-2 border text-right" rowSpan={2}>
+                                    অনুমোদিত ঋণ
+                                </th>
+                                <th className="px-2 py-2 border text-left" rowSpan={2}>
+                                    মন্তব্য
+                                </th>
+                                <th className="px-2 py-2 border text-left" rowSpan={2}>
+                                    অনুমোদনকারীর স্বাক্ষর / তারিখ
+                                </th>
+                                <th className="px-2 py-2 border text-left print:hidden" rowSpan={2}>
+                                    Status
+                                </th>
+                            </tr>
+                            <tr>
+                                <th className="px-2 py-1 border text-right">সাধারণ</th>
+                                <th className="px-2 py-1 border text-right">অন্যান্য</th>
+                                <th className="px-2 py-1 border text-right">মোট</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {flatRows.length === 0 && (
+                                <tr>
+                                    <td colSpan={18} className="px-4 py-6 text-center text-gray-500 text-sm">
+                                        কোনো Team Based তথ্য পাওয়া যায়নি।
+                                    </td>
+                                </tr>
+                            )}
+                            {flatRows.map((row, idx) => (
+                                <tr key={`${row.sheet_id}-${idx}`} className="hover:bg-gray-50">
+                                    <td className="px-2 py-1 border align-middle">{idx + 1}</td>
+                                    <td className="px-2 py-1 border align-middle">{row.sheet_date || '-'}</td>
+                                    <td className="px-2 py-1 border align-middle">{row.approver_name || '-'}</td>
+                                    <td className="px-2 py-1 border align-middle">{row.member_name}</td>
+                                    <td className="px-2 py-1 border align-middle">{row.member_code || ''}</td>
+                                    <td className="px-2 py-1 border align-middle">{row.samity_number || ''}</td>
+                                    <td className="px-2 py-1 border align-middle text-right">
+                                        {row.savings_general ?? ''}
+                                    </td>
+                                    <td className="px-2 py-1 border align-middle text-right">
+                                        {row.savings_other ?? ''}
+                                    </td>
+                                    <td className="px-2 py-1 border align-middle text-right">
+                                        {row.savings_total ?? ''}
+                                    </td>
+                                    <td className="px-2 py-1 border align-middle text-right">
+                                        {row.repaid_loan_amount ?? ''}
+                                    </td>
+                                    <td className="px-2 py-1 border align-middle text-center">
+                                        {row.repaid_installment_no ?? ''}
+                                    </td>
+                                    <td className="px-2 py-1 border align-middle text-right">
+                                        {row.other_institution_loan_amount ?? ''}
+                                    </td>
+                                    <td className="px-2 py-1 border align-middle text-right">
+                                        {row.proposed_loan_amount ?? ''}
+                                    </td>
+                                    <td className="px-2 py-1 border align-middle text-center">
+                                        {row.loan_term_years ?? ''}
+                                    </td>
+                                    <td className="px-2 py-1 border align-middle">{row.loan_type || ''}</td>
+                                    <td className="px-2 py-1 border align-middle">{row.project_name || ''}</td>
+                                    <td className="px-2 py-1 border align-middle text-right">
+                                        {row.approved_amount ?? ''}
+                                    </td>
+                                    <td className="px-2 py-1 border align-middle">
+                                        {row.review_comments || ''}
+                                    </td>
+                                    <td className="px-2 py-1 border align-middle">
+                                        {row.approver_signature && (
+                                            <div className="flex flex-col items-center gap-0.5">
+                                                <img
+                                                    src={
+                                                        row.approver_signature.startsWith('http')
+                                                            ? row.approver_signature
+                                                            : row.approver_signature.startsWith('/storage/')
+                                                            ? row.approver_signature
+                                                            : `/storage/${row.approver_signature}`
+                                                    }
+                                                    alt="Signature"
+                                                    className="h-12 object-contain"
+                                                    onError={(e) => {
+                                                        (e.target as HTMLImageElement).style.display = 'none';
+                                                    }}
+                                                />
+                                                <span className="text-[9px] text-gray-700 leading-tight">
+                                                    {row.decided_at || ''}
+                                                </span>
+                                            </div>
+                                        )}
+                                        {!row.approver_signature && (
+                                            <span className="text-[9px] text-gray-500">{row.decided_at || ''}</span>
+                                        )}
+                                    </td>
+                                    <td className="px-2 py-1 border align-middle print:hidden">
+                                        <span
+                                            className={`inline-flex items-center px-2 py-0.5 rounded-full border text-[10px] ${
+                                                statusClass[row.status] || statusClass.draft
+                                            }`}
+                                        >
+                                            {statusLabel[row.status] || row.status}
+                                        </span>
+                                    </td>
+                                </tr>
+                            ))}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </AdminLayout>
+    );
+}
+

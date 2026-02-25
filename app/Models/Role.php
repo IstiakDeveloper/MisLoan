@@ -37,4 +37,20 @@ class Role extends Model
     const AREA_MANAGER = 'area_manager';
     const BRANCH_MANAGER = 'branch_manager';
     const BRANCH_USER = 'branch_user';
+    const FIELD_OFFICER = 'field_officer';
+
+    /** Team Vittik Onumodon (Financial Approval) - branch can select these for approval */
+    const ADMF = 'admf';  // Assistant Director Microfinance
+    const DMF = 'dmf';    // Director Microfinance
+    const ED = 'ed';      // Executive Director
+
+    public static function approverRoleNames(): array
+    {
+        return [self::ADMF, self::DMF, self::ED];
+    }
+
+    public function isApproverRole(): bool
+    {
+        return in_array($this->name, self::approverRoleNames(), true);
+    }
 }

@@ -86,9 +86,13 @@ export default function UserModal({ isOpen, onClose, user, roles, zones, areas, 
 
     // Check role type
     const selectedRole = roles.find(r => r.id.toString() === data.role_id);
-    const isBranchLevel = selectedRole?.name === 'branch_manager' || selectedRole?.name === 'branch_user';
+    const isBranchLevel =
+        selectedRole?.name === 'branch_manager' ||
+        selectedRole?.name === 'branch_user' ||
+        selectedRole?.name === 'field_officer';
     const isZoneManager = selectedRole?.name === 'zone_manager';
     const isAreaManager = selectedRole?.name === 'area_manager';
+    const isApproverRole = selectedRole?.name === 'admf' || selectedRole?.name === 'dmf' || selectedRole?.name === 'ed';
 
     // Filter branches for search
     const filteredSearchBranches = branches.filter(b =>
@@ -429,6 +433,7 @@ export default function UserModal({ isOpen, onClose, user, roles, zones, areas, 
                             {isBranchLevel && <span className="ml-2 text-xs font-normal text-blue-600">(Single Branch)</span>}
                             {isZoneManager && <span className="ml-2 text-xs font-normal text-purple-600">(Auto from Zone)</span>}
                             {isAreaManager && <span className="ml-2 text-xs font-normal text-green-600">(Auto from Area)</span>}
+                            {isApproverRole && <span className="ml-2 text-xs font-normal text-amber-600">(Team Vittik – assign Zone/Area/Branch so branches can select)</span>}
                         </h4>
 
                         {isBranchLevel ? (
@@ -565,8 +570,13 @@ export default function UserModal({ isOpen, onClose, user, roles, zones, areas, 
                                 </p>
                             </div>
                         ) : (
-                            // Other roles: Custom multi-select with checkbox toggle
+                            // Other roles (Head Office, ADMF, DMF, ED, etc.): Custom multi-select with checkbox toggle
                             <div className="space-y-3">
+                                {isApproverRole && (
+                                    <div className="p-3 bg-amber-50 border border-amber-200 rounded-lg text-sm text-amber-800">
+                                        Assign zones, areas, or branches below. Branch users will only see and select this user for Team Vittik approval when their branch falls within the assigned scope.
+                                    </div>
+                                )}
                                 <label className="flex items-center gap-2 p-3 bg-gray-50 border border-gray-300 rounded-lg cursor-pointer hover:bg-gray-100 transition-colors">
                                     <input
                                         type="checkbox"

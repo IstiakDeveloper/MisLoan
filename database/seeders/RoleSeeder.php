@@ -92,6 +92,49 @@ class RoleSeeder extends Seeder
                     'receive_notifications',
                 ],
             ],
+            [
+                'name' => 'field_officer',
+                'display_name' => 'Field Officer',
+                'description' => 'Field Officer (survey / form fill for own branch)',
+                'permissions' => [
+                    // Shurute same basic submission rights; pore jodi chai draft-only/limited kora jabe
+                    'submit_loan_applications',
+                    'submit_member_admissions',
+                    'view_branch_applications',
+                    'receive_notifications',
+                ],
+            ],
+            // Team Vittik Onumodon (Financial Approval) - branch selects these for approval
+            [
+                'name' => 'admf',
+                'display_name' => 'Assistant Director Microfinance (ADMF)',
+                'description' => 'Assistant Director Microfinance - can approve/reject when selected by branch',
+                'permissions' => [
+                    'vittik_approve',
+                    'view_vittik_requests',
+                    'receive_notifications',
+                ],
+            ],
+            [
+                'name' => 'dmf',
+                'display_name' => 'Director Microfinance (DMF)',
+                'description' => 'Director Microfinance - can approve/reject when selected by branch',
+                'permissions' => [
+                    'vittik_approve',
+                    'view_vittik_requests',
+                    'receive_notifications',
+                ],
+            ],
+            [
+                'name' => 'ed',
+                'display_name' => 'Executive Director (ED)',
+                'description' => 'Executive Director - can approve/reject when selected by branch',
+                'permissions' => [
+                    'vittik_approve',
+                    'view_vittik_requests',
+                    'receive_notifications',
+                ],
+            ],
         ];
 
         foreach ($roles as $role) {
