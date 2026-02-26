@@ -1,4 +1,4 @@
-import { Head, useForm } from '@inertiajs/react';
+import { Head, Link, router, useForm } from '@inertiajs/react';
 import AdminLayout from '@/layouts/admin-layout';
 import { Plus, Trash2, Save } from 'lucide-react';
 import { useEffect } from 'react';
@@ -124,10 +124,20 @@ export default function TeamBasedApprovalForm({ branch, approverOptions, today, 
         if (isEdit && existingApproval) {
             put(`/team-based-approvals/${existingApproval.id}`, {
                 preserveScroll: true,
+                onSuccess: () => {
+                    router.visit('/team-based-approvals/drafts', {
+                        preserveScroll: true,
+                    });
+                },
             });
         } else {
             post('/team-based-approvals/save-draft', {
                 preserveScroll: true,
+                onSuccess: () => {
+                    router.visit('/team-based-approvals/drafts', {
+                        preserveScroll: true,
+                    });
+                },
             });
         }
     };
@@ -136,17 +146,25 @@ export default function TeamBasedApprovalForm({ branch, approverOptions, today, 
         <AdminLayout>
             <Head title="Team Based Loan Approval Form" />
 
-            <div className="max-w-6xl mx-auto py-6">
+            <div className="max-w-[1600px] mx-auto py-6">
                 <div className="bg-white shadow rounded-lg border border-gray-200">
                     <div className="px-6 py-4 border-b border-gray-200 flex items-center justify-between">
-                        <div>
-                            <h1 className="text-lg font-semibold text-gray-900">
-                                {isEdit ? 'Edit Team Based Draft' : 'Team Based Loan Disbursement & Approval Form'}
-                            </h1>
-                            <p className="text-xs text-gray-600 mt-1">
-                                শাখা: {branch.name} ({branch.code}){branch.area_name && `, এরিয়া: ${branch.area_name}`}
-                                {branch.zone_name && `, জোন: ${branch.zone_name}`}
-                            </p>
+                        <div className="flex items-center gap-3">
+                            <Link
+                                href="/team-based-approvals/drafts"
+                                className="inline-flex items-center px-3 py-1.5 rounded-md border border-gray-300 text-sm font-medium text-gray-700 hover:bg-gray-100"
+                            >
+                                Back
+                            </Link>
+                            <div>
+                                <h1 className="text-lg font-semibold text-gray-900">
+                                    {isEdit ? 'Edit Team Based Draft' : 'Team Based Loan Disbursement & Approval Form'}
+                                </h1>
+                                <p className="text-xs text-gray-600 mt-1">
+                                    শাখা: {branch.name} ({branch.code}){branch.area_name && `, এরিয়া: ${branch.area_name}`}
+                                    {branch.zone_name && `, জোন: ${branch.zone_name}`}
+                                </p>
+                            </div>
                         </div>
                         <div className="flex items-center gap-2">
                             <label className="text-sm text-gray-700">তারিখ:</label>

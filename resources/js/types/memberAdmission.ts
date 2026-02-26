@@ -105,13 +105,14 @@ export interface MemberAdmission {
 
     // Additional
     interviewer_name?: string;
+    employee_name?: string;
     other_loan_info?: string;
     collector_comment?: string;
     guardian_name?: string;
     applicant_signature?: string | null;
 
     // Status
-    status: 'draft' | 'submitted' | 'under_review' | 'approved' | 'rejected' | 'needs_revision' | 'pending_head_office';
+    status: 'draft' | 'submitted' | 'under_review' | 'ready_for_head_office' | 'approved' | 'rejected' | 'needs_revision' | 'pending_head_office';
     submitted_at?: string;
     reviewed_at?: string;
     rejection_reason?: string;
@@ -121,11 +122,17 @@ export interface MemberAdmission {
 
     created_at: string;
     updated_at: string;
+    printed_at?: string | null;
+
+    // Tracking: কার কাছে পেন্ডিং / কোন অবস্থায় (for branch user list)
+    tracking_state?: { label: string; pending_with_name: string | null };
 
     // Relations
     branch?: any;
     samity?: any;
     member_category?: any;
+    created_by?: number | null;
+    createdBy?: { id: number; name: string } | null;
     submitted_by?: any;
     reviewed_by?: any;
     family_members?: FamilyMember[];

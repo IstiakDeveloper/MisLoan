@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Models\MemberAdmission;
 use App\Models\Branch;
+use App\Models\Role;
 use App\Models\Samity;
 use App\Models\MemberCategory;
 use App\Services\ApprovalService;
@@ -20,7 +21,9 @@ class MemberAdmissionController extends Controller
             'branch.area.zone',
             'samity',
             'memberCategory',
-            'submittedBy'
+            'submittedBy',
+            'createdBy',
+            'approvals.user',
         ]);
 
         // Filter by branch (for branch users)
@@ -45,8 +48,8 @@ class MemberAdmissionController extends Controller
             'rejected' => (clone $statsQuery)->where('status', 'rejected')->count(),
         ];
 
-        // Filters
-        if ($request->has('status')) {
+        // Filters (সর্বমোট ক্লিক করলে status খালি পাঠালে কোনো স্ট্যাটাস ফিল্টার নাই)
+        if ($request->filled('status')) {
             $query->where('status', $request->status);
         }
 
@@ -54,7 +57,7 @@ class MemberAdmissionController extends Controller
             $query->where('branch_id', $request->branch_id);
         }
 
-        if ($request->has('search')) {
+        if ($request->filled('search')) {
             $search = $request->search;
             $query->where(function($q) use ($search) {
                 $q->where('application_no', 'like', "%{$search}%")
@@ -65,11 +68,24 @@ class MemberAdmissionController extends Controller
             });
         }
 
+        if ($request->filled('from_date')) {
+            $query->whereDate('created_at', '>=', $request->from_date);
+        }
+        if ($request->filled('to_date')) {
+            $query->whereDate('created_at', '<=', $request->to_date);
+        }
+
         $admissions = $query->orderBy('created_at', 'desc')->paginate(15);
+
+        $admissions = $admissions->through(function (MemberAdmission $admission) {
+            $arr = $admission->toArray();
+            $arr['tracking_state'] = $admission->getTrackingState();
+            return $arr;
+        });
 
         return Inertia::render('MemberAdmission/Index', [
             'admissions' => $admissions,
-            'filters' => $request->only(['status', 'branch_id', 'search']),
+            'filters' => $request->only(['status', 'branch_id', 'search', 'from_date', 'to_date']),
             'stats' => $stats,
         ]);
     }
@@ -92,13 +108,6 @@ class MemberAdmissionController extends Controller
             'categories' => $categories,
             'samities' => $samities,
             'availableApprovers' => $approvers,
-            'auth' => [
-                'user' => [
-                    'id' => auth()->user()->id,
-                    'branch_id' => auth()->user()->branch_id,
-                    'has_all_access' => auth()->user()->has_all_access,
-                ],
-            ],
         ]);
     }
 
@@ -293,6 +302,17 @@ class MemberAdmissionController extends Controller
                   $admissionData['guardian_photo'], $admissionData['guardian_nid_photo'],
                   $admissionData['applicant_signature']);
 
+            $admissionData['created_by'] = auth()->id();
+
+            $authUser = auth()->user();
+            $authUser->loadMissing('role');
+            if ($authUser->role?->name === Role::FIELD_OFFICER) {
+                $admissionData['interviewer_name'] = $admissionData['interviewer_name'] ?: $authUser->name;
+                $admissionData['employee_name'] = $admissionData['employee_name'] ?: $authUser->name;
+                $admissionData['surveyor_signature_path'] = $authUser->signature;
+                $admissionData['surveyor_pin'] = $authUser->pin;
+            }
+
             $admission = MemberAdmission::create($admissionData);
 
             // Save family members
@@ -341,20 +361,16 @@ class MemberAdmissionController extends Controller
             'branch.area.zone',
             'samity',
             'memberCategory',
+            'createdBy',
             'submittedBy',
             'reviewedBy',
             'familyMembers',
             'otherAssets',
-            'approvals.user' // Load approvals with user details for signatures
+            'approvals.user',
         ]);
 
         return Inertia::render('MemberAdmission/Show', [
             'admission' => $memberAdmission,
-            'auth' => [
-                'user' => [
-                    'has_all_access' => auth()->user()->has_all_access ?? false,
-                ],
-            ],
         ]);
     }
 
@@ -514,6 +530,15 @@ class MemberAdmissionController extends Controller
                   $updateData['guardian_photo'], $updateData['guardian_nid_photo'],
                   $updateData['applicant_signature']);
 
+            $authUser = auth()->user();
+            $authUser->loadMissing('role');
+            if ($authUser->role?->name === Role::FIELD_OFFICER) {
+                $updateData['interviewer_name'] = $updateData['interviewer_name'] ?: $authUser->name;
+                $updateData['employee_name'] = $updateData['employee_name'] ?: $authUser->name;
+                $updateData['surveyor_signature_path'] = $authUser->signature;
+                $updateData['surveyor_pin'] = $authUser->pin;
+            }
+
             $memberAdmission->update($updateData);
 
             // Update family members
@@ -573,18 +598,26 @@ class MemberAdmissionController extends Controller
 
     public function submit(MemberAdmission $memberAdmission)
     {
+        $user = auth()->user();
+        $user->loadMissing('role');
+        if ($user->role?->name === Role::FIELD_OFFICER) {
+            return back()->with('error', 'ফিল্ড অফিসার শুধু ফর্ম পূরণ করতে পারবেন, জমা দিতে পারবেন না।');
+        }
+
         if (!$memberAdmission->isDraft()) {
             return back()->with('error', 'Only draft admissions can be submitted!');
         }
 
-        DB::transaction(function () use ($memberAdmission) {
+        $authUser = auth()->user();
+        DB::transaction(function () use ($memberAdmission, $authUser) {
             $memberAdmission->update([
                 'status' => 'submitted',
-                'submitted_by' => auth()->id(),
+                'submitted_by' => $authUser->id,
                 'submitted_at' => now(),
+                'submitted_by_signature_path' => $authUser->signature,
+                'submitted_by_pin' => $authUser->pin,
             ]);
 
-            // Create approval workflow
             $approvalService = app(ApprovalService::class);
             $approvalService->createApprovalWorkflow($memberAdmission);
         });
@@ -598,6 +631,12 @@ class MemberAdmissionController extends Controller
      */
     public function resubmit(Request $request, MemberAdmission $memberAdmission)
     {
+        $user = auth()->user();
+        $user->loadMissing('role');
+        if ($user->role?->name === Role::FIELD_OFFICER) {
+            return back()->with('error', 'ফিল্ড অফিসার শুধু ফর্ম পূরণ করতে পারবেন, জমা দিতে পারবেন না।');
+        }
+
         $request->validate([
             'revision_note' => 'required|string|max:2000',
         ]);
@@ -624,17 +663,48 @@ class MemberAdmissionController extends Controller
             // Clear all issues
             $memberAdmission->issues()->delete();
 
-            // Update admission status to pending_head_office directly
+            $authUser = auth()->user();
             $memberAdmission->update([
                 'status' => 'pending_head_office',
                 'revision_comments' => $currentComments . $newComment,
-                'submitted_by' => auth()->id(),
+                'submitted_by' => $authUser->id,
                 'submitted_at' => now(),
+                'submitted_by_signature_path' => $authUser->signature,
+                'submitted_by_pin' => $authUser->pin,
             ]);
         });
 
         return redirect()->route('member-admissions.index')
             ->with('success', 'Member admission resubmitted successfully!');
+    }
+
+    /**
+     * After all approvals, branch user sends admission to Head Office.
+     * This replaces the previous auto-send from ApprovalService.
+     */
+    public function sendToHeadOffice(MemberAdmission $memberAdmission)
+    {
+        $user = auth()->user();
+        $user->loadMissing('role');
+        if ($user->role?->name === Role::FIELD_OFFICER) {
+            return back()->with('error', 'ফিল্ড অফিসার শুধু ফর্ম পূরণ করতে পারবেন, Head Office এ পাঠাতে পারবেন না।');
+        }
+
+        if ($memberAdmission->status !== 'ready_for_head_office') {
+            return back()->with('error', 'শুধু শাখা অনুমোদিত আবেদনই Head Office এ পাঠানো যাবে।');
+        }
+
+        $authUser = auth()->user();
+        $memberAdmission->update([
+            'status' => 'pending_head_office',
+            'submitted_by' => $authUser->id,
+            'submitted_at' => now(),
+            'submitted_by_signature_path' => $authUser->signature,
+            'submitted_by_pin' => $authUser->pin,
+        ]);
+
+        return redirect()->route('member-admissions.index')
+            ->with('success', 'আবেদনটি Head Office এ পাঠানো হয়েছে।');
     }
 
     /**

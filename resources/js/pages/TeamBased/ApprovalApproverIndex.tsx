@@ -218,6 +218,12 @@ export default function TeamBasedApprovalApproverIndex({ reviews, filters }: Pro
         }
     };
 
+    const formatDateOnly = (value?: string | null) => {
+        if (!value) return '';
+        // Expecting "YYYY-MM-DD HH:MM:SS" or ISO string; take only date part
+        return value.split('T')[0].split(' ')[0];
+    };
+
     const page = usePage<any>();
     const authUser = (page.props as any)?.auth?.user;
 
@@ -270,7 +276,7 @@ export default function TeamBasedApprovalApproverIndex({ reviews, filters }: Pro
                 `}</style>
             </Head>
 
-            <div className="max-w-8xl mx-auto py-6 px-4">
+            <div className="mx-auto py-6 px-4">
                 {/* Print header - organization + approver info */}
                 <div className="mb-4 approval-print-header">
                     <div className="flex items-center justify-between mb-2 print:flex print:mb-1">
@@ -428,17 +434,17 @@ export default function TeamBasedApprovalApproverIndex({ reviews, filters }: Pro
                                                                     : `/storage/${row.approver_signature}`
                                                             }
                                                             alt="Signature"
-                                                            className="h-4 max-h-4 object-contain print:!h-3 print:!max-h-3"
+                                                            className="h-8 max-h-8 object-contain print:!h-8 print:!max-h-8"
                                                             onError={(e) => {
                                                                 (e.target as HTMLImageElement).style.display = 'none';
                                                             }}
                                                         />
                                                         <span className="text-gray-700 leading-tight">
-                                                            {row.decided_at || ''}
+                                                            {formatDateOnly(row.decided_at)}
                                                         </span>
                                                     </div>
                                                 ) : (
-                                                    <span className="text-gray-500">{row.decided_at || ''}</span>
+                                                    <span className="text-gray-500">{formatDateOnly(row.decided_at)}</span>
                                                 )}
                                             </td>
                                             <td className="border text-center">

@@ -19,6 +19,7 @@ class MemberAdmissionApproval extends Model
         'comments',
         'approved_at',
         'approver_signature',
+        'approver_pin',
     ];
 
     protected $casts = [

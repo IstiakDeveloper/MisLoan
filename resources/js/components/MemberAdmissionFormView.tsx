@@ -10,12 +10,19 @@ interface Props {
         applicant_signature_path?: string | null;
         guardian_signature_path?: string | null;
         employee_name?: string | null;
+        surveyor_signature_path?: string | null;
+        surveyor_pin?: string | null;
+        submitted_by_signature_path?: string | null;
+        submitted_by_pin?: string | null;
+        createdBy?: { id: number; name: string } | null;
+        submittedBy?: { id: number; name: string } | null;
         approvals?: Array<{
             id: number;
             user: { id: number; name: string };
             level: string;
             status: string;
-            approver_signature?: string;
+            approver_signature?: string | null;
+            approver_pin?: string | null;
             approved_at?: string;
         }>;
     };
@@ -450,40 +457,86 @@ export default function MemberAdmissionFormView({ admission, printMode }: Props)
                         <FormRow label="অভিভাবকের নাম:" value={str(admission.guardian_name)} />
                     </div>
                 </div>
-                <div className="grid grid-cols-3 gap-4 pt-4 border-t border-gray-600">
-                    <div className="text-center">
-                        <p className="text-xs font-medium">অফিসারের স্বাক্ষর ও তারিখ</p>
-                        <div className="border-b border-dotted border-gray-700 min-h-[24px] mt-0.5" />
-                        <p className="text-xs mt-0.5">পিন:</p>
+                {/* জরিপকারী, জমাদানকারী ও অনুমোদনকারী – স্বাক্ষর ও পিন */}
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 pt-4 border-t border-gray-600">
+                    <div className="text-center border border-gray-300 rounded p-2">
+                        <p className="text-xs font-medium">জরিপকারীর স্বাক্ষর</p>
+                        <div className="min-h-[28px] mt-0.5 flex items-center justify-center">
+                            {(admission as any).surveyor_signature_path ? (
+                                <img src={`/storage/${(admission as any).surveyor_signature_path}`} alt="" className="h-8 object-contain" />
+                            ) : (
+                                <span className="border-b border-dotted border-gray-500 w-full min-h-[20px] block" />
+                            )}
+                        </div>
+                        <p className="text-xs mt-0.5">পিন: {(admission as any).surveyor_pin ?? '—'}</p>
+                        <p className="text-[10px] text-gray-600 mt-0.5">{(admission as any).createdBy?.name ?? admission.employee_name ?? admission.interviewer_name ?? '—'}</p>
                     </div>
-                    <div className="text-center">
-                        <p className="text-xs font-medium">শাখা ব্যবস্থাপকের স্বাক্ষর ও তারিখ</p>
-                        <div className="border-b border-dotted border-gray-700 min-h-[24px] mt-0.5" />
-                        <p className="text-xs mt-0.5">পিন:</p>
+                    <div className="text-center border border-gray-300 rounded p-2">
+                        <p className="text-xs font-medium">জমাদানকারীর স্বাক্ষর</p>
+                        <div className="min-h-[28px] mt-0.5 flex items-center justify-center">
+                            {(admission as any).submitted_by_signature_path ? (
+                                <img src={`/storage/${(admission as any).submitted_by_signature_path}`} alt="" className="h-8 object-contain" />
+                            ) : (
+                                <span className="border-b border-dotted border-gray-500 w-full min-h-[20px] block" />
+                            )}
+                        </div>
+                        <p className="text-xs mt-0.5">পিন: {(admission as any).submitted_by_pin ?? '—'}</p>
+                        <p className="text-[10px] text-gray-600 mt-0.5">{(admission as any).submittedBy?.name ?? '—'}</p>
                     </div>
-                    <div className="text-center">
-                        <p className="text-xs font-medium">হিসাবরক্ষকের স্বাক্ষর ও তারিখ</p>
-                        <div className="border-b border-dotted border-gray-700 min-h-[24px] mt-0.5" />
-                        <p className="text-xs mt-0.5">পিন:</p>
+                    <div className="text-center border border-gray-300 rounded p-2 sm:col-span-1">
+                        <p className="text-xs font-medium">অনুমোদনকারী (প্রথম)</p>
+                        {admission.approvals && admission.approvals.filter((a: any) => a.status === 'approved').length > 0 ? (
+                            (() => {
+                                const first = admission.approvals!.filter((a: any) => a.status === 'approved')[0];
+                                return (
+                                    <>
+                                        <div className="min-h-[28px] mt-0.5 flex items-center justify-center">
+                                            {first.approver_signature ? (
+                                                <img src={`/storage/${first.approver_signature}`} alt="" className="h-8 object-contain" />
+                                            ) : (
+                                                <span className="border-b border-dotted border-gray-500 w-full min-h-[20px] block" />
+                                            )}
+                                        </div>
+                                        <p className="text-xs mt-0.5">পিন: {first.approver_pin ?? '—'}</p>
+                                        <p className="text-[10px] text-gray-600 mt-0.5">{first.user?.name ?? '—'}</p>
+                                        <p className="text-[10px] text-gray-500">{first.approved_at ? formatDate(first.approved_at) : ''}</p>
+                                    </>
+                                );
+                            })()
+                        ) : (
+                            <>
+                                <span className="border-b border-dotted border-gray-500 w-full min-h-[20px] block mt-0.5" />
+                                <p className="text-xs mt-0.5">পিন: —</p>
+                            </>
+                        )}
                     </div>
                 </div>
-                {/* Show approval signatures if any */}
-                {admission.approvals && admission.approvals.filter((a: any) => a.status === 'approved' && a.approver_signature).length > 0 && (
-                    <div className="grid grid-cols-3 gap-4 pt-2">
-                        {admission.approvals
-                            .filter((a: any) => a.status === 'approved' && a.approver_signature)
-                            .slice(0, 3)
-                            .map((approval: any) => (
-                                <div key={approval.id} className="text-center">
-                                    <img
-                                        src={`/storage/${approval.approver_signature}`}
-                                        alt=""
-                                        className="h-10 mx-auto border border-gray-400"
-                                    />
-                                    <p className="text-xs font-medium mt-0.5">{approval.user?.name}</p>
-                                    <p className="text-[10px] text-gray-600">{approval.level} | {approval.approved_at ? formatDate(approval.approved_at) : ''}</p>
-                                </div>
-                            ))}
+                {/* সব অনুমোদনকারীর স্বাক্ষর ও পিন */}
+                {admission.approvals && admission.approvals.filter((a: any) => a.status === 'approved').length > 0 && (
+                    <div className="pt-3 border-t border-gray-400">
+                        <p className="text-xs font-medium text-gray-700 mb-2">অনুমোদনকারীগণ (স্বাক্ষর ও পিন)</p>
+                        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
+                            {admission.approvals
+                                .filter((a: any) => a.status === 'approved')
+                                .map((approval: any) => (
+                                    <div key={approval.id} className="text-center border border-gray-300 rounded p-2">
+                                        <div className="min-h-[32px] flex items-center justify-center">
+                                            {approval.approver_signature ? (
+                                                <img
+                                                    src={`/storage/${approval.approver_signature}`}
+                                                    alt=""
+                                                    className="h-10 object-contain mx-auto border border-gray-400"
+                                                />
+                                            ) : (
+                                                <span className="border-b border-dotted border-gray-500 w-full min-h-[24px] block" />
+                                            )}
+                                        </div>
+                                        <p className="text-xs font-medium mt-0.5">{approval.user?.name ?? '—'}</p>
+                                        <p className="text-[10px] text-gray-600">পিন: {approval.approver_pin ?? '—'}</p>
+                                        <p className="text-[10px] text-gray-500">{approval.level} | {approval.approved_at ? formatDate(approval.approved_at) : ''}</p>
+                                    </div>
+                                ))}
+                        </div>
                     </div>
                 )}
             </div>

@@ -154,13 +154,15 @@ export default function Index({ approvals, loanApprovals = [] }: Props) {
                     <p className="text-gray-600 mt-1">Review and approve member admission applications</p>
                 </div>
 
-                {approvals.length === 0 ? (
+                {approvals.length === 0 && loanApprovals.length === 0 ? (
                     <div className="bg-white rounded-lg shadow p-8 text-center">
                         <CheckCircle className="w-16 h-16 text-green-500 mx-auto mb-4" />
                         <h3 className="text-lg font-semibold text-gray-900 mb-2">No Pending Approvals</h3>
                         <p className="text-gray-600">You have no applications waiting for your approval.</p>
                     </div>
                 ) : (
+                    <>
+                    {approvals.length > 0 && (
                     <div className="bg-white rounded-lg shadow overflow-hidden">
                         <table className="min-w-full divide-y divide-gray-200">
                             <thead className="bg-gray-50">
@@ -283,7 +285,7 @@ export default function Index({ approvals, loanApprovals = [] }: Props) {
                             </tbody>
                         </table>
                     </div>
-                )}
+                    )}
 
                 {/* Loan Approvals Section */}
                 {loanApprovals.length > 0 && (
@@ -344,6 +346,8 @@ export default function Index({ approvals, loanApprovals = [] }: Props) {
                             </table>
                         </div>
                     </div>
+                )}
+                    </>
                 )}
             </div>
 

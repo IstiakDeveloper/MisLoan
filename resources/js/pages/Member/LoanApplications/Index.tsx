@@ -1,5 +1,5 @@
 import { useState, useMemo, useEffect } from 'react';
-import { Head, router, useForm } from '@inertiajs/react';
+import { Head, router, useForm, usePage } from '@inertiajs/react';
 import AdminLayout from '@/layouts/admin-layout';
 import {
     Plus, Calendar, FileText, CheckCircle, XCircle, Clock,
@@ -143,6 +143,8 @@ interface Member {
 }
 
 export default function Index({ categories, applications, stats, selectedDate, dateFrom, dateTo, statusFilter = '', flash }: Props) {
+    const pageAuth = usePage().props.auth as { user?: { role?: { name: string } } } | undefined;
+    const isFieldOfficer = pageAuth?.user?.role?.name === 'field_officer';
     const today = new Date().toISOString().split('T')[0];
     const [currentDateFrom, setCurrentDateFrom] = useState(dateFrom || selectedDate || today);
     const [currentDateTo, setCurrentDateTo] = useState(dateTo || selectedDate || today);
@@ -821,7 +823,7 @@ export default function Index({ categories, applications, stats, selectedDate, d
                                                             </button>
                                                         </>
                                                     )}
-                                                    {app.status === 'draft' && app.all_forms_complete && (
+                                                    {app.status === 'draft' && app.all_forms_complete && !isFieldOfficer && (
                                                         <button
                                                             onClick={() => router.get(`/member/loan-applications/${app.id}`)}
                                                             className="text-[10px] px-1.5 py-0.5 bg-green-100 text-green-700 rounded"

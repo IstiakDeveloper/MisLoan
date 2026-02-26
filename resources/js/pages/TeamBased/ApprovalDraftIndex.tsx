@@ -55,7 +55,7 @@ export default function TeamBasedApprovalDraftIndex({ approvals, filters }: Prop
         <AdminLayout>
             <Head title="Team Based Drafts" />
 
-            <div className="max-w-7xl mx-auto py-6 px-4">
+            <div className="mx-auto py-6 px-4">
                 <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3 mb-4">
                     <div>
                         <h1 className="text-lg font-semibold text-gray-900">Team Based Loan Approvals (Draft List)</h1>

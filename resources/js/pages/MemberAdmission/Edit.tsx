@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Head, router, useForm, Link } from '@inertiajs/react';
+import { Head, router, useForm, Link, usePage } from '@inertiajs/react';
 import AdminLayout from '@/layouts/admin-layout';
 import {
     Save,
@@ -23,6 +23,8 @@ interface Props {
 }
 
 export default function Edit({ admission, branches, samities, categories, availableApprovers }: Props) {
+    const pageAuth = usePage().props.auth as { user?: { role?: { name: string } } } | undefined;
+    const isFieldOfficer = pageAuth?.user?.role?.name === 'field_officer';
     const [currentStep, setCurrentStep] = useState(1);
     const [availableSamities, setAvailableSamities] = useState(samities);
     const [validationErrors, setValidationErrors] = useState<Record<string, string>>({});
@@ -1562,15 +1564,17 @@ export default function Edit({ admission, branches, samities, categories, availa
                                         <Save className="w-4 h-4" />
                                         Save Draft
                                     </button>
-                                    <button
-                                        type="button"
-                                        onClick={() => handleSubmit(false)}
-                                        disabled={processing}
-                                        className="flex items-center gap-2 px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 transition-colors"
-                                    >
-                                        <Send className="w-4 h-4" />
-                                        Update
-                                    </button>
+                                    {!isFieldOfficer && (
+                                        <button
+                                            type="button"
+                                            onClick={() => handleSubmit(false)}
+                                            disabled={processing}
+                                            className="flex items-center gap-2 px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 transition-colors"
+                                        >
+                                            <Send className="w-4 h-4" />
+                                            Update
+                                        </button>
+                                    )}
                                 </>
                             ) : (
                                 <button

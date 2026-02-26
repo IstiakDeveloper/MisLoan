@@ -14,6 +14,8 @@ import {
     FileText,
     X,
     Printer,
+    CheckCircle,
+    Circle,
 } from 'lucide-react';
 import { MemberAdmission } from '@/types/memberAdmission';
 
@@ -62,6 +64,7 @@ interface Props {
         date_from?: string;
         date_to?: string;
         had_issues?: string;
+        printed?: string;
     };
     stats: {
         total: number;
@@ -83,6 +86,8 @@ export default function AdmissionMembers({ admissions, filters, stats, zones, ar
     const [statusFilter, setStatusFilter] = useState(filters.status || '');
     const [showHistoryModal, setShowHistoryModal] = useState(false);
     const [selectedAdmission, setSelectedAdmission] = useState<MemberAdmission | null>(null);
+    const [showPrintModal, setShowPrintModal] = useState(false);
+    const [markAsPrintedCheckbox, setMarkAsPrintedCheckbox] = useState(false);
 
     // Date filters - default to current date
     const today = new Date().toISOString().split('T')[0];
@@ -94,6 +99,7 @@ export default function AdmissionMembers({ admissions, filters, stats, zones, ar
     const [selectedArea, setSelectedArea] = useState(filters.area_id?.toString() || '');
     const [selectedBranch, setSelectedBranch] = useState(filters.branch_id?.toString() || '');
     const [hadIssues, setHadIssues] = useState(filters.had_issues || '');
+    const [printedFilter, setPrintedFilter] = useState(filters.printed || '');
 
     // Filtered lists for cascading dropdowns
     const [filteredAreas, setFilteredAreas] = useState<Area[]>(areas);
@@ -184,6 +190,7 @@ export default function AdmissionMembers({ admissions, filters, stats, zones, ar
                 date_from: dateFrom,
                 date_to: dateTo,
                 had_issues: hadIssues,
+                printed: printedFilter,
             },
             { preserveState: true }
         );
@@ -202,6 +209,7 @@ export default function AdmissionMembers({ admissions, filters, stats, zones, ar
                 date_from: dateFrom,
                 date_to: dateTo,
                 had_issues: hadIssues,
+                printed: printedFilter,
             },
             { preserveState: true }
         );
@@ -216,24 +224,37 @@ export default function AdmissionMembers({ admissions, filters, stats, zones, ar
         setDateFrom(today);
         setDateTo(today);
         setHadIssues('');
+        setPrintedFilter('');
         router.get('/head-office/admission-members', { date_from: today, date_to: today }, { preserveState: true });
     };
 
-    const handlePrint = () => {
-        // Build query string from current filters
-        const params = new URLSearchParams();
-        if (searchQuery) params.append('search', searchQuery);
-        if (statusFilter) params.append('status', statusFilter);
-        if (selectedZone) params.append('zone_id', selectedZone);
-        if (selectedArea) params.append('area_id', selectedArea);
-        if (selectedBranch) params.append('branch_id', selectedBranch);
-        if (dateFrom) params.append('date_from', dateFrom);
-        if (dateTo) params.append('date_to', dateTo);
-        if (hadIssues) params.append('had_issues', hadIssues);
+    const getPrintParams = () => {
+        const params: Record<string, string> = {};
+        if (searchQuery) params.search = searchQuery;
+        if (statusFilter) params.status = statusFilter;
+        if (selectedZone) params.zone_id = selectedZone;
+        if (selectedArea) params.area_id = selectedArea;
+        if (selectedBranch) params.branch_id = selectedBranch;
+        if (dateFrom) params.date_from = dateFrom;
+        if (dateTo) params.date_to = dateTo;
+        if (hadIssues) params.had_issues = hadIssues;
+        if (printedFilter) params.printed = printedFilter;
+        return params;
+    };
 
-        // Open print page in new window
-        const printUrl = `/head-office/admission-members/print?${params.toString()}`;
+    const handlePrint = () => {
+        setShowPrintModal(true);
+    };
+
+    const handlePrintConfirm = () => {
+        const params = getPrintParams();
+        const printUrl = `/head-office/admission-members/print?${new URLSearchParams(params).toString()}`;
         window.open(printUrl, '_blank');
+        if (markAsPrintedCheckbox) {
+            router.post('/head-office/admission-members/mark-printed', params, { preserveScroll: true });
+        }
+        setShowPrintModal(false);
+        setMarkAsPrintedCheckbox(false);
     };
 
     const handleDelete = (id: number, applicationNo: string) => {
@@ -412,6 +433,15 @@ export default function AdmissionMembers({ admissions, filters, stats, zones, ar
                                 <option value="yes">Had Issues</option>
                                 <option value="no">Direct Approved</option>
                             </select>
+                            <select
+                                value={printedFilter}
+                                onChange={(e) => setPrintedFilter(e.target.value)}
+                                className="px-2 py-1.5 text-sm border border-gray-300 rounded focus:ring-1 focus:ring-blue-500 focus:border-blue-500"
+                            >
+                                <option value="">Print: All</option>
+                                <option value="yes">Printed</option>
+                                <option value="no">Not Printed</option>
+                            </select>
                             <button
                                 type="submit"
                                 className="px-3 py-1.5 text-sm bg-blue-600 text-white rounded hover:bg-blue-700 transition-colors flex items-center gap-1"
@@ -427,7 +457,7 @@ export default function AdmissionMembers({ admissions, filters, stats, zones, ar
                                 <Printer className="w-3 h-3" />
                                 Print
                             </button>
-                            {(searchQuery || statusFilter || selectedZone || selectedArea || selectedBranch || hadIssues || dateFrom !== today || dateTo !== today) && (
+                            {(searchQuery || statusFilter || selectedZone || selectedArea || selectedBranch || hadIssues || printedFilter || dateFrom !== today || dateTo !== today) && (
                                 <button
                                     type="button"
                                     onClick={clearFilters}
@@ -469,6 +499,9 @@ export default function AdmissionMembers({ admissions, filters, stats, zones, ar
                                         Status
                                     </th>
                                     <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                                        প্রিন্ট
+                                    </th>
+                                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                                         Submitted
                                     </th>
                                     <th className="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
@@ -479,7 +512,7 @@ export default function AdmissionMembers({ admissions, filters, stats, zones, ar
                             <tbody className="bg-white divide-y divide-gray-200">
                                 {admissions.data.length === 0 ? (
                                     <tr>
-                                        <td colSpan={9} className="px-4 py-8 text-center text-gray-500">
+                                        <td colSpan={10} className="px-4 py-8 text-center text-gray-500">
                                             No admissions found
                                         </td>
                                     </tr>
@@ -513,6 +546,19 @@ export default function AdmissionMembers({ admissions, filters, stats, zones, ar
                                             </td>
                                             <td className="px-4 py-3">
                                                 {getStatusBadge(admission.status)}
+                                            </td>
+                                            <td className="px-4 py-3 text-sm">
+                                                {admission.printed_at ? (
+                                                    <span className="inline-flex items-center gap-1 text-green-700" title="প্রিন্ট সম্পন্ন">
+                                                        <CheckCircle className="w-4 h-4 shrink-0" />
+                                                        প্রিন্ট সম্পন্ন
+                                                    </span>
+                                                ) : (
+                                                    <span className="inline-flex items-center gap-1 text-gray-500" title="অপ্রিন্টেড">
+                                                        <Circle className="w-4 h-4 shrink-0" />
+                                                        অপ্রিন্টেড
+                                                    </span>
+                                                )}
                                             </td>
                                             <td className="px-4 py-3 text-sm text-gray-600">
                                                 <div>
@@ -575,7 +621,7 @@ export default function AdmissionMembers({ admissions, filters, stats, zones, ar
                                 <Link
                                     href={`/head-office/admission-members?page=${admissions.current_page - 1}${
                                         searchQuery ? `&search=${searchQuery}` : ''
-                                    }${statusFilter ? `&status=${statusFilter}` : ''}`}
+                                    }${statusFilter ? `&status=${statusFilter}` : ''}${printedFilter ? `&printed=${printedFilter}` : ''}`}
                                     className={`px-3 py-1 rounded-lg border ${
                                         admissions.current_page === 1
                                             ? 'border-gray-200 text-gray-400 cursor-not-allowed'
@@ -591,7 +637,7 @@ export default function AdmissionMembers({ admissions, filters, stats, zones, ar
                                 <Link
                                     href={`/head-office/admission-members?page=${admissions.current_page + 1}${
                                         searchQuery ? `&search=${searchQuery}` : ''
-                                    }${statusFilter ? `&status=${statusFilter}` : ''}`}
+                                    }${statusFilter ? `&status=${statusFilter}` : ''}${printedFilter ? `&printed=${printedFilter}` : ''}`}
                                     className={`px-3 py-1 rounded-lg border ${
                                         admissions.current_page === admissions.last_page
                                             ? 'border-gray-200 text-gray-400 cursor-not-allowed'
@@ -605,6 +651,44 @@ export default function AdmissionMembers({ admissions, filters, stats, zones, ar
                         </div>
                     )}
                 </div>
+
+                {/* Print Modal */}
+                {showPrintModal && (
+                    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+                        <div className="bg-white rounded-lg shadow-xl max-w-md w-full p-6">
+                            <h3 className="text-lg font-semibold text-gray-900 mb-3">প্রিন্ট</h3>
+                            <p className="text-sm text-gray-600 mb-4">
+                                বর্তমান ফিল্টার অনুযায়ী তালিকা প্রিন্ট করা হবে। প্রিন্টের পর নিচের চেকবক্স চিহ্নিত করলে এই তালিকার সব রেকর্ড <strong>প্রিন্ট সম্পন্ন</strong> হিসেবে নোট থাকবে (লিস্টে প্রিন্ট সম্পন্ন/অপ্রিন্টেড দেখা যাবে)।
+                            </p>
+                            <label className="flex items-center gap-2 cursor-pointer mb-6">
+                                <input
+                                    type="checkbox"
+                                    checked={markAsPrintedCheckbox}
+                                    onChange={(e) => setMarkAsPrintedCheckbox(e.target.checked)}
+                                    className="w-4 h-4 rounded border-gray-300 text-green-600 focus:ring-green-500"
+                                />
+                                <span className="text-sm font-medium text-gray-700">প্রিন্ট সম্পন্ন চিহ্নিত করুন</span>
+                            </label>
+                            <div className="flex gap-3 justify-end">
+                                <button
+                                    type="button"
+                                    onClick={() => { setShowPrintModal(false); setMarkAsPrintedCheckbox(false); }}
+                                    className="px-4 py-2 text-sm font-medium text-gray-700 bg-gray-100 rounded-lg hover:bg-gray-200"
+                                >
+                                    বাতিল
+                                </button>
+                                <button
+                                    type="button"
+                                    onClick={handlePrintConfirm}
+                                    className="px-4 py-2 text-sm font-medium text-white bg-green-600 rounded-lg hover:bg-green-700 flex items-center gap-1"
+                                >
+                                    <Printer className="w-4 h-4" />
+                                    প্রিন্ট
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                )}
 
                 {/* History Modal */}
                 {showHistoryModal && selectedAdmission && (

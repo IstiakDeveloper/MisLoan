@@ -98,6 +98,8 @@ class MemberAdmission extends Model
         // Additional Information
         'interviewer_name',
         'employee_name',
+        'surveyor_signature_path',
+        'surveyor_pin',
         'other_loan_info',
         'collector_comment',
         'applicant_signature',
@@ -115,6 +117,8 @@ class MemberAdmission extends Model
         'status',
         'submitted_by',
         'submitted_at',
+        'submitted_by_signature_path',
+        'submitted_by_pin',
         'reviewed_by',
         'reviewed_at',
         'rejection_reason',
@@ -123,6 +127,8 @@ class MemberAdmission extends Model
         'revision_comments',
         'returned_at',
         'returned_by',
+        'printed_at',
+        'created_by',
     ];
 
     protected $casts = [
@@ -150,6 +156,7 @@ class MemberAdmission extends Model
         'submitted_at' => 'datetime',
         'reviewed_at' => 'datetime',
         'returned_at' => 'datetime',
+        'printed_at' => 'datetime',
         'selected_approvers' => 'array',
     ];
 
@@ -167,6 +174,11 @@ class MemberAdmission extends Model
     public function memberCategory(): BelongsTo
     {
         return $this->belongsTo(MemberCategory::class);
+    }
+
+    public function createdBy(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'created_by');
     }
 
     public function submittedBy(): BelongsTo
@@ -274,6 +286,83 @@ class MemberAdmission extends Model
     public function getFullNameBnAttribute(): string
     {
         return $this->applicant_name_bn;
+    }
+
+    /**
+     * Tracking state for branch user: কার কাছে পেন্ডিং / কোন অবস্থায় আছে
+     * Returns ['label' => '...', 'pending_with_name' => '...'] for display in list.
+     * Uses loaded approvals when present to avoid N+1.
+     */
+    public function getTrackingState(): array
+    {
+        $status = $this->status;
+
+        if (in_array($status, ['draft', 'rejected'], true)) {
+            return ['label' => '—', 'pending_with_name' => null];
+        }
+
+        if ($status === 'approved') {
+            return ['label' => 'অনুমোদিত', 'pending_with_name' => null];
+        }
+
+        if ($status === 'needs_revision') {
+            return ['label' => 'সংশোধনের জন্য ফেরত', 'pending_with_name' => null];
+        }
+
+        if ($status === 'pending_head_office') {
+            return ['label' => 'হেড অফিসে', 'pending_with_name' => null];
+        }
+        if ($status === 'ready_for_head_office') {
+            return ['label' => 'শাখা অনুমোদিত (Head Office অপেক্ষমান)', 'pending_with_name' => null];
+        }
+
+        $current = $this->getCurrentPendingApprovalForTracking();
+        if (!$current) {
+            if ($status === 'submitted') {
+                return ['label' => 'শাখা ব্যবস্থাপকের কাছে', 'pending_with_name' => null];
+            }
+            if ($status === 'under_review') {
+                return ['label' => 'পর্যালোচনায়', 'pending_with_name' => null];
+            }
+            return ['label' => '—', 'pending_with_name' => null];
+        }
+
+        $level = $current->level;
+        $name = $current->relationLoaded('user') ? ($current->user->name ?? null) : null;
+        if ($name === null && $current->user_id) {
+            $name = $current->user->name ?? null;
+        }
+        $levelLabels = [
+            'branch' => 'শাখা ব্যবস্থাপকের কাছে',
+            'area' => 'অঞ্চল ব্যবস্থাপকের কাছে',
+            'zone' => 'জোন ব্যবস্থাপকের কাছে',
+            'escalation' => 'অনুমোদকের কাছে',
+            'head_office' => 'হেড অফিসে',
+        ];
+        $label = $levelLabels[$level] ?? 'পর্যালোচনায়';
+        if ($name && $level !== 'branch') {
+            $label .= ' (' . $name . ')';
+        }
+
+        return ['label' => $label, 'pending_with_name' => $name];
+    }
+
+    /**
+     * Get current pending approval (for tracking). Uses loaded approvals when present.
+     */
+    protected function getCurrentPendingApprovalForTracking(): ?MemberAdmissionApproval
+    {
+        if ($this->relationLoaded('approvals')) {
+            $pending = $this->approvals->where('status', 'pending')->sortBy('sequence');
+            foreach ($pending as $p) {
+                $previous = $this->approvals->where('sequence', '<', $p->sequence);
+                if ($previous->every(fn ($a) => $a->status === 'approved')) {
+                    return $p;
+                }
+            }
+            return null;
+        }
+        return $this->currentPendingApproval();
     }
 
     // Boot method to generate application number

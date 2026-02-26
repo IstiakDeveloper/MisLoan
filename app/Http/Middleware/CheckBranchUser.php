@@ -21,7 +21,7 @@ class CheckBranchUser
 
         // Block SuperAdmin and Head Office users (check directly without loading role)
         if ($user->has_all_access) {
-            abort(403, 'Loan module is only accessible to Branch users.');
+            abort(403, 'This section is only accessible to Branch users.');
         }
 
         // Block users without any branch assignment (check directly without query)
@@ -32,7 +32,7 @@ class CheckBranchUser
                 ->exists();
 
             if (!$hasBranches) {
-                abort(403, 'You need a branch assignment to access loan module.');
+                abort(403, 'You need a branch assignment to access this section.');
             }
         }
 

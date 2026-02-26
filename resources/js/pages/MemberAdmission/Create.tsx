@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Head, router, useForm } from '@inertiajs/react';
+import { Head, router, useForm, usePage } from '@inertiajs/react';
 import AdminLayout from '@/layouts/admin-layout';
 import {
     Save,
@@ -18,10 +18,20 @@ interface Props {
     samities: Array<{ id: number; samity_name: string; branch_id: number }>;
     categories: Array<{ id: number; category_name: string }>;
     availableApprovers: Array<{ id: number; name: string; email: string; role: { name: string } }>;
-    auth: { user: { id: number; branch_id: number | null; has_all_access: boolean } };
 }
 
-export default function Create({ branches, samities, categories, availableApprovers, auth }: Props) {
+export default function Create({ branches, samities, categories, availableApprovers }: Props) {
+    const page = usePage<{
+        auth: {
+            user?: {
+                role?: { name: string };
+                has_all_access?: boolean;
+                branch?: { id: number };
+            };
+        };
+    }>();
+    const pageAuth = page.props.auth;
+    const isFieldOfficer = pageAuth.user?.role?.name === 'field_officer';
     const [currentStep, setCurrentStep] = useState(1);
     const [availableSamities, setAvailableSamities] = useState(samities);
     const [validationErrors, setValidationErrors] = useState<Record<string, string>>({});
@@ -32,8 +42,10 @@ export default function Create({ branches, samities, categories, availableApprov
     const [permanentDistricts, setPermanentDistricts] = useState<string[]>([]);
     const [permanentUpazilas, setPermanentUpazilas] = useState<string[]>([]);
 
-    // Auto-fill branch for branch users
-    const initialBranchId = !auth.user.has_all_access && auth.user.branch_id ? auth.user.branch_id : 0;
+    // Auto-fill branch for branch users (no all-access) using shared auth.user.branch.id
+    const hasAllAccess = !!pageAuth.user?.has_all_access;
+    const initialBranchId =
+        !hasAllAccess && pageAuth.user?.branch?.id ? pageAuth.user.branch.id : 0;
 
     const { data, setData, post, processing, errors } = useForm<MemberAdmissionFormData>({
         branch_id: initialBranchId,
@@ -401,7 +413,7 @@ export default function Create({ branches, samities, categories, availableApprov
                                             value={data.branch_id}
                                             onChange={handleBranchChange}
                                             className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 disabled:bg-gray-100 disabled:cursor-not-allowed"
-                                            disabled={!auth.user.has_all_access}
+                                            disabled={!hasAllAccess}
                                         >
                                             <option value={0}>Select Branch</option>
                                             {branches.map((branch) => (
@@ -1475,15 +1487,17 @@ export default function Create({ branches, samities, categories, availableApprov
                                         <Save className="w-4 h-4" />
                                         Save Draft
                                     </button>
-                                    <button
-                                        type="button"
-                                        onClick={() => handleSubmit(false)}
-                                        disabled={processing}
-                                        className="flex items-center gap-2 px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 transition-colors"
-                                    >
-                                        <Send className="w-4 h-4" />
-                                        Submit
-                                    </button>
+                                    {!isFieldOfficer && (
+                                        <button
+                                            type="button"
+                                            onClick={() => handleSubmit(false)}
+                                            disabled={processing}
+                                            className="flex items-center gap-2 px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 transition-colors"
+                                        >
+                                            <Send className="w-4 h-4" />
+                                            Submit
+                                        </button>
+                                    )}
                                 </>
                             ) : (
                                 <button

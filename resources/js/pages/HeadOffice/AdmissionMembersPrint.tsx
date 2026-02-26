@@ -1,18 +1,24 @@
 import { Head } from '@inertiajs/react';
 import { useEffect } from 'react';
 
+interface Zone {
+    id: number;
+    name: string;
+}
+
+interface Area {
+    id: number;
+    name: string;
+    zone?: Zone;
+}
+
 interface Branch {
     id: number;
     name: string;
-    branch_code: string;
-    area?: {
-        id: number;
-        name: string;
-        zone?: {
-            id: number;
-            name: string;
-        };
-    };
+    branch_code?: string;
+    code?: string;
+    area?: Area;
+    area_id?: number;
 }
 
 interface Samity {
@@ -30,7 +36,7 @@ interface User {
     name: string;
 }
 
-interface MemberAdmission {
+interface MemberAdmissionPrint {
     id: number;
     application_no: string;
     applicant_name_en: string;
@@ -47,7 +53,27 @@ interface MemberAdmission {
     samity?: Samity;
     member_category?: MemberCategory;
     submitted_by?: User;
+    createdBy?: User;
     revision_count: number;
+    employee_name?: string | null;
+    interviewer_name?: string | null;
+    mud_house_count?: number;
+    tin_house_count?: number;
+    brick_house_count?: number;
+    semi_brick_house_count?: number;
+    cultivable_land_amount?: number | null;
+    cultivable_land_value?: number | null;
+    non_cultivable_land_amount?: number | null;
+    non_cultivable_land_value?: number | null;
+    total_asset_value?: number | null;
+    cow_buffalo_count?: number;
+    goat_sheep_count?: number;
+    duck_chicken_count?: number;
+    job_details?: string | null;
+    business_details?: string | null;
+    monthly_income?: number | null;
+    guarantor_name?: string | null;
+    other_loan_info?: string | null;
 }
 
 interface Filters {
@@ -61,72 +87,42 @@ interface Filters {
     had_issues?: string;
 }
 
-interface Zone {
-    id: number;
-    name: string;
-}
-
-interface Area {
-    id: number;
-    name: string;
-}
-
 interface Props {
-    admissions: MemberAdmission[];
+    admissions: MemberAdmissionPrint[];
     filters: Filters;
     zones: Zone[];
     areas: Area[];
     branches: Branch[];
 }
 
+function num(n: number | null | undefined): string {
+    if (n == null || n === undefined) return '—';
+    return String(n);
+}
+
+function str(s: string | null | undefined): string {
+    if (s == null || s === undefined || s === '') return '—';
+    return String(s);
+}
+
 export default function AdmissionMembersPrint({ admissions, filters, zones, areas, branches }: Props) {
     useEffect(() => {
-        // Auto print when page loads, with small delay to ensure content is rendered
         const timer = setTimeout(() => {
             window.print();
         }, 500);
         return () => clearTimeout(timer);
     }, []);
 
-    const getStatusLabel = (status: string) => {
-        const labels: Record<string, string> = {
-            draft: 'Draft',
-            submitted: 'Submitted',
-            under_review: 'Under Review',
-            pending_head_office: 'Pending HO',
-            approved: 'Approved',
-            rejected: 'Rejected',
-            needs_revision: 'Needs Revision',
-        };
-        return labels[status] || status;
-    };
-
-    const formatDate = (dateString: string | null) => {
-        if (!dateString) return '-';
+    const formatDate = (dateString: string | null | undefined) => {
+        if (!dateString) return '—';
         try {
-            return new Date(dateString).toLocaleDateString('en-GB', {
+            return new Date(dateString).toLocaleDateString('bn-BD', {
                 day: '2-digit',
                 month: '2-digit',
                 year: 'numeric',
             });
         } catch {
-            return '-';
-        }
-    };
-
-    const formatDateTime = (dateString: string | null) => {
-        if (!dateString) return '-';
-        try {
-            return new Date(dateString).toLocaleDateString('en-GB', {
-                day: '2-digit',
-                month: '2-digit',
-                year: 'numeric',
-                hour: '2-digit',
-                minute: '2-digit',
-                hour12: true,
-            });
-        } catch {
-            return '-';
+            return '—';
         }
     };
 
@@ -134,292 +130,234 @@ export default function AdmissionMembersPrint({ admissions, filters, zones, area
     const selectedArea = filters.area_id ? areas.find(a => a.id === filters.area_id) : null;
     const selectedBranch = filters.branch_id ? branches.find(b => b.id === filters.branch_id) : null;
 
+    // হেডারে ফিল্টার অনুযায়ী দেখান: ব্রাঞ্চ সিলেক্ট থাকলে সেই শাখা (ও তার অঞ্চল/জোন), অন্যথায় অঞ্চল/জোন ফিল্টার বা "সকল"
+    const branchName = selectedBranch
+        ? selectedBranch.name
+        : selectedArea
+        ? 'সকল শাখা (অঞ্চল)'
+        : selectedZone
+        ? 'সকল শাখা (জোন)'
+        : 'সকল শাখা';
+    const areaName = selectedBranch?.area?.name ?? (selectedArea ? selectedArea.name : selectedZone ? 'সকল অঞ্চল' : 'সকল অঞ্চল');
+    const zoneName = selectedBranch?.area?.zone?.name ?? (selectedZone ? selectedZone.name : 'সকল জোন');
+    const reportDate = filters.date_from && filters.date_to
+        ? `${formatDate(filters.date_from)} - ${formatDate(filters.date_to)}`
+        : filters.date_to
+        ? formatDate(filters.date_to)
+        : formatDate(new Date().toISOString());
+
+    const statusLabels: Record<string, string> = {
+        draft: 'খসড়া',
+        submitted: 'জমা',
+        under_review: 'পর্যালোচনায়',
+        pending_head_office: 'হেড অফিসে',
+        approved: 'অনুমোদিত',
+        rejected: 'প্রত্যাখ্যাত',
+        needs_revision: 'সংশোধন',
+    };
+    const filterStatusLabel = filters.status ? statusLabels[filters.status] || filters.status : 'সব';
+
+    const officerName = (a: MemberAdmissionPrint) =>
+        str(a.createdBy?.name ?? a.employee_name ?? a.interviewer_name);
+    const memberName = (a: MemberAdmissionPrint) =>
+        str(a.applicant_name_bn || a.applicant_name_en);
+    const houseCount = (a: MemberAdmissionPrint) => {
+        const m = a.mud_house_count ?? 0;
+        const t = a.tin_house_count ?? 0;
+        const b = a.brick_house_count ?? 0;
+        const s = a.semi_brick_house_count ?? 0;
+        const total = m + t + b + s;
+        return total === 0 ? '—' : String(total);
+    };
+    const cultivable = (a: MemberAdmissionPrint) =>
+        a.cultivable_land_amount != null ? String(a.cultivable_land_amount) : '—';
+    const totalAsset = (a: MemberAdmissionPrint) =>
+        a.total_asset_value != null ? String(a.total_asset_value) : '—';
+    const occupation = (a: MemberAdmissionPrint) =>
+        str(a.job_details || a.business_details);
+
     return (
         <>
-            <Head title="Print Admission Members">
+            <Head title="সদস্য ভর্তি যাচাই ও অনুমোদন সংক্রান্ত তথ্য - প্রিন্ট">
                 <style>{`
-                    @page {
-                        size: A4 landscape;
-                        margin: 8mm 10mm;
-                    }
-
-                    * {
-                        margin: 0;
-                        padding: 0;
-                        box-sizing: border-box;
-                    }
-
-                    body {
-                        font-family: 'Arial', 'Calibri', sans-serif;
-                        font-size: 8px;
-                        line-height: 1.3;
-                        color: #000;
-                        print-color-adjust: exact;
-                        -webkit-print-color-adjust: exact;
-                    }
-
-                    .print-container {
-                        width: 100%;
-                        max-width: 100%;
-                    }
-
-                    /* Header Styles */
+                    @page { size: A4 landscape; margin: 8mm 10mm; }
+                    * { margin: 0; padding: 0; box-sizing: border-box; }
+                    .print-container { width: 100%; max-width: 100%; }
                     .print-header {
                         text-align: center;
                         margin-bottom: 6px;
-                        border-bottom: 2px solid #000;
                         padding-bottom: 4px;
                     }
-
-                    .print-header h1 {
-                        font-size: 13px;
-                        margin-bottom: 2px;
-                        font-weight: bold;
-                        text-transform: uppercase;
-                        letter-spacing: 0.5px;
-                    }
-
-                    .print-header h2 {
-                        font-size: 10px;
-                        margin-bottom: 2px;
-                        font-weight: 600;
-                    }
-
-                    .filter-info {
-                        font-size: 7.5px;
-                        margin: 2px 0;
-                        text-align: left;
+                    .print-header .org { font-size: 14px; font-weight: bold; margin-bottom: 2px; }
+                    .print-header .address { font-size: 10px; margin-bottom: 4px; }
+                    .print-header .title { font-size: 12px; font-weight: bold; margin-bottom: 6px; text-decoration: underline; }
+                    .print-header .meta {
                         display: flex;
                         flex-wrap: wrap;
+                        justify-content: space-between;
                         gap: 8px;
-                    }
-
-                    .filter-info > div {
-                        display: inline-block;
-                    }
-
-                    .filter-info strong {
-                        font-weight: bold;
-                    }
-
-                    /* Table Styles */
-                    table {
-                        width: 100%;
-                        border-collapse: collapse;
+                        font-size: 10px;
                         margin-top: 4px;
                     }
-
-                    thead {
-                        display: table-header-group;
+                    .header-filter-table {
+                        width: auto;
+                        margin: 6px auto 0;
+                        border: none;
+                        font-size: 9px;
                     }
-
-                    tbody {
-                        display: table-row-group;
+                    .header-filter-table td {
+                        border: none;
+                        padding: 1px 6px 1px 2px;
+                        vertical-align: middle;
                     }
-
+                    .header-filter-label {
+                        font-weight: 600;
+                        color: #374151;
+                        white-space: nowrap;
+                    }
+                    .header-filter-value {
+                        max-width: 120px;
+                        overflow: hidden;
+                        text-overflow: ellipsis;
+                        white-space: nowrap;
+                    }
+                    table { width: 100%; border-collapse: collapse; margin-top: 4px; }
+                    thead { display: table-header-group; }
+                    tbody { display: table-row-group; }
                     th, td {
                         border: 0.5px solid #333;
-                        padding: 2px 3px;
-                        text-align: left;
+                        padding: 4px 5px;
+                        text-align: center;
                         vertical-align: middle;
                         word-wrap: break-word;
                         overflow-wrap: break-word;
                     }
-
                     th {
-                        background-color: #d9d9d9;
+                        background-color: #e5e7eb;
                         font-weight: bold;
-                        font-size: 8px;
+                        font-size: 9px;
                         text-align: center;
-                        padding: 3px 2px;
                     }
-
-                    td {
-                        font-size: 7.5px;
-                    }
-
-                    /* Column widths - optimized for landscape A4 */
-                    th:nth-child(1), td:nth-child(1) { width: 6%; text-align: center; }  /* SL */
-                    th:nth-child(2), td:nth-child(2) { width: 9%; }                       /* App No */
-                    th:nth-child(3), td:nth-child(3) { width: 13%; }                      /* Name */
-                    th:nth-child(4), td:nth-child(4) { width: 9%; }                       /* Father Name */
-                    th:nth-child(5), td:nth-child(5) { width: 8%; text-align: center; }  /* NID */
-                    th:nth-child(6), td:nth-child(6) { width: 8%; text-align: center; }  /* Mobile */
-                    th:nth-child(7), td:nth-child(7) { width: 11%; }                      /* Branch */
-                    th:nth-child(8), td:nth-child(8) { width: 11%; }                      /* Samity */
-                    th:nth-child(9), td:nth-child(9) { width: 8%; text-align: center; }  /* Category */
-                    th:nth-child(10), td:nth-child(10) { width: 8%; text-align: center; } /* Status */
-                    th:nth-child(11), td:nth-child(11) { width: 9%; text-align: center; } /* Date */
-
-                    /* Status Colors */
-                    .status-approved {
-                        color: #059669;
-                        font-weight: bold;
-                    }
-
-                    .status-rejected {
-                        color: #dc2626;
-                        font-weight: bold;
-                    }
-
-                    .status-pending, .status-under_review, .status-pending_head_office {
-                        color: #d97706;
-                        font-weight: 600;
-                    }
-
-                    .status-draft {
-                        color: #6b7280;
-                    }
-
-                    .status-needs_revision {
-                        color: #ea580c;
-                        font-weight: 600;
-                    }
-
-                    /* Footer Styles */
-                    .print-footer {
-                        margin-top: 6px;
-                        padding-top: 3px;
-                        border-top: 1px solid #333;
-                        font-size: 6.5px;
-                        text-align: center;
-                        display: flex;
-                        justify-content: space-between;
-                    }
-
-                    .print-footer div {
-                        flex: 1;
-                    }
-
-                    /* Print-specific rules */
+                    td { font-size: 9px; text-align: center; }
+                    .col-sl { width: 3%; text-align: center; }
+                    .col-branch { width: 8%; }
+                    .col-officer { width: 9%; }
+                    .col-component { width: 8%; }
+                    .col-member { width: 10%; }
+                    .col-samity { width: 9%; }
+                    .col-mobile { width: 7%; text-align: center; }
+                    .col-num { width: 4%; text-align: center; }
+                    .col-asset { width: 6%; text-align: center; }
+                    .col-livestock { width: 4%; text-align: center; }
+                    .col-value { width: 6%; text-align: center; }
+                    .col-occupation { width: 8%; text-align: center; }
+                    .col-income { width: 5%; text-align: center; }
+                    .col-guarantor { width: 8%; text-align: center; }
+                    .col-loan { width: 8%; text-align: center; }
                     @media print {
-                        body {
-                            print-color-adjust: exact;
-                            -webkit-print-color-adjust: exact;
-                        }
-
-                        table {
-                            page-break-inside: auto;
-                        }
-
-                        tr {
-                            page-break-inside: avoid;
-                            page-break-after: auto;
-                        }
-
-                        thead {
-                            display: table-header-group;
-                        }
-
-                        tfoot {
-                            display: table-footer-group;
-                        }
+                        body { print-color-adjust: exact; }
+                        table { page-break-inside: auto; }
+                        tr { page-break-inside: avoid; }
+                        thead { display: table-header-group; }
                     }
                 `}</style>
             </Head>
 
             <div className="print-container">
-                {/* Header Section */}
+                {/* হেডার - ফিল্টার অনুযায়ী শাখা/অঞ্চল/জোন, ছোট কলামে */}
                 <div className="print-header">
-                    <h1>Member Admission Report</h1>
-                    <h2>Head Office - Complete List</h2>
-
-                    {/* Filter Information */}
-                    <div className="filter-info">
-                        {selectedZone && (
-                            <div>
-                                <strong>Zone:</strong> {selectedZone.name}
-                            </div>
-                        )}
-                        {selectedArea && (
-                            <div>
-                                <strong>Area:</strong> {selectedArea.name}
-                            </div>
-                        )}
-                        {selectedBranch && (
-                            <div>
-                                <strong>Branch:</strong> {selectedBranch.name} ({selectedBranch.branch_code})
-                            </div>
-                        )}
-                        {filters.status && (
-                            <div>
-                                <strong>Status:</strong> {getStatusLabel(filters.status)}
-                            </div>
-                        )}
-                        {filters.date_from && filters.date_to && (
-                            <div>
-                                <strong>Date Range:</strong> {formatDate(filters.date_from)} to {formatDate(filters.date_to)}
-                            </div>
-                        )}
-                        {filters.had_issues && (
-                            <div>
-                                <strong>Had Issues:</strong> {filters.had_issues === 'yes' ? 'Yes (With Revisions)' : 'No (Direct Approved)'}
-                            </div>
-                        )}
-                        {filters.search && (
-                            <div>
-                                <strong>Search:</strong> {filters.search}
-                            </div>
-                        )}
-                        <div>
-                            <strong>Total Records:</strong> {admissions.length}
-                        </div>
-                        <div>
-                            <strong>Printed:</strong> {formatDateTime(new Date().toISOString())}
-                        </div>
-                    </div>
+                    <p className="org">মৌসুমী</p>
+                    <p className="address">উকিলপাড়া, নওগাঁ।</p>
+                    <p className="title">সদস্য ভর্তি যাচাই ও অনুমোদন সংক্রান্ত তথ্য।</p>
+                    <table className="header-filter-table">
+                        <tbody>
+                            <tr>
+                                <td className="header-filter-label">শাখার নাম:</td>
+                                <td className="header-filter-value">{branchName}</td>
+                                <td className="header-filter-label">অঞ্চলের নাম:</td>
+                                <td className="header-filter-value">{areaName}</td>
+                                <td className="header-filter-label">জোনের নাম:</td>
+                                <td className="header-filter-value">{zoneName}</td>
+                                <td className="header-filter-label">তারিখ:</td>
+                                <td className="header-filter-value">{reportDate}</td>
+                            </tr>
+                        </tbody>
+                    </table>
                 </div>
 
-                {/* Main Table */}
+                {/* টেবিল - চিত্রের কলাম অনুযায়ী */}
                 <table>
                     <thead>
                         <tr>
-                            <th>SL</th>
-                            <th>App No</th>
-                            <th>Applicant Name</th>
-                            <th>Father Name</th>
-                            <th>NID</th>
-                            <th>Mobile</th>
-                            <th>Branch</th>
-                            <th>Samity</th>
-                            <th>Category</th>
-                            <th>Status</th>
-                            <th>Submitted Date</th>
+                            <th className="col-sl">ক্র. নং</th>
+                            <th className="col-branch">শাখার নাম</th>
+                            <th className="col-officer">অফিসারের নাম</th>
+                            <th className="col-component">কম্পোনেন্টের নাম</th>
+                            <th className="col-member">সদস্যের নাম</th>
+                            <th className="col-samity">সমিতির নাম</th>
+                            <th className="col-mobile">মোবাইল নম্বর</th>
+                            <th colSpan={3}>সম্পদের পরিমাণ</th>
+                            <th colSpan={3}>গবাদী পশুর সংখ্যা</th>
+                            <th className="col-value">স্থাবর ও অস্থাবর সম্পদের মূল্য</th>
+                            <th className="col-occupation">উপার্জনকারীর পেশা</th>
+                            <th className="col-income">পরিবারের মাসিক আয়</th>
+                            <th className="col-guarantor">জামিনদারের নাম</th>
+                            <th className="col-loan">অন্যান্য সংস্থায় গ্রহণকৃত ঋণের পরিমাণ</th>
+                        </tr>
+                        <tr>
+                            <th className="col-sl"></th>
+                            <th className="col-branch"></th>
+                            <th className="col-officer"></th>
+                            <th className="col-component"></th>
+                            <th className="col-member"></th>
+                            <th className="col-samity"></th>
+                            <th className="col-mobile"></th>
+                            <th className="col-num">বসতবাড়ি</th>
+                            <th className="col-num">আবাদী</th>
+                            <th className="col-num">মোট</th>
+                            <th className="col-num">গরু</th>
+                            <th className="col-num">ছাগল</th>
+                            <th className="col-num">হাঁস/মুরগী</th>
+                            <th className="col-value"></th>
+                            <th className="col-occupation"></th>
+                            <th className="col-income"></th>
+                            <th className="col-guarantor"></th>
+                            <th className="col-loan"></th>
                         </tr>
                     </thead>
                     <tbody>
-                        {admissions.map((admission, index) => (
-                            <tr key={admission.id}>
-                                <td>{index + 1}</td>
-                                <td>{admission.application_no}</td>
-                                <td>{admission.applicant_name_en}</td>
-                                <td>{admission.father_name_en || '-'}</td>
-                                <td>{admission.nid_number || '-'}</td>
-                                <td>{admission.mobile_number || '-'}</td>
-                                <td>{admission.branch.name}</td>
-                                <td>{admission.samity?.samity_name || '-'}</td>
-                                <td>{admission.member_category?.category_name || '-'}</td>
-                                <td className={`status-${admission.status.replace('_', '')}`}>
-                                    {getStatusLabel(admission.status)}
+                        {admissions.length === 0 ? (
+                            <tr>
+                                <td colSpan={18} style={{ textAlign: 'center', padding: '12px' }}>
+                                    কোনো রেকর্ড নেই
                                 </td>
-                                <td>{formatDate(admission.submitted_at || admission.created_at)}</td>
                             </tr>
-                        ))}
+                        ) : (
+                            admissions.map((admission, index) => (
+                                <tr key={admission.id}>
+                                    <td className="col-sl">{index + 1}</td>
+                                    <td className="col-branch">{admission.branch?.name ?? '—'}</td>
+                                    <td className="col-officer">{officerName(admission)}</td>
+                                    <td className="col-component">{str(admission.member_category?.category_name)}</td>
+                                    <td className="col-member">{memberName(admission)}</td>
+                                    <td className="col-samity">{str(admission.samity?.samity_name)}</td>
+                                    <td className="col-mobile">{str(admission.mobile_number)}</td>
+                                    <td className="col-num">{houseCount(admission)}</td>
+                                    <td className="col-num">{cultivable(admission)}</td>
+                                    <td className="col-num">{totalAsset(admission)}</td>
+                                    <td className="col-num">{num(admission.cow_buffalo_count)}</td>
+                                    <td className="col-num">{num(admission.goat_sheep_count)}</td>
+                                    <td className="col-num">{num(admission.duck_chicken_count)}</td>
+                                    <td className="col-value">{num(admission.total_asset_value)}</td>
+                                    <td className="col-occupation">{occupation(admission)}</td>
+                                    <td className="col-income">{num(admission.monthly_income)}</td>
+                                    <td className="col-guarantor">{str(admission.guarantor_name)}</td>
+                                    <td className="col-loan">{str(admission.other_loan_info)}</td>
+                                </tr>
+                            ))
+                        )}
                     </tbody>
                 </table>
-
-                {/* Footer Section */}
-                <div className="print-footer">
-                    <div style={{ textAlign: 'left' }}>
-                        Generated by: MIS Loan System
-                    </div>
-                    <div style={{ textAlign: 'center' }}>
-                        Page: ___ of ___
-                    </div>
-                    <div style={{ textAlign: 'right' }}>
-                        Date: {new Date().toLocaleDateString('en-GB')}
-                    </div>
-                </div>
             </div>
         </>
     );

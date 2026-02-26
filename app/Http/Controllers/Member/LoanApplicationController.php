@@ -8,6 +8,7 @@ use App\Models\LoanApplicationIssue;
 use App\Models\LoanCategory;
 use App\Models\LoanProduct;
 use App\Models\MemberAdmission;
+use App\Models\Role;
 use App\Models\SavingsProduct;
 use App\Models\Samity;
 use App\Services\ApprovalService;
@@ -725,6 +726,12 @@ class LoanApplicationController extends Controller
      */
     public function submit(Request $request, $id)
     {
+        $user = $request->user();
+        $user->loadMissing('role');
+        if ($user->role?->name === Role::FIELD_OFFICER) {
+            return back()->withErrors(['error' => 'ফিল্ড অফিসার শুধু ফর্ম পূরণ করতে পারবেন, জমা দিতে পারবেন না।']);
+        }
+
         $application = LoanApplication::with('loanProduct')->findOrFail($id);
 
         if (!$application->canBeEdited()) {

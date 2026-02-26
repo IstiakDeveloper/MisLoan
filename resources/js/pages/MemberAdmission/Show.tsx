@@ -1,5 +1,5 @@
 import React from 'react';
-import { Head, Link, router } from '@inertiajs/react';
+import { Head, Link, router, usePage } from '@inertiajs/react';
 import AdminLayout from '@/layouts/admin-layout';
 import { Badge } from '@/components/ui/badge';
 import { ArrowLeft, Edit, Send, Printer } from 'lucide-react';
@@ -16,7 +16,9 @@ interface Props {
 }
 
 export default function Show({ admission, auth }: Props) {
-    const isHeadOffice = auth?.user?.has_all_access ?? false;
+    const pageAuth = usePage().props.auth as { user?: { has_all_access?: boolean; role?: { name: string } } } | undefined;
+    const isHeadOffice = auth?.user?.has_all_access ?? pageAuth?.user?.has_all_access ?? false;
+    const isFieldOfficer = pageAuth?.user?.role?.name === 'field_officer';
     const backUrl = isHeadOffice ? '/head-office/admission-members' : '/member-admissions';
 
     const getStatusBadge = (status: string) => {
@@ -55,6 +57,12 @@ export default function Show({ admission, auth }: Props) {
     const handleSubmit = () => {
         if (confirm(`Are you sure you want to submit application ${admission.application_no}?`)) {
             router.patch(`/member-admissions/${admission.id}/submit`);
+        }
+    };
+
+    const handleSendToHeadOffice = () => {
+        if (confirm(`এই আবেদনটি Head Office এ পাঠাতে চান? (${admission.application_no})`)) {
+            router.patch(`/member-admissions/${admission.id}/send-to-head-office`);
         }
     };
 
@@ -104,13 +112,22 @@ export default function Show({ admission, auth }: Props) {
                                 সম্পাদনা
                             </Link>
                         )}
-                        {admission.status === 'draft' && (
+                        {admission.status === 'draft' && !isFieldOfficer && (
                             <button
                                 onClick={handleSubmit}
                                 className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
                             >
                                 <Send className="w-4 h-4" />
                                 জমা দিন
+                            </button>
+                        )}
+                        {admission.status === 'ready_for_head_office' && !isFieldOfficer && (
+                            <button
+                                onClick={handleSendToHeadOffice}
+                                className="flex items-center gap-2 px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700"
+                            >
+                                <Send className="w-4 h-4" />
+                                Head Office এ পাঠান
                             </button>
                         )}
                     </div>

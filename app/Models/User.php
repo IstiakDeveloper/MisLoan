@@ -28,6 +28,7 @@ class User extends Authenticatable
         'has_all_access',
         'profile_photo',
         'signature',
+        'pin',
         'is_active',
         'email_verified_at',
     ];

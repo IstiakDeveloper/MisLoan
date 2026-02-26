@@ -9,6 +9,7 @@ interface Props {
         name: string;
         email: string;
         phone?: string;
+        pin?: string;
         signature?: string;
     };
 }
@@ -18,6 +19,7 @@ export default function Edit({ user }: Props) {
         name: user.name || '',
         email: user.email || '',
         phone: user.phone || '',
+        pin: user.pin || '',
         signature: null as File | null,
         _method: 'POST',
     });
@@ -96,6 +98,23 @@ export default function Edit({ user }: Props) {
                                 {errors.phone && (
                                     <p className="text-sm text-red-600 mt-1">{errors.phone}</p>
                                 )}
+                            </div>
+
+                            <div>
+                                <label className="block text-sm font-medium text-gray-700 mb-2">
+                                    PIN (পিন নং)
+                                </label>
+                                <input
+                                    type="text"
+                                    value={data.pin}
+                                    onChange={(e) => setData('pin', e.target.value)}
+                                    placeholder="অনুমোদন/জমা নথিতে ব্যবহার হবে"
+                                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                                />
+                                {errors.pin && (
+                                    <p className="text-sm text-red-600 mt-1">{errors.pin}</p>
+                                )}
+                                <p className="text-xs text-gray-500 mt-1">সেভ/জমা/অ্যাপ্রুভ করার সময় প্রোফাইল থেকে অটো যুক্ত হবে</p>
                             </div>
                         </div>
 

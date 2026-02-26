@@ -1,5 +1,5 @@
-import React, { useState } from 'react';
-import { Head, router, Link } from '@inertiajs/react';
+import React, { useState, useEffect } from 'react';
+import { Head, router, Link, usePage } from '@inertiajs/react';
 import AdminLayout from '@/layouts/admin-layout';
 import { Badge } from '@/components/ui/badge';
 import {
@@ -9,11 +9,11 @@ import {
     Edit,
     Trash2,
     Send,
-    Filter,
     ChevronLeft,
     ChevronRight,
     RotateCcw,
     Ban,
+    Printer,
 } from 'lucide-react';
 import { MemberAdmission } from '@/types/memberAdmission';
 
@@ -30,6 +30,8 @@ interface Props {
     filters: {
         status?: string;
         search?: string;
+        from_date?: string;
+        to_date?: string;
     };
     stats: {
         total: number;
@@ -43,8 +45,16 @@ interface Props {
 }
 
 export default function Index({ admissions, filters, stats }: Props) {
+    const pageAuth = usePage().props.auth as { user?: { role?: { name: string } } } | undefined;
+    const isFieldOfficer = pageAuth?.user?.role?.name === 'field_officer';
     const [searchQuery, setSearchQuery] = useState(filters.search || '');
     const [statusFilter, setStatusFilter] = useState(filters.status || '');
+    const [fromDate, setFromDate] = useState(filters.from_date || '');
+    const [toDate, setToDate] = useState(filters.to_date || '');
+    useEffect(() => {
+        setFromDate(filters.from_date || '');
+        setToDate(filters.to_date || '');
+    }, [filters.from_date, filters.to_date]);
     const [showRejectModal, setShowRejectModal] = useState(false);
     const [showResubmitModal, setShowResubmitModal] = useState(false);
     const [selectedAdmission, setSelectedAdmission] = useState<MemberAdmission | null>(null);
@@ -53,64 +63,72 @@ export default function Index({ admissions, filters, stats }: Props) {
 
     const getStatusBadge = (status: string) => {
         const variants: Record<string, { variant: any; label: string }> = {
-            draft: { variant: 'secondary', label: 'Draft' },
-            submitted: { variant: 'default', label: 'Submitted' },
-            under_review: { variant: 'default', label: 'Under Review' },
-            pending_head_office: { variant: 'default', label: 'Pending HO' },
-            approved: { variant: 'default', label: 'Approved' },
-            rejected: { variant: 'destructive', label: 'Rejected' },
-            needs_revision: { variant: 'default', label: 'Needs Revision' },
+            draft: { variant: 'secondary', label: 'খসড়া' },
+            submitted: { variant: 'default', label: 'জমা' },
+            under_review: { variant: 'default', label: 'পর্যালোচনায়' },
+            ready_for_head_office: { variant: 'default', label: 'শাখা অনুমোদিত' },
+            pending_head_office: { variant: 'default', label: 'হেড অফিসে' },
+            approved: { variant: 'default', label: 'অনুমোদিত' },
+            rejected: { variant: 'destructive', label: 'প্রত্যাখ্যাত' },
+            needs_revision: { variant: 'default', label: 'সংশোধন' },
         };
 
         const config = variants[status] || { variant: 'secondary', label: status };
         return (
             <Badge
                 variant={config.variant}
-                className={
+                className={`text-[10px] px-1.5 py-0 ${
                     status === 'approved'
                         ? 'bg-green-500 hover:bg-green-600'
                         : status === 'under_review'
-                        ? 'bg-yellow-500 hover:bg-yellow-600'
+                        ? 'bg-amber-500 hover:bg-amber-600'
                         : status === 'submitted'
                         ? 'bg-blue-500 hover:bg-blue-600'
+                        : status === 'ready_for_head_office'
+                        ? 'bg-emerald-500 hover:bg-emerald-600'
                         : status === 'pending_head_office'
                         ? 'bg-purple-500 hover:bg-purple-600'
                         : status === 'needs_revision'
                         ? 'bg-orange-500 hover:bg-orange-600'
                         : ''
-                }
+                }`}
             >
                 {config.label}
             </Badge>
         );
     };
 
+    const buildParams = () => {
+        const params: Record<string, string> = {};
+        if (searchQuery) params.search = searchQuery;
+        if (statusFilter) params.status = statusFilter;
+        if (fromDate) params.from_date = fromDate;
+        if (toDate) params.to_date = toDate;
+        return params;
+    };
+
     const handleSearch = (e: React.FormEvent) => {
         e.preventDefault();
-        router.get(
-            '/member-admissions',
-            { search: searchQuery, status: statusFilter },
-            { preserveState: true }
-        );
+        router.get('/member-admissions', buildParams(), { preserveState: true });
     };
 
     const handleFilterChange = (status: string) => {
         setStatusFilter(status);
-        router.get(
-            '/member-admissions',
-            { search: searchQuery, status: status },
-            { preserveState: true }
-        );
+        router.get('/member-admissions', { ...buildParams(), status }, { preserveState: true });
+    };
+
+    const handlePrint = () => {
+        window.print();
     };
 
     const handleDelete = (id: number, applicationNo: string) => {
-        if (confirm(`Are you sure you want to delete application no ${applicationNo}?`)) {
+        if (confirm(`আবেদন নং ${applicationNo} মুছে ফেলতে চান?`)) {
             router.delete(`/member-admissions/${id}`);
         }
     };
 
     const handleSubmit = (id: number, applicationNo: string) => {
-        if (confirm(`Are you sure you want to submit application no ${applicationNo}?`)) {
+        if (confirm(`আবেদন নং ${applicationNo} জমা দিতে চান?`)) {
             router.patch(`/member-admissions/${id}/submit`);
         }
     };
@@ -123,7 +141,7 @@ export default function Index({ admissions, filters, stats }: Props) {
 
     const handleResubmit = () => {
         if (!selectedAdmission || !revisionNote.trim()) {
-            alert('Please provide revision details (কি পরিবর্তন করা হয়েছে তা লিখুন)');
+            alert('সংশোধনের বিবরণ লিখুন');
             return;
         }
         router.patch(`/member-admissions/${selectedAdmission.id}/resubmit`, {
@@ -145,7 +163,7 @@ export default function Index({ admissions, filters, stats }: Props) {
 
     const handleReject = () => {
         if (!selectedAdmission || !rejectionReason.trim()) {
-            alert('Please provide a rejection reason');
+            alert('প্রত্যাখ্যানের কারণ লিখুন');
             return;
         }
         router.patch(`/member-admissions/${selectedAdmission.id}/reject`, {
@@ -160,251 +178,196 @@ export default function Index({ admissions, filters, stats }: Props) {
     };
 
     const statCards = [
-        { label: 'Total', count: stats.total, color: 'bg-blue-500', filter: '' },
-        { label: 'Draft', count: stats.draft, color: 'bg-gray-500', filter: 'draft' },
-        { label: 'Submitted', count: stats.submitted, color: 'bg-blue-500', filter: 'submitted' },
-        {
-            label: 'Under Review',
-            count: stats.under_review,
-            color: 'bg-yellow-500',
-            filter: 'under_review',
-        },
-        {
-            label: 'Needs Revision',
-            count: stats.needs_revision || 0,
-            color: 'bg-orange-500',
-            filter: 'needs_revision',
-        },
-        { label: 'Approved', count: stats.approved, color: 'bg-green-500', filter: 'approved' },
-        { label: 'Rejected', count: stats.rejected, color: 'bg-red-500', filter: 'rejected' },
+        { label: 'সর্বমোট', count: stats.total, color: 'bg-slate-600', filter: '' },
+        { label: 'খসড়া', count: stats.draft, color: 'bg-gray-500', filter: 'draft' },
+        { label: 'জমা', count: stats.submitted, color: 'bg-blue-500', filter: 'submitted' },
+        { label: 'পর্যালোচনা', count: stats.under_review, color: 'bg-amber-500', filter: 'under_review' },
+        { label: 'সংশোধন', count: stats.needs_revision || 0, color: 'bg-orange-500', filter: 'needs_revision' },
+        { label: 'অনুমোদিত', count: stats.approved, color: 'bg-green-600', filter: 'approved' },
+        { label: 'প্রত্যাখ্যাত', count: stats.rejected, color: 'bg-red-500', filter: 'rejected' },
     ];
 
     return (
         <AdminLayout>
-            <Head title="Member Admission" />
+            <Head title="সদস্য ভর্তি" />
 
-            <div className="space-y-6">
-                {/* Header */}
-                <div className="flex items-center justify-between">
-                    <div>
-                        <h1 className="text-2xl font-bold text-gray-900">Member Admission</h1>
-                        <p className="text-sm text-gray-600 mt-1">
-                            Manage member admission applications
-                        </p>
-                    </div>
-                    <Link
-                        href="/member-admissions/create"
-                        className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors shadow-sm"
-                    >
-                        <Plus className="w-4 h-4" />
-                        New Application
-                    </Link>
-                </div>
-
-                {/* Stats Cards */}
-                <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
-                    {statCards.map((stat) => (
-                        <button
-                            key={stat.label}
-                            onClick={() => handleFilterChange(stat.filter)}
-                            className={`bg-white p-4 rounded-lg shadow-sm border transition-all hover:shadow-md ${
-                                statusFilter === stat.filter
-                                    ? 'border-blue-500 ring-2 ring-blue-200'
-                                    : 'border-gray-200'
-                            }`}
+            <div className="space-y-3 print:block">
+                {/* Header + Search row - compact - hidden when printing */}
+                <div className="flex flex-wrap items-center justify-between gap-2 print:hidden">
+                    <div className="flex items-center gap-3 flex-wrap">
+                        <h1 className="text-lg font-semibold text-gray-800">সদস্য ভর্তি আবেদন</h1>
+                        <Link
+                            href="/member-admissions/create"
+                            className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-blue-600 text-white text-sm rounded-md hover:bg-blue-700 transition-colors"
                         >
-                            <div className={`${stat.color} w-12 h-12 rounded-lg flex items-center justify-center mb-2`}>
-                                <span className="text-white text-xl font-bold">{stat.count}</span>
-                            </div>
-                            <p className="text-sm text-gray-600">{stat.label}</p>
-                        </button>
-                    ))}
-                </div>
-
-                {/* Search and Filter */}
-                <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-4">
-                    <form onSubmit={handleSearch} className="flex gap-4">
-                        <div className="flex-1 relative">
-                            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
+                            <Plus className="w-3.5 h-3.5" />
+                            নতুন আবেদন
+                        </Link>
+                    </div>
+                    <form onSubmit={handleSearch} className="flex items-center gap-2">
+                        <div className="relative">
+                            <Search className="absolute left-2 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
                             <input
                                 type="text"
                                 value={searchQuery}
                                 onChange={(e) => setSearchQuery(e.target.value)}
-                                placeholder="Search by Application No, Name, Mobile, NID..."
-                                className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                                placeholder="আবেদন নং, নাম, মোবাইল, এনআইডি..."
+                                className="w-56 sm:w-64 pl-8 pr-2.5 py-1.5 text-sm border border-gray-300 rounded-md focus:ring-1 focus:ring-blue-500 focus:border-blue-500"
                             />
                         </div>
-                        <button
-                            type="submit"
-                            className="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
-                        >
-                            Search
+                        <button type="submit" className="px-3 py-1.5 text-sm bg-slate-600 text-white rounded-md hover:bg-slate-700">
+                            খুঁজুন
                         </button>
-                        {(searchQuery || statusFilter) && (
+                        <input
+                            type="date"
+                            value={fromDate}
+                            onChange={(e) => setFromDate(e.target.value)}
+                            className="px-2 py-1.5 text-sm border border-gray-300 rounded-md"
+                            title="তারিখ থেকে"
+                        />
+                        <span className="text-gray-500 text-sm">–</span>
+                        <input
+                            type="date"
+                            value={toDate}
+                            onChange={(e) => setToDate(e.target.value)}
+                            className="px-2 py-1.5 text-sm border border-gray-300 rounded-md"
+                            title="তারিখ পর্যন্ত"
+                        />
+                        <button
+                            type="button"
+                            onClick={handlePrint}
+                            className="print:hidden inline-flex items-center gap-1.5 px-3 py-1.5 text-sm text-gray-700 border border-gray-300 rounded-md hover:bg-gray-50"
+                        >
+                            <Printer className="w-4 h-4" />
+                            প্রিন্ট
+                        </button>
+                        {(searchQuery || statusFilter || fromDate || toDate) && (
                             <button
                                 type="button"
                                 onClick={() => {
                                     setSearchQuery('');
                                     setStatusFilter('');
+                                    setFromDate('');
+                                    setToDate('');
                                     router.get('/member-admissions');
                                 }}
-                                className="px-6 py-2 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300 transition-colors"
+                                className="px-2.5 py-1.5 text-xs text-gray-600 border border-gray-300 rounded-md hover:bg-gray-50"
                             >
-                                Reset
+                                রিসেট
                             </button>
                         )}
                     </form>
                 </div>
 
-                {/* Table */}
-                <div className="bg-white rounded-lg shadow-sm border border-gray-200 overflow-hidden">
-                    <div className="overflow-x-auto">
-                        <table className="w-full">
-                            <thead className="bg-gray-50 border-b border-gray-200">
+                {/* Summary - compact inline chips - hidden when printing */}
+                <div className="flex flex-wrap items-center gap-1.5 print:hidden">
+                    {statCards.map((stat) => (
+                        <button
+                            key={stat.label}
+                            onClick={() => handleFilterChange(stat.filter)}
+                            className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-medium transition-colors ${
+                                statusFilter === stat.filter
+                                    ? 'ring-1 ring-offset-1 ring-slate-400 bg-slate-100 text-slate-800'
+                                    : 'bg-white border border-gray-200 text-gray-600 hover:bg-gray-50'
+                            }`}
+                        >
+                            <span className={`w-5 h-5 rounded flex items-center justify-center text-white text-xs font-semibold ${stat.color}`}>
+                                {stat.count}
+                            </span>
+                            {stat.label}
+                        </button>
+                    ))}
+                </div>
+
+                {/* Table - compact - print-friendly */}
+                <div className="bg-white rounded-md border border-gray-200 overflow-hidden member-admission-index-print print:overflow-visible">
+                    <div className="hidden print:block text-center py-2 border-b border-gray-300">
+                        <h2 className="text-lg font-semibold">সদস্য ভর্তি আবেদন তালিকা</h2>
+                        {(fromDate || toDate) && (
+                            <p className="text-sm text-gray-600">তারিখ: {fromDate || 'শুরু'} – {toDate || 'শেষ'}</p>
+                        )}
+                        <p className="text-xs text-gray-500">প্রিন্টের সময়: {new Date().toLocaleString('bn-BD')}</p>
+                    </div>
+                    <div className="member-admission-index-table-wrap overflow-x-auto print:overflow-visible">
+                        <table className="w-full text-sm member-admission-index-table">
+                            <thead className="bg-gray-50/80 border-b border-gray-200">
                                 <tr>
-                                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                                        Application No
-                                    </th>
-                                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                                        Applicant Name
-                                    </th>
-                                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                                        Mobile
-                                    </th>
-                                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                                        Branch
-                                    </th>
-                                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                                        Samity
-                                    </th>
-                                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                                        Category
-                                    </th>
-                                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                                        Status
-                                    </th>
-                                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                                        Date
-                                    </th>
-                                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                                        Actions
-                                    </th>
+                                    <th className="px-2.5 py-2 text-left text-xs font-medium text-gray-600">আবেদন নং</th>
+                                    <th className="px-2.5 py-2 text-left text-xs font-medium text-gray-600">আবেদনকারী</th>
+                                    <th className="px-2.5 py-2 text-left text-xs font-medium text-gray-600">মোবাইল</th>
+                                    <th className="px-2.5 py-2 text-left text-xs font-medium text-gray-600">শাখা</th>
+                                    <th className="px-2.5 py-2 text-left text-xs font-medium text-gray-600">সামিতি</th>
+                                    <th className="px-2.5 py-2 text-left text-xs font-medium text-gray-600">ক্যাটাগরি</th>
+                                    <th className="px-2.5 py-2 text-left text-xs font-medium text-gray-600">জরিপকারী</th>
+                                    <th className="px-2.5 py-2 text-left text-xs font-medium text-gray-600">স্ট্যাটাস</th>
+                                    <th className="px-2.5 py-2 text-left text-xs font-medium text-gray-600">কার কাছে পেন্ডিং</th>
+                                    <th className="px-2.5 py-2 text-left text-xs font-medium text-gray-600">তারিখ</th>
+                                    <th className="px-2.5 py-2 text-left text-xs font-medium text-gray-600 w-24 print:hidden">কর্ম</th>
                                 </tr>
                             </thead>
-                            <tbody className="divide-y divide-gray-200">
+                            <tbody className="divide-y divide-gray-100">
                                 {admissions.data.length === 0 ? (
                                     <tr>
-                                        <td colSpan={9} className="px-4 py-8 text-center text-gray-500">
-                                            No applications found
+                                        <td colSpan={11} className="px-2.5 py-6 text-center text-gray-500 text-sm">
+                                            কোনো আবেদন পাওয়া যায়নি
                                         </td>
                                     </tr>
                                 ) : (
                                     admissions.data.map((admission) => (
-                                        <tr
-                                            key={admission.id}
-                                            className="hover:bg-gray-50 transition-colors"
-                                        >
-                                            <td className="px-4 py-3 text-sm text-gray-900 font-medium">
-                                                {admission.application_no}
+                                        <tr key={admission.id} className="hover:bg-gray-50/50">
+                                            <td className="px-2.5 py-2 text-gray-900 font-medium whitespace-nowrap">{admission.application_no}</td>
+                                            <td className="px-2.5 py-2">
+                                                <div className="font-medium text-gray-900">{admission.applicant_name_bn || admission.applicant_name_en}</div>
+                                                {(admission.applicant_name_bn && admission.applicant_name_en) && (
+                                                    <div className="text-gray-500 text-xs">{admission.applicant_name_en}</div>
+                                                )}
                                             </td>
-                                            <td className="px-4 py-3">
-                                                <div className="text-sm">
-                                                    <div className="font-medium text-gray-900">
-                                                        {admission.applicant_name_en}
-                                                    </div>
-                                                    <div className="text-gray-500">
-                                                        {admission.applicant_name_bn}
-                                                    </div>
-                                                </div>
+                                            <td className="px-2.5 py-2 text-gray-700 whitespace-nowrap">{admission.mobile_number}</td>
+                                            <td className="px-2.5 py-2 text-gray-700">{admission.branch?.name || '–'}</td>
+                                            <td className="px-2.5 py-2 text-gray-700">{admission.samity?.samity_name || '–'}</td>
+                                            <td className="px-2.5 py-2 text-gray-700">{admission.member_category?.category_name || '–'}</td>
+                                            <td className="px-2.5 py-2 text-gray-600 text-xs">{admission.createdBy?.name ?? admission.interviewer_name ?? admission.employee_name ?? '–'}</td>
+                                            <td className="px-2.5 py-2">{getStatusBadge(admission.status)}</td>
+                                            <td className="px-2.5 py-2 text-gray-700 text-xs">
+                                                {admission.tracking_state?.label ?? '—'}
                                             </td>
-                                            <td className="px-4 py-3 text-sm text-gray-900">
-                                                {admission.mobile_number}
-                                            </td>
-                                            <td className="px-4 py-3 text-sm text-gray-900">
-                                                {admission.branch?.name || '-'}
-                                            </td>
-                                            <td className="px-4 py-3 text-sm text-gray-900">
-                                                {admission.samity?.samity_name || '-'}
-                                            </td>
-                                            <td className="px-4 py-3 text-sm text-gray-900">
-                                                {admission.member_category?.category_name || '-'}
-                                            </td>
-                                            <td className="px-4 py-3">
-                                                {getStatusBadge(admission.status)}
-                                            </td>
-                                            <td className="px-4 py-3 text-sm text-gray-600">
-                                                <div>
-                                                    {new Date(admission.created_at).toLocaleDateString(
-                                                        'bn-BD'
-                                                    )}
-                                                </div>
-                                            </td>
-                                            <td className="px-4 py-3">
-                                                <div className="flex items-center gap-2">
-                                                    <Link
-                                                        href={`/member-admissions/${admission.id}`}
-                                                        className="p-2 text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
-                                                        title="View"
-                                                    >
-                                                        <Eye className="w-4 h-4" />
-                                                    </Link>
-                                                    {(admission.status === 'draft' ||
-                                                        admission.status === 'rejected') && (
+                                            <td className="px-2.5 py-2 text-gray-600 whitespace-nowrap">{new Date(admission.created_at).toLocaleDateString('bn-BD')}</td>
+                                            <td className="px-2.5 py-2 print:hidden">
+                                                <div className="flex items-center gap-0.5">
+                                                    <Link href={`/member-admissions/${admission.id}`} className="p-1.5 text-blue-600 hover:bg-blue-50 rounded" title="দেখুন"><Eye className="w-3.5 h-3.5" /></Link>
+                                                    {(admission.status === 'draft' || admission.status === 'rejected') && (
                                                         <>
-                                                            <Link
-                                                                href={`/member-admissions/${admission.id}/edit`}
-                                                                className="p-2 text-yellow-600 hover:bg-yellow-50 rounded-lg transition-colors"
-                                                                title="Edit"
-                                                            >
-                                                                <Edit className="w-4 h-4" />
-                                                            </Link>
-                                                            {admission.status === 'draft' && (
-                                                                <button
-                                                                    onClick={() =>
-                                                                        handleSubmit(
-                                                                            admission.id,
-                                                                            admission.application_no
-                                                                        )
-                                                                    }
-                                                                    className="p-2 text-green-600 hover:bg-green-50 rounded-lg transition-colors"
-                                                                    title="Submit"
-                                                                >
-                                                                    <Send className="w-4 h-4" />
-                                                                </button>
+                                                            <Link href={`/member-admissions/${admission.id}/edit`} className="p-1.5 text-amber-600 hover:bg-amber-50 rounded" title="সম্পাদনা"><Edit className="w-3.5 h-3.5" /></Link>
+                                                            {admission.status === 'draft' && !isFieldOfficer && (
+                                                                <button onClick={() => handleSubmit(admission.id, admission.application_no)} className="p-1.5 text-green-600 hover:bg-green-50 rounded" title="জমা দিন"><Send className="w-3.5 h-3.5" /></button>
                                                             )}
                                                         </>
                                                     )}
                                                     {admission.status === 'needs_revision' && (
                                                         <>
-                                                            <button
-                                                                onClick={() => openResubmitModal(admission)}
-                                                                className="p-2 text-green-600 hover:bg-green-50 rounded-lg transition-colors"
-                                                                title="Resubmit to Head Office"
-                                                            >
-                                                                <RotateCcw className="w-4 h-4" />
-                                                            </button>
-                                                            <button
-                                                                onClick={() => openRejectModal(admission)}
-                                                                className="p-2 text-red-600 hover:bg-red-50 rounded-lg transition-colors"
-                                                                title="Reject Permanently"
-                                                            >
-                                                                <Ban className="w-4 h-4" />
-                                                            </button>
+                                                            {!isFieldOfficer && (
+                                                                <>
+                                                                    <button onClick={() => openResubmitModal(admission)} className="p-1.5 text-green-600 hover:bg-green-50 rounded" title="পুনরায় জমা"><RotateCcw className="w-3.5 h-3.5" /></button>
+                                                                    <button onClick={() => openRejectModal(admission)} className="p-1.5 text-red-600 hover:bg-red-50 rounded" title="প্রত্যাখ্যান"><Ban className="w-3.5 h-3.5" /></button>
+                                                                </>
+                                                            )}
                                                         </>
                                                     )}
-                                                    {admission.status === 'draft' && (
+                                                    {admission.status === 'ready_for_head_office' && !isFieldOfficer && (
                                                         <button
-                                                            onClick={() =>
-                                                                handleDelete(
-                                                                    admission.id,
-                                                                    admission.application_no
-                                                                )
-                                                            }
-                                                            className="p-2 text-red-600 hover:bg-red-50 rounded-lg transition-colors"
-                                                            title="Delete"
+                                                            onClick={() => {
+                                                                if (confirm(`এই আবেদনটি Head Office এ পাঠাতে চান? (${admission.application_no})`)) {
+                                                                    router.patch(`/member-admissions/${admission.id}/send-to-head-office`);
+                                                                }
+                                                            }}
+                                                            className="p-1.5 text-purple-600 hover:bg-purple-50 rounded"
+                                                            title="Head Office এ পাঠান"
                                                         >
-                                                            <Trash2 className="w-4 h-4" />
+                                                            <Send className="w-3.5 h-3.5" />
                                                         </button>
+                                                    )}
+                                                    {admission.status === 'draft' && (
+                                                        <button onClick={() => handleDelete(admission.id, admission.application_no)} className="p-1.5 text-red-600 hover:bg-red-50 rounded" title="মুছুন"><Trash2 className="w-3.5 h-3.5" /></button>
                                                     )}
                                                 </div>
                                             </td>
@@ -415,95 +378,77 @@ export default function Index({ admissions, filters, stats }: Props) {
                         </table>
                     </div>
 
-                    {/* Pagination */}
+                    {/* Pagination - compact - hidden when printing */}
                     {admissions.last_page > 1 && (
-                        <div className="px-4 py-3 border-t border-gray-200 bg-gray-50 flex items-center justify-between">
-                            <div className="text-sm text-gray-700">
-                                Showing <span className="font-medium">{admissions.from}</span> to{' '}
-                                <span className="font-medium">{admissions.to}</span> of{' '}
-                                <span className="font-medium">{admissions.total}</span> results
-                            </div>
-                            <div className="flex gap-2">
+                        <div className="px-2.5 py-2 border-t border-gray-100 bg-gray-50/50 flex items-center justify-between text-xs text-gray-600 print:hidden">
+                            <span>{admissions.from}–{admissions.to} / {admissions.total}</span>
+                            <div className="flex items-center gap-1">
                                 <Link
-                                    href={`/member-admissions?page=${admissions.current_page - 1}${
-                                        searchQuery ? `&search=${searchQuery}` : ''
-                                    }${statusFilter ? `&status=${statusFilter}` : ''}`}
-                                    className={`px-3 py-1 rounded-lg border ${
-                                        admissions.current_page === 1
-                                            ? 'border-gray-200 text-gray-400 cursor-not-allowed'
-                                            : 'border-gray-300 text-gray-700 hover:bg-gray-100'
-                                    }`}
+                                    href={`/member-admissions?page=${admissions.current_page - 1}${searchQuery ? `&search=${searchQuery}` : ''}${statusFilter ? `&status=${statusFilter}` : ''}${fromDate ? `&from_date=${fromDate}` : ''}${toDate ? `&to_date=${toDate}` : ''}`}
+                                    className={`p-1.5 rounded border ${admissions.current_page === 1 ? 'border-gray-200 text-gray-400 cursor-not-allowed' : 'border-gray-300 hover:bg-gray-100'}`}
                                     preserveState
                                 >
-                                    <ChevronLeft className="w-5 h-5" />
+                                    <ChevronLeft className="w-4 h-4" />
                                 </Link>
-                                <span className="px-4 py-1 text-sm text-gray-700">
-                                    Page {admissions.current_page} of {admissions.last_page}
-                                </span>
+                                <span className="px-2">পৃ. {admissions.current_page} / {admissions.last_page}</span>
                                 <Link
-                                    href={`/member-admissions?page=${admissions.current_page + 1}${
-                                        searchQuery ? `&search=${searchQuery}` : ''
-                                    }${statusFilter ? `&status=${statusFilter}` : ''}`}
-                                    className={`px-3 py-1 rounded-lg border ${
-                                        admissions.current_page === admissions.last_page
-                                            ? 'border-gray-200 text-gray-400 cursor-not-allowed'
-                                            : 'border-gray-300 text-gray-700 hover:bg-gray-100'
-                                    }`}
+                                    href={`/member-admissions?page=${admissions.current_page + 1}${searchQuery ? `&search=${searchQuery}` : ''}${statusFilter ? `&status=${statusFilter}` : ''}${fromDate ? `&from_date=${fromDate}` : ''}${toDate ? `&to_date=${toDate}` : ''}`}
+                                    className={`p-1.5 rounded border ${admissions.current_page === admissions.last_page ? 'border-gray-200 text-gray-400 cursor-not-allowed' : 'border-gray-300 hover:bg-gray-100'}`}
                                     preserveState
                                 >
-                                    <ChevronRight className="w-5 h-5" />
+                                    <ChevronRight className="w-4 h-4" />
                                 </Link>
                             </div>
                         </div>
                     )}
                 </div>
 
+                <style>{`
+                    @media print {
+                        html, body { overflow: hidden !important; height: auto !important; }
+                        body * { visibility: hidden; }
+                        .member-admission-index-print,
+                        .member-admission-index-print * { visibility: visible; }
+                        .member-admission-index-print {
+                            position: absolute !important;
+                            left: 0 !important;
+                            top: 0 !important;
+                            width: 100% !important;
+                            overflow: visible !important;
+                            max-height: none !important;
+                        }
+                        .member-admission-index-table-wrap { overflow: visible !important; }
+                        .member-admission-index-table { font-size: 10pt; }
+                        .member-admission-index-table th,
+                        .member-admission-index-table td { padding: 4px 6px; border: 1px solid #ddd; }
+                    }
+                `}</style>
+
                 {/* Resubmit Modal */}
                 {showResubmitModal && selectedAdmission && (
-                    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-                        <div className="bg-white rounded-lg shadow-xl max-w-md w-full mx-4">
-                            <div className="p-6">
-                                <h3 className="text-lg font-semibold text-gray-900 mb-2">
-                                    Resubmit Application: {selectedAdmission.application_no}
-                                </h3>
-                                <p className="text-sm text-gray-600 mb-4">
-                                    Please explain what changes you made (কি পরিবর্তন করেছেন তা বর্ণনা করুন)
-                                </p>
-                                <div className="mb-4">
-                                    <label className="block text-sm font-medium text-gray-700 mb-2">
-                                        Revision Details (সংশোধনের বিবরণ) *
-                                    </label>
+                    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+                        <div className="bg-white rounded-lg shadow-xl max-w-md w-full">
+                            <div className="p-4">
+                                <h3 className="text-base font-semibold text-gray-900 mb-1">পুনরায় জমা: {selectedAdmission.application_no}</h3>
+                                <p className="text-xs text-gray-600 mb-3">কি পরিবর্তন করেছেন তা লিখুন</p>
+                                <div className="mb-3">
+                                    <label className="block text-xs font-medium text-gray-700 mb-1">সংশোধনের বিবরণ *</label>
                                     <textarea
                                         value={revisionNote}
                                         onChange={(e) => setRevisionNote(e.target.value)}
-                                        rows={5}
-                                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                                        placeholder="Describe what you changed or fixed..."
+                                        rows={3}
+                                        className="w-full px-2.5 py-1.5 text-sm border border-gray-300 rounded-md focus:ring-1 focus:ring-blue-500"
+                                        placeholder="সংশোধন বিবরণ লিখুন..."
                                     />
                                 </div>
                                 {selectedAdmission.revision_comments && (
-                                    <div className="mb-4 p-3 bg-orange-50 border border-orange-200 rounded-lg">
-                                        <p className="text-xs font-medium text-orange-800 mb-1">Head Office Issues:</p>
-                                        <p className="text-sm text-orange-700">{selectedAdmission.revision_comments}</p>
+                                    <div className="mb-3 p-2 bg-orange-50 border border-orange-200 rounded text-xs text-orange-800">
+                                        {selectedAdmission.revision_comments}
                                     </div>
                                 )}
-                                <div className="flex gap-3 justify-end">
-                                    <button
-                                        onClick={() => {
-                                            setShowResubmitModal(false);
-                                            setSelectedAdmission(null);
-                                            setRevisionNote('');
-                                        }}
-                                        className="px-4 py-2 text-gray-700 bg-gray-100 rounded-lg hover:bg-gray-200 transition-colors"
-                                    >
-                                        Cancel
-                                    </button>
-                                    <button
-                                        onClick={handleResubmit}
-                                        className="px-4 py-2 text-white bg-green-600 rounded-lg hover:bg-green-700 transition-colors"
-                                    >
-                                        Resubmit to Head Office
-                                    </button>
+                                <div className="flex gap-2 justify-end">
+                                    <button onClick={() => { setShowResubmitModal(false); setSelectedAdmission(null); setRevisionNote(''); }} className="px-3 py-1.5 text-sm text-gray-600 bg-gray-100 rounded-md hover:bg-gray-200">বাতিল</button>
+                                    <button onClick={handleResubmit} className="px-3 py-1.5 text-sm text-white bg-green-600 rounded-md hover:bg-green-700">জমা দিন</button>
                                 </div>
                             </div>
                         </div>
@@ -512,41 +457,23 @@ export default function Index({ admissions, filters, stats }: Props) {
 
                 {/* Reject Modal */}
                 {showRejectModal && selectedAdmission && (
-                    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-                        <div className="bg-white rounded-lg shadow-xl max-w-md w-full mx-4">
-                            <div className="p-6">
-                                <h3 className="text-lg font-semibold text-gray-900 mb-4">
-                                    Reject Application: {selectedAdmission.application_no}
-                                </h3>
-                                <div className="mb-4">
-                                    <label className="block text-sm font-medium text-gray-700 mb-2">
-                                        Rejection Reason (প্রত্যাখ্যানের কারণ) *
-                                    </label>
+                    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+                        <div className="bg-white rounded-lg shadow-xl max-w-md w-full">
+                            <div className="p-4">
+                                <h3 className="text-base font-semibold text-gray-900 mb-3">প্রত্যাখ্যান: {selectedAdmission.application_no}</h3>
+                                <div className="mb-3">
+                                    <label className="block text-xs font-medium text-gray-700 mb-1">প্রত্যাখ্যানের কারণ *</label>
                                     <textarea
                                         value={rejectionReason}
                                         onChange={(e) => setRejectionReason(e.target.value)}
-                                        rows={4}
-                                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                                        placeholder="Enter reason for rejection..."
+                                        rows={3}
+                                        className="w-full px-2.5 py-1.5 text-sm border border-gray-300 rounded-md focus:ring-1 focus:ring-blue-500"
+                                        placeholder="কারণ লিখুন..."
                                     />
                                 </div>
-                                <div className="flex gap-3 justify-end">
-                                    <button
-                                        onClick={() => {
-                                            setShowRejectModal(false);
-                                            setSelectedAdmission(null);
-                                            setRejectionReason('');
-                                        }}
-                                        className="px-4 py-2 text-gray-700 bg-gray-100 rounded-lg hover:bg-gray-200 transition-colors"
-                                    >
-                                        Cancel
-                                    </button>
-                                    <button
-                                        onClick={handleReject}
-                                        className="px-4 py-2 text-white bg-red-600 rounded-lg hover:bg-red-700 transition-colors"
-                                    >
-                                        Reject Application
-                                    </button>
+                                <div className="flex gap-2 justify-end">
+                                    <button onClick={() => { setShowRejectModal(false); setSelectedAdmission(null); setRejectionReason(''); }} className="px-3 py-1.5 text-sm text-gray-600 bg-gray-100 rounded-md hover:bg-gray-200">বাতিল</button>
+                                    <button onClick={handleReject} className="px-3 py-1.5 text-sm text-white bg-red-600 rounded-md hover:bg-red-700">প্রত্যাখ্যান</button>
                                 </div>
                             </div>
                         </div>

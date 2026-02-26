@@ -214,6 +214,17 @@ class HandleInertiaRequests extends Middleware
             $badgeCounts['pendingApprovals'] = $pendingLoanApprovals + $pendingMemberApprovals;
         }
 
+        // যার কাছে পেন্ডিং আছে শুধু তারই ব্যাজ: every authenticated user gets their own pending count (branch_manager, area, zone, admf, dmf, ed)
+        if ($userData && $request->user() && ! ($userData['has_all_access'] ?? false)) {
+            $approvalService = app(\App\Services\ApprovalService::class);
+            $memberCount = $approvalService->getPendingApprovalsForUser($request->user())->count();
+            $loanCount = \App\Models\LoanApplicationApproval::where('user_id', $request->user()->id)
+                ->where('status', 'pending')
+                ->whereHas('loanApplication', fn ($q) => $q->whereIn('status', ['submitted', 'under_review']))
+                ->count();
+            $badgeCounts['pendingApprovals'] = $memberCount + $loanCount;
+        }
+
         return array_merge(parent::share($request), [
             'name' => 'MIS Loan',
             'quote' => ['message' => $message, 'author' => $author],

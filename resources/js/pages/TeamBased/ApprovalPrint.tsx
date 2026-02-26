@@ -47,7 +47,7 @@ export default function TeamBasedApprovalPrint({ sheet, items }: Props) {
         <AdminLayout>
             <Head title="Team Based Approval - Print" />
 
-            <div className="max-w-6xl mx-auto py-6 px-4 print:px-0">
+            <div className="mx-auto py-6 px-4 print:px-0">
                 <div className="print:hidden flex justify-end mb-4">
                     <button
                         type="button"

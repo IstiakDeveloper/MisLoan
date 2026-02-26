@@ -25,7 +25,7 @@ class ApprovalService
                 throw new \Exception('Admission must have a branch.');
             }
 
-            // First step: Branch Manager(s) only — any Branch Manager of this branch can approve or forward
+            // First step: সব Branch Manager দের কাছে পেন্ডিং — যেকোনো একজন approve বা forward করতে পারবে
             $branchManagers = User::where('branch_id', $branch->id)
                 ->where('is_active', 1)
                 ->whereHas('role', function ($query) {
@@ -37,15 +37,15 @@ class ApprovalService
                 throw new \Exception('No Branch Manager found for this branch. Please assign a Branch Manager.');
             }
 
-            // One approval row for first branch manager (any BM can take it; first in list gets the task)
-            $firstBranchManager = $branchManagers->first();
-            MemberAdmissionApproval::create([
-                'member_admission_id' => $admission->id,
-                'user_id' => $firstBranchManager->id,
-                'level' => 'branch',
-                'sequence' => 1,
-                'status' => 'pending',
-            ]);
+            foreach ($branchManagers as $bm) {
+                MemberAdmissionApproval::create([
+                    'member_admission_id' => $admission->id,
+                    'user_id' => $bm->id,
+                    'level' => 'branch',
+                    'sequence' => 1,
+                    'status' => 'pending',
+                ]);
+            }
         });
     }
 
@@ -151,23 +151,37 @@ class ApprovalService
         }
 
         DB::transaction(function () use ($approval, $comments) {
-            // Get the approver's signature from their user profile
+            $admission = $approval->memberAdmission;
             $approverSignature = $approval->user->signature;
+            $approverPin = $approval->user->pin ?? null;
 
             $approval->update([
                 'status' => 'approved',
                 'comments' => $comments,
                 'approved_at' => now(),
                 'approver_signature' => $approverSignature,
+                'approver_pin' => $approverPin,
             ]);
 
-            // Check if all approvals are done
-            $admission = $approval->memberAdmission;
+            // একই শাখার অন্য Branch Manager দের pending row গুলোও approved করে দিন (যেকোনো একজন approve করলেই ধরা হবে)
+            if ($approval->level === 'branch') {
+                $admission->approvals()
+                    ->where('level', 'branch')
+                    ->where('id', '!=', $approval->id)
+                    ->where('status', 'pending')
+                    ->update([
+                        'status' => 'approved',
+                        'comments' => 'Approved by another branch manager',
+                        'approved_at' => now(),
+                    ]);
+            }
+
             $pendingCount = $admission->approvals()->where('status', 'pending')->count();
 
             if ($pendingCount === 0) {
-                // No more steps: admission is fully approved (branch manager approved or escalation approver approved)
-                $admission->update(['status' => 'approved']);
+                // সব লেভেলের অনুমোদন শেষ হলে এখন সরাসরি Head Office এ না গিয়ে
+                // শাখা অনুমোদিত অবস্থা থাকবে; ব্রাঞ্চ ইউজার আলাদা করে Head Office এ পাঠাবে
+                $admission->update(['status' => 'ready_for_head_office']);
             } else {
                 if ($admission->status === 'submitted') {
                     $admission->update(['status' => 'under_review']);
@@ -196,9 +210,10 @@ class ApprovalService
                 'status' => 'rejected',
                 'comments' => $comments,
                 'approved_at' => now(),
+                'approver_signature' => $approval->user->signature ?? null,
+                'approver_pin' => $approval->user->pin ?? null,
             ]);
 
-            // Mark admission as rejected
             $approval->memberAdmission->update(['status' => 'rejected']);
         });
 
@@ -206,20 +221,31 @@ class ApprovalService
     }
 
     /**
-     * Get pending approvals for a user
+     * Get pending approvals for a user (only rows that are "current" in sequence).
+     * Includes: (1) current pending in sequence, or (2) under_review admission assigned to this approver (non-branch level).
      */
     public function getPendingApprovalsForUser(User $user)
     {
-        return MemberAdmissionApproval::where('user_id', $user->id)
+        $approvals = MemberAdmissionApproval::where('user_id', $user->id)
             ->where('status', 'pending')
             ->whereHas('memberAdmission', function ($query) {
                 $query->whereIn('status', ['submitted', 'under_review']);
             })
             ->with(['memberAdmission.branch', 'memberAdmission.samity'])
-            ->get()
-            ->filter(function ($approval) {
-                return $approval->isCurrentPending();
-            });
+            ->get();
+
+        return $approvals->filter(function ($approval) {
+            // Normal case: this is the current step in sequence
+            if ($approval->isCurrentPending()) {
+                return true;
+            }
+            // Under review: admission was forwarded to an approver; show if this row is for this user and not branch level
+            $admission = $approval->memberAdmission;
+            if ($admission && $admission->status === 'under_review' && $approval->level !== 'branch') {
+                return true;
+            }
+            return false;
+        })->values();
     }
 
     /**
@@ -425,7 +451,18 @@ class ApprovalService
                 'comments' => $comments ?? 'Forwarded to higher-level approver',
                 'approved_at' => now(),
                 'approver_signature' => $approval->user->signature ?? null,
+                'approver_pin' => $approval->user->pin ?? null,
             ]);
+            // একই শাখার অন্য Branch Manager দের pending row গুলোও approved
+            $admission->approvals()
+                ->where('level', 'branch')
+                ->where('id', '!=', $approval->id)
+                ->where('status', 'pending')
+                ->update([
+                    'status' => 'approved',
+                    'comments' => 'Forwarded by another branch manager',
+                    'approved_at' => now(),
+                ]);
             $nextSequence = $admission->approvals()->max('sequence') + 1;
             MemberAdmissionApproval::create([
                 'member_admission_id' => $admission->id,

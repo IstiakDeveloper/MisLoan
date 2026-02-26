@@ -24,7 +24,7 @@ class HeadOfficeAdmissionController extends Controller
             'samity',
             'memberCategory',
             'submittedBy'
-        ]);
+        ])->whereIn('status', ['pending_head_office', 'approved', 'rejected', 'needs_revision']);
 
         // Default date filter - current date
         $dateFrom = $request->date_from ?? now()->toDateString();
@@ -89,8 +89,17 @@ class HeadOfficeAdmissionController extends Controller
             }
         }
 
+        // Printed filter (প্রিন্ট সম্পন্ন / অপ্রিন্টেড)
+        if ($request->filled('printed')) {
+            if ($request->printed === 'yes') {
+                $query->whereNotNull('printed_at');
+            } elseif ($request->printed === 'no') {
+                $query->whereNull('printed_at');
+            }
+        }
+
         // Calculate stats based on current filters (excluding status filter for stats)
-        $statsQuery = MemberAdmission::query();
+        $statsQuery = MemberAdmission::query()->whereIn('status', ['pending_head_office', 'approved', 'rejected', 'needs_revision']);
 
         // Apply same date filter to stats
         if ($dateFrom && $dateTo) {
@@ -148,7 +157,7 @@ class HeadOfficeAdmissionController extends Controller
         return Inertia::render('HeadOffice/AdmissionMembers', [
             'admissions' => $admissions,
             'filters' => array_merge(
-                $request->only(['status', 'search', 'zone_id', 'area_id', 'branch_id', 'date_from', 'date_to', 'had_issues']),
+                $request->only(['status', 'search', 'zone_id', 'area_id', 'branch_id', 'date_from', 'date_to', 'had_issues', 'printed']),
                 [
                     'date_from' => $dateFrom,
                     'date_to' => $dateTo,
@@ -170,7 +179,8 @@ class HeadOfficeAdmissionController extends Controller
             'branch.area.zone',
             'samity',
             'memberCategory',
-            'submittedBy'
+            'submittedBy',
+            'createdBy',
         ]);
 
         // Apply same filters as index
@@ -240,6 +250,57 @@ class HeadOfficeAdmissionController extends Controller
             'areas' => $areas,
             'branches' => $branches,
         ]);
+    }
+
+    /**
+     * Mark admissions as printed (same filter as print) so list can show printed/not printed
+     */
+    public function markAsPrinted(Request $request)
+    {
+        $query = MemberAdmission::query();
+
+        $dateFrom = $request->date_from ?? now()->toDateString();
+        $dateTo = $request->date_to ?? now()->toDateString();
+        if ($dateFrom && $dateTo) {
+            $query->whereBetween('created_at', [
+                Carbon::parse($dateFrom)->startOfDay(),
+                Carbon::parse($dateTo)->endOfDay(),
+            ]);
+        }
+        if ($request->zone_id) {
+            $query->whereHas('branch.area', fn ($q) => $q->where('zone_id', $request->zone_id));
+        }
+        if ($request->area_id) {
+            $query->whereHas('branch', fn ($q) => $q->where('area_id', $request->area_id));
+        }
+        if ($request->branch_id) {
+            $query->where('branch_id', $request->branch_id);
+        }
+        if ($request->status) {
+            $query->where('status', $request->status);
+        }
+        if ($request->search) {
+            $search = $request->search;
+            $query->where(function ($q) use ($search) {
+                $q->where('application_no', 'like', "%{$search}%")
+                    ->orWhere('applicant_name_en', 'like', "%{$search}%")
+                    ->orWhere('applicant_name_bn', 'like', "%{$search}%")
+                    ->orWhere('mobile_number', 'like', "%{$search}%")
+                    ->orWhere('nid_number', 'like', "%{$search}%");
+            });
+        }
+        if ($request->had_issues) {
+            if ($request->had_issues === 'yes') {
+                $query->where('revision_count', '>', 0);
+            } elseif ($request->had_issues === 'no') {
+                $query->where(fn ($q) => $q->whereNull('revision_count')->orWhere('revision_count', 0));
+            }
+        }
+
+        $ids = $query->pluck('id');
+        MemberAdmission::whereIn('id', $ids)->update(['printed_at' => now()]);
+
+        return back()->with('success', __('প্রিন্ট সম্পন্ন চিহ্নিত হয়েছে।') ?: 'প্রিন্ট সম্পন্ন চিহ্নিত হয়েছে।');
     }
 
     /**

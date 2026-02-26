@@ -1,5 +1,5 @@
 import AdminLayout from '@/layouts/admin-layout';
-import { Head, Link, router } from '@inertiajs/react';
+import { Head, Link, router, usePage } from '@inertiajs/react';
 import { useState, useRef } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -128,6 +128,8 @@ const statusConfig = {
 };
 
 export default function Show({ application, availableApprovers = [], routes }: Props) {
+    const pageAuth = usePage().props.auth as { user?: { role?: { name: string } } } | undefined;
+    const isFieldOfficer = pageAuth?.user?.role?.name === 'field_officer';
     const [showSubmitModal, setShowSubmitModal] = useState(false);
     const [selectedApprovers, setSelectedApprovers] = useState<number[]>([]);
     const [submitting, setSubmitting] = useState(false);
@@ -263,7 +265,7 @@ export default function Show({ application, availableApprovers = [], routes }: P
                                             সম্পাদনা
                                         </Button>
                                     </Link>
-                                    {application.all_forms_complete && (
+                                    {application.all_forms_complete && !isFieldOfficer && (
                                         <Button onClick={() => setShowSubmitModal(true)}>
                                             <Send className="w-4 h-4 mr-2" />
                                             সাবমিট করুন

@@ -197,7 +197,7 @@ export default function TeamBasedApprovalIndex({ approvals, filters, draftCount,
                 `}</style>
             </Head>
 
-            <div className="max-w-8xl mx-auto py-6 px-4">
+            <div className="mx-auto py-6 px-4">
                 {/* Print header - organization + branch info */}
                 <div className="mb-4 approval-index-print-header">
                     <div className="flex items-center justify-between mb-2 print:flex print:mb-1">
@@ -388,7 +388,7 @@ export default function TeamBasedApprovalIndex({ approvals, filters, draftCount,
                                                             : `/storage/${row.approver_signature}`
                                                     }
                                                     alt="Signature"
-                                                    className="h-4 max-h-4 object-contain print:!h-3 print:!max-h-3"
+                                                    className="h-8 max-h-8 object-contain print:!h-8 print:!max-h-8"
                                                     onError={(e) => {
                                                         (e.target as HTMLImageElement).style.display = 'none';
                                                     }}

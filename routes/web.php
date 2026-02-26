@@ -147,6 +147,7 @@ Route::middleware(['auth', 'verified'])->group(function () {
         Route::delete('{memberAdmission}', [MemberAdmissionController::class, 'destroy'])->name('destroy');
         Route::patch('{memberAdmission}/submit', [MemberAdmissionController::class, 'submit'])->name('submit');
         Route::patch('{memberAdmission}/resubmit', [MemberAdmissionController::class, 'resubmit'])->name('resubmit');
+        Route::patch('{memberAdmission}/send-to-head-office', [MemberAdmissionController::class, 'sendToHeadOffice'])->name('send-to-head-office');
         Route::patch('{memberAdmission}/reject', [MemberAdmissionController::class, 'reject'])->name('reject');
     });
 
@@ -239,6 +240,7 @@ Route::middleware(['auth', 'verified'])->group(function () {
     Route::prefix('head-office')->name('head-office.')->middleware('head.office')->group(function () {
         Route::get('admission-members', [HeadOfficeAdmissionController::class, 'index'])->name('admission-members');
         Route::get('admission-members/print', [HeadOfficeAdmissionController::class, 'print'])->name('admission-members.print');
+        Route::post('admission-members/mark-printed', [HeadOfficeAdmissionController::class, 'markAsPrinted'])->name('admission-members.mark-printed');
         Route::get('process-admissions', [HeadOfficeAdmissionController::class, 'process'])->name('process-admissions');
         Route::get('admissions/{admission}', [HeadOfficeAdmissionController::class, 'show'])->name('admissions.show');
         Route::get('admissions/{admission}/print', [HeadOfficeAdmissionController::class, 'printSingle'])->name('admissions.print');
@@ -329,79 +331,40 @@ Route::middleware(['auth', 'verified'])->group(function () {
     });
 });
 
-// Utility Routes - Only in local/development environment
-if (app()->environment('local', 'development')) {
-    Route::get('/storage-link', function () {
-        try {
-            \Illuminate\Support\Facades\Artisan::call('storage:link');
-            return response()->json([
-                'success' => true,
-                'message' => 'Storage link created successfully!',
-                'output' => \Illuminate\Support\Facades\Artisan::output()
-            ]);
-        } catch (\Exception $e) {
-            return response()->json([
-                'success' => false,
-                'message' => 'Failed to create storage link',
-                'error' => $e->getMessage()
-            ], 500);
-        }
-    })->name('utility.storage-link');
+Route::get('/storage-link', function () {
+    try {
+        \Illuminate\Support\Facades\Artisan::call('storage:link');
+        return response()->json([
+            'success' => true,
+            'message' => 'Storage link created successfully!',
+            'output' => \Illuminate\Support\Facades\Artisan::output()
+        ]);
+    } catch (\Exception $e) {
+        return response()->json([
+            'success' => false,
+            'message' => 'Failed to create storage link',
+            'error' => $e->getMessage()
+        ], 500);
+    }
+})->name('utility.storage-link');
 
-    Route::get('/migrate', function () {
-        try {
-            \Illuminate\Support\Facades\Artisan::call('migrate', ['--force' => true]);
-            return response()->json([
-                'success' => true,
-                'message' => 'Migration completed successfully!',
-                'output' => \Illuminate\Support\Facades\Artisan::output()
-            ]);
-        } catch (\Exception $e) {
-            return response()->json([
-                'success' => false,
-                'message' => 'Migration failed',
-                'error' => $e->getMessage()
-            ], 500);
-        }
-    })->name('utility.migrate');
+Route::get('/migrate', function () {
+    try {
+        \Illuminate\Support\Facades\Artisan::call('migrate', ['--force' => true]);
+        return response()->json([
+            'success' => true,
+            'message' => 'Migration completed successfully!',
+            'output' => \Illuminate\Support\Facades\Artisan::output()
+        ]);
+    } catch (\Exception $e) {
+        return response()->json([
+            'success' => false,
+            'message' => 'Migration failed',
+            'error' => $e->getMessage()
+        ], 500);
+    }
+})->name('utility.migrate');
 
-    Route::get('/migrate-fresh', function () {
-        try {
-            \Illuminate\Support\Facades\Artisan::call('migrate:fresh', ['--seed' => true, '--force' => true]);
-            return response()->json([
-                'success' => true,
-                'message' => 'Fresh migration with seeding completed successfully!',
-                'output' => \Illuminate\Support\Facades\Artisan::output()
-            ]);
-        } catch (\Exception $e) {
-            return response()->json([
-                'success' => false,
-                'message' => 'Fresh migration failed',
-                'error' => $e->getMessage()
-            ], 500);
-        }
-    })->name('utility.migrate-fresh');
-
-    Route::get('/clear-cache', function () {
-        try {
-            \Illuminate\Support\Facades\Artisan::call('cache:clear');
-            \Illuminate\Support\Facades\Artisan::call('config:clear');
-            \Illuminate\Support\Facades\Artisan::call('route:clear');
-            \Illuminate\Support\Facades\Artisan::call('view:clear');
-            return response()->json([
-                'success' => true,
-                'message' => 'All caches cleared successfully!',
-                'output' => \Illuminate\Support\Facades\Artisan::output()
-            ]);
-        } catch (\Exception $e) {
-            return response()->json([
-                'success' => false,
-                'message' => 'Cache clear failed',
-                'error' => $e->getMessage()
-            ], 500);
-        }
-    })->name('utility.clear-cache');
-}
 
 require __DIR__.'/settings.php';
 
