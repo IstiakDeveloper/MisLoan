@@ -19,6 +19,7 @@ class DatabaseSeeder extends Seeder
             AreaSeeder::class,
             AreaZoneManagerSeeder::class,
             BranchSeeder::class,
+            BranchManagerSeeder::class,
             UserSeeder::class,
             MemberCategorySeeder::class,
             LoanCategorySeeder::class,

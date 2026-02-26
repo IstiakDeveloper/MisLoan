@@ -2,12 +2,61 @@
 
 namespace App\Http\Controllers;
 
+use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Storage;
 use Inertia\Inertia;
+use Inertia\Response;
 
 class ProfileController extends Controller
 {
+    /**
+     * Show the profile completion page. Shown after login when phone, pin or signature is missing.
+     */
+    public function complete(): Response|RedirectResponse
+    {
+        $user = auth()->user();
+
+        if ($user->hasCompleteProfile()) {
+            return redirect()->route('dashboard');
+        }
+
+        return Inertia::render('Profile/Complete', [
+            'user' => $user->only(['id', 'name', 'email', 'phone', 'signature']),
+        ]);
+    }
+
+    /**
+     * Store completed profile (phone, pin, signature required). Then redirect to dashboard.
+     */
+    public function completeStore(Request $request): RedirectResponse
+    {
+        $user = auth()->user();
+
+        $signatureRule = $user->signature
+            ? 'nullable|image|mimes:jpeg,png,jpg,gif|max:2048'
+            : 'required|image|mimes:jpeg,png,jpg,gif|max:2048';
+
+        $validated = $request->validate([
+            'phone' => 'required|string|max:20',
+            'pin' => 'required|string|max:50',
+            'signature' => $signatureRule,
+        ]);
+
+        if ($request->hasFile('signature')) {
+            if ($user->signature) {
+                Storage::disk('public')->delete($user->signature);
+            }
+            $validated['signature'] = $request->file('signature')->store('signatures/users', 'public');
+        } else {
+            unset($validated['signature']);
+        }
+
+        $user->update($validated);
+
+        return redirect()->route('dashboard')->with('success', __('Profile completed. You can now use the application.'));
+    }
+
     public function edit()
     {
         return Inertia::render('Profile/Edit', [

@@ -31,19 +31,19 @@ class ApproverUserSeeder extends Seeder
             'admf' => [
                 'name' => 'Assistant Director Microfinance',
                 'email' => 'admf@misloan.com',
-                'username' => 'admf1',
+                'username' => 'admf',
                 'phone' => '01710000001',
             ],
             'dmf' => [
                 'name' => 'Director Microfinance',
                 'email' => 'dmf@misloan.com',
-                'username' => 'dmf1',
+                'username' => 'dmf',
                 'phone' => '01710000002',
             ],
             'ed' => [
                 'name' => 'Executive Director',
                 'email' => 'ed@misloan.com',
-                'username' => 'ed1',
+                'username' => 'ed',
                 'phone' => '01710000003',
             ],
         ];
@@ -75,7 +75,7 @@ class ApproverUserSeeder extends Seeder
                 'email' => $data['email'],
                 'phone' => $data['phone'],
                 'username' => $data['username'],
-                'password' => Hash::make('password'),
+                'password' => Hash::make('12345678'),
                 'role_id' => $role->id,
                 'branch_id' => null,
                 'area_id' => null,

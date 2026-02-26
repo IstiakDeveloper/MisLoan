@@ -52,6 +52,15 @@ class User extends Authenticatable
     }
 
     /**
+     * Check if user has completed profile: phone, pin and digital signature are set.
+     * Until complete, user is redirected to profile/complete after login.
+     */
+    public function hasCompleteProfile(): bool
+    {
+        return filled($this->phone) && filled($this->pin) && filled($this->signature);
+    }
+
+    /**
      * Get the role
      */
     public function role(): BelongsTo

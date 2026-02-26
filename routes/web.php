@@ -29,8 +29,12 @@ Route::get('/', function () {
     return redirect()->route('login');
 })->name('home');
 
-Route::middleware(['auth', 'verified'])->group(function () {
+Route::middleware(['auth', 'verified', 'ensure.profile.complete'])->group(function () {
     Route::get('dashboard', [DashboardController::class, 'index'])->name('dashboard');
+
+    // Profile completion (required before using app if phone/pin/signature missing)
+    Route::get('profile/complete', [ProfileController::class, 'complete'])->name('profile.complete');
+    Route::post('profile/complete', [ProfileController::class, 'completeStore'])->name('profile.complete.store');
 
     // Profile Routes
     Route::get('profile', [ProfileController::class, 'edit'])->name('profile.edit');

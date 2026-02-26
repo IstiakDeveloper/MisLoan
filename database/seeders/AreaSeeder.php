@@ -16,7 +16,7 @@ class AreaSeeder extends Seeder
             [
                 'id' => 1,
                 'zone_id' => 1,
-                'name' => 'Atrai Area',
+                'name' => 'Atrai',
                 'code' => '101',
                 'description' => null,
                 'is_active' => true,
@@ -24,7 +24,7 @@ class AreaSeeder extends Seeder
             [
                 'id' => 2,
                 'zone_id' => 1,
-                'name' => 'Adamdighi Area',
+                'name' => 'Adamdighi',
                 'code' => '102',
                 'description' => null,
                 'is_active' => true,
@@ -32,7 +32,7 @@ class AreaSeeder extends Seeder
             [
                 'id' => 3,
                 'zone_id' => 1,
-                'name' => 'Betgari Area',
+                'name' => 'Betgari',
                 'code' => '105',
                 'description' => null,
                 'is_active' => true,
@@ -40,7 +40,7 @@ class AreaSeeder extends Seeder
             [
                 'id' => 4,
                 'zone_id' => 2,
-                'name' => 'Naogaon Area',
+                'name' => 'Naogaon',
                 'code' => '106',
                 'description' => null,
                 'is_active' => true,
@@ -48,7 +48,7 @@ class AreaSeeder extends Seeder
             [
                 'id' => 5,
                 'zone_id' => 2,
-                'name' => 'Khetlal Area',
+                'name' => 'Khetlal',
                 'code' => '108',
                 'description' => null,
                 'is_active' => true,
@@ -56,7 +56,7 @@ class AreaSeeder extends Seeder
             [
                 'id' => 6,
                 'zone_id' => 2,
-                'name' => 'Paharpur Area',
+                'name' => 'Paharpur',
                 'code' => '109',
                 'description' => null,
                 'is_active' => true,
@@ -64,7 +64,7 @@ class AreaSeeder extends Seeder
             [
                 'id' => 7,
                 'zone_id' => 3,
-                'name' => 'Mohadebpur Area',
+                'name' => 'Mohadebpur',
                 'code' => '103',
                 'description' => null,
                 'is_active' => true,
@@ -72,7 +72,7 @@ class AreaSeeder extends Seeder
             [
                 'id' => 8,
                 'zone_id' => 3,
-                'name' => 'Sapahar Area',
+                'name' => 'Sapahar',
                 'code' => '104',
                 'description' => null,
                 'is_active' => true,
@@ -80,7 +80,7 @@ class AreaSeeder extends Seeder
             [
                 'id' => 9,
                 'zone_id' => 3,
-                'name' => 'Rajbari Area',
+                'name' => 'Rajbari',
                 'code' => '107',
                 'description' => null,
                 'is_active' => true,

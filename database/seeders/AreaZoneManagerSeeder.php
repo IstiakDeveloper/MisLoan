@@ -20,23 +20,28 @@ class AreaZoneManagerSeeder extends Seeder
         $areaManagerRole = Role::where('name', Role::AREA_MANAGER)->first();
 
         if (! $zoneManagerRole || ! $areaManagerRole) {
-            $this->command?->warn('Zone/Area manager roles not found. Run RoleSeeder first.');
+            $this->command?->warn('Zone/Regional manager roles not found. Run RoleSeeder first.');
             return;
         }
 
         // For each zone, ensure at least one Zone Manager user exists
+        // Username: zmbadalgachi (zm + slug from zone name, e.g. "Badalgachi" → badalgachi)
         foreach (Zone::all() as $zone) {
             $exists = User::where('role_id', $zoneManagerRole->id)
                 ->where('zone_id', $zone->id)
                 ->exists();
 
             if (! $exists) {
+                $slug = $this->nameToSlug($zone->name);
+                $username = 'zm' . $slug;
+                $email = $username . '@misloan.com';
+
                 User::create([
                     'name' => $zone->name . ' Zone Manager',
-                    'email' => 'zone' . $zone->code . '_manager@misloan.com',
+                    'email' => $email,
                     'phone' => null,
-                    'username' => 'Z' . $zone->code . '_MGR',
-                    'password' => Hash::make('password'),
+                    'username' => $username,
+                    'password' => Hash::make('12345678'),
                     'role_id' => $zoneManagerRole->id,
                     'zone_id' => $zone->id,
                     'has_all_access' => false,
@@ -44,33 +49,45 @@ class AreaZoneManagerSeeder extends Seeder
                     'email_verified_at' => now(),
                 ]);
 
-                $this->command?->info("Zone Manager created for zone {$zone->name}.");
+                $this->command?->info("Zone Manager created for zone {$zone->name} ({$username}).");
             }
         }
 
-        // For each area, ensure at least one Area Manager user exists
-        foreach (Area::all() as $area) {
+        // For each regional, ensure at least one Regional Manager user exists
+        // Username: rmnaogaon (rm + slug from regional name, e.g. "Naogaon" → naogaon)
+        foreach (Area::all() as $regional) {
             $exists = User::where('role_id', $areaManagerRole->id)
-                ->where('area_id', $area->id)
+                ->where('area_id', $regional->id)
                 ->exists();
 
             if (! $exists) {
+                $slug = $this->nameToSlug($regional->name);
+                $username = 'rm' . $slug;
+                $email = $username . '@misloan.com';
+
                 User::create([
-                    'name' => $area->name . ' Area Manager',
-                    'email' => 'area' . $area->code . '_manager@misloan.com',
+                    'name' => $regional->name . ' Regional Manager',
+                    'email' => $email,
                     'phone' => null,
-                    'username' => 'A' . $area->code . '_MGR',
-                    'password' => Hash::make('password'),
+                    'username' => $username,
+                    'password' => Hash::make('12345678'),
                     'role_id' => $areaManagerRole->id,
-                    'area_id' => $area->id,
+                    'area_id' => $regional->id,
                     'has_all_access' => false,
                     'is_active' => true,
                     'email_verified_at' => now(),
                 ]);
 
-                $this->command?->info("Area Manager created for area {$area->name}.");
+                $this->command?->info("Regional Manager created for {$regional->name} ({$username}).");
             }
         }
     }
-}
 
+    /**
+     * Convert name to slug: lowercase, remove spaces. (Names in DB have no Zone/Area/Branch suffix.)
+     */
+    private function nameToSlug(string $name): string
+    {
+        return strtolower(preg_replace('/\s+/', '', $name));
+    }
+}

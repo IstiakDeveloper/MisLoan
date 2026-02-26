@@ -15,21 +15,21 @@ class ZoneSeeder extends Seeder
         $zones = [
             [
                 'id' => 1,
-                'name' => 'Raninagar Zone',
+                'name' => 'Raninagar',
                 'code' => '01',
                 'description' => null,
                 'is_active' => true,
             ],
             [
                 'id' => 2,
-                'name' => 'Badalgachi Zone',
+                'name' => 'Badalgachi',
                 'code' => '02',
                 'description' => null,
                 'is_active' => true,
             ],
             [
                 'id' => 3,
-                'name' => 'Shishahat Zone',
+                'name' => 'Shishahat',
                 'code' => '03',
                 'description' => null,
                 'is_active' => true,
