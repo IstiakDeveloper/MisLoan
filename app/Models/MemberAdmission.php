@@ -377,23 +377,18 @@ class MemberAdmission extends Model
         });
     }
 
+    /**
+     * Generate a simple 5-digit serial application number: 00001, 00002, ...
+     * Grows beyond 5 digits when needed (100000, 100001, ...).
+     */
     private static function generateApplicationNumber(): string
     {
-        $year = date('Y');
-        $month = date('m');
-        $prefix = "MEM-{$year}{$month}-";
-
-        $lastAdmission = self::where('application_no', 'like', "{$prefix}%")
-            ->orderBy('application_no', 'desc')
+        $lastAdmission = self::whereRaw("application_no REGEXP '^[0-9]+$'")
+            ->orderByRaw('CAST(application_no AS UNSIGNED) DESC')
             ->first();
 
-        if ($lastAdmission) {
-            $lastNumber = intval(substr($lastAdmission->application_no, -6));
-            $newNumber = $lastNumber + 1;
-        } else {
-            $newNumber = 1;
-        }
+        $next = $lastAdmission ? (int) $lastAdmission->application_no + 1 : 1;
 
-        return $prefix . str_pad($newNumber, 6, '0', STR_PAD_LEFT);
+        return str_pad((string) $next, 5, '0', STR_PAD_LEFT);
     }
 }

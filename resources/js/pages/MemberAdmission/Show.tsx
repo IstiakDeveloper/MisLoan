@@ -139,11 +139,26 @@ export default function Show({ admission, auth }: Props) {
 
             <style>{`
                 @media print {
-                    body { font-size: 12pt; line-height: 1.4; }
-                    @page { margin: 5mm; size: A4 portrait; }
+                    body {
+                        font-size: 14pt;
+                        line-height: 1.7;
+                        -webkit-print-color-adjust: exact;
+                        print-color-adjust: exact;
+                    }
+                    @page { margin: 6mm; size: A4 portrait; }
                     .form-print-document {
-                        padding: 5mm !important;
-                        font-size: 11pt !important;
+                        padding: 8mm !important;
+                        font-size: 14pt !important;
+                        line-height: 1.7 !important;
+                    }
+                    .form-print-section {
+                        padding-top: 5mm !important;
+                        padding-bottom: 5mm !important;
+                    }
+                    /* Header এর নিচে + Declaration এর নিচে গ্যাপ */
+                    .form-print-document > header.form-print-section + .form-print-section {
+                        margin-top: 5mm !important;
+                        margin-bottom: 6mm !important;
                     }
                     .print\\:break-inside-avoid,
                     .form-print-section {

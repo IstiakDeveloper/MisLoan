@@ -1,20 +1,10 @@
 import React, { useState, useEffect } from 'react';
 import { Head, router, useForm, usePage } from '@inertiajs/react';
 import AdminLayout from '@/layouts/admin-layout';
-import {
-    Save,
-    Send,
-    Plus,
-    Trash2,
-    ChevronLeft,
-    ChevronRight,
-} from 'lucide-react';
+import { Save, Send, Plus, Trash2 } from 'lucide-react';
 import { MemberAdmissionFormData, FamilyMember, OtherAsset } from '@/types/memberAdmission';
 import bangladeshData from '@/data/bangladeshAddresses.json';
 import ApproverSelectionStep from '@/components/MemberAdmission/ApproverSelectionStep';
-import Section1OrganizationDates from './components/Section1OrganizationDates';
-import Section2PersonalInfo from './components/Section2PersonalInfo';
-import Section3Address from './components/Section3Address';
 
 interface Props {
     branches: Array<{ id: number; name: string }>;
@@ -35,9 +25,7 @@ export default function Create({ branches, samities, categories, availableApprov
     }>();
     const pageAuth = page.props.auth;
     const isFieldOfficer = pageAuth.user?.role?.name === 'field_officer';
-    const [currentStep, setCurrentStep] = useState(1); // used only for visual step indicator
     const [availableSamities, setAvailableSamities] = useState(samities);
-    const [validationErrors, setValidationErrors] = useState<Record<string, string>>({});
 
     // Address dropdown states
     const [presentDistricts, setPresentDistricts] = useState<string[]>([]);
@@ -209,7 +197,7 @@ export default function Create({ branches, samities, categories, availableApprov
         if (data.permanent_division) {
             const districts = bangladeshData.districtsByDivision[data.permanent_division as keyof typeof bangladeshData.districtsByDivision] || [];
             setPermanentDistricts(districts);
-            if (!districts.includes(data.permanent_district ?? '')) {
+            if (!districts.includes(data.permanent_district)) {
                 setData('permanent_district', '');
                 setPermanentUpazilas([]);
             }
@@ -221,7 +209,7 @@ export default function Create({ branches, samities, categories, availableApprov
         if (data.permanent_district) {
             const upazilas = bangladeshData.upazilasByDistrict[data.permanent_district as keyof typeof bangladeshData.upazilasByDistrict] || [];
             setPermanentUpazilas(upazilas);
-            if (!upazilas.includes(data.permanent_upazila ?? '')) {
+            if (!upazilas.includes(data.permanent_upazila)) {
                 setData('permanent_upazila', '');
             }
         }
@@ -243,31 +231,6 @@ export default function Create({ branches, samities, categories, availableApprov
 
         return () => clearInterval(interval);
     }, [data]);
-
-    const validateStep = (step: number): boolean => {
-        const errors: Record<string, string> = {};
-
-        if (step === 1) {
-            if (!data.branch_id) errors.branch_id = 'Branch is required';
-            if (!data.samity_id) errors.samity_id = 'Samity is required';
-            if (!data.member_category_id) errors.member_category_id = 'Member Category is required';
-            if (!data.survey_date) errors.survey_date = 'Survey Date is required';
-            if (!data.admission_date) errors.admission_date = 'Admission Date is required';
-        } else if (step === 2) {
-            if (!data.applicant_name_en) errors.applicant_name_en = 'Applicant Name (English) is required';
-            if (!data.father_name_en) errors.father_name_en = 'Father Name is required';
-            if (!data.mobile_number) errors.mobile_number = 'Mobile Number is required';
-        } else if (step === 3) {
-            if (!data.present_village_road) errors.present_village_road = 'Present Address is required';
-        } else if (step === 4) {
-            if (!data.nid_number) {
-                errors.nid_number = 'NID number is required';
-            }
-        }
-
-        setValidationErrors(errors);
-        return Object.keys(errors).length === 0;
-    };
 
     const handleSubmit = (saveAsDraft: boolean) => {
         // Submit goes to branch manager automatically; no approver selection needed
@@ -331,108 +294,498 @@ export default function Create({ branches, samities, categories, availableApprov
         setData('other_assets', newAssets);
     };
 
-    const steps = [
-        { id: 1, title: '১. সংস্থা ও তারিখ' },
-        { id: 2, title: '২. ব্যক্তিগত তথ্য' },
-        { id: 3, title: '৩. ঠিকানা' },
-        { id: 4, title: '৪. ১২–১৫ পরিচয় ও জামিনদার' },
-        { id: 5, title: '৫. ১৬ পরিবার ও আর্থিক কর্মকাণ্ড' },
-        { id: 6, title: '৬. সম্পত্তি (১৭–১৯)' },
-        { id: 7, title: '৭. আর্থিক তথ্য (২০)' },
-        { id: 8, title: '৮. অন্যান্য তথ্য ও অনুমোদনকারী (২১–২৩)' },
-    ];
-
     return (
         <AdminLayout>
             <Head title="New Member Admission Application" />
 
             <div className="space-y-6 max-w-full">
-                {/* Header */}
-                <div className="flex items-center justify-between">
-                    <div>
-                        <h1 className="text-2xl font-bold text-gray-900">New Member Admission Application</h1>
-                        <p className="text-sm text-gray-600 mt-1">Fill out the application form for member admission</p>
-                    </div>
-                </div>
+                <header>
+                    <h1 className="text-2xl font-semibold text-gray-900 tracking-tight">New Member Admission</h1>
+                    <p className="text-sm text-gray-500 mt-1">Complete the form below. All sections are on this page.</p>
+                </header>
 
-                {/* Progress Steps */}
                 <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
-                    <div className="flex items-center justify-between mb-8 overflow-x-auto">
-                        {steps.map((step, index) => (
-                            <div key={step.id} className="flex items-center">
-                                <button
-                                    onClick={() => setCurrentStep(step.id)}
-                                    className={`flex flex-col items-center min-w-[80px] ${
-                                        currentStep === step.id ? 'text-blue-600' : 'text-gray-400'
-                                    }`}
-                                >
-                                    <div
-                                        className={`w-10 h-10 rounded-full flex items-center justify-center text-sm font-semibold mb-2 ${
-                                            currentStep === step.id
-                                                ? 'bg-blue-600 text-white'
-                                                : currentStep > step.id
-                                                ? 'bg-green-500 text-white'
-                                                : 'bg-gray-200 text-gray-600'
-                                        }`}
-                                    >
-                                        {step.id}
-                                    </div>
-                                    <span className="text-xs text-center whitespace-nowrap">{step.title}</span>
-                                </button>
-                                {index < steps.length - 1 && (
-                                    <div
-                                        className={`h-1 w-12 mx-2 ${
-                                            currentStep > step.id ? 'bg-green-500' : 'bg-gray-200'
-                                        }`}
-                                    />
-                                )}
-                            </div>
-                        ))}
-                    </div>
-
-                    {/* Form Content – all sections on one page */}
                     <div className="space-y-8">
-                        <Section1OrganizationDates
-                            data={data}
-                            setData={setData}
-                            errors={errors}
-                            validationErrors={validationErrors}
-                            branches={branches}
-                            availableSamities={availableSamities}
-                            categories={categories}
-                            hasAllAccess={hasAllAccess}
-                            onBranchChange={handleBranchChange}
-                        />
-                        <Section2PersonalInfo data={data} setData={setData} errors={errors} />
-                        <Section3Address
-                            data={data}
-                            setData={setData}
-                            errors={errors}
-                            presentDistricts={presentDistricts}
-                            presentUpazilas={presentUpazilas}
-                            permanentDistricts={permanentDistricts}
-                            permanentUpazilas={permanentUpazilas}
-                        />
-
-                        {/* Section 4: Identity - ১২, ১৩ (ফরম অনুযায়ী) */}
-                        <div className="space-y-4">
-                                <h3 className="text-lg font-semibold text-gray-900">১২. Identity Information (পরিচয় তথ্য)</h3>
+                        {/* ১. সংস্থা ও তারিখ */}
+                        <section className="border-b border-gray-100 pb-6 last:border-0">
+                            <div className="space-y-4">
+                                <h3 className="text-lg font-semibold text-gray-900 mb-4">Organization & Date</h3>
                                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                                     <div>
                                         <label className="block text-sm font-medium text-gray-700 mb-1">
-                                            National ID No. <span className="text-red-500">*</span>
+                                            Branch (শাখা) <span className="text-red-500">*</span>
                                         </label>
+                                        <select
+                                            value={data.branch_id}
+                                            onChange={handleBranchChange}
+                                            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 disabled:bg-gray-100 disabled:cursor-not-allowed"
+                                            disabled={!hasAllAccess}
+                                        >
+                                            <option value={0}>Select Branch</option>
+                                            {branches.map((branch) => (
+                                                <option key={branch.id} value={branch.id}>
+                                                    {branch.name}
+                                                </option>
+                                            ))}
+                                        </select>
+                                        {errors.branch_id && (
+                                            <p className="mt-1 text-sm text-red-600">{errors.branch_id}</p>
+                                        )}
+                                    </div>
+
+                                    <div>
+                                        <label className="block text-sm font-medium text-gray-700 mb-1">
+                                            ১. Samity (সমিতি) <span className="text-red-500">*</span>
+                                        </label>
+                                        <select
+                                            value={data.samity_id}
+                                            onChange={(e) => setData('samity_id', Number(e.target.value))}
+                                            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                                            disabled={!data.branch_id}
+                                        >
+                                            <option value={0}>Select Samity</option>
+                                            {availableSamities.map((samity) => (
+                                                <option key={samity.id} value={samity.id}>
+                                                    {samity.samity_name}
+                                                </option>
+                                            ))}
+                                        </select>
+                                        {errors.samity_id && (
+                                            <p className="mt-1 text-sm text-red-600">{errors.samity_id}</p>
+                                        )}
+                                    </div>
+
+                                    <div>
+                                        <label className="block text-sm font-medium text-gray-700 mb-1">
+                                            ২. Member Category (সদস্য শ্রেণি) <span className="text-red-500">*</span>
+                                        </label>
+                                        <select
+                                            value={data.member_category_id}
+                                            onChange={(e) => setData('member_category_id', Number(e.target.value))}
+                                            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                                        >
+                                            <option value={0}>Select Category</option>
+                                            {categories.map((category) => (
+                                                <option key={category.id} value={category.id}>
+                                                    {category.category_name}
+                                                </option>
+                                            ))}
+                                        </select>
+                                        {errors.member_category_id && (
+                                            <p className="mt-1 text-sm text-red-600">{errors.member_category_id}</p>
+                                        )}
+                                    </div>
+
+                                    <div>
+                                        <label className="block text-sm font-medium text-gray-700 mb-1">
+                                            জরিপের তারিখ <span className="text-red-500">*</span>
+                                        </label>
+                                        <input
+                                            type="date"
+                                            value={data.survey_date}
+                                            onChange={(e) => setData('survey_date', e.target.value)}
+                                            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                                        />
+                                        {errors.survey_date && (
+                                            <p className="mt-1 text-sm text-red-600">{errors.survey_date}</p>
+                                        )}
+                                    </div>
+
+                                    <div>
+                                        <label className="block text-sm font-medium text-gray-700 mb-1">
+                                            ভর্তির তারিখ <span className="text-red-500">*</span>
+                                        </label>
+                                        <input
+                                            type="date"
+                                            value={data.admission_date}
+                                            onChange={(e) => setData('admission_date', e.target.value)}
+                                            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                                        />
+                                        {errors.admission_date && (
+                                            <p className="mt-1 text-sm text-red-600">{errors.admission_date}</p>
+                                        )}
+                                    </div>
+                                </div>
+                            </div>
+                        </section>
+
+                        {/* ২. ব্যক্তিগত তথ্য */}
+                        <section className="border-b border-gray-100 pb-6 last:border-0">
+                                <h3 className="text-lg font-semibold text-gray-900 mb-4">Personal Information</h3>
+                                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                    <div>
+                                        <label className="block text-sm font-medium text-gray-700 mb-1">
+                                            ৩. Applicant's Name (English) (আবেদনকারীর নাম - ইংরেজি) <span className="text-red-500">*</span>
+                                        </label>
+                                        <input
+                                            type="text"
+                                            value={data.applicant_name_en}
+                                            onChange={(e) => setData('applicant_name_en', e.target.value)}
+                                            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                                        />
+                                        {errors.applicant_name_en && (
+                                            <p className="mt-1 text-sm text-red-600">{errors.applicant_name_en}</p>
+                                        )}
+                                    </div>
+
+                                    <div>
+                                        <label className="block text-sm font-medium text-gray-700 mb-1">
+                                            ৩. Applicant's Name (বাংলায়) (আবেদনকারীর নাম - বাংলা) <span className="text-red-500">*</span>
+                                        </label>
+                                        <input
+                                            type="text"
+                                            value={data.applicant_name_bn}
+                                            onChange={(e) => setData('applicant_name_bn', e.target.value)}
+                                            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                                        />
+                                        {errors.applicant_name_bn && (
+                                            <p className="mt-1 text-sm text-red-600">{errors.applicant_name_bn}</p>
+                                        )}
+                                    </div>
+
+                                    <div>
+                                        <label className="block text-sm font-medium text-gray-700 mb-1">
+                                            ৪. Father's Name (English) (পিতার নাম - ইংরেজি) <span className="text-red-500">*</span>
+                                        </label>
+                                        <input
+                                            type="text"
+                                            value={data.father_name_en}
+                                            onChange={(e) => setData('father_name_en', e.target.value)}
+                                            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                                        />
+                                        {errors.father_name_en && (
+                                            <p className="mt-1 text-sm text-red-600">{errors.father_name_en}</p>
+                                        )}
+                                    </div>
+
+                                    <div>
+                                        <label className="block text-sm font-medium text-gray-700 mb-1">
+                                            ৪. Father's Name (বাংলায়) (পিতার নাম - বাংলা) <span className="text-red-500">*</span>
+                                        </label>
+                                        <input
+                                            type="text"
+                                            value={data.father_name_bn}
+                                            onChange={(e) => setData('father_name_bn', e.target.value)}
+                                            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                                        />
+                                        {errors.father_name_bn && (
+                                            <p className="mt-1 text-sm text-red-600">{errors.father_name_bn}</p>
+                                        )}
+                                    </div>
+
+                                    <div>
+                                        <label className="block text-sm font-medium text-gray-700 mb-1">
+                                            ৫. Mother's Name (English) (মাতার নাম - ইংরেজি) <span className="text-red-500">*</span>
+                                        </label>
+                                        <input
+                                            type="text"
+                                            value={data.mother_name_en}
+                                            onChange={(e) => setData('mother_name_en', e.target.value)}
+                                            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                                        />
+                                        {errors.mother_name_en && (
+                                            <p className="mt-1 text-sm text-red-600">{errors.mother_name_en}</p>
+                                        )}
+                                    </div>
+
+                                    <div>
+                                        <label className="block text-sm font-medium text-gray-700 mb-1">
+                                            ৫. Mother's Name (বাংলায়) (মাতার নাম - বাংলা) <span className="text-red-500">*</span>
+                                        </label>
+                                        <input
+                                            type="text"
+                                            value={data.mother_name_bn}
+                                            onChange={(e) => setData('mother_name_bn', e.target.value)}
+                                            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                                        />
+                                        {errors.mother_name_bn && (
+                                            <p className="mt-1 text-sm text-red-600">{errors.mother_name_bn}</p>
+                                        )}
+                                    </div>
+
+                                    <div>
+                                        <label className="block text-sm font-medium text-gray-700 mb-1">
+                                            ৭. বৈবাহিক অবস্থা (Marital Status) (বৈবাহিক অবস্থা) <span className="text-red-500">*</span>
+                                        </label>
+                                        <select
+                                            value={data.marital_status}
+                                            onChange={(e) => setData('marital_status', e.target.value as any)}
+                                            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                                        >
+                                            <option value="single">Single</option>
+                                            <option value="married">Married</option>
+                                            <option value="divorced">Divorced</option>
+                                            <option value="widowed">Widowed</option>
+                                        </select>
+                                        {errors.marital_status && (
+                                            <p className="mt-1 text-sm text-red-600">{errors.marital_status}</p>
+                                        )}
+                                    </div>
+
+                                    {data.marital_status === 'married' && (
+                                        <>
+                                            <div>
+                                                <label className="block text-sm font-medium text-gray-700 mb-1">
+                                                    ৬. Spouse Name (English) (স্বামী/স্ত্রীর নাম - ইংরেজি)
+                                                </label>
+                                                <input
+                                                    type="text"
+                                                    value={data.spouse_name_en}
+                                                    onChange={(e) => setData('spouse_name_en', e.target.value)}
+                                                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                                                />
+                                            </div>
+
+                                            <div>
+                                                <label className="block text-sm font-medium text-gray-700 mb-1">
+                                                    ৬. Spouse Name (বাংলায়) (স্বামী/স্ত্রীর নাম - বাংলা)
+                                                </label>
+                                                <input
+                                                    type="text"
+                                                    value={data.spouse_name_bn}
+                                                    onChange={(e) => setData('spouse_name_bn', e.target.value)}
+                                                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                                                />
+                                            </div>
+                                        </>
+                                    )}
+
+                                    <div>
+                                        <label className="block text-sm font-medium text-gray-700 mb-1">
+                                            ৮. মোবাইল নং (Mobile Number) (মোবাইল নং) <span className="text-red-500">*</span>
+                                        </label>
+                                        <input
+                                            type="tel"
+                                            value={data.mobile_number}
+                                            onChange={(e) => setData('mobile_number', e.target.value)}
+                                            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                                        />
+                                        {errors.mobile_number && (
+                                            <p className="mt-1 text-sm text-red-600">{errors.mobile_number}</p>
+                                        )}
+                                    </div>
+
+                                    <div>
+                                        <label className="block text-sm font-medium text-gray-700 mb-1">
+                                            ৯. বিকল্প মোবাইল নং (Alternative Mobile) (বিকল্প মোবাইল নং)
+                                        </label>
+                                        <input
+                                            type="tel"
+                                            value={data.alternative_mobile}
+                                            onChange={(e) => setData('alternative_mobile', e.target.value)}
+                                            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                                        />
+                                    </div>
+                                </div>
+                        </section>
+
+                        {/* ৩. ঠিকানা */}
+                        <section className="border-b border-gray-100 pb-6 last:border-0">
+                                <div>
+                                    <h3 className="text-lg font-semibold text-gray-900 mb-4">১০. Present Address (বর্তমান ঠিকানা)</h3>
+                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                        <div>
+                                            <label className="block text-sm font-medium text-gray-700 mb-1">
+                                                Division (বিভাগ) <span className="text-red-500">*</span>
+                                            </label>
+                                            <select
+                                                value={data.present_division}
+                                                onChange={(e) => setData('present_division', e.target.value)}
+                                                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                                            >
+                                                <option value="">Select Division (বিভাগ নির্বাচন করুন)</option>
+                                                {bangladeshData.divisions.map((division) => (
+                                                    <option key={division} value={division}>{division}</option>
+                                                ))}
+                                            </select>
+                                            {errors.present_division && (
+                                                <p className="mt-1 text-sm text-red-600">{errors.present_division}</p>
+                                            )}
+                                        </div>
+
+                                        <div>
+                                            <label className="block text-sm font-medium text-gray-700 mb-1">
+                                                District (জেলা) <span className="text-red-500">*</span>
+                                            </label>
+                                            <select
+                                                value={data.present_district}
+                                                onChange={(e) => setData('present_district', e.target.value)}
+                                                disabled={!data.present_division}
+                                                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 disabled:bg-gray-100 disabled:cursor-not-allowed"
+                                            >
+                                                <option value="">Select District (জেলা নির্বাচন করুন)</option>
+                                                {presentDistricts.map((district) => (
+                                                    <option key={district} value={district}>{district}</option>
+                                                ))}
+                                            </select>
+                                            {errors.present_district && (
+                                                <p className="mt-1 text-sm text-red-600">{errors.present_district}</p>
+                                            )}
+                                        </div>
+
+                                        <div>
+                                            <label className="block text-sm font-medium text-gray-700 mb-1">
+                                                Upazila (উপজেলা) <span className="text-red-500">*</span>
+                                            </label>
+                                            <select
+                                                value={data.present_upazila}
+                                                onChange={(e) => setData('present_upazila', e.target.value)}
+                                                disabled={!data.present_district}
+                                                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 disabled:bg-gray-100 disabled:cursor-not-allowed"
+                                            >
+                                                <option value="">Select Upazila (উপজেলা নির্বাচন করুন)</option>
+                                                {presentUpazilas.map((upazila) => (
+                                                    <option key={upazila} value={upazila}>{upazila}</option>
+                                                ))}
+                                            </select>
+                                            {errors.present_upazila && (
+                                                <p className="mt-1 text-sm text-red-600">{errors.present_upazila}</p>
+                                            )}
+                                        </div>
+
+                                        <div>
+                                            <label className="block text-sm font-medium text-gray-700 mb-1">Union (ইউনিয়ন)</label>
+                                            <input
+                                                type="text"
+                                                value={data.present_union}
+                                                onChange={(e) => setData('present_union', e.target.value)}
+                                                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                                            />
+                                        </div>
+
+                                        <div>
+                                            <label className="block text-sm font-medium text-gray-700 mb-1">
+                                                Village/Road (গ্রাম/রাস্তা)
+                                            </label>
+                                            <input
+                                                type="text"
+                                                value={data.present_village_road}
+                                                onChange={(e) => setData('present_village_road', e.target.value)}
+                                                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                                            />
+                                        </div>
+
+                                        <div>
+                                            <label className="block text-sm font-medium text-gray-700 mb-1">Post Code (পোস্ট কোড)</label>
+                                            <input
+                                                type="text"
+                                                value={data.present_post_code}
+                                                onChange={(e) => setData('present_post_code', e.target.value)}
+                                                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                                            />
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <div className="flex items-center gap-2">
+                                    <input
+                                        type="checkbox"
+                                        id="same_address"
+                                        checked={data.permanent_address_same}
+                                        onChange={(e) => setData('permanent_address_same', e.target.checked)}
+                                        className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
+                                    />
+                                    <label htmlFor="same_address" className="text-sm font-medium text-gray-700">
+                                        Permanent address same as present address (স্থায়ী ঠিকানা বর্তমান ঠিকানার মতো)
+                                    </label>
+                                </div>
+
+                                {!data.permanent_address_same && (
+                                    <div>
+                                        <h3 className="text-lg font-semibold text-gray-900 mb-4">১১. Permanent Address (স্থায়ী ঠিকানা)</h3>
+                                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                            <div>
+                                                <label className="block text-sm font-medium text-gray-700 mb-1">Division (বিভাগ)</label>
+                                                <select
+                                                    value={data.permanent_division}
+                                                    onChange={(e) => setData('permanent_division', e.target.value)}
+                                                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                                                >
+                                                    <option value="">Select Division (বিভাগ নির্বাচন করুন)</option>
+                                                    {bangladeshData.divisions.map((division) => (
+                                                        <option key={division} value={division}>{division}</option>
+                                                    ))}
+                                                </select>
+                                            </div>
+
+                                            <div>
+                                                <label className="block text-sm font-medium text-gray-700 mb-1">District (জেলা)</label>
+                                                <select
+                                                    value={data.permanent_district}
+                                                    onChange={(e) => setData('permanent_district', e.target.value)}
+                                                    disabled={!data.permanent_division}
+                                                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 disabled:bg-gray-100 disabled:cursor-not-allowed"
+                                                >
+                                                    <option value="">Select District (জেলা নির্বাচন করুন)</option>
+                                                    {permanentDistricts.map((district) => (
+                                                        <option key={district} value={district}>{district}</option>
+                                                    ))}
+                                                </select>
+                                            </div>
+
+                                            <div>
+                                                <label className="block text-sm font-medium text-gray-700 mb-1">Upazila (উপজেলা)</label>
+                                                <select
+                                                    value={data.permanent_upazila}
+                                                    onChange={(e) => setData('permanent_upazila', e.target.value)}
+                                                    disabled={!data.permanent_district}
+                                                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 disabled:bg-gray-100 disabled:cursor-not-allowed"
+                                                >
+                                                    <option value="">Select Upazila (উপজেলা নির্বাচন করুন)</option>
+                                                    {permanentUpazilas.map((upazila) => (
+                                                        <option key={upazila} value={upazila}>{upazila}</option>
+                                                    ))}
+                                                </select>
+                                            </div>
+
+                                            <div>
+                                                <label className="block text-sm font-medium text-gray-700 mb-1">Union (ইউনিয়ন)</label>
+                                                <input
+                                                    type="text"
+                                                    value={data.permanent_union}
+                                                    onChange={(e) => setData('permanent_union', e.target.value)}
+                                                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                                                />
+                                            </div>
+
+                                            <div>
+                                                <label className="block text-sm font-medium text-gray-700 mb-1">
+                                                    Village/Road (গ্রাম/রাস্তা)
+                                                </label>
+                                                <input
+                                                    type="text"
+                                                    value={data.permanent_village_road}
+                                                    onChange={(e) => setData('permanent_village_road', e.target.value)}
+                                                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                                                />
+                                            </div>
+
+                                            <div>
+                                                <label className="block text-sm font-medium text-gray-700 mb-1">Post Code (পোস্ট কোড)</label>
+                                                <input
+                                                    type="text"
+                                                    value={data.permanent_post_code}
+                                                    onChange={(e) => setData('permanent_post_code', e.target.value)}
+                                                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                                                />
+                                            </div>
+                                        </div>
+                                    </div>
+                                )}
+                        </section>
+
+                        {/* ৪. পরিচয় ও জামিনদার */}
+                        <section className="border-b border-gray-100 pb-6 last:border-0">
+                                <h3 className="text-lg font-semibold text-gray-900 mb-4">১২. Identity Information (পরিচয় তথ্য)</h3>
+                                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                    <div>
+                                        <label className="block text-sm font-medium text-gray-700 mb-1">National ID No.</label>
                                         <input
                                             type="text"
                                             value={data.nid_number}
                                             onChange={(e) => setData('nid_number', e.target.value)}
                                             className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                                         />
-                                        {(errors.nid_number || validationErrors.nid_number) && (
-                                            <p className="mt-1 text-sm text-red-600">
-                                                {errors.nid_number || validationErrors.nid_number}
-                                            </p>
-                                        )}
                                     </div>
 
                                     <div>
@@ -490,67 +843,59 @@ export default function Create({ branches, samities, categories, availableApprov
                                         />
                                     </div>
                                 </div>
-                            </div>
 
-                        {/* Section 4 (cont.): Guarantor - ১৪, ১৫ (ফরম অনুযায়ী) */}
-                        <div className="space-y-4">
-                            <h3 className="text-lg font-semibold text-gray-900">
-                                ১৪. Co-Applicant/Guarantor Name, ১৫. TIN ও এসএমএস
-                            </h3>
-                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                                <div>
-                                    <label className="block text-sm font-medium text-gray-700 mb-1">
-                                        ১৪. Co-Applicant/Guarantor Name
-                                    </label>
-                                    <input
-                                        type="text"
-                                        value={data.guarantor_name}
-                                        onChange={(e) => setData('guarantor_name', e.target.value)}
-                                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                                    />
+                                <h3 className="text-lg font-semibold text-gray-900 mt-6 mb-4">১৪. Co-Applicant/Guarantor Name, ১৫. TIN ও এসএমএস</h3>
+                                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                    <div>
+                                        <label className="block text-sm font-medium text-gray-700 mb-1">১৪. Co-Applicant/Guarantor Name</label>
+                                        <input
+                                            type="text"
+                                            value={data.guarantor_name}
+                                            onChange={(e) => setData('guarantor_name', e.target.value)}
+                                            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                                        />
+                                    </div>
+
+                                    <div>
+                                        <label className="block text-sm font-medium text-gray-700 mb-1">
+                                            Guarantor Mobile Number
+                                        </label>
+                                        <input
+                                            type="tel"
+                                            value={data.guarantor_mobile}
+                                            onChange={(e) => setData('guarantor_mobile', e.target.value)}
+                                            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                                        />
+                                    </div>
+
+                                    <div>
+                                        <label className="block text-sm font-medium text-gray-700 mb-1">১৫. TIN (ট্র্যাক্স সার্টিফিকেট নং)</label>
+                                        <input
+                                            type="text"
+                                            value={data.tin_number}
+                                            onChange={(e) => setData('tin_number', e.target.value)}
+                                            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                                        />
+                                    </div>
+
+                                    <div className="flex items-center gap-2">
+                                        <input
+                                            type="checkbox"
+                                            id="want_sms"
+                                            checked={data.want_sms_service}
+                                            onChange={(e) => setData('want_sms_service', e.target.checked)}
+                                            className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
+                                        />
+                                        <label htmlFor="want_sms" className="text-sm font-medium text-gray-700">
+                                            সদস্য কি এসএমএস সেবা নিতে চান?
+                                        </label>
+                                    </div>
                                 </div>
+                        </section>
 
-                                <div>
-                                    <label className="block text-sm font-medium text-gray-700 mb-1">
-                                        Guarantor Mobile Number
-                                    </label>
-                                    <input
-                                        type="tel"
-                                        value={data.guarantor_mobile}
-                                        onChange={(e) => setData('guarantor_mobile', e.target.value)}
-                                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                                    />
-                                </div>
-
-                                <div>
-                                    <label className="block text-sm font-medium text-gray-700 mb-1">
-                                        ১৫. TIN (ট্র্যাক্স সার্টিফিকেট নং)
-                                    </label>
-                                    <input
-                                        type="text"
-                                        value={data.tin_number}
-                                        onChange={(e) => setData('tin_number', e.target.value)}
-                                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                                    />
-                                </div>
-
-                                <div className="flex items-center gap-2">
-                                    <input
-                                        type="checkbox"
-                                        id="want_sms"
-                                        checked={data.want_sms_service}
-                                        onChange={(e) => setData('want_sms_service', e.target.checked)}
-                                        className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
-                                    />
-                                    <label htmlFor="want_sms" className="text-sm font-medium text-gray-700">
-                                        সদস্য কি এসএমএস সেবা নিতে চান?
-                                    </label>
-                                </div>
-                            </div>
-
-                        {/* Section 5: ১৬. পরিবারের তথ্য + আর্থিক কর্মকাণ্ড */}
-                        <div className="space-y-6">
-                            <div className="flex items-center justify-between">
+                        {/* ৫. পরিবার ও আর্থিক কর্মকাণ্ড */}
+                        <section className="border-b border-gray-100 pb-6 last:border-0">
+                                <div className="flex items-center justify-between">
                                     <h3 className="text-lg font-semibold text-gray-900">১৬. পরিবারের তথ্য / Family Members</h3>
                                     <button
                                         type="button"
@@ -692,10 +1037,10 @@ export default function Create({ branches, samities, categories, availableApprov
                                         </div>
                                     </div>
                                 </div>
-                            </div>
+                        </section>
 
-                        {/* Section 6: ১৭, ১৮, ১৯ Property Info (including ১৯(iv) other assets) */}
-                        <div className="space-y-6">
+                        {/* ৬. সম্পত্তি (১৭–১৯) */}
+                        <section className="border-b border-gray-100 pb-6 last:border-0">
                                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
                                     <div>
                                         <label className="block text-sm font-medium text-gray-700 mb-1">
@@ -946,11 +1291,11 @@ export default function Create({ branches, samities, categories, availableApprov
                                         <div className="text-center py-8 text-gray-500">No assets added</div>
                                     )}
                                 </div>
-                            </div>
+                        </section>
 
-                        {/* Section 7: Financial Info (২০) */}
-                        <div className="space-y-4">
-                                <h3 className="text-lg font-semibold text-gray-900">২০. পরিবারের মোট মাসিক আয়</h3>
+                        {/* ৭. আর্থিক তথ্য (২০) */}
+                        <section className="border-b border-gray-100 pb-6 last:border-0">
+                                <h3 className="text-lg font-semibold text-gray-900 mb-4">২০. পরিবারের মোট মাসিক আয়</h3>
                                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                                     <div>
                                         <label className="block text-sm font-medium text-gray-700 mb-1">মাসিক আয়</label>
@@ -980,64 +1325,55 @@ export default function Create({ branches, samities, categories, availableApprov
                                             onChange={(e) => setData('monthly_savings', Number(e.target.value))}
                                             className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                                         />
+                                    </div>
                                 </div>
-                            </div>
-                        </div>
+                        </section>
 
-                        {/* Section 8: Additional (২১–২৩) + Documents */}
-                        <ApproverSelectionStep
-                            approvers={[]}
-                            selectedApprovers={[]}
-                            onApproverToggle={() => {}}
-                            hideApproverSelection
-                            interviewerName={data.interviewer_name || ''}
-                            employeeName={data.employee_name || ''}
-                            guardianName={data.guardian_name || ''}
-                            otherLoanInfo={data.other_loan_info || ''}
-                            collectorComment={data.collector_comment || ''}
-                            customerPhoto={data.customer_photo || null}
-                            customerNidPhoto={data.customer_nid_photo || null}
-                            guardianPhoto={data.guardian_photo || null}
-                            guardianNidPhoto={data.guardian_nid_photo || null}
-                            applicantSignature={(data.applicant_signature ?? null) as React.ComponentProps<typeof ApproverSelectionStep>['applicantSignature']}
-                            onFieldChange={(field, value) => setData(field as any, value)}
-                            errors={errors}
-                        />
+                        {/* ৮. অন্যান্য তথ্য ও নথিপত্র (২১–২৩) */}
+                        <section className="pb-2">
+                            <ApproverSelectionStep
+                                approvers={[]}
+                                selectedApprovers={[]}
+                                onApproverToggle={() => {}}
+                                hideApproverSelection
+                                interviewerName={data.interviewer_name || ''}
+                                employeeName={data.employee_name || ''}
+                                guardianName={data.guardian_name || ''}
+                                otherLoanInfo={data.other_loan_info || ''}
+                                collectorComment={data.collector_comment || ''}
+                                customerPhoto={data.customer_photo || null}
+                                customerNidPhoto={data.customer_nid_photo || null}
+                                guardianPhoto={data.guardian_photo || null}
+                                guardianNidPhoto={data.guardian_nid_photo || null}
+                                applicantSignature={data.applicant_signature || null}
+                                onFieldChange={(field, value) => setData(field as any, value)}
+                                errors={errors}
+                            />
+                        </section>
                     </div>
 
-                    {/* Actions */}
-                    <div className="flex items-center justify-end mt-8 pt-6 border-t border-gray-200 gap-4">
+                    {/* Form Actions */}
+                    <div className="flex flex-col sm:flex-row items-center justify-end gap-3 mt-8 pt-6 border-t border-gray-200">
                         <button
                             type="button"
                             onClick={() => handleSubmit(true)}
                             disabled={processing}
-                            className="flex items-center gap-2 px-6 py-2 bg-gray-600 text-white rounded-lg hover:bg-gray-700 disabled:opacity-50 transition-colors"
+                            className="w-full sm:w-auto inline-flex items-center justify-center gap-2 px-6 py-2.5 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 disabled:opacity-50 transition-colors font-medium"
                         >
                             <Save className="w-4 h-4" />
                             Save Draft
                         </button>
-                        <button
-                            type="button"
-                            onClick={() => handleSubmit(false)}
-                            disabled={processing}
-                            className="flex items-center gap-2 px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 transition-colors"
-                        >
-                            <Send className="w-4 h-4" />
-                            Submit
-                        </button>
-                    </div>
-
-                    {/* Validation Errors */}
-                    {Object.keys(validationErrors).length > 0 && (
-                        <div className="mt-4 p-4 bg-red-50 border border-red-200 rounded-lg">
-                            <p className="text-sm font-medium text-red-800 mb-2">Please fix the following errors:</p>
-                            <ul className="list-disc list-inside text-sm text-red-600">
-                                {Object.values(validationErrors).map((error, index) => (
-                                    <li key={index}>{error}</li>
-                                ))}
-                            </ul>
-                        </div>
-                    )}
+                        {!isFieldOfficer && (
+                            <button
+                                type="button"
+                                onClick={() => handleSubmit(false)}
+                                disabled={processing}
+                                className="w-full sm:w-auto inline-flex items-center justify-center gap-2 px-6 py-2.5 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 transition-colors font-medium"
+                            >
+                                <Send className="w-4 h-4" />
+                                Submit Application
+                            </button>
+                        )}
                     </div>
                 </div>
             </div>
