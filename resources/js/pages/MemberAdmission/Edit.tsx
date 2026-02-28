@@ -10,7 +10,7 @@ import {
     ChevronRight,
     ArrowLeft,
 } from 'lucide-react';
-import { MemberAdmission, FamilyMember, OtherAsset } from '@/types/memberAdmission';
+import { MemberAdmission, MemberAdmissionFormData, FamilyMember, OtherAsset } from '@/types/memberAdmission';
 import bangladeshData from '@/data/bangladeshAddresses.json';
 import ApproverSelectionStep from '@/components/MemberAdmission/ApproverSelectionStep';
 
@@ -35,7 +35,7 @@ export default function Edit({ admission, branches, samities, categories, availa
     const [permanentDistricts, setPermanentDistricts] = useState<string[]>([]);
     const [permanentUpazilas, setPermanentUpazilas] = useState<string[]>([]);
 
-    const { data, setData, put, processing, errors } = useForm({
+    const { data, setData, put, processing, errors } = useForm<MemberAdmissionFormData>({
         branch_id: admission.branch_id,
         samity_id: admission.samity_id,
         member_category_id: admission.member_category_id,
@@ -166,7 +166,7 @@ export default function Edit({ admission, branches, samities, categories, availa
         if (data.present_division) {
             const districts = bangladeshData.districtsByDivision[data.present_division as keyof typeof bangladeshData.districtsByDivision] || [];
             setPresentDistricts(districts);
-            if (!districts.includes(data.present_district)) {
+            if (!districts.includes(data.present_district || '')) {
                 setData('present_district', '');
                 setPresentUpazilas([]);
             }
@@ -178,7 +178,7 @@ export default function Edit({ admission, branches, samities, categories, availa
         if (data.present_district) {
             const upazilas = bangladeshData.upazilasByDistrict[data.present_district as keyof typeof bangladeshData.upazilasByDistrict] || [];
             setPresentUpazilas(upazilas);
-            if (!upazilas.includes(data.present_upazila)) {
+            if (!upazilas.includes(data.present_upazila || '')) {
                 setData('present_upazila', '');
             }
         }
@@ -189,7 +189,7 @@ export default function Edit({ admission, branches, samities, categories, availa
         if (data.permanent_division) {
             const districts = bangladeshData.districtsByDivision[data.permanent_division as keyof typeof bangladeshData.districtsByDivision] || [];
             setPermanentDistricts(districts);
-            if (!districts.includes(data.permanent_district)) {
+            if (!districts.includes(data.permanent_district || '')) {
                 setData('permanent_district', '');
                 setPermanentUpazilas([]);
             }
@@ -201,7 +201,7 @@ export default function Edit({ admission, branches, samities, categories, availa
         if (data.permanent_district) {
             const upazilas = bangladeshData.upazilasByDistrict[data.permanent_district as keyof typeof bangladeshData.upazilasByDistrict] || [];
             setPermanentUpazilas(upazilas);
-            if (!upazilas.includes(data.permanent_upazila)) {
+            if (!upazilas.includes(data.permanent_upazila || '')) {
                 setData('permanent_upazila', '');
             }
         }
@@ -325,7 +325,6 @@ export default function Edit({ admission, branches, samities, categories, availa
     return (
         <AdminLayout>
             <Head title="Edit Member Admission Application" />
-
             <div className="space-y-6 max-w-full">
                 {/* Header */}
                 <div className="flex items-center justify-between">
@@ -479,7 +478,6 @@ export default function Edit({ admission, branches, samities, categories, availa
                                     </div>
                                 </div>
                             </div>
-                        </div>
 
                         {/* Section 2: Personal Information */}
                         <div className="space-y-4">
@@ -650,7 +648,6 @@ export default function Edit({ admission, branches, samities, categories, availa
                                     </div>
                                 </div>
                             </div>
-                        )}
 
                         {/* Section 3: Address */}
                         <div className="space-y-6">
@@ -846,8 +843,6 @@ export default function Edit({ admission, branches, samities, categories, availa
                                     </div>
                                 )}
                             </div>
-                        )}
-
                         {/* Section 4: Identity */}
                         <div className="space-y-4">
                                 <h3 className="text-lg font-semibold text-gray-900">Identity Information</h3>
@@ -932,7 +927,6 @@ export default function Edit({ admission, branches, samities, categories, availa
                                     </div>
                                 </div>
                             </div>
-                        </div>
 
                         {/* Section 5: Guarantor */}
                         <div className="space-y-4">
@@ -984,8 +978,6 @@ export default function Edit({ admission, branches, samities, categories, availa
                                     </div>
                                 </div>
                             </div>
-                        )}
-
                         {/* Section 6: Property Info */}
                         <div className="space-y-6">
                                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
@@ -1211,7 +1203,6 @@ export default function Edit({ admission, branches, samities, categories, availa
                                     </div>
                                 </div>
                             </div>
-                        </div>
 
                         {/* Section 8: Family Members */}
                         <div className="space-y-4">
@@ -1416,7 +1407,6 @@ export default function Edit({ admission, branches, samities, categories, availa
                                     </div>
                                 )}
                             </div>
-                        )}
 
                         {/* Section 9: Other Assets */}
                         <div className="space-y-4">
@@ -1502,28 +1492,30 @@ export default function Edit({ admission, branches, samities, categories, availa
                                     </div>
                                 )}
                             </div>
-                        </div>
 
                         {/* Section 10: Additional Information & Documents — submit goes to branch manager */}
                         <ApproverSelectionStep
-                                approvers={[]}
-                                selectedApprovers={[]}
-                                onApproverToggle={() => {}}
-                                hideApproverSelection
-                                interviewerName={data.interviewer_name || ''}
-                                employeeName={data.employee_name || ''}
-                                guardianName={data.guardian_name || ''}
-                                otherLoanInfo={data.other_loan_info || ''}
-                                collectorComment={data.collector_comment || ''}
-                                customerPhoto={data.customer_photo || null}
-                                customerNidPhoto={data.customer_nid_photo || null}
-                                guardianPhoto={data.guardian_photo || null}
-                                guardianNidPhoto={data.guardian_nid_photo || null}
-                                applicantSignature={data.applicant_signature || null}
-                                onFieldChange={(field, value) => setData(field as any, value)}
-                                errors={errors}
-                            />
-                    </div>
+                            approvers={availableApprovers}
+                            selectedApprovers={data.selected_approvers || []}
+                            onApproverToggle={(id) => {
+                                const current = data.selected_approvers || [];
+                                const next = current.includes(id) ? current.filter((x) => x !== id) : [...current, id];
+                                setData('selected_approvers', next);
+                            }}
+                            hideApproverSelection
+                            interviewerName={data.interviewer_name || ''}
+                            employeeName={data.employee_name || ''}
+                            guardianName={data.guardian_name || ''}
+                            otherLoanInfo={data.other_loan_info || ''}
+                            collectorComment={data.collector_comment || ''}
+                            customerPhoto={data.customer_photo ?? null}
+                            customerNidPhoto={data.customer_nid_photo ?? null}
+                            guardianPhoto={data.guardian_photo ?? null}
+                            guardianNidPhoto={data.guardian_nid_photo ?? null}
+                            applicantSignature={data.applicant_signature ?? null}
+                            onFieldChange={(field, value) => setData(field as keyof MemberAdmissionFormData, value)}
+                            errors={errors}
+                        />
 
                     {/* Actions */}
                     <div className="flex items-center justify-end mt-8 pt-6 border-t border-gray-200 gap-4">
@@ -1558,8 +1550,8 @@ export default function Edit({ admission, branches, samities, categories, availa
                             </ul>
                         </div>
                     )}
+                    </div>
                 </div>
-            </div>
         </AdminLayout>
     );
 }
