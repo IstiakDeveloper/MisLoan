@@ -112,7 +112,7 @@ export default function Show({ admission, auth }: Props) {
                                 সম্পাদনা
                             </Link>
                         )}
-                        {admission.status === 'draft' && !isFieldOfficer && (
+                        {admission.status === 'draft' && (
                             <button
                                 onClick={handleSubmit}
                                 className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"

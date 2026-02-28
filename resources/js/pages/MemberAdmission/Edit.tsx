@@ -25,7 +25,7 @@ interface Props {
 export default function Edit({ admission, branches, samities, categories, availableApprovers }: Props) {
     const pageAuth = usePage().props.auth as { user?: { role?: { name: string } } } | undefined;
     const isFieldOfficer = pageAuth?.user?.role?.name === 'field_officer';
-    const [currentStep, setCurrentStep] = useState(1);
+    const [currentStep, setCurrentStep] = useState(1); // used only for visual step indicator
     const [availableSamities, setAvailableSamities] = useState(samities);
     const [validationErrors, setValidationErrors] = useState<Record<string, string>>({});
 
@@ -223,24 +223,13 @@ export default function Edit({ admission, branches, samities, categories, availa
         } else if (step === 3) {
             if (!data.present_village_road) errors.present_village_road = 'Present Address is required';
         } else if (step === 4) {
-            if (!data.nid_number && !data.birth_certificate_number) {
-                errors.nid_number = 'Either NID or Birth Certificate is required';
+            if (!data.nid_number) {
+                errors.nid_number = 'NID number is required';
             }
-            if (!data.date_of_birth) errors.date_of_birth = 'Date of Birth is required';
         }
 
         setValidationErrors(errors);
         return Object.keys(errors).length === 0;
-    };
-
-    const handleNext = () => {
-        if (validateStep(currentStep)) {
-            setCurrentStep(currentStep + 1);
-        }
-    };
-
-    const handlePrevious = () => {
-        setCurrentStep(currentStep - 1);
     };
 
     const handleSubmit = (saveAsDraft: boolean) => {
@@ -389,11 +378,10 @@ export default function Edit({ admission, branches, samities, categories, availa
                         ))}
                     </div>
 
-                    {/* Form Content */}
-                    <div className="space-y-6">
-                        {/* Step 1: Organization & Dates */}
-                        {currentStep === 1 && (
-                            <div className="space-y-4">
+                    {/* Form Content – all sections on one page */}
+                    <div className="space-y-8">
+                        {/* Section 1: Organization & Dates */}
+                        <div className="space-y-4">
                                 <h3 className="text-lg font-semibold text-gray-900">Organization & Date</h3>
                                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                                     <div>
@@ -491,11 +479,10 @@ export default function Edit({ admission, branches, samities, categories, availa
                                     </div>
                                 </div>
                             </div>
-                        )}
+                        </div>
 
-                        {/* Step 2: Personal Information */}
-                        {currentStep === 2 && (
-                            <div className="space-y-4">
+                        {/* Section 2: Personal Information */}
+                        <div className="space-y-4">
                                 <h3 className="text-lg font-semibold text-gray-900">Personal Information</h3>
                                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                                     <div>
@@ -665,9 +652,8 @@ export default function Edit({ admission, branches, samities, categories, availa
                             </div>
                         )}
 
-                        {/* Step 3: Address */}
-                        {currentStep === 3 && (
-                            <div className="space-y-6">
+                        {/* Section 3: Address */}
+                        <div className="space-y-6">
                                 <div>
                                     <h3 className="text-lg font-semibold text-gray-900 mb-4">Present Address</h3>
                                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -862,19 +848,25 @@ export default function Edit({ admission, branches, samities, categories, availa
                             </div>
                         )}
 
-                        {/* Step 4: Identity */}
-                        {currentStep === 4 && (
-                            <div className="space-y-4">
+                        {/* Section 4: Identity */}
+                        <div className="space-y-4">
                                 <h3 className="text-lg font-semibold text-gray-900">Identity Information</h3>
                                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                                     <div>
-                                        <label className="block text-sm font-medium text-gray-700 mb-1">NID Number (এনআইডি নম্বর)</label>
+                                        <label className="block text-sm font-medium text-gray-700 mb-1">
+                                            NID Number (এনআইডি নম্বর) <span className="text-red-500">*</span>
+                                        </label>
                                         <input
                                             type="text"
                                             value={data.nid_number}
                                             onChange={(e) => setData('nid_number', e.target.value)}
                                             className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                                         />
+                                        {(errors.nid_number || validationErrors.nid_number) && (
+                                            <p className="mt-1 text-sm text-red-600">
+                                                {errors.nid_number || validationErrors.nid_number}
+                                            </p>
+                                        )}
                                     </div>
 
                                     <div>
@@ -940,11 +932,10 @@ export default function Edit({ admission, branches, samities, categories, availa
                                     </div>
                                 </div>
                             </div>
-                        )}
+                        </div>
 
-                        {/* Step 5: Guarantor */}
-                        {currentStep === 5 && (
-                            <div className="space-y-4">
+                        {/* Section 5: Guarantor */}
+                        <div className="space-y-4">
                                 <h3 className="text-lg font-semibold text-gray-900">Guarantor Information</h3>
                                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                                     <div>
@@ -995,9 +986,8 @@ export default function Edit({ admission, branches, samities, categories, availa
                             </div>
                         )}
 
-                        {/* Step 6: Property Info */}
-                        {currentStep === 6 && (
-                            <div className="space-y-6">
+                        {/* Section 6: Property Info */}
+                        <div className="space-y-6">
                                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
                                     <div>
                                         <label className="block text-sm font-medium text-gray-700 mb-1">
@@ -1184,11 +1174,10 @@ export default function Edit({ admission, branches, samities, categories, availa
                                     </div>
                                 </div>
                             </div>
-                        )}
+                        </div>
 
-                        {/* Step 7: Financial Info */}
-                        {currentStep === 7 && (
-                            <div className="space-y-4">
+                        {/* Section 7: Financial Info */}
+                        <div className="space-y-4">
                                 <h3 className="text-lg font-semibold text-gray-900">Financial Information</h3>
                                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                                     <div>
@@ -1222,11 +1211,10 @@ export default function Edit({ admission, branches, samities, categories, availa
                                     </div>
                                 </div>
                             </div>
-                        )}
+                        </div>
 
-                        {/* Step 8: Family Members */}
-                        {currentStep === 8 && (
-                            <div className="space-y-4">
+                        {/* Section 8: Family Members */}
+                        <div className="space-y-4">
                                 <div className="flex items-center justify-between">
                                     <h3 className="text-lg font-semibold text-gray-900">Family Members</h3>
                                     <button
@@ -1430,9 +1418,8 @@ export default function Edit({ admission, branches, samities, categories, availa
                             </div>
                         )}
 
-                        {/* Step 9: Other Assets */}
-                        {currentStep === 9 && (
-                            <div className="space-y-4">
+                        {/* Section 9: Other Assets */}
+                        <div className="space-y-4">
                                 <div className="flex items-center justify-between">
                                     <h3 className="text-lg font-semibold text-gray-900">Other Assets</h3>
                                     <button
@@ -1515,11 +1502,10 @@ export default function Edit({ admission, branches, samities, categories, availa
                                     </div>
                                 )}
                             </div>
-                        )}
+                        </div>
 
-                        {/* Step 10: Additional Information & Documents — submit goes to branch manager */}
-                        {currentStep === 10 && (
-                            <ApproverSelectionStep
+                        {/* Section 10: Additional Information & Documents — submit goes to branch manager */}
+                        <ApproverSelectionStep
                                 approvers={[]}
                                 selectedApprovers={[]}
                                 onApproverToggle={() => {}}
@@ -1537,56 +1523,28 @@ export default function Edit({ admission, branches, samities, categories, availa
                                 onFieldChange={(field, value) => setData(field as any, value)}
                                 errors={errors}
                             />
-                        )}
                     </div>
 
-                    {/* Navigation Buttons */}
-                    <div className="flex items-center justify-between mt-8 pt-6 border-t border-gray-200">
+                    {/* Actions */}
+                    <div className="flex items-center justify-end mt-8 pt-6 border-t border-gray-200 gap-4">
                         <button
                             type="button"
-                            onClick={handlePrevious}
-                            disabled={currentStep === 1}
-                            className="flex items-center gap-2 px-6 py-2 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                            onClick={() => handleSubmit(true)}
+                            disabled={processing}
+                            className="flex items-center gap-2 px-6 py-2 bg-gray-600 text-white rounded-lg hover:bg-gray-700 disabled:opacity-50 transition-colors"
                         >
-                            <ChevronLeft className="w-4 h-4" />
-                            Previous
+                            <Save className="w-4 h-4" />
+                            Save Draft
                         </button>
-
-                        <div className="flex items-center gap-4">
-                            {currentStep === steps.length ? (
-                                <>
-                                    <button
-                                        type="button"
-                                        onClick={() => handleSubmit(true)}
-                                        disabled={processing}
-                                        className="flex items-center gap-2 px-6 py-2 bg-gray-600 text-white rounded-lg hover:bg-gray-700 disabled:opacity-50 transition-colors"
-                                    >
-                                        <Save className="w-4 h-4" />
-                                        Save Draft
-                                    </button>
-                                    {!isFieldOfficer && (
-                                        <button
-                                            type="button"
-                                            onClick={() => handleSubmit(false)}
-                                            disabled={processing}
-                                            className="flex items-center gap-2 px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 transition-colors"
-                                        >
-                                            <Send className="w-4 h-4" />
-                                            Update
-                                        </button>
-                                    )}
-                                </>
-                            ) : (
-                                <button
-                                    type="button"
-                                    onClick={handleNext}
-                                    className="flex items-center gap-2 px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
-                                >
-                                    Next
-                                    <ChevronRight className="w-4 h-4" />
-                                </button>
-                            )}
-                        </div>
+                        <button
+                            type="button"
+                            onClick={() => handleSubmit(false)}
+                            disabled={processing}
+                            className="flex items-center gap-2 px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 transition-colors"
+                        >
+                            <Send className="w-4 h-4" />
+                            Update
+                        </button>
                     </div>
 
                     {/* Validation Errors */}

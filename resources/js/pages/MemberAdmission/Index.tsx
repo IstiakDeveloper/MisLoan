@@ -338,7 +338,7 @@ export default function Index({ admissions, filters, stats }: Props) {
                                                     {(admission.status === 'draft' || admission.status === 'rejected') && (
                                                         <>
                                                             <Link href={`/member-admissions/${admission.id}/edit`} className="p-1.5 text-amber-600 hover:bg-amber-50 rounded" title="সম্পাদনা"><Edit className="w-3.5 h-3.5" /></Link>
-                                                            {admission.status === 'draft' && !isFieldOfficer && (
+                                                            {admission.status === 'draft' && (
                                                                 <button onClick={() => handleSubmit(admission.id, admission.application_no)} className="p-1.5 text-green-600 hover:bg-green-50 rounded" title="জমা দিন"><Send className="w-3.5 h-3.5" /></button>
                                                             )}
                                                         </>

@@ -8,6 +8,9 @@ export interface FamilyMember {
     education_level?: string;
     occupation?: string;
     monthly_income?: number;
+    business_details?: string;
+    job_details?: string;
+    other_income_details?: string;
 }
 
 export interface OtherAsset {
@@ -109,7 +112,11 @@ export interface MemberAdmission {
     other_loan_info?: string;
     collector_comment?: string;
     guardian_name?: string;
-    applicant_signature?: string | null;
+    applicant_signature?: string | File | null;
+    customer_photo?: File | null;
+    customer_nid_photo?: File | null;
+    guardian_photo?: File | null;
+    guardian_nid_photo?: File | null;
 
     // Status
     status: 'draft' | 'submitted' | 'under_review' | 'ready_for_head_office' | 'approved' | 'rejected' | 'needs_revision' | 'pending_head_office';

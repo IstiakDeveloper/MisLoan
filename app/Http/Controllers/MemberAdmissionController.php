@@ -155,7 +155,7 @@ class MemberAdmissionController extends Controller
             'permanent_post_code' => 'nullable|string|max:10',
 
             // Identity
-            'nid_number' => 'nullable|string|max:20',
+            'nid_number' => 'required|string|max:20',
             'smart_card_number' => 'nullable|string|max:20',
             'birth_certificate_number' => 'nullable|string|max:30',
             'date_of_birth' => 'nullable|date',
@@ -309,8 +309,6 @@ class MemberAdmissionController extends Controller
             if ($authUser->role?->name === Role::FIELD_OFFICER) {
                 $admissionData['interviewer_name'] = $admissionData['interviewer_name'] ?: $authUser->name;
                 $admissionData['employee_name'] = $admissionData['employee_name'] ?: $authUser->name;
-                $admissionData['surveyor_signature_path'] = $authUser->signature;
-                $admissionData['surveyor_pin'] = $authUser->pin;
             }
 
             $admission = MemberAdmission::create($admissionData);
@@ -435,6 +433,7 @@ class MemberAdmissionController extends Controller
             'branch_id' => 'required|exists:branches,id',
             'samity_id' => 'required|exists:samities,id',
             'member_category_id' => 'required|exists:member_categories,id',
+            'nid_number' => 'required|string|max:20',
 
             // Customer Documents (Required on create, optional on update if already exists) - Max 10MB (will be compressed)
             'customer_photo' => $memberAdmission->customer_photo_path ? 'nullable|image|mimes:jpeg,png,jpg|max:10240' : 'required|image|mimes:jpeg,png,jpg|max:10240',
@@ -535,8 +534,6 @@ class MemberAdmissionController extends Controller
             if ($authUser->role?->name === Role::FIELD_OFFICER) {
                 $updateData['interviewer_name'] = $updateData['interviewer_name'] ?: $authUser->name;
                 $updateData['employee_name'] = $updateData['employee_name'] ?: $authUser->name;
-                $updateData['surveyor_signature_path'] = $authUser->signature;
-                $updateData['surveyor_pin'] = $authUser->pin;
             }
 
             $memberAdmission->update($updateData);
@@ -600,10 +597,6 @@ class MemberAdmissionController extends Controller
     {
         $user = auth()->user();
         $user->loadMissing('role');
-        if ($user->role?->name === Role::FIELD_OFFICER) {
-            return back()->with('error', 'ফিল্ড অফিসার শুধু ফর্ম পূরণ করতে পারবেন, জমা দিতে পারবেন না।');
-        }
-
         if (!$memberAdmission->isDraft()) {
             return back()->with('error', 'Only draft admissions can be submitted!');
         }
@@ -614,8 +607,6 @@ class MemberAdmissionController extends Controller
                 'status' => 'submitted',
                 'submitted_by' => $authUser->id,
                 'submitted_at' => now(),
-                'submitted_by_signature_path' => $authUser->signature,
-                'submitted_by_pin' => $authUser->pin,
             ]);
 
             $approvalService = app(ApprovalService::class);
@@ -633,10 +624,6 @@ class MemberAdmissionController extends Controller
     {
         $user = auth()->user();
         $user->loadMissing('role');
-        if ($user->role?->name === Role::FIELD_OFFICER) {
-            return back()->with('error', 'ফিল্ড অফিসার শুধু ফর্ম পূরণ করতে পারবেন, জমা দিতে পারবেন না।');
-        }
-
         $request->validate([
             'revision_note' => 'required|string|max:2000',
         ]);
@@ -669,8 +656,6 @@ class MemberAdmissionController extends Controller
                 'revision_comments' => $currentComments . $newComment,
                 'submitted_by' => $authUser->id,
                 'submitted_at' => now(),
-                'submitted_by_signature_path' => $authUser->signature,
-                'submitted_by_pin' => $authUser->pin,
             ]);
         });
 
@@ -686,10 +671,6 @@ class MemberAdmissionController extends Controller
     {
         $user = auth()->user();
         $user->loadMissing('role');
-        if ($user->role?->name === Role::FIELD_OFFICER) {
-            return back()->with('error', 'ফিল্ড অফিসার শুধু ফর্ম পূরণ করতে পারবেন, Head Office এ পাঠাতে পারবেন না।');
-        }
-
         if ($memberAdmission->status !== 'ready_for_head_office') {
             return back()->with('error', 'শুধু শাখা অনুমোদিত আবেদনই Head Office এ পাঠানো যাবে।');
         }
@@ -699,8 +680,6 @@ class MemberAdmissionController extends Controller
             'status' => 'pending_head_office',
             'submitted_by' => $authUser->id,
             'submitted_at' => now(),
-            'submitted_by_signature_path' => $authUser->signature,
-            'submitted_by_pin' => $authUser->pin,
         ]);
 
         return redirect()->route('member-admissions.index')

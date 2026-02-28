@@ -19,11 +19,11 @@ interface Props {
     guardianName: string;
     otherLoanInfo: string;
     collectorComment: string;
-    customerPhoto: File | null;
-    customerNidPhoto: File | null;
-    guardianPhoto: File | null;
-    guardianNidPhoto: File | null;
-    applicantSignature: File | null;
+    customerPhoto: File | string | null;
+    customerNidPhoto: File | string | null;
+    guardianPhoto: File | string | null;
+    guardianNidPhoto: File | string | null;
+    applicantSignature: File | string | null;
     onFieldChange: (field: string, value: string | File | null) => void;
     errors: any;
 }
@@ -47,23 +47,37 @@ export default function ApproverSelectionStep({
     errors,
 }: Props) {
     const [uploadStatus, setUploadStatus] = useState<{ [key: string]: string }>({});
+    const [previewUrls, setPreviewUrls] = useState<{ [key: string]: string }>({});
 
     const handleFileChange = (field: string, file: File | null) => {
+        const nextStatus = { ...uploadStatus };
+        const nextPreview = { ...previewUrls };
+
         if (file) {
             const fileSizeMB = file.size / 1048576;
             const fileSizeKB = file.size / 1024;
 
             // Check file size (10MB = 10485760 bytes)
             if (file.size > 10485760) {
-                setUploadStatus({ ...uploadStatus, [field]: `❌ File is too large (${fileSizeMB.toFixed(2)}MB). Maximum 10MB allowed.` });
+                nextStatus[field] = `❌ File is too large (${fileSizeMB.toFixed(2)}MB). Maximum 10MB allowed.`;
             } else if (file.size > 2097152) {
-                setUploadStatus({ ...uploadStatus, [field]: `⚠️ File is ${fileSizeMB.toFixed(2)}MB. It will be automatically compressed to under 2MB during upload.` });
+                nextStatus[field] = `⚠️ File is ${fileSizeMB.toFixed(2)}MB. It will be automatically compressed to under 2MB during upload.`;
             } else {
-                setUploadStatus({ ...uploadStatus, [field]: `✓ File selected: ${file.name} (${fileSizeKB.toFixed(2)}KB)` });
+                nextStatus[field] = `✓ File selected: ${file.name} (${fileSizeKB.toFixed(2)}KB)`;
+            }
+
+            if (file.type.startsWith('image/')) {
+                nextPreview[field] = URL.createObjectURL(file);
+            } else {
+                nextPreview[field] = '';
             }
         } else {
-            setUploadStatus({ ...uploadStatus, [field]: '' });
+            nextStatus[field] = '';
+            nextPreview[field] = '';
         }
+
+        setUploadStatus(nextStatus);
+        setPreviewUrls(nextPreview);
         onFieldChange(field, file);
     };
 
@@ -235,6 +249,15 @@ export default function ApproverSelectionStep({
                         {errors.customer_photo && (
                             <p className="text-sm text-red-600 mt-1">❌ {errors.customer_photo}</p>
                         )}
+                        {previewUrls.customer_photo && (
+                            <div className="mt-2">
+                                <img
+                                    src={previewUrls.customer_photo}
+                                    alt="Customer preview"
+                                    className="h-24 w-24 rounded-md border object-cover"
+                                />
+                            </div>
+                        )}
                         <p className="text-xs text-gray-500 mt-1">
                             📸 Upload customer's passport-size photo (JPG, PNG - Max: 10MB)<br />
                             ℹ️ Images will be automatically compressed to under 2MB
@@ -261,6 +284,15 @@ export default function ApproverSelectionStep({
                         {errors.customer_nid_photo && (
                             <p className="text-sm text-red-600 mt-1">❌ {errors.customer_nid_photo}</p>
                         )}
+                        {previewUrls.customer_nid_photo && (
+                            <div className="mt-2">
+                                <img
+                                    src={previewUrls.customer_nid_photo}
+                                    alt="Customer NID preview"
+                                    className="h-24 w-24 rounded-md border object-cover"
+                                />
+                            </div>
+                        )}
                         <p className="text-xs text-gray-500 mt-1">
                             📄 Upload customer's NID card (JPG, PNG, PDF - Max: 10MB)<br />
                             ℹ️ Images will be automatically compressed. PDFs will be uploaded as-is.
@@ -284,6 +316,15 @@ export default function ApproverSelectionStep({
                         {uploadStatus.guardian_photo && (
                             <p className="text-xs text-blue-600 mt-1">{uploadStatus.guardian_photo}</p>
                         )}
+                        {previewUrls.guardian_photo && (
+                            <div className="mt-2">
+                                <img
+                                    src={previewUrls.guardian_photo}
+                                    alt="Guardian preview"
+                                    className="h-24 w-24 rounded-md border object-cover"
+                                />
+                            </div>
+                        )}
                         <p className="text-xs text-gray-500 mt-1">
                             📸 Upload guardian's photo (JPG, PNG - Max: 10MB)
                         </p>
@@ -306,6 +347,15 @@ export default function ApproverSelectionStep({
                         {uploadStatus.guardian_nid_photo && (
                             <p className="text-xs text-blue-600 mt-1">{uploadStatus.guardian_nid_photo}</p>
                         )}
+                        {previewUrls.guardian_nid_photo && (
+                            <div className="mt-2">
+                                <img
+                                    src={previewUrls.guardian_nid_photo}
+                                    alt="Guardian NID preview"
+                                    className="h-24 w-24 rounded-md border object-cover"
+                                />
+                            </div>
+                        )}
                         <p className="text-xs text-gray-500 mt-1">
                             📄 Upload guardian's NID card (JPG, PNG, PDF - Max: 10MB)
                         </p>
@@ -327,6 +377,15 @@ export default function ApproverSelectionStep({
                         />
                         {uploadStatus.applicant_signature && (
                             <p className="text-xs text-blue-600 mt-1">{uploadStatus.applicant_signature}</p>
+                        )}
+                        {previewUrls.applicant_signature && (
+                            <div className="mt-2">
+                                <img
+                                    src={previewUrls.applicant_signature}
+                                    alt="Applicant signature preview"
+                                    className="h-16 rounded-md border object-contain"
+                                />
+                            </div>
                         )}
                         <p className="text-xs text-gray-500 mt-1">
                             ✍️ Upload applicant's signature image (JPG, PNG, etc.)

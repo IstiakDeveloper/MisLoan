@@ -26,3 +26,7 @@ yarn-error.log
 /.nova
 /.vscode
 /.zed
+
+# Windows reserved name (invalid path for git)
+/nul
+nul
