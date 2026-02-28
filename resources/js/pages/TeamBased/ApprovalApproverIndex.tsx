@@ -26,6 +26,8 @@ interface SheetInfo {
     status: string;
     branch_name?: string | null;
     branch_code?: string | null;
+    area_name?: string | null;
+    zone_name?: string | null;
     items_count: number;
     proposed_total: number;
     items: ItemRow[];
@@ -277,10 +279,10 @@ export default function TeamBasedApprovalApproverIndex({ reviews, filters }: Pro
             </Head>
 
             <div className="mx-auto py-6 px-4">
-                {/* Print header - organization + approver info */}
+                {/* Print header - same as ApprovalIndex: logo left, org+title center; then branch/area/zone/tarikh row */}
                 <div className="mb-4 approval-print-header">
-                    <div className="flex items-center justify-between mb-2 print:flex print:mb-1">
-                        <div className="flex items-center gap-3">
+                    <div className="flex items-start justify-between gap-4 mb-2 print:flex print:mb-1">
+                        <div className="flex-shrink-0">
                             <img
                                 src="/logo.png"
                                 alt="Logo"
@@ -289,30 +291,25 @@ export default function TeamBasedApprovalApproverIndex({ reviews, filters }: Pro
                                     (e.target as HTMLImageElement).style.display = 'none';
                                 }}
                             />
-                            <div className="leading-tight">
-                                <h1 className="text-lg font-bold text-gray-900">মৌসুমী</h1>
-                                <p className="text-xs text-gray-700">উকিলপাড়া, নওগাঁ</p>
-                            </div>
                         </div>
-                        <div className="text-right text-xs text-gray-700">
-                            <p>তারিখ: {currentTo || currentFrom || '-'}</p>
+                        <div className="flex-1 text-center leading-tight">
+                            <h1 className="text-lg font-bold text-gray-900">মৌসুমী</h1>
+                            <p className="text-xs text-gray-700">উকিলপাড়া, নওগাঁ।</p>
+                            <p className="text-sm font-semibold text-gray-900 mt-0.5">
+                                মাসিক ঋণ যাচাই ও অনুমোদন সংক্রান্ত তথ্য।
+                            </p>
                         </div>
+                        <div className="flex-shrink-0 w-12" />
                     </div>
-                    <div className="text-center mb-3">
-                        <p className="text-sm font-semibold text-gray-900">
-                            মাসিক ঋণ বণ্টন ও অনুমোদন সংগ্রহ তথ্য
-                        </p>
+                    <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-1 text-xs text-gray-700 mb-4">
+                        <span><span className="font-semibold">শাখার নাম:</span> {reviews.data[0]?.sheet?.branch_name ?? 'বহু শাখা'}</span>
+                        <span><span className="font-semibold">অঞ্চলের নাম:</span> {reviews.data[0]?.sheet?.area_name ?? '-'}</span>
+                        <span><span className="font-semibold">জোনের নাম:</span> {reviews.data[0]?.sheet?.zone_name ?? '-'}</span>
+                        <span><span className="font-semibold">তারিখ:</span> {currentTo || currentFrom || '-'}</span>
                     </div>
-                    <div className="grid grid-cols-2 gap-2 text-xs text-gray-700 mb-4">
-                        <div>
-                            <span className="font-semibold">শাখার নাম:</span>{' '}
-                            <span>বহু শাখা</span>
-                        </div>
-                        <div>
-                            <span className="font-semibold">অনুমোদনকারীর নাম:</span>{' '}
-                            <span>{authUser?.name || '-'}</span>
-                        </div>
-                    </div>
+                    {authUser?.name && (
+                        <p className="text-xs text-gray-600 mb-1 print:mb-0"><span className="font-semibold">অনুমোদনকারীর নাম:</span> {authUser.name}</p>
+                    )}
                 </div>
 
                 {/* Filters - only visible on screen */}

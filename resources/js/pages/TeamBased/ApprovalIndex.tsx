@@ -176,16 +176,21 @@ export default function TeamBasedApprovalIndex({ approvals, filters, draftCount,
                         padding: 1px 2px;
                     }
                     .approval-index-table-wrapper tbody td {
-                        padding: 0 0;
+                        padding: 8px 4px;
                     }
                     @page { size: A4 landscape; margin: 6mm; }
                     @media print {
                         body { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
                         .approval-index-table-wrapper { overflow: visible !important; }
                         .approval-index-table-wrapper table { width: 100% !important; table-layout: fixed !important; font-size: 7pt !important; }
+                        .approval-index-table-wrapper thead th {
+                            padding: 2px 4px !important;
+                        }
+                        .approval-index-table-wrapper tbody td {
+                            padding: 8px 4px !important;
+                        }
                         .approval-index-table-wrapper th,
                         .approval-index-table-wrapper td {
-                            padding: 1px 2px !important;
                             font-size: 7pt !important;
                             line-height: 1.2 !important;
                         }
@@ -198,10 +203,10 @@ export default function TeamBasedApprovalIndex({ approvals, filters, draftCount,
             </Head>
 
             <div className="mx-auto py-6 px-4">
-                {/* Print header - organization + branch info */}
+                {/* Print header - matches formal document: logo left, org+title center, date right; then branch/area/zone row */}
                 <div className="mb-4 approval-index-print-header">
-                    <div className="flex items-center justify-between mb-2 print:flex print:mb-1">
-                        <div className="flex items-center gap-3">
+                    <div className="flex items-start justify-between gap-4 mb-2 print:flex print:mb-1">
+                        <div className="flex-shrink-0">
                             <img
                                 src="/logo.png"
                                 alt="Logo"
@@ -210,35 +215,21 @@ export default function TeamBasedApprovalIndex({ approvals, filters, draftCount,
                                     (e.target as HTMLImageElement).style.display = 'none';
                                 }}
                             />
-                            <div className="leading-tight">
-                                <h1 className="text-lg font-bold text-gray-900">মৌসুমী</h1>
-                                <p className="text-xs text-gray-700">উকিলপাড়া, নওগাঁ</p>
-                            </div>
                         </div>
-                        <div className="text-right text-xs text-gray-700">
-                            <p>তারিখ: {currentTo || currentFrom || '-'}</p>
+                        <div className="flex-1 text-center leading-tight">
+                            <h1 className="text-lg font-bold text-gray-900">মৌসুমী</h1>
+                            <p className="text-xs text-gray-700">উকিলপাড়া, নওগাঁ।</p>
+                            <p className="text-sm font-semibold text-gray-900 mt-0.5">
+                                মাসিক ঋণ যাচাই ও অনুমোদন সংক্রান্ত তথ্য।
+                            </p>
                         </div>
+
                     </div>
-                    <div className="text-center mb-3">
-                        <p className="text-sm font-semibold text-gray-900">
-                            মাসিক ঋণ বণ্টন ও অনুমোদন সংগ্রহ তথ্য
-                        </p>
-                    </div>
-                    <div className="grid grid-cols-2 gap-2 text-xs text-gray-700 mb-4">
-                        <div>
-                            <span className="font-semibold">শাখার নাম:</span>{' '}
-                            <span>
-                                {branch.name} ({branch.code})
-                            </span>
-                        </div>
-                        <div>
-                            <span className="font-semibold">জোনের নাম:</span>{' '}
-                            <span>{branch.zone_name || '-'}</span>
-                        </div>
-                        <div>
-                            <span className="font-semibold">অঞ্চলের নাম:</span>{' '}
-                            <span>{branch.area_name || '-'}</span>
-                        </div>
+                    <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-1 text-xs text-gray-700 mb-4">
+                        <span><span className="font-semibold">শাখার নাম:</span> {branch.name}</span>
+                        <span><span className="font-semibold">অঞ্চলের নাম:</span> {branch.area_name || '-'}</span>
+                        <span><span className="font-semibold">জোনের নাম:</span> {branch.zone_name || '-'}</span>
+                        <span><span className="font-semibold">তারিখ:</span> {currentTo || currentFrom || '-'}</span>
                     </div>
                 </div>
 
@@ -323,21 +314,19 @@ export default function TeamBasedApprovalIndex({ approvals, filters, draftCount,
                     <table className="w-full border-collapse table-fixed" style={{ tableLayout: 'fixed' }}>
                         <thead className="bg-gray-50">
                             <tr>
-                                <th className="border" rowSpan={2}>ক্রম</th>
-                                <th className="border" rowSpan={2}>তারিখ</th>
-                                <th className="border" rowSpan={2}>অনুমোদনকারী</th>
+                                <th className="border" rowSpan={2}>ক্র. নং</th>
                                 <th className="border" rowSpan={2}>সদস্যের নাম</th>
                                 <th className="border" rowSpan={2}>সদস্য নম্বর</th>
                                 <th className="border" rowSpan={2}>সমিতি নম্বর</th>
                                 <th className="border text-center" colSpan={3}>সঞ্চয়ের পরিমাণ</th>
-                                <th className="border" rowSpan={2}>পরিশোধিত ঋণ</th>
-                                <th className="border" rowSpan={2}>পরিশোধিত দফা</th>
-                                <th className="border" rowSpan={2}>অন্যান্য সংস্থায় ঋণ</th>
-                                <th className="border" rowSpan={2}>প্রস্তাবিত ঋণ</th>
-                                <th className="border" rowSpan={2}>মেয়াদ (বছর)</th>
+                                <th className="border" rowSpan={2}>পরিশোধিত ঋণের পরিমাণ</th>
+                                <th className="border" rowSpan={2}>পরি: দফা নম্বর</th>
+                                <th className="border" rowSpan={2}>অন্যান্য সংস্থায় গ্রহণকৃত ঋণের পরিমাণ</th>
+                                <th className="border" rowSpan={2}>প্রস্তাবিত ঋণের পরিমাণ</th>
+                                <th className="border" rowSpan={2}>ঋণের মেয়াদ (বছর)</th>
                                 <th className="border" rowSpan={2}>ঋণের ধরন</th>
                                 <th className="border" rowSpan={2}>প্রকল্পের নাম</th>
-                                <th className="border" rowSpan={2}>অনুমোদিত ঋণ</th>
+                                <th className="border" rowSpan={2}>অনুমোদঙ্কা ঋণ</th>
                                 <th className="border" rowSpan={2}>মন্তব্য</th>
                                 <th className="border" rowSpan={2}>অনুমোদনকারীর স্বাক্ষর / তারিখ</th>
                                 <th className="border print:hidden" rowSpan={2}>Status</th>
@@ -359,8 +348,6 @@ export default function TeamBasedApprovalIndex({ approvals, filters, draftCount,
                             {flatRows.map((row, idx) => (
                                 <tr key={`${row.sheet_id}-${idx}`} className="hover:bg-gray-50">
                                     <td className="border">{idx + 1}</td>
-                                    <td className="border">{row.sheet_date || '-'}</td>
-                                    <td className="border">{row.approver_name || '-'}</td>
                                     <td className="border">{row.member_name}</td>
                                     <td className="border">{row.member_code || ''}</td>
                                     <td className="border">{row.samity_number || ''}</td>

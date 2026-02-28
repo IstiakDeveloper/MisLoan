@@ -118,11 +118,11 @@ export default function MemberAdmissionFormView({ admission, printMode }: Props)
 
     return (
         <div
-            className={`bg-white text-gray-900 ${isPrint ? 'text-[11pt]' : 'text-sm'} max-w-[210mm] mx-auto border border-gray-400 form-print-document`}
+            className={`bg-white text-gray-900 ${isPrint ? 'text-[11pt]' : 'text-sm'} max-w-[210mm] mx-auto border border-gray-400 form-print-document print:pt-8`}
             style={{ fontFamily: 'Noto Sans Bengali, Arial, sans-serif' }}
         >
             {/* ========== HEADER (প্রথম ছবি A–Z): লোগো | তারিখ | মাঝে মৌসুমী+ঠিকানা | ডানে ছবি বক্স (উপরেই); নিচে কালো বার + সদস্য নং ========== */}
-            <header className="form-print-section p-4 print:p-3">
+            <header className="form-print-section p-4 print:p-2 print:py-2 print:mb-3 mb-4">
                 <div className="grid grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-stretch w-full">
                     {/* Left: Logo and Dates */}
                     <div
@@ -190,7 +190,7 @@ export default function MemberAdmissionFormView({ admission, printMode }: Props)
             </header>
 
             {/* Declaration */}
-            <div className="form-print-section px-4 py-2.5 print:py-4 border-b border-gray-600">
+            <div className="form-print-section px-4 py-2.5 print:py-1.5 print:px-2 border-b border-gray-600">
                 <p className="text-xs leading-relaxed text-gray-800 print:text-sm print:leading-loose">
                     আমি নিম্ন স্বাক্ষরকারী মৌসুমী'র উদ্যোগে গঠিত{' '}
                     <span className="border-b border-dotted border-gray-700 px-2 inline-block min-w-[120px] text-center">
@@ -201,7 +201,7 @@ export default function MemberAdmissionFormView({ admission, printMode }: Props)
             </div>
 
             {/* ========== SECTION: Personal (1–9) — form layout: 1 & 2 side by side; 3–6 Bengali then English below; 7, 8 & 9 ========== */}
-            <div className="form-print-section px-3 py-2 print:py-4 space-y-2 print:space-y-3 border-b border-gray-500">
+            <div className="form-print-section px-3 py-2 print:py-1.5 print:px-2 space-y-2 print:space-y-3 border-b border-gray-500">
                 <div className="grid grid-cols-2 gap-x-8 gap-y-1.5 print:gap-y-2.5">
                     <FormRow label="1. Samity Name :" value={admission.samity?.samity_name ?? ''} />
                     <FormRow label="2. Member Category:" value={admission.member_category?.category_name ?? ''} />
@@ -230,7 +230,7 @@ export default function MemberAdmissionFormView({ admission, printMode }: Props)
             </div>
 
             {/* ========== SECTION: Present Address (10) ========== */}
-            <div className="form-print-section px-3 py-2 print:py-4 space-y-1.5 print:space-y-2.5 border-b border-gray-500">
+            <div className="form-print-section px-3 py-2 print:py-1.5 print:px-2 space-y-1.5 print:space-y-2.5 border-b border-gray-500">
                 <p className="font-medium text-xs text-gray-700">10. Present Address (বর্তমান ঠিকানা):</p>
                 <div className="grid grid-cols-2 gap-x-6 gap-y-1">
                     <FormRow label="বিভাগ:" value={admission.present_division} />
@@ -243,7 +243,7 @@ export default function MemberAdmissionFormView({ admission, printMode }: Props)
             </div>
 
             {/* ========== SECTION: Permanent Address (11) ========== */}
-            <div className="form-print-section px-3 py-2 print:py-4 space-y-1.5 print:space-y-2.5 border-b border-gray-500">
+            <div className="form-print-section px-3 py-2 print:py-1.5 print:px-2 space-y-1.5 print:space-y-2.5 border-b border-gray-500">
                 <p className="font-medium text-xs text-gray-700">11. Permanent Address (স্থায়ী ঠিকানা):</p>
                 <div className="grid grid-cols-2 gap-x-6 gap-y-1">
                     <FormRow label="বিভাগ:" value={admission.permanent_address_same ? 'বর্তমান ঠিকানার সাথে একই' : str(admission.permanent_division)} />
@@ -256,7 +256,7 @@ export default function MemberAdmissionFormView({ admission, printMode }: Props)
             </div>
 
             {/* ========== SECTION: Identity (12–15) ========== */}
-            <div className="form-print-section px-3 py-2 print:py-4 space-y-1.5 print:space-y-2.5 border-b border-gray-500">
+            <div className="form-print-section px-3 py-2 print:py-1.5 print:px-2 space-y-1.5 print:space-y-2.5 border-b border-gray-500">
                 <p className="font-medium text-xs text-gray-700">12. Identity Information:</p>
                 <div className="flex gap-6 flex-wrap">
                     <FormRow label="National ID No. :" value={str(admission.nid_number)} />
@@ -284,7 +284,7 @@ export default function MemberAdmissionFormView({ admission, printMode }: Props)
             </div>
 
             {/* ========== SECTION 16: Family table ========== */}
-            <div className="form-print-section px-3 py-2 print:py-4 border-b border-gray-500">
+            <div className="form-print-section px-3 py-2 print:py-1.5 print:px-2 border-b border-gray-500">
                 <p className="font-medium text-xs text-gray-700 mb-2">১৬. পরিবারের তথ্য:</p>
                 <table className="w-full border border-gray-600 border-collapse text-xs print:text-sm">
                     <thead>
@@ -336,7 +336,7 @@ export default function MemberAdmissionFormView({ admission, printMode }: Props)
             </div>
 
             {/* Financial activity checkboxes + 17, 18 */}
-            <div className="form-print-section px-3 py-2 print:py-4 border-b border-gray-500 space-y-1.5 print:space-y-2.5">
+            <div className="form-print-section px-3 py-2 print:py-1.5 print:px-2 border-b border-gray-500 space-y-1.5 print:space-y-2.5">
                 <p className="font-medium text-xs text-gray-700">আর্থিক কর্মকাণ্ড সম্পর্কিত (প্রযোজ্য ক্ষেত্রে ✓ চিহ্ন দিন):</p>
                 <div className="flex gap-6 flex-wrap">
                     <span className={admission.business_details ? 'font-bold' : ''}>ক. ব্যবসা {admission.business_details ? '✓' : ''}</span>
@@ -350,7 +350,7 @@ export default function MemberAdmissionFormView({ admission, printMode }: Props)
             </div>
 
             {/* ========== SECTION 19: Permanent assets (page break before so ১–১৮ on first page) ========== */}
-            <div className="form-print-section form-print-page-break-before px-3 py-2 print:py-4 border-b border-gray-500 space-y-2 print:space-y-3">
+            <div className="form-print-section form-print-page-break-before px-3 py-2 print:py-2 border-b border-gray-500 space-y-2 print:space-y-3">
                 <p className="font-medium text-xs text-gray-700">১৯. গ্রাহকের স্থায়ী সম্পদের বিবরণ:</p>
                 <div>
                     <p className="text-xs text-gray-600">(i) মোট ঘরের সংখ্যা:</p>
@@ -421,7 +421,7 @@ export default function MemberAdmissionFormView({ admission, printMode }: Props)
             </div>
 
             {/* ========== SECTION 20–23 ========== */}
-            <div className="form-print-section px-3 py-2 print:py-4 border-b border-gray-500 space-y-1.5 print:space-y-2.5">
+            <div className="form-print-section px-3 py-2 print:py-1.5 print:px-2 border-b border-gray-500 space-y-1.5 print:space-y-2.5">
                 <div className="flex gap-6 flex-wrap">
                     <FormRow label="২০. পরিবারের মোট মাসিক আয়:" value={admission.monthly_income != null ? String(admission.monthly_income) : ''} />
                     <FormRow label="মাসিক ব্যয়:" value={admission.monthly_expense != null ? String(admission.monthly_expense) : ''} />
@@ -441,7 +441,7 @@ export default function MemberAdmissionFormView({ admission, printMode }: Props)
             </div>
 
             {/* ========== DECLARATION & SIGNATURES (signature/seal এর জন্য একটু বেশি gap) ========== */}
-            <div className="form-print-section px-3 py-4 print:py-6 border-t-2 border-gray-800 space-y-4 print:space-y-5">
+            <div className="form-print-section form-print-signature-block px-3 py-4 print:py-3 print:px-2 border-t-2 border-gray-800 space-y-4 print:space-y-5">
                 <p className="text-xs leading-relaxed">
                     উপরোক্ত তথ্য ও জীবন বৃত্তান্তের উপর ভিত্তি করে আমাকে সদস্যপদ প্রদান করার জন্য আবেদন করছি।
                 </p>
@@ -520,7 +520,7 @@ export default function MemberAdmissionFormView({ admission, printMode }: Props)
                                         </div>
                                         <p className="text-xs mt-1">পিন: {first.approver_pin ?? '—'}</p>
                                         {/* <p className="text-[10px] text-gray-600 mt-0.5">{first.user?.name ?? '—'}</p> */}
-                                        <p className="text-[10px] text-gray-500">{first.approved_at ? formatDate(first.approved_at) : ''}</p>
+                                        {/* <p className="text-[10px] text-gray-500">{first.approved_at ? formatDate(first.approved_at) : ''}</p> */}
                                     </>
                                 );
                             })()
@@ -533,7 +533,7 @@ export default function MemberAdmissionFormView({ admission, printMode }: Props)
                     </div>
                 </div>
                 {/* সব অনুমোদনকারীর স্বাক্ষর ও পিন */}
-                {admission.approvals && admission.approvals.filter((a: any) => a.status === 'approved').length > 0 && (
+                {/* {admission.approvals && admission.approvals.filter((a: any) => a.status === 'approved').length > 0 && (
                     <div className="pt-3 border-t border-gray-400">
                         <p className="text-xs font-medium text-gray-700 mb-2">অনুমোদনকারীগণ (স্বাক্ষর ও পিন)</p>
                         <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
@@ -559,7 +559,7 @@ export default function MemberAdmissionFormView({ admission, printMode }: Props)
                                 ))}
                         </div>
                     </div>
-                )}
+                )} */}
             </div>
         </div>
     );

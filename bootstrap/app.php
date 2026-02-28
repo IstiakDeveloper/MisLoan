@@ -7,6 +7,7 @@ use App\Http\Middleware\CheckRole;
 use App\Http\Middleware\CheckPermission;
 use App\Http\Middleware\CheckBranchUser;
 use App\Http\Middleware\CheckHeadOffice;
+use App\Http\Middleware\EnsureCanViewMemberAdmission;
 use Illuminate\Foundation\Application;
 use Illuminate\Foundation\Configuration\Exceptions;
 use Illuminate\Foundation\Configuration\Middleware;
@@ -33,6 +34,7 @@ return Application::configure(basePath: dirname(__DIR__))
             'permission' => CheckPermission::class,
             'branch.user' => CheckBranchUser::class,
             'head.office' => CheckHeadOffice::class,
+            'member.admission.view' => EnsureCanViewMemberAdmission::class,
         ]);
     })
     ->withExceptions(function (Exceptions $exceptions): void {

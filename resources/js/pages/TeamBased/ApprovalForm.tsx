@@ -373,10 +373,10 @@ export default function TeamBasedApprovalForm({ branch, approverOptions, today, 
                                                     onChange={(e) => handleRowChange(index, 'loan_term_years', e.target.value)}
                                                 >
                                                     <option value="">নির্বাচন</option>
-                                                    <option value="1">১ বছর</option>
-                                                    <option value="1.5">১.৫ বছর</option>
-                                                    <option value="2">২ বছর</option>
-                                                    <option value="3">৩ বছর</option>
+                                                    <option value="1">১</option>
+                                                    <option value="1.5">১.৫</option>
+                                                    <option value="2">২</option>
+                                                    <option value="3">৩</option>
                                                 </select>
                                             </td>
                                             <td className="border border-gray-300 px-1 py-0.5">

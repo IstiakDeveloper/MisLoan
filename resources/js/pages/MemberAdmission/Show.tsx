@@ -145,20 +145,28 @@ export default function Show({ admission, auth }: Props) {
                         -webkit-print-color-adjust: exact;
                         print-color-adjust: exact;
                     }
-                    @page { margin: 6mm; size: A4 portrait; }
+                    @page {
+                        margin: 14mm 8mm 10mm 8mm;
+                        size: A4 portrait;
+                    }
                     .form-print-document {
-                        padding: 8mm !important;
+                        padding: 0 8mm 8mm 8mm !important;
+                        padding-top: 6mm !important;
                         font-size: 14pt !important;
                         line-height: 1.7 !important;
                     }
                     .form-print-section {
-                        padding-top: 5mm !important;
-                        padding-bottom: 5mm !important;
+                        padding-top: 4mm !important;
+                        padding-bottom: 4mm !important;
                     }
-                    /* Header এর নিচে + Declaration এর নিচে গ্যাপ */
-                    .form-print-document > header.form-print-section + .form-print-section {
-                        margin-top: 5mm !important;
+                    /* Header এর নিচে স্পষ্ট গ্যাপ */
+                    .form-print-document > header.form-print-section {
                         margin-bottom: 6mm !important;
+                    }
+                    /* Declaration ব্লক এর নিচে গ্যাপ */
+                    .form-print-document > header.form-print-section + .form-print-section {
+                        margin-top: 2mm !important;
+                        margin-bottom: 4mm !important;
                     }
                     .print\\:break-inside-avoid,
                     .form-print-section {

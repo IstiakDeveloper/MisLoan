@@ -139,20 +139,20 @@ Route::middleware(['auth', 'verified'])->group(function () {
         Route::patch('{savingsProduct}/toggle-status', [SavingsProductController::class, 'toggleStatus'])->name('toggle-status');
     });
 
-    // Member Admission Routes - For Branch Users
-    Route::prefix('member-admissions')->name('member-admissions.')->middleware('branch.user')->group(function () {
-        Route::get('/', [MemberAdmissionController::class, 'index'])->name('index');
-        Route::get('create', [MemberAdmissionController::class, 'create'])->name('create');
-        Route::post('/', [MemberAdmissionController::class, 'store'])->name('store');
-        Route::get('{memberAdmission}', [MemberAdmissionController::class, 'show'])->name('show');
-        Route::get('{memberAdmission}/print', [MemberAdmissionController::class, 'printSingle'])->name('print');
-        Route::get('{memberAdmission}/edit', [MemberAdmissionController::class, 'edit'])->name('edit');
-        Route::put('{memberAdmission}', [MemberAdmissionController::class, 'update'])->name('update');
-        Route::delete('{memberAdmission}', [MemberAdmissionController::class, 'destroy'])->name('destroy');
-        Route::patch('{memberAdmission}/submit', [MemberAdmissionController::class, 'submit'])->name('submit');
-        Route::patch('{memberAdmission}/resubmit', [MemberAdmissionController::class, 'resubmit'])->name('resubmit');
-        Route::patch('{memberAdmission}/send-to-head-office', [MemberAdmissionController::class, 'sendToHeadOffice'])->name('send-to-head-office');
-        Route::patch('{memberAdmission}/reject', [MemberAdmissionController::class, 'reject'])->name('reject');
+    // Member Admission Routes - For Branch Users + Approvers (show/print)
+    Route::prefix('member-admissions')->name('member-admissions.')->group(function () {
+        Route::get('/', [MemberAdmissionController::class, 'index'])->name('index')->middleware('branch.user');
+        Route::get('create', [MemberAdmissionController::class, 'create'])->name('create')->middleware('branch.user');
+        Route::post('/', [MemberAdmissionController::class, 'store'])->name('store')->middleware('branch.user');
+        Route::get('{memberAdmission}', [MemberAdmissionController::class, 'show'])->name('show')->middleware('member.admission.view');
+        Route::get('{memberAdmission}/print', [MemberAdmissionController::class, 'printSingle'])->name('print')->middleware('member.admission.view');
+        Route::get('{memberAdmission}/edit', [MemberAdmissionController::class, 'edit'])->name('edit')->middleware('branch.user');
+        Route::put('{memberAdmission}', [MemberAdmissionController::class, 'update'])->name('update')->middleware('branch.user');
+        Route::delete('{memberAdmission}', [MemberAdmissionController::class, 'destroy'])->name('destroy')->middleware('branch.user');
+        Route::patch('{memberAdmission}/submit', [MemberAdmissionController::class, 'submit'])->name('submit')->middleware('branch.user');
+        Route::patch('{memberAdmission}/resubmit', [MemberAdmissionController::class, 'resubmit'])->name('resubmit')->middleware('branch.user');
+        Route::patch('{memberAdmission}/send-to-head-office', [MemberAdmissionController::class, 'sendToHeadOffice'])->name('send-to-head-office')->middleware('branch.user');
+        Route::patch('{memberAdmission}/reject', [MemberAdmissionController::class, 'reject'])->name('reject')->middleware('branch.user');
     });
 
     // Team Based Approval Routes - Branch users + Approver roles

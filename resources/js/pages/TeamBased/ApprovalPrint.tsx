@@ -59,16 +59,39 @@ export default function TeamBasedApprovalPrint({ sheet, items }: Props) {
                 </div>
 
                 <div className="bg-white border border-gray-300 rounded-lg shadow-sm p-4 print:shadow-none print:border-0">
-                    <div className="flex flex-col items-center mb-4">
-                        <h1 className="text-lg font-bold text-gray-900">টিম ভিত্তিক ঋণ বণ্টন ও অনুমোদন সংগ্রহ ফরম</h1>
-                        <p className="text-xs text-gray-700 mt-1">
-                            শাখা: {sheet.branch.name} ({sheet.branch.code})
-                            {sheet.branch.area_name && `, এরিয়া: ${sheet.branch.area_name}`}
-                            {sheet.branch.zone_name && `, জোন: ${sheet.branch.zone_name}`}
-                        </p>
-                        <p className="text-xs text-gray-700 mt-0.5">
-                            তারিখ: {sheet.sheet_date || '-'} | অনুমোদনকারী: {sheet.approver_name || '-'}
-                        </p>
+                    {/* Header - matches formal document: logo left, org+title center, date right; then branch/area/zone */}
+                    <div className="mb-4">
+                        <div className="flex items-start justify-between gap-4 mb-2">
+                            <div className="flex-shrink-0">
+                                <img
+                                    src="/logo.png"
+                                    alt="Logo"
+                                    className="w-12 h-12 object-contain"
+                                    onError={(e) => {
+                                        (e.target as HTMLImageElement).style.display = 'none';
+                                    }}
+                                />
+                            </div>
+                            <div className="flex-1 text-center leading-tight">
+                                <h1 className="text-lg font-bold text-gray-900">মৌসুমী</h1>
+                                <p className="text-xs text-gray-700">উকিলপাড়া, নওগাঁ।</p>
+                                <p className="text-sm font-semibold text-gray-900 mt-0.5">
+                                    মাসিক ঋণ যাচাই ও অনুমোদন সংক্রান্ত তথ্য।
+                                </p>
+                            </div>
+                            <div className="flex-shrink-0 text-right text-xs text-gray-700">
+                                <p>তারিখ: {sheet.sheet_date || '-'}</p>
+                            </div>
+                        </div>
+                        <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-1 text-xs text-gray-700">
+                            <span><span className="font-semibold">শাখার নাম:</span> {sheet.branch.name}</span>
+                            <span><span className="font-semibold">অঞ্চলের নাম:</span> {sheet.branch.area_name || '-'}</span>
+                            <span><span className="font-semibold">জোনের নাম:</span> {sheet.branch.zone_name || '-'}</span>
+                            <span><span className="font-semibold">তারিখ:</span> {sheet.sheet_date || '-'}</span>
+                        </div>
+                        {sheet.approver_name && (
+                            <p className="text-xs text-gray-600 mt-1">অনুমোদনকারী: {sheet.approver_name}</p>
+                        )}
                     </div>
 
                     <div className="overflow-x-auto">
