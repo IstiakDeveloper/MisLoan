@@ -39,6 +39,9 @@ interface ReviewRow {
     comments?: string | null;
     approver_signature?: string | null;
     decided_at?: string | null;
+    can_act: boolean;
+    approver_name?: string | null;
+    approver_role?: string | null;
     sheet: SheetInfo;
 }
 
@@ -55,17 +58,33 @@ interface PaginatedReviews {
     links: PaginationLink[];
 }
 
+interface BranchOption {
+    id: number;
+    name: string;
+    code?: string | null;
+}
+
 interface Props {
     reviews: PaginatedReviews;
     filters: {
         status?: string;
+        branch_id?: number | string;
+        approver_id?: number | string;
         date_from?: string;
         date_to?: string;
     };
+    branches: BranchOption[];
+    approverOptions: {
+        id: number;
+        name: string;
+        role_name: string;
+    }[];
 }
 
-export default function TeamBasedApprovalApproverIndex({ reviews, filters }: Props) {
+export default function TeamBasedApprovalApproverIndex({ reviews, filters, branches, approverOptions }: Props) {
     const currentStatus = filters.status ?? '';
+    const currentBranchId = (filters.branch_id ?? '').toString();
+    const currentApproverId = (filters.approver_id ?? '').toString();
     const currentFrom = filters.date_from || '';
     const currentTo = filters.date_to || '';
 
@@ -74,12 +93,14 @@ export default function TeamBasedApprovalApproverIndex({ reviews, filters }: Pro
         [key: number]: { decision: 'approved' | 'rejected'; approved_amount: string; comments: string };
     }>({});
 
-    const applyFilter = (status: string, from: string, to: string) => {
+    const applyFilter = (status: string, from: string, to: string, branchId: string, approverId: string) => {
         router.visit('/team-based-approvals/for-approver', {
             data: {
                 status: status || undefined,
                 date_from: from || undefined,
                 date_to: to || undefined,
+                branch_id: branchId || undefined,
+                approver_id: approverId || undefined,
             },
             preserveScroll: true,
         });
@@ -87,17 +108,27 @@ export default function TeamBasedApprovalApproverIndex({ reviews, filters }: Pro
 
     const handleStatusFilterChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
         const newStatus = e.target.value;
-        applyFilter(newStatus, currentFrom, currentTo || currentFrom);
+        applyFilter(newStatus, currentFrom, currentTo || currentFrom, currentBranchId, currentApproverId);
+    };
+
+    const handleBranchChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
+        const newBranchId = e.target.value;
+        applyFilter(currentStatus, currentFrom, currentTo || currentFrom, newBranchId, currentApproverId);
+    };
+
+    const handleApproverChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
+        const newApproverId = e.target.value;
+        applyFilter(currentStatus, currentFrom, currentTo || currentFrom, currentBranchId, newApproverId);
     };
 
     const handleFromChange = (e: React.ChangeEvent<HTMLInputElement>) => {
         const newFrom = e.target.value;
-        applyFilter(currentStatus, newFrom, currentTo || newFrom);
+        applyFilter(currentStatus, newFrom, currentTo || newFrom, currentBranchId, currentApproverId);
     };
 
     const handleToChange = (e: React.ChangeEvent<HTMLInputElement>) => {
         const newTo = e.target.value;
-        applyFilter(currentStatus, currentFrom || newTo, newTo);
+        applyFilter(currentStatus, currentFrom || newTo, newTo, currentBranchId, currentApproverId);
     };
 
     const handleToggleAction = (reviewId: number, rowKey: string) => {
@@ -193,6 +224,9 @@ export default function TeamBasedApprovalApproverIndex({ reviews, filters }: Pro
         review_comments?: string | null;
         approver_signature?: string | null;
         decided_at?: string | null;
+        can_act: boolean;
+        approver_name?: string | null;
+        approver_role?: string | null;
     })[] = [];
 
     reviews.data.forEach((review) => {
@@ -210,6 +244,9 @@ export default function TeamBasedApprovalApproverIndex({ reviews, filters }: Pro
                 review_comments: review.comments,
                 approver_signature: review.approver_signature,
                 decided_at: review.decided_at,
+                can_act: review.can_act,
+                approver_name: review.approver_name,
+                approver_role: review.approver_role,
             });
         });
     });
@@ -228,6 +265,11 @@ export default function TeamBasedApprovalApproverIndex({ reviews, filters }: Pro
 
     const page = usePage<any>();
     const authUser = (page.props as any)?.auth?.user;
+
+    const selectedBranch =
+        currentBranchId && branches
+            ? branches.find((b) => b.id.toString() === currentBranchId)
+            : null;
 
     return (
         <AdminLayout>
@@ -302,9 +344,22 @@ export default function TeamBasedApprovalApproverIndex({ reviews, filters }: Pro
                         <div className="flex-shrink-0 w-12" />
                     </div>
                     <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-1 text-xs text-gray-700 mb-4">
-                        <span><span className="font-semibold">শাখার নাম:</span> {reviews.data[0]?.sheet?.branch_name ?? 'বহু শাখা'}</span>
-                        <span><span className="font-semibold">অঞ্চলের নাম:</span> {reviews.data[0]?.sheet?.area_name ?? '-'}</span>
-                        <span><span className="font-semibold">জোনের নাম:</span> {reviews.data[0]?.sheet?.zone_name ?? '-'}</span>
+                        <span>
+                            <span className="font-semibold">শাখার নাম:</span>{' '}
+                            {selectedBranch
+                                ? `${selectedBranch.name}${selectedBranch.code ? ` (${selectedBranch.code})` : ''}`
+                                : currentBranchId
+                                ? reviews.data[0]?.sheet?.branch_name ?? 'বহু শাখা'
+                                : 'All Branch'}
+                        </span>
+                        <span>
+                            <span className="font-semibold">অঞ্চলের নাম:</span>{' '}
+                            {reviews.data[0]?.sheet?.area_name ?? '-'}
+                        </span>
+                        <span>
+                            <span className="font-semibold">জোনের নাম:</span>{' '}
+                            {reviews.data[0]?.sheet?.zone_name ?? '-'}
+                        </span>
                         <span><span className="font-semibold">তারিখ:</span> {currentTo || currentFrom || '-'}</span>
                     </div>
                     {authUser?.name && (
@@ -313,7 +368,52 @@ export default function TeamBasedApprovalApproverIndex({ reviews, filters }: Pro
                 </div>
 
                 {/* Filters - only visible on screen */}
-                <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3 mb-4 print:hidden">
+                <div className="flex flex-col gap-2 mb-4 print:hidden">
+                    <div className="flex flex-wrap items-center gap-2">
+                        <div className="flex items-center gap-1">
+                            <span className="text-xs text-gray-600">Branch:</span>
+                            <select
+                                value={currentBranchId}
+                                onChange={handleBranchChange}
+                                className="border border-gray-300 rounded-md px-2 py-1 text-xs"
+                            >
+                                <option value="">All</option>
+                                {branches.map((branch) => (
+                                    <option key={branch.id} value={branch.id}>
+                                        {branch.name} {branch.code ? `(${branch.code})` : ''}
+                                    </option>
+                                ))}
+                            </select>
+                        </div>
+                        <div className="flex items-center gap-1">
+                            <span className="text-xs text-gray-600">Approver:</span>
+                            <select
+                                value={currentApproverId}
+                                onChange={handleApproverChange}
+                                className="border border-gray-300 rounded-md px-2 py-1 text-xs"
+                            >
+                                <option value="">All</option>
+                                {approverOptions.map((opt) => (
+                                    <option key={opt.id} value={opt.id}>
+                                        {opt.name} ({opt.role_name})
+                                    </option>
+                                ))}
+                            </select>
+                        </div>
+                        <div className="flex items-center gap-1">
+                            <span className="text-xs text-gray-600">Status:</span>
+                            <select
+                                value={currentStatus}
+                                onChange={handleStatusFilterChange}
+                                className="border border-gray-300 rounded-md px-2 py-1 text-xs"
+                            >
+                                <option value="">All</option>
+                                <option value="pending">Pending</option>
+                                <option value="approved">Approved</option>
+                                <option value="rejected">Rejected</option>
+                            </select>
+                        </div>
+                    </div>
                     <div className="flex flex-wrap items-center gap-2">
                         <div className="flex items-center gap-1">
                             <span className="text-xs text-gray-600">From:</span>
@@ -332,19 +432,6 @@ export default function TeamBasedApprovalApproverIndex({ reviews, filters }: Pro
                                 onChange={handleToChange}
                                 className="border border-gray-300 rounded-md px-2 py-1 text-sm"
                             />
-                        </div>
-                        <div className="flex items-center gap-1">
-                            <span className="text-xs text-gray-600">Status:</span>
-                            <select
-                                value={currentStatus}
-                                onChange={handleStatusFilterChange}
-                                className="border border-gray-300 rounded-md px-2 py-1 text-xs"
-                            >
-                                <option value="">All</option>
-                                <option value="pending">Pending</option>
-                                <option value="approved">Approved</option>
-                                <option value="rejected">Rejected</option>
-                            </select>
                         </div>
                         <button
                             type="button"
@@ -374,6 +461,7 @@ export default function TeamBasedApprovalApproverIndex({ reviews, filters }: Pro
                                 <th className="border text-left" rowSpan={2}>ঋণের ধরন</th>
                                 <th className="border text-left" rowSpan={2}>প্রকল্পের নাম</th>
                                 <th className="border text-right" rowSpan={2}>অনুমোদিত ঋণ</th>
+                        <th className="border text-left" rowSpan={2}>অনুমোদনকারী</th>
                                 <th className="border text-left" rowSpan={2}>মন্তব্য</th>
                                 <th className="border text-left" rowSpan={2}>অনুমোদনকারীর স্বাক্ষর / তারিখ</th>
                                 <th className="border text-center" rowSpan={2}>Status</th>
@@ -418,6 +506,9 @@ export default function TeamBasedApprovalApproverIndex({ reviews, filters }: Pro
                                             <td className="border text-left">{row.loan_type || ''}</td>
                                             <td className="border text-left">{row.project_name || ''}</td>
                                             <td className="border text-right">{row.approved_amount ?? ''}</td>
+                                            <td className="border text-left">
+                                                {row.approver_name ? `${row.approver_name}${row.approver_role ? ` (${row.approver_role})` : ''}` : ''}
+                                            </td>
                                             <td className="border text-left">{row.review_comments || ''}</td>
                                             <td className="border text-left">
                                                 {row.approver_signature ? (
@@ -445,7 +536,7 @@ export default function TeamBasedApprovalApproverIndex({ reviews, filters }: Pro
                                                 )}
                                             </td>
                                             <td className="border text-center">
-                                                {review.status === 'pending' ? (
+                                                {review.status === 'pending' && row.can_act ? (
                                                     <button
                                                         type="button"
                                                         onClick={() => handleToggleAction(review.review_id, rowKey)}

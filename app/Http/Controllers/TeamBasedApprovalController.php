@@ -335,25 +335,59 @@ class TeamBasedApprovalController extends Controller
         }
 
         $status = $request->input('status');
+        $branchId = $request->input('branch_id');
+        $approverId = $request->input('approver_id');
         $dateFrom = $request->input('date_from');
         $dateTo = $request->input('date_to');
 
         // Reviews may be:
         // - new style: per-loan (team_based_approval_item_id set)
         // - old style: per-sheet (no item id) – still need to show them
-        $reviews = TeamBasedApprovalReview::with(['approval.branch', 'approval.items', 'item'])
-            ->where('user_id', $user->id)
+        // For RM (area manager): only own reviews.
+        // For higher levels (ZM/ADMF/DMF/ED): own reviews + RM reviews under their accessible branches (read-only).
+        $reviewsQuery = TeamBasedApprovalReview::with(['approval.branch', 'approval.items', 'item', 'user.role']);
+
+        if ($roleName === Role::AREA_MANAGER) {
+            $reviewsQuery->where('user_id', $user->id);
+        } else {
+            $accessibleBranchIds = $user->getAccessibleBranches()->pluck('id');
+
+            $reviewsQuery->where(function ($q) use ($user, $accessibleBranchIds) {
+                $q->where('user_id', $user->id)
+                    ->orWhere(function ($sub) use ($accessibleBranchIds) {
+                        $sub->whereHas('user.role', function ($rq) {
+                            $rq->where('name', Role::AREA_MANAGER);
+                        })->whereHas('approval', function ($aq) use ($accessibleBranchIds) {
+                            $aq->whereIn('branch_id', $accessibleBranchIds);
+                        });
+                    });
+            });
+        }
+
+        // Base query with filters (no ordering/pagination yet)
+        $baseQuery = $reviewsQuery
             ->when($status, function ($q) use ($status) {
                 $q->where('status', $status);
+            })
+            ->when($branchId, function ($q) use ($branchId) {
+                $q->whereHas('approval', function ($qa) use ($branchId) {
+                    $qa->where('branch_id', $branchId);
+                });
+            })
+            ->when($approverId, function ($q) use ($approverId) {
+                $q->where('user_id', $approverId);
             })
             ->when($dateFrom && $dateTo, function ($q) use ($dateFrom, $dateTo) {
                 $q->whereHas('approval', function ($qa) use ($dateFrom, $dateTo) {
                     $qa->whereBetween('sheet_date', [$dateFrom, $dateTo]);
                 });
-            })
+            });
+
+        // Paginated reviews list for table
+        $reviews = (clone $baseQuery)
             ->latest()
             ->paginate(20)
-            ->through(function (TeamBasedApprovalReview $review) {
+            ->through(function (TeamBasedApprovalReview $review) use ($user) {
                 $approval = $review->approval;
 
                 // New style: one review per loan item
@@ -412,12 +446,17 @@ class TeamBasedApprovalController extends Controller
                     'comments' => $review->comments,
                     'approver_signature' => $review->approver_signature,
                     'decided_at' => $review->decided_at?->toDateTimeString(),
+                    'can_act' => $review->user_id === $user->id,
+                    'approver_name' => $review->user?->name,
+                    'approver_role' => $review->user?->role?->display_name ?? $review->user?->role?->name,
                     'sheet' => [
                         'id' => $approval->id,
                         'sheet_date' => optional($approval->sheet_date)->toDateString(),
                         'status' => $approval->status,
                         'branch_name' => $approval->branch?->name,
                         'branch_code' => $approval->branch?->code,
+                        'area_name' => $approval->branch?->area?->name,
+                        'zone_name' => $approval->branch?->area?->zone?->name,
                         'items_count' => $itemsCount,
                         'proposed_total' => $proposedTotal,
                         'items' => $itemsPayload,
@@ -425,13 +464,48 @@ class TeamBasedApprovalController extends Controller
                 ];
             });
 
+        // Branch list for this approver: all branches this user can access (for filtering)
+        $branches = Branch::query()
+            ->whereIn('id', $user->getAccessibleBranches()->pluck('id'))
+            ->orderBy('name')
+            ->get([
+                'id',
+                'name',
+                'code',
+            ]);
+
+        // Approver list (RM + higher levels) appearing in these reviews, for filter dropdown
+        // Distinct approvers from the same filtered dataset (no ORDER BY / LIMIT issues)
+        $approverUserIds = (clone $baseQuery)
+            ->select('user_id')
+            ->distinct()
+            ->pluck('user_id');
+
+        $approverOptions = User::query()
+            ->with('role')
+            ->whereIn('id', $approverUserIds)
+            ->orderBy('name')
+            ->get()
+            ->map(function (User $u) {
+                return [
+                    'id' => $u->id,
+                    'name' => $u->name,
+                    'role_name' => $u->role->display_name ?? $u->role->name,
+                ];
+            })
+            ->values();
+
         return Inertia::render('TeamBased/ApprovalApproverIndex', [
             'reviews' => $reviews,
             'filters' => [
                 'status' => $status,
+                'branch_id' => $branchId,
+                'approver_id' => $approverId,
                 'date_from' => $dateFrom,
                 'date_to' => $dateTo,
             ],
+            'branches' => $branches,
+            'approverOptions' => $approverOptions,
         ]);
     }
 

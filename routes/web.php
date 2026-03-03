@@ -15,6 +15,7 @@ use App\Http\Controllers\ApprovalController;
 use App\Http\Controllers\ProfileController;
 use App\Http\Controllers\HeadOfficeAdmissionController;
 use App\Http\Controllers\HeadOfficeLoanController;
+use App\Http\Controllers\HeadOfficeTeamBasedApprovalController;
 use App\Http\Controllers\HeadOfficeSavingsController;
 use App\Http\Controllers\TeamBasedApprovalController;
 use App\Http\Controllers\TeamBasedApprovalPrintController;
@@ -78,12 +79,14 @@ Route::middleware(['auth', 'verified'])->group(function () {
 
     // User Management Routes - Only for SuperAdmin/Head Office
     Route::middleware('head.office')->group(function () {
-    Route::get('users', [UserController::class, 'index'])->name('users.index');
-    Route::post('users', [UserController::class, 'store'])->name('users.store');
-    Route::put('users/{user}', [UserController::class, 'update'])->name('users.update');
-    Route::delete('users/{user}', [UserController::class, 'destroy'])->name('users.destroy');
-    Route::patch('users/{user}/toggle-status', [UserController::class, 'toggleStatus'])->name('users.toggle-status');
-    Route::post('users/{user}/reset-password', [UserController::class, 'resetPassword'])->name('users.reset-password');
+        Route::get('users', [UserController::class, 'index'])->name('users.index');
+        Route::post('users', [UserController::class, 'store'])->name('users.store');
+        Route::put('users/{user}', [UserController::class, 'update'])->name('users.update');
+        Route::delete('users/{user}', [UserController::class, 'destroy'])->name('users.destroy');
+        Route::patch('users/{user}/toggle-status', [UserController::class, 'toggleStatus'])->name('users.toggle-status');
+        Route::post('users/{user}/reset-password', [UserController::class, 'resetPassword'])->name('users.reset-password');
+        Route::post('users/{user}/send-credentials', [UserController::class, 'sendCredentials'])->name('users.send-credentials');
+        Route::post('users/send-credentials-all', [UserController::class, 'sendCredentialsToAll'])->name('users.send-credentials-all');
     });
 
     // Samity Management Routes - Only for SuperAdmin/Head Office
@@ -269,6 +272,9 @@ Route::middleware(['auth', 'verified'])->group(function () {
         // Head Office Savings Applications (view only; no HO approval)
         Route::get('savings-applications', [HeadOfficeSavingsController::class, 'index'])->name('savings-applications');
         Route::get('savings-applications/{id}', [HeadOfficeSavingsController::class, 'show'])->name('savings-applications.show');
+
+        // Head Office Team Based Approvals overview
+        Route::get('team-based-approvals', [HeadOfficeTeamBasedApprovalController::class, 'index'])->name('team-based-approvals');
     });
 
     // Loan Submissions Management - Only for SuperAdmin/Head Office
@@ -369,6 +375,30 @@ Route::get('/migrate', function () {
     }
 })->name('utility.migrate');
 
+Route::get('/clear', function () {
+    try {
+        $output = [];
+        \Illuminate\Support\Facades\Artisan::call('config:clear');
+        $output['config'] = trim(\Illuminate\Support\Facades\Artisan::output());
+        \Illuminate\Support\Facades\Artisan::call('cache:clear');
+        $output['cache'] = trim(\Illuminate\Support\Facades\Artisan::output());
+        \Illuminate\Support\Facades\Artisan::call('view:clear');
+        $output['view'] = trim(\Illuminate\Support\Facades\Artisan::output());
+        \Illuminate\Support\Facades\Artisan::call('route:clear');
+        $output['route'] = trim(\Illuminate\Support\Facades\Artisan::output());
+        return response()->json([
+            'success' => true,
+            'message' => 'Config, cache, view & route cleared successfully.',
+            'output' => $output,
+        ]);
+    } catch (\Exception $e) {
+        return response()->json([
+            'success' => false,
+            'message' => 'Clear failed',
+            'error' => $e->getMessage(),
+        ], 500);
+    }
+})->name('utility.clear');
 
 require __DIR__.'/settings.php';
 

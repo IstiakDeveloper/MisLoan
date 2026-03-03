@@ -161,6 +161,7 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
         { name: 'Dashboard', href: '/dashboard', icon: LayoutDashboard },
         { name: 'Admission Members', href: '/head-office/admission-members', icon: UserPlus, badge: badgeCounts.pendingAdmissions || 0 },
         { name: 'Loan Applications', href: '/head-office/loan-applications', icon: FileText, badge: badgeCounts.pendingLoanApplications || 0 },
+        { name: 'Team Based Approvals', href: '/head-office/team-based-approvals', icon: FileText },
         { name: 'Savings Applications', href: '/head-office/savings-applications', icon: Landmark },
     ];
 

@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { Head, router } from '@inertiajs/react';
 import AdminLayout from '@/layouts/admin-layout';
-import { Plus, Search, MoreVertical, Edit, Trash2, Power, PowerOff, KeyRound, Filter } from 'lucide-react';
+import { Plus, Search, MoreVertical, Edit, Trash2, Power, PowerOff, KeyRound, Filter, Send, X } from 'lucide-react';
 import UserModal from './Components/UserModal';
 
 interface Role {
@@ -90,6 +90,8 @@ export default function Index({ users, roles, zones, areas, branches, filters }:
     const [filterArea, setFilterArea] = useState(filters.area_id || '');
     const [filterBranch, setFilterBranch] = useState(filters.branch_id || '');
     const [filterStatus, setFilterStatus] = useState(filters.is_active || '');
+    const [bulkMailModalOpen, setBulkMailModalOpen] = useState(false);
+    const [excludeRoleIds, setExcludeRoleIds] = useState<number[]>([]);
 
     const handleAddNew = () => {
         setSelectedUser(null);
@@ -119,6 +121,30 @@ export default function Index({ users, roles, zones, areas, branches, filters }:
             router.post(`/users/${id}/reset-password`);
         }
         setOpenDropdown(null);
+    };
+
+    const handleSendCredentials = (id: number, name: string) => {
+        if (confirm(`"${name}" এর login credentials ইমেইল করা হবে. নিশ্চিত?`)) {
+            router.post(`/users/${id}/send-credentials`);
+        }
+        setOpenDropdown(null);
+    };
+
+    const handleOpenBulkMailModal = () => {
+        setExcludeRoleIds([]);
+        setBulkMailModalOpen(true);
+    };
+
+    const toggleExcludeRole = (roleId: number) => {
+        setExcludeRoleIds((prev) =>
+            prev.includes(roleId) ? prev.filter((id) => id !== roleId) : [...prev, roleId]
+        );
+    };
+
+    const handleSendAllCredentials = () => {
+        router.post('/users/send-credentials-all', { exclude_role_ids: excludeRoleIds }, {
+            onSuccess: () => setBulkMailModalOpen(false),
+        });
     };
 
     const handleSearch = (e: React.FormEvent) => {
@@ -170,13 +196,22 @@ export default function Index({ users, roles, zones, areas, branches, filters }:
                             Manage system users and their access
                         </p>
                     </div>
-                    <button
-                        onClick={handleAddNew}
-                        className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors shadow-sm"
-                    >
-                        <Plus className="w-4 h-4" />
-                        Add New User
-                    </button>
+                    <div className="flex items-center gap-3">
+                        <button
+                            onClick={handleOpenBulkMailModal}
+                            className="flex items-center gap-2 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors shadow-sm"
+                        >
+                            <Send className="w-4 h-4" />
+                            Send Login Info (All)
+                        </button>
+                        <button
+                            onClick={handleAddNew}
+                            className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors shadow-sm"
+                        >
+                            <Plus className="w-4 h-4" />
+                            Add New User
+                        </button>
+                    </div>
                 </div>
 
                 {/* Content Card */}
@@ -482,6 +517,13 @@ export default function Index({ users, roles, zones, areas, branches, filters }:
                                                             Reset Password
                                                         </button>
                                                         <button
+                                                            onClick={() => handleSendCredentials(user.id, user.name)}
+                                                            className="w-full flex items-center gap-2 px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 transition-colors"
+                                                        >
+                                                            <Send className="w-4 h-4" />
+                                                            Send Login Email
+                                                        </button>
+                                                        <button
                                                             onClick={() => handleDelete(user.id, user.name)}
                                                             className="w-full flex items-center gap-2 px-4 py-2 text-sm text-red-600 hover:bg-red-50 transition-colors"
                                                         >
@@ -528,6 +570,64 @@ export default function Index({ users, roles, zones, areas, branches, filters }:
                     )}
                 </div>
             </div>
+
+            {/* Bulk Mail Modal - Role অনুযায়ী বাদ */}
+            {bulkMailModalOpen && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50">
+                    <div className="bg-white rounded-xl shadow-xl max-w-md w-full p-6">
+                        <div className="flex items-center justify-between mb-4">
+                            <h3 className="text-lg font-semibold text-gray-900">
+                                Bulk Mail – কাদের বাদ দেবেন?
+                            </h3>
+                            <button
+                                type="button"
+                                onClick={() => setBulkMailModalOpen(false)}
+                                className="p-1 rounded-lg text-gray-500 hover:bg-gray-100"
+                            >
+                                <X className="w-5 h-5" />
+                            </button>
+                        </div>
+                        <p className="text-sm text-gray-600 mb-4">
+                            নিচের যে রোলগুলো বাদ দিতে চান সেগুলো সিলেক্ট করুন। বাদ দেওয়া রোলের কোনো ইউজারকে মেইল যাবে না।
+                        </p>
+                        <div className="space-y-2 max-h-48 overflow-y-auto mb-5">
+                            {roles.map((role) => (
+                                <label
+                                    key={role.id}
+                                    className="flex items-center gap-3 p-2 rounded-lg hover:bg-gray-50 cursor-pointer"
+                                >
+                                    <input
+                                        type="checkbox"
+                                        checked={excludeRoleIds.includes(role.id)}
+                                        onChange={() => toggleExcludeRole(role.id)}
+                                        className="w-4 h-4 rounded border-gray-300 text-green-600 focus:ring-green-500"
+                                    />
+                                    <span className="text-sm font-medium text-gray-800">
+                                        {role.display_name}
+                                    </span>
+                                </label>
+                            ))}
+                        </div>
+                        <div className="flex gap-2 justify-end">
+                            <button
+                                type="button"
+                                onClick={() => setBulkMailModalOpen(false)}
+                                className="px-4 py-2 text-gray-700 bg-gray-100 rounded-lg hover:bg-gray-200"
+                            >
+                                বাতিল
+                            </button>
+                            <button
+                                type="button"
+                                onClick={handleSendAllCredentials}
+                                className="flex items-center gap-2 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700"
+                            >
+                                <Send className="w-4 h-4" />
+                                মেইল পাঠান
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
 
             {/* Modal */}
             <UserModal

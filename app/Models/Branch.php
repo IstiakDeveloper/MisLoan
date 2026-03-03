@@ -61,6 +61,11 @@ class Branch extends Model
         return $this->hasMany(MemberAdmission::class);
     }
 
+    public function teamBasedApprovals(): HasMany
+    {
+        return $this->hasMany(TeamBasedApproval::class);
+    }
+
     public function scopeActive($query)
     {
         return $query->where('is_active', true);

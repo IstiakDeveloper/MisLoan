@@ -34,6 +34,71 @@ interface RowItem {
     project_name: string;
 }
 
+// Convert Bangla digits to English digits so that
+// users can type বাংলা/English amount but calculations still work.
+function normalizeNumericInput(value: string): string {
+    if (!value) return '';
+    const banglaToEnglishMap: Record<string, string> = {
+        '০': '0',
+        '১': '1',
+        '২': '2',
+        '৩': '3',
+        '৪': '4',
+        '৫': '5',
+        '৬': '6',
+        '৭': '7',
+        '৮': '8',
+        '৯': '9',
+    };
+
+    let result = '';
+    for (const ch of value) {
+        if (banglaToEnglishMap[ch] !== undefined) {
+            result += banglaToEnglishMap[ch];
+        } else {
+            result += ch;
+        }
+    }
+
+    // Remove common thousand separators so parseFloat works
+    result = result.replace(/,/g, '');
+
+    return result;
+}
+
+function toNumber(value: string): number {
+    const normalized = normalizeNumericInput(value);
+    const n = parseFloat(normalized);
+    return Number.isFinite(n) ? n : 0;
+}
+
+function toBanglaDigits(value: string): string {
+    if (!value) return '';
+    const engToBanglaMap: Record<string, string> = {
+        '0': '০',
+        '1': '১',
+        '2': '২',
+        '3': '৩',
+        '4': '৪',
+        '5': '৫',
+        '6': '৬',
+        '7': '৭',
+        '8': '৮',
+        '9': '৯',
+    };
+
+    let result = '';
+    for (const ch of value) {
+        if (engToBanglaMap[ch] !== undefined) {
+            result += engToBanglaMap[ch];
+        } else {
+            result += ch;
+        }
+    }
+
+    return result;
+}
+
 interface ExistingApproval {
     id: number;
     sheet_date: string;
@@ -78,28 +143,29 @@ export default function TeamBasedApprovalForm({ branch, approverOptions, today, 
         items: (existingApproval?.items as RowItem[]) || ([makeEmptyRow()] as RowItem[]),
     });
 
-    useEffect(() => {
-        // Auto-calc মোট সঞ্চয় whenever সাধারণ/অন্যান্য change
-        const newItems = data.items.map((row) => {
-            const g = parseFloat(row.savings_general || '0') || 0;
-            const o = parseFloat(row.savings_other || '0') || 0;
-            const total = g + o;
-            return {
-                ...row,
-                savings_total: total > 0 ? String(total) : row.savings_total,
-            };
-        });
-        setData('items', newItems);
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [data.savings_general, data.savings_other]);
-
     const handleRowChange = (index: number, field: keyof RowItem, value: string) => {
         const newItems = [...data.items];
-        newItems[index] = { ...newItems[index], [field]: value };
+        let newValue = value;
+
+        // For all numeric/amount fields, normalize Bangla digits to English
+        if (
+            field === 'savings_general' ||
+            field === 'savings_other' ||
+            field === 'savings_total' ||
+            field === 'repaid_loan_amount' ||
+            field === 'repaid_installment_no' ||
+            field === 'other_institution_loan_amount' ||
+            field === 'proposed_loan_amount' ||
+            field === 'loan_term_years'
+        ) {
+            newValue = normalizeNumericInput(value);
+        }
+
+        newItems[index] = { ...newItems[index], [field]: newValue };
         // Auto-update total savings for this row
         if (field === 'savings_general' || field === 'savings_other') {
-            const g = parseFloat(newItems[index].savings_general || '0') || 0;
-            const o = parseFloat(newItems[index].savings_other || '0') || 0;
+            const g = toNumber(newItems[index].savings_general || '0');
+            const o = toNumber(newItems[index].savings_other || '0');
             const total = g + o;
             newItems[index].savings_total = total > 0 ? String(total) : '';
         }
@@ -268,7 +334,7 @@ export default function TeamBasedApprovalForm({ branch, approverOptions, today, 
                                                     className="w-full border border-gray-200 rounded px-1 py-0.5 text-[11px]"
                                                     value={row.member_name}
                                                     onChange={(e) => handleRowChange(index, 'member_name', e.target.value)}
-                                                placeholder="সদস্যের নাম"
+                                                    placeholder="সদস্যের নাম"
                                                 />
                                                 {errors[`items.${index}.member_name` as keyof typeof errors] && (
                                                     <p className="text-[10px] text-red-500 mt-0.5">
@@ -282,7 +348,7 @@ export default function TeamBasedApprovalForm({ branch, approverOptions, today, 
                                                     className="w-full border border-gray-200 rounded px-1 py-0.5 text-[11px]"
                                                     value={row.member_code}
                                                     onChange={(e) => handleRowChange(index, 'member_code', e.target.value)}
-                                                placeholder="কোড / ০ = নতুন"
+                                                    placeholder="কোড / ০ = নতুন"
                                                 />
                                             </td>
                                             <td className="border border-gray-300 px-1 py-0.5">
@@ -296,61 +362,49 @@ export default function TeamBasedApprovalForm({ branch, approverOptions, today, 
                                             </td>
                                             <td className="border border-gray-300 px-1 py-0.5">
                                                 <input
-                                                    type="number"
-                                                    min="0"
-                                                    step="0.01"
+                                                    type="text"
                                                     className="w-full border border-gray-200 rounded px-1 py-0.5 text-[11px] text-right"
-                                                    value={row.savings_general}
+                                                    value={toBanglaDigits(row.savings_general)}
                                                     onChange={(e) => handleRowChange(index, 'savings_general', e.target.value)}
                                                 />
                                             </td>
                                             <td className="border border-gray-300 px-1 py-0.5">
                                                 <input
-                                                    type="number"
-                                                    min="0"
-                                                    step="0.01"
+                                                    type="text"
                                                     className="w-full border border-gray-200 rounded px-1 py-0.5 text-[11px] text-right"
-                                                    value={row.savings_other}
+                                                    value={toBanglaDigits(row.savings_other)}
                                                     onChange={(e) => handleRowChange(index, 'savings_other', e.target.value)}
                                                 />
                                             </td>
                                             <td className="border border-gray-300 px-1 py-0.5 bg-gray-50">
                                                 <input
-                                                    type="number"
-                                                    min="0"
-                                                    step="0.01"
+                                                    type="text"
                                                     className="w-full border border-gray-200 rounded px-1 py-0.5 text-[11px] text-right bg-gray-50"
-                                                    value={row.savings_total}
+                                                    value={toBanglaDigits(row.savings_total)}
                                                     onChange={(e) => handleRowChange(index, 'savings_total', e.target.value)}
                                                 />
                                             </td>
                                             <td className="border border-gray-300 px-1 py-0.5">
                                                 <input
-                                                    type="number"
-                                                    min="0"
-                                                    step="0.01"
+                                                    type="text"
                                                     className="w-full border border-gray-200 rounded px-1 py-0.5 text-[11px] text-right"
-                                                    value={row.repaid_loan_amount}
+                                                    value={toBanglaDigits(row.repaid_loan_amount)}
                                                     onChange={(e) => handleRowChange(index, 'repaid_loan_amount', e.target.value)}
                                                 />
                                             </td>
                                             <td className="border border-gray-300 px-1 py-0.5">
                                                 <input
-                                                    type="number"
-                                                    min="0"
-                                                    step="1"
+                                                    type="text"
                                                     className="w-full border border-gray-200 rounded px-1 py-0.5 text-[11px] text-right"
-                                                    value={row.repaid_installment_no}
+                                                    value={toBanglaDigits(row.repaid_installment_no)}
                                                     onChange={(e) => handleRowChange(index, 'repaid_installment_no', e.target.value)}
                                                 />
                                             </td>
                                             <td className="border border-gray-300 px-1 py-0.5">
                                                 <input
-                                                    type="number"
-                                                    min="0"
-                                                    step="0.01"
+                                                    type="text"
                                                     className="w-full border border-gray-200 rounded px-1 py-0.5 text-[11px] text-right"
-                                                    value={row.other_institution_loan_amount}
+                                                    value={toBanglaDigits(row.other_institution_loan_amount)}
                                                     onChange={(e) =>
                                                         handleRowChange(index, 'other_institution_loan_amount', e.target.value)
                                                     }
@@ -358,26 +412,19 @@ export default function TeamBasedApprovalForm({ branch, approverOptions, today, 
                                             </td>
                                             <td className="border border-gray-300 px-1 py-0.5">
                                                 <input
-                                                    type="number"
-                                                    min="0"
-                                                    step="0.01"
+                                                    type="text"
                                                     className="w-full border border-gray-200 rounded px-1 py-0.5 text-[11px] text-right"
-                                                    value={row.proposed_loan_amount}
+                                                    value={toBanglaDigits(row.proposed_loan_amount)}
                                                     onChange={(e) => handleRowChange(index, 'proposed_loan_amount', e.target.value)}
                                                 />
                                             </td>
                                             <td className="border border-gray-300 px-1 py-0.5">
-                                                <select
+                                                <input
+                                                    type="text"
                                                     className="w-full border border-gray-200 rounded px-1 py-0.5 text-[11px]"
-                                                    value={row.loan_term_years}
+                                                    value={toBanglaDigits(row.loan_term_years)}
                                                     onChange={(e) => handleRowChange(index, 'loan_term_years', e.target.value)}
-                                                >
-                                                    <option value="">নির্বাচন</option>
-                                                    <option value="1">১</option>
-                                                    <option value="1.5">১.৫</option>
-                                                    <option value="2">২</option>
-                                                    <option value="3">৩</option>
-                                                </select>
+                                                />
                                             </td>
                                             <td className="border border-gray-300 px-1 py-0.5">
                                                 <input

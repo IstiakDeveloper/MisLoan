@@ -10,6 +10,7 @@ use App\Models\Branch;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\Mail;
 use Illuminate\Validation\Rules\Password;
 use Inertia\Inertia;
 
@@ -205,5 +206,54 @@ class UserController extends Controller
         ]);
 
         return back()->with('success', 'Password reset successfully.');
+    }
+
+    public function sendCredentials(User $user)
+    {
+        if (!$user->email) {
+            return back()->with('error', 'User does not have an email address.');
+        }
+
+        $plainPassword = '12345678';
+
+        try {
+            Mail::to($user->email)->send(new \App\Mail\UserCredentialsMail($user, $plainPassword));
+            return back()->with('success', 'Login credentials email sent.');
+        } catch (\Throwable $e) {
+            return back()->with('error', 'Mail failed: ' . $e->getMessage());
+        }
+    }
+
+    public function sendCredentialsToAll(Request $request)
+    {
+        $plainPassword = '12345678';
+
+        $query = User::whereNotNull('email')->where('is_active', true);
+
+        $excludeRoleIds = $request->input('exclude_role_ids', []);
+        if (!empty($excludeRoleIds)) {
+            $query->whereNotIn('role_id', $excludeRoleIds);
+        }
+
+        $users = $query->get();
+        $sent = 0;
+        $lastError = null;
+
+        foreach ($users as $user) {
+            try {
+                Mail::to($user->email)->send(new \App\Mail\UserCredentialsMail($user, $plainPassword));
+                $sent++;
+            } catch (\Throwable $e) {
+                $lastError = $e->getMessage();
+            }
+        }
+
+        if ($sent === $users->count()) {
+            return back()->with('success', "Login credentials sent to {$sent} user(s).");
+        }
+        if ($sent > 0) {
+            return back()->with('error', "Sent to {$sent}/{$users->count()} users. Last error: " . ($lastError ?? 'unknown'));
+        }
+        return back()->with('error', 'No mail sent. Error: ' . ($lastError ?? 'Check MAIL_* in .env and /clear'));
     }
 }
