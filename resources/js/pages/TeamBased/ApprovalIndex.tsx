@@ -1,5 +1,6 @@
 import { Head, Link, router } from '@inertiajs/react';
 import AdminLayout from '@/layouts/admin-layout';
+import React from 'react';
 
 interface ItemRow {
     serial_no: number;
@@ -149,6 +150,8 @@ export default function TeamBasedApprovalIndex({ approvals, filters, draftCount,
             });
         });
     });
+
+    const [zoomSignatureUrl, setZoomSignatureUrl] = React.useState<string | null>(null);
 
     const handlePrintPage = () => {
         if (typeof window !== 'undefined') {
@@ -319,7 +322,7 @@ export default function TeamBasedApprovalIndex({ approvals, filters, draftCount,
                                 <th className="border" rowSpan={2}>সদস্য নম্বর</th>
                                 <th className="border" rowSpan={2}>সমিতি নম্বর</th>
                                 <th className="border text-center" colSpan={3}>সঞ্চয়ের পরিমাণ</th>
-                                <th className="border" rowSpan={2}>পরিশোধিত ঋণের পরিমাণ</th>
+                                <th className="border" rowSpan={2}>পরিশোধিত মূল ঋণের পরিমাণ</th>
                                 <th className="border" rowSpan={2}>পরি: দফা নম্বর</th>
                                 <th className="border" rowSpan={2}>অন্যান্য সংস্থায় গ্রহণকৃত ঋণের পরিমাণ</th>
                                 <th className="border" rowSpan={2}>প্রস্তাবিত ঋণের পরিমাণ</th>
@@ -364,26 +367,40 @@ export default function TeamBasedApprovalIndex({ approvals, filters, draftCount,
                                     <td className="border">{row.approved_amount ?? ''}</td>
                                     <td className="border">{row.review_comments || ''}</td>
                                     <td className="border">
-                                        {row.approver_signature && (
+                                        {row.approver_signature ? (
                                             <div className="flex flex-col items-center gap-0">
-                                                <img
-                                                    src={
-                                                        row.approver_signature.startsWith('http')
-                                                            ? row.approver_signature
-                                                            : row.approver_signature.startsWith('/storage/')
-                                                            ? row.approver_signature
-                                                            : `/storage/${row.approver_signature}`
+                                                <button
+                                                    type="button"
+                                                    onClick={() =>
+                                                        setZoomSignatureUrl(
+                                                            row.approver_signature!.startsWith('http')
+                                                                ? row.approver_signature!
+                                                                : row.approver_signature!.startsWith('/storage/')
+                                                                ? row.approver_signature!
+                                                                : `/storage/${row.approver_signature!}`,
+                                                        )
                                                     }
-                                                    alt="Signature"
-                                                    className="h-8 max-h-8 object-contain print:!h-8 print:!max-h-8"
-                                                    onError={(e) => {
-                                                        (e.target as HTMLImageElement).style.display = 'none';
-                                                    }}
-                                                />
+                                                    className="focus:outline-none hover:scale-105 transition-transform"
+                                                    title="স্বাক্ষর বড় করে দেখুন"
+                                                >
+                                                    <img
+                                                        src={
+                                                            row.approver_signature.startsWith('http')
+                                                                ? row.approver_signature
+                                                                : row.approver_signature.startsWith('/storage/')
+                                                                ? row.approver_signature
+                                                                : `/storage/${row.approver_signature}`
+                                                        }
+                                                        alt="Signature"
+                                                        className="h-8 max-h-8 object-contain print:!h-8 print:!max-h-8"
+                                                        onError={(e) => {
+                                                            (e.target as HTMLImageElement).style.display = 'none';
+                                                        }}
+                                                    />
+                                                </button>
                                                 <span className="text-gray-700 leading-tight">{row.decided_at || ''}</span>
                                             </div>
-                                        )}
-                                        {!row.approver_signature && (
+                                        ) : (
                                             <span className="text-gray-500">{row.decided_at || ''}</span>
                                         )}
                                     </td>
@@ -402,6 +419,34 @@ export default function TeamBasedApprovalIndex({ approvals, filters, draftCount,
                     </table>
                 </div>
             </div>
+
+            {zoomSignatureUrl && (
+                <div
+                    className="fixed inset-0 z-40 flex items-center justify-center bg-black/60 print:hidden"
+                    onClick={() => setZoomSignatureUrl(null)}
+                >
+                    <div
+                        className="bg-white rounded-lg shadow-xl max-w-3xl w-[90%] max-h-[90vh] p-3 flex flex-col items-center"
+                        onClick={(e) => e.stopPropagation()}
+                    >
+                        <img
+                            src={zoomSignatureUrl}
+                            alt="Signature zoomed"
+                            className="max-h-[75vh] w-auto object-contain"
+                            onError={(e) => {
+                                (e.target as HTMLImageElement).style.display = 'none';
+                            }}
+                        />
+                        <button
+                            type="button"
+                            onClick={() => setZoomSignatureUrl(null)}
+                            className="mt-3 inline-flex items-center px-3 py-1.5 rounded-md border border-gray-300 text-xs font-medium text-gray-700 hover:bg-gray-100"
+                        >
+                            Close
+                        </button>
+                    </div>
+                </div>
+            )}
         </AdminLayout>
     );
 }

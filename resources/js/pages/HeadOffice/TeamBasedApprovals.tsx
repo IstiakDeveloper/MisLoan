@@ -27,6 +27,7 @@ interface Branch {
 }
 
 interface ItemRow {
+    id: number;
     serial_no: number;
     member_name: string;
     member_code?: string | null;
@@ -104,6 +105,7 @@ export default function TeamBasedApprovals({ approvals, filters, stats, zones, a
     const [branchId, setBranchId] = useState((filters.branch_id ?? '').toString());
     const [dateFrom, setDateFrom] = useState(filters.date_from || new Date().toISOString().slice(0, 10));
     const [dateTo, setDateTo] = useState(filters.date_to || new Date().toISOString().slice(0, 10));
+    const [zoomSignatureUrl, setZoomSignatureUrl] = useState<string | null>(null);
 
     const applyFilters = () => {
         router.get(
@@ -205,6 +207,17 @@ export default function TeamBasedApprovals({ approvals, filters, stats, zones, a
         if (typeof window !== 'undefined') {
             window.print();
         }
+    };
+
+    const handleEditItem = (itemId: number) => {
+        router.get(`/head-office/team-based-approvals/items/${itemId}/edit`);
+    };
+
+    const handleDeleteItem = (itemId: number) => {
+        if (!confirm('আপনি কি নিশ্চিত যে এই লোন সারিটি মুছে ফেলতে চান?')) {
+            return;
+        }
+        router.delete(`/head-office/team-based-approvals/items/${itemId}`);
     };
 
     return (
@@ -443,6 +456,7 @@ export default function TeamBasedApprovals({ approvals, filters, stats, zones, a
                                 <th className="border px-2 py-1 text-left">অনুমোদনকারীর স্বাক্ষর / তারিখ</th>
                                 <th className="border px-2 py-1 text-center">অবস্থা</th>
                                 <th className="border px-2 py-1 text-left">অনুমোদনকারী</th>
+                                <th className="border px-2 py-1 text-center">কর্ম</th>
                             </tr>
                         </thead>
                         <tbody>
@@ -473,20 +487,35 @@ export default function TeamBasedApprovals({ approvals, filters, stats, zones, a
                                     <td className="border px-2 py-1">
                                         {row.approver_signature ? (
                                             <div className="flex flex-col items-start gap-0.5">
-                                                <img
-                                                    src={
-                                                        row.approver_signature.startsWith('http')
-                                                            ? row.approver_signature
-                                                            : row.approver_signature.startsWith('/storage/')
-                                                            ? row.approver_signature
-                                                            : `/storage/${row.approver_signature}`
+                                                <button
+                                                    type="button"
+                                                    onClick={() =>
+                                                        setZoomSignatureUrl(
+                                                            row.approver_signature!.startsWith('http')
+                                                                ? row.approver_signature!
+                                                                : row.approver_signature!.startsWith('/storage/')
+                                                                ? row.approver_signature!
+                                                                : `/storage/${row.approver_signature!}`,
+                                                        )
                                                     }
-                                                    alt="Signature"
-                                                    className="h-6 max-h-6 object-contain"
-                                                    onError={(e) => {
-                                                        (e.target as HTMLImageElement).style.display = 'none';
-                                                    }}
-                                                />
+                                                    className="focus:outline-none hover:scale-105 transition-transform"
+                                                    title="স্বাক্ষর বড় করে দেখুন"
+                                                >
+                                                    <img
+                                                        src={
+                                                            row.approver_signature.startsWith('http')
+                                                                ? row.approver_signature
+                                                                : row.approver_signature.startsWith('/storage/')
+                                                                ? row.approver_signature
+                                                                : `/storage/${row.approver_signature}`
+                                                        }
+                                                        alt="Signature"
+                                                        className="h-6 max-h-6 object-contain"
+                                                        onError={(e) => {
+                                                            (e.target as HTMLImageElement).style.display = 'none';
+                                                        }}
+                                                    />
+                                                </button>
                                                 <span>{row.decided_at || ''}</span>
                                             </div>
                                         ) : (
@@ -495,6 +524,24 @@ export default function TeamBasedApprovals({ approvals, filters, stats, zones, a
                                     </td>
                                     <td className="border px-2 py-1 text-center capitalize">{row.status}</td>
                                     <td className="border px-2 py-1">{row.approver_name || '-'}</td>
+                                    <td className="border px-2 py-1 text-center">
+                                        <div className="flex items-center justify-center gap-1">
+                                            <button
+                                                type="button"
+                                                onClick={() => handleEditItem(row.id)}
+                                                className="px-2 py-0.5 text-[11px] rounded border border-blue-500 text-blue-600 hover:bg-blue-50"
+                                            >
+                                                Edit
+                                            </button>
+                                            <button
+                                                type="button"
+                                                onClick={() => handleDeleteItem(row.id)}
+                                                className="px-2 py-0.5 text-[11px] rounded border border-red-500 text-red-600 hover:bg-red-50"
+                                            >
+                                                Delete
+                                            </button>
+                                        </div>
+                                    </td>
                                 </tr>
                             ))}
                         </tbody>
@@ -529,6 +576,34 @@ export default function TeamBasedApprovals({ approvals, filters, stats, zones, a
                     </div>
                 </div>
             </div>
+
+            {zoomSignatureUrl && (
+                <div
+                    className="fixed inset-0 z-40 flex items-center justify-center bg-black/60 print:hidden"
+                    onClick={() => setZoomSignatureUrl(null)}
+                >
+                    <div
+                        className="bg-white rounded-lg shadow-xl max-w-3xl w-[90%] max-h-[90vh] p-3 flex flex-col items-center"
+                        onClick={(e) => e.stopPropagation()}
+                    >
+                        <img
+                            src={zoomSignatureUrl}
+                            alt="Signature zoomed"
+                            className="max-h-[75vh] w-auto object-contain"
+                            onError={(e) => {
+                                (e.target as HTMLImageElement).style.display = 'none';
+                            }}
+                        />
+                        <button
+                            type="button"
+                            onClick={() => setZoomSignatureUrl(null)}
+                            className="mt-3 inline-flex items-center px-3 py-1.5 rounded-md border border-gray-300 text-xs font-medium text-gray-700 hover:bg-gray-100"
+                        >
+                            Close
+                        </button>
+                    </div>
+                </div>
+            )}
         </AdminLayout>
     );
 }

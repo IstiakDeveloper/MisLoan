@@ -1,7 +1,6 @@
 import { Head, Link, router, useForm } from '@inertiajs/react';
 import AdminLayout from '@/layouts/admin-layout';
 import { Plus, Trash2, Save } from 'lucide-react';
-import { useEffect } from 'react';
 
 interface ApproverUser {
     id: number;
@@ -29,13 +28,13 @@ interface RowItem {
     repaid_installment_no: string;
     other_institution_loan_amount: string;
     proposed_loan_amount: string;
+    approved_amount: string;
     loan_term_years: string;
     loan_type: string;
     project_name: string;
+    review_comments: string;
 }
 
-// Convert Bangla digits to English digits so that
-// users can type বাংলা/English amount but calculations still work.
 function normalizeNumericInput(value: string): string {
     if (!value) return '';
     const banglaToEnglishMap: Record<string, string> = {
@@ -60,43 +59,13 @@ function normalizeNumericInput(value: string): string {
         }
     }
 
-    // Remove common thousand separators so parseFloat works
-    result = result.replace(/,/g, '');
-
-    return result;
+    return result.replace(/,/g, '');
 }
 
 function toNumber(value: string): number {
     const normalized = normalizeNumericInput(value);
     const n = parseFloat(normalized);
     return Number.isFinite(n) ? n : 0;
-}
-
-function toBanglaDigits(value: string): string {
-    if (!value) return '';
-    const engToBanglaMap: Record<string, string> = {
-        '0': '০',
-        '1': '১',
-        '2': '২',
-        '3': '৩',
-        '4': '৪',
-        '5': '৫',
-        '6': '৬',
-        '7': '৭',
-        '8': '৮',
-        '9': '৯',
-    };
-
-    let result = '';
-    for (const ch of value) {
-        if (engToBanglaMap[ch] !== undefined) {
-            result += engToBanglaMap[ch];
-        } else {
-            result += ch;
-        }
-    }
-
-    return result;
 }
 
 interface ExistingApproval {
@@ -111,7 +80,7 @@ interface Props {
     branch: BranchInfo;
     approverOptions: ApproverUser[];
     today: string;
-    existingApproval?: ExistingApproval;
+    existingApproval: ExistingApproval;
 }
 
 function makeEmptyRow(): RowItem {
@@ -126,20 +95,18 @@ function makeEmptyRow(): RowItem {
         repaid_installment_no: '',
         other_institution_loan_amount: '',
         proposed_loan_amount: '',
+        approved_amount: '',
         loan_term_years: '',
         loan_type: '',
         project_name: '',
+        review_comments: '',
     };
 }
 
-export default function TeamBasedApprovalForm({ branch, approverOptions, today, existingApproval }: Props) {
-    const isEdit = !!existingApproval;
-
-    const { data, setData, post, put, processing, errors, reset } = useForm({
+export default function HeadOfficeTeamBasedApprovalEdit({ branch, approverOptions, today, existingApproval }: Props) {
+    const { data, setData, put, processing, errors } = useForm({
         sheet_date: existingApproval?.sheet_date || today || '',
-        approver_user_id: existingApproval?.approver_user_id
-            ? String(existingApproval.approver_user_id)
-            : '',
+        approver_user_id: existingApproval?.approver_user_id ? String(existingApproval.approver_user_id) : '',
         items: (existingApproval?.items as RowItem[]) || ([makeEmptyRow()] as RowItem[]),
     });
 
@@ -147,7 +114,6 @@ export default function TeamBasedApprovalForm({ branch, approverOptions, today, 
         const newItems = [...data.items];
         let newValue = value;
 
-        // For all numeric/amount fields, normalize Bangla digits to English
         if (
             field === 'savings_general' ||
             field === 'savings_other' ||
@@ -156,19 +122,21 @@ export default function TeamBasedApprovalForm({ branch, approverOptions, today, 
             field === 'repaid_installment_no' ||
             field === 'other_institution_loan_amount' ||
             field === 'proposed_loan_amount' ||
+            field === 'approved_amount' ||
             field === 'loan_term_years'
         ) {
             newValue = normalizeNumericInput(value);
         }
 
         newItems[index] = { ...newItems[index], [field]: newValue };
-        // Auto-update total savings for this row
+
         if (field === 'savings_general' || field === 'savings_other') {
             const g = toNumber(newItems[index].savings_general || '0');
             const o = toNumber(newItems[index].savings_other || '0');
             const total = g + o;
             newItems[index].savings_total = total > 0 ? String(total) : '';
         }
+
         setData('items', newItems);
     };
 
@@ -187,48 +155,41 @@ export default function TeamBasedApprovalForm({ branch, approverOptions, today, 
     const handleSubmit = (e: React.FormEvent) => {
         e.preventDefault();
 
-        if (isEdit && existingApproval) {
-            put(`/team-based-approvals/${existingApproval.id}`, {
-                preserveScroll: true,
-                onSuccess: () => {
-                    router.visit('/team-based-approvals/drafts', {
-                        preserveScroll: true,
-                    });
-                },
-            });
-        } else {
-            post('/team-based-approvals/save-draft', {
-                preserveScroll: true,
-                onSuccess: () => {
-                    router.visit('/team-based-approvals/drafts', {
-                        preserveScroll: true,
-                    });
-                },
-            });
-        }
+        put(`/head-office/team-based-approvals/${existingApproval.id}`, {
+            preserveScroll: true,
+            onSuccess: () => {
+                router.visit('/head-office/team-based-approvals', {
+                    preserveScroll: true,
+                });
+            },
+        });
     };
 
     return (
         <AdminLayout>
-            <Head title="Team Based Loan Approval Form" />
+            <Head title="Head Office - Edit Team Based Sheet" />
 
             <div className="max-w-[1600px] mx-auto py-6">
                 <div className="bg-white shadow rounded-lg border border-gray-200">
                     <div className="px-6 py-4 border-b border-gray-200 flex items-center justify-between">
                         <div className="flex items-center gap-3">
                             <Link
-                                href="/team-based-approvals/drafts"
+                                href="/head-office/team-based-approvals"
                                 className="inline-flex items-center px-3 py-1.5 rounded-md border border-gray-300 text-sm font-medium text-gray-700 hover:bg-gray-100"
                             >
                                 Back
                             </Link>
                             <div>
                                 <h1 className="text-lg font-semibold text-gray-900">
-                                    {isEdit ? 'Edit Team Based Draft' : 'Team Based Loan Disbursement & Approval Form'}
+                                    Head Office: Team Based Sheet Edit
                                 </h1>
                                 <p className="text-xs text-gray-600 mt-1">
-                                    শাখা: {branch.name} ({branch.code}){branch.area_name && `, এরিয়া: ${branch.area_name}`}
+                                    শাখা: {branch.name} ({branch.code})
+                                    {branch.area_name && `, এরিয়া: ${branch.area_name}`}
                                     {branch.zone_name && `, জোন: ${branch.zone_name}`}
+                                </p>
+                                <p className="text-xs text-gray-500">
+                                    বর্তমান স্ট্যাটাস: <span className="font-semibold uppercase">{existingApproval.status}</span>
                                 </p>
                             </div>
                         </div>
@@ -244,12 +205,10 @@ export default function TeamBasedApprovalForm({ branch, approverOptions, today, 
                     </div>
 
                     <form onSubmit={handleSubmit} className="px-6 py-4 space-y-6">
-                        {/* Approver selection */}
                         <div className="border border-gray-200 rounded-lg p-4 bg-gray-50">
-                            <h2 className="text-sm font-semibold text-gray-900 mb-3">Approver Selection (Team Based)</h2>
+                            <h2 className="text-sm font-semibold text-gray-900 mb-3">Approver Selection</h2>
                             <p className="text-xs text-gray-600 mb-3">
-                                এই শিটটির জন্য মাত্র <span className="font-semibold">১ জন</span> অনুমোদনকারী নির্বাচন করুন। এই ব্যক্তি Area/Zone Manager বা
-                                ADMF/DMF/ED যে কেউ হতে পারেন (যাদের এই শাখায় অ্যাক্সেস আছে)।
+                                এই শিটটির জন্য মাত্র <span className="font-semibold">১ জন</span> অনুমোদনকারী নির্বাচন করুন (Area/Zone Manager বা ADMF/DMF/ED)।
                             </p>
                             <div className="max-w-md">
                                 <label className="block text-xs font-medium text-gray-700 mb-1">
@@ -273,7 +232,6 @@ export default function TeamBasedApprovalForm({ branch, approverOptions, today, 
                             </div>
                         </div>
 
-                        {/* Data table */}
                         <div className="border border-gray-300 rounded-lg overflow-x-auto">
                             <table className="min-w-full border-collapse text-[12px]">
                                 <thead>
@@ -306,6 +264,9 @@ export default function TeamBasedApprovalForm({ branch, approverOptions, today, 
                                             প্রস্তাবিত ঋণের পরিমাণ
                                         </th>
                                         <th rowSpan={2} className="border border-gray-400 px-2 py-1 bg-gray-100 text-center">
+                                            অনুমোদিত ঋণের পরিমাণ
+                                        </th>
+                                        <th rowSpan={2} className="border border-gray-400 px-2 py-1 bg-gray-100 text-center">
                                             ঋণের মেয়াদ
                                         </th>
                                         <th rowSpan={2} className="border border-gray-400 px-2 py-1 bg-gray-100 text-center">
@@ -313,6 +274,9 @@ export default function TeamBasedApprovalForm({ branch, approverOptions, today, 
                                         </th>
                                         <th rowSpan={2} className="border border-gray-400 px-2 py-1 bg-gray-100 text-center">
                                             প্রকল্পের নাম
+                                        </th>
+                                        <th rowSpan={2} className="border border-gray-400 px-2 py-1 bg-gray-100 text-center">
+                                            মন্তব্য
                                         </th>
                                         <th rowSpan={2} className="border border-gray-400 px-1 py-1 bg-gray-100 text-center">
                                             কার্য
@@ -419,6 +383,14 @@ export default function TeamBasedApprovalForm({ branch, approverOptions, today, 
                                                 />
                                             </td>
                                             <td className="border border-gray-300 px-1 py-0.5">
+                                                <input
+                                                    type="text"
+                                                    className="w-full border border-gray-200 rounded px-1 py-0.5 text-[11px] text-right"
+                                                    value={row.approved_amount}
+                                                    onChange={(e) => handleRowChange(index, 'approved_amount', e.target.value)}
+                                                />
+                                            </td>
+                                            <td className="border border-gray-300 px-1 py-0.5">
                                                 <select
                                                     className="w-full border border-gray-200 rounded px-1 py-0.5 text-[11px]"
                                                     value={row.loan_term_years}
@@ -448,6 +420,15 @@ export default function TeamBasedApprovalForm({ branch, approverOptions, today, 
                                                     value={row.project_name}
                                                     onChange={(e) => handleRowChange(index, 'project_name', e.target.value)}
                                                     placeholder="প্রকল্পের নাম"
+                                                />
+                                            </td>
+                                            <td className="border border-gray-300 px-1 py-0.5">
+                                                <input
+                                                    type="text"
+                                                    className="w-full border border-gray-200 rounded px-1 py-0.5 text-[11px]"
+                                                    value={row.review_comments}
+                                                    onChange={(e) => handleRowChange(index, 'review_comments', e.target.value)}
+                                                    placeholder="মন্তব্য"
                                                 />
                                             </td>
                                             <td className="border border-gray-300 px-1 py-0.5 text-center">
@@ -487,7 +468,7 @@ export default function TeamBasedApprovalForm({ branch, approverOptions, today, 
                                 className="inline-flex items-center gap-1 px-4 py-2 rounded-md bg-blue-600 text-white text-sm font-medium hover:bg-blue-700 disabled:opacity-60"
                             >
                                 <Save className="w-4 h-4" />
-                                {processing ? 'Saving...' : 'Save Draft'}
+                                {processing ? 'Updating...' : 'Update Sheet'}
                             </button>
                         </div>
                     </form>

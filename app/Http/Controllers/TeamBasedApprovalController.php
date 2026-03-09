@@ -104,7 +104,7 @@ class TeamBasedApprovalController extends Controller
             'items.*.repaid_installment_no' => ['nullable', 'integer', 'min:0'],
             'items.*.other_institution_loan_amount' => ['nullable', 'numeric', 'min:0'],
             'items.*.proposed_loan_amount' => ['nullable', 'numeric', 'min:0'],
-            'items.*.loan_term_years' => ['nullable', 'numeric', 'in:1,1.5,2,3'],
+            'items.*.loan_term_years' => ['nullable', 'numeric', 'in:0.5,1,1.5,2,3'],
             'items.*.loan_type' => ['nullable', 'string', 'max:100'],
             'items.*.project_name' => ['nullable', 'string', 'max:255'],
         ], [
@@ -219,15 +219,54 @@ class TeamBasedApprovalController extends Controller
                     ->whereNotNull('team_based_approval_item_id')
                     ->keyBy('team_based_approval_item_id');
 
+                $snapshot = $approval->last_items_snapshot ?? [];
+
                 return [
                     'id' => $approval->id,
                     'sheet_date' => optional($approval->sheet_date)->toDateString(),
                     'status' => $approval->status,
                     'created_at' => $approval->created_at?->toDateTimeString(),
                     'approver_name' => $approverUser?->name,
-                    'items' => $approval->items->map(function (TeamBasedApprovalItem $item) use ($reviewsByItem, $approval) {
+                    'items' => $approval->items->map(function (TeamBasedApprovalItem $item) use ($reviewsByItem, $approval, $snapshot) {
                         /** @var \Illuminate\Support\Collection $reviewsByItem */
                         $review = $reviewsByItem[$item->id] ?? null;
+
+                        $original = null;
+                        if (! empty($snapshot) && $item->serial_no !== null) {
+                            $index = max(0, $item->serial_no - 1);
+                            $original = $snapshot[$index] ?? null;
+                        }
+
+                        $changedFields = [];
+                        if (is_array($original)) {
+                            $fieldsToCheck = [
+                                'member_name',
+                                'member_code',
+                                'samity_number',
+                                'savings_general',
+                                'savings_other',
+                                'savings_total',
+                                'repaid_loan_amount',
+                                'repaid_installment_no',
+                                'other_institution_loan_amount',
+                                'proposed_loan_amount',
+                                'loan_term_years',
+                                'loan_type',
+                                'project_name',
+                            ];
+
+                            foreach ($fieldsToCheck as $field) {
+                                $currentValue = $item->{$field};
+                                $originalValue = $original[$field] ?? null;
+
+                                $currentStr = $currentValue === null ? '' : (string) $currentValue;
+                                $originalStr = $originalValue === null ? '' : (string) $originalValue;
+
+                                if ($currentStr !== $originalStr) {
+                                    $changedFields[] = $field;
+                                }
+                            }
+                        }
 
                         return [
                             'serial_no' => $item->serial_no,
@@ -250,6 +289,7 @@ class TeamBasedApprovalController extends Controller
                             'review_comments' => $review?->comments,
                             'approver_signature' => $review?->approver_signature,
                             'decided_at' => optional($review?->decided_at)->toDateString(),
+                            'changed_fields' => $changedFields,
                         ];
                     })->values(),
                 ];
@@ -574,6 +614,46 @@ class TeamBasedApprovalController extends Controller
     }
 
     /**
+     * Approver side: update a single loan row before/after decision.
+     */
+    public function updateItem(Request $request, TeamBasedApprovalReview $review)
+    {
+        $user = $request->user();
+
+        if ($review->user_id !== $user->id) {
+            abort(403, 'আপনি এই আবেদনটির অনুমোদনকারী নন।');
+        }
+
+        if (! $review->team_based_approval_item_id || ! $review->item) {
+            abort(404, 'এই রিভিউটির সাথে কোন লোন সারি যুক্ত নেই।');
+        }
+
+        $item = $review->item;
+
+        $data = $request->validate([
+            'member_name' => ['required', 'string', 'max:255'],
+            'member_code' => ['nullable', 'string', 'max:50'],
+            'samity_number' => ['nullable', 'string', 'max:50'],
+            'savings_general' => ['nullable', 'numeric', 'min:0'],
+            'savings_other' => ['nullable', 'numeric', 'min:0'],
+            'savings_total' => ['nullable', 'numeric', 'min:0'],
+            'repaid_loan_amount' => ['nullable', 'numeric', 'min:0'],
+            'repaid_installment_no' => ['nullable', 'integer', 'min:0'],
+            'other_institution_loan_amount' => ['nullable', 'numeric', 'min:0'],
+            'proposed_loan_amount' => ['nullable', 'numeric', 'min:0'],
+            'loan_term_years' => ['nullable', 'numeric', 'in:0.5,1,1.5,2,3'],
+            'loan_type' => ['nullable', 'string', 'max:100'],
+            'project_name' => ['nullable', 'string', 'max:255'],
+        ]);
+
+        $item->update($data);
+
+        return redirect()
+            ->back()
+            ->with('success', 'সারি তথ্য সফলভাবে হালনাগাদ হয়েছে।');
+    }
+
+    /**
      * List only drafts for current branch (Draft List page).
      */
     public function drafts(Request $request)
@@ -742,7 +822,7 @@ class TeamBasedApprovalController extends Controller
             'items.*.repaid_installment_no' => ['nullable', 'integer', 'min:0'],
             'items.*.other_institution_loan_amount' => ['nullable', 'numeric', 'min:0'],
             'items.*.proposed_loan_amount' => ['nullable', 'numeric', 'min:0'],
-            'items.*.loan_term_years' => ['nullable', 'numeric', 'in:1,1.5,2,3'],
+            'items.*.loan_term_years' => ['nullable', 'numeric', 'in:0.5,1,1.5,2,3'],
             'items.*.loan_type' => ['nullable', 'string', 'max:100'],
             'items.*.project_name' => ['nullable', 'string', 'max:255'],
         ]);

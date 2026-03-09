@@ -173,6 +173,7 @@ Route::middleware(['auth', 'verified'])->group(function () {
         // Approver-side: list & decision
         Route::get('for-approver', [TeamBasedApprovalController::class, 'approverIndex'])->name('approver-index');
         Route::post('reviews/{review}/decide', [TeamBasedApprovalController::class, 'decide'])->name('reviews.decide');
+        Route::post('reviews/{review}/update-item', [TeamBasedApprovalController::class, 'updateItem'])->name('reviews.update-item');
 
         // Shared print view
         Route::get('{teamBasedApproval}/print', [TeamBasedApprovalPrintController::class, 'show'])->name('print');
@@ -273,8 +274,15 @@ Route::middleware(['auth', 'verified'])->group(function () {
         Route::get('savings-applications', [HeadOfficeSavingsController::class, 'index'])->name('savings-applications');
         Route::get('savings-applications/{id}', [HeadOfficeSavingsController::class, 'show'])->name('savings-applications.show');
 
-        // Head Office Team Based Approvals overview
+        // Head Office Team Based Approvals overview + management
         Route::get('team-based-approvals', [HeadOfficeTeamBasedApprovalController::class, 'index'])->name('team-based-approvals');
+        Route::get('team-based-approvals/{teamBasedApproval}/edit', [HeadOfficeTeamBasedApprovalController::class, 'edit'])->name('team-based-approvals.edit');
+        Route::put('team-based-approvals/{teamBasedApproval}', [HeadOfficeTeamBasedApprovalController::class, 'update'])->name('team-based-approvals.update');
+        Route::delete('team-based-approvals/{teamBasedApproval}', [HeadOfficeTeamBasedApprovalController::class, 'destroy'])->name('team-based-approvals.destroy');
+        // Single item (row) actions from overview
+        Route::get('team-based-approvals/items/{item}/edit', [HeadOfficeTeamBasedApprovalController::class, 'editItem'])->name('team-based-approvals.items.edit');
+        Route::put('team-based-approvals/items/{item}', [HeadOfficeTeamBasedApprovalController::class, 'updateItem'])->name('team-based-approvals.items.update');
+        Route::delete('team-based-approvals/items/{item}', [HeadOfficeTeamBasedApprovalController::class, 'destroyItem'])->name('team-based-approvals.items.destroy');
     });
 
     // Loan Submissions Management - Only for SuperAdmin/Head Office

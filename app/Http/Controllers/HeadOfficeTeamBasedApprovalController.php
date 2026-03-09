@@ -4,10 +4,15 @@ namespace App\Http\Controllers;
 
 use App\Models\Area;
 use App\Models\Branch;
+use App\Models\Role;
 use App\Models\TeamBasedApproval;
+use App\Models\TeamBasedApprovalItem;
+use App\Models\TeamBasedApprovalReview;
+use App\Models\User;
 use App\Models\Zone;
 use Carbon\Carbon;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 use Inertia\Inertia;
 
 class HeadOfficeTeamBasedApprovalController extends Controller
@@ -177,6 +182,7 @@ class HeadOfficeTeamBasedApprovalController extends Controller
                         $review = $reviewsByItem[$item->id] ?? null;
 
                         return [
+                            'id' => $item->id,
                             'serial_no' => $item->serial_no,
                             'member_name' => $item->member_name,
                             'member_code' => $item->member_code,
@@ -220,6 +226,312 @@ class HeadOfficeTeamBasedApprovalController extends Controller
             'areas' => $areas,
             'branches' => $branches,
         ]);
+    }
+
+    /**
+     * Head Office: edit a draft Team Based sheet (same form as branch, but without branch restriction).
+     */
+    public function edit(TeamBasedApproval $teamBasedApproval)
+    {
+        $branch = $teamBasedApproval->branch()->with('area.zone')->firstOrFail();
+
+        // Build approver list for this branch (same as branch edit)
+        $areaZoneUsers = User::query()
+            ->active()
+            ->whereHas('role', function ($q) {
+                $q->whereIn('name', [Role::AREA_MANAGER, Role::ZONE_MANAGER]);
+            })
+            ->canAccessBranch($branch->id)
+            ->with('role:id,name,display_name')
+            ->orderBy('name')
+            ->get();
+
+        $admfDmfEd = User::getApproversSelectableByBranch($branch->id)
+            ->loadMissing('role:id,name,display_name');
+
+        $approverOptions = collect();
+        $approverOptions = $approverOptions->merge(
+            $areaZoneUsers->map(function (User $u) {
+                return [
+                    'id' => $u->id,
+                    'name' => $u->name,
+                    'role_name' => $u->role->display_name ?? $u->role->name,
+                    'level' => $u->role->name,
+                ];
+            })
+        );
+        $approverOptions = $approverOptions->merge(
+            $admfDmfEd->map(function (User $u) {
+                return [
+                    'id' => $u->id,
+                    'name' => $u->name,
+                    'role_name' => $u->role->display_name ?? $u->role->name,
+                    'level' => $u->role->name,
+                ];
+            })
+        );
+
+        $teamBasedApproval->load('items');
+
+        $approverUserId = $teamBasedApproval->area_manager_id
+            ?? $teamBasedApproval->zone_manager_id
+            ?? $teamBasedApproval->admf_id
+            ?? $teamBasedApproval->dmf_id
+            ?? $teamBasedApproval->ed_id;
+
+        $existingApproval = [
+            'id' => $teamBasedApproval->id,
+            'sheet_date' => optional($teamBasedApproval->sheet_date)->toDateString(),
+            'approver_user_id' => $approverUserId,
+            'status' => $teamBasedApproval->status,
+            'items' => $teamBasedApproval->items->map(function (TeamBasedApprovalItem $item) {
+                return [
+                    'member_name' => $item->member_name,
+                    'member_code' => $item->member_code ?? '',
+                    'samity_number' => $item->samity_number ?? '',
+                    'savings_general' => $item->savings_general !== null ? (string) $item->savings_general : '',
+                    'savings_other' => $item->savings_other !== null ? (string) $item->savings_other : '',
+                    'savings_total' => $item->savings_total !== null ? (string) $item->savings_total : '',
+                    'repaid_loan_amount' => $item->repaid_loan_amount !== null ? (string) $item->repaid_loan_amount : '',
+                    'repaid_installment_no' => $item->repaid_installment_no !== null ? (string) $item->repaid_installment_no : '',
+                    'other_institution_loan_amount' => $item->other_institution_loan_amount !== null
+                        ? (string) $item->other_institution_loan_amount
+                        : '',
+                    'proposed_loan_amount' => $item->proposed_loan_amount !== null ? (string) $item->proposed_loan_amount : '',
+                    'loan_term_years' => $item->loan_term_years !== null ? (string) $item->loan_term_years : '',
+                    'loan_type' => $item->loan_type ?? '',
+                    'project_name' => $item->project_name ?? '',
+                ];
+            })->values(),
+        ];
+
+        return Inertia::render('HeadOffice/TeamBasedApprovalEdit', [
+            'branch' => [
+                'id' => $branch->id,
+                'name' => $branch->name,
+                'code' => $branch->code,
+                'area_name' => $branch->area?->name,
+                'zone_name' => $branch->area?->zone?->name,
+            ],
+            'approverOptions' => $approverOptions->values(),
+            'today' => now()->toDateString(),
+            'existingApproval' => $existingApproval,
+        ]);
+    }
+
+    /**
+     * Head Office: edit a single loan item (row) from overview table.
+     */
+    public function editItem(TeamBasedApprovalItem $item)
+    {
+        $approval = $item->approval()
+            ->with(['branch.area.zone', 'reviews' => function ($q) use ($item) {
+                $q->where('team_based_approval_item_id', $item->id);
+            }])
+            ->firstOrFail();
+
+        /** @var \App\Models\TeamBasedApprovalReview|null $review */
+        $review = $approval->reviews->first();
+
+        $existingItem = [
+            'id' => $item->id,
+            'sheet_date' => optional($approval->sheet_date)->toDateString(),
+            'status' => $review?->status ?? $approval->status,
+            'member_name' => $item->member_name,
+            'member_code' => $item->member_code ?? '',
+            'samity_number' => $item->samity_number ?? '',
+            'savings_general' => $item->savings_general !== null ? (string) $item->savings_general : '',
+            'savings_other' => $item->savings_other !== null ? (string) $item->savings_other : '',
+            'savings_total' => $item->savings_total !== null ? (string) $item->savings_total : '',
+            'repaid_loan_amount' => $item->repaid_loan_amount !== null ? (string) $item->repaid_loan_amount : '',
+            'repaid_installment_no' => $item->repaid_installment_no !== null ? (string) $item->repaid_installment_no : '',
+            'other_institution_loan_amount' => $item->other_institution_loan_amount !== null
+                ? (string) $item->other_institution_loan_amount
+                : '',
+            'proposed_loan_amount' => $item->proposed_loan_amount !== null ? (string) $item->proposed_loan_amount : '',
+            'approved_amount' => $item->approved_amount !== null ? (string) $item->approved_amount : '',
+            'loan_term_years' => $item->loan_term_years !== null ? (string) $item->loan_term_years : '',
+            'loan_type' => $item->loan_type ?? '',
+            'project_name' => $item->project_name ?? '',
+            'review_comments' => $review?->comments ?? '',
+        ];
+
+        $branch = $approval->branch;
+
+        return Inertia::render('HeadOffice/TeamBasedItemEdit', [
+            'branch' => [
+                'id' => $branch->id,
+                'name' => $branch->name,
+                'code' => $branch->code,
+                'area_name' => $branch->area?->name,
+                'zone_name' => $branch->area?->zone?->name,
+            ],
+            'item' => $existingItem,
+        ]);
+    }
+
+    /**
+     * Head Office: update a Team Based sheet data (including approved amount & comments) – sheet-level.
+     */
+    public function update(Request $request, TeamBasedApproval $teamBasedApproval)
+    {
+        $validated = $request->validate([
+            'sheet_date' => ['required', 'date'],
+            'items' => ['required', 'array', 'min:1'],
+            'items.*.member_name' => ['required', 'string', 'max:255'],
+            'items.*.member_code' => ['nullable', 'string', 'max:50'],
+            'items.*.samity_number' => ['nullable', 'string', 'max:50'],
+            'items.*.savings_general' => ['nullable', 'numeric', 'min:0'],
+            'items.*.savings_other' => ['nullable', 'numeric', 'min:0'],
+            'items.*.savings_total' => ['nullable', 'numeric', 'min:0'],
+            'items.*.repaid_loan_amount' => ['nullable', 'numeric', 'min:0'],
+            'items.*.repaid_installment_no' => ['nullable', 'integer', 'min:0'],
+            'items.*.other_institution_loan_amount' => ['nullable', 'numeric', 'min:0'],
+            'items.*.proposed_loan_amount' => ['nullable', 'numeric', 'min:0'],
+            'items.*.approved_amount' => ['nullable', 'numeric', 'min:0'],
+            'items.*.loan_term_years' => ['nullable', 'numeric', 'in:0.5,1,1.5,2,3'],
+            'items.*.loan_type' => ['nullable', 'string', 'max:100'],
+            'items.*.project_name' => ['nullable', 'string', 'max:255'],
+            'items.*.review_comments' => ['nullable', 'string', 'max:1000'],
+        ]);
+
+        DB::transaction(function () use ($validated, $teamBasedApproval) {
+            // Update basic sheet info; approver mapping অপরিবর্তিত থাকবে (Head Office কেবল তথ্য ঠিক করবে)
+            $teamBasedApproval->update([
+                'sheet_date' => $validated['sheet_date'],
+            ]);
+
+            $teamBasedApproval->loadMissing(['items', 'reviews']);
+
+            $items = $teamBasedApproval->items()
+                ->orderBy('serial_no')
+                ->get();
+
+            $reviewsByItem = $teamBasedApproval->reviews
+                ->whereNotNull('team_based_approval_item_id')
+                ->keyBy('team_based_approval_item_id');
+
+            foreach ($items as $index => $item) {
+                if (! isset($validated['items'][$index])) {
+                    continue;
+                }
+
+                $row = $validated['items'][$index];
+
+                $itemUpdate = [
+                    'member_name' => $row['member_name'],
+                    'member_code' => $row['member_code'] ?? null,
+                    'samity_number' => $row['samity_number'] ?? null,
+                    'savings_general' => $row['savings_general'] ?? null,
+                    'savings_other' => $row['savings_other'] ?? null,
+                    'savings_total' => $row['savings_total'] ?? null,
+                    'repaid_loan_amount' => $row['repaid_loan_amount'] ?? null,
+                    'repaid_installment_no' => $row['repaid_installment_no'] ?? null,
+                    'other_institution_loan_amount' => $row['other_institution_loan_amount'] ?? null,
+                    'proposed_loan_amount' => $row['proposed_loan_amount'] ?? null,
+                    'approved_amount' => $row['approved_amount'] ?? null,
+                    'loan_term_years' => $row['loan_term_years'] ?? null,
+                    'loan_type' => $row['loan_type'] ?? null,
+                    'project_name' => $row['project_name'] ?? null,
+                ];
+
+                $item->update($itemUpdate);
+
+                /** @var \App\Models\TeamBasedApprovalReview|null $review */
+                $review = $reviewsByItem[$item->id] ?? null;
+                if ($review && array_key_exists('review_comments', $row)) {
+                    $review->update([
+                        'comments' => $row['review_comments'] ?: null,
+                    ]);
+                }
+            }
+        });
+
+        return redirect()
+            ->route('head-office.team-based-approvals')
+            ->with('success', 'টিম ভিত্তিক শিটের তথ্য সফলভাবে হালনাগাদ হয়েছে।');
+    }
+
+    /**
+     * Head Office: update a single loan item (row) including approved amount & comments.
+     */
+    public function updateItem(Request $request, TeamBasedApprovalItem $item)
+    {
+        $validated = $request->validate([
+            'member_name' => ['required', 'string', 'max:255'],
+            'member_code' => ['nullable', 'string', 'max:50'],
+            'samity_number' => ['nullable', 'string', 'max:50'],
+            'savings_general' => ['nullable', 'numeric', 'min:0'],
+            'savings_other' => ['nullable', 'numeric', 'min:0'],
+            'savings_total' => ['nullable', 'numeric', 'min:0'],
+            'repaid_loan_amount' => ['nullable', 'numeric', 'min:0'],
+            'repaid_installment_no' => ['nullable', 'integer', 'min:0'],
+            'other_institution_loan_amount' => ['nullable', 'numeric', 'min:0'],
+            'proposed_loan_amount' => ['nullable', 'numeric', 'min:0'],
+            'approved_amount' => ['nullable', 'numeric', 'min:0'],
+            'loan_term_years' => ['nullable', 'numeric', 'in:0.5,1,1.5,2,3'],
+            'loan_type' => ['nullable', 'string', 'max:100'],
+            'project_name' => ['nullable', 'string', 'max:255'],
+            'review_comments' => ['nullable', 'string', 'max:1000'],
+        ]);
+
+        DB::transaction(function () use ($validated, $item) {
+            $item->update([
+                'member_name' => $validated['member_name'],
+                'member_code' => $validated['member_code'] ?? null,
+                'samity_number' => $validated['samity_number'] ?? null,
+                'savings_general' => $validated['savings_general'] ?? null,
+                'savings_other' => $validated['savings_other'] ?? null,
+                'savings_total' => $validated['savings_total'] ?? null,
+                'repaid_loan_amount' => $validated['repaid_loan_amount'] ?? null,
+                'repaid_installment_no' => $validated['repaid_installment_no'] ?? null,
+                'other_institution_loan_amount' => $validated['other_institution_loan_amount'] ?? null,
+                'proposed_loan_amount' => $validated['proposed_loan_amount'] ?? null,
+                'approved_amount' => $validated['approved_amount'] ?? null,
+                'loan_term_years' => $validated['loan_term_years'] ?? null,
+                'loan_type' => $validated['loan_type'] ?? null,
+                'project_name' => $validated['project_name'] ?? null,
+            ]);
+
+            /** @var \App\Models\TeamBasedApprovalReview|null $review */
+            $review = TeamBasedApprovalReview::where('team_based_approval_item_id', $item->id)->first();
+            if ($review && array_key_exists('review_comments', $validated)) {
+                $review->update([
+                    'comments' => $validated['review_comments'] ?: null,
+                ]);
+            }
+        });
+
+        return redirect()
+            ->route('head-office.team-based-approvals')
+            ->with('success', 'সিঙ্গেল লোন সারির তথ্য সফলভাবে হালনাগাদ হয়েছে।');
+    }
+
+    /**
+     * Head Office: delete a single loan item (row) from overview.
+     */
+    public function destroyItem(TeamBasedApprovalItem $item)
+    {
+        DB::transaction(function () use ($item) {
+            TeamBasedApprovalReview::where('team_based_approval_item_id', $item->id)->delete();
+            $item->delete();
+        });
+
+        return redirect()
+            ->back()
+            ->with('success', 'এই লোন সারিটি সফলভাবে মুছে ফেলা হয়েছে।');
+    }
+
+    /**
+     * Head Office: delete a Team Based sheet (any status; Head Office override).
+     */
+    public function destroy(TeamBasedApproval $teamBasedApproval)
+    {
+        $teamBasedApproval->delete();
+
+        return redirect()
+            ->back()
+            ->with('success', 'Team Based শিট সফলভাবে মুছে ফেলা হয়েছে।');
     }
 }
 

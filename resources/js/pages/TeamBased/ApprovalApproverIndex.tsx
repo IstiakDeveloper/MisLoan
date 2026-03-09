@@ -90,8 +90,24 @@ export default function TeamBasedApprovalApproverIndex({ reviews, filters, branc
 
     const [openRowKey, setOpenRowKey] = React.useState<string | null>(null);
     const [decisionState, setDecisionState] = React.useState<{
-        [key: number]: { decision: 'approved' | 'rejected'; approved_amount: string; comments: string };
+        [key: number]: {
+            decision: 'approved' | 'rejected';
+            approved_amount: string;
+            comments: string;
+        };
     }>({});
+
+    const [editModal, setEditModal] = React.useState<{
+        open: boolean;
+        reviewId: number | null;
+        row: (ItemRow & { review_id: number }) | null;
+    }>({
+        open: false,
+        reviewId: null,
+        row: null,
+    });
+
+    const [zoomSignatureUrl, setZoomSignatureUrl] = React.useState<string | null>(null);
 
     const applyFilter = (status: string, from: string, to: string, branchId: string, approverId: string) => {
         router.visit('/team-based-approvals/for-approver', {
@@ -176,6 +192,93 @@ export default function TeamBasedApprovalApproverIndex({ reviews, filters, branc
         }));
     };
 
+    const openEditModal = (reviewId: number, row: ItemRow & { review_id: number }) => {
+        setEditModal({
+            open: true,
+            reviewId,
+            row: { ...row },
+        });
+        setOpenRowKey(null);
+    };
+
+    const closeEditModal = () => {
+        setEditModal({
+            open: false,
+            reviewId: null,
+            row: null,
+        });
+    };
+
+    const handleEditModalChange = <K extends keyof ItemRow>(field: K, value: string) => {
+        setEditModal((prev) => {
+            if (!prev.row) return prev;
+
+            const isNumericField =
+                field === 'savings_general' ||
+                field === 'savings_other' ||
+                field === 'savings_total' ||
+                field === 'repaid_loan_amount' ||
+                field === 'repaid_installment_no' ||
+                field === 'other_institution_loan_amount' ||
+                field === 'proposed_loan_amount' ||
+                field === 'loan_term_years';
+
+            const parsedValue = isNumericField ? (value === '' ? null : Number(value)) : value;
+
+            const nextRow: ItemRow & { review_id: number } = {
+                ...prev.row,
+                [field]: parsedValue as any,
+            };
+
+            // Auto-calculate total savings inside modal
+            if (field === 'savings_general' || field === 'savings_other') {
+                const g = nextRow.savings_general ?? 0;
+                const o = nextRow.savings_other ?? 0;
+                const total = g + o;
+                nextRow.savings_total = total > 0 ? total : null;
+            }
+
+            return {
+                ...prev,
+                row: nextRow,
+            };
+        });
+    };
+
+    const handleEditModalSave = () => {
+        if (!editModal.open || !editModal.reviewId || !editModal.row) {
+            closeEditModal();
+            return;
+        }
+
+        const { reviewId, row } = editModal;
+
+        const payload: any = {
+            member_name: row.member_name,
+            member_code: row.member_code ?? null,
+            samity_number: row.samity_number ?? null,
+            savings_general: row.savings_general ?? null,
+            savings_other: row.savings_other ?? null,
+            savings_total: row.savings_total ?? null,
+            repaid_loan_amount: row.repaid_loan_amount ?? null,
+            repaid_installment_no: row.repaid_installment_no ?? null,
+            other_institution_loan_amount: row.other_institution_loan_amount ?? null,
+            proposed_loan_amount: row.proposed_loan_amount ?? null,
+            loan_term_years: row.loan_term_years ?? null,
+            loan_type: row.loan_type ?? null,
+            project_name: row.project_name ?? null,
+        };
+
+        router.post(`/team-based-approvals/reviews/${reviewId}/update-item`, payload, {
+            preserveScroll: true,
+            onSuccess: () => {
+                closeEditModal();
+                // Reload current filter to show fresh data
+                applyFilter(currentStatus, currentFrom, currentTo || currentFrom, currentBranchId, currentApproverId);
+            },
+        });
+    };
+
     const handleSubmitDecision = (review: ReviewRow) => {
         const state = decisionState[review.review_id] || {
             decision: 'approved' as const,
@@ -183,7 +286,7 @@ export default function TeamBasedApprovalApproverIndex({ reviews, filters, branc
             comments: '',
         };
 
-        const payload: Record<string, unknown> = {
+        const payload: any = {
             decision: state.decision,
             comments: state.comments || undefined,
         };
@@ -320,7 +423,7 @@ export default function TeamBasedApprovalApproverIndex({ reviews, filters, branc
                 `}</style>
             </Head>
 
-            <div className="mx-auto py-6 px-4">
+            <div className="mx-auto py-4 sm:py-6 px-2 sm:px-4">
                 {/* Print header - same as ApprovalIndex: logo left, org+title center; then branch/area/zone/tarikh row */}
                 <div className="mb-4 approval-print-header">
                     <div className="flex items-start justify-between gap-4 mb-2 print:flex print:mb-1">
@@ -369,15 +472,15 @@ export default function TeamBasedApprovalApproverIndex({ reviews, filters, branc
 
                 {/* Filters - only visible on screen */}
                 <div className="flex flex-col gap-2 mb-4 print:hidden">
-                    <div className="flex flex-wrap items-center gap-2">
-                        <div className="flex items-center gap-1">
-                            <span className="text-xs text-gray-600">Branch:</span>
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                        <div className="flex flex-col gap-0.5">
+                            <span className="text-[10px] font-semibold text-gray-500 uppercase tracking-wider">Branch</span>
                             <select
                                 value={currentBranchId}
                                 onChange={handleBranchChange}
-                                className="border border-gray-300 rounded-md px-2 py-1 text-xs"
+                                className="w-full border border-gray-300 rounded-md px-2 py-1.5 text-xs bg-white"
                             >
-                                <option value="">All</option>
+                                <option value="">All Branches</option>
                                 {branches.map((branch) => (
                                     <option key={branch.id} value={branch.id}>
                                         {branch.name} {branch.code ? `(${branch.code})` : ''}
@@ -385,14 +488,14 @@ export default function TeamBasedApprovalApproverIndex({ reviews, filters, branc
                                 ))}
                             </select>
                         </div>
-                        <div className="flex items-center gap-1">
-                            <span className="text-xs text-gray-600">Approver:</span>
+                        <div className="flex flex-col gap-0.5">
+                            <span className="text-[10px] font-semibold text-gray-500 uppercase tracking-wider">Approver</span>
                             <select
                                 value={currentApproverId}
                                 onChange={handleApproverChange}
-                                className="border border-gray-300 rounded-md px-2 py-1 text-xs"
+                                className="w-full border border-gray-300 rounded-md px-2 py-1.5 text-xs bg-white"
                             >
-                                <option value="">All</option>
+                                <option value="">All Approvers</option>
                                 {approverOptions.map((opt) => (
                                     <option key={opt.id} value={opt.id}>
                                         {opt.name} ({opt.role_name})
@@ -400,55 +503,280 @@ export default function TeamBasedApprovalApproverIndex({ reviews, filters, branc
                                 ))}
                             </select>
                         </div>
-                        <div className="flex items-center gap-1">
-                            <span className="text-xs text-gray-600">Status:</span>
+                        <div className="flex flex-col gap-0.5">
+                            <span className="text-[10px] font-semibold text-gray-500 uppercase tracking-wider">Status</span>
                             <select
                                 value={currentStatus}
                                 onChange={handleStatusFilterChange}
-                                className="border border-gray-300 rounded-md px-2 py-1 text-xs"
+                                className="w-full border border-gray-300 rounded-md px-2 py-1.5 text-xs bg-white"
                             >
-                                <option value="">All</option>
+                                <option value="">All Status</option>
                                 <option value="pending">Pending</option>
                                 <option value="approved">Approved</option>
                                 <option value="rejected">Rejected</option>
                             </select>
                         </div>
                     </div>
-                    <div className="flex flex-wrap items-center gap-2">
-                        <div className="flex items-center gap-1">
-                            <span className="text-xs text-gray-600">From:</span>
+                    <div className="grid grid-cols-2 sm:flex sm:flex-wrap sm:items-center gap-2">
+                        <div className="flex flex-col gap-0.5">
+                            <span className="text-[10px] font-semibold text-gray-500 uppercase tracking-wider">From</span>
                             <input
                                 type="date"
                                 value={currentFrom}
                                 onChange={handleFromChange}
-                                className="border border-gray-300 rounded-md px-2 py-1 text-sm"
+                                className="w-full border border-gray-300 rounded-md px-2 py-1.5 text-sm"
                             />
                         </div>
-                        <div className="flex items-center gap-1">
-                            <span className="text-xs text-gray-600">To:</span>
+                        <div className="flex flex-col gap-0.5">
+                            <span className="text-[10px] font-semibold text-gray-500 uppercase tracking-wider">To</span>
                             <input
                                 type="date"
                                 value={currentTo}
                                 onChange={handleToChange}
-                                className="border border-gray-300 rounded-md px-2 py-1 text-sm"
+                                className="w-full border border-gray-300 rounded-md px-2 py-1.5 text-sm"
                             />
                         </div>
                         <button
                             type="button"
                             onClick={handlePrintPage}
-                            className="px-3 py-1.5 rounded-md bg-gray-800 text-white text-xs font-medium hover:bg-black"
+                            className="col-span-2 sm:col-span-1 mt-auto px-4 py-1.5 rounded-md bg-gray-800 text-white text-xs font-medium hover:bg-black"
                         >
                             Print List
                         </button>
                     </div>
                 </div>
 
-                <div className="bg-white shadow-sm border border-gray-200 rounded-lg overflow-hidden approval-table-print-wrapper w-full approval-print-page">
+                {/* ── MOBILE CARD VIEW ─────────────────────────────────── */}
+                <div className="md:hidden flex flex-col gap-3 print:hidden">
+                    {flatRows.length === 0 && (
+                        <div className="bg-white border border-gray-200 rounded-lg p-6 text-center text-sm text-gray-500">
+                            আপনার জন্য কোনো Team Based আবেদন পাওয়া যায়নি।
+                        </div>
+                    )}
+                    {flatRows.map((row, index) => {
+                        const review = reviews.data.find((r) => r.review_id === row.review_id)!;
+                        const rowKey = `${row.review_id}-${row.serial_no}-${index}`;
+                        const isOpen = openRowKey === rowKey;
+                        const state = decisionState[review.review_id];
+
+                        return (
+                            <div key={rowKey} className="bg-white border border-gray-200 rounded-xl shadow-sm overflow-hidden">
+                                {/* Card header */}
+                                <div className="flex items-center justify-between px-3 py-2 bg-slate-50 border-b border-gray-200">
+                                    <div className="flex items-center gap-2">
+                                        <span className="flex items-center justify-center w-5 h-5 rounded-full bg-slate-200 text-slate-600 text-[10px] font-bold">{index + 1}</span>
+                                        <div>
+                                            <p className="text-xs font-semibold text-gray-900 leading-tight">{row.member_name}</p>
+                                            <p className="text-[10px] text-gray-500 leading-tight">{row.sheet_date || ''}{row.branch_name ? ` · ${row.branch_name}` : ''}</p>
+                                        </div>
+                                    </div>
+                                    <div>
+                                        {review.status === 'pending' && row.can_act ? (
+                                            <button
+                                                type="button"
+                                                onClick={() => handleToggleAction(review.review_id, rowKey)}
+                                                className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-semibold transition-all ${
+                                                    isOpen ? 'bg-slate-700 text-white' : 'bg-blue-600 text-white hover:bg-blue-700'
+                                                }`}
+                                            >
+                                                {isOpen ? 'বন্ধ করুন' : 'সিদ্ধান্ত দিন'}
+                                            </button>
+                                        ) : (
+                                            <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold border ${statusClass[review.status] || statusClass.pending}`}>
+                                                {statusLabel[review.status] || review.status}
+                                            </span>
+                                        )}
+                                    </div>
+                                </div>
+
+                                {/* Card body */}
+                                <div className="px-3 py-2.5 grid grid-cols-2 gap-x-4 gap-y-1.5 text-xs">
+                                    {row.member_code && (
+                                        <div><span className="text-gray-400">সদস্য নম্বর</span><p className="font-medium text-gray-800">{row.member_code}</p></div>
+                                    )}
+                                    {row.samity_number && (
+                                        <div><span className="text-gray-400">সমিতি নম্বর</span><p className="font-medium text-gray-800">{row.samity_number}</p></div>
+                                    )}
+                                    <div><span className="text-gray-400">সঞ্চয় (সা/অ/মো)</span><p className="font-medium text-gray-800">{row.savings_general ?? '—'} / {row.savings_other ?? '—'} / {row.savings_total ?? '—'}</p></div>
+                                    {row.repaid_loan_amount != null && (
+                                        <div><span className="text-gray-400">পরিশোধিত মূল ঋণ</span><p className="font-medium text-gray-800">{row.repaid_loan_amount}{row.repaid_installment_no != null ? ` (${row.repaid_installment_no} দফা)` : ''}</p></div>
+                                    )}
+                                    {row.other_institution_loan_amount != null && (
+                                        <div><span className="text-gray-400">অন্য সংস্থায় ঋণ</span><p className="font-medium text-gray-800">{row.other_institution_loan_amount}</p></div>
+                                    )}
+                                    <div><span className="text-gray-400">প্রস্তাবিত ঋণ</span><p className="font-semibold text-blue-700">{row.proposed_loan_amount ?? '—'}</p></div>
+                                    {row.loan_term_years != null && (
+                                        <div><span className="text-gray-400">মেয়াদ</span><p className="font-medium text-gray-800">{row.loan_term_years} বছর</p></div>
+                                    )}
+                                    {row.loan_type && (
+                                        <div><span className="text-gray-400">ঋণের ধরন</span><p className="font-medium text-gray-800">{row.loan_type}</p></div>
+                                    )}
+                                    {row.project_name && (
+                                        <div className="col-span-2"><span className="text-gray-400">প্রকল্প</span><p className="font-medium text-gray-800">{row.project_name}</p></div>
+                                    )}
+                                    {row.approved_amount != null && (
+                                        <div><span className="text-gray-400">অনুমোদিত ঋণ</span><p className="font-semibold text-green-700">৳ {row.approved_amount}</p></div>
+                                    )}
+                                    {row.approver_name && (
+                                        <div><span className="text-gray-400">অনুমোদনকারী</span><p className="font-medium text-gray-800">{row.approver_name}{row.approver_role ? ` (${row.approver_role})` : ''}</p></div>
+                                    )}
+                                    {row.review_comments && (
+                                        <div className="col-span-2"><span className="text-gray-400">মন্তব্য</span><p className="font-medium text-gray-800">{row.review_comments}</p></div>
+                                    )}
+                                    {(row.approver_signature || row.decided_at) && (
+                                        <div className="col-span-2 flex items-center gap-2">
+                                            {row.approver_signature && (
+                                                <button
+                                                    type="button"
+                                                    onClick={() =>
+                                                        setZoomSignatureUrl(
+                                                            row.approver_signature!.startsWith('http')
+                                                                ? row.approver_signature!
+                                                                : row.approver_signature!.startsWith('/storage/')
+                                                                ? row.approver_signature!
+                                                                : `/storage/${row.approver_signature!}`,
+                                                        )
+                                                    }
+                                                    className="focus:outline-none hover:scale-105 transition-transform"
+                                                    title="স্বাক্ষর বড় করে দেখুন"
+                                                >
+                                                    <img
+                                                        src={
+                                                            row.approver_signature.startsWith('http')
+                                                                ? row.approver_signature
+                                                                : row.approver_signature.startsWith('/storage/')
+                                                                ? row.approver_signature
+                                                                : `/storage/${row.approver_signature}`
+                                                        }
+                                                        alt="Signature"
+                                                        className="h-7 object-contain"
+                                                        onError={(e) => {
+                                                            (e.target as HTMLImageElement).style.display = 'none';
+                                                        }}
+                                                    />
+                                                </button>
+                                            )}
+                                            {row.decided_at && (
+                                                <span className="text-[10px] text-gray-500">
+                                                    {formatDateOnly(row.decided_at)}
+                                                </span>
+                                            )}
+                                        </div>
+                                    )}
+                                </div>
+
+                                {/* Mobile action panel */}
+                                {isOpen && review.status === 'pending' && (
+                                    <div className="border-t border-blue-100 bg-gradient-to-b from-slate-50 to-blue-50 px-3 py-3">
+                                        {/* Header row */}
+                                        <div className="flex items-center justify-between mb-3">
+                                            <div className="flex items-center gap-1.5">
+                                                <div className="flex items-center justify-center w-4 h-4 rounded-full bg-blue-600 text-white text-[8px] font-bold">✓</div>
+                                                <span className="text-[10px] font-semibold text-slate-700 uppercase tracking-wide">অনুমোদন সিদ্ধান্ত</span>
+                                            </div>
+                                            <button
+                                                type="button"
+                                                onClick={() => openEditModal(review.review_id, { ...row, review_id: review.review_id })}
+                                                className="inline-flex items-center gap-1 px-2 py-1 rounded-md border border-slate-300 bg-white text-[10px] font-medium text-slate-600 hover:bg-slate-50 shadow-sm"
+                                            >
+                                                <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/></svg>
+                                                সম্পাদনা
+                                            </button>
+                                        </div>
+
+                                        {/* Decision toggle */}
+                                        <p className="text-[10px] font-semibold text-slate-500 uppercase tracking-wider mb-1.5">সিদ্ধান্ত</p>
+                                        <div className="flex gap-2 mb-3">
+                                            <button
+                                                type="button"
+                                                onClick={() => handleDecisionChange(review.review_id, 'approved')}
+                                                className={`flex-1 flex items-center justify-center gap-1.5 py-2 rounded-lg border-2 text-xs font-semibold transition-all ${(!state || state.decision === 'approved') ? 'border-green-500 bg-green-50 text-green-700' : 'border-slate-200 bg-white text-slate-500'}`}
+                                            >
+                                                <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+                                                অনুমোদন
+                                            </button>
+                                            <button
+                                                type="button"
+                                                onClick={() => handleDecisionChange(review.review_id, 'rejected')}
+                                                className={`flex-1 flex items-center justify-center gap-1.5 py-2 rounded-lg border-2 text-xs font-semibold transition-all ${state?.decision === 'rejected' ? 'border-red-500 bg-red-50 text-red-700' : 'border-slate-200 bg-white text-slate-500'}`}
+                                            >
+                                                <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2m7-2a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+                                                প্রত্যাখ্যান
+                                            </button>
+                                        </div>
+
+                                        {/* Amount + comments */}
+                                        <div className="flex flex-col gap-2 mb-3">
+                                            {(!state || state.decision === 'approved') && (
+                                                <div>
+                                                    <label className="text-[10px] font-semibold text-slate-500 uppercase tracking-wider block mb-1">অনুমোদিত ঋণ <span className="text-red-500">*</span></label>
+                                                    <div className="flex items-center border border-slate-300 rounded-lg overflow-hidden bg-white shadow-sm">
+                                                        <span className="px-2.5 py-2 bg-slate-100 border-r border-slate-300 text-[10px] font-semibold text-slate-600 select-none">৳</span>
+                                                        <input
+                                                            type="number"
+                                                            min={0}
+                                                            value={state?.approved_amount ?? ''}
+                                                            onChange={(e) => handleAmountChange(review.review_id, e.target.value)}
+                                                            placeholder="পরিমাণ লিখুন"
+                                                            className="flex-1 px-2 py-2 text-xs outline-none bg-transparent text-slate-800 placeholder-slate-400"
+                                                        />
+                                                    </div>
+                                                </div>
+                                            )}
+                                            <div>
+                                                <label className="text-[10px] font-semibold text-slate-500 uppercase tracking-wider block mb-1">
+                                                    মন্তব্য {state?.decision === 'rejected' && <span className="text-red-500">*</span>}
+                                                </label>
+                                                <textarea
+                                                    rows={3}
+                                                    value={state?.comments ?? ''}
+                                                    onChange={(e) => handleCommentsChange(review.review_id, e.target.value)}
+                                                    placeholder={state?.decision === 'rejected' ? 'প্রত্যাখ্যানের কারণ লিখুন...' : 'মন্তব্য লিখুন (ঐচ্ছিক)'}
+                                                    className="w-full border border-slate-300 rounded-lg px-3 py-2 text-xs text-slate-800 placeholder-slate-400 bg-white shadow-sm resize-none focus:outline-none focus:border-blue-400 focus:ring-1 focus:ring-blue-200"
+                                                />
+                                            </div>
+                                        </div>
+
+                                        {/* Action buttons */}
+                                        <div className="flex gap-2">
+                                            {(() => {
+                                                const isApprove = !state || state.decision === 'approved';
+                                                const isDisabled = isApprove ? !state?.approved_amount : !state?.comments;
+                                                return (
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => handleSubmitDecision(review)}
+                                                        disabled={isDisabled}
+                                                        className={`flex-1 inline-flex items-center justify-center gap-1.5 py-2.5 rounded-lg text-xs font-semibold shadow-sm transition-all ${isDisabled ? 'bg-slate-200 text-slate-400 cursor-not-allowed' : isApprove ? 'bg-green-600 text-white hover:bg-green-700' : 'bg-red-600 text-white hover:bg-red-700'}`}
+                                                    >
+                                                        {isApprove ? <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M5 13l4 4L19 7"/></svg> : <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M6 18L18 6M6 6l12 12"/></svg>}
+                                                        {isApprove ? 'অনুমোদন দিন' : 'প্রত্যাখ্যান করুন'}
+                                                    </button>
+                                                );
+                                            })()}
+                                            <button
+                                                type="button"
+                                                onClick={() => setOpenRowKey(null)}
+                                                className="inline-flex items-center justify-center gap-1 px-4 py-2.5 rounded-lg border border-slate-300 bg-white text-xs font-medium text-slate-600 hover:bg-slate-50 shadow-sm"
+                                            >
+                                                বাতিল
+                                            </button>
+                                        </div>
+                                    </div>
+                                )}
+                            </div>
+                        );
+                    })}
+                </div>
+
+                {/* ── DESKTOP TABLE VIEW ────────────────────────────────── */}
+                <div className="hidden md:block print:block bg-white shadow-sm border border-gray-200 rounded-lg overflow-x-auto approval-table-print-wrapper w-full approval-print-page">
                     <table className="w-full border-collapse table-fixed" style={{ tableLayout: 'fixed' }}>
                         <thead className="bg-gray-50">
                             <tr>
                                 <th className="border text-left" rowSpan={2}>ক্রম</th>
                                 <th className="border text-left" rowSpan={2}>তারিখ</th>
+                                <th className="border text-left" rowSpan={2}>শাখার নাম</th>
                                 <th className="border text-left" rowSpan={2}>সদস্যের নাম</th>
                                 <th className="border text-left" rowSpan={2}>সদস্য নম্বর</th>
                                 <th className="border text-left" rowSpan={2}>সমিতি নম্বর</th>
@@ -475,7 +803,7 @@ export default function TeamBasedApprovalApproverIndex({ reviews, filters, branc
                         <tbody>
                             {flatRows.length === 0 && (
                                 <tr>
-                                    <td colSpan={19} className="border text-center text-gray-500 py-4">
+                                    <td colSpan={20} className="border text-center text-gray-500 py-4">
                                         আপনার জন্য কোনো Team Based আবেদন পাওয়া যায়নি।
                                     </td>
                                 </tr>
@@ -492,6 +820,7 @@ export default function TeamBasedApprovalApproverIndex({ reviews, filters, branc
                                         <tr className="hover:bg-gray-50">
                                             <td className="border text-left">{index + 1}</td>
                                             <td className="border text-left">{row.sheet_date || '-'}</td>
+                                            <td className="border text-left">{row.branch_name || '-'}</td>
                                             <td className="border text-left">{row.member_name}</td>
                                             <td className="border text-left">{row.member_code || ''}</td>
                                             <td className="border text-left">{row.samity_number || ''}</td>
@@ -513,20 +842,35 @@ export default function TeamBasedApprovalApproverIndex({ reviews, filters, branc
                                             <td className="border text-left">
                                                 {row.approver_signature ? (
                                                     <div className="flex flex-col items-center gap-0">
-                                                        <img
-                                                            src={
-                                                                row.approver_signature.startsWith('http')
-                                                                    ? row.approver_signature
-                                                                    : row.approver_signature.startsWith('/storage/')
-                                                                    ? row.approver_signature
-                                                                    : `/storage/${row.approver_signature}`
+                                                        <button
+                                                            type="button"
+                                                            onClick={() =>
+                                                                setZoomSignatureUrl(
+                                                                    row.approver_signature!.startsWith('http')
+                                                                        ? row.approver_signature!
+                                                                        : row.approver_signature!.startsWith('/storage/')
+                                                                        ? row.approver_signature!
+                                                                        : `/storage/${row.approver_signature!}`,
+                                                                )
                                                             }
-                                                            alt="Signature"
-                                                            className="h-8 max-h-8 object-contain print:!h-8 print:!max-h-8"
-                                                            onError={(e) => {
-                                                                (e.target as HTMLImageElement).style.display = 'none';
-                                                            }}
-                                                        />
+                                                            className="focus:outline-none hover:scale-105 transition-transform"
+                                                            title="স্বাক্ষর বড় করে দেখুন"
+                                                        >
+                                                            <img
+                                                                src={
+                                                                    row.approver_signature.startsWith('http')
+                                                                        ? row.approver_signature
+                                                                        : row.approver_signature.startsWith('/storage/')
+                                                                        ? row.approver_signature
+                                                                        : `/storage/${row.approver_signature}`
+                                                                }
+                                                                alt="Signature"
+                                                                className="h-8 max-h-8 object-contain print:!h-8 print:!max-h-8"
+                                                                onError={(e) => {
+                                                                    (e.target as HTMLImageElement).style.display = 'none';
+                                                                }}
+                                                            />
+                                                        </button>
                                                         <span className="text-gray-700 leading-tight">
                                                             {formatDateOnly(row.decided_at)}
                                                         </span>
@@ -556,91 +900,158 @@ export default function TeamBasedApprovalApproverIndex({ reviews, filters, branc
                                             </td>
                                         </tr>
                                         {isOpen && review.status === 'pending' && (
-                                            <tr>
-                                                <td colSpan={19} className="px-3 py-3 border-b bg-gray-50">
-                                                    <div className="flex flex-col md:flex-row md:items-end gap-3">
-                                                        <div className="flex items-center gap-3">
-                                                            <label className="flex items-center gap-1 text-xs text-gray-700">
-                                                                <input
-                                                                    type="radio"
-                                                                    className="h-3 w-3"
-                                                                    checked={(state?.decision || 'approved') === 'approved'}
-                                                                    onChange={() =>
-                                                                        handleDecisionChange(review.review_id, 'approved')
+                                            <tr className="print:hidden">
+                                                <td colSpan={20} className="border-b border-blue-100 bg-gradient-to-r from-slate-50 to-blue-50 p-0">
+                                                    <div className="px-4 py-4">
+                                                        {/* Panel header */}
+                                                        <div className="flex items-center gap-2 mb-3 pb-2 border-b border-slate-200">
+                                                            <div className="flex items-center justify-center w-5 h-5 rounded-full bg-blue-600 text-white text-[9px] font-bold">✓</div>
+                                                            <span className="text-xs font-semibold text-slate-700 uppercase tracking-wide">অনুমোদন সিদ্ধান্ত</span>
+                                                            <span className="text-[10px] text-slate-400 ml-1">— {row.member_name}</span>
+                                                            <div className="ml-auto">
+                                                                <button
+                                                                    type="button"
+                                                                    onClick={() =>
+                                                                        openEditModal(review.review_id, {
+                                                                            ...row,
+                                                                            review_id: review.review_id,
+                                                                        })
                                                                     }
-                                                                />
-                                                                <span>Approve</span>
-                                                            </label>
-                                                            <label className="flex items-center gap-1 text-xs text-gray-700">
-                                                                <input
-                                                                    type="radio"
-                                                                    className="h-3 w-3"
-                                                                    checked={state?.decision === 'rejected'}
-                                                                    onChange={() =>
-                                                                        handleDecisionChange(review.review_id, 'rejected')
-                                                                    }
-                                                                />
-                                                                <span>Reject</span>
-                                                            </label>
-                                                        </div>
-
-                                                        {(!state || state.decision === 'approved') && (
-                                                            <div className="flex items-center gap-2">
-                                                                <span className="text-xs text-gray-700 whitespace-nowrap">
-                                                                    অনুমোদিত টাকার পরিমাণ:
-                                                                </span>
-                                                                <input
-                                                                    type="number"
-                                                                    min={0}
-                                                                    value={state?.approved_amount ?? ''}
-                                                                    onChange={(e) =>
-                                                                        handleAmountChange(review.review_id, e.target.value)
-                                                                    }
-                                                                    className="border border-gray-300 rounded-md px-2 py-1 text-xs w-40"
-                                                                />
+                                                                    className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md border border-slate-300 bg-white text-[10px] font-medium text-slate-600 hover:bg-slate-50 hover:border-slate-400 shadow-sm transition-colors"
+                                                                >
+                                                                    <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/></svg>
+                                                                    সারি সম্পাদনা
+                                                                </button>
                                                             </div>
-                                                        )}
-
-                                                        <div className="flex-1">
-                                                            <textarea
-                                                                rows={2}
-                                                                value={state?.comments ?? ''}
-                                                                onChange={(e) =>
-                                                                    handleCommentsChange(review.review_id, e.target.value)
-                                                                }
-                                                                placeholder="মন্তব্য লিখুন (ঐচ্ছিক)"
-                                                                className="w-full border border-gray-300 rounded-md px-2 py-1 text-xs"
-                                                            />
                                                         </div>
 
-                                                        <div className="flex items-center gap-2">
-                                                            <button
-                                                                type="button"
-                                                                onClick={() => handleSubmitDecision(review)}
-                                                                disabled={
-                                                                    (!state || state.decision === 'approved')
-                                                                        ? !state?.approved_amount
-                                                                        : !state?.comments
-                                                                }
-                                                                className={`inline-flex items-center px-3 py-1.5 rounded-md text-xs font-medium ${
-                                                                    (!state || state.decision === 'approved')
-                                                                        ? !state?.approved_amount
-                                                                            ? 'bg-green-300 text-white cursor-not-allowed'
-                                                                            : 'bg-green-600 text-white hover:bg-green-700'
-                                                                        : !state?.comments
-                                                                            ? 'bg-green-300 text-white cursor-not-allowed'
-                                                                            : 'bg-green-600 text-white hover:bg-green-700'
-                                                                }`}
-                                                            >
-                                                                Submit
-                                                            </button>
-                                                            <button
-                                                                type="button"
-                                                                onClick={() => setOpenRowKey(null)}
-                                                                className="inline-flex items-center px-3 py-1.5 rounded-md border border-gray-300 text-xs font-medium text-gray-700 hover:bg-gray-100"
-                                                            >
-                                                                Cancel
-                                                            </button>
+                                                        <div className="flex flex-col lg:flex-row gap-4">
+                                                            {/* Decision selection */}
+                                                            <div className="flex flex-col gap-2">
+                                                                <p className="text-[10px] font-semibold text-slate-500 uppercase tracking-wider">সিদ্ধান্ত নির্বাচন করুন</p>
+                                                                <div className="flex gap-2">
+                                                                    {/* Approve card */}
+                                                                    <button
+                                                                        type="button"
+                                                                        onClick={() => handleDecisionChange(review.review_id, 'approved')}
+                                                                        className={`flex items-center gap-2 px-4 py-2.5 rounded-lg border-2 text-xs font-semibold transition-all ${
+                                                                            (!state || state.decision === 'approved')
+                                                                                ? 'border-green-500 bg-green-50 text-green-700 shadow-sm'
+                                                                                : 'border-slate-200 bg-white text-slate-500 hover:border-green-300 hover:bg-green-50/50'
+                                                                        }`}
+                                                                    >
+                                                                        <span className={`flex items-center justify-center w-4 h-4 rounded-full border-2 transition-all ${
+                                                                            (!state || state.decision === 'approved')
+                                                                                ? 'border-green-500 bg-green-500'
+                                                                                : 'border-slate-300 bg-white'
+                                                                        }`}>
+                                                                            {(!state || state.decision === 'approved') && (
+                                                                                <svg className="w-2.5 h-2.5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7"/></svg>
+                                                                            )}
+                                                                        </span>
+                                                                        <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+                                                                        অনুমোদন
+                                                                    </button>
+                                                                    {/* Reject card */}
+                                                                    <button
+                                                                        type="button"
+                                                                        onClick={() => handleDecisionChange(review.review_id, 'rejected')}
+                                                                        className={`flex items-center gap-2 px-4 py-2.5 rounded-lg border-2 text-xs font-semibold transition-all ${
+                                                                            state?.decision === 'rejected'
+                                                                                ? 'border-red-500 bg-red-50 text-red-700 shadow-sm'
+                                                                                : 'border-slate-200 bg-white text-slate-500 hover:border-red-300 hover:bg-red-50/50'
+                                                                        }`}
+                                                                    >
+                                                                        <span className={`flex items-center justify-center w-4 h-4 rounded-full border-2 transition-all ${
+                                                                            state?.decision === 'rejected'
+                                                                                ? 'border-red-500 bg-red-500'
+                                                                                : 'border-slate-300 bg-white'
+                                                                        }`}>
+                                                                            {state?.decision === 'rejected' && (
+                                                                                <svg className="w-2.5 h-2.5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7"/></svg>
+                                                                            )}
+                                                                        </span>
+                                                                        <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2m7-2a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+                                                                        প্রত্যাখ্যান
+                                                                    </button>
+                                                                </div>
+
+                                                            </div>
+
+                                                            {/* Amount + Comments — separate labeled fields */}
+                                                            <div className="flex-1 flex items-start gap-3">
+                                                                {(!state || state.decision === 'approved') && (
+                                                                    <div className="flex flex-col gap-1">
+                                                                        <label className="text-[10px] font-semibold text-slate-500 uppercase tracking-wider whitespace-nowrap">
+                                                                            অনুমোদিত ঋণ <span className="text-red-500">*</span>
+                                                                        </label>
+                                                                        <div className="flex items-center border border-slate-300 rounded-lg overflow-hidden bg-white shadow-sm focus-within:border-green-400 focus-within:ring-1 focus-within:ring-green-200 transition-all w-44">
+                                                                            <span className="flex items-center px-2.5 py-2 bg-slate-100 border-r border-slate-300 text-[10px] font-semibold text-slate-600 select-none">৳</span>
+                                                                            <input
+                                                                                type="number"
+                                                                                min={0}
+                                                                                value={state?.approved_amount ?? ''}
+                                                                                onChange={(e) =>
+                                                                                    handleAmountChange(review.review_id, e.target.value)
+                                                                                }
+                                                                                placeholder="পরিমাণ"
+                                                                                className="flex-1 px-2 py-2 text-xs outline-none bg-transparent text-slate-800 placeholder-slate-400"
+                                                                            />
+                                                                        </div>
+                                                                    </div>
+                                                                )}
+                                                                <div className="flex flex-col gap-1 flex-1">
+                                                                    <label className="text-[10px] font-semibold text-slate-500 uppercase tracking-wider">
+                                                                        মন্তব্য {state?.decision === 'rejected' && <span className="text-red-500">*</span>}
+                                                                    </label>
+                                                                    <textarea
+                                                                        rows={2}
+                                                                        value={state?.comments ?? ''}
+                                                                        onChange={(e) =>
+                                                                            handleCommentsChange(review.review_id, e.target.value)
+                                                                        }
+                                                                        placeholder={state?.decision === 'rejected' ? 'প্রত্যাখ্যানের কারণ লিখুন...' : 'মন্তব্য লিখুন (ঐচ্ছিক)'}
+                                                                        className="w-full border border-slate-300 rounded-lg px-3 py-2 text-xs text-slate-800 placeholder-slate-400 bg-white shadow-sm resize-none focus:outline-none focus:border-blue-400 focus:ring-1 focus:ring-blue-200 transition-all"
+                                                                    />
+                                                                </div>
+                                                            </div>
+
+                                                            {/* Action buttons */}
+                                                            <div className="flex flex-col justify-end gap-2 pt-5 lg:pt-0 lg:pb-0.5 self-end">
+                                                                {(() => {
+                                                                    const isApprove = !state || state.decision === 'approved';
+                                                                    const isDisabled = isApprove ? !state?.approved_amount : !state?.comments;
+                                                                    return (
+                                                                        <button
+                                                                            type="button"
+                                                                            onClick={() => handleSubmitDecision(review)}
+                                                                            disabled={isDisabled}
+                                                                            className={`inline-flex items-center justify-center gap-1.5 px-5 py-2 rounded-lg text-xs font-semibold shadow-sm transition-all ${
+                                                                                isDisabled
+                                                                                    ? 'bg-slate-200 text-slate-400 cursor-not-allowed'
+                                                                                    : isApprove
+                                                                                    ? 'bg-green-600 text-white hover:bg-green-700 active:bg-green-800'
+                                                                                    : 'bg-red-600 text-white hover:bg-red-700 active:bg-red-800'
+                                                                            }`}
+                                                                        >
+                                                                            {isApprove ? (
+                                                                                <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M5 13l4 4L19 7"/></svg>
+                                                                            ) : (
+                                                                                <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M6 18L18 6M6 6l12 12"/></svg>
+                                                                            )}
+                                                                            {isApprove ? 'অনুমোদন দিন' : 'প্রত্যাখ্যান করুন'}
+                                                                        </button>
+                                                                    );
+                                                                })()}
+                                                                <button
+                                                                    type="button"
+                                                                    onClick={() => setOpenRowKey(null)}
+                                                                    className="inline-flex items-center justify-center gap-1.5 px-5 py-2 rounded-lg border border-slate-300 bg-white text-xs font-medium text-slate-600 hover:bg-slate-50 hover:border-slate-400 shadow-sm transition-all"
+                                                                >
+                                                                    <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12"/></svg>
+                                                                    বাতিল
+                                                                </button>
+                                                            </div>
                                                         </div>
                                                     </div>
                                                 </td>
@@ -653,6 +1064,197 @@ export default function TeamBasedApprovalApproverIndex({ reviews, filters, branc
                     </table>
                 </div>
             </div>
+
+            {editModal.open && editModal.row && (
+                <div className="fixed inset-0 z-40 flex items-end sm:items-center justify-center bg-black/40">
+                    <div className="bg-white rounded-t-2xl sm:rounded-lg shadow-lg w-full sm:max-w-4xl sm:mx-4 max-h-[92vh] sm:max-h-[90vh] overflow-y-auto">
+                        <div className="px-4 py-3 border-b border-gray-200 flex items-center justify-between">
+                            <h2 className="text-sm font-semibold text-gray-900">
+                                সারি সম্পাদনা করুন (সদস্য: {editModal.row.member_name})
+                            </h2>
+                            <button
+                                type="button"
+                                onClick={closeEditModal}
+                                className="text-xs text-gray-500 hover:text-gray-800"
+                            >
+                                Close
+                            </button>
+                        </div>
+                        <div className="px-4 py-4 space-y-3 text-xs">
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                                <div>
+                                    <label className="block text-gray-700 mb-1">সদস্যের নাম</label>
+                                    <input
+                                        type="text"
+                                        value={editModal.row.member_name}
+                                        onChange={(e) => handleEditModalChange('member_name', e.target.value)}
+                                        className="w-full border border-gray-300 rounded-md px-2 py-1"
+                                    />
+                                </div>
+                                <div>
+                                    <label className="block text-gray-700 mb-1">সদস্য নম্বর</label>
+                                    <input
+                                        type="text"
+                                        value={editModal.row.member_code || ''}
+                                        onChange={(e) => handleEditModalChange('member_code', e.target.value)}
+                                        className="w-full border border-gray-300 rounded-md px-2 py-1"
+                                    />
+                                </div>
+                                <div>
+                                    <label className="block text-gray-700 mb-1">সমিতি নম্বর</label>
+                                    <input
+                                        type="text"
+                                        value={editModal.row.samity_number || ''}
+                                        onChange={(e) => handleEditModalChange('samity_number', e.target.value)}
+                                        className="w-full border border-gray-300 rounded-md px-2 py-1"
+                                    />
+                                </div>
+                                <div className="grid grid-cols-3 gap-2">
+                                    <div>
+                                        <label className="block text-gray-700 mb-1">সঞ্চয় (সাধারণ)</label>
+                                        <input
+                                            type="number"
+                                            value={editModal.row.savings_general ?? ''}
+                                            onChange={(e) => handleEditModalChange('savings_general', e.target.value)}
+                                            className="w-full border border-gray-300 rounded-md px-2 py-1"
+                                        />
+                                    </div>
+                                    <div>
+                                        <label className="block text-gray-700 mb-1">সঞ্চয় (অন্যান্য)</label>
+                                        <input
+                                            type="number"
+                                            value={editModal.row.savings_other ?? ''}
+                                            onChange={(e) => handleEditModalChange('savings_other', e.target.value)}
+                                            className="w-full border border-gray-300 rounded-md px-2 py-1"
+                                        />
+                                    </div>
+                                    <div>
+                                        <label className="block text-gray-700 mb-1">সঞ্চয় (মোট)</label>
+                                        <input
+                                            type="number"
+                                            value={editModal.row.savings_total ?? ''}
+                                            onChange={(e) => handleEditModalChange('savings_total', e.target.value)}
+                                            className="w-full border border-gray-300 rounded-md px-2 py-1"
+                                        />
+                                    </div>
+                                </div>
+                                <div>
+                                    <label className="block text-gray-700 mb-1">পরিশোধিত ঋণের পরিমাণ</label>
+                                    <input
+                                        type="number"
+                                        value={editModal.row.repaid_loan_amount ?? ''}
+                                        onChange={(e) => handleEditModalChange('repaid_loan_amount', e.target.value)}
+                                        className="w-full border border-gray-300 rounded-md px-2 py-1"
+                                    />
+                                </div>
+                                <div>
+                                    <label className="block text-gray-700 mb-1">পরিশোধিত দফা নম্বর</label>
+                                    <input
+                                        type="number"
+                                        value={editModal.row.repaid_installment_no ?? ''}
+                                        onChange={(e) => handleEditModalChange('repaid_installment_no', e.target.value)}
+                                        className="w-full border border-gray-300 rounded-md px-2 py-1"
+                                    />
+                                </div>
+                                <div>
+                                    <label className="block text-gray-700 mb-1">
+                                        অন্যান্য সংস্থায় গ্রহণকৃত ঋণের পরিমাণ
+                                    </label>
+                                    <input
+                                        type="number"
+                                        value={editModal.row.other_institution_loan_amount ?? ''}
+                                        onChange={(e) =>
+                                            handleEditModalChange('other_institution_loan_amount', e.target.value)
+                                        }
+                                        className="w-full border border-gray-300 rounded-md px-2 py-1"
+                                    />
+                                </div>
+                                <div>
+                                    <label className="block text-gray-700 mb-1">প্রস্তাবিত ঋণের পরিমাণ</label>
+                                    <input
+                                        type="number"
+                                        value={editModal.row.proposed_loan_amount ?? ''}
+                                        onChange={(e) => handleEditModalChange('proposed_loan_amount', e.target.value)}
+                                        className="w-full border border-gray-300 rounded-md px-2 py-1"
+                                    />
+                                </div>
+                                <div>
+                                    <label className="block text-gray-700 mb-1">ঋণের মেয়াদ (বছর)</label>
+                                    <input
+                                        type="number"
+                                        step={0.5}
+                                        value={editModal.row.loan_term_years ?? ''}
+                                        onChange={(e) => handleEditModalChange('loan_term_years', e.target.value)}
+                                        className="w-full border border-gray-300 rounded-md px-2 py-1"
+                                    />
+                                </div>
+                                <div>
+                                    <label className="block text-gray-700 mb-1">ঋণের ধরন</label>
+                                    <input
+                                        type="text"
+                                        value={editModal.row.loan_type || ''}
+                                        onChange={(e) => handleEditModalChange('loan_type', e.target.value)}
+                                        className="w-full border border-gray-300 rounded-md px-2 py-1"
+                                    />
+                                </div>
+                                <div>
+                                    <label className="block text-gray-700 mb-1">প্রকল্পের নাম</label>
+                                    <input
+                                        type="text"
+                                        value={editModal.row.project_name || ''}
+                                        onChange={(e) => handleEditModalChange('project_name', e.target.value)}
+                                        className="w-full border border-gray-300 rounded-md px-2 py-1"
+                                    />
+                                </div>
+                            </div>
+                        </div>
+                        <div className="px-4 py-3 border-t border-gray-200 flex items-center justify-end gap-2">
+                            <button
+                                type="button"
+                                onClick={closeEditModal}
+                                className="inline-flex items-center px-3 py-1.5 rounded-md border border-gray-300 text-xs font-medium text-gray-700 hover:bg-gray-100"
+                            >
+                                Cancel
+                            </button>
+                            <button
+                                type="button"
+                                onClick={handleEditModalSave}
+                                className="inline-flex items-center px-3 py-1.5 rounded-md bg-blue-600 text-xs font-medium text-white hover:bg-blue-700"
+                            >
+                                Save changes
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {zoomSignatureUrl && (
+                <div
+                    className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 print:hidden"
+                    onClick={() => setZoomSignatureUrl(null)}
+                >
+                    <div
+                        className="bg-white rounded-lg shadow-xl max-w-3xl w-[90%] max-h-[90vh] p-3 flex flex-col items-center"
+                        onClick={(e) => e.stopPropagation()}
+                    >
+                        <img
+                            src={zoomSignatureUrl}
+                            alt="Signature zoomed"
+                            className="max-h-[75vh] w-auto object-contain"
+                            onError={(e) => {
+                                (e.target as HTMLImageElement).style.display = 'none';
+                            }}
+                        />
+                        <button
+                            type="button"
+                            onClick={() => setZoomSignatureUrl(null)}
+                            className="mt-3 inline-flex items-center px-3 py-1.5 rounded-md border border-gray-300 text-xs font-medium text-gray-700 hover:bg-gray-100"
+                        >
+                            Close
+                        </button>
+                    </div>
+                </div>
+            )}
         </AdminLayout>
     );
 }
