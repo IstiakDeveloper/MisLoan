@@ -10,10 +10,10 @@ interface ItemRow {
     savings_general?: number | null;
     savings_other?: number | null;
     savings_total?: number | null;
-    repaid_loan_amount?: number | null;
-    repaid_installment_no?: number | null;
-    other_institution_loan_amount?: number | null;
-    proposed_loan_amount?: number | null;
+    repaid_loan_amount?: string | number | null;
+    repaid_installment_no?: string | number | null;
+    other_institution_loan_amount?: string | null;
+    proposed_loan_amount?: string | number | null;
     approved_amount?: number | null;
     loan_term_years?: number | null;
     loan_type?: string | null;
@@ -79,9 +79,14 @@ interface Props {
         name: string;
         role_name: string;
     }[];
+    forwardToOptions?: {
+        id: number;
+        name: string;
+        role_name: string;
+    }[];
 }
 
-export default function TeamBasedApprovalApproverIndex({ reviews, filters, branches, approverOptions }: Props) {
+export default function TeamBasedApprovalApproverIndex({ reviews, filters, branches, approverOptions, forwardToOptions = [] }: Props) {
     const currentStatus = filters.status ?? '';
     const currentBranchId = (filters.branch_id ?? '').toString();
     const currentApproverId = (filters.approver_id ?? '').toString();
@@ -108,6 +113,29 @@ export default function TeamBasedApprovalApproverIndex({ reviews, filters, branc
     });
 
     const [zoomSignatureUrl, setZoomSignatureUrl] = React.useState<string | null>(null);
+
+    const [forwardModal, setForwardModal] = React.useState<{
+        open: boolean;
+        sheetId: number | null;
+        sheetLabel: string;
+        reviewId: number | null;
+        forwardToUserId: string;
+        comments: string;
+    }>({
+        open: false,
+        sheetId: null,
+        sheetLabel: '',
+        reviewId: null,
+        forwardToUserId: '',
+        comments: '',
+    });
+
+    /** When user clicks "অনুমোদন দিন": show modal to choose "নিজে অনুমোদন" or "ফরওয়ার্ড" */
+    const [approveChoiceModal, setApproveChoiceModal] = React.useState<{
+        open: boolean;
+        review: ReviewRow | null;
+        row: (ItemRow & { review_id: number; sheet_id: number; sheet_date: string | null; branch_name?: string | null }) | null;
+    }>({ open: false, review: null, row: null });
 
     const applyFilter = (status: string, from: string, to: string, branchId: string, approverId: string) => {
         router.visit('/team-based-approvals/for-approver', {
@@ -304,6 +332,7 @@ export default function TeamBasedApprovalApproverIndex({ reviews, filters, branc
         pending: 'Pending',
         approved: 'Approved',
         rejected: 'Rejected',
+        forwarded: 'Forwarded',
         under_review: 'Under Review',
         draft: 'Draft',
     };
@@ -312,6 +341,7 @@ export default function TeamBasedApprovalApproverIndex({ reviews, filters, branc
         pending: 'bg-yellow-50 text-yellow-800 border-yellow-200',
         approved: 'bg-green-50 text-green-800 border-green-200',
         rejected: 'bg-red-50 text-red-800 border-red-200',
+        forwarded: 'bg-slate-100 text-slate-700 border-slate-300',
         under_review: 'bg-blue-50 text-blue-800 border-blue-200',
         draft: 'bg-gray-50 text-gray-700 border-gray-200',
     };
@@ -330,11 +360,13 @@ export default function TeamBasedApprovalApproverIndex({ reviews, filters, branc
         can_act: boolean;
         approver_name?: string | null;
         approver_role?: string | null;
+        approvers?: { approver_name?: string | null; approver_role?: string | null; status?: string; approved_amount?: number | string | null; comments?: string | null; approver_signature?: string | null; decided_at?: string | null }[];
     })[] = [];
 
     reviews.data.forEach((review) => {
         const sheet = review.sheet;
         sheet.items.forEach((item, idx) => {
+            const it = item as { approvers?: { approver_name?: string | null; approver_role?: string | null; status?: string; approved_amount?: number | string | null; comments?: string | null; approver_signature?: string | null; decided_at?: string | null }[] };
             flatRows.push({
                 ...item,
                 serial_no: item.serial_no || idx + 1,
@@ -350,9 +382,43 @@ export default function TeamBasedApprovalApproverIndex({ reviews, filters, branc
                 can_act: review.can_act,
                 approver_name: review.approver_name,
                 approver_role: review.approver_role,
+                approvers: it.approvers ?? [],
             });
         });
     });
+
+    const openForwardModal = (sheetId: number, sheetLabel: string, reviewId: number) => {
+        setForwardModal({
+            open: true,
+            sheetId,
+            sheetLabel,
+            reviewId,
+            forwardToUserId: '',
+            comments: '',
+        });
+    };
+
+    const submitForward = () => {
+        if (!forwardModal.sheetId || !forwardModal.forwardToUserId || !forwardModal.reviewId) return;
+
+        const state = decisionState[forwardModal.reviewId] || {
+            decision: 'approved' as const,
+            approved_amount: '',
+            comments: '',
+        };
+
+        const approvedAmount = state.approved_amount ? parseFloat(state.approved_amount) : NaN;
+        if (!Number.isFinite(approvedAmount)) return;
+
+        router.post(`/team-based-approvals/${forwardModal.sheetId}/forward`, {
+            forward_to_user_id: Number(forwardModal.forwardToUserId),
+            comments: forwardModal.comments || undefined,
+            approved_amount: approvedAmount,
+        }, {
+            preserveScroll: true,
+            onSuccess: () => setForwardModal((p) => ({ ...p, open: false, sheetId: null, sheetLabel: '', reviewId: null, forwardToUserId: '', comments: '' })),
+        });
+    };
 
     const handlePrintPage = () => {
         if (typeof window !== 'undefined') {
@@ -404,9 +470,10 @@ export default function TeamBasedApprovalApproverIndex({ reviews, filters, branc
                         padding: 0 0;
                         width: 4%;
                     }
-                    @page { size: A4 landscape; margin: 6mm; }
+                    @page { size: A4 landscape; margin: 0; }
                     @media print {
-                        body { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+                        html, body { margin: 0 !important; padding: 0 !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+                        .approval-print-page { margin: 0 !important; padding: 0 !important; }
                         .approval-table-print-wrapper { overflow: visible !important; }
                         .approval-table-print-wrapper table { width: 100% !important; table-layout: fixed !important; font-size: 7pt !important; }
                         .approval-table-print-wrapper th,
@@ -423,7 +490,7 @@ export default function TeamBasedApprovalApproverIndex({ reviews, filters, branc
                 `}</style>
             </Head>
 
-            <div className="mx-auto py-4 sm:py-6 px-2 sm:px-4">
+            <div className="mx-auto py-4 sm:py-6 px-2 sm:px-4 print:py-0 print:px-0">
                 {/* Print header - same as ApprovalIndex: logo left, org+title center; then branch/area/zone/tarikh row */}
                 <div className="mb-4 approval-print-header">
                     <div className="flex items-start justify-between gap-4 mb-2 print:flex print:mb-1">
@@ -602,7 +669,7 @@ export default function TeamBasedApprovalApproverIndex({ reviews, filters, branc
                                         <div><span className="text-gray-400">পরিশোধিত মূল ঋণ</span><p className="font-medium text-gray-800">{row.repaid_loan_amount}{row.repaid_installment_no != null ? ` (${row.repaid_installment_no} দফা)` : ''}</p></div>
                                     )}
                                     {row.other_institution_loan_amount != null && (
-                                        <div><span className="text-gray-400">অন্য সংস্থায় ঋণ</span><p className="font-medium text-gray-800">{row.other_institution_loan_amount}</p></div>
+                                        <div><span className="text-gray-400">অন্য সংস্থায় ঋণ</span><p className="font-medium text-gray-800 whitespace-pre-line">{String(row.other_institution_loan_amount)}</p></div>
                                     )}
                                     <div><span className="text-gray-400">প্রস্তাবিত ঋণ</span><p className="font-semibold text-blue-700">{row.proposed_loan_amount ?? '—'}</p></div>
                                     {row.loan_term_years != null && (
@@ -617,50 +684,50 @@ export default function TeamBasedApprovalApproverIndex({ reviews, filters, branc
                                     {row.approved_amount != null && (
                                         <div><span className="text-gray-400">অনুমোদিত ঋণ</span><p className="font-semibold text-green-700">৳ {row.approved_amount}</p></div>
                                     )}
-                                    {row.approver_name && (
-                                        <div><span className="text-gray-400">অনুমোদনকারী</span><p className="font-medium text-gray-800">{row.approver_name}{row.approver_role ? ` (${row.approver_role})` : ''}</p></div>
+                                    {((row.approvers && row.approvers.length > 0) || row.approver_name) && (
+                                        <div><span className="text-gray-400">অনুমোদনকারী</span><p className="font-medium text-gray-800">{(row.approvers && row.approvers.length > 0 ? row.approvers.map((a) => a.approver_name).filter(Boolean).join(', ') : row.approver_name) || ''}{row.approver_role && !(row.approvers && row.approvers.length > 0) ? ` (${row.approver_role})` : ''}</p></div>
                                     )}
                                     {row.review_comments && (
                                         <div className="col-span-2"><span className="text-gray-400">মন্তব্য</span><p className="font-medium text-gray-800">{row.review_comments}</p></div>
                                     )}
-                                    {(row.approver_signature || row.decided_at) && (
-                                        <div className="col-span-2 flex items-center gap-2">
-                                            {row.approver_signature && (
-                                                <button
-                                                    type="button"
-                                                    onClick={() =>
-                                                        setZoomSignatureUrl(
-                                                            row.approver_signature!.startsWith('http')
-                                                                ? row.approver_signature!
-                                                                : row.approver_signature!.startsWith('/storage/')
-                                                                ? row.approver_signature!
-                                                                : `/storage/${row.approver_signature!}`,
-                                                        )
-                                                    }
-                                                    className="focus:outline-none hover:scale-105 transition-transform"
-                                                    title="স্বাক্ষর বড় করে দেখুন"
-                                                >
-                                                    <img
-                                                        src={
-                                                            row.approver_signature.startsWith('http')
-                                                                ? row.approver_signature
-                                                                : row.approver_signature.startsWith('/storage/')
-                                                                ? row.approver_signature
-                                                                : `/storage/${row.approver_signature}`
-                                                        }
-                                                        alt="Signature"
-                                                        className="h-7 object-contain"
-                                                        onError={(e) => {
-                                                            (e.target as HTMLImageElement).style.display = 'none';
-                                                        }}
-                                                    />
-                                                </button>
-                                            )}
-                                            {row.decided_at && (
-                                                <span className="text-[10px] text-gray-500">
-                                                    {formatDateOnly(row.decided_at)}
-                                                </span>
-                                            )}
+                                    {((row.approvers && row.approvers.length > 0) || row.approver_signature || row.decided_at) && (
+                                        <div className="col-span-2 flex flex-col gap-1.5">
+                                            {(row.approvers && row.approvers.length > 0 ? row.approvers : [{ approver_signature: row.approver_signature, decided_at: row.decided_at, approver_name: row.approver_name }]).map((a, i) => (
+                                                <div key={i} className="flex items-center gap-2">
+                                                    {a.approver_signature && (
+                                                        <button
+                                                            type="button"
+                                                            onClick={() =>
+                                                                setZoomSignatureUrl(
+                                                                    a.approver_signature!.startsWith('http')
+                                                                        ? a.approver_signature!
+                                                                        : a.approver_signature!.startsWith('/storage/')
+                                                                        ? a.approver_signature!
+                                                                        : `/storage/${a.approver_signature!}`,
+                                                                )
+                                                            }
+                                                            className="focus:outline-none hover:scale-105 transition-transform"
+                                                            title="স্বাক্ষর বড় করে দেখুন"
+                                                        >
+                                                            <img
+                                                                src={
+                                                                    a.approver_signature.startsWith('http')
+                                                                        ? a.approver_signature
+                                                                        : a.approver_signature.startsWith('/storage/')
+                                                                        ? a.approver_signature
+                                                                        : `/storage/${a.approver_signature}`
+                                                                }
+                                                                alt="Signature"
+                                                                className="h-7 object-contain"
+                                                                onError={(e) => {
+                                                                    (e.target as HTMLImageElement).style.display = 'none';
+                                                                }}
+                                                            />
+                                                        </button>
+                                                    )}
+                                                    <span className="text-[10px] text-gray-500">{formatDateOnly(a.decided_at || '')}</span>
+                                                </div>
+                                            ))}
                                         </div>
                                     )}
                                 </div>
@@ -683,6 +750,33 @@ export default function TeamBasedApprovalApproverIndex({ reviews, filters, branc
                                                 সম্পাদনা
                                             </button>
                                         </div>
+
+                                        {/* Previous approver history (when forwarded / multi-step) */}
+                                        {Array.isArray(row.approvers) && row.approvers.some((a) => a?.status && a.status !== 'pending') && (
+                                            <div className="mb-3 rounded-lg border border-slate-200 bg-white/70 p-2">
+                                                <p className="text-[10px] font-semibold text-slate-500 uppercase tracking-wider mb-1">পূর্ববর্তী অনুমোদন</p>
+                                                <div className="space-y-1">
+                                                    {row.approvers
+                                                        .filter((a) => a?.status && a.status !== 'pending')
+                                                        .map((a, i) => (
+                                                            <div key={`${a.approver_name || 'approver'}-${i}`} className="text-[11px] text-slate-700">
+                                                                <span className="font-semibold">{a.approver_name || '—'}</span>
+                                                                {a.approver_role ? <span className="text-slate-500"> ({a.approver_role})</span> : null}
+                                                                <div className="text-slate-700">
+                                                                    <span className="text-slate-500">অনুমোদিত ঋণ:</span>{' '}
+                                                                    <span className="font-semibold">{a.approved_amount ?? '—'}</span>
+                                                                    {a.decided_at ? <span className="text-slate-500"> · {a.decided_at}</span> : null}
+                                                                </div>
+                                                                {a.comments ? (
+                                                                    <div className="text-slate-700 whitespace-pre-line">
+                                                                        <span className="text-slate-500">মন্তব্য:</span> {a.comments}
+                                                                    </div>
+                                                                ) : null}
+                                                            </div>
+                                                        ))}
+                                                </div>
+                                            </div>
+                                        )}
 
                                         {/* Decision toggle */}
                                         <p className="text-[10px] font-semibold text-slate-500 uppercase tracking-wider mb-1.5">সিদ্ধান্ত</p>
@@ -745,7 +839,10 @@ export default function TeamBasedApprovalApproverIndex({ reviews, filters, branc
                                                 return (
                                                     <button
                                                         type="button"
-                                                        onClick={() => handleSubmitDecision(review)}
+                                                        onClick={() => {
+                                                            if (isApprove) setApproveChoiceModal({ open: true, review, row });
+                                                            else handleSubmitDecision(review);
+                                                        }}
                                                         disabled={isDisabled}
                                                         className={`flex-1 inline-flex items-center justify-center gap-1.5 py-2.5 rounded-lg text-xs font-semibold shadow-sm transition-all ${isDisabled ? 'bg-slate-200 text-slate-400 cursor-not-allowed' : isApprove ? 'bg-green-600 text-white hover:bg-green-700' : 'bg-red-600 text-white hover:bg-red-700'}`}
                                                     >
@@ -829,55 +926,59 @@ export default function TeamBasedApprovalApproverIndex({ reviews, filters, branc
                                             <td className="border text-center">{row.savings_total ?? ''}</td>
                                             <td className="border text-right">{row.repaid_loan_amount ?? ''}</td>
                                             <td className="border text-center">{row.repaid_installment_no ?? ''}</td>
-                                            <td className="border text-right">{row.other_institution_loan_amount ?? ''}</td>
+                                            <td className="border text-right align-top">
+                                                <span className="whitespace-pre-line block text-left">{row.other_institution_loan_amount ?? ''}</span>
+                                            </td>
                                             <td className="border text-right">{row.proposed_loan_amount ?? ''}</td>
                                             <td className="border text-center">{row.loan_term_years ?? ''}</td>
                                             <td className="border text-left">{row.loan_type || ''}</td>
                                             <td className="border text-left">{row.project_name || ''}</td>
                                             <td className="border text-right">{row.approved_amount ?? ''}</td>
                                             <td className="border text-left">
-                                                {row.approver_name ? `${row.approver_name}${row.approver_role ? ` (${row.approver_role})` : ''}` : ''}
+                                                {row.approvers && row.approvers.length > 0 ? row.approvers.map((a) => a.approver_name).filter(Boolean).join(', ') : (row.approver_name ? `${row.approver_name}${row.approver_role ? ` (${row.approver_role})` : ''}` : '')}
                                             </td>
                                             <td className="border text-left">{row.review_comments || ''}</td>
-                                            <td className="border text-left">
-                                                {row.approver_signature ? (
-                                                    <div className="flex flex-col items-center gap-0">
-                                                        <button
-                                                            type="button"
-                                                            onClick={() =>
-                                                                setZoomSignatureUrl(
-                                                                    row.approver_signature!.startsWith('http')
-                                                                        ? row.approver_signature!
-                                                                        : row.approver_signature!.startsWith('/storage/')
-                                                                        ? row.approver_signature!
-                                                                        : `/storage/${row.approver_signature!}`,
-                                                                )
-                                                            }
-                                                            className="focus:outline-none hover:scale-105 transition-transform"
-                                                            title="স্বাক্ষর বড় করে দেখুন"
-                                                        >
-                                                            <img
-                                                                src={
-                                                                    row.approver_signature.startsWith('http')
-                                                                        ? row.approver_signature
-                                                                        : row.approver_signature.startsWith('/storage/')
-                                                                        ? row.approver_signature
-                                                                        : `/storage/${row.approver_signature}`
-                                                                }
-                                                                alt="Signature"
-                                                                className="h-8 max-h-8 object-contain print:!h-8 print:!max-h-8"
-                                                                onError={(e) => {
-                                                                    (e.target as HTMLImageElement).style.display = 'none';
-                                                                }}
-                                                            />
-                                                        </button>
-                                                        <span className="text-gray-700 leading-tight">
-                                                            {formatDateOnly(row.decided_at)}
-                                                        </span>
+                                            <td className="border text-left align-top">
+                                                {(row.approvers && row.approvers.length > 0 ? row.approvers : [{ approver_signature: row.approver_signature, decided_at: row.decided_at, approver_name: row.approver_name }]).map((a, i) => (
+                                                    <div key={i} className="flex flex-col items-center gap-0 py-0.5 border-b border-gray-100 last:border-0">
+                                                        {a.approver_signature ? (
+                                                            <>
+                                                                <button
+                                                                    type="button"
+                                                                    onClick={() =>
+                                                                        setZoomSignatureUrl(
+                                                                            a.approver_signature!.startsWith('http')
+                                                                                ? a.approver_signature!
+                                                                                : a.approver_signature!.startsWith('/storage/')
+                                                                                ? a.approver_signature!
+                                                                                : `/storage/${a.approver_signature!}`,
+                                                                        )
+                                                                    }
+                                                                    className="focus:outline-none hover:scale-105 transition-transform"
+                                                                    title="স্বাক্ষর বড় করে দেখুন"
+                                                                >
+                                                                    <img
+                                                                        src={
+                                                                            a.approver_signature.startsWith('http')
+                                                                                ? a.approver_signature
+                                                                                : a.approver_signature.startsWith('/storage/')
+                                                                                ? a.approver_signature
+                                                                                : `/storage/${a.approver_signature}`
+                                                                        }
+                                                                        alt="Signature"
+                                                                        className="h-7 max-h-7 object-contain print:!h-7 print:!max-h-7"
+                                                                        onError={(e) => {
+                                                                            (e.target as HTMLImageElement).style.display = 'none';
+                                                                        }}
+                                                                    />
+                                                                </button>
+                                                                <span className="text-[10px] text-gray-700">{formatDateOnly(a.decided_at || '')}</span>
+                                                            </>
+                                                        ) : (
+                                                            <span className="text-[10px] text-gray-500">{formatDateOnly(a.decided_at || '')}</span>
+                                                        )}
                                                     </div>
-                                                ) : (
-                                                    <span className="text-gray-500">{formatDateOnly(row.decided_at)}</span>
-                                                )}
+                                                ))}
                                             </td>
                                             <td className="border text-center">
                                                 {review.status === 'pending' && row.can_act ? (
@@ -924,6 +1025,63 @@ export default function TeamBasedApprovalApproverIndex({ reviews, filters, branc
                                                                 </button>
                                                             </div>
                                                         </div>
+
+                                                        {/* Previous approver history (when forwarded / multi-step) */}
+                                                        {Array.isArray(row.approvers) && row.approvers.some((a) => a?.status && a.status !== 'pending') && (
+                                                            <div className="mb-4 rounded-xl border border-slate-200 bg-white/70 p-3">
+                                                                <div className="flex items-center gap-2 mb-2">
+                                                                    <div className="w-2 h-2 rounded-full bg-amber-500" />
+                                                                    <p className="text-[11px] font-semibold text-slate-600 uppercase tracking-wider">পূর্ববর্তী অনুমোদন</p>
+                                                                </div>
+                                                                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                                                                    {row.approvers
+                                                                        .filter((a) => a?.status && a.status !== 'pending')
+                                                                        .map((a, i) => (
+                                                                            <div key={`${a.approver_name || 'approver'}-${i}`} className="rounded-lg border border-slate-200 bg-white p-3 shadow-sm">
+                                                                                <div className="flex items-start justify-between gap-2">
+                                                                                    <div className="min-w-0">
+                                                                                        <p className="text-sm font-semibold text-slate-800 truncate">
+                                                                                            {a.approver_name || '—'}
+                                                                                        </p>
+                                                                                        {a.approver_role ? (
+                                                                                            <p className="text-xs text-slate-500">
+                                                                                                {a.approver_role}
+                                                                                            </p>
+                                                                                        ) : null}
+                                                                                    </div>
+                                                                                    <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold bg-slate-100 text-slate-700 border border-slate-200">
+                                                                                        {a.status}
+                                                                                    </span>
+                                                                                </div>
+                                                                                <div className="mt-2 grid grid-cols-2 gap-2 text-xs">
+                                                                                    <div className="rounded-md bg-slate-50 border border-slate-200 px-2 py-1.5">
+                                                                                        <p className="text-[10px] font-semibold text-slate-500 uppercase tracking-wider">অনুমোদিত</p>
+                                                                                        <p className="font-semibold text-green-700">
+                                                                                            ৳ {a.approved_amount ?? '—'}
+                                                                                        </p>
+                                                                                    </div>
+                                                                                    <div className="rounded-md bg-slate-50 border border-slate-200 px-2 py-1.5">
+                                                                                        <p className="text-[10px] font-semibold text-slate-500 uppercase tracking-wider">তারিখ</p>
+                                                                                        <p className="font-medium text-slate-700">
+                                                                                            {a.decided_at ? formatDateOnly(a.decided_at) : '—'}
+                                                                                        </p>
+                                                                                    </div>
+                                                                                </div>
+                                                                                {a.comments ? (
+                                                                                    <div className="mt-2 rounded-md bg-amber-50 border border-amber-200 px-2.5 py-2 text-xs text-amber-900 whitespace-pre-line">
+                                                                                        <span className="text-[10px] font-semibold uppercase tracking-wider text-amber-700">মন্তব্য</span>
+                                                                                        <div className="mt-0.5">{a.comments}</div>
+                                                                                    </div>
+                                                                                ) : (
+                                                                                    <div className="mt-2 text-xs text-slate-500">
+                                                                                        মন্তব্য: —
+                                                                                    </div>
+                                                                                )}
+                                                                            </div>
+                                                                        ))}
+                                                                </div>
+                                                            </div>
+                                                        )}
 
                                                         <div className="flex flex-col lg:flex-row gap-4">
                                                             {/* Decision selection */}
@@ -1024,7 +1182,10 @@ export default function TeamBasedApprovalApproverIndex({ reviews, filters, branc
                                                                     return (
                                                                         <button
                                                                             type="button"
-                                                                            onClick={() => handleSubmitDecision(review)}
+                                                                            onClick={() => {
+                                                                                if (isApprove) setApproveChoiceModal({ open: true, review, row });
+                                                                                else handleSubmitDecision(review);
+                                                                            }}
                                                                             disabled={isDisabled}
                                                                             className={`inline-flex items-center justify-center gap-1.5 px-5 py-2 rounded-lg text-xs font-semibold shadow-sm transition-all ${
                                                                                 isDisabled
@@ -1160,13 +1321,14 @@ export default function TeamBasedApprovalApproverIndex({ reviews, filters, branc
                                     <label className="block text-gray-700 mb-1">
                                         অন্যান্য সংস্থায় গ্রহণকৃত ঋণের পরিমাণ
                                     </label>
-                                    <input
-                                        type="number"
+                                    <textarea
+                                        rows={3}
                                         value={editModal.row.other_institution_loan_amount ?? ''}
                                         onChange={(e) =>
                                             handleEditModalChange('other_institution_loan_amount', e.target.value)
                                         }
-                                        className="w-full border border-gray-300 rounded-md px-2 py-1"
+                                        placeholder="যেমন: আশা ৫০০০, ব্রাক ২০০০ (প্রতি লাইনে বা কমা দিয়ে)"
+                                        className="w-full border border-gray-300 rounded-md px-2 py-1 resize-y"
                                     />
                                 </div>
                                 <div>
@@ -1222,6 +1384,130 @@ export default function TeamBasedApprovalApproverIndex({ reviews, filters, branc
                                 className="inline-flex items-center px-3 py-1.5 rounded-md bg-blue-600 text-xs font-medium text-white hover:bg-blue-700"
                             >
                                 Save changes
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* Approve choice: নিজে অনুমোদন নাকি ফরওয়ার্ড */}
+            {approveChoiceModal.open && approveChoiceModal.review && approveChoiceModal.row && (
+                <div className="fixed inset-0 z-40 flex items-end sm:items-center justify-center bg-black/50 p-2 sm:p-4">
+                    <div
+                        className="bg-white rounded-t-2xl sm:rounded-xl shadow-xl w-full max-w-md max-h-[90vh] overflow-y-auto"
+                        onClick={(e) => e.stopPropagation()}
+                    >
+                        <div className="border-b border-gray-200 px-4 py-3">
+                            <h2 className="text-base font-semibold text-gray-900">অনুমোদন সিদ্ধান্ত</h2>
+                            <p className="text-xs text-gray-500 mt-0.5">
+                                নিচের যেকোনো একটি নির্বাচন করুন
+                            </p>
+                        </div>
+                        <div className="p-4 flex flex-col gap-3">
+                            <button
+                                type="button"
+                                onClick={() => {
+                                    handleSubmitDecision(approveChoiceModal.review!);
+                                    setApproveChoiceModal({ open: false, review: null, row: null });
+                                    setOpenRowKey(null);
+                                }}
+                                className="w-full inline-flex items-center justify-center gap-2 px-4 py-3 rounded-lg bg-green-600 text-white text-sm font-medium hover:bg-green-700"
+                            >
+                                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7"/></svg>
+                                আমি অনুমোদন দিলাম
+                            </button>
+                            {forwardToOptions.length > 0 ? (
+                                <button
+                                    type="button"
+                                    onClick={() => {
+                                        const row = approveChoiceModal.row!;
+                                        const review = approveChoiceModal.review!;
+                                        setApproveChoiceModal({ open: false, review: null, row: null });
+                                        setOpenRowKey(null);
+                                        setForwardModal({
+                                            open: true,
+                                            sheetId: row.sheet_id,
+                                            sheetLabel: `${row.sheet_date || ''} · ${row.branch_name || ''}`,
+                                            reviewId: review.review_id,
+                                            forwardToUserId: '',
+                                            comments: '',
+                                        });
+                                    }}
+                                    className="w-full inline-flex items-center justify-center gap-2 px-4 py-3 rounded-lg border-2 border-amber-400 bg-amber-50 text-amber-800 text-sm font-medium hover:bg-amber-100"
+                                >
+                                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 7l5 5m0 0l-5 5m5-5H6"/></svg>
+                                    আমি অনুমোদন দিলাম, অন্য একজনেরও অনুমোদন লাগবে
+                                </button>
+                            ) : null}
+                            <button
+                                type="button"
+                                onClick={() => setApproveChoiceModal({ open: false, review: null, row: null })}
+                                className="w-full inline-flex items-center justify-center px-4 py-2.5 rounded-lg border border-gray-300 bg-white text-sm font-medium text-gray-700 hover:bg-gray-50"
+                            >
+                                বাতিল
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* Forward to Superior modal */}
+            {forwardModal.open && (
+                <div className="fixed inset-0 z-40 flex items-end sm:items-center justify-center bg-black/50 p-2 sm:p-4">
+                    <div
+                        className="bg-white rounded-t-2xl sm:rounded-xl shadow-xl w-full max-w-md max-h-[90vh] overflow-y-auto"
+                        onClick={(e) => e.stopPropagation()}
+                    >
+                        <div className="sticky top-0 bg-white border-b border-gray-200 px-4 py-3 rounded-t-2xl sm:rounded-t-xl">
+                            <h2 className="text-base font-semibold text-gray-900">উর্ধ্বতনের কাছে ফরওয়ার্ড করুন</h2>
+                            <p className="text-xs text-gray-500 mt-0.5">{forwardModal.sheetLabel}</p>
+                        </div>
+                        <div className="p-4 space-y-4">
+                            <p className="text-sm text-gray-600">
+                                এই শিটের সব পেন্ডিং আইটেম নির্বাচিত ব্যক্তির কাছে চলে যাবে। তারা অনুমোদন বা প্রত্যাখ্যান করতে পারবেন।
+                            </p>
+                            <div>
+                                <label className="block text-sm font-medium text-gray-700 mb-1">উর্ধ্বতন নির্বাচন করুন <span className="text-red-500">*</span></label>
+                                <select
+                                    value={forwardModal.forwardToUserId}
+                                    onChange={(e) => setForwardModal((p) => ({ ...p, forwardToUserId: e.target.value }))}
+                                    className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                                >
+                                    <option value="">নির্বাচন করুন</option>
+                                    {forwardToOptions.map((u) => (
+                                        <option key={u.id} value={u.id}>
+                                            {u.name} ({u.role_name})
+                                        </option>
+                                    ))}
+                                </select>
+                            </div>
+                            <div>
+                                <label className="block text-sm font-medium text-gray-700 mb-1">মন্তব্য (ঐচ্ছিক)</label>
+                                <textarea
+                                    rows={2}
+                                    value={forwardModal.comments}
+                                    onChange={(e) => setForwardModal((p) => ({ ...p, comments: e.target.value }))}
+                                    placeholder="ফরওয়ার্ডের কারণ বা নির্দেশনা..."
+                                    className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm resize-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                                />
+                            </div>
+                        </div>
+                        <div className="flex gap-2 p-4 border-t border-gray-200 bg-gray-50 rounded-b-2xl sm:rounded-b-xl">
+                            <button
+                                type="button"
+                                onClick={() => setForwardModal((p) => ({ ...p, open: false, sheetId: null, sheetLabel: '', reviewId: null, forwardToUserId: '', comments: '' }))}
+                                className="flex-1 inline-flex items-center justify-center px-4 py-2.5 rounded-lg border border-gray-300 bg-white text-sm font-medium text-gray-700 hover:bg-gray-50"
+                            >
+                                বাতিল
+                            </button>
+                            <button
+                                type="button"
+                                onClick={submitForward}
+                                disabled={!forwardModal.forwardToUserId || !forwardModal.reviewId || !(decisionState[forwardModal.reviewId!]?.approved_amount)}
+                                className="flex-1 inline-flex items-center justify-center gap-1.5 px-4 py-2.5 rounded-lg bg-amber-600 text-white text-sm font-medium hover:bg-amber-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                            >
+                                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 7l5 5m0 0l-5 5m5-5H6"/></svg>
+                                ফরওয়ার্ড সাবমিট
                             </button>
                         </div>
                     </div>

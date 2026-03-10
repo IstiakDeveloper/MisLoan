@@ -7,7 +7,8 @@ import { createRoot } from 'react-dom/client';
 import { initializeTheme } from './hooks/use-appearance';
 import { AuthProvider } from './contexts/AuthContext';
 
-const appName = import.meta.env.VITE_APP_NAME || 'Laravel';
+const rawAppName = import.meta.env.VITE_APP_NAME || 'Mis Loan';
+const appName = rawAppName === 'MisLoan' ? 'Mis Loan' : rawAppName;
 
 createInertiaApp({
     title: (title) => (title ? `${title} - ${appName}` : appName),
@@ -34,3 +35,13 @@ createInertiaApp({
 
 // This will set light / dark mode on load...
 initializeTheme();
+
+if ('serviceWorker' in navigator) {
+    window.addEventListener('load', () => {
+        navigator.serviceWorker
+            .register('/sw.js')
+            .catch(() => {
+                // ignore registration errors
+            });
+    });
+}

@@ -24,9 +24,11 @@ import {
     Package,
     FileText,
     Wallet,
-    Settings
+    Settings,
+    Download
 } from 'lucide-react';
 import { useIsMobile } from '@/hooks/use-mobile';
+import { usePwaInstallPrompt } from '@/hooks/usePwaInstallPrompt';
 
 interface User {
     id: number;
@@ -123,6 +125,14 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
         roleName === 'ed';
 
     const isFieldOfficer = roleName === 'field_officer';
+    const { canInstall, promptInstall, isInstalled, isStandalone, platform } = usePwaInstallPrompt();
+    const [showInstallDialog, setShowInstallDialog] = useState(false);
+
+    useEffect(() => {
+        if (canInstall) {
+            setShowInstallDialog(true);
+        }
+    }, [canInstall]);
 
     const branchMenuItemsFull = [
         { name: 'Dashboard', href: '/dashboard', icon: LayoutDashboard },
@@ -430,7 +440,20 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
                             </h2>
                         </div>
 
-                        <div className="flex items-center gap-1">
+                        <div className="flex items-center gap-1.5">
+                            {canInstall && (
+                                <button
+                                    type="button"
+                                    onClick={() => {
+                                        console.log('[PWA] Install button clicked, canInstall:', canInstall, 'isInstalled:', isInstalled, 'isStandalone:', isStandalone);
+                                        setShowInstallDialog(true);
+                                    }}
+                                    className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-md border border-blue-500 text-[11px] font-medium text-blue-700 hover:bg-blue-50"
+                                >
+                                    <Download className="w-3.5 h-3.5" />
+                                    Install app
+                                </button>
+                            )}
                             <button type="button" className="relative p-1.5 rounded-md hover:bg-gray-100 text-gray-500 transition-colors" aria-label="Notifications">
                                 <Bell className="w-4 h-4" />
                                 <span className="absolute top-1 right-1 w-1.5 h-1.5 bg-red-500 rounded-full" />
@@ -488,6 +511,60 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
                     onClick={() => setSidebarOpen(false)}
                     aria-hidden
                 />
+            )}
+            {/* PWA Install Dialog */}
+            {canInstall && showInstallDialog && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
+                    <div className="bg-white rounded-xl shadow-2xl max-w-sm w-[90%] p-5 border border-gray-200">
+                        <div className="flex items-start justify-between gap-3 mb-3">
+                            <div>
+                                <h3 className="text-sm font-semibold text-gray-900">Install Mis Loan</h3>
+                                <p className="text-xs text-gray-600 mt-1">
+                                    Add Mis Loan to your home screen or desktop for a full‑screen, app‑like experience.
+                                </p>
+                            </div>
+                            <button
+                                type="button"
+                                onClick={() => setShowInstallDialog(false)}
+                                className="text-gray-400 hover:text-gray-600"
+                                aria-label="Close"
+                            >
+                                <X className="w-4 h-4" />
+                            </button>
+                        </div>
+                        <div className="space-y-2 text-xs text-gray-600 mb-4">
+                            <p>• Faster access – open Mis Loan directly from your home screen.</p>
+                            <p>• Cleaner UI – runs without browser address bar.</p>
+                            {isInstalled || isStandalone ? (
+                                <p className="text-green-700 font-medium">This app is already installed.</p>
+                            ) : (
+                                <p className="text-gray-600">Click “Install now” to install this app.</p>
+                            )}
+                        </div>
+                        <div className="flex items-center justify-end gap-2">
+                            <button
+                                type="button"
+                                onClick={() => setShowInstallDialog(false)}
+                                className="px-3 py-1.5 rounded-md text-xs font-medium text-gray-600 hover:bg-gray-100"
+                            >
+                                Later
+                            </button>
+                            <button
+                                type="button"
+                                onClick={async () => {
+                                    console.log('[PWA] Install now clicked, canInstall:', canInstall, 'platform:', platform);
+                                    await promptInstall();
+                                    setShowInstallDialog(false);
+                                }}
+                                disabled={isInstalled || isStandalone}
+                                className="inline-flex items-center gap-1 px-3 py-1.5 rounded-md bg-blue-600 text-white text-xs font-semibold hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                            >
+                                <Download className="w-3.5 h-3.5" />
+                                Install now
+                            </button>
+                        </div>
+                    </div>
+                </div>
             )}
         </div>
     );

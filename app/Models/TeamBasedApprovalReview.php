@@ -17,12 +17,14 @@ class TeamBasedApprovalReview extends Model
         'level',
         'status',
         'comments',
+        'approved_amount',
         'approver_signature',
         'decided_at',
     ];
 
     protected $casts = [
         'decided_at' => 'datetime',
+        'approved_amount' => 'decimal:2',
     ];
 
     public function approval(): BelongsTo

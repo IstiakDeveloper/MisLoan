@@ -40,6 +40,9 @@ Route::middleware(['auth', 'verified'])->group(function () {
     // Profile Routes
     Route::get('profile', [ProfileController::class, 'edit'])->name('profile.edit');
     Route::post('profile', [ProfileController::class, 'update'])->name('profile.update');
+    Route::put('profile/password', [ProfileController::class, 'updatePassword'])
+        ->middleware('throttle:6,1')
+        ->name('profile.password.update');
 
     // Organization Management Routes - Only for SuperAdmin/Head Office
     Route::prefix('organizations')->name('organizations.')->middleware('head.office')->group(function () {
@@ -174,6 +177,7 @@ Route::middleware(['auth', 'verified'])->group(function () {
         Route::get('for-approver', [TeamBasedApprovalController::class, 'approverIndex'])->name('approver-index');
         Route::post('reviews/{review}/decide', [TeamBasedApprovalController::class, 'decide'])->name('reviews.decide');
         Route::post('reviews/{review}/update-item', [TeamBasedApprovalController::class, 'updateItem'])->name('reviews.update-item');
+        Route::post('{teamBasedApproval}/forward', [TeamBasedApprovalController::class, 'forward'])->name('forward');
 
         // Shared print view
         Route::get('{teamBasedApproval}/print', [TeamBasedApprovalPrintController::class, 'show'])->name('print');

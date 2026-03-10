@@ -12,7 +12,7 @@ interface ItemRow {
     savings_total?: number | null;
     repaid_loan_amount?: number | null;
     repaid_installment_no?: number | null;
-    other_institution_loan_amount?: number | null;
+    other_institution_loan_amount?: string | null;
     proposed_loan_amount?: number | null;
     loan_term_years?: number | null;
     loan_type?: string | null;
@@ -23,6 +23,7 @@ interface ItemRow {
     review_comments?: string | null;
     approver_signature?: string | null;
     decided_at?: string | null;
+    approvers?: { approver_name?: string | null; approver_role?: string | null; status?: string; approver_signature?: string | null; decided_at?: string | null }[];
 }
 
 interface ApprovalRow {
@@ -94,6 +95,17 @@ export default function TeamBasedApprovalIndex({ approvals, filters, draftCount,
     const currentTo = filters.date_to || '';
     const currentApprover = filters.approver_id || '';
     const currentStatus = filters.status || '';
+    const [filterFrom, setFilterFrom] = React.useState(currentFrom);
+    const [filterTo, setFilterTo] = React.useState(currentTo);
+    const [filterApprover, setFilterApprover] = React.useState(currentApprover);
+    const [filterStatus, setFilterStatus] = React.useState(currentStatus);
+
+    React.useEffect(() => {
+        setFilterFrom(currentFrom);
+        setFilterTo(currentTo);
+        setFilterApprover(currentApprover);
+        setFilterStatus(currentStatus);
+    }, [currentFrom, currentTo, currentApprover, currentStatus]);
 
     const applyFilter = (from: string, to: string, approverId: string, status: string) => {
         router.visit('/team-based-approvals', {
@@ -107,24 +119,33 @@ export default function TeamBasedApprovalIndex({ approvals, filters, draftCount,
         });
     };
 
+    const submitFilters = () => {
+        const from = filterFrom || '';
+        const to = filterTo || filterFrom || '';
+        applyFilter(from, to, filterApprover, filterStatus);
+    };
+
+    const handleFilterKeyDown = (e: React.KeyboardEvent) => {
+        if (e.key === 'Enter') {
+            e.preventDefault();
+            submitFilters();
+        }
+    };
+
     const handleFromChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-        const newFrom = e.target.value;
-        applyFilter(newFrom, currentTo || newFrom, currentApprover, currentStatus);
+        setFilterFrom(e.target.value);
     };
 
     const handleToChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-        const newTo = e.target.value;
-        applyFilter(currentFrom || newTo, newTo, currentApprover, currentStatus);
+        setFilterTo(e.target.value);
     };
 
     const handleApproverChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
-        const newApprover = e.target.value;
-        applyFilter(currentFrom, currentTo || currentFrom, newApprover, currentStatus);
+        setFilterApprover(e.target.value);
     };
 
     const handleStatusChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
-        const newStatus = e.target.value;
-        applyFilter(currentFrom, currentTo || currentFrom, currentApprover, newStatus);
+        setFilterStatus(e.target.value);
     };
 
     // Flatten all sheet items into a single list so that
@@ -181,9 +202,10 @@ export default function TeamBasedApprovalIndex({ approvals, filters, draftCount,
                     .approval-index-table-wrapper tbody td {
                         padding: 8px 4px;
                     }
-                    @page { size: A4 landscape; margin: 6mm; }
+                    @page { size: A4 landscape; margin: 0; }
                     @media print {
-                        body { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+                        html, body { margin: 0 !important; padding: 0 !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+                        .approval-index-print-page { margin: 0 !important; padding: 0 !important; }
                         .approval-index-table-wrapper { overflow: visible !important; }
                         .approval-index-table-wrapper table { width: 100% !important; table-layout: fixed !important; font-size: 7pt !important; }
                         .approval-index-table-wrapper thead th {
@@ -205,7 +227,7 @@ export default function TeamBasedApprovalIndex({ approvals, filters, draftCount,
                 `}</style>
             </Head>
 
-            <div className="mx-auto py-6 px-4">
+            <div className="mx-auto py-6 px-4 print:py-0 print:px-0">
                 {/* Print header - matches formal document: logo left, org+title center, date right; then branch/area/zone row */}
                 <div className="mb-4 approval-index-print-header">
                     <div className="flex items-start justify-between gap-4 mb-2 print:flex print:mb-1">
@@ -237,23 +259,34 @@ export default function TeamBasedApprovalIndex({ approvals, filters, draftCount,
                 </div>
 
                 {/* Filters - only visible on screen */}
-                <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3 mb-4 print:hidden">
-                    <div className="flex flex-wrap items-center gap-2">
-                        <div className="flex items-center gap-1">
-                            <span className="text-xs text-gray-600">From:</span>
+                <div className="flex flex-col gap-2 mb-4 print:hidden">
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                        <div className="flex flex-col gap-0.5">
+                            <span className="text-[10px] font-semibold text-gray-500 uppercase tracking-wider">From</span>
                             <input
                                 type="date"
-                                value={currentFrom}
+                                value={filterFrom}
                                 onChange={handleFromChange}
-                                className="border border-gray-300 rounded-md px-2 py-1 text-sm"
+                                onKeyDown={handleFilterKeyDown}
+                                className="w-full border border-gray-300 rounded-md px-2 py-1.5 text-sm bg-white"
                             />
                         </div>
-                        <div className="flex items-center gap-1">
-                            <span className="text-xs text-gray-600">Approver:</span>
+                        <div className="flex flex-col gap-0.5">
+                            <span className="text-[10px] font-semibold text-gray-500 uppercase tracking-wider">To</span>
+                            <input
+                                type="date"
+                                value={filterTo}
+                                onChange={handleToChange}
+                                onKeyDown={handleFilterKeyDown}
+                                className="w-full border border-gray-300 rounded-md px-2 py-1.5 text-sm bg-white"
+                            />
+                        </div>
+                        <div className="flex flex-col gap-0.5">
+                            <span className="text-[10px] font-semibold text-gray-500 uppercase tracking-wider">Approver</span>
                             <select
-                                value={currentApprover}
+                                value={filterApprover}
                                 onChange={handleApproverChange}
-                                className="border border-gray-300 rounded-md px-2 py-1 text-xs"
+                                className="w-full border border-gray-300 rounded-md px-2 py-1.5 text-xs bg-white"
                             >
                                 <option value="">All Approvers</option>
                                 {approverOptions.map((u) => (
@@ -263,57 +296,214 @@ export default function TeamBasedApprovalIndex({ approvals, filters, draftCount,
                                 ))}
                             </select>
                         </div>
-                        <div className="flex items-center gap-1">
-                            <span className="text-xs text-gray-600">Status:</span>
-                            <select
-                                value={currentStatus}
-                                onChange={handleStatusChange}
-                                className="border border-gray-300 rounded-md px-2 py-1 text-xs"
+                    </div>
+
+                    <div className="flex flex-col sm:flex-row sm:items-end sm:justify-between gap-2">
+                        <div className="grid grid-cols-2 gap-2 sm:flex sm:flex-wrap sm:items-end">
+                            <div className="col-span-2 sm:col-span-1 flex flex-col gap-0.5 min-w-[180px]">
+                                <span className="text-[10px] font-semibold text-gray-500 uppercase tracking-wider">Status</span>
+                                <select
+                                    value={filterStatus}
+                                    onChange={handleStatusChange}
+                                    className="w-full border border-gray-300 rounded-md px-2 py-1.5 text-xs bg-white"
+                                >
+                                    {statusFilterOptions.map((s) => (
+                                        <option key={s.value} value={s.value}>
+                                            {s.label}
+                                        </option>
+                                    ))}
+                                </select>
+                            </div>
+
+                            <Link
+                                href="/team-based-approvals/drafts"
+                                className="col-span-1 inline-flex items-center justify-center gap-1 px-3 py-1.5 rounded-md text-xs font-medium border border-amber-500 text-amber-700 hover:bg-amber-50"
                             >
-                                {statusFilterOptions.map((s) => (
-                                    <option key={s.value} value={s.value}>
-                                        {s.label}
-                                    </option>
-                                ))}
-                            </select>
+                                <span>Draft List</span>
+                                {draftCount > 0 && (
+                                    <span className="inline-flex items-center justify-center min-w-[18px] h-4 px-1 rounded-full bg-amber-600 text-white text-[10px] font-semibold">
+                                        {draftCount}
+                                    </span>
+                                )}
+                            </Link>
+                            <Link
+                                href="/team-based-approvals/create"
+                                className="col-span-1 inline-flex items-center justify-center px-3 py-1.5 rounded-md bg-blue-600 text-white text-xs font-semibold hover:bg-blue-700"
+                            >
+                                New Form
+                            </Link>
                         </div>
-                        <div className="flex items-center gap-1">
-                            <span className="text-xs text-gray-600">To:</span>
-                            <input
-                                type="date"
-                                value={currentTo}
-                                onChange={handleToChange}
-                                className="border border-gray-300 rounded-md px-2 py-1 text-sm"
-                            />
+
+                        <div className="grid grid-cols-2 sm:flex sm:items-end gap-2">
+                            <button
+                                type="button"
+                                onClick={submitFilters}
+                                className="px-4 py-1.5 rounded-md bg-blue-600 text-white text-xs font-semibold hover:bg-blue-700"
+                            >
+                                Apply Filter
+                            </button>
+                            <button
+                                type="button"
+                                onClick={handlePrintPage}
+                                className="px-4 py-1.5 rounded-md bg-gray-800 text-white text-xs font-medium hover:bg-black"
+                            >
+                                Print List
+                            </button>
                         </div>
-                        <button
-                            type="button"
-                            onClick={handlePrintPage}
-                            className="px-3 py-1.5 rounded-md bg-gray-800 text-white text-xs font-medium hover:bg-black"
-                        >
-                            Print List
-                        </button>
-                        <Link
-                            href="/team-based-approvals/drafts"
-                            className="inline-flex items-center gap-1 px-3 py-1.5 rounded-md text-xs font-medium border border-amber-500 text-amber-700 hover:bg-amber-50"
-                        >
-                            <span>Draft List</span>
-                            {draftCount > 0 && (
-                                <span className="inline-flex items-center justify-center min-w-[18px] h-4 px-1 rounded-full bg-amber-600 text-white text-[10px] font-semibold">
-                                    {draftCount}
-                                </span>
-                            )}
-                        </Link>
-                        <Link
-                            href="/team-based-approvals/create"
-                            className="inline-flex items-center px-3 py-1.5 rounded-md bg-blue-600 text-white text-sm hover:bg-blue-700"
-                        >
-                            New Form
-                        </Link>
                     </div>
                 </div>
 
-                <div className="bg-white shadow-sm border border-gray-200 rounded-lg overflow-hidden approval-index-table-wrapper w-full approval-index-print-page">
+                {/* ── MOBILE CARD VIEW ─────────────────────────────────── */}
+                <div className="md:hidden flex flex-col gap-3 print:hidden">
+                    {flatRows.length === 0 && (
+                        <div className="bg-white border border-gray-200 rounded-lg p-6 text-center text-sm text-gray-500">
+                            কোনো Team Based তথ্য পাওয়া যায়নি।
+                        </div>
+                    )}
+
+                    {flatRows.map((row, idx) => (
+                        <div key={`${row.sheet_id}-${idx}`} className="bg-white border border-gray-200 rounded-xl shadow-sm overflow-hidden">
+                            <div className="flex items-center justify-between px-3 py-2 bg-slate-50 border-b border-gray-200">
+                                <div className="flex items-center gap-2">
+                                    <span className="flex items-center justify-center w-5 h-5 rounded-full bg-slate-200 text-slate-600 text-[10px] font-bold">
+                                        {idx + 1}
+                                    </span>
+                                    <div>
+                                        <p className="text-xs font-semibold text-gray-900 leading-tight">{row.member_name}</p>
+                                        <p className="text-[10px] text-gray-500 leading-tight">
+                                            {row.sheet_date || ''}{row.created_at ? ` · ${row.created_at}` : ''}
+                                        </p>
+                                    </div>
+                                </div>
+                                <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold border ${statusClass[row.status] || statusClass.draft}`}>
+                                    {statusLabel[row.status] || row.status}
+                                </span>
+                            </div>
+
+                            <div className="px-3 py-2.5 grid grid-cols-2 gap-x-4 gap-y-1.5 text-xs">
+                                {row.member_code && (
+                                    <div>
+                                        <span className="text-gray-400">সদস্য নম্বর</span>
+                                        <p className="font-medium text-gray-800">{row.member_code}</p>
+                                    </div>
+                                )}
+                                {row.samity_number && (
+                                    <div>
+                                        <span className="text-gray-400">সমিতি নম্বর</span>
+                                        <p className="font-medium text-gray-800">{row.samity_number}</p>
+                                    </div>
+                                )}
+                                <div>
+                                    <span className="text-gray-400">সঞ্চয় (সা/অ/মো)</span>
+                                    <p className="font-medium text-gray-800">
+                                        {row.savings_general ?? '—'} / {row.savings_other ?? '—'} / {row.savings_total ?? '—'}
+                                    </p>
+                                </div>
+                                {row.repaid_loan_amount != null && (
+                                    <div>
+                                        <span className="text-gray-400">পরিশোধিত মূল ঋণ</span>
+                                        <p className="font-medium text-gray-800">
+                                            {row.repaid_loan_amount}{row.repaid_installment_no != null ? ` (${row.repaid_installment_no} দফা)` : ''}
+                                        </p>
+                                    </div>
+                                )}
+                                {row.other_institution_loan_amount != null && (
+                                    <div className="col-span-2">
+                                        <span className="text-gray-400">অন্যান্য সংস্থায় ঋণ</span>
+                                        <p className="font-medium text-gray-800 whitespace-pre-line">{String(row.other_institution_loan_amount)}</p>
+                                    </div>
+                                )}
+                                <div>
+                                    <span className="text-gray-400">প্রস্তাবিত ঋণ</span>
+                                    <p className="font-semibold text-blue-700">{row.proposed_loan_amount ?? '—'}</p>
+                                </div>
+                                {row.loan_term_years != null && (
+                                    <div>
+                                        <span className="text-gray-400">মেয়াদ</span>
+                                        <p className="font-medium text-gray-800">{row.loan_term_years} বছর</p>
+                                    </div>
+                                )}
+                                {row.loan_type && (
+                                    <div>
+                                        <span className="text-gray-400">ঋণের ধরন</span>
+                                        <p className="font-medium text-gray-800">{row.loan_type}</p>
+                                    </div>
+                                )}
+                                {row.project_name && (
+                                    <div className="col-span-2">
+                                        <span className="text-gray-400">প্রকল্প</span>
+                                        <p className="font-medium text-gray-800">{row.project_name}</p>
+                                    </div>
+                                )}
+                                {row.approved_amount != null && (
+                                    <div>
+                                        <span className="text-gray-400">অনুমোদিত ঋণ</span>
+                                        <p className="font-semibold text-green-700">৳ {row.approved_amount}</p>
+                                    </div>
+                                )}
+                                {((row.approvers && row.approvers.length > 0) || row.approver_name) && (
+                                    <div className={row.review_comments ? '' : 'col-span-2'}>
+                                        <span className="text-gray-400">অনুমোদনকারী</span>
+                                        <p className="font-medium text-gray-800">
+                                            {(row.approvers && row.approvers.length > 0
+                                                ? row.approvers.map((a) => a.approver_name).filter(Boolean).join(', ')
+                                                : row.approver_name) || ''}
+                                        </p>
+                                    </div>
+                                )}
+                                {row.review_comments && (
+                                    <div className="col-span-2">
+                                        <span className="text-gray-400">মন্তব্য</span>
+                                        <p className="font-medium text-gray-800 whitespace-pre-line">{row.review_comments}</p>
+                                    </div>
+                                )}
+                                {((row.approvers && row.approvers.length > 0) || row.approver_signature || row.decided_at) && (
+                                    <div className="col-span-2 flex flex-col gap-1.5">
+                                        {(row.approvers && row.approvers.length > 0 ? row.approvers : [{ approver_signature: row.approver_signature, decided_at: row.decided_at }]).map((a, i) => (
+                                            <div key={i} className="flex items-center gap-2">
+                                                {a.approver_signature ? (
+                                                    <button
+                                                        type="button"
+                                                        onClick={() =>
+                                                            setZoomSignatureUrl(
+                                                                a.approver_signature!.startsWith('http')
+                                                                    ? a.approver_signature!
+                                                                    : a.approver_signature!.startsWith('/storage/')
+                                                                    ? a.approver_signature!
+                                                                    : `/storage/${a.approver_signature!}`,
+                                                            )
+                                                        }
+                                                        className="focus:outline-none hover:scale-105 transition-transform"
+                                                        title="স্বাক্ষর বড় করে দেখুন"
+                                                    >
+                                                        <img
+                                                            src={
+                                                                a.approver_signature.startsWith('http')
+                                                                    ? a.approver_signature
+                                                                    : a.approver_signature.startsWith('/storage/')
+                                                                    ? a.approver_signature
+                                                                    : `/storage/${a.approver_signature}`
+                                                            }
+                                                            alt="Signature"
+                                                            className="h-7 object-contain"
+                                                            onError={(e) => {
+                                                                (e.target as HTMLImageElement).style.display = 'none';
+                                                            }}
+                                                        />
+                                                    </button>
+                                                ) : null}
+                                                <span className="text-[10px] text-gray-500">{a.decided_at || ''}</span>
+                                            </div>
+                                        ))}
+                                    </div>
+                                )}
+                            </div>
+                        </div>
+                    ))}
+                </div>
+
+                {/* ── DESKTOP TABLE VIEW ────────────────────────────────── */}
+                <div className="hidden md:block print:block bg-white shadow-sm border border-gray-200 rounded-lg overflow-x-auto approval-index-table-wrapper w-full approval-index-print-page">
                     <table className="w-full border-collapse table-fixed" style={{ tableLayout: 'fixed' }}>
                         <thead className="bg-gray-50">
                             <tr>
@@ -331,6 +521,7 @@ export default function TeamBasedApprovalIndex({ approvals, filters, draftCount,
                                 <th className="border" rowSpan={2}>প্রকল্পের নাম</th>
                                 <th className="border" rowSpan={2}>অনুমোদঙ্কা ঋণ</th>
                                 <th className="border" rowSpan={2}>মন্তব্য</th>
+                                <th className="border" rowSpan={2}>অনুমোদনকারী</th>
                                 <th className="border" rowSpan={2}>অনুমোদনকারীর স্বাক্ষর / তারিখ</th>
                                 <th className="border print:hidden" rowSpan={2}>Status</th>
                             </tr>
@@ -343,7 +534,7 @@ export default function TeamBasedApprovalIndex({ approvals, filters, draftCount,
                         <tbody>
                             {flatRows.length === 0 && (
                                 <tr>
-                                    <td colSpan={18} className="border text-center text-gray-500 py-4">
+                                    <td colSpan={19} className="border text-center text-gray-500 py-4">
                                         কোনো Team Based তথ্য পাওয়া যায়নি।
                                     </td>
                                 </tr>
@@ -359,50 +550,57 @@ export default function TeamBasedApprovalIndex({ approvals, filters, draftCount,
                                     <td className="border">{row.savings_total ?? ''}</td>
                                     <td className="border">{row.repaid_loan_amount ?? ''}</td>
                                     <td className="border">{row.repaid_installment_no ?? ''}</td>
-                                    <td className="border">{row.other_institution_loan_amount ?? ''}</td>
+                                    <td className="border align-top">
+                                    <span className="whitespace-pre-line block text-left">{row.other_institution_loan_amount ?? ''}</span>
+                                </td>
                                     <td className="border">{row.proposed_loan_amount ?? ''}</td>
                                     <td className="border">{row.loan_term_years ?? ''}</td>
                                     <td className="border">{row.loan_type || ''}</td>
                                     <td className="border">{row.project_name || ''}</td>
                                     <td className="border">{row.approved_amount ?? ''}</td>
                                     <td className="border">{row.review_comments || ''}</td>
-                                    <td className="border">
-                                        {row.approver_signature ? (
-                                            <div className="flex flex-col items-center gap-0">
-                                                <button
-                                                    type="button"
-                                                    onClick={() =>
-                                                        setZoomSignatureUrl(
-                                                            row.approver_signature!.startsWith('http')
-                                                                ? row.approver_signature!
-                                                                : row.approver_signature!.startsWith('/storage/')
-                                                                ? row.approver_signature!
-                                                                : `/storage/${row.approver_signature!}`,
-                                                        )
-                                                    }
-                                                    className="focus:outline-none hover:scale-105 transition-transform"
-                                                    title="স্বাক্ষর বড় করে দেখুন"
-                                                >
-                                                    <img
-                                                        src={
-                                                            row.approver_signature.startsWith('http')
-                                                                ? row.approver_signature
-                                                                : row.approver_signature.startsWith('/storage/')
-                                                                ? row.approver_signature
-                                                                : `/storage/${row.approver_signature}`
-                                                        }
-                                                        alt="Signature"
-                                                        className="h-8 max-h-8 object-contain print:!h-8 print:!max-h-8"
-                                                        onError={(e) => {
-                                                            (e.target as HTMLImageElement).style.display = 'none';
-                                                        }}
-                                                    />
-                                                </button>
-                                                <span className="text-gray-700 leading-tight">{row.decided_at || ''}</span>
+                                    <td className="border">{(row.approvers && row.approvers.length > 0 ? row.approvers.map((a) => a.approver_name).filter(Boolean).join(', ') : null) ?? row.approver_name ?? ''}</td>
+                                    <td className="border align-top">
+                                        {(row.approvers && row.approvers.length > 0 ? row.approvers : [{ approver_signature: row.approver_signature, decided_at: row.decided_at }]).map((a, i) => (
+                                            <div key={i} className="flex flex-col items-center gap-0 py-0.5 border-b border-gray-100 last:border-0">
+                                                {a.approver_signature ? (
+                                                    <>
+                                                        <button
+                                                            type="button"
+                                                            onClick={() =>
+                                                                setZoomSignatureUrl(
+                                                                    a.approver_signature!.startsWith('http')
+                                                                        ? a.approver_signature!
+                                                                        : a.approver_signature!.startsWith('/storage/')
+                                                                        ? a.approver_signature!
+                                                                        : `/storage/${a.approver_signature!}`,
+                                                                )
+                                                            }
+                                                            className="focus:outline-none hover:scale-105 transition-transform"
+                                                            title="স্বাক্ষর বড় করে দেখুন"
+                                                        >
+                                                            <img
+                                                                src={
+                                                                    a.approver_signature.startsWith('http')
+                                                                        ? a.approver_signature
+                                                                        : a.approver_signature.startsWith('/storage/')
+                                                                        ? a.approver_signature
+                                                                        : `/storage/${a.approver_signature}`
+                                                                }
+                                                                alt="Signature"
+                                                                className="h-7 max-h-7 object-contain print:!h-7 print:!max-h-7"
+                                                                onError={(e) => {
+                                                                    (e.target as HTMLImageElement).style.display = 'none';
+                                                                }}
+                                                            />
+                                                        </button>
+                                                        <span className="text-[10px] text-gray-700">{a.decided_at || ''}</span>
+                                                    </>
+                                                ) : (
+                                                    <span className="text-[10px] text-gray-500">{a.decided_at || ''}</span>
+                                                )}
                                             </div>
-                                        ) : (
-                                            <span className="text-gray-500">{row.decided_at || ''}</span>
-                                        )}
+                                        ))}
                                     </td>
                                     <td className="border print:hidden">
                                         <span

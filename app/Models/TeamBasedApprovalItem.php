@@ -33,9 +33,7 @@ class TeamBasedApprovalItem extends Model
         'savings_general' => 'decimal:2',
         'savings_other' => 'decimal:2',
         'savings_total' => 'decimal:2',
-        'repaid_loan_amount' => 'decimal:2',
-        'other_institution_loan_amount' => 'decimal:2',
-        'proposed_loan_amount' => 'decimal:2',
+        // repaid_loan_amount, repaid_installment_no, other_institution_loan_amount, proposed_loan_amount: stored as string (text+number)
         'approved_amount' => 'decimal:2',
         'loan_term_years' => 'float',
     ];

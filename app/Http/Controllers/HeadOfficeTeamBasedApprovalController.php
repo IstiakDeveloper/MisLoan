@@ -41,7 +41,7 @@ class HeadOfficeTeamBasedApprovalController extends Controller
             'dmf:id,name,role_id',
             'ed:id,name,role_id',
             'items',
-            'reviews',
+            'reviews.user.role',
         ])
             ->withCount('items')
             ->withSum('items as proposed_total', 'proposed_loan_amount')
@@ -158,10 +158,10 @@ class HeadOfficeTeamBasedApprovalController extends Controller
                     ?? $approval->dmf
                     ?? $approval->ed;
 
-                // Map reviews by item id (per-loan decisions)
+                // All reviews per item (multi-approver chain)
                 $reviewsByItem = $approval->reviews
                     ->whereNotNull('team_based_approval_item_id')
-                    ->keyBy('team_based_approval_item_id');
+                    ->groupBy('team_based_approval_item_id');
 
                 return [
                     'id' => $approval->id,
@@ -179,7 +179,8 @@ class HeadOfficeTeamBasedApprovalController extends Controller
                     'creator_name' => $approval->creator?->name,
                     'approver_name' => $approver?->name,
                     'items' => $approval->items->map(function ($item) use ($reviewsByItem, $approval) {
-                        $review = $reviewsByItem[$item->id] ?? null;
+                        $reviewsForItem = $reviewsByItem->get($item->id, collect())->sortBy('id')->values();
+                        $review = $reviewsForItem->last();
 
                         return [
                             'id' => $item->id,
@@ -198,11 +199,21 @@ class HeadOfficeTeamBasedApprovalController extends Controller
                             'loan_term_years' => $item->loan_term_years,
                             'loan_type' => $item->loan_type,
                             'project_name' => $item->project_name,
-                            // Per-loan approval info
                             'status' => $review?->status ?? $approval->status,
                             'review_comments' => $review?->comments,
                             'approver_signature' => $review?->approver_signature,
                             'decided_at' => optional($review?->decided_at)->toDateString(),
+                            'approvers' => $reviewsForItem->map(function ($r) {
+                                return [
+                                    'approver_name' => $r->user?->name,
+                                    'approver_role' => $r->user?->role?->display_name ?? $r->user?->role?->name,
+                                    'status' => $r->status,
+                                    'approved_amount' => $r->approved_amount,
+                                    'comments' => $r->comments,
+                                    'approver_signature' => $r->approver_signature,
+                                    'decided_at' => optional($r->decided_at)->toDateString(),
+                                ];
+                            })->values()->all(),
                         ];
                     })->values(),
                 ];
@@ -384,10 +395,10 @@ class HeadOfficeTeamBasedApprovalController extends Controller
             'items.*.savings_general' => ['nullable', 'numeric', 'min:0'],
             'items.*.savings_other' => ['nullable', 'numeric', 'min:0'],
             'items.*.savings_total' => ['nullable', 'numeric', 'min:0'],
-            'items.*.repaid_loan_amount' => ['nullable', 'numeric', 'min:0'],
-            'items.*.repaid_installment_no' => ['nullable', 'integer', 'min:0'],
-            'items.*.other_institution_loan_amount' => ['nullable', 'numeric', 'min:0'],
-            'items.*.proposed_loan_amount' => ['nullable', 'numeric', 'min:0'],
+            'items.*.repaid_loan_amount' => ['nullable', 'string', 'max:100'],
+            'items.*.repaid_installment_no' => ['nullable', 'string', 'max:100'],
+            'items.*.other_institution_loan_amount' => ['nullable', 'string', 'max:500'],
+            'items.*.proposed_loan_amount' => ['nullable', 'string', 'max:100'],
             'items.*.approved_amount' => ['nullable', 'numeric', 'min:0'],
             'items.*.loan_term_years' => ['nullable', 'numeric', 'in:0.5,1,1.5,2,3'],
             'items.*.loan_type' => ['nullable', 'string', 'max:100'],
@@ -464,10 +475,10 @@ class HeadOfficeTeamBasedApprovalController extends Controller
             'savings_general' => ['nullable', 'numeric', 'min:0'],
             'savings_other' => ['nullable', 'numeric', 'min:0'],
             'savings_total' => ['nullable', 'numeric', 'min:0'],
-            'repaid_loan_amount' => ['nullable', 'numeric', 'min:0'],
-            'repaid_installment_no' => ['nullable', 'integer', 'min:0'],
-            'other_institution_loan_amount' => ['nullable', 'numeric', 'min:0'],
-            'proposed_loan_amount' => ['nullable', 'numeric', 'min:0'],
+            'repaid_loan_amount' => ['nullable', 'string', 'max:100'],
+            'repaid_installment_no' => ['nullable', 'string', 'max:100'],
+            'other_institution_loan_amount' => ['nullable', 'string', 'max:500'],
+            'proposed_loan_amount' => ['nullable', 'string', 'max:100'],
             'approved_amount' => ['nullable', 'numeric', 'min:0'],
             'loan_term_years' => ['nullable', 'numeric', 'in:0.5,1,1.5,2,3'],
             'loan_type' => ['nullable', 'string', 'max:100'],

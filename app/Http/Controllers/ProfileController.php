@@ -4,7 +4,9 @@ namespace App\Http\Controllers;
 
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Storage;
+use Illuminate\Validation\Rules\Password;
 use Inertia\Inertia;
 use Inertia\Response;
 
@@ -15,14 +17,15 @@ class ProfileController extends Controller
      */
     public function complete(): Response|RedirectResponse
     {
-        $user = auth()->user();
+        /** @var \App\Models\User|null $user */
+        $user = Auth::user();
 
-        if ($user->hasCompleteProfile()) {
+        if ($user && $user->hasCompleteProfile()) {
             return redirect()->route('dashboard');
         }
 
         return Inertia::render('Profile/Complete', [
-            'user' => $user->only(['id', 'name', 'email', 'phone', 'signature']),
+            'user' => $user?->only(['id', 'name', 'email', 'phone', 'signature']),
         ]);
     }
 
@@ -31,7 +34,7 @@ class ProfileController extends Controller
      */
     public function completeStore(Request $request): RedirectResponse
     {
-        $user = auth()->user();
+        $user = $request->user();
 
         $signatureRule = $user->signature
             ? 'nullable|image|mimes:jpeg,png,jpg,gif|max:2048'
@@ -57,16 +60,16 @@ class ProfileController extends Controller
         return redirect()->route('dashboard')->with('success', __('Profile completed. You can now use the application.'));
     }
 
-    public function edit()
+    public function edit(Request $request)
     {
         return Inertia::render('Profile/Edit', [
-            'user' => auth()->user(),
+            'user' => $request->user(),
         ]);
     }
 
     public function update(Request $request)
     {
-        $user = auth()->user();
+        $user = $request->user();
 
         $validated = $request->validate([
             'name' => 'required|string|max:255',
@@ -89,5 +92,20 @@ class ProfileController extends Controller
 
         return redirect()->route('profile.edit')
             ->with('success', 'Profile updated successfully!');
+    }
+
+    public function updatePassword(Request $request): RedirectResponse
+    {
+        $validated = $request->validate([
+            'current_password' => ['required', 'current_password'],
+            'password' => ['required', Password::defaults(), 'confirmed'],
+        ]);
+
+        $request->user()->update([
+            'password' => $validated['password'],
+        ]);
+
+        return redirect()->route('profile.edit')
+            ->with('success', 'Password updated successfully!');
     }
 }

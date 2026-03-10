@@ -30,11 +30,12 @@
             }
         </style>
 
-        <title inertia>{{ config('app.name', 'Laravel') }}</title>
+        <title inertia>{{ str_replace('MisLoan', 'Mis Loan', config('app.name', 'Mis Loan')) }}</title>
 
-        <link rel="icon" href="/favicon.ico" sizes="any">
+        <meta name="theme-color" content="#2563eb">
+        <link rel="manifest" href="/manifest.webmanifest">
         <link rel="icon" href="/favicon.svg" type="image/svg+xml">
-        <link rel="apple-touch-icon" href="/apple-touch-icon.png">
+        <link rel="mask-icon" href="/favicon.svg" color="#2563eb">
 
         <link rel="preconnect" href="https://fonts.bunny.net">
         <link href="https://fonts.bunny.net/css?family=instrument-sans:400,500,600" rel="stylesheet" />

@@ -100,10 +100,10 @@ class TeamBasedApprovalController extends Controller
             'items.*.savings_general' => ['nullable', 'numeric', 'min:0'],
             'items.*.savings_other' => ['nullable', 'numeric', 'min:0'],
             'items.*.savings_total' => ['nullable', 'numeric', 'min:0'],
-            'items.*.repaid_loan_amount' => ['nullable', 'numeric', 'min:0'],
-            'items.*.repaid_installment_no' => ['nullable', 'integer', 'min:0'],
-            'items.*.other_institution_loan_amount' => ['nullable', 'numeric', 'min:0'],
-            'items.*.proposed_loan_amount' => ['nullable', 'numeric', 'min:0'],
+            'items.*.repaid_loan_amount' => ['nullable', 'string', 'max:50'],
+            'items.*.repaid_installment_no' => ['nullable', 'string', 'max:50'],
+            'items.*.other_institution_loan_amount' => ['nullable', 'string', 'max:500'],
+            'items.*.proposed_loan_amount' => ['nullable', 'string', 'max:50'],
             'items.*.loan_term_years' => ['nullable', 'numeric', 'in:0.5,1,1.5,2,3'],
             'items.*.loan_type' => ['nullable', 'string', 'max:100'],
             'items.*.project_name' => ['nullable', 'string', 'max:255'],
@@ -187,7 +187,7 @@ class TeamBasedApprovalController extends Controller
         $approverId = $request->input('approver_id');
         $status = $request->input('status');
 
-        $approvals = TeamBasedApproval::with(['branch', 'creator', 'areaManager', 'zoneManager', 'admf', 'dmf', 'ed', 'items', 'reviews'])
+        $approvals = TeamBasedApproval::with(['branch', 'creator', 'areaManager', 'zoneManager', 'admf', 'dmf', 'ed', 'items', 'reviews.user.role'])
             ->where('branch_id', $branch->id)
             ->where('status', '!=', 'draft')
             ->when($dateFrom && $dateTo, function ($q) use ($dateFrom, $dateTo) {
@@ -214,10 +214,10 @@ class TeamBasedApprovalController extends Controller
                     ?? $approval->dmf
                     ?? $approval->ed;
 
-                // Map reviews by item id for quick lookup
+                // All reviews per item (for multi-approver signature chain)
                 $reviewsByItem = $approval->reviews
                     ->whereNotNull('team_based_approval_item_id')
-                    ->keyBy('team_based_approval_item_id');
+                    ->groupBy('team_based_approval_item_id');
 
                 $snapshot = $approval->last_items_snapshot ?? [];
 
@@ -228,8 +228,8 @@ class TeamBasedApprovalController extends Controller
                     'created_at' => $approval->created_at?->toDateTimeString(),
                     'approver_name' => $approverUser?->name,
                     'items' => $approval->items->map(function (TeamBasedApprovalItem $item) use ($reviewsByItem, $approval, $snapshot) {
-                        /** @var \Illuminate\Support\Collection $reviewsByItem */
-                        $review = $reviewsByItem[$item->id] ?? null;
+                        $reviewsForItem = $reviewsByItem->get($item->id, collect())->sortBy('id')->values();
+                        $review = $reviewsForItem->last(); // latest for status/comments
 
                         $original = null;
                         if (! empty($snapshot) && $item->serial_no !== null) {
@@ -289,6 +289,17 @@ class TeamBasedApprovalController extends Controller
                             'review_comments' => $review?->comments,
                             'approver_signature' => $review?->approver_signature,
                             'decided_at' => optional($review?->decided_at)->toDateString(),
+                            'approvers' => $reviewsForItem->map(function ($r) {
+                                return [
+                                    'approver_name' => $r->user?->name,
+                                    'approver_role' => $r->user?->role?->display_name ?? $r->user?->role?->name,
+                                    'status' => $r->status,
+                                    'approved_amount' => $r->approved_amount,
+                                    'comments' => $r->comments,
+                                    'approver_signature' => $r->approver_signature,
+                                    'decided_at' => optional($r->decided_at)->toDateString(),
+                                ];
+                            })->values()->all(),
                             'changed_fields' => $changedFields,
                         ];
                     })->values(),
@@ -385,7 +396,7 @@ class TeamBasedApprovalController extends Controller
         // - old style: per-sheet (no item id) – still need to show them
         // For RM (area manager): only own reviews.
         // For higher levels (ZM/ADMF/DMF/ED): own reviews + RM reviews under their accessible branches (read-only).
-        $reviewsQuery = TeamBasedApprovalReview::with(['approval.branch', 'approval.items', 'item', 'user.role']);
+        $reviewsQuery = TeamBasedApprovalReview::with(['approval.branch', 'approval.items', 'approval.reviews.user.role', 'item', 'user.role']);
 
         if ($roleName === Role::AREA_MANAGER) {
             $reviewsQuery->where('user_id', $user->id);
@@ -433,6 +444,10 @@ class TeamBasedApprovalController extends Controller
                 // New style: one review per loan item
                 if ($review->team_based_approval_item_id && $review->item) {
                     $item = $review->item;
+                    $reviewsForItem = $approval->reviews
+                        ->where('team_based_approval_item_id', $item->id)
+                        ->sortBy('id')
+                        ->values();
 
                     $itemsPayload = [[
                         'serial_no' => $item->serial_no,
@@ -450,13 +465,27 @@ class TeamBasedApprovalController extends Controller
                         'loan_term_years' => $item->loan_term_years,
                         'loan_type' => $item->loan_type,
                         'project_name' => $item->project_name,
+                        'approvers' => $reviewsForItem->map(function ($r) {
+                            return [
+                                'approver_name' => $r->user?->name,
+                                'approver_role' => $r->user?->role?->display_name ?? $r->user?->role?->name,
+                                'status' => $r->status,
+                                'approved_amount' => $r->approved_amount,
+                                'comments' => $r->comments,
+                                'approver_signature' => $r->approver_signature,
+                                'decided_at' => $r->decided_at?->toDateString(),
+                            ];
+                        })->values()->all(),
                     ]];
 
                     $itemsCount = 1;
                     $proposedTotal = $item->proposed_loan_amount ?? 0;
                 } else {
                     // Old style: one review per sheet – show all items under this sheet
-                    $itemsPayload = $approval->items->map(function (TeamBasedApprovalItem $item) {
+                    $reviewsByItem = $approval->reviews->whereNotNull('team_based_approval_item_id')->groupBy('team_based_approval_item_id');
+                    $itemsPayload = $approval->items->map(function (TeamBasedApprovalItem $item) use ($reviewsByItem) {
+                        $reviewsForItem = $reviewsByItem->get($item->id, collect())->sortBy('id')->values();
+
                         return [
                             'serial_no' => $item->serial_no,
                             'member_name' => $item->member_name,
@@ -473,6 +502,17 @@ class TeamBasedApprovalController extends Controller
                             'loan_term_years' => $item->loan_term_years,
                             'loan_type' => $item->loan_type,
                             'project_name' => $item->project_name,
+                            'approvers' => $reviewsForItem->map(function ($r) {
+                                return [
+                                    'approver_name' => $r->user?->name,
+                                    'approver_role' => $r->user?->role?->display_name ?? $r->user?->role?->name,
+                                    'status' => $r->status,
+                                    'approved_amount' => $r->approved_amount,
+                                    'comments' => $r->comments,
+                                    'approver_signature' => $r->approver_signature,
+                                    'decided_at' => $r->decided_at?->toDateString(),
+                                ];
+                            })->values()->all(),
                         ];
                     })->values();
 
@@ -535,6 +575,31 @@ class TeamBasedApprovalController extends Controller
             })
             ->values();
 
+        // Users who can receive forwards (ZM, ADMF, DMF, ED) and can access current user's branches
+        $accessibleBranchIds = $user->getAccessibleBranches()->pluck('id');
+        $forwardToOptions = User::query()
+            ->with('role')
+            ->active()
+            ->whereHas('role', function ($q) {
+                $q->whereIn('name', [Role::ZONE_MANAGER, Role::ADMF, Role::DMF, Role::ED]);
+            })
+            ->where('id', '!=', $user->id)
+            ->orderBy('name')
+            ->get()
+            ->filter(function (User $u) use ($accessibleBranchIds) {
+                $theirBranchIds = $u->getAccessibleBranches()->pluck('id');
+
+                return $theirBranchIds->intersect($accessibleBranchIds)->isNotEmpty();
+            })
+            ->map(function (User $u) {
+                return [
+                    'id' => $u->id,
+                    'name' => $u->name,
+                    'role_name' => $u->role->display_name ?? $u->role->name,
+                ];
+            })
+            ->values();
+
         return Inertia::render('TeamBased/ApprovalApproverIndex', [
             'reviews' => $reviews,
             'filters' => [
@@ -546,6 +611,7 @@ class TeamBasedApprovalController extends Controller
             ],
             'branches' => $branches,
             'approverOptions' => $approverOptions,
+            'forwardToOptions' => $forwardToOptions,
         ]);
     }
 
@@ -584,6 +650,7 @@ class TeamBasedApprovalController extends Controller
                 $review->update([
                     'status' => 'rejected',
                     'comments' => $data['comments'] ?? null,
+                    'approved_amount' => null,
                     'approver_signature' => $user->signature,
                     'decided_at' => $now,
                 ]);
@@ -595,11 +662,22 @@ class TeamBasedApprovalController extends Controller
                 $review->update([
                     'status' => 'approved',
                     'comments' => $data['comments'] ?? null,
+                    'approved_amount' => $approvedAmount,
                     'approver_signature' => $user->signature,
                     'decided_at' => $now,
                 ]);
 
                 if ($item) {
+                    // If this item was previously approved+forwarded, mark earlier forwarded review(s) as approved
+                    TeamBasedApprovalReview::query()
+                        ->where('team_based_approval_id', $approval->id)
+                        ->where('team_based_approval_item_id', $item->id)
+                        ->where('status', 'forwarded')
+                        ->where('id', '!=', $review->id)
+                        ->update([
+                            'status' => 'approved',
+                        ]);
+
                     // Store approved amount per loan row
                     $item->update([
                         'approved_amount' => $approvedAmount,
@@ -611,6 +689,80 @@ class TeamBasedApprovalController extends Controller
         return redirect()
             ->route('team-based-approvals.approver-index')
             ->with('success', 'সিদ্ধান্ত সফলভাবে সংরক্ষণ হয়েছে।');
+    }
+
+    /**
+     * Forward entire sheet to a superior (উর্ধ্বতন). Current user's pending reviews become 'forwarded',
+     * new pending reviews are created for the selected user.
+     */
+    public function forward(Request $request, TeamBasedApproval $teamBasedApproval)
+    {
+        $user = $request->user();
+
+        $validated = $request->validate([
+            'forward_to_user_id' => ['required', 'integer', 'exists:users,id'],
+            'comments' => ['nullable', 'string', 'max:1000'],
+            'approved_amount' => ['required', 'numeric', 'min:0'],
+        ]);
+
+        $forwardTo = User::with('role')->findOrFail($validated['forward_to_user_id']);
+        $branchId = $teamBasedApproval->branch_id;
+
+        // Only approvers (RM/ZM/ADMF/DMF/ED) can forward
+        if (! in_array($user->role?->name, [Role::AREA_MANAGER, Role::ZONE_MANAGER, Role::ADMF, Role::DMF, Role::ED], true)) {
+            abort(403, 'আপনার জন্য এই কার্য প্রযোজ্য নয়।');
+        }
+
+        if ($forwardTo->id === $user->id) {
+            return redirect()->back()->with('error', 'আপনি নিজের কাছে ফরওয়ার্ড করতে পারবেন না।');
+        }
+
+        // Superior must be ZM, ADMF, DMF or ED and must be able to access this branch
+        $superiorRoles = [Role::ZONE_MANAGER, Role::ADMF, Role::DMF, Role::ED];
+        if (! in_array($forwardTo->role?->name, $superiorRoles, true)) {
+            return redirect()->back()->with('error', 'কেবল জোন ম্যানেজার / ADMF / DMF / ED এর কাছে ফরওয়ার্ড করা যাবে।');
+        }
+
+        if (! $forwardTo->canAccessBranch($branchId)) {
+            return redirect()->back()->with('error', 'নির্বাচিত ব্যবহারকারীর এই শাখায় অ্যাক্সেস নেই।');
+        }
+
+        $pendingReviews = TeamBasedApprovalReview::where('team_based_approval_id', $teamBasedApproval->id)
+            ->where('user_id', $user->id)
+            ->where('status', 'pending')
+            ->get();
+
+        if ($pendingReviews->isEmpty()) {
+            return redirect()->back()->with('error', 'এই শিটের জন্য আপনার কোনো পেন্ডিং রিভিউ নেই।');
+        }
+
+        DB::transaction(function () use ($teamBasedApproval, $user, $forwardTo, $pendingReviews, $validated) {
+            $now = now();
+            foreach ($pendingReviews as $review) {
+                $review->update([
+                    'status' => 'forwarded',
+                    'comments' => ($review->comments ? $review->comments."\n" : '').'ফরওয়ার্ড: '.($validated['comments'] ?? ''),
+                    'approved_amount' => $validated['approved_amount'],
+                    'approver_signature' => $user->signature,
+                    'decided_at' => $now,
+                ]);
+            }
+
+            $level = $forwardTo->role?->name;
+            foreach ($teamBasedApproval->items as $item) {
+                TeamBasedApprovalReview::create([
+                    'team_based_approval_id' => $teamBasedApproval->id,
+                    'team_based_approval_item_id' => $item->id,
+                    'user_id' => $forwardTo->id,
+                    'level' => $level,
+                    'status' => 'pending',
+                ]);
+            }
+        });
+
+        return redirect()
+            ->route('team-based-approvals.approver-index')
+            ->with('success', 'শিট সফলভাবে '.$forwardTo->name.' এর কাছে ফরওয়ার্ড হয়েছে।');
     }
 
     /**
@@ -637,10 +789,10 @@ class TeamBasedApprovalController extends Controller
             'savings_general' => ['nullable', 'numeric', 'min:0'],
             'savings_other' => ['nullable', 'numeric', 'min:0'],
             'savings_total' => ['nullable', 'numeric', 'min:0'],
-            'repaid_loan_amount' => ['nullable', 'numeric', 'min:0'],
-            'repaid_installment_no' => ['nullable', 'integer', 'min:0'],
-            'other_institution_loan_amount' => ['nullable', 'numeric', 'min:0'],
-            'proposed_loan_amount' => ['nullable', 'numeric', 'min:0'],
+            'repaid_loan_amount' => ['nullable', 'string', 'max:50'],
+            'repaid_installment_no' => ['nullable', 'string', 'max:50'],
+            'other_institution_loan_amount' => ['nullable', 'string', 'max:500'],
+            'proposed_loan_amount' => ['nullable', 'string', 'max:50'],
             'loan_term_years' => ['nullable', 'numeric', 'in:0.5,1,1.5,2,3'],
             'loan_type' => ['nullable', 'string', 'max:100'],
             'project_name' => ['nullable', 'string', 'max:255'],
@@ -818,10 +970,10 @@ class TeamBasedApprovalController extends Controller
             'items.*.savings_general' => ['nullable', 'numeric', 'min:0'],
             'items.*.savings_other' => ['nullable', 'numeric', 'min:0'],
             'items.*.savings_total' => ['nullable', 'numeric', 'min:0'],
-            'items.*.repaid_loan_amount' => ['nullable', 'numeric', 'min:0'],
-            'items.*.repaid_installment_no' => ['nullable', 'integer', 'min:0'],
-            'items.*.other_institution_loan_amount' => ['nullable', 'numeric', 'min:0'],
-            'items.*.proposed_loan_amount' => ['nullable', 'numeric', 'min:0'],
+            'items.*.repaid_loan_amount' => ['nullable', 'string', 'max:50'],
+            'items.*.repaid_installment_no' => ['nullable', 'string', 'max:50'],
+            'items.*.other_institution_loan_amount' => ['nullable', 'string', 'max:500'],
+            'items.*.proposed_loan_amount' => ['nullable', 'string', 'max:50'],
             'items.*.loan_term_years' => ['nullable', 'numeric', 'in:0.5,1,1.5,2,3'],
             'items.*.loan_type' => ['nullable', 'string', 'max:100'],
             'items.*.project_name' => ['nullable', 'string', 'max:255'],

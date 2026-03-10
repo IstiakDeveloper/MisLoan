@@ -219,11 +219,12 @@ export default function HeadOfficeTeamBasedItemEdit({ branch, item }: Props) {
                                 <label className="block text-xs font-medium text-gray-700 mb-1">
                                     অন্যান্য সংস্থায় গ্রহণকৃত ঋণের পরিমাণ
                                 </label>
-                                <input
-                                    type="text"
+                                <textarea
+                                    rows={2}
                                     value={data.other_institution_loan_amount}
                                     onChange={(e) => handleNumberChange('other_institution_loan_amount', e.target.value)}
-                                    className="w-full border border-gray-300 rounded-md px-2 py-1 text-right"
+                                    placeholder="যেমন: আশা ৫০০০, ব্রাক ২০০০ (প্রতি লাইনে বা কমা দিয়ে)"
+                                    className="w-full border border-gray-300 rounded-md px-2 py-1 resize-y"
                                 />
                             </div>
                         </div>

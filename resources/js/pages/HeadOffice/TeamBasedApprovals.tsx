@@ -37,7 +37,7 @@ interface ItemRow {
     savings_total?: number | null;
     repaid_loan_amount?: number | null;
     repaid_installment_no?: number | null;
-    other_institution_loan_amount?: number | null;
+    other_institution_loan_amount?: string | null;
     proposed_loan_amount?: number | null;
     approved_amount?: number | null;
     loan_term_years?: number | null;
@@ -47,6 +47,7 @@ interface ItemRow {
     review_comments?: string | null;
     approver_signature?: string | null;
     decided_at?: string | null;
+    approvers?: { approver_name?: string | null; approver_role?: string | null; status?: string; approver_signature?: string | null; decided_at?: string | null }[];
 }
 
 interface ApprovalRow {
@@ -242,9 +243,10 @@ export default function TeamBasedApprovals({ approvals, filters, stats, zones, a
                     .approval-index-table-wrapper tbody td {
                         padding: 8px 4px;
                     }
-                    @page { size: A4 landscape; margin: 6mm; }
+                    @page { size: A4 landscape; margin: 0; }
                     @media print {
-                        body { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+                        html, body { margin: 0 !important; padding: 0 !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+                        .approval-index-print-page { margin: 0 !important; padding: 0 !important; }
                         .approval-index-table-wrapper { overflow: visible !important; }
                         .approval-index-table-wrapper table { width: 100% !important; table-layout: fixed !important; font-size: 7pt !important; }
                         .approval-index-table-wrapper thead th {
@@ -267,7 +269,7 @@ export default function TeamBasedApprovals({ approvals, filters, stats, zones, a
                 `}</style>
             </Head>
 
-            <div className="mx-auto py-6 px-4 space-y-4 approval-index-print-page">
+            <div className="mx-auto py-6 px-4 space-y-4 approval-index-print-page print:py-0 print:px-0">
                 {/* Print-style header similar to branch ApprovalIndex */}
                 <div className="mb-4 approval-index-print-header">
                     <div className="flex items-start justify-between gap-4 mb-2 print:flex print:mb-1">
@@ -484,46 +486,50 @@ export default function TeamBasedApprovals({ approvals, filters, stats, zones, a
                                     <td className="border px-2 py-1">{row.loan_type || ''}</td>
                                     <td className="border px-2 py-1">{row.project_name || ''}</td>
                                     <td className="border px-2 py-1">{row.review_comments || ''}</td>
-                                    <td className="border px-2 py-1">
-                                        {row.approver_signature ? (
-                                            <div className="flex flex-col items-start gap-0.5">
-                                                <button
-                                                    type="button"
-                                                    onClick={() =>
-                                                        setZoomSignatureUrl(
-                                                            row.approver_signature!.startsWith('http')
-                                                                ? row.approver_signature!
-                                                                : row.approver_signature!.startsWith('/storage/')
-                                                                ? row.approver_signature!
-                                                                : `/storage/${row.approver_signature!}`,
-                                                        )
-                                                    }
-                                                    className="focus:outline-none hover:scale-105 transition-transform"
-                                                    title="স্বাক্ষর বড় করে দেখুন"
-                                                >
-                                                    <img
-                                                        src={
-                                                            row.approver_signature.startsWith('http')
-                                                                ? row.approver_signature
-                                                                : row.approver_signature.startsWith('/storage/')
-                                                                ? row.approver_signature
-                                                                : `/storage/${row.approver_signature}`
-                                                        }
-                                                        alt="Signature"
-                                                        className="h-6 max-h-6 object-contain"
-                                                        onError={(e) => {
-                                                            (e.target as HTMLImageElement).style.display = 'none';
-                                                        }}
-                                                    />
-                                                </button>
-                                                <span>{row.decided_at || ''}</span>
+                                    <td className="border px-2 py-1 align-top">
+                                        {(row.approvers && row.approvers.length > 0 ? row.approvers : [{ approver_signature: row.approver_signature, decided_at: row.decided_at, approver_name: row.approver_name }]).map((a, i) => (
+                                            <div key={i} className="flex flex-col items-start gap-0.5 py-0.5 border-b border-gray-100 last:border-0">
+                                                {a.approver_signature ? (
+                                                    <>
+                                                        <button
+                                                            type="button"
+                                                            onClick={() =>
+                                                                setZoomSignatureUrl(
+                                                                    a.approver_signature!.startsWith('http')
+                                                                        ? a.approver_signature!
+                                                                        : a.approver_signature!.startsWith('/storage/')
+                                                                        ? a.approver_signature!
+                                                                        : `/storage/${a.approver_signature!}`,
+                                                                )
+                                                            }
+                                                            className="focus:outline-none hover:scale-105 transition-transform"
+                                                            title="স্বাক্ষর বড় করে দেখুন"
+                                                        >
+                                                            <img
+                                                                src={
+                                                                    a.approver_signature.startsWith('http')
+                                                                        ? a.approver_signature
+                                                                        : a.approver_signature.startsWith('/storage/')
+                                                                        ? a.approver_signature
+                                                                        : `/storage/${a.approver_signature}`
+                                                                }
+                                                                alt="Signature"
+                                                                className="h-6 max-h-6 object-contain"
+                                                                onError={(e) => {
+                                                                    (e.target as HTMLImageElement).style.display = 'none';
+                                                                }}
+                                                            />
+                                                        </button>
+                                                        <span className="text-xs">{a.decided_at || ''}</span>
+                                                    </>
+                                                ) : (
+                                                    <span className="text-xs text-gray-500">{a.decided_at || ''}</span>
+                                                )}
                                             </div>
-                                        ) : (
-                                            <span>{row.decided_at || ''}</span>
-                                        )}
+                                        ))}
                                     </td>
                                     <td className="border px-2 py-1 text-center capitalize">{row.status}</td>
-                                    <td className="border px-2 py-1">{row.approver_name || '-'}</td>
+                                    <td className="border px-2 py-1">{row.approvers && row.approvers.length > 0 ? row.approvers.map((a) => a.approver_name).filter(Boolean).join(', ') : (row.approver_name || '-')}</td>
                                     <td className="border px-2 py-1 text-center">
                                         <div className="flex items-center justify-center gap-1">
                                             <button

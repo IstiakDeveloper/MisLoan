@@ -364,14 +364,15 @@ export default function HeadOfficeTeamBasedApprovalEdit({ branch, approverOption
                                                     onChange={(e) => handleRowChange(index, 'repaid_installment_no', e.target.value)}
                                                 />
                                             </td>
-                                            <td className="border border-gray-300 px-1 py-0.5">
-                                                <input
-                                                    type="text"
-                                                    className="w-full border border-gray-200 rounded px-1 py-0.5 text-[11px] text-right"
+                                            <td className="border border-gray-300 px-1 py-0.5 align-top">
+                                                <textarea
+                                                    rows={2}
+                                                    className="w-full min-w-[120px] border border-gray-200 rounded px-1 py-0.5 text-[11px] resize-y"
                                                     value={row.other_institution_loan_amount}
                                                     onChange={(e) =>
                                                         handleRowChange(index, 'other_institution_loan_amount', e.target.value)
                                                     }
+                                                    placeholder="আশা ৫০০০, ব্রাক ২০০০"
                                                 />
                                             </td>
                                             <td className="border border-gray-300 px-1 py-0.5">
