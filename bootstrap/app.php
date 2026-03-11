@@ -8,6 +8,7 @@ use App\Http\Middleware\CheckPermission;
 use App\Http\Middleware\CheckBranchUser;
 use App\Http\Middleware\CheckHeadOffice;
 use App\Http\Middleware\EnsureCanViewMemberAdmission;
+use App\Http\Middleware\CheckMaintenanceMode;
 use Illuminate\Foundation\Application;
 use Illuminate\Foundation\Configuration\Exceptions;
 use Illuminate\Foundation\Configuration\Middleware;
@@ -26,6 +27,7 @@ return Application::configure(basePath: dirname(__DIR__))
             HandleAppearance::class,
             HandleInertiaRequests::class,
             AddLinkHeadersForPreloadedAssets::class,
+            CheckMaintenanceMode::class,
         ]);
 
         $middleware->alias([

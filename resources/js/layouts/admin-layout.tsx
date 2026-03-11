@@ -25,7 +25,8 @@ import {
     FileText,
     Wallet,
     Settings,
-    Download
+    Download,
+    Wrench,
 } from 'lucide-react';
 import { useIsMobile } from '@/hooks/use-mobile';
 import { usePwaInstallPrompt } from '@/hooks/usePwaInstallPrompt';
@@ -49,6 +50,7 @@ interface Flash {
 interface PageProps extends Record<string, unknown> {
     auth: { user: User };
     flash: Flash;
+    siteMaintenance?: boolean;
     unreadSubmissionsCount?: number;
     badgeCounts?: {
         pendingLoanApplications?: number;
@@ -66,7 +68,7 @@ const SETUP_PATHS = ['/loan-categories', '/loan-products', '/savings-products', 
 
 export default function AdminLayout({ children }: AdminLayoutProps) {
     const page = usePage<PageProps>();
-    const { auth, flash, badgeCounts = {} } = page.props;
+    const { auth, flash, siteMaintenance = false, badgeCounts = {} } = page.props;
     const path = (() => {
         try {
             return new URL(page.url).pathname;
@@ -125,7 +127,12 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
         roleName === 'ed';
 
     const isFieldOfficer = roleName === 'field_officer';
+    const isSuperAdmin = roleName === 'super_admin';
     const { canInstall, promptInstall, isInstalled, isStandalone, platform } = usePwaInstallPrompt();
+
+    const handleMaintenanceToggle = () => {
+        router.post('/admin/maintenance/toggle', {}, { preserveScroll: true });
+    };
     const [showInstallDialog, setShowInstallDialog] = useState(false);
 
     useEffect(() => {
@@ -393,6 +400,41 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
                             </>
                         )}
                     </nav>
+
+                    {/* Super Admin: Site maintenance switch */}
+                    {isSuperAdmin && (
+                        <div className="border-t border-gray-100 px-2 py-2">
+                            <button
+                                type="button"
+                                onClick={handleMaintenanceToggle}
+                                title={siteMaintenance ? 'মেইনটেন্যান্স বন্ধ করুন' : 'মেইনটেন্যান্স চালু করুন'}
+                                className={`flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 text-left transition-colors ${
+                                    siteMaintenance
+                                        ? 'bg-amber-100 text-amber-800 hover:bg-amber-200'
+                                        : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                                }`}
+                            >
+                                <Wrench className="w-4 h-4 flex-shrink-0" />
+                                {sidebarOpen && (
+                                    <span className="text-xs font-medium truncate flex-1">
+                                        {siteMaintenance ? 'মেইনটেন্যান্স চালু' : 'মেইনটেন্যান্স'}
+                                    </span>
+                                )}
+                                <span
+                                    className={`flex h-5 w-9 flex-shrink-0 rounded-full border transition-colors ${
+                                        siteMaintenance ? 'border-amber-400 bg-amber-500' : 'border-gray-300 bg-gray-300'
+                                    }`}
+                                    aria-hidden
+                                >
+                                    <span
+                                        className={`mt-0.5 block h-4 w-4 rounded-full bg-white shadow-sm transition-transform ${
+                                            siteMaintenance ? 'translate-x-4' : 'translate-x-0.5'
+                                        }`}
+                                    />
+                                </span>
+                            </button>
+                        </div>
+                    )}
 
                     {/* User footer */}
                     <div className="border-t border-gray-100 p-2">

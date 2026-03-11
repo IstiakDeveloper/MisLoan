@@ -35,6 +35,8 @@
         <meta name="theme-color" content="#2563eb">
         <link rel="manifest" href="/manifest.webmanifest">
         <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+        <link rel="icon" href="/icons/icon-192.png" type="image/png" sizes="192x192">
+        <link rel="icon" href="/icons/icon-512.png" type="image/png" sizes="512x512">
         <link rel="mask-icon" href="/favicon.svg" color="#2563eb">
 
         <link rel="preconnect" href="https://fonts.bunny.net">

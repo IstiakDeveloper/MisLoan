@@ -1,5 +1,5 @@
-import { useState } from 'react';
-import { Head, router } from '@inertiajs/react';
+import { useState, useRef, ChangeEvent } from 'react';
+import { Head, router, usePage } from '@inertiajs/react';
 import AdminLayout from '@/layouts/admin-layout';
 import { Plus, Search, MoreVertical, Edit, Trash2, Power, PowerOff, KeyRound, Filter, Send, X } from 'lucide-react';
 import UserModal from './Components/UserModal';
@@ -45,6 +45,7 @@ interface User {
     branches?: Branch[];
     is_active: boolean;
     has_all_access: boolean;
+    signature?: string | null;
 }
 
 interface PaginationLink {
@@ -92,6 +93,15 @@ export default function Index({ users, roles, zones, areas, branches, filters }:
     const [filterStatus, setFilterStatus] = useState(filters.is_active || '');
     const [bulkMailModalOpen, setBulkMailModalOpen] = useState(false);
     const [excludeRoleIds, setExcludeRoleIds] = useState<number[]>([]);
+    const [branchSummaryModalOpen, setBranchSummaryModalOpen] = useState(false);
+    const [selectedBranchIdForSummary, setSelectedBranchIdForSummary] = useState<string>('');
+    const [targetEmailForSummary, setTargetEmailForSummary] = useState<string>('');
+
+    const page = usePage() as { props: { auth?: { user?: { has_all_access?: boolean } } } };
+    const authUser = page.props.auth?.user;
+    const canUpdateSignature = !!authUser?.has_all_access;
+
+    const fileInputRefs = useRef<Record<number, HTMLInputElement | null>>({});
 
     const handleAddNew = () => {
         setSelectedUser(null);
@@ -147,6 +157,33 @@ export default function Index({ users, roles, zones, areas, branches, filters }:
         });
     };
 
+    const handleOpenBranchSummaryModal = () => {
+        setSelectedBranchIdForSummary(filterBranch || '');
+        setTargetEmailForSummary('');
+        setBranchSummaryModalOpen(true);
+    };
+
+    const handleSendBranchSummary = () => {
+        if (!selectedBranchIdForSummary) {
+            alert('Please select a branch or All Branches.');
+            return;
+        }
+
+        const isAll = selectedBranchIdForSummary === 'all';
+
+        router.post(
+            '/users/send-branch-summary',
+            {
+                branch_id: isAll ? undefined : selectedBranchIdForSummary,
+                email: isAll ? undefined : (targetEmailForSummary || undefined),
+                all_branches: isAll,
+            },
+            {
+                onSuccess: () => setBranchSummaryModalOpen(false),
+            }
+        );
+    };
+
     const handleSearch = (e: React.FormEvent) => {
         e.preventDefault();
         router.get('/users', { search: searchQuery }, { preserveState: true });
@@ -183,6 +220,30 @@ export default function Index({ users, roles, zones, areas, branches, filters }:
         }
     };
 
+    const handleOpenSignaturePicker = (userId: number) => {
+        const input = fileInputRefs.current[userId];
+        if (input) {
+            input.click();
+        }
+    };
+
+    const handleSignatureChange = (userId: number, event: ChangeEvent<HTMLInputElement>) => {
+        const file = event.target.files?.[0];
+        if (!file) return;
+
+        const formData: Record<string, any> = {
+            signature: file,
+        };
+
+        router.post(`/users/${userId}/signature`, formData, {
+            forceFormData: true,
+        });
+
+        // reset value so same file can be re-selected if needed
+        event.target.value = '';
+        setOpenDropdown(null);
+    };
+
     return (
         <AdminLayout>
             <Head title="User Management" />
@@ -197,6 +258,13 @@ export default function Index({ users, roles, zones, areas, branches, filters }:
                         </p>
                     </div>
                     <div className="flex items-center gap-3">
+                        <button
+                            onClick={handleOpenBranchSummaryModal}
+                            className="flex items-center gap-2 px-4 py-2 bg-teal-600 text-white rounded-lg hover:bg-teal-700 transition-colors shadow-sm"
+                        >
+                            <Send className="w-4 h-4" />
+                            Branch User List Mail
+                        </button>
                         <button
                             onClick={handleOpenBulkMailModal}
                             className="flex items-center gap-2 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors shadow-sm"
@@ -485,7 +553,7 @@ export default function Index({ users, roles, zones, areas, branches, filters }:
                                                     <MoreVertical className="w-4 h-4 text-gray-600" />
                                                 </button>
                                                 {openDropdown === user.id && (
-                                                    <div className="absolute right-0 mt-2 w-48 bg-white rounded-lg shadow-lg border border-gray-200 py-1 z-10 animate-in fade-in slide-in-from-top-2 duration-200">
+                                                    <div className="absolute right-0 mt-2 w-56 bg-white rounded-lg shadow-lg border border-gray-200 py-1 z-10 animate-in fade-in slide-in-from-top-2 duration-200">
                                                         <button
                                                             onClick={() => handleEdit(user)}
                                                             className="w-full flex items-center gap-2 px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 transition-colors"
@@ -523,6 +591,26 @@ export default function Index({ users, roles, zones, areas, branches, filters }:
                                                             <Send className="w-4 h-4" />
                                                             Send Login Email
                                                         </button>
+                                                        {canUpdateSignature && (
+                                                            <>
+                                                                <button
+                                                                    onClick={() => handleOpenSignaturePicker(user.id)}
+                                                                    className="w-full flex items-center gap-2 px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 transition-colors"
+                                                                >
+                                                                    <KeyRound className="w-4 h-4" />
+                                                                    Update Signature
+                                                                </button>
+                                                                <input
+                                                                    type="file"
+                                                                    accept="image/png,image/jpg,image/jpeg,image/gif"
+                                                                    className="hidden"
+                                                                    ref={(el) => {
+                                                                        fileInputRefs.current[user.id] = el;
+                                                                    }}
+                                                                    onChange={(e) => handleSignatureChange(user.id, e)}
+                                                                />
+                                                            </>
+                                                        )}
                                                         <button
                                                             onClick={() => handleDelete(user.id, user.name)}
                                                             className="w-full flex items-center gap-2 px-4 py-2 text-sm text-red-600 hover:bg-red-50 transition-colors"
@@ -620,6 +708,81 @@ export default function Index({ users, roles, zones, areas, branches, filters }:
                                 type="button"
                                 onClick={handleSendAllCredentials}
                                 className="flex items-center gap-2 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700"
+                            >
+                                <Send className="w-4 h-4" />
+                                মেইল পাঠান
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* Branch Summary Mail Modal */}
+            {branchSummaryModalOpen && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50">
+                    <div className="bg-white rounded-xl shadow-xl max-w-md w-full p-6">
+                        <div className="flex items-center justify-between mb-4">
+                            <h3 className="text-lg font-semibold text-gray-900">
+                                Branch User List – ইমেইল পাঠান
+                            </h3>
+                            <button
+                                type="button"
+                                onClick={() => setBranchSummaryModalOpen(false)}
+                                className="p-1 rounded-lg text-gray-500 hover:bg-gray-100"
+                            >
+                                <X className="w-5 h-5" />
+                            </button>
+                        </div>
+                        <p className="text-sm text-gray-600 mb-4">
+                            নির্বাচিত শাখার Branch User, Branch Manager এবং Field Officer দের তথ্যসহ সুন্দর grid আকারে ইমেইল যাবে।
+                        </p>
+                        <div className="space-y-4 mb-5">
+                            <div>
+                                <label className="block text-sm font-medium text-gray-700 mb-1">
+                                    Branch নির্বাচন করুন
+                                </label>
+                                <select
+                                    value={selectedBranchIdForSummary}
+                                    onChange={(e) => setSelectedBranchIdForSummary(e.target.value)}
+                                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-teal-500 focus:border-transparent"
+                                >
+                                    <option value="">-- Select Branch --</option>
+                                    <option value="all">All Branches (prottek branch er jonno alada mail)</option>
+                                    {branches.map((branch) => (
+                                        <option key={branch.id} value={branch.id}>
+                                            {branch.name}
+                                        </option>
+                                    ))}
+                                </select>
+                                <p className="mt-1 text-xs text-gray-500">
+                                    আগের ফিল্টারের branch থাকলে সেটাই auto select হয়ে যাবে।
+                                </p>
+                            </div>
+                            <div>
+                                <label className="block text-sm font-medium text-gray-700 mb-1">
+                                    Target Email (optional)
+                                </label>
+                                <input
+                                    type="email"
+                                    value={targetEmailForSummary}
+                                    onChange={(e) => setTargetEmailForSummary(e.target.value)}
+                                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-teal-500 focus:border-transparent"
+                                    placeholder="যদি নির্দিষ্ট ইমেইল এ পাঠাতে চান (না দিলে branch এর ইমেইল ব্যবহার হবে)"
+                                />
+                            </div>
+                        </div>
+                        <div className="flex gap-2 justify-end">
+                            <button
+                                type="button"
+                                onClick={() => setBranchSummaryModalOpen(false)}
+                                className="px-4 py-2 text-gray-700 bg-gray-100 rounded-lg hover:bg-gray-200"
+                            >
+                                বাতিল
+                            </button>
+                            <button
+                                type="button"
+                                onClick={handleSendBranchSummary}
+                                className="flex items-center gap-2 px-4 py-2 bg-teal-600 text-white rounded-lg hover:bg-teal-700"
                             >
                                 <Send className="w-4 h-4" />
                                 মেইল পাঠান

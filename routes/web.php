@@ -22,6 +22,7 @@ use App\Http\Controllers\TeamBasedApprovalPrintController;
 use App\Http\Controllers\LoanCategoryController;
 use App\Http\Controllers\LoanProductController;
 use App\Http\Controllers\SavingsProductController;
+use App\Http\Controllers\MaintenanceController;
 
 Route::get('/', function () {
     if (auth()->check()) {
@@ -32,6 +33,9 @@ Route::get('/', function () {
 
 Route::middleware(['auth', 'verified'])->group(function () {
     Route::get('dashboard', [DashboardController::class, 'index'])->name('dashboard');
+
+    // Site maintenance toggle (Super Admin only)
+    Route::post('admin/maintenance/toggle', [MaintenanceController::class, 'toggle'])->name('admin.maintenance.toggle');
 
     // Profile completion (required before using app if phone/pin/signature missing)
     Route::get('profile/complete', [ProfileController::class, 'complete'])->name('profile.complete');
@@ -85,11 +89,13 @@ Route::middleware(['auth', 'verified'])->group(function () {
         Route::get('users', [UserController::class, 'index'])->name('users.index');
         Route::post('users', [UserController::class, 'store'])->name('users.store');
         Route::put('users/{user}', [UserController::class, 'update'])->name('users.update');
+        Route::post('users/{user}/signature', [UserController::class, 'updateSignature'])->name('users.update-signature');
         Route::delete('users/{user}', [UserController::class, 'destroy'])->name('users.destroy');
         Route::patch('users/{user}/toggle-status', [UserController::class, 'toggleStatus'])->name('users.toggle-status');
         Route::post('users/{user}/reset-password', [UserController::class, 'resetPassword'])->name('users.reset-password');
         Route::post('users/{user}/send-credentials', [UserController::class, 'sendCredentials'])->name('users.send-credentials');
         Route::post('users/send-credentials-all', [UserController::class, 'sendCredentialsToAll'])->name('users.send-credentials-all');
+        Route::post('users/send-branch-summary', [UserController::class, 'sendBranchSummary'])->name('users.send-branch-summary');
     });
 
     // Samity Management Routes - Only for SuperAdmin/Head Office

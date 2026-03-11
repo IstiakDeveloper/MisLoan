@@ -41,8 +41,8 @@
                                         <tr>
                                             <td style="padding:4px 0;width:120px;color:#6b7280;">Login URL</td>
                                             <td style="padding:4px 0;">
-                                                <a href="{{ url('/') }}" style="color:#2563eb;text-decoration:none;">
-                                                    {{ url('/') }}
+                                                <a href="{{ url('/login') }}" style="color:#2563eb;text-decoration:none;">
+                                                    {{ url('/login') }}
                                                 </a>
                                             </td>
                                         </tr>

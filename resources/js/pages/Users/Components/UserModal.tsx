@@ -1,5 +1,5 @@
 import { FormEvent, useEffect, useState } from 'react';
-import { useForm } from '@inertiajs/react';
+import { useForm, usePage } from '@inertiajs/react';
 import { X } from 'lucide-react';
 
 interface Role {
@@ -43,6 +43,7 @@ interface User {
     branches?: Branch[];
     is_active: boolean;
     has_all_access: boolean;
+    signature?: string | null;
 }
 
 interface Props {
@@ -56,6 +57,9 @@ interface Props {
 }
 
 export default function UserModal({ isOpen, onClose, user, roles, zones, areas, branches }: Props) {
+    const page = usePage() as { props: { auth?: { user?: { has_all_access?: boolean; role?: { name: string } } } } };
+    const authUser = page.props.auth?.user;
+    const canEditSignature = !!authUser?.has_all_access;
     const [selectedZone, setSelectedZone] = useState<string>('');
     const [selectedArea, setSelectedArea] = useState<string>('');
     const [filteredAreas, setFilteredAreas] = useState<Area[]>(areas);
@@ -82,6 +86,7 @@ export default function UserModal({ isOpen, onClose, user, roles, zones, areas, 
         branch_ids: [] as number[],
         is_active: user?.is_active ?? true,
         has_all_access: user?.has_all_access ?? false,
+        signature: null as File | null,
     });
 
     // Check role type
@@ -133,6 +138,7 @@ export default function UserModal({ isOpen, onClose, user, roles, zones, areas, 
                 branch_ids: branchIds,
                 is_active: user.is_active,
                 has_all_access: user.has_all_access,
+                signature: null,
             });
         } else {
             setSelectedZone('');
@@ -264,6 +270,12 @@ export default function UserModal({ isOpen, onClose, user, roles, zones, areas, 
             : [...selectedBranchIds, branchId];
         setSelectedBranchIds(newIds);
         setData('branch_ids', newIds);
+    };
+
+    const getSignatureUrl = (value?: string | null) => {
+        if (!value) return null;
+        if (value.startsWith('http') || value.startsWith('/storage/')) return value;
+        return `/storage/${value}`;
     };
 
     if (!isOpen) return null;
@@ -704,6 +716,44 @@ export default function UserModal({ isOpen, onClose, user, roles, zones, areas, 
                             </label>
                         </div>
                     </div>
+
+                    {/* Signature (Super Admin only) */}
+                    {canEditSignature && (
+                        <div>
+                            <h4 className="text-sm font-semibold text-gray-900 mb-3">Signature (for approvals)</h4>
+                            <div className="space-y-3">
+                                {user?.signature && (
+                                    <div>
+                                        <p className="text-xs text-gray-500 mb-1">Current Signature</p>
+                                        <img
+                                            src={getSignatureUrl(user.signature) || ''}
+                                            alt="Signature"
+                                            className="h-16 w-32 object-contain border rounded bg-white"
+                                            onError={(e) => {
+                                                (e.target as HTMLImageElement).style.display = 'none';
+                                            }}
+                                        />
+                                    </div>
+                                )}
+                                <div>
+                                    <label htmlFor="signature" className="block text-sm font-medium text-gray-700 mb-1">
+                                        Upload New Signature
+                                    </label>
+                                    <input
+                                        id="signature"
+                                        type="file"
+                                        accept="image/png,image/jpg,image/jpeg,image/gif"
+                                        onChange={(e) => setData('signature', e.target.files?.[0] || null)}
+                                        className="block w-full text-sm text-gray-700 file:mr-4 file:py-2 file:px-3 file:rounded-lg file:border-0 file:text-sm file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100"
+                                    />
+                                    <p className="text-xs text-gray-500 mt-1">
+                                        Optional. PNG/JPG/GIF, max 2MB. This signature will be used on approvals.
+                                    </p>
+                                    {errors.signature && <p className="text-red-500 text-sm mt-1">{errors.signature}</p>}
+                                </div>
+                            </div>
+                        </div>
+                    )}
 
                     {/* Footer */}
                     <div className="flex items-center justify-end gap-3 pt-4 border-t border-gray-200">

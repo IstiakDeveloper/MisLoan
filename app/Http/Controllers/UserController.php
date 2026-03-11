@@ -11,6 +11,7 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Mail;
+use Illuminate\Support\Facades\Storage;
 use Illuminate\Validation\Rules\Password;
 use Inertia\Inertia;
 
@@ -26,8 +27,8 @@ class UserController extends Controller
                       ->orWhere('username', 'like', "%{$search}%")
                       ->orWhere('phone', 'like', "%{$search}%");
             })
-            ->when($request->role_id, function ($query, $roleId) {
-                $query->where('role_id', $roleId);
+            ->when($request->filled('role_id'), function ($query) use ($request) {
+                $query->where('role_id', $request->integer('role_id'));
             })
             ->when($request->zone_id, function ($query, $zoneId) {
                 $query->where(function($q) use ($zoneId) {
@@ -47,8 +48,9 @@ class UserController extends Controller
                       ->orWhereHas('branches', fn($sq) => $sq->where('branches.id', $branchId));
                 });
             })
-            ->when($request->has('is_active'), function ($query) use ($request) {
-                $query->where('is_active', $request->is_active);
+            ->when($request->filled('is_active'), function ($query) use ($request) {
+                $isActive = $request->input('is_active') === '1';
+                $query->where('is_active', $isActive);
             })
             ->latest()
             ->paginate(15)
@@ -124,7 +126,7 @@ class UserController extends Controller
 
     public function update(Request $request, User $user)
     {
-        $validated = $request->validate([
+        $rules = [
             'name' => 'required|string|max:255',
             'username' => 'required|string|max:255|unique:users,username,' . $user->id,
             'email' => 'required|string|email|max:255|unique:users,email,' . $user->id,
@@ -142,7 +144,14 @@ class UserController extends Controller
             'branch_ids.*' => 'exists:branches,id',
             'is_active' => 'boolean',
             'has_all_access' => 'boolean',
-        ]);
+        ];
+
+        // Only super admin / full-access users can update another user's signature
+        if (Auth::user()?->has_all_access) {
+            $rules['signature'] = 'nullable|image|mimes:jpeg,png,jpg,gif|max:2048';
+        }
+
+        $validated = $request->validate($rules);
 
         if (!empty($validated['password'])) {
             $validated['password'] = Hash::make($validated['password']);
@@ -150,7 +159,15 @@ class UserController extends Controller
             unset($validated['password']);
         }
 
-        $user->update([
+        // Handle signature upload for super admin / full-access users
+        if (Auth::user()?->has_all_access && $request->hasFile('signature')) {
+            if ($user->signature) {
+                Storage::disk('public')->delete($user->signature);
+            }
+            $validated['signature'] = $request->file('signature')->store('signatures/users', 'public');
+        }
+
+        $updateData = [
             'name' => $validated['name'],
             'username' => $validated['username'],
             'email' => $validated['email'],
@@ -161,7 +178,13 @@ class UserController extends Controller
             'branch_id' => $validated['branch_id'] ?? null,
             'is_active' => $validated['is_active'] ?? true,
             'has_all_access' => $validated['has_all_access'] ?? false,
-        ] + (isset($validated['password']) ? ['password' => $validated['password']] : []));
+        ] + (isset($validated['password']) ? ['password' => $validated['password']] : []);
+
+        if (isset($validated['signature'])) {
+            $updateData['signature'] = $validated['signature'];
+        }
+
+        $user->update($updateData);
 
         // Sync multi-assignments
         $user->zones()->sync($validated['zone_ids'] ?? []);
@@ -255,5 +278,120 @@ class UserController extends Controller
             return back()->with('error', "Sent to {$sent}/{$users->count()} users. Last error: " . ($lastError ?? 'unknown'));
         }
         return back()->with('error', 'No mail sent. Error: ' . ($lastError ?? 'Check MAIL_* in .env and /clear'));
+    }
+
+    public function sendBranchSummary(Request $request)
+    {
+        $validated = $request->validate([
+            'branch_id' => 'nullable|exists:branches,id',
+            'email' => 'nullable|email',
+            'all_branches' => 'sometimes|boolean',
+        ]);
+
+        $allBranches = $validated['all_branches'] ?? false;
+
+        if ($allBranches) {
+            $branches = Branch::with(['users.role'])
+                ->where('is_active', true)
+                ->get();
+
+            $totalSent = 0;
+            $skipped = 0;
+
+            foreach ($branches as $branch) {
+                $users = $branch->users()
+                    ->whereHas('role', function ($q) {
+                        $q->whereIn('name', ['branch_manager', 'branch_user', 'field_officer']);
+                    })
+                    ->orderBy('role_id')
+                    ->orderBy('name')
+                    ->get();
+
+                if ($users->isEmpty() || !$branch->email) {
+                    $skipped++;
+                    continue;
+                }
+
+                try {
+                    Mail::to($branch->email)->send(new \App\Mail\BranchUsersSummaryMail($branch, $users));
+                    $totalSent++;
+                } catch (\Throwable $e) {
+                    // Continue with other branches; collect minimal info
+                    $skipped++;
+                }
+            }
+
+            if ($totalSent > 0) {
+                return back()->with(
+                    'success',
+                    "Branch user summary email sent for {$totalSent} branch(es)." .
+                    ($skipped > 0 ? " Skipped {$skipped} branch(es) (no email/users)." : '')
+                );
+            }
+
+            return back()->with('error', 'No branch user summary email sent. Please ensure branches have email and users.');
+        }
+
+        if (empty($validated['branch_id'])) {
+            return back()->with('error', 'Please select a branch.');
+        }
+
+        $branch = Branch::with(['users.role'])->findOrFail($validated['branch_id']);
+
+        $users = $branch->users()
+            ->whereHas('role', function ($q) {
+                $q->whereIn('name', ['branch_manager', 'branch_user', 'field_officer']);
+            })
+            ->orderBy('role_id')
+            ->orderBy('name')
+            ->get();
+
+        if ($users->isEmpty()) {
+            return back()->with('error', 'No branch users (Branch Manager / Branch User / Field Officer) found for this branch.');
+        }
+
+        $toEmail = $validated['email'] ?? $branch->email;
+
+        if (!$toEmail) {
+            return back()->with('error', 'No target email address provided and branch email not set.');
+        }
+
+        try {
+            Mail::to($toEmail)->send(new \App\Mail\BranchUsersSummaryMail($branch, $users));
+
+            return back()->with(
+                'success',
+                "Branch user summary email sent to {$toEmail} for branch {$branch->name}."
+            );
+        } catch (\Throwable $e) {
+            return back()->with('error', 'Mail failed: ' . $e->getMessage());
+        }
+    }
+
+    /**
+     * Update only the user's signature (Super Admin / Head Office via separate button).
+     */
+    public function updateSignature(Request $request, User $user)
+    {
+        $actor = Auth::user();
+
+        if (! $actor || ! $actor->has_all_access) {
+            abort(403, 'Only Super Admin can update user signatures.');
+        }
+
+        $validated = $request->validate([
+            'signature' => 'required|image|mimes:jpeg,png,jpg,gif|max:2048',
+        ]);
+
+        if ($request->hasFile('signature')) {
+            if ($user->signature) {
+                Storage::disk('public')->delete($user->signature);
+            }
+
+            $path = $request->file('signature')->store('signatures/users', 'public');
+            $user->update(['signature' => $path]);
+        }
+
+        return back()->with('success', 'User signature updated successfully.');
     }
 }

@@ -2,6 +2,24 @@ import { Head, router, usePage } from '@inertiajs/react';
 import AdminLayout from '@/layouts/admin-layout';
 import React from 'react';
 
+// বাংলা সংখ্যাকে ইংরেজিতে রূপান্তর (সঞ্চয় ফিল্ডে হিসাবের জন্য)
+function normalizeNumericInput(value: string): string {
+    if (!value) return '';
+    const banglaToEnglishMap: Record<string, string> = {
+        '০': '0', '১': '1', '২': '2', '৩': '3', '৪': '4',
+        '৫': '5', '৬': '6', '৭': '7', '৮': '8', '৯': '9',
+    };
+    let result = '';
+    for (const ch of value) {
+        result += banglaToEnglishMap[ch] ?? ch;
+    }
+    return result.replace(/,/g, '');
+}
+function toNumber(value: string): number {
+    const n = parseFloat(normalizeNumericInput(value));
+    return Number.isFinite(n) ? n : 0;
+}
+
 interface ItemRow {
     serial_no: number;
     member_name: string;
@@ -241,24 +259,30 @@ export default function TeamBasedApprovalApproverIndex({ reviews, filters, branc
         setEditModal((prev) => {
             if (!prev.row) return prev;
 
-            const isNumericField =
+            // শুধু সঞ্চয় ও ঋণের মেয়াদ সংখ্যা; বাকি সব (নাম, কোড, পরিশোধিত ঋণ, প্রস্তাবিত ঋণ ইত্যাদি) স্ট্রিং — বাংলা লেখা যাবে
+            const isSavingsOrTerm =
                 field === 'savings_general' ||
                 field === 'savings_other' ||
                 field === 'savings_total' ||
-                field === 'repaid_loan_amount' ||
-                field === 'repaid_installment_no' ||
-                field === 'other_institution_loan_amount' ||
-                field === 'proposed_loan_amount' ||
                 field === 'loan_term_years';
 
-            const parsedValue = isNumericField ? (value === '' ? null : Number(value)) : value;
+            let parsedValue: string | number | null;
+            if (isSavingsOrTerm) {
+                if (field === 'loan_term_years') {
+                    parsedValue = value === '' ? null : Number(value);
+                } else {
+                    const normalized = normalizeNumericInput(value);
+                    parsedValue = normalized === '' ? null : toNumber(normalized);
+                }
+            } else {
+                parsedValue = value;
+            }
 
             const nextRow: ItemRow & { review_id: number } = {
                 ...prev.row,
                 [field]: parsedValue as any,
             };
 
-            // Auto-calculate total savings inside modal
             if (field === 'savings_general' || field === 'savings_other') {
                 const g = nextRow.savings_general ?? 0;
                 const o = nextRow.savings_other ?? 0;
@@ -281,20 +305,21 @@ export default function TeamBasedApprovalApproverIndex({ reviews, filters, branc
 
         const { reviewId, row } = editModal;
 
+        // Backend expects strings for repaid_*, proposed_loan_amount (ApprovalForm RowItem uses strings)
         const payload: any = {
-            member_name: row.member_name,
-            member_code: row.member_code ?? null,
-            samity_number: row.samity_number ?? null,
+            member_name: row.member_name || '',
+            member_code: row.member_code ?? '',
+            samity_number: row.samity_number ?? '',
             savings_general: row.savings_general ?? null,
             savings_other: row.savings_other ?? null,
             savings_total: row.savings_total ?? null,
-            repaid_loan_amount: row.repaid_loan_amount ?? null,
-            repaid_installment_no: row.repaid_installment_no ?? null,
-            other_institution_loan_amount: row.other_institution_loan_amount ?? null,
-            proposed_loan_amount: row.proposed_loan_amount ?? null,
+            repaid_loan_amount: row.repaid_loan_amount != null ? String(row.repaid_loan_amount) : '',
+            repaid_installment_no: row.repaid_installment_no != null ? String(row.repaid_installment_no) : '',
+            other_institution_loan_amount: row.other_institution_loan_amount ?? '',
+            proposed_loan_amount: row.proposed_loan_amount != null ? String(row.proposed_loan_amount) : '',
             loan_term_years: row.loan_term_years ?? null,
-            loan_type: row.loan_type ?? null,
-            project_name: row.project_name ?? null,
+            loan_type: row.loan_type ?? '',
+            project_name: row.project_name ?? '',
         };
 
         router.post(`/team-based-approvals/reviews/${reviewId}/update-item`, payload, {
@@ -1241,131 +1266,164 @@ export default function TeamBasedApprovalApproverIndex({ reviews, filters, branc
                                 Close
                             </button>
                         </div>
-                        <div className="px-4 py-4 space-y-3 text-xs">
-                            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                        <div className="p-3 sm:p-6 grid grid-cols-1 gap-3 text-sm">
+                            <div className="grid grid-cols-1 gap-3">
                                 <div>
-                                    <label className="block text-gray-700 mb-1">সদস্যের নাম</label>
+                                    <label className="block text-[10px] font-semibold text-gray-500 uppercase tracking-wider mb-1">সদস্যের নাম</label>
                                     <input
                                         type="text"
                                         value={editModal.row.member_name}
                                         onChange={(e) => handleEditModalChange('member_name', e.target.value)}
-                                        className="w-full border border-gray-300 rounded-md px-2 py-1"
+                                        placeholder="সদস্যের নাম"
+                                        className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm"
                                     />
                                 </div>
-                                <div>
-                                    <label className="block text-gray-700 mb-1">সদস্য নম্বর</label>
-                                    <input
-                                        type="text"
-                                        value={editModal.row.member_code || ''}
-                                        onChange={(e) => handleEditModalChange('member_code', e.target.value)}
-                                        className="w-full border border-gray-300 rounded-md px-2 py-1"
-                                    />
+                                <div className="grid grid-cols-2 gap-3">
+                                    <div>
+                                        <label className="block text-[10px] font-semibold text-gray-500 uppercase tracking-wider mb-1">সদস্য নম্বর</label>
+                                        <input
+                                            type="text"
+                                            value={editModal.row.member_code || ''}
+                                            onChange={(e) => handleEditModalChange('member_code', e.target.value)}
+                                            placeholder="কোড / ০ = নতুন"
+                                            className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm"
+                                        />
+                                    </div>
+                                    <div>
+                                        <label className="block text-[10px] font-semibold text-gray-500 uppercase tracking-wider mb-1">সমিতি নম্বর</label>
+                                        <input
+                                            type="text"
+                                            value={editModal.row.samity_number || ''}
+                                            onChange={(e) => handleEditModalChange('samity_number', e.target.value)}
+                                            placeholder="সমিতি নং"
+                                            className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm"
+                                        />
+                                    </div>
                                 </div>
-                                <div>
-                                    <label className="block text-gray-700 mb-1">সমিতি নম্বর</label>
-                                    <input
-                                        type="text"
-                                        value={editModal.row.samity_number || ''}
-                                        onChange={(e) => handleEditModalChange('samity_number', e.target.value)}
-                                        className="w-full border border-gray-300 rounded-md px-2 py-1"
-                                    />
-                                </div>
+                            </div>
+
+                            <div className="rounded-lg border border-gray-200 bg-gray-50 p-3">
+                                <p className="text-[10px] font-semibold text-gray-500 uppercase tracking-wider mb-2">সঞ্চয়</p>
                                 <div className="grid grid-cols-3 gap-2">
                                     <div>
-                                        <label className="block text-gray-700 mb-1">সঞ্চয় (সাধারণ)</label>
+                                        <label className="block text-[10px] font-medium text-gray-600 mb-1">সাধারণ</label>
                                         <input
-                                            type="number"
+                                            type="text"
                                             value={editModal.row.savings_general ?? ''}
                                             onChange={(e) => handleEditModalChange('savings_general', e.target.value)}
-                                            className="w-full border border-gray-300 rounded-md px-2 py-1"
+                                            inputMode="decimal"
+                                            className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm text-right bg-white"
                                         />
                                     </div>
                                     <div>
-                                        <label className="block text-gray-700 mb-1">সঞ্চয় (অন্যান্য)</label>
+                                        <label className="block text-[10px] font-medium text-gray-600 mb-1">অন্যান্য</label>
                                         <input
-                                            type="number"
+                                            type="text"
                                             value={editModal.row.savings_other ?? ''}
                                             onChange={(e) => handleEditModalChange('savings_other', e.target.value)}
-                                            className="w-full border border-gray-300 rounded-md px-2 py-1"
+                                            inputMode="decimal"
+                                            className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm text-right bg-white"
                                         />
                                     </div>
                                     <div>
-                                        <label className="block text-gray-700 mb-1">সঞ্চয় (মোট)</label>
+                                        <label className="block text-[10px] font-medium text-gray-600 mb-1">মোট</label>
                                         <input
-                                            type="number"
+                                            type="text"
                                             value={editModal.row.savings_total ?? ''}
                                             onChange={(e) => handleEditModalChange('savings_total', e.target.value)}
-                                            className="w-full border border-gray-300 rounded-md px-2 py-1"
+                                            inputMode="decimal"
+                                            className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm text-right bg-white"
                                         />
                                     </div>
                                 </div>
+                                <p className="text-[11px] text-gray-600 mt-2">
+                                    টিপস: সাধারণ/অন্যান্য লিখলে মোট অটো হিসাব হবে।
+                                </p>
+                            </div>
+
+                            <div className="grid grid-cols-2 gap-3">
                                 <div>
-                                    <label className="block text-gray-700 mb-1">পরিশোধিত ঋণের পরিমাণ</label>
+                                    <label className="block text-[10px] font-semibold text-gray-500 uppercase tracking-wider mb-1">পরিশোধিত মূল ঋণ</label>
                                     <input
-                                        type="number"
-                                        value={editModal.row.repaid_loan_amount ?? ''}
+                                        type="text"
+                                        value={editModal.row.repaid_loan_amount != null ? String(editModal.row.repaid_loan_amount) : ''}
                                         onChange={(e) => handleEditModalChange('repaid_loan_amount', e.target.value)}
-                                        className="w-full border border-gray-300 rounded-md px-2 py-1"
+                                        className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm text-right"
                                     />
                                 </div>
                                 <div>
-                                    <label className="block text-gray-700 mb-1">পরিশোধিত দফা নম্বর</label>
+                                    <label className="block text-[10px] font-semibold text-gray-500 uppercase tracking-wider mb-1">পরিশোধিত দফা</label>
                                     <input
-                                        type="number"
-                                        value={editModal.row.repaid_installment_no ?? ''}
+                                        type="text"
+                                        value={editModal.row.repaid_installment_no != null ? String(editModal.row.repaid_installment_no) : ''}
                                         onChange={(e) => handleEditModalChange('repaid_installment_no', e.target.value)}
-                                        className="w-full border border-gray-300 rounded-md px-2 py-1"
+                                        className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm text-right"
                                     />
                                 </div>
+                            </div>
+
+                            <div>
+                                <label className="block text-[10px] font-semibold text-gray-500 uppercase tracking-wider mb-1">
+                                    অন্যান্য সংস্থায় ঋণ (ঐচ্ছিক)
+                                </label>
+                                <textarea
+                                    rows={3}
+                                    value={editModal.row.other_institution_loan_amount ?? ''}
+                                    onChange={(e) =>
+                                        handleEditModalChange('other_institution_loan_amount', e.target.value)
+                                    }
+                                    placeholder="যেমন: আশা ৫০০০, ব্রাক ২০০০ (প্রতি লাইনে বা কমা দিয়ে)"
+                                    title="একাধিক সংস্থা লিখতে প্রতি লাইনে বা কমা দিয়ে আলাদা করুন"
+                                    className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm resize-y"
+                                />
+                            </div>
+
+                            <div className="grid grid-cols-2 gap-3">
                                 <div>
-                                    <label className="block text-gray-700 mb-1">
-                                        অন্যান্য সংস্থায় গ্রহণকৃত ঋণের পরিমাণ
-                                    </label>
-                                    <textarea
-                                        rows={3}
-                                        value={editModal.row.other_institution_loan_amount ?? ''}
-                                        onChange={(e) =>
-                                            handleEditModalChange('other_institution_loan_amount', e.target.value)
-                                        }
-                                        placeholder="যেমন: আশা ৫০০০, ব্রাক ২০০০ (প্রতি লাইনে বা কমা দিয়ে)"
-                                        className="w-full border border-gray-300 rounded-md px-2 py-1 resize-y"
-                                    />
-                                </div>
-                                <div>
-                                    <label className="block text-gray-700 mb-1">প্রস্তাবিত ঋণের পরিমাণ</label>
+                                    <label className="block text-[10px] font-semibold text-gray-500 uppercase tracking-wider mb-1">প্রস্তাবিত ঋণ</label>
                                     <input
-                                        type="number"
-                                        value={editModal.row.proposed_loan_amount ?? ''}
+                                        type="text"
+                                        value={editModal.row.proposed_loan_amount != null ? String(editModal.row.proposed_loan_amount) : ''}
                                         onChange={(e) => handleEditModalChange('proposed_loan_amount', e.target.value)}
-                                        className="w-full border border-gray-300 rounded-md px-2 py-1"
+                                        className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm text-right"
                                     />
                                 </div>
                                 <div>
-                                    <label className="block text-gray-700 mb-1">ঋণের মেয়াদ (বছর)</label>
-                                    <input
-                                        type="number"
-                                        step={0.5}
-                                        value={editModal.row.loan_term_years ?? ''}
+                                    <label className="block text-[10px] font-semibold text-gray-500 uppercase tracking-wider mb-1">ঋণের মেয়াদ</label>
+                                    <select
+                                        value={editModal.row.loan_term_years != null ? String(editModal.row.loan_term_years) : ''}
                                         onChange={(e) => handleEditModalChange('loan_term_years', e.target.value)}
-                                        className="w-full border border-gray-300 rounded-md px-2 py-1"
-                                    />
+                                        className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm bg-white"
+                                    >
+                                        <option value="">নির্বাচন</option>
+                                        <option value="0.5">৬ মাস</option>
+                                        <option value="1">১ বছর</option>
+                                        <option value="1.5">১.৫ বছর</option>
+                                        <option value="2">২ বছর</option>
+                                        <option value="3">৩ বছর</option>
+                                    </select>
                                 </div>
+                            </div>
+
+                            <div className="grid grid-cols-1 gap-3">
                                 <div>
-                                    <label className="block text-gray-700 mb-1">ঋণের ধরন</label>
+                                    <label className="block text-[10px] font-semibold text-gray-500 uppercase tracking-wider mb-1">ঋণের ধরন</label>
                                     <input
                                         type="text"
                                         value={editModal.row.loan_type || ''}
                                         onChange={(e) => handleEditModalChange('loan_type', e.target.value)}
-                                        className="w-full border border-gray-300 rounded-md px-2 py-1"
+                                        placeholder="ঋণের ধরন"
+                                        className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm"
                                     />
                                 </div>
                                 <div>
-                                    <label className="block text-gray-700 mb-1">প্রকল্পের নাম</label>
+                                    <label className="block text-[10px] font-semibold text-gray-500 uppercase tracking-wider mb-1">প্রকল্পের নাম</label>
                                     <input
                                         type="text"
                                         value={editModal.row.project_name || ''}
                                         onChange={(e) => handleEditModalChange('project_name', e.target.value)}
-                                        className="w-full border border-gray-300 rounded-md px-2 py-1"
+                                        placeholder="প্রকল্পের নাম"
+                                        className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm"
                                     />
                                 </div>
                             </div>
