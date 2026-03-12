@@ -108,11 +108,27 @@ class SamityController extends Controller
             ->with('success', 'Samity deleted successfully!');
     }
 
-    // API endpoint to get samities by branch
+    // API endpoint to get samities by branch (and optional filters)
     public function getByBranch(Request $request, $branchId)
     {
-        $samities = Samity::where('branch_id', $branchId)
-            ->active()
+        $query = Samity::where('branch_id', $branchId)
+            ->active();
+
+        if ($request->filled('search')) {
+            $search = $request->get('search');
+
+            $query->where(function ($q) use ($search) {
+                $q->where('samity_name', 'like', "%{$search}%")
+                    ->orWhere('samity_code', 'like', "%{$search}%")
+                    ->orWhere('samity_name_bn', 'like', "%{$search}%");
+            });
+        }
+
+        if ($request->filled('limit')) {
+            $query->limit((int) $request->get('limit', 50));
+        }
+
+        $samities = $query
             ->orderBy('samity_name')
             ->get(['id', 'samity_code', 'samity_name', 'samity_name_bn']);
 

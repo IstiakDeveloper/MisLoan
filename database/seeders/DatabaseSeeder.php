@@ -25,6 +25,7 @@ class DatabaseSeeder extends Seeder
             LoanCategorySeeder::class,
             SavingsProductAutomationSeeder::class,
             SavingsProductSeeder::class,
+            SamitySeeder::class,
 
         ]);
 

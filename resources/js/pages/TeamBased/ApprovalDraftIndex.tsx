@@ -114,6 +114,13 @@ export default function TeamBasedApprovalDraftIndex({ approvals, filters }: Prop
                             >
                                 Apply Filter
                             </button>
+                            <button
+                                type="button"
+                                onClick={() => applyFilter('', '')}
+                                className="inline-flex items-center justify-center px-3 py-1.5 rounded-md bg-gray-200 text-gray-700 text-xs font-semibold hover:bg-gray-300"
+                            >
+                                সব ডেটা
+                            </button>
                             <Link
                                 href="/team-based-approvals"
                                 className="inline-flex items-center justify-center px-3 py-1.5 rounded-md bg-slate-900 text-white text-xs font-semibold hover:bg-black"

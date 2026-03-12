@@ -816,14 +816,17 @@ class TeamBasedApprovalController extends Controller
             abort(403, 'Draft list শুধুমাত্র শাখা ব্যবহারকারীরা দেখতে পারবেন।');
         }
 
-        $dateFrom = $request->input('date_from', now()->toDateString());
-        $dateTo = $request->input('date_to', now()->toDateString());
+        // Default: show all drafts. Apply date filter only when user selects dates.
+        $dateFrom = $request->input('date_from');
+        $dateTo = $request->input('date_to');
 
         $approvals = TeamBasedApproval::with(['branch', 'creator', 'areaManager', 'zoneManager', 'admf', 'dmf', 'ed'])
             ->where('branch_id', $branch->id)
             ->where('status', 'draft')
-            ->when($dateFrom && $dateTo, function ($q) use ($dateFrom, $dateTo) {
-                $q->whereBetween('sheet_date', [$dateFrom, $dateTo]);
+            ->when($dateFrom || $dateTo, function ($q) use ($dateFrom, $dateTo) {
+                $from = $dateFrom ?: $dateTo;
+                $to = $dateTo ?: $dateFrom;
+                $q->whereBetween('sheet_date', [$from, $to]);
             })
             ->latest()
             ->paginate(20)
@@ -846,8 +849,8 @@ class TeamBasedApprovalController extends Controller
         return Inertia::render('TeamBased/ApprovalDraftIndex', [
             'approvals' => $approvals,
             'filters' => [
-                'date_from' => $dateFrom,
-                'date_to' => $dateTo,
+                'date_from' => $dateFrom ?? '',
+                'date_to' => $dateTo ?? '',
             ],
         ]);
     }

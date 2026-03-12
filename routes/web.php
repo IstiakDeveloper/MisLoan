@@ -1,6 +1,7 @@
 <?php
 
 use Illuminate\Support\Facades\Route;
+use Illuminate\Support\Facades\Redirect;
 use Inertia\Inertia;
 use App\Http\Controllers\OrganizationController;
 use App\Http\Controllers\RoleController;
@@ -24,11 +25,12 @@ use App\Http\Controllers\LoanProductController;
 use App\Http\Controllers\SavingsProductController;
 use App\Http\Controllers\MaintenanceController;
 
+// Home: unauthenticated → login; authenticated → dashboard (no Inertia, plain redirect)
 Route::get('/', function () {
     if (auth()->check()) {
-        return redirect()->route('dashboard');
+        return Redirect::route('dashboard', [], 302);
     }
-    return redirect()->route('login');
+    return Redirect::route('login', [], 302);
 })->name('home');
 
 Route::middleware(['auth', 'verified'])->group(function () {
