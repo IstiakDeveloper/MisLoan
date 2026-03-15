@@ -15,6 +15,7 @@ class TeamBasedApprovalItem extends Model
         'serial_no',
         'member_name',
         'member_code',
+        'member_phone',
         'samity_number',
         'savings_general',
         'savings_other',
@@ -30,11 +31,11 @@ class TeamBasedApprovalItem extends Model
     ];
 
     protected $casts = [
-        'savings_general' => 'decimal:2',
-        'savings_other' => 'decimal:2',
-        'savings_total' => 'decimal:2',
+        'savings_general' => 'integer',
+        'savings_other' => 'integer',
+        'savings_total' => 'integer',
         // repaid_loan_amount, repaid_installment_no, other_institution_loan_amount, proposed_loan_amount: stored as string (text+number)
-        'approved_amount' => 'decimal:2',
+        'approved_amount' => 'integer',
         'loan_term_years' => 'float',
     ];
 

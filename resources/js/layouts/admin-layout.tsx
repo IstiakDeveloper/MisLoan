@@ -150,8 +150,9 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
         { name: 'Pending Approvals', href: '/approvals', icon: ClipboardCheck, badge: badgeCounts.pendingApprovals || 0 },
     ];
 
+    // Field officer: only Member Admissions
     const branchMenuItems = isFieldOfficer
-        ? branchMenuItemsFull.slice(0, 3)
+        ? branchMenuItemsFull.filter((m) => m.name === 'Member Admissions')
         : roleName === 'branch_user'
         ? branchMenuItemsFull.slice(0, 5)
         : roleName === 'branch_manager'

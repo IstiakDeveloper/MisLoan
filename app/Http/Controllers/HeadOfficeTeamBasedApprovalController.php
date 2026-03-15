@@ -90,9 +90,17 @@ class HeadOfficeTeamBasedApprovalController extends Controller
             $query->where('branch_id', (int) $request->input('branch_id'));
         }
 
-        // Status filter
+        // Status filter by team_based_approval_reviews.status (case-insensitive); item list filtered in response
+        $statusFilter = '';
         if ($request->filled('status')) {
-            $query->where('status', $request->input('status'));
+            $statusFilter = strtolower(trim((string) $request->input('status')));
+            $query->whereHas('reviews', function ($q) use ($statusFilter) {
+                if ($statusFilter === 'under_review') {
+                    $q->whereRaw('LOWER(status) IN (?, ?)', ['under_review', 'forwarded']);
+                } else {
+                    $q->whereRaw('LOWER(status) = ?', [$statusFilter]);
+                }
+            });
         }
 
         // Simple search on member / sheet information via items (member name / code / project)
@@ -141,17 +149,21 @@ class HeadOfficeTeamBasedApprovalController extends Controller
 
         $stats = [
             'total' => (clone $statsQuery)->count(),
-            'draft' => (clone $statsQuery)->where('status', 'draft')->count(),
-            'pending' => (clone $statsQuery)->where('status', 'pending')->count(),
-            'approved' => (clone $statsQuery)->where('status', 'approved')->count(),
-            'rejected' => (clone $statsQuery)->where('status', 'rejected')->count(),
+            'draft' => (clone $statsQuery)->whereRaw('LOWER(status) = ?', ['draft'])->count(),
+            'pending' => (clone $statsQuery)->whereRaw('LOWER(status) = ?', ['pending'])->count(),
+            'approved' => (clone $statsQuery)->whereHas('reviews', function ($q) {
+                $q->whereRaw('LOWER(status) = ?', ['approved']);
+            })->count(),
+            'rejected' => (clone $statsQuery)->whereHas('reviews', function ($q) {
+                $q->whereRaw('LOWER(status) = ?', ['rejected']);
+            })->count(),
         ];
 
         $approvals = $query
             ->orderBy('sheet_date', 'desc')
             ->orderBy('id', 'desc')
             ->paginate(20)
-            ->through(function (TeamBasedApproval $approval) {
+            ->through(function (TeamBasedApproval $approval) use ($statusFilter) {
                 $approver = $approval->areaManager
                     ?? $approval->zoneManager
                     ?? $approval->admf
@@ -162,6 +174,57 @@ class HeadOfficeTeamBasedApprovalController extends Controller
                 $reviewsByItem = $approval->reviews
                     ->whereNotNull('team_based_approval_item_id')
                     ->groupBy('team_based_approval_item_id');
+
+                $items = $approval->items->map(function ($item) use ($reviewsByItem, $approval) {
+                    $reviewsForItem = $reviewsByItem->get($item->id, collect())->sortBy('id')->values();
+                    $review = $reviewsForItem->last();
+                    $itemStatus = $review?->status ?? $approval->status;
+
+                    return [
+                        'id' => $item->id,
+                        'serial_no' => $item->serial_no,
+                        'member_name' => $item->member_name,
+                        'member_code' => $item->member_code,
+                        'member_phone' => $item->member_phone,
+                        'samity_number' => $item->samity_number,
+                        'savings_general' => $item->savings_general !== null ? (int) round((float) $item->savings_general) : null,
+                        'savings_other' => $item->savings_other !== null ? (int) round((float) $item->savings_other) : null,
+                        'savings_total' => $item->savings_total !== null ? (int) round((float) $item->savings_total) : null,
+                        'repaid_loan_amount' => $item->repaid_loan_amount,
+                        'repaid_installment_no' => $item->repaid_installment_no,
+                        'other_institution_loan_amount' => $item->other_institution_loan_amount,
+                        'proposed_loan_amount' => $item->proposed_loan_amount,
+                        'approved_amount' => $item->approved_amount !== null ? (int) round((float) $item->approved_amount) : null,
+                        'loan_term_years' => $item->loan_term_years,
+                        'loan_type' => $item->loan_type,
+                        'project_name' => $item->project_name,
+                        'status' => $itemStatus,
+                        'review_comments' => $review?->comments,
+                        'approver_signature' => $review && in_array($review->status, ['approved', 'rejected', 'forwarded'], true) ? ($review->approver_signature ?? $review->user?->signature) : null,
+                        'decided_at' => optional($review?->decided_at)->toDateString(),
+                        'approvers' => $reviewsForItem->map(function ($r) {
+                            return [
+                                'approver_name' => $r->user?->name,
+                                'approver_role' => $r->user?->role?->display_name ?? $r->user?->role?->name,
+                                'status' => $r->status,
+                                'approved_amount' => $r->approved_amount !== null ? (int) round((float) $r->approved_amount) : null,
+                                'comments' => $r->comments,
+                                'approver_signature' => in_array($r->status, ['approved', 'rejected', 'forwarded'], true) ? ($r->approver_signature ?? $r->user?->signature) : null,
+                                'decided_at' => optional($r->decided_at)->toDateString(),
+                            ];
+                        })->values()->all(),
+                    ];
+                })->values()
+                ->filter(function ($itemData) use ($statusFilter) {
+                    if (! $statusFilter) {
+                        return true;
+                    }
+                    $itemStatus = strtolower((string) ($itemData['status'] ?? ''));
+
+                    return $itemStatus === $statusFilter || ($statusFilter === 'under_review' && $itemStatus === 'forwarded');
+                })
+                ->values()
+                ->all();
 
                 return [
                     'id' => $approval->id,
@@ -174,48 +237,11 @@ class HeadOfficeTeamBasedApprovalController extends Controller
                         'zone_name' => $approval->branch?->area?->zone?->name,
                     ],
                     'items_count' => $approval->items_count,
-                    'proposed_total' => $approval->proposed_total ?? 0,
-                    'approved_total_amount' => $approval->approved_total_amount,
+                    'proposed_total' => $approval->proposed_total !== null ? (int) round((float) $approval->proposed_total) : 0,
+                    'approved_total_amount' => $approval->approved_total_amount !== null ? (int) round((float) $approval->approved_total_amount) : null,
                     'creator_name' => $approval->creator?->name,
                     'approver_name' => $approver?->name,
-                    'items' => $approval->items->map(function ($item) use ($reviewsByItem, $approval) {
-                        $reviewsForItem = $reviewsByItem->get($item->id, collect())->sortBy('id')->values();
-                        $review = $reviewsForItem->last();
-
-                        return [
-                            'id' => $item->id,
-                            'serial_no' => $item->serial_no,
-                            'member_name' => $item->member_name,
-                            'member_code' => $item->member_code,
-                            'samity_number' => $item->samity_number,
-                            'savings_general' => $item->savings_general,
-                            'savings_other' => $item->savings_other,
-                            'savings_total' => $item->savings_total,
-                            'repaid_loan_amount' => $item->repaid_loan_amount,
-                            'repaid_installment_no' => $item->repaid_installment_no,
-                            'other_institution_loan_amount' => $item->other_institution_loan_amount,
-                            'proposed_loan_amount' => $item->proposed_loan_amount,
-                            'approved_amount' => $item->approved_amount,
-                            'loan_term_years' => $item->loan_term_years,
-                            'loan_type' => $item->loan_type,
-                            'project_name' => $item->project_name,
-                            'status' => $review?->status ?? $approval->status,
-                            'review_comments' => $review?->comments,
-                            'approver_signature' => $review?->approver_signature,
-                            'decided_at' => optional($review?->decided_at)->toDateString(),
-                            'approvers' => $reviewsForItem->map(function ($r) {
-                                return [
-                                    'approver_name' => $r->user?->name,
-                                    'approver_role' => $r->user?->role?->display_name ?? $r->user?->role?->name,
-                                    'status' => $r->status,
-                                    'approved_amount' => $r->approved_amount,
-                                    'comments' => $r->comments,
-                                    'approver_signature' => $r->approver_signature,
-                                    'decided_at' => optional($r->decided_at)->toDateString(),
-                                ];
-                            })->values()->all(),
-                        ];
-                    })->values(),
+                    'items' => $items,
                 ];
             });
 
@@ -299,10 +325,11 @@ class HeadOfficeTeamBasedApprovalController extends Controller
                 return [
                     'member_name' => $item->member_name,
                     'member_code' => $item->member_code ?? '',
+                    'member_phone' => $item->member_phone ?? '',
                     'samity_number' => $item->samity_number ?? '',
-                    'savings_general' => $item->savings_general !== null ? (string) $item->savings_general : '',
-                    'savings_other' => $item->savings_other !== null ? (string) $item->savings_other : '',
-                    'savings_total' => $item->savings_total !== null ? (string) $item->savings_total : '',
+                    'savings_general' => $item->savings_general !== null ? (string) (int) round((float) $item->savings_general) : '',
+                    'savings_other' => $item->savings_other !== null ? (string) (int) round((float) $item->savings_other) : '',
+                    'savings_total' => $item->savings_total !== null ? (string) (int) round((float) $item->savings_total) : '',
                     'repaid_loan_amount' => $item->repaid_loan_amount !== null ? (string) $item->repaid_loan_amount : '',
                     'repaid_installment_no' => $item->repaid_installment_no !== null ? (string) $item->repaid_installment_no : '',
                     'other_institution_loan_amount' => $item->other_institution_loan_amount !== null
@@ -350,17 +377,18 @@ class HeadOfficeTeamBasedApprovalController extends Controller
             'status' => $review?->status ?? $approval->status,
             'member_name' => $item->member_name,
             'member_code' => $item->member_code ?? '',
+            'member_phone' => $item->member_phone ?? '',
             'samity_number' => $item->samity_number ?? '',
-            'savings_general' => $item->savings_general !== null ? (string) $item->savings_general : '',
-            'savings_other' => $item->savings_other !== null ? (string) $item->savings_other : '',
-            'savings_total' => $item->savings_total !== null ? (string) $item->savings_total : '',
+            'savings_general' => $item->savings_general !== null ? (string) (int) round((float) $item->savings_general) : '',
+            'savings_other' => $item->savings_other !== null ? (string) (int) round((float) $item->savings_other) : '',
+            'savings_total' => $item->savings_total !== null ? (string) (int) round((float) $item->savings_total) : '',
             'repaid_loan_amount' => $item->repaid_loan_amount !== null ? (string) $item->repaid_loan_amount : '',
             'repaid_installment_no' => $item->repaid_installment_no !== null ? (string) $item->repaid_installment_no : '',
             'other_institution_loan_amount' => $item->other_institution_loan_amount !== null
                 ? (string) $item->other_institution_loan_amount
                 : '',
             'proposed_loan_amount' => $item->proposed_loan_amount !== null ? (string) $item->proposed_loan_amount : '',
-            'approved_amount' => $item->approved_amount !== null ? (string) $item->approved_amount : '',
+            'approved_amount' => $item->approved_amount !== null ? (string) (int) round((float) $item->approved_amount) : '',
             'loan_term_years' => $item->loan_term_years !== null ? (string) $item->loan_term_years : '',
             'loan_type' => $item->loan_type ?? '',
             'project_name' => $item->project_name ?? '',
@@ -391,6 +419,7 @@ class HeadOfficeTeamBasedApprovalController extends Controller
             'items' => ['required', 'array', 'min:1'],
             'items.*.member_name' => ['required', 'string', 'max:255'],
             'items.*.member_code' => ['nullable', 'string', 'max:50'],
+            'items.*.member_phone' => ['nullable', 'string', 'max:20'],
             'items.*.samity_number' => ['nullable', 'string', 'max:50'],
             'items.*.savings_general' => ['nullable', 'numeric', 'min:0'],
             'items.*.savings_other' => ['nullable', 'numeric', 'min:0'],
@@ -432,15 +461,16 @@ class HeadOfficeTeamBasedApprovalController extends Controller
                 $itemUpdate = [
                     'member_name' => $row['member_name'],
                     'member_code' => $row['member_code'] ?? null,
+                    'member_phone' => $row['member_phone'] ?? null,
                     'samity_number' => $row['samity_number'] ?? null,
-                    'savings_general' => $row['savings_general'] ?? null,
-                    'savings_other' => $row['savings_other'] ?? null,
-                    'savings_total' => $row['savings_total'] ?? null,
+                    'savings_general' => isset($row['savings_general']) ? (int) round((float) $row['savings_general']) : null,
+                    'savings_other' => isset($row['savings_other']) ? (int) round((float) $row['savings_other']) : null,
+                    'savings_total' => isset($row['savings_total']) ? (int) round((float) $row['savings_total']) : null,
                     'repaid_loan_amount' => $row['repaid_loan_amount'] ?? null,
                     'repaid_installment_no' => $row['repaid_installment_no'] ?? null,
                     'other_institution_loan_amount' => $row['other_institution_loan_amount'] ?? null,
                     'proposed_loan_amount' => $row['proposed_loan_amount'] ?? null,
-                    'approved_amount' => $row['approved_amount'] ?? null,
+                    'approved_amount' => isset($row['approved_amount']) ? (int) round((float) $row['approved_amount']) : null,
                     'loan_term_years' => $row['loan_term_years'] ?? null,
                     'loan_type' => $row['loan_type'] ?? null,
                     'project_name' => $row['project_name'] ?? null,
@@ -471,6 +501,7 @@ class HeadOfficeTeamBasedApprovalController extends Controller
         $validated = $request->validate([
             'member_name' => ['required', 'string', 'max:255'],
             'member_code' => ['nullable', 'string', 'max:50'],
+            'member_phone' => ['nullable', 'string', 'max:20'],
             'samity_number' => ['nullable', 'string', 'max:50'],
             'savings_general' => ['nullable', 'numeric', 'min:0'],
             'savings_other' => ['nullable', 'numeric', 'min:0'],
@@ -490,15 +521,16 @@ class HeadOfficeTeamBasedApprovalController extends Controller
             $item->update([
                 'member_name' => $validated['member_name'],
                 'member_code' => $validated['member_code'] ?? null,
+                'member_phone' => $validated['member_phone'] ?? null,
                 'samity_number' => $validated['samity_number'] ?? null,
-                'savings_general' => $validated['savings_general'] ?? null,
-                'savings_other' => $validated['savings_other'] ?? null,
-                'savings_total' => $validated['savings_total'] ?? null,
+                'savings_general' => isset($validated['savings_general']) ? (int) round((float) $validated['savings_general']) : null,
+                'savings_other' => isset($validated['savings_other']) ? (int) round((float) $validated['savings_other']) : null,
+                'savings_total' => isset($validated['savings_total']) ? (int) round((float) $validated['savings_total']) : null,
                 'repaid_loan_amount' => $validated['repaid_loan_amount'] ?? null,
                 'repaid_installment_no' => $validated['repaid_installment_no'] ?? null,
                 'other_institution_loan_amount' => $validated['other_institution_loan_amount'] ?? null,
                 'proposed_loan_amount' => $validated['proposed_loan_amount'] ?? null,
-                'approved_amount' => $validated['approved_amount'] ?? null,
+                'approved_amount' => isset($validated['approved_amount']) ? (int) round((float) $validated['approved_amount']) : null,
                 'loan_term_years' => $validated['loan_term_years'] ?? null,
                 'loan_type' => $validated['loan_type'] ?? null,
                 'project_name' => $validated['project_name'] ?? null,

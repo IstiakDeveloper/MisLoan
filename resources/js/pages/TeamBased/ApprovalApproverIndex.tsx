@@ -19,11 +19,19 @@ function toNumber(value: string): number {
     const n = parseFloat(normalizeNumericInput(value));
     return Number.isFinite(n) ? n : 0;
 }
+/** কোনো অ্যামাউন্টে ডেসিমাল থাকবে না – রাউন্ড নম্বর রিটার্ন */
+function formatAmount(val: number | string | null | undefined): string {
+    if (val == null || val === '') return '';
+    const n = typeof val === 'number' ? val : parseFloat(String(val).replace(/[^\d.-]/g, ''));
+    if (!Number.isFinite(n)) return String(val);
+    return String(Math.round(n));
+}
 
 interface ItemRow {
     serial_no: number;
     member_name: string;
     member_code?: string | null;
+    member_phone?: string | null;
     samity_number?: string | null;
     savings_general?: number | null;
     savings_other?: number | null;
@@ -74,6 +82,8 @@ interface PaginatedReviews {
     current_page: number;
     last_page: number;
     links: PaginationLink[];
+    per_page?: number;
+    total?: number;
 }
 
 interface BranchOption {
@@ -90,6 +100,8 @@ interface Props {
         approver_id?: number | string;
         date_from?: string;
         date_to?: string;
+        approval_flow?: string | null;
+        per_page?: number;
     };
     branches: BranchOption[];
     approverOptions: {
@@ -110,6 +122,8 @@ export default function TeamBasedApprovalApproverIndex({ reviews, filters, branc
     const currentApproverId = (filters.approver_id ?? '').toString();
     const currentFrom = filters.date_from || '';
     const currentTo = filters.date_to || '';
+    const currentApprovalFlow = filters.approval_flow ?? '';
+    const currentPerPage = filters.per_page ?? 20;
 
     const [openRowKey, setOpenRowKey] = React.useState<string | null>(null);
     const [decisionState, setDecisionState] = React.useState<{
@@ -155,7 +169,16 @@ export default function TeamBasedApprovalApproverIndex({ reviews, filters, branc
         row: (ItemRow & { review_id: number; sheet_id: number; sheet_date: string | null; branch_name?: string | null }) | null;
     }>({ open: false, review: null, row: null });
 
-    const applyFilter = (status: string, from: string, to: string, branchId: string, approverId: string) => {
+    const applyFilter = (
+        status: string,
+        from: string,
+        to: string,
+        branchId: string,
+        approverId: string,
+        approvalFlow: string,
+        perPage?: number,
+        page?: number,
+    ) => {
         router.visit('/team-based-approvals/for-approver', {
             data: {
                 status: status || undefined,
@@ -163,6 +186,9 @@ export default function TeamBasedApprovalApproverIndex({ reviews, filters, branc
                 date_to: to || undefined,
                 branch_id: branchId || undefined,
                 approver_id: approverId || undefined,
+                approval_flow: approvalFlow || undefined,
+                per_page: perPage ?? currentPerPage,
+                page: page ?? 1,
             },
             preserveScroll: true,
         });
@@ -170,27 +196,42 @@ export default function TeamBasedApprovalApproverIndex({ reviews, filters, branc
 
     const handleStatusFilterChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
         const newStatus = e.target.value;
-        applyFilter(newStatus, currentFrom, currentTo || currentFrom, currentBranchId, currentApproverId);
+        applyFilter(newStatus, currentFrom, currentTo || currentFrom, currentBranchId, currentApproverId, currentApprovalFlow, currentPerPage, 1);
     };
 
     const handleBranchChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
         const newBranchId = e.target.value;
-        applyFilter(currentStatus, currentFrom, currentTo || currentFrom, newBranchId, currentApproverId);
+        applyFilter(currentStatus, currentFrom, currentTo || currentFrom, newBranchId, currentApproverId, currentApprovalFlow, currentPerPage, 1);
     };
 
     const handleApproverChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
         const newApproverId = e.target.value;
-        applyFilter(currentStatus, currentFrom, currentTo || currentFrom, currentBranchId, newApproverId);
+        applyFilter(currentStatus, currentFrom, currentTo || currentFrom, currentBranchId, newApproverId, currentApprovalFlow, currentPerPage, 1);
+    };
+
+    const handleApprovalFlowChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
+        const newFlow = e.target.value;
+        applyFilter(currentStatus, currentFrom, currentTo || currentFrom, currentBranchId, currentApproverId, newFlow, currentPerPage, 1);
     };
 
     const handleFromChange = (e: React.ChangeEvent<HTMLInputElement>) => {
         const newFrom = e.target.value;
-        applyFilter(currentStatus, newFrom, currentTo || newFrom, currentBranchId, currentApproverId);
+        applyFilter(currentStatus, newFrom, currentTo || newFrom, currentBranchId, currentApproverId, currentApprovalFlow, currentPerPage, 1);
     };
 
     const handleToChange = (e: React.ChangeEvent<HTMLInputElement>) => {
         const newTo = e.target.value;
-        applyFilter(currentStatus, currentFrom || newTo, newTo, currentBranchId, currentApproverId);
+        applyFilter(currentStatus, currentFrom || newTo, newTo, currentBranchId, currentApproverId, currentApprovalFlow, currentPerPage, 1);
+    };
+
+    const handlePerPageChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
+        const newPerPage = Number(e.target.value) || 20;
+        applyFilter(currentStatus, currentFrom, currentTo || currentFrom, currentBranchId, currentApproverId, currentApprovalFlow, newPerPage, 1);
+    };
+
+    const goToPage = (page: number) => {
+        if (page < 1 || page > (reviews.last_page ?? 1)) return;
+        applyFilter(currentStatus, currentFrom, currentTo || currentFrom, currentBranchId, currentApproverId, currentApprovalFlow, currentPerPage, page);
     };
 
     const handleToggleAction = (reviewId: number, rowKey: string) => {
@@ -286,8 +327,7 @@ export default function TeamBasedApprovalApproverIndex({ reviews, filters, branc
             if (field === 'savings_general' || field === 'savings_other') {
                 const g = nextRow.savings_general ?? 0;
                 const o = nextRow.savings_other ?? 0;
-                const total = g + o;
-                nextRow.savings_total = total > 0 ? total : null;
+                nextRow.savings_total = g + o > 0 ? Math.round(g + o) : null;
             }
 
             return {
@@ -309,10 +349,11 @@ export default function TeamBasedApprovalApproverIndex({ reviews, filters, branc
         const payload: any = {
             member_name: row.member_name || '',
             member_code: row.member_code ?? '',
+            member_phone: row.member_phone ?? '',
             samity_number: row.samity_number ?? '',
-            savings_general: row.savings_general ?? null,
-            savings_other: row.savings_other ?? null,
-            savings_total: row.savings_total ?? null,
+            savings_general: row.savings_general != null ? Math.round(Number(row.savings_general)) : null,
+            savings_other: row.savings_other != null ? Math.round(Number(row.savings_other)) : null,
+            savings_total: row.savings_total != null ? Math.round(Number(row.savings_total)) : null,
             repaid_loan_amount: row.repaid_loan_amount != null ? String(row.repaid_loan_amount) : '',
             repaid_installment_no: row.repaid_installment_no != null ? String(row.repaid_installment_no) : '',
             other_institution_loan_amount: row.other_institution_loan_amount ?? '',
@@ -327,7 +368,7 @@ export default function TeamBasedApprovalApproverIndex({ reviews, filters, branc
             onSuccess: () => {
                 closeEditModal();
                 // Reload current filter to show fresh data
-                applyFilter(currentStatus, currentFrom, currentTo || currentFrom, currentBranchId, currentApproverId);
+                applyFilter(currentStatus, currentFrom, currentTo || currentFrom, currentBranchId, currentApproverId, currentApprovalFlow, currentPerPage, 1);
             },
         });
     };
@@ -345,7 +386,7 @@ export default function TeamBasedApprovalApproverIndex({ reviews, filters, branc
         };
 
         if (state.decision === 'approved') {
-            payload.approved_amount = state.approved_amount ? parseFloat(state.approved_amount) : undefined;
+            payload.approved_amount = state.approved_amount ? Math.round(parseFloat(state.approved_amount)) : undefined;
         }
 
         router.post(`/team-based-approvals/reviews/${review.review_id}/decide`, payload, {
@@ -495,22 +536,22 @@ export default function TeamBasedApprovalApproverIndex({ reviews, filters, branc
                         padding: 0 0;
                         width: 4%;
                     }
-                    @page { size: A4 landscape; margin: 0; }
+                    /* পেজে খুব সামান্য মার্জিন ০.২৫", ফন্ট ছোট – সাইড কাটা যাবে না */
+                    @page { size: legal landscape; margin: 0.25in; }
                     @media print {
                         html, body { margin: 0 !important; padding: 0 !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
-                        .approval-print-page { margin: 0 !important; padding: 0 !important; }
-                        .approval-table-print-wrapper { overflow: visible !important; }
-                        .approval-table-print-wrapper table { width: 100% !important; table-layout: fixed !important; font-size: 7pt !important; }
+                        .approval-print-page { margin: 0 !important; padding: 0 !important; width: 100% !important; max-width: 100% !important; box-sizing: border-box !important; }
+                        .approval-table-print-wrapper { overflow: visible !important; width: 100% !important; box-sizing: border-box !important; }
+                        .approval-table-print-wrapper table { width: 100% !important; max-width: 100% !important; table-layout: fixed !important; font-size: 6pt !important; }
                         .approval-table-print-wrapper th,
                         .approval-table-print-wrapper td {
-                            padding: 1px 2px !important;
-                            font-size: 7pt !important;
-                            line-height: 1.2 !important;
+                            padding: 2px 3px !important;
+                            font-size: 6pt !important;
+                            line-height: 1.15 !important;
                         }
-                        .approval-print-page { width: 100%; max-width: 100%; }
-                        .approval-print-header .text-lg { font-size: 10pt !important; }
-                        .approval-print-header .text-xs { font-size: 7pt !important; }
-                        .approval-print-header .text-sm { font-size: 8pt !important; }
+                        .approval-print-header .text-lg { font-size: 9pt !important; }
+                        .approval-print-header .text-xs { font-size: 6pt !important; }
+                        .approval-print-header .text-sm { font-size: 7pt !important; }
                     }
                 `}</style>
             </Head>
@@ -564,7 +605,7 @@ export default function TeamBasedApprovalApproverIndex({ reviews, filters, branc
 
                 {/* Filters - only visible on screen */}
                 <div className="flex flex-col gap-2 mb-4 print:hidden">
-                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-2">
                         <div className="flex flex-col gap-0.5">
                             <span className="text-[10px] font-semibold text-gray-500 uppercase tracking-wider">Branch</span>
                             <select
@@ -580,21 +621,23 @@ export default function TeamBasedApprovalApproverIndex({ reviews, filters, branc
                                 ))}
                             </select>
                         </div>
-                        <div className="flex flex-col gap-0.5">
-                            <span className="text-[10px] font-semibold text-gray-500 uppercase tracking-wider">Approver</span>
-                            <select
-                                value={currentApproverId}
-                                onChange={handleApproverChange}
-                                className="w-full border border-gray-300 rounded-md px-2 py-1.5 text-xs bg-white"
-                            >
-                                <option value="">All Approvers</option>
-                                {approverOptions.map((opt) => (
-                                    <option key={opt.id} value={opt.id}>
-                                        {opt.name} ({opt.role_name})
-                                    </option>
-                                ))}
-                            </select>
-                        </div>
+                        {approverOptions.length > 1 && (
+                            <div className="flex flex-col gap-0.5">
+                                <span className="text-[10px] font-semibold text-gray-500 uppercase tracking-wider">Approver</span>
+                                <select
+                                    value={currentApproverId}
+                                    onChange={handleApproverChange}
+                                    className="w-full border border-gray-300 rounded-md px-2 py-1.5 text-xs bg-white"
+                                >
+                                    <option value="">All Approvers</option>
+                                    {approverOptions.map((opt) => (
+                                        <option key={opt.id} value={opt.id}>
+                                            {opt.name} ({opt.role_name})
+                                        </option>
+                                    ))}
+                                </select>
+                            </div>
+                        )}
                         <div className="flex flex-col gap-0.5">
                             <span className="text-[10px] font-semibold text-gray-500 uppercase tracking-wider">Status</span>
                             <select
@@ -606,6 +649,32 @@ export default function TeamBasedApprovalApproverIndex({ reviews, filters, branc
                                 <option value="pending">Pending</option>
                                 <option value="approved">Approved</option>
                                 <option value="rejected">Rejected</option>
+                                <option value="forwarded">Forwarded</option>
+                            </select>
+                        </div>
+                        <div className="flex flex-col gap-0.5">
+                            <span className="text-[10px] font-semibold text-gray-500 uppercase tracking-wider">Per page</span>
+                            <select
+                                value={currentPerPage}
+                                onChange={handlePerPageChange}
+                                className="w-full border border-gray-300 rounded-md px-2 py-1.5 text-xs bg-white"
+                            >
+                                <option value={10}>10</option>
+                                <option value={20}>20</option>
+                                <option value={50}>50</option>
+                                <option value={100}>100</option>
+                            </select>
+                        </div>
+                        <div className="flex flex-col gap-0.5">
+                            <span className="text-[10px] font-semibold text-gray-500 uppercase tracking-wider">Select type</span>
+                            <select
+                                value={currentApprovalFlow}
+                                onChange={handleApprovalFlowChange}
+                                className="w-full border border-gray-300 rounded-md px-2 py-1.5 text-xs bg-white"
+                            >
+                                <option value="">All</option>
+                                <option value="single">Single Approver</option>
+                                <option value="multiple">Multiple Approver</option>
                             </select>
                         </div>
                     </div>
@@ -686,17 +755,20 @@ export default function TeamBasedApprovalApproverIndex({ reviews, filters, branc
                                     {row.member_code && (
                                         <div><span className="text-gray-400">সদস্য নম্বর</span><p className="font-medium text-gray-800">{row.member_code}</p></div>
                                     )}
+                                    {row.member_phone && (
+                                        <div><span className="text-gray-400">ফোন নম্বর</span><p className="font-medium text-gray-800">{row.member_phone}</p></div>
+                                    )}
                                     {row.samity_number && (
                                         <div><span className="text-gray-400">সমিতি নম্বর</span><p className="font-medium text-gray-800">{row.samity_number}</p></div>
                                     )}
-                                    <div><span className="text-gray-400">সঞ্চয় (সা/অ/মো)</span><p className="font-medium text-gray-800">{row.savings_general ?? '—'} / {row.savings_other ?? '—'} / {row.savings_total ?? '—'}</p></div>
+                                    <div><span className="text-gray-400">সঞ্চয় (সা/অ/মো)</span><p className="font-medium text-gray-800">{formatAmount(row.savings_general) || '—'} / {formatAmount(row.savings_other) || '—'} / {formatAmount(row.savings_total) || '—'}</p></div>
                                     {row.repaid_loan_amount != null && (
-                                        <div><span className="text-gray-400">পরিশোধিত মূল ঋণ</span><p className="font-medium text-gray-800">{row.repaid_loan_amount}{row.repaid_installment_no != null ? ` (${row.repaid_installment_no} দফা)` : ''}</p></div>
+                                        <div><span className="text-gray-400">পরিশোধিত মূল ঋণ</span><p className="font-medium text-gray-800">{formatAmount(row.repaid_loan_amount) || row.repaid_loan_amount}{row.repaid_installment_no != null ? ` (${row.repaid_installment_no} দফা)` : ''}</p></div>
                                     )}
                                     {row.other_institution_loan_amount != null && (
                                         <div><span className="text-gray-400">অন্য সংস্থায় ঋণ</span><p className="font-medium text-gray-800 whitespace-pre-line">{String(row.other_institution_loan_amount)}</p></div>
                                     )}
-                                    <div><span className="text-gray-400">প্রস্তাবিত ঋণ</span><p className="font-semibold text-blue-700">{row.proposed_loan_amount ?? '—'}</p></div>
+                                    <div><span className="text-gray-400">প্রস্তাবিত ঋণ</span><p className="font-semibold text-blue-700">{formatAmount(row.proposed_loan_amount) || '—'}</p></div>
                                     {row.loan_term_years != null && (
                                         <div><span className="text-gray-400">মেয়াদ</span><p className="font-medium text-gray-800">{row.loan_term_years} বছর</p></div>
                                     )}
@@ -707,7 +779,7 @@ export default function TeamBasedApprovalApproverIndex({ reviews, filters, branc
                                         <div className="col-span-2"><span className="text-gray-400">প্রকল্প</span><p className="font-medium text-gray-800">{row.project_name}</p></div>
                                     )}
                                     {row.approved_amount != null && (
-                                        <div><span className="text-gray-400">অনুমোদিত ঋণ</span><p className="font-semibold text-green-700">৳ {row.approved_amount}</p></div>
+                                        <div><span className="text-gray-400">অনুমোদিত ঋণ</span><p className="font-semibold text-green-700">৳ {formatAmount(row.approved_amount)}</p></div>
                                     )}
                                     {((row.approvers && row.approvers.length > 0) || row.approver_name) && (
                                         <div><span className="text-gray-400">অনুমোদনকারী</span><p className="font-medium text-gray-800">{(row.approvers && row.approvers.length > 0 ? row.approvers.map((a) => a.approver_name).filter(Boolean).join(', ') : row.approver_name) || ''}{row.approver_role && !(row.approvers && row.approvers.length > 0) ? ` (${row.approver_role})` : ''}</p></div>
@@ -789,7 +861,7 @@ export default function TeamBasedApprovalApproverIndex({ reviews, filters, branc
                                                                 {a.approver_role ? <span className="text-slate-500"> ({a.approver_role})</span> : null}
                                                                 <div className="text-slate-700">
                                                                     <span className="text-slate-500">অনুমোদিত ঋণ:</span>{' '}
-                                                                    <span className="font-semibold">{a.approved_amount ?? '—'}</span>
+                                                                    <span className="font-semibold">{formatAmount(a.approved_amount) || '—'}</span>
                                                                     {a.decided_at ? <span className="text-slate-500"> · {a.decided_at}</span> : null}
                                                                 </div>
                                                                 {a.comments ? (
@@ -901,11 +973,12 @@ export default function TeamBasedApprovalApproverIndex({ reviews, filters, branc
                                 <th className="border text-left" rowSpan={2}>শাখার নাম</th>
                                 <th className="border text-left" rowSpan={2}>সদস্যের নাম</th>
                                 <th className="border text-left" rowSpan={2}>সদস্য নম্বর</th>
+                                <th className="border text-left" rowSpan={2}>ফোন নম্বর</th>
                                 <th className="border text-left" rowSpan={2}>সমিতি নম্বর</th>
                                 <th className="border text-center" colSpan={3}>সঞ্চয়ের পরিমাণ</th>
                                 <th className="border text-right" rowSpan={2}>পরিশোধিত ঋণ</th>
                                 <th className="border text-center" rowSpan={2}>পরিশোধিত দফা</th>
-                                <th className="border text-right" rowSpan={2}>অন্যান্য সংস্থায় ঋণ</th>
+                                <th className="border text-right px-2 py-1 min-w-[10rem]" rowSpan={2}>অন্যান্য সংস্থায় ঋণ</th>
                                 <th className="border text-right" rowSpan={2}>প্রস্তাবিত ঋণ</th>
                                 <th className="border text-center" rowSpan={2}>মেয়াদ (বছর)</th>
                                 <th className="border text-left" rowSpan={2}>ঋণের ধরন</th>
@@ -945,20 +1018,21 @@ export default function TeamBasedApprovalApproverIndex({ reviews, filters, branc
                                             <td className="border text-left">{row.branch_name || '-'}</td>
                                             <td className="border text-left">{row.member_name}</td>
                                             <td className="border text-left">{row.member_code || ''}</td>
+                                            <td className="border text-left">{row.member_phone || ''}</td>
                                             <td className="border text-left">{row.samity_number || ''}</td>
-                                            <td className="border text-center">{row.savings_general ?? ''}</td>
-                                            <td className="border text-center">{row.savings_other ?? ''}</td>
-                                            <td className="border text-center">{row.savings_total ?? ''}</td>
-                                            <td className="border text-right">{row.repaid_loan_amount ?? ''}</td>
+                                            <td className="border text-center">{formatAmount(row.savings_general)}</td>
+                                            <td className="border text-center">{formatAmount(row.savings_other)}</td>
+                                            <td className="border text-center">{formatAmount(row.savings_total)}</td>
+                                            <td className="border text-right">{(formatAmount(row.repaid_loan_amount) || row.repaid_loan_amount) ?? ''}</td>
                                             <td className="border text-center">{row.repaid_installment_no ?? ''}</td>
-                                            <td className="border text-right align-top">
+                                            <td className="border text-left align-top px-2 py-1.5 min-w-[10rem]">
                                                 <span className="whitespace-pre-line block text-left">{row.other_institution_loan_amount ?? ''}</span>
                                             </td>
-                                            <td className="border text-right">{row.proposed_loan_amount ?? ''}</td>
+                                            <td className="border text-right">{formatAmount(row.proposed_loan_amount)}</td>
                                             <td className="border text-center">{row.loan_term_years ?? ''}</td>
                                             <td className="border text-left">{row.loan_type || ''}</td>
                                             <td className="border text-left">{row.project_name || ''}</td>
-                                            <td className="border text-right">{row.approved_amount ?? ''}</td>
+                                            <td className="border text-right">{formatAmount(row.approved_amount)}</td>
                                             <td className="border text-left">
                                                 {row.approvers && row.approvers.length > 0 ? row.approvers.map((a) => a.approver_name).filter(Boolean).join(', ') : (row.approver_name ? `${row.approver_name}${row.approver_role ? ` (${row.approver_role})` : ''}` : '')}
                                             </td>
@@ -1082,7 +1156,7 @@ export default function TeamBasedApprovalApproverIndex({ reviews, filters, branc
                                                                                     <div className="rounded-md bg-slate-50 border border-slate-200 px-2 py-1.5">
                                                                                         <p className="text-[10px] font-semibold text-slate-500 uppercase tracking-wider">অনুমোদিত</p>
                                                                                         <p className="font-semibold text-green-700">
-                                                                                            ৳ {a.approved_amount ?? '—'}
+                                                                                            ৳ {formatAmount(a.approved_amount) || '—'}
                                                                                         </p>
                                                                                     </div>
                                                                                     <div className="rounded-md bg-slate-50 border border-slate-200 px-2 py-1.5">
@@ -1249,6 +1323,55 @@ export default function TeamBasedApprovalApproverIndex({ reviews, filters, branc
                         </tbody>
                     </table>
                 </div>
+
+                {/* Pagination - below table */}
+                {(reviews.last_page ?? 0) > 1 && (
+                    <div className="flex flex-wrap items-center justify-between gap-2 py-4 border-t border-gray-200 print:hidden">
+                        <p className="text-xs text-gray-600">
+                            Showing{' '}
+                            <span className="font-medium">
+                                {(reviews.total ?? 0) === 0
+                                    ? '0'
+                                    : `${(reviews.current_page - 1) * (reviews.per_page ?? 20) + 1}–${Math.min(reviews.current_page * (reviews.per_page ?? 20), reviews.total ?? 0)}`}
+                            </span>{' '}
+                            of {reviews.total ?? 0}
+                        </p>
+                        <div className="flex items-center gap-1">
+                            <button
+                                type="button"
+                                onClick={() => goToPage((reviews.current_page ?? 1) - 1)}
+                                disabled={(reviews.current_page ?? 1) <= 1}
+                                className="px-2.5 py-1.5 rounded border border-gray-300 bg-white text-xs font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
+                            >
+                                Previous
+                            </button>
+                            {reviews.links?.map((link, i) => {
+                                if (link.label === '&laquo; Previous' || link.label === 'Previous' || link.label === '...' || link.label === 'Next &raquo;' || link.label === 'Next') return null;
+                                const p = parseInt(link.label, 10);
+                                if (Number.isNaN(p)) return null;
+                                const isActive = link.active;
+                                return (
+                                    <button
+                                        key={i}
+                                        type="button"
+                                        onClick={() => goToPage(p)}
+                                        className={`min-w-[2rem] px-2 py-1.5 rounded text-xs font-medium border ${isActive ? 'bg-gray-800 text-white border-gray-800' : 'border-gray-300 bg-white text-gray-700 hover:bg-gray-50'}`}
+                                    >
+                                        {p}
+                                    </button>
+                                );
+                            })}
+                            <button
+                                type="button"
+                                onClick={() => goToPage((reviews.current_page ?? 1) + 1)}
+                                disabled={(reviews.current_page ?? 1) >= (reviews.last_page ?? 1)}
+                                className="px-2.5 py-1.5 rounded border border-gray-300 bg-white text-xs font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
+                            >
+                                Next
+                            </button>
+                        </div>
+                    </div>
+                )}
             </div>
 
             {editModal.open && editModal.row && (
@@ -1286,6 +1409,16 @@ export default function TeamBasedApprovalApproverIndex({ reviews, filters, branc
                                             value={editModal.row.member_code || ''}
                                             onChange={(e) => handleEditModalChange('member_code', e.target.value)}
                                             placeholder="কোড / ০ = নতুন"
+                                            className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm"
+                                        />
+                                    </div>
+                                    <div>
+                                        <label className="block text-[10px] font-semibold text-gray-500 uppercase tracking-wider mb-1">ফোন নম্বর</label>
+                                        <input
+                                            type="text"
+                                            value={editModal.row.member_phone || ''}
+                                            onChange={(e) => handleEditModalChange('member_phone', e.target.value)}
+                                            placeholder="সদস্যের ফোন"
                                             className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm"
                                         />
                                     </div>

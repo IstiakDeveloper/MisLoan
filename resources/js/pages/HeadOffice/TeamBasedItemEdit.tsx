@@ -16,6 +16,7 @@ interface ItemPayload {
     status: string;
     member_name: string;
     member_code: string;
+    member_phone: string;
     samity_number: string;
     savings_general: string;
     savings_other: string;
@@ -67,6 +68,7 @@ export default function HeadOfficeTeamBasedItemEdit({ branch, item }: Props) {
     const { data, setData, put, processing, errors } = useForm({
         member_name: item.member_name,
         member_code: item.member_code,
+        member_phone: item.member_phone ?? '',
         samity_number: item.samity_number,
         savings_general: item.savings_general,
         savings_other: item.savings_other,
@@ -149,6 +151,16 @@ export default function HeadOfficeTeamBasedItemEdit({ branch, item }: Props) {
                                     value={data.member_code}
                                     onChange={(e) => setData('member_code', e.target.value)}
                                     className="w-full border border-gray-300 rounded-md px-2 py-1"
+                                />
+                            </div>
+                            <div>
+                                <label className="block text-xs font-medium text-gray-700 mb-1">ফোন নম্বর</label>
+                                <input
+                                    type="text"
+                                    value={data.member_phone}
+                                    onChange={(e) => setData('member_phone', e.target.value)}
+                                    className="w-full border border-gray-300 rounded-md px-2 py-1"
+                                    placeholder="সদস্যের ফোন"
                                 />
                             </div>
                             <div>

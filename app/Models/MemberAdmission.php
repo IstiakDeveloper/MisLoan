@@ -89,6 +89,8 @@ class MemberAdmission extends Model
         'cultivable_land_value',
         'non_cultivable_land_amount',
         'non_cultivable_land_value',
+        'total_land_amount',
+        'total_land_value',
 
         // Financial Information
         'monthly_income',
@@ -150,6 +152,8 @@ class MemberAdmission extends Model
         'cultivable_land_value' => 'decimal:2',
         'non_cultivable_land_amount' => 'decimal:2',
         'non_cultivable_land_value' => 'decimal:2',
+        'total_land_amount' => 'decimal:2',
+        'total_land_value' => 'decimal:2',
         'monthly_income' => 'decimal:2',
         'monthly_expense' => 'decimal:2',
         'monthly_savings' => 'decimal:2',

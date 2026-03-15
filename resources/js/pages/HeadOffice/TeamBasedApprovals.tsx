@@ -2,6 +2,14 @@ import React, { useState } from 'react';
 import { Head, router } from '@inertiajs/react';
 import AdminLayout from '@/layouts/admin-layout';
 
+/** কোনো অ্যামাউন্টে ডেসিমাল থাকবে না – রাউন্ড নম্বর রিটার্ন */
+function formatAmount(val: number | string | null | undefined): string {
+    if (val == null || val === '') return '';
+    const n = typeof val === 'number' ? val : parseFloat(String(val).replace(/[^\d.-]/g, ''));
+    if (!Number.isFinite(n)) return String(val);
+    return String(Math.round(n));
+}
+
 interface Zone {
     id: number;
     name: string;
@@ -31,6 +39,7 @@ interface ItemRow {
     serial_no: number;
     member_name: string;
     member_code?: string | null;
+    member_phone?: string | null;
     samity_number?: string | null;
     savings_general?: number | null;
     savings_other?: number | null;
@@ -73,6 +82,7 @@ interface PaginatedApprovals {
     current_page: number;
     last_page: number;
     total: number;
+    per_page?: number;
 }
 
 interface Props {
@@ -130,6 +140,7 @@ export default function TeamBasedApprovals({ approvals, filters, stats, zones, a
     );
 
     const handlePageChange = (page: number) => {
+        if (page < 1 || page > approvals.last_page) return;
         router.get(
             '/head-office/team-based-approvals',
             {
@@ -144,6 +155,19 @@ export default function TeamBasedApprovals({ approvals, filters, stats, zones, a
             },
             { preserveState: true }
         );
+    };
+
+    const perPage = approvals.per_page ?? 20;
+    const from = approvals.total === 0 ? 0 : (approvals.current_page - 1) * perPage + 1;
+    const to = Math.min(approvals.current_page * perPage, approvals.total);
+
+    const getPageNumbers = (): (number | 'ellipsis')[] => {
+        const totalPages = approvals.last_page;
+        const current = approvals.current_page;
+        if (totalPages <= 7) return Array.from({ length: totalPages }, (_, i) => i + 1);
+        if (current <= 3) return [1, 2, 3, 4, 'ellipsis', totalPages];
+        if (current >= totalPages - 2) return [1, 'ellipsis', totalPages - 3, totalPages - 2, totalPages - 1, totalPages];
+        return [1, 'ellipsis', current - 1, current, current + 1, 'ellipsis', totalPages];
     };
 
     // Flatten all items (similar to branch TeamBased ApprovalIndex)
@@ -344,7 +368,19 @@ export default function TeamBasedApprovals({ approvals, filters, stats, zones, a
                         />
                         <select
                             value={statusFilter}
-                            onChange={(e) => setStatusFilter(e.target.value)}
+                            onChange={(e) => {
+                                const v = e.target.value;
+                                setStatusFilter(v);
+                                router.get('/head-office/team-based-approvals', {
+                                    status: v || undefined,
+                                    search: search || undefined,
+                                    zone_id: zoneId || undefined,
+                                    area_id: areaId || undefined,
+                                    branch_id: branchId || undefined,
+                                    date_from: dateFrom || undefined,
+                                    date_to: dateTo || undefined,
+                                }, { preserveState: true });
+                            }}
                             className="border border-gray-300 rounded-md px-2 py-1 text-xs"
                         >
                             <option value="">All Status</option>
@@ -356,9 +392,19 @@ export default function TeamBasedApprovals({ approvals, filters, stats, zones, a
                         <select
                             value={zoneId}
                             onChange={(e) => {
-                                setZoneId(e.target.value);
+                                const v = e.target.value;
+                                setZoneId(v);
                                 setAreaId('');
                                 setBranchId('');
+                                router.get('/head-office/team-based-approvals', {
+                                    status: statusFilter || undefined,
+                                    search: search || undefined,
+                                    zone_id: v || undefined,
+                                    area_id: undefined,
+                                    branch_id: undefined,
+                                    date_from: dateFrom || undefined,
+                                    date_to: dateTo || undefined,
+                                }, { preserveState: true });
                             }}
                             className="border border-gray-300 rounded-md px-2 py-1 text-xs"
                         >
@@ -372,8 +418,18 @@ export default function TeamBasedApprovals({ approvals, filters, stats, zones, a
                         <select
                             value={areaId}
                             onChange={(e) => {
-                                setAreaId(e.target.value);
+                                const v = e.target.value;
+                                setAreaId(v);
                                 setBranchId('');
+                                router.get('/head-office/team-based-approvals', {
+                                    status: statusFilter || undefined,
+                                    search: search || undefined,
+                                    zone_id: zoneId || undefined,
+                                    area_id: v || undefined,
+                                    branch_id: undefined,
+                                    date_from: dateFrom || undefined,
+                                    date_to: dateTo || undefined,
+                                }, { preserveState: true });
                             }}
                             className="border border-gray-300 rounded-md px-2 py-1 text-xs"
                         >
@@ -388,7 +444,19 @@ export default function TeamBasedApprovals({ approvals, filters, stats, zones, a
                         </select>
                         <select
                             value={branchId}
-                            onChange={(e) => setBranchId(e.target.value)}
+                            onChange={(e) => {
+                                const v = e.target.value;
+                                setBranchId(v);
+                                router.get('/head-office/team-based-approvals', {
+                                    status: statusFilter || undefined,
+                                    search: search || undefined,
+                                    zone_id: zoneId || undefined,
+                                    area_id: areaId || undefined,
+                                    branch_id: v || undefined,
+                                    date_from: dateFrom || undefined,
+                                    date_to: dateTo || undefined,
+                                }, { preserveState: true });
+                            }}
                             className="border border-gray-300 rounded-md px-2 py-1 text-xs"
                         >
                             <option value="">All Branches</option>
@@ -449,6 +517,7 @@ export default function TeamBasedApprovals({ approvals, filters, stats, zones, a
                                 <th className="border px-2 py-1 text-left">জোন</th>
                                 <th className="border px-2 py-1 text-left">সদস্যের নাম</th>
                                 <th className="border px-2 py-1 text-left">সদস্য নম্বর</th>
+                                <th className="border px-2 py-1 text-left">ফোন নম্বর</th>
                                 <th className="border px-2 py-1 text-left">সমিতি নম্বর</th>
                                 <th className="border px-2 py-1 text-right">প্রস্তাবিত ঋণ</th>
                                 <th className="border px-2 py-1 text-right">অনুমোদিত ঋণ</th>
@@ -458,7 +527,7 @@ export default function TeamBasedApprovals({ approvals, filters, stats, zones, a
                                 <th className="border px-2 py-1 text-left">অনুমোদনকারীর স্বাক্ষর / তারিখ</th>
                                 <th className="border px-2 py-1 text-center">অবস্থা</th>
                                 <th className="border px-2 py-1 text-left">অনুমোদনকারী</th>
-                                <th className="border px-2 py-1 text-center">কর্ম</th>
+                                <th className="border px-2 py-1 text-center print:hidden">কর্ম</th>
                             </tr>
                         </thead>
                         <tbody>
@@ -480,9 +549,10 @@ export default function TeamBasedApprovals({ approvals, filters, stats, zones, a
                                     <td className="border px-2 py-1">{row.zone_name || '-'}</td>
                                     <td className="border px-2 py-1">{row.member_name}</td>
                                     <td className="border px-2 py-1">{row.member_code || ''}</td>
+                                    <td className="border px-2 py-1">{row.member_phone || ''}</td>
                                     <td className="border px-2 py-1">{row.samity_number || ''}</td>
-                                    <td className="border px-2 py-1 text-right">{row.proposed_loan_amount ?? ''}</td>
-                                    <td className="border px-2 py-1 text-right">{row.approved_amount ?? ''}</td>
+                                    <td className="border px-2 py-1 text-right">{formatAmount(row.proposed_loan_amount)}</td>
+                                    <td className="border px-2 py-1 text-right">{formatAmount(row.approved_amount)}</td>
                                     <td className="border px-2 py-1">{row.loan_type || ''}</td>
                                     <td className="border px-2 py-1">{row.project_name || ''}</td>
                                     <td className="border px-2 py-1">{row.review_comments || ''}</td>
@@ -530,19 +600,19 @@ export default function TeamBasedApprovals({ approvals, filters, stats, zones, a
                                     </td>
                                     <td className="border px-2 py-1 text-center capitalize">{row.status}</td>
                                     <td className="border px-2 py-1">{row.approvers && row.approvers.length > 0 ? row.approvers.map((a) => a.approver_name).filter(Boolean).join(', ') : (row.approver_name || '-')}</td>
-                                    <td className="border px-2 py-1 text-center">
-                                        <div className="flex items-center justify-center gap-1">
+                                    <td className="border px-2 py-1 text-center print:hidden">
+                                        <div className="flex flex-col items-center justify-center gap-1">
                                             <button
                                                 type="button"
                                                 onClick={() => handleEditItem(row.id)}
-                                                className="px-2 py-0.5 text-[11px] rounded border border-blue-500 text-blue-600 hover:bg-blue-50"
+                                                className="px-2 py-0.5 text-[11px] rounded border border-blue-500 text-blue-600 hover:bg-blue-50 w-full sm:w-auto"
                                             >
                                                 Edit
                                             </button>
                                             <button
                                                 type="button"
                                                 onClick={() => handleDeleteItem(row.id)}
-                                                className="px-2 py-0.5 text-[11px] rounded border border-red-500 text-red-600 hover:bg-red-50"
+                                                className="px-2 py-0.5 text-[11px] rounded border border-red-500 text-red-600 hover:bg-red-50 w-full sm:w-auto"
                                             >
                                                 Delete
                                             </button>
@@ -554,33 +624,59 @@ export default function TeamBasedApprovals({ approvals, filters, stats, zones, a
                     </table>
                 </div>
 
-                {/* Pagination summary (item-wise for current page) */}
-                <div className="flex items-center justify-between text-xs text-gray-600">
-                    <span>
-                        এই পাতায় {flatRows.length}টি আইটেম দেখানো হচ্ছে
-                    </span>
-                    <div className="flex items-center gap-1">
-                        <button
-                            type="button"
-                            disabled={approvals.current_page <= 1}
-                            onClick={() => handlePageChange(approvals.current_page - 1)}
-                            className="px-2 py-1 border rounded disabled:opacity-50"
-                        >
-                            Prev
-                        </button>
-                        <span>
-                            Page {approvals.current_page} of {approvals.last_page}
-                        </span>
-                        <button
-                            type="button"
-                            disabled={approvals.current_page >= approvals.last_page}
-                            onClick={() => handlePageChange(approvals.current_page + 1)}
-                            className="px-2 py-1 border rounded disabled:opacity-50"
-                        >
-                            Next
-                        </button>
+                {/* Pagination - professional with page numbers */}
+                {approvals.last_page > 1 && (
+                    <div className="mt-4 flex flex-col sm:flex-row items-center justify-between gap-3 px-1 py-3 border-t border-gray-200 bg-white rounded-b-lg">
+                        <p className="text-sm text-gray-600 order-2 sm:order-1">
+                            {approvals.total > 0 ? (
+                                <>Showing <span className="font-medium">{from}</span>–<span className="font-medium">{to}</span> of <span className="font-medium">{approvals.total}</span> sheets</>
+                            ) : (
+                                <>No results</>
+                            )}
+                        </p>
+                        <nav className="flex items-center gap-1 order-1 sm:order-2" aria-label="Pagination">
+                            <button
+                                type="button"
+                                onClick={() => handlePageChange(approvals.current_page - 1)}
+                                disabled={approvals.current_page <= 1}
+                                className="px-3 py-1.5 text-sm font-medium rounded-l-md border border-gray-300 bg-white text-gray-700 hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-white"
+                            >
+                                Previous
+                            </button>
+                            <div className="flex items-center border-y border-gray-300">
+                                {getPageNumbers().map((p, i) =>
+                                    p === 'ellipsis' ? (
+                                        <span key={`ellipsis-${i}`} className="px-2 py-1.5 text-gray-400">…</span>
+                                    ) : (
+                                        <button
+                                            key={p}
+                                            type="button"
+                                            onClick={() => handlePageChange(p)}
+                                            className={`min-w-[2.25rem] px-2 py-1.5 text-sm font-medium border-x border-gray-300 ${
+                                                approvals.current_page === p
+                                                    ? 'bg-blue-600 text-white border-blue-600'
+                                                    : 'bg-white text-gray-700 hover:bg-gray-50'
+                                            }`}
+                                        >
+                                            {p}
+                                        </button>
+                                    )
+                                )}
+                            </div>
+                            <button
+                                type="button"
+                                onClick={() => handlePageChange(approvals.current_page + 1)}
+                                disabled={approvals.current_page >= approvals.last_page}
+                                className="px-3 py-1.5 text-sm font-medium rounded-r-md border border-gray-300 bg-white text-gray-700 hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-white"
+                            >
+                                Next
+                            </button>
+                        </nav>
                     </div>
-                </div>
+                )}
+                {approvals.last_page <= 1 && approvals.total > 0 && (
+                    <p className="text-xs text-gray-500 mt-2">এই পাতায় {flatRows.length}টি আইটেম</p>
+                )}
             </div>
 
             {zoomSignatureUrl && (

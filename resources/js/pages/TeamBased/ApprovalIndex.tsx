@@ -2,10 +2,19 @@ import { Head, Link, router } from '@inertiajs/react';
 import AdminLayout from '@/layouts/admin-layout';
 import React from 'react';
 
+/** কোনো অ্যামাউন্টে ডেসিমাল থাকবে না – রাউন্ড নম্বর রিটার্ন */
+function formatAmount(val: number | string | null | undefined): string {
+    if (val == null || val === '') return '';
+    const n = typeof val === 'number' ? val : parseFloat(String(val).replace(/[^\d.-]/g, ''));
+    if (!Number.isFinite(n)) return String(val);
+    return String(Math.round(n));
+}
+
 interface ItemRow {
     serial_no: number;
     member_name: string;
     member_code?: string | null;
+    member_phone?: string | null;
     samity_number?: string | null;
     savings_general?: number | null;
     savings_other?: number | null;
@@ -45,6 +54,8 @@ interface PaginatedApprovals {
     data: ApprovalRow[];
     current_page: number;
     last_page: number;
+    total?: number;
+    per_page?: number;
     links: PaginationLink[];
 }
 
@@ -107,16 +118,36 @@ export default function TeamBasedApprovalIndex({ approvals, filters, draftCount,
         setFilterStatus(currentStatus);
     }, [currentFrom, currentTo, currentApprover, currentStatus]);
 
-    const applyFilter = (from: string, to: string, approverId: string, status: string) => {
+    const applyFilter = (from: string, to: string, approverId: string, status: string, page?: number) => {
         router.visit('/team-based-approvals', {
             data: {
                 date_from: from,
                 date_to: to,
                 approver_id: approverId || undefined,
                 status: status || undefined,
+                page: page || undefined,
             },
             preserveScroll: true,
         });
+    };
+
+    const goToPage = (page: number) => {
+        if (page < 1 || page > approvals.last_page) return;
+        applyFilter(filterFrom, filterTo || filterFrom, filterApprover, filterStatus, page);
+    };
+
+    const perPage = approvals.per_page ?? 20;
+    const total = approvals.total ?? 0;
+    const from = total === 0 ? 0 : (approvals.current_page - 1) * perPage + 1;
+    const to = Math.min(approvals.current_page * perPage, total);
+
+    const getPageNumbers = (): (number | 'ellipsis')[] => {
+        const totalPages = approvals.last_page;
+        const current = approvals.current_page;
+        if (totalPages <= 7) return Array.from({ length: totalPages }, (_, i) => i + 1);
+        if (current <= 3) return [1, 2, 3, 4, 'ellipsis', totalPages];
+        if (current >= totalPages - 2) return [1, 'ellipsis', totalPages - 3, totalPages - 2, totalPages - 1, totalPages];
+        return [1, 'ellipsis', current - 1, current, current + 1, 'ellipsis', totalPages];
     };
 
     const submitFilters = () => {
@@ -141,11 +172,15 @@ export default function TeamBasedApprovalIndex({ approvals, filters, draftCount,
     };
 
     const handleApproverChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
-        setFilterApprover(e.target.value);
+        const v = e.target.value;
+        setFilterApprover(v);
+        applyFilter(filterFrom, filterTo || filterFrom, v, filterStatus);
     };
 
     const handleStatusChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
-        setFilterStatus(e.target.value);
+        const v = e.target.value;
+        setFilterStatus(v);
+        applyFilter(filterFrom, filterTo || filterFrom, filterApprover, v);
     };
 
     // Flatten all sheet items into a single list so that
@@ -202,9 +237,10 @@ export default function TeamBasedApprovalIndex({ approvals, filters, draftCount,
                     .approval-index-table-wrapper tbody td {
                         padding: 8px 4px;
                     }
-                    @page { size: A4 landscape; margin: 0; }
+                    /* Legal size – টেবিল/ফর্মের জন্য জায়গা */
+                    @page { size: legal landscape; margin: 10mm; }
                     @media print {
-                        html, body { margin: 0 !important; padding: 0 !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+                        html, body { margin: 0 !important; padding: 0 !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; background: #fff !important; }
                         .approval-index-print-page { margin: 0 !important; padding: 0 !important; }
                         .approval-index-table-wrapper { overflow: visible !important; }
                         .approval-index-table-wrapper table { width: 100% !important; table-layout: fixed !important; font-size: 7pt !important; }
@@ -387,6 +423,12 @@ export default function TeamBasedApprovalIndex({ approvals, filters, draftCount,
                                         <p className="font-medium text-gray-800">{row.member_code}</p>
                                     </div>
                                 )}
+                                {row.member_phone && (
+                                    <div>
+                                        <span className="text-gray-400">ফোন নম্বর</span>
+                                        <p className="font-medium text-gray-800">{row.member_phone}</p>
+                                    </div>
+                                )}
                                 {row.samity_number && (
                                     <div>
                                         <span className="text-gray-400">সমিতি নম্বর</span>
@@ -396,14 +438,14 @@ export default function TeamBasedApprovalIndex({ approvals, filters, draftCount,
                                 <div>
                                     <span className="text-gray-400">সঞ্চয় (সা/অ/মো)</span>
                                     <p className="font-medium text-gray-800">
-                                        {row.savings_general ?? '—'} / {row.savings_other ?? '—'} / {row.savings_total ?? '—'}
+                                        {formatAmount(row.savings_general) || '—'} / {formatAmount(row.savings_other) || '—'} / {formatAmount(row.savings_total) || '—'}
                                     </p>
                                 </div>
                                 {row.repaid_loan_amount != null && (
                                     <div>
                                         <span className="text-gray-400">পরিশোধিত মূল ঋণ</span>
                                         <p className="font-medium text-gray-800">
-                                            {row.repaid_loan_amount}{row.repaid_installment_no != null ? ` (${row.repaid_installment_no} দফা)` : ''}
+                                            {formatAmount(row.repaid_loan_amount) || row.repaid_loan_amount}{row.repaid_installment_no != null ? ` (${row.repaid_installment_no} দফা)` : ''}
                                         </p>
                                     </div>
                                 )}
@@ -415,7 +457,7 @@ export default function TeamBasedApprovalIndex({ approvals, filters, draftCount,
                                 )}
                                 <div>
                                     <span className="text-gray-400">প্রস্তাবিত ঋণ</span>
-                                    <p className="font-semibold text-blue-700">{row.proposed_loan_amount ?? '—'}</p>
+                                    <p className="font-semibold text-blue-700">{formatAmount(row.proposed_loan_amount) || '—'}</p>
                                 </div>
                                 {row.loan_term_years != null && (
                                     <div>
@@ -438,7 +480,7 @@ export default function TeamBasedApprovalIndex({ approvals, filters, draftCount,
                                 {row.approved_amount != null && (
                                     <div>
                                         <span className="text-gray-400">অনুমোদিত ঋণ</span>
-                                        <p className="font-semibold text-green-700">৳ {row.approved_amount}</p>
+                                        <p className="font-semibold text-green-700">৳ {formatAmount(row.approved_amount)}</p>
                                     </div>
                                 )}
                                 {((row.approvers && row.approvers.length > 0) || row.approver_name) && (
@@ -510,11 +552,12 @@ export default function TeamBasedApprovalIndex({ approvals, filters, draftCount,
                                 <th className="border" rowSpan={2}>ক্র. নং</th>
                                 <th className="border" rowSpan={2}>সদস্যের নাম</th>
                                 <th className="border" rowSpan={2}>সদস্য নম্বর</th>
+                                <th className="border" rowSpan={2}>ফোন নম্বর</th>
                                 <th className="border" rowSpan={2}>সমিতি নম্বর</th>
                                 <th className="border text-center" colSpan={3}>সঞ্চয়ের পরিমাণ</th>
                                 <th className="border" rowSpan={2}>পরিশোধিত মূল ঋণের পরিমাণ</th>
                                 <th className="border" rowSpan={2}>পরি: দফা নম্বর</th>
-                                <th className="border" rowSpan={2}>অন্যান্য সংস্থায় গ্রহণকৃত ঋণের পরিমাণ</th>
+                                <th className="border px-2 py-1 min-w-[10rem]" rowSpan={2}>অন্যান্য সংস্থায় গ্রহণকৃত ঋণের পরিমাণ</th>
                                 <th className="border" rowSpan={2}>প্রস্তাবিত ঋণের পরিমাণ</th>
                                 <th className="border" rowSpan={2}>ঋণের মেয়াদ (বছর)</th>
                                 <th className="border" rowSpan={2}>ঋণের ধরন</th>
@@ -534,7 +577,7 @@ export default function TeamBasedApprovalIndex({ approvals, filters, draftCount,
                         <tbody>
                             {flatRows.length === 0 && (
                                 <tr>
-                                    <td colSpan={19} className="border text-center text-gray-500 py-4">
+                                    <td colSpan={20} className="border text-center text-gray-500 py-4">
                                         কোনো Team Based তথ্য পাওয়া যায়নি।
                                     </td>
                                 </tr>
@@ -544,20 +587,21 @@ export default function TeamBasedApprovalIndex({ approvals, filters, draftCount,
                                     <td className="border">{idx + 1}</td>
                                     <td className="border">{row.member_name}</td>
                                     <td className="border">{row.member_code || ''}</td>
+                                    <td className="border">{row.member_phone || ''}</td>
                                     <td className="border">{row.samity_number || ''}</td>
-                                    <td className="border">{row.savings_general ?? ''}</td>
-                                    <td className="border">{row.savings_other ?? ''}</td>
-                                    <td className="border">{row.savings_total ?? ''}</td>
-                                    <td className="border">{row.repaid_loan_amount ?? ''}</td>
+                                    <td className="border">{formatAmount(row.savings_general)}</td>
+                                    <td className="border">{formatAmount(row.savings_other)}</td>
+                                    <td className="border">{formatAmount(row.savings_total)}</td>
+                                    <td className="border">{(formatAmount(row.repaid_loan_amount) || row.repaid_loan_amount) ?? ''}</td>
                                     <td className="border">{row.repaid_installment_no ?? ''}</td>
-                                    <td className="border align-top">
-                                    <span className="whitespace-pre-line block text-left">{row.other_institution_loan_amount ?? ''}</span>
-                                </td>
-                                    <td className="border">{row.proposed_loan_amount ?? ''}</td>
+                                    <td className="border align-top px-2 py-1.5 min-w-[10rem]">
+                                        <span className="whitespace-pre-line block text-left">{row.other_institution_loan_amount ?? ''}</span>
+                                    </td>
+                                    <td className="border">{formatAmount(row.proposed_loan_amount)}</td>
                                     <td className="border">{row.loan_term_years ?? ''}</td>
                                     <td className="border">{row.loan_type || ''}</td>
                                     <td className="border">{row.project_name || ''}</td>
-                                    <td className="border">{row.approved_amount ?? ''}</td>
+                                    <td className="border">{formatAmount(row.approved_amount)}</td>
                                     <td className="border">{row.review_comments || ''}</td>
                                     <td className="border">{(row.approvers && row.approvers.length > 0 ? row.approvers.map((a) => a.approver_name).filter(Boolean).join(', ') : null) ?? row.approver_name ?? ''}</td>
                                     <td className="border align-top">
@@ -616,6 +660,57 @@ export default function TeamBasedApprovalIndex({ approvals, filters, draftCount,
                         </tbody>
                     </table>
                 </div>
+
+                {/* Pagination - only when multiple pages */}
+                {approvals.last_page > 1 && (
+                    <div className="mt-4 print:hidden flex flex-col sm:flex-row items-center justify-between gap-3 px-1 py-3 border-t border-gray-200 bg-white rounded-b-lg">
+                        <p className="text-sm text-gray-600 order-2 sm:order-1">
+                            {total > 0 ? (
+                                <>দেখানো হচ্ছে <span className="font-medium">{from}</span>–<span className="font-medium">{to}</span> (মোট <span className="font-medium">{total}</span> শীট)</>
+                            ) : (
+                                <>কোনো ফলাফল নেই</>
+                            )}
+                        </p>
+                        <nav className="flex items-center gap-1 order-1 sm:order-2" aria-label="পৃষ্ঠা নেভিগেশন">
+                            <button
+                                type="button"
+                                onClick={() => goToPage(approvals.current_page - 1)}
+                                disabled={approvals.current_page <= 1}
+                                className="px-3 py-1.5 text-sm font-medium rounded-l-md border border-gray-300 bg-white text-gray-700 hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-white"
+                            >
+                                পূর্ববর্তী
+                            </button>
+                            <div className="flex items-center border-y border-gray-300">
+                                {getPageNumbers().map((p, i) =>
+                                    p === 'ellipsis' ? (
+                                        <span key={`ellipsis-${i}`} className="px-2 py-1.5 text-gray-400">…</span>
+                                    ) : (
+                                        <button
+                                            key={p}
+                                            type="button"
+                                            onClick={() => goToPage(p)}
+                                            className={`min-w-[2.25rem] px-2 py-1.5 text-sm font-medium border-x border-gray-300 ${
+                                                approvals.current_page === p
+                                                    ? 'bg-blue-600 text-white border-blue-600'
+                                                    : 'bg-white text-gray-700 hover:bg-gray-50'
+                                            }`}
+                                        >
+                                            {p}
+                                        </button>
+                                    )
+                                )}
+                            </div>
+                            <button
+                                type="button"
+                                onClick={() => goToPage(approvals.current_page + 1)}
+                                disabled={approvals.current_page >= approvals.last_page}
+                                className="px-3 py-1.5 text-sm font-medium rounded-r-md border border-gray-300 bg-white text-gray-700 hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-white"
+                            >
+                                পরবর্তী
+                            </button>
+                        </nav>
+                    </div>
+                )}
             </div>
 
             {zoomSignatureUrl && (

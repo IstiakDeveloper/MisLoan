@@ -21,6 +21,7 @@ interface BranchInfo {
 interface RowItem {
     member_name: string;
     member_code: string;
+    member_phone: string;
     samity_number: string;
     savings_general: string;
     savings_other: string;
@@ -118,6 +119,7 @@ function makeEmptyRow(): RowItem {
     return {
         member_name: '',
         member_code: '',
+        member_phone: '',
         samity_number: '',
         savings_general: '',
         savings_other: '',
@@ -135,7 +137,7 @@ function makeEmptyRow(): RowItem {
 export default function TeamBasedApprovalForm({ branch, approverOptions, today, existingApproval }: Props) {
     const isEdit = !!existingApproval;
 
-    const { data, setData, post, put, processing, errors, reset } = useForm({
+    const { data, setData, post, put, processing, errors, transform } = useForm({
         sheet_date: existingApproval?.sheet_date || today || '',
         approver_user_id: existingApproval?.approver_user_id
             ? String(existingApproval.approver_user_id)
@@ -145,28 +147,17 @@ export default function TeamBasedApprovalForm({ branch, approverOptions, today, 
 
     const handleRowChange = (index: number, field: keyof RowItem, value: string) => {
         const newItems = [...data.items];
-        let newValue = value;
-
-        // For all numeric/amount fields, normalize Bangla digits to English
-        if (
-            field === 'savings_general' ||
-            field === 'savings_other' ||
-            field === 'savings_total' ||
-            field === 'repaid_loan_amount' ||
-            field === 'repaid_installment_no' ||
-            field === 'other_institution_loan_amount' ||
-            field === 'proposed_loan_amount' ||
-            field === 'loan_term_years'
-        ) {
-            newValue = normalizeNumericInput(value);
-        }
-
+        // সঞ্চয় সেকশন: টাইপেই ইংরেজি নরমালাইজ (বাংলা সাপোর্ট নাই)
+        // বাকি ফিল্ড: যেভাবে লিখবেন সেভাবেই থাকবে (বাংলা/ইংরেজি)
+        const isSavingsField =
+            field === 'savings_general' || field === 'savings_other' || field === 'savings_total';
+        const newValue = isSavingsField ? normalizeNumericInput(value) : value;
         newItems[index] = { ...newItems[index], [field]: newValue };
-        // Auto-update total savings for this row
+        // Auto-update total savings
         if (field === 'savings_general' || field === 'savings_other') {
             const g = toNumber(newItems[index].savings_general || '0');
             const o = toNumber(newItems[index].savings_other || '0');
-            const total = g + o;
+            const total = Math.round(g + o);
             newItems[index].savings_total = total > 0 ? String(total) : '';
         }
         setData('items', newItems);
@@ -186,23 +177,39 @@ export default function TeamBasedApprovalForm({ branch, approverOptions, today, 
 
     const handleSubmit = (e: React.FormEvent) => {
         e.preventDefault();
+        // সঞ্চয় ইতিমধ্যে ইংরেজি; বাকি অ্যামাউন্ট ফিল্ডগুলো ব্যাকএন্ডে ইংরেজি করে পাঠানো
+        transform((formData) => ({
+            ...formData,
+            items: formData.items.map((item: RowItem) => {
+                const g = toNumber(item.savings_general || '0');
+                const o = toNumber(item.savings_other || '0');
+                const total = Math.round(g + o);
+                return {
+                    ...item,
+                    savings_general: g > 0 ? String(Math.round(g)) : '',
+                    savings_other: o > 0 ? String(Math.round(o)) : '',
+                    savings_total: total > 0 ? String(total) : '',
+                    repaid_loan_amount: normalizeNumericInput(item.repaid_loan_amount),
+                    repaid_installment_no: normalizeNumericInput(item.repaid_installment_no),
+                    other_institution_loan_amount: normalizeNumericInput(item.other_institution_loan_amount),
+                    proposed_loan_amount: normalizeNumericInput(item.proposed_loan_amount),
+                    loan_term_years: normalizeNumericInput(item.loan_term_years),
+                };
+            }),
+        }));
 
         if (isEdit && existingApproval) {
             put(`/team-based-approvals/${existingApproval.id}`, {
                 preserveScroll: true,
                 onSuccess: () => {
-                    router.visit('/team-based-approvals/drafts', {
-                        preserveScroll: true,
-                    });
+                    router.visit('/team-based-approvals/drafts', { preserveScroll: true });
                 },
             });
         } else {
             post('/team-based-approvals/save-draft', {
                 preserveScroll: true,
                 onSuccess: () => {
-                    router.visit('/team-based-approvals/drafts', {
-                        preserveScroll: true,
-                    });
+                    router.visit('/team-based-approvals/drafts', { preserveScroll: true });
                 },
             });
         }
@@ -288,6 +295,9 @@ export default function TeamBasedApprovalForm({ branch, approverOptions, today, 
                                             সদস্য নম্বর
                                         </th>
                                         <th rowSpan={2} className="border border-gray-400 px-2 py-1 bg-gray-100 text-center">
+                                            ফোন নম্বর
+                                        </th>
+                                        <th rowSpan={2} className="border border-gray-400 px-2 py-1 bg-gray-100 text-center">
                                             সমিতি নম্বর
                                         </th>
                                         <th colSpan={3} className="border border-gray-400 px-2 py-1 bg-gray-100 text-center">
@@ -355,6 +365,15 @@ export default function TeamBasedApprovalForm({ branch, approverOptions, today, 
                                                 <input
                                                     type="text"
                                                     className="w-full border border-gray-200 rounded px-1 py-0.5 text-[11px]"
+                                                    value={row.member_phone}
+                                                    onChange={(e) => handleRowChange(index, 'member_phone', e.target.value)}
+                                                    placeholder="সদস্যের ফোন"
+                                                />
+                                            </td>
+                                            <td className="border border-gray-300 px-1 py-0.5">
+                                                <input
+                                                    type="text"
+                                                    className="w-full border border-gray-200 rounded px-1 py-0.5 text-[11px]"
                                                     value={row.samity_number}
                                                     onChange={(e) => handleRowChange(index, 'samity_number', e.target.value)}
                                                     placeholder="সমিতি নং"
@@ -400,14 +419,15 @@ export default function TeamBasedApprovalForm({ branch, approverOptions, today, 
                                                     onChange={(e) => handleRowChange(index, 'repaid_installment_no', e.target.value)}
                                                 />
                                             </td>
-                                            <td className="border border-gray-300 px-1 py-0.5">
+                                            <td className="border border-gray-300 px-2 py-1 min-w-[8rem]">
                                                 <input
                                                     type="text"
-                                                    className="w-full border border-gray-200 rounded px-1 py-0.5 text-[11px] text-right"
+                                                    className="w-full border border-gray-200 rounded px-2 py-0.5 text-[11px]"
                                                     value={row.other_institution_loan_amount}
                                                     onChange={(e) =>
                                                         handleRowChange(index, 'other_institution_loan_amount', e.target.value)
                                                     }
+                                                    placeholder="অন্যান্য সংস্থায় ঋণ"
                                                 />
                                             </td>
                                             <td className="border border-gray-300 px-1 py-0.5">

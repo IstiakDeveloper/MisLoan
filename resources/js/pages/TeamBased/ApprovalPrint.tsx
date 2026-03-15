@@ -18,6 +18,7 @@ interface Item {
     serial_no: number;
     member_name: string;
     member_code?: string | null;
+    member_phone?: string | null;
     samity_number?: string | null;
     savings_general?: number | null;
     savings_other?: number | null;
@@ -38,6 +39,14 @@ interface Props {
     items: Item[];
 }
 
+/** টিম ভিত্তিকে পরিমাণে ডেসিমাল থাকবে না – রাউন্ড নম্বর */
+function formatAmount(val: number | string | null | undefined): string {
+    if (val == null || val === '') return '';
+    const n = typeof val === 'number' ? val : parseFloat(String(val).replace(/[^\d.-]/g, ''));
+    if (!Number.isFinite(n)) return String(val);
+    return String(Math.round(n));
+}
+
 export default function TeamBasedApprovalPrint({ sheet, items }: Props) {
     const handlePrint = () => {
         if (typeof window !== 'undefined') {
@@ -49,10 +58,41 @@ export default function TeamBasedApprovalPrint({ sheet, items }: Props) {
         <AdminLayout>
             <Head title="Team Based Approval - Print">
                 <style>{`
-                    @page { size: A4; margin: 0; }
+                    /* Legal size (৮.৫" x ১৪") – প্রফেশনাল ফর্মের জন্য জায়গা */
+                    @page {
+                        size: legal;
+                        margin: 12mm;
+                    }
                     @media print {
-                        html, body { margin: 0 !important; padding: 0 !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
-                        .teambased-approval-print-page { margin: 0 !important; padding: 0 !important; }
+                        html, body {
+                            margin: 0 !important;
+                            padding: 0 !important;
+                            -webkit-print-color-adjust: exact;
+                            print-color-adjust: exact;
+                            background: #fff !important;
+                        }
+                        /* প্রিন্টে শুধু ফর্ম কনটেন্ট দেখাবে, সাইডবার/নেভ লুকানো */
+                        body * { visibility: hidden; }
+                        .teambased-approval-print-page,
+                        .teambased-approval-print-page * { visibility: visible; }
+                        .teambased-approval-print-page {
+                            position: absolute !important;
+                            left: 0 !important;
+                            top: 0 !important;
+                            width: 100% !important;
+                            max-width: 100% !important;
+                            margin: 0 !important;
+                            padding: 0 !important;
+                        }
+                        .teambased-approval-print-page .print-content-wrapper {
+                            width: 100% !important;
+                            max-width: 100% !important;
+                        }
+                        .teambased-approval-print-page table {
+                            font-size: 9pt !important;
+                            page-break-inside: auto;
+                        }
+                        .teambased-approval-print-page tr { page-break-inside: avoid; page-break-after: auto; }
                     }
                 `}</style>
             </Head>
@@ -68,7 +108,7 @@ export default function TeamBasedApprovalPrint({ sheet, items }: Props) {
                     </button>
                 </div>
 
-                <div className="bg-white border border-gray-300 rounded-lg shadow-sm p-4 print:shadow-none print:border-0 print:rounded-none print:p-0">
+                <div className="bg-white border border-gray-300 rounded-lg shadow-sm p-4 print:shadow-none print:border-0 print:rounded-none print:p-0 print-content-wrapper">
                     {/* Header - matches formal document: logo left, org+title center, date right; then branch/area/zone */}
                     <div className="mb-4">
                         <div className="flex items-start justify-between gap-4 mb-2">
@@ -111,6 +151,7 @@ export default function TeamBasedApprovalPrint({ sheet, items }: Props) {
                                     <th className="border border-gray-400 px-2 py-1 bg-gray-100 text-center">ক্র. নং</th>
                                     <th className="border border-gray-400 px-2 py-1 bg-gray-100 text-center">সদস্যের নাম</th>
                                     <th className="border border-gray-400 px-2 py-1 bg-gray-100 text-center">সদস্য নম্বর</th>
+                                    <th className="border border-gray-400 px-2 py-1 bg-gray-100 text-center">ফোন নম্বর</th>
                                     <th className="border border-gray-400 px-2 py-1 bg-gray-100 text-center">সমিতি নম্বর</th>
                                     <th colSpan={3} className="border border-gray-400 px-2 py-1 bg-gray-100 text-center">
                                         সঞ্চয়ের পরিমাণ
@@ -121,7 +162,7 @@ export default function TeamBasedApprovalPrint({ sheet, items }: Props) {
                                     <th className="border border-gray-400 px-2 py-1 bg-gray-100 text-center">
                                         পরিশোধিত দফা নম্বর
                                     </th>
-                                    <th className="border border-gray-400 px-2 py-1 bg-gray-100 text-center">
+                                    <th className="border border-gray-400 px-3 py-1 bg-gray-100 text-center min-w-[8rem]">
                                         অন্যান্য সংস্থায় গ্রহণকৃত ঋণের পরিমাণ
                                     </th>
                                     <th className="border border-gray-400 px-2 py-1 bg-gray-100 text-center">
@@ -136,7 +177,8 @@ export default function TeamBasedApprovalPrint({ sheet, items }: Props) {
                                     <th className="border border-gray-400 px-2 py-1 bg-gray-100 text-center">অনুমোদনকারী</th>
                                     <th className="border border-gray-400 px-2 py-1 bg-gray-100 text-center">অনুমোদনকারীর স্বাক্ষর / তারিখ</th>
                                 </tr>
-                                <tr>
+                                    <tr>
+                                    <th className="border border-gray-400 px-2 py-1 bg-gray-100 text-center" />
                                     <th className="border border-gray-400 px-2 py-1 bg-gray-100 text-center" />
                                     <th className="border border-gray-400 px-2 py-1 bg-gray-100 text-center" />
                                     <th className="border border-gray-400 px-2 py-1 bg-gray-100 text-center" />
@@ -163,34 +205,35 @@ export default function TeamBasedApprovalPrint({ sheet, items }: Props) {
                                         </td>
                                         <td className="border border-gray-300 px-2 py-1">{row.member_name}</td>
                                         <td className="border border-gray-300 px-2 py-1">{row.member_code || ''}</td>
+                                        <td className="border border-gray-300 px-2 py-1">{row.member_phone || ''}</td>
                                         <td className="border border-gray-300 px-2 py-1">{row.samity_number || ''}</td>
                                         <td className="border border-gray-300 px-2 py-1 text-right">
-                                            {row.savings_general ?? ''}
+                                            {formatAmount(row.savings_general)}
                                         </td>
                                         <td className="border border-gray-300 px-2 py-1 text-right">
-                                            {row.savings_other ?? ''}
+                                            {formatAmount(row.savings_other)}
                                         </td>
                                         <td className="border border-gray-300 px-2 py-1 text-right">
-                                            {row.savings_total ?? ''}
+                                            {formatAmount(row.savings_total)}
                                         </td>
                                         <td className="border border-gray-300 px-2 py-1 text-right">
-                                            {row.repaid_loan_amount ?? ''}
+                                            {formatAmount(row.repaid_loan_amount) || row.repaid_loan_amount ?? ''}
                                         </td>
                                         <td className="border border-gray-300 px-2 py-1 text-center">
                                             {row.repaid_installment_no ?? ''}
                                         </td>
-                                        <td className="border border-gray-300 px-2 py-1 text-right align-top">
+                                        <td className="border border-gray-300 px-3 py-1.5 text-left align-top min-w-[8rem]">
                                             <span className="whitespace-pre-line block text-left">{row.other_institution_loan_amount ?? ''}</span>
                                         </td>
                                         <td className="border border-gray-300 px-2 py-1 text-right">
-                                            {row.proposed_loan_amount ?? ''}
+                                            {formatAmount(row.proposed_loan_amount)}
                                         </td>
                                         <td className="border border-gray-300 px-2 py-1 text-center">
                                             {row.loan_term_years ?? ''}
                                         </td>
                                         <td className="border border-gray-300 px-2 py-1">{row.loan_type || ''}</td>
                                         <td className="border border-gray-300 px-2 py-1">{row.project_name || ''}</td>
-                                        <td className="border border-gray-300 px-2 py-1 text-right">{row.approved_amount ?? ''}</td>
+                                        <td className="border border-gray-300 px-2 py-1 text-right">{formatAmount(row.approved_amount)}</td>
                                         <td className="border border-gray-300 px-2 py-1 text-center text-[10px]">
                                             {row.approvers && row.approvers.length > 0 ? row.approvers.map((a) => a.approver_name).filter(Boolean).join(', ') : ''}
                                         </td>

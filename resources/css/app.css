@@ -141,3 +141,11 @@
         @apply bg-background text-foreground;
     }
 }
+
+/* প্রিন্টে মেম্বার অ্যাডমিশন কমেন্ট বক্সের ভেতরে প্যাডিং নিশ্চিত */
+@media print {
+    .member-admission-comment-inner {
+        padding: 10px !important;
+        box-sizing: border-box;
+    }
+}

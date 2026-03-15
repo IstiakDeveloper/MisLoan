@@ -229,10 +229,10 @@ export default function ApproverSelectionStep({
                 </h3>
 
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    {/* Customer Photo - Required */}
+                    {/* Customer Photo - Optional */}
                     <div>
                         <label className="block text-sm font-medium text-gray-700 mb-1">
-                            Customer Photo <span className="text-red-500">*</span> (গ্রাহকের ছবি)
+                            Customer Photo (গ্রাহকের ছবি)
                         </label>
                         <input
                             type="file"
@@ -264,10 +264,10 @@ export default function ApproverSelectionStep({
                         </p>
                     </div>
 
-                    {/* Customer NID Photo - Required */}
+                    {/* Customer NID Photo - Optional */}
                     <div>
                         <label className="block text-sm font-medium text-gray-700 mb-1">
-                            Customer NID Photo <span className="text-red-500">*</span> (গ্রাহকের জাতীয় পরিচয়পত্রের ছবি)
+                            Customer NID Photo (গ্রাহকের জাতীয় পরিচয়পত্রের ছবি)
                         </label>
                         <input
                             type="file"
@@ -302,7 +302,7 @@ export default function ApproverSelectionStep({
                     {/* Guardian Photo - Optional */}
                     <div>
                         <label className="block text-sm font-medium text-gray-700 mb-1">
-                            Guardian Photo (Optional) (অভিভাবকের ছবি - ঐচ্ছিক)
+                            Guardian Photo (অভিভাবকের ছবি)
                         </label>
                         <input
                             type="file"
@@ -333,7 +333,7 @@ export default function ApproverSelectionStep({
                     {/* Guardian NID Photo - Optional */}
                     <div>
                         <label className="block text-sm font-medium text-gray-700 mb-1">
-                            Guardian NID Photo (Optional) (অভিভাবকের জাতীয় পরিচয়পত্রের ছবি - ঐচ্ছিক)
+                            Guardian NID Photo (অভিভাবকের জাতীয় পরিচয়পত্রের ছবি)
                         </label>
                         <input
                             type="file"
@@ -364,7 +364,7 @@ export default function ApproverSelectionStep({
                     {/* Applicant Signature - Optional */}
                     <div className="md:col-span-2">
                         <label className="block text-sm font-medium text-gray-700 mb-1">
-                            Applicant Signature (Optional) (আবেদনকারীর স্বাক্ষর - ঐচ্ছিক)
+                            Applicant Signature (আবেদনকারীর স্বাক্ষর)
                         </label>
                         <input
                             type="file"

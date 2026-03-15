@@ -100,6 +100,8 @@ export interface MemberAdmission {
     cultivable_land_value?: number;
     non_cultivable_land_amount?: number;
     non_cultivable_land_value?: number;
+    total_land_amount?: number;
+    total_land_value?: number;
 
     // Financial
     monthly_income?: number;

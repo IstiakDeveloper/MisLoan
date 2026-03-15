@@ -206,9 +206,9 @@ class MemberAdmissionController extends Controller
             'collector_comment' => 'nullable|string',
             'guardian_name' => 'nullable|string|max:255',
 
-            // Customer Documents (Required) - Max 10MB (will be compressed)
-            'customer_photo' => 'required|image|mimes:jpeg,png,jpg|max:10240',
-            'customer_nid_photo' => 'required|file|mimes:jpeg,png,jpg,pdf|max:10240',
+            // Customer Documents (Optional) - Max 10MB (will be compressed)
+            'customer_photo' => 'nullable|image|mimes:jpeg,png,jpg|max:10240',
+            'customer_nid_photo' => 'nullable|file|mimes:jpeg,png,jpg,pdf|max:10240',
 
             // Guardian Documents (Optional) - Max 10MB (will be compressed)
             'guardian_photo' => 'nullable|image|mimes:jpeg,png,jpg|max:10240',
@@ -303,6 +303,10 @@ class MemberAdmissionController extends Controller
                   $admissionData['applicant_signature']);
 
             $admissionData['created_by'] = auth()->id();
+
+            // মোট জমির পরিমাণ ও মূল্য (আবাদযোগ্য + অনাবাদি)
+            $admissionData['total_land_amount'] = ($admissionData['cultivable_land_amount'] ?? 0) + ($admissionData['non_cultivable_land_amount'] ?? 0);
+            $admissionData['total_land_value'] = ($admissionData['cultivable_land_value'] ?? 0) + ($admissionData['non_cultivable_land_value'] ?? 0);
 
             $authUser = auth()->user();
             $authUser->loadMissing('role');
@@ -435,9 +439,9 @@ class MemberAdmissionController extends Controller
             'member_category_id' => 'required|exists:member_categories,id',
             'nid_number' => 'required|string|max:20',
 
-            // Customer Documents (Required on create, optional on update if already exists) - Max 10MB (will be compressed)
-            'customer_photo' => $memberAdmission->customer_photo_path ? 'nullable|image|mimes:jpeg,png,jpg|max:10240' : 'required|image|mimes:jpeg,png,jpg|max:10240',
-            'customer_nid_photo' => $memberAdmission->customer_nid_photo_path ? 'nullable|file|mimes:jpeg,png,jpg,pdf|max:10240' : 'required|file|mimes:jpeg,png,jpg,pdf|max:10240',
+            // Customer Documents (Optional) - Max 10MB (will be compressed)
+            'customer_photo' => 'nullable|image|mimes:jpeg,png,jpg|max:10240',
+            'customer_nid_photo' => 'nullable|file|mimes:jpeg,png,jpg,pdf|max:10240',
 
             // Guardian Documents (Optional) - Max 10MB (will be compressed)
             'guardian_photo' => 'nullable|image|mimes:jpeg,png,jpg|max:10240',
@@ -535,6 +539,14 @@ class MemberAdmissionController extends Controller
                 $updateData['interviewer_name'] = $updateData['interviewer_name'] ?: $authUser->name;
                 $updateData['employee_name'] = $updateData['employee_name'] ?: $authUser->name;
             }
+
+            // মোট জমির পরিমাণ ও মূল্য (আবাদযোগ্য + অনাবাদি)
+            $cultivableAmount = $updateData['cultivable_land_amount'] ?? $memberAdmission->cultivable_land_amount ?? 0;
+            $cultivableValue = $updateData['cultivable_land_value'] ?? $memberAdmission->cultivable_land_value ?? 0;
+            $nonCultivableAmount = $updateData['non_cultivable_land_amount'] ?? $memberAdmission->non_cultivable_land_amount ?? 0;
+            $nonCultivableValue = $updateData['non_cultivable_land_value'] ?? $memberAdmission->non_cultivable_land_value ?? 0;
+            $updateData['total_land_amount'] = $cultivableAmount + $nonCultivableAmount;
+            $updateData['total_land_value'] = $cultivableValue + $nonCultivableValue;
 
             $memberAdmission->update($updateData);
 
