@@ -401,11 +401,18 @@ function renderPage2(d: any, categoryName?: string) {
     const fmt = formatDateBangla;
     return (
         <div className="bg-white border border-gray-300 p-4 print:p-2" style={{ fontSize: '12px', pageBreakAfter: 'always' }}>
-            <div className="text-center mb-3 rounded-lg border-2 border-gray-600 p-2">
-                <h2 className="text-[12px] font-bold print:text-[12px]">{cat} ঋণের প্রোফাইল</h2>
+            <div className="flex justify-center mb-3">
+                <div className="inline-block text-center rounded-lg border-2 border-gray-600 px-3 py-1">
+                    <h2 className="text-[12px] font-bold print:text-[12px]">{cat} ঋণের প্রোফাইল</h2>
+                </div>
+
             </div>
             <div className="mb-3">
-                <h3 className="font-bold text-[12px] mb-2">ক. উদ্যোগ বিষয়ক সাধারণ তথ্যাবলী:</h3>
+                <div className="flex justify-center items-center">
+                    <h3 className="font-bold text-[12px] mb-2 border border-gray-600 px-3 py-1 inline-block mx-auto">
+                        ক. উদ্যোগ বিষয়ক সাধারণ তথ্যাবলী:
+                    </h3>
+                </div>
                 <div className="space-y-2" style={{ fontSize: '12px' }}>
                     <div><span>১. প্রস্তাবিত প্রকল্পের নাম:</span><span className="border-b border-dotted border-gray-600 inline-block min-w-[300px] ml-1 align-bottom">{d.proposed_project_name || d.project_name || ''}</span></div>
                     <div><span>২. উদ্যোক্তাদের সংশ্লিষ্টতা-</span>
@@ -414,42 +421,299 @@ function renderPage2(d: any, categoryName?: string) {
                             <div><span>(খ) খণ্ডকালীন: কতোদিন কাজটিতে নিযুক্ত আছে</span><span className="border-b border-dotted border-gray-600 inline-block min-w-[40px] mx-1 align-bottom">{d.entrepreneur_parttime_years || ''}</span> বছর, <span className="border-b border-dotted border-gray-600 inline-block min-w-[40px] mx-1 align-bottom">{d.entrepreneur_parttime_months || ''}</span> মাস</div>
                         </div>
                     </div>
-                    <div><span>৩. ঋণ গ্রহণের অভিজ্ঞতা:</span><span className="border-b border-dotted border-gray-600 inline-block min-w-[40px] mx-1 align-bottom">{d.loan_experience_years || ''}</span> বছর, <span className="border-b border-dotted border-gray-600 inline-block min-w-[40px] mx-1 align-bottom">{d.loan_experience_months || ''}</span> মাস</div>
-                    <div><span>৪. প্রকল্পে নিয়োজিত জনবল:</span>
-                        <div className="ml-4 mt-1">
-                            <div><span>মোট:</span><span className="border-b border-dotted border-gray-600 inline-block min-w-[50px] mx-1 align-bottom">{d.project_manpower_total || d.project_manpower || ''}</span> পরিবারের সদস্য: <span className="border-b border-dotted border-gray-600 inline-block min-w-[50px] mx-1 align-bottom">{d.project_manpower_family || ''}</span> বাইরের: <span className="border-b border-dotted border-gray-600 inline-block min-w-[50px] mx-1 align-bottom">{d.project_manpower_outside || ''}</span> প্রশিক্ষিত: <span className="border-b border-dotted border-gray-600 inline-block min-w-[50px] mx-1 align-bottom">{d.project_manpower_trained || ''}</span></div>
+                    <div><span>৩. ঋণ কার্যক্রমে উদ্যোক্তার অভিজ্ঞতা:</span><span className="border-b border-dotted border-gray-600 inline-block min-w-[40px] mx-1 align-bottom">{d.loan_experience_years || ''}</span> বছর, <span className="border-b border-dotted border-gray-600 inline-block min-w-[40px] mx-1 align-bottom">{d.loan_experience_months || ''}</span> মাস</div>
+                    <div>
+                        <div>
+                            <span>৪. প্রকল্পে নিয়োগকৃত জনবল</span>
+                            <span className="border-b border-dotted border-gray-600 inline-block min-w-[60px] mx-1 align-bottom">
+                                {d.project_manpower_total || d.project_manpower || ''}
+                            </span>
+                            <span>জন।</span>
+                        </div>
+                        <div className="ml-4 mt-1 space-y-0.5">
+                            <div>
+                                <span>(ক) পরিবারের মধ্যে</span>
+                                <span className="border-b border-dotted border-gray-600 inline-block min-w-[60px] mx-1 align-bottom">
+                                    {d.project_manpower_family || ''}
+                                </span>
+                                <span>জন</span>
+                            </div>
+                            <div>
+                                <span>(খ) পরিবারের বাইরে</span>
+                                <span className="border-b border-dotted border-gray-600 inline-block min-w-[60px] mx-1 align-bottom">
+                                    {d.project_manpower_outside || ''}
+                                </span>
+                                <span>জন</span>
+                            </div>
+                            <div>
+                                <span>(গ) প্রশিক্ষণপ্রাপ্ত লোকবল</span>
+                                <span className="border-b border-dotted border-gray-600 inline-block min-w-[60px] mx-1 align-bottom">
+                                    {d.project_manpower_trained || ''}
+                                </span>
+                                <span>জন</span>
+                            </div>
                         </div>
                     </div>
-                    <div><span>৫. কাঁচামাল ক্রয়ের স্থান:</span><span className="border-b border-dotted border-gray-600 inline-block min-w-[200px] ml-1 align-bottom">{d.raw_material_purchase_location || ''}</span></div>
-                    <div><span>৬. পণ্য বিপণনের স্থান:</span><span className="border-b border-dotted border-gray-600 inline-block min-w-[200px] ml-1 align-bottom">{d.product_marketing_location || ''}</span></div>
-                    <div><span>৭. গত বছরের মূলধন:</span><span className="border-b border-dotted border-gray-600 inline-block min-w-[100px] mx-1 align-bottom">{noDecimal(d.last_year_capital)}</span> বিক্রয়: <span className="border-b border-dotted border-gray-600 inline-block min-w-[100px] mx-1 align-bottom">{noDecimal(d.last_year_sales)}</span> লাভ/ক্ষতি: <span className="border-b border-dotted border-gray-600 inline-block min-w-[100px] mx-1 align-bottom">{noDecimal(d.last_year_profit_loss)}</span></div>
-                </div>
-            </div>
-            <div className="mb-3">
-                <h3 className="font-bold text-[12px] mb-2">খ. আর্থিক তথ্য বিবরণী সমূহ:</h3>
-                <div className="space-y-2" style={{ fontSize: '12px' }}>
-                    <div><span>১. মোট কতবার ঋণ গ্রহণ করেছেন:</span><span className="border-b border-dotted border-gray-600 inline-block min-w-[60px] mx-1 align-bottom">{d.total_loans_taken || d.previous_loan_times || ''}</span></div>
-                    <div><span>২. গত তিনবারের ঋণের তথ্য:</span>
+                    {/* ৫. উৎপাদন ও বাজারজাতকরণের সংক্ষিপ্ত তথ্য (২ কলামের টেবিল) */}
+                    <div>
+                        <div><span>৫. উৎপাদন ও বাজারজাতকরণ সংক্রান্ত তথ্য:</span></div>
+                        <table className="w-full border-collapse border border-gray-600 text-[12px] mt-1">
+                            <tbody>
+                                <tr>
+                                    <td className="w-1/2 border border-gray-600 px-1 py-0.5 align-top">
+                                        ব্যবহৃত কাঁচামাল ক্রয়ের স্থান (নাম ও ঠিকানাসহ):
+                                    </td>
+                                    <td className="w-1/2 border border-gray-600 px-2 py-0.5">
+                                        {d.raw_material_purchase_location || ''}
+                                    </td>
+                                </tr>
+                                <tr>
+                                    <td className="w-1/2 border border-gray-600 px-1 py-0.5 align-top">
+                                        উৎপাদিত পণ্য বাজারজাতকরণের স্থান কোথায়? (নাম ও ঠিকানাসহ):
+                                    </td>
+                                    <td className="w-1/2 border border-gray-600 px-2 py-0.5">
+                                        {d.product_marketing_location || ''}
+                                    </td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+
+                    {/* ৬. গত ১ বছরের আর্থিক তথ্য (টেবিল আকারে) */}
+                    <div className="mt-2">
+                        <div><span>৬. বিগত ০১ বছরের আর্থিক তথ্য:</span></div>
                         <table className="w-full border-collapse border border-gray-600 text-[12px] mt-1">
                             <thead>
-                                <tr>
-                                    <th className="border border-gray-600 px-1 py-0.5">ঋণ নং</th>
-                                    <th className="border border-gray-600 px-1 py-0.5">তারিখ</th>
-                                    <th className="border border-gray-600 px-1 py-0.5">পরিমাণ</th>
-                                    <th className="border border-gray-600 px-1 py-0.5">প্রকল্পের নাম</th>
-                                    <th className="border border-gray-600 px-1 py-0.5">সঞ্চয় অবস্থা</th>
+                                <tr className="font-normal">
+                                    <td className="border border-gray-600 px-1 py-0.5 text-center">পুঁজির পরিমাণ</td>
+                                    <td className="border border-gray-600 px-1 py-0.5 text-center">বিক্রয় (সারা বছর)</td>
+                                    <td className="border border-gray-600 px-1 py-0.5 text-center">মোট লাভ/ক্ষতি</td>
                                 </tr>
                             </thead>
                             <tbody>
-                                {((d.last_three_loans || []) as any[]).slice(0, 3).map((loan, idx) => (
+                                <tr>
+                                    <td className="border border-gray-600 px-2 py-0.5 text-center">
+                                        <span className="inline-block min-w-[80px]">
+                                            {noDecimal(d.last_year_capital)}
+                                        </span>
+                                    </td>
+                                    <td className="border border-gray-600 px-2 py-0.5 text-center">
+                                        <span className="inline-block min-w-[80px]">
+                                            {noDecimal(d.last_year_sales)}
+                                        </span>
+                                    </td>
+                                    <td className="border border-gray-600 px-2 py-0.5 text-center">
+                                        <span className="inline-block min-w-[80px]">
+                                            {noDecimal(d.last_year_profit_loss)}
+                                        </span>
+                                    </td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+
+                    {/* ৭. প্রযোজ্য ক্ষেত্রে ট্রেড লাইসেন্স ও অন্যান্য লাইসেন্স এবং আয়ের প্রমাণ সম্পর্কিত তথ্য */}
+                    <div className="mt-2 space-y-1" style={{ fontSize: '12px' }}>
+                        <div>
+                            <span>৭. প্রযোজ্য ক্ষেত্রে ট্রেড লাইসেন্স ও অন্যান্য লাইসেন্স এবং আয়ের প্রমাণ সম্পর্কিত তথ্য:</span>
+                        </div>
+                        <div>
+                            <div>
+                                <span>(ক) লাইসেন্স প্রদানকারী কর্তৃপক্ষ</span>
+                                <span className="border-b border-dotted border-gray-600 inline-block min-w-[120px] mx-0.5 align-bottom">
+                                    {d.license_authority_1 || ''}
+                                </span>
+                                <span>লাইসেন্স নম্বর</span>
+                                <span className="border-b border-dotted border-gray-600 inline-block min-w-[90px] mx-0.5 align-bottom">
+                                    {d.license_number_1 || ''}
+                                </span>
+                                <span>মেয়াদ</span>
+                                <span className="border-b border-dotted border-gray-600 inline-block min-w-[70px] mx-0.5 align-bottom">
+                                    {d.license_validity_1 || ''}
+                                </span>
+                            </div>
+                            <div>
+                                <span>(খ) লাইসেন্স প্রদানকারী কর্তৃপক্ষ</span>
+                                <span className="border-b border-dotted border-gray-600 inline-block min-w-[120px] mx-0.5 align-bottom">
+                                    {d.license_authority_2 || ''}
+                                </span>
+                                <span>লাইসেন্স নম্বর</span>
+                                <span className="border-b border-dotted border-gray-600 inline-block min-w-[90px] mx-0.5 align-bottom">
+                                    {d.license_number_2 || ''}
+                                </span>
+                                <span>মেয়াদ</span>
+                                <span className="border-b border-dotted border-gray-600 inline-block min-w-[70px] mx-0.5 align-bottom">
+                                    {d.license_validity_2 || ''}
+                                </span>
+                            </div>
+                            <div>
+                                <span>(গ) আয়ের প্রত্যয়ন আছে কি?</span>
+                                <span className="mx-1">{d.income_tax_certification === 'yes' ? '☑' : '☐'} হ্যাঁ</span>
+                                <span className="mx-1">{d.income_tax_certification === 'no' ? '☑' : '☐'} না;</span>
+                                <span>হ্যাঁ হলে, ফটোকপি গ্রহণ করতে হবে।</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div className="mb-3">
+                <div className="flex justify-center items-center">
+                    <h3 className="font-bold text-[12px] mb-2 border border-gray-600 px-3 py-1 inline-block mx-auto bg-gray-200">
+                        খ. আর্থিক তথ্য বিবরণী সমূহ:
+                    </h3>
+                </div>
+
+                <div className="space-y-2" style={{ fontSize: '12px' }}>
+                    {/* ০১. সর্বশেষ ৩ দফার ঋণ গ্রহণ সংক্রান্ত তথ্য */}
+                    <div>
+                        <span>০১. সদস্য এ' পর্যন্ত </span>
+                        <span className="border-b border-dotted border-gray-600 inline-block min-w-[60px] mx-1 align-bottom">
+                            {d.total_loans_taken || d.previous_loan_times || ''}
+                        </span>
+                        <span>দফায় ঋণ গ্রহণ করেছেন। সর্বশেষ ৩ দফার ঋণ গ্রহণ সংক্রান্ত তথ্য:</span>
+                        <table className="w-full border-collapse border border-gray-600 text-[12px] mt-1">
+                            <thead>
+                                <tr className="bg-gray-100 font-semibold text-center">
+                                    <td className="border border-gray-600 px-1 py-0.5 w-[26%]">বিবরণ</td>
+                                    <td className="border border-gray-600 px-1 py-0.5">দফা নং {d.last_three_loans?.[0]?.loan_number || '...'}</td>
+                                    <td className="border border-gray-600 px-1 py-0.5">দফা নং {d.last_three_loans?.[1]?.loan_number || '...'}</td>
+                                    <td className="border border-gray-600 px-1 py-0.5">দফা নং {d.last_three_loans?.[2]?.loan_number || '...'}</td>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {(() => {
+                                    const loans = ((d.last_three_loans || []) as any[]).slice(0, 3);
+                                    const cell = (i: number, v: any) => (
+                                        <td className="border border-gray-600 px-1 py-0.5 text-center">
+                                            <span className="inline-block min-w-[80px] min-h-[14px]">{v ?? ''}</span>
+                                        </td>
+                                    );
+                                    const l = (i: number) => loans[i] || {};
+                                    return (
+                                        <>
+                                            <tr>
+                                                <td className="border border-gray-600 px-1 py-0.5">ঋণ গ্রহণের তারিখ</td>
+                                                {cell(0, fmt(l(0).loan_date))}
+                                                {cell(1, fmt(l(1).loan_date))}
+                                                {cell(2, fmt(l(2).loan_date))}
+                                            </tr>
+
+                                            <tr>
+                                                <td className="border border-gray-600 px-1 py-0.5">গৃহীত ঋণের পরিমাণ</td>
+                                                {cell(0, noDecimal(l(0).loan_amount))}
+                                                {cell(1, noDecimal(l(1).loan_amount))}
+                                                {cell(2, noDecimal(l(2).loan_amount))}
+                                            </tr>
+                                            <tr>
+                                                <td className="border border-gray-600 px-1 py-0.5">প্রকল্পের নাম</td>
+                                                {cell(0, l(0).project_name || '')}
+                                                {cell(1, l(1).project_name || '')}
+                                                {cell(2, l(2).project_name || '')}
+                                            </tr>
+                                            <tr>
+                                                <td className="border border-gray-600 px-1 py-0.5">সঞ্চয় স্থিতি</td>
+                                                {cell(0, l(0).savings_status || '')}
+                                                {cell(1, l(1).savings_status || '')}
+                                                {cell(2, l(2).savings_status || '')}
+                                            </tr>
+                                        </>
+                                    );
+                                })()}
+                            </tbody>
+                        </table>
+                    </div>
+
+                    {/* ০২. অন্যান্য ঋণ গ্রহণ স্থিতি */}
+                    <div className="mt-1">
+                        <div><span>০২. অন্যান্য উৎস থেকে গৃহীত ঋণের বিবরণ (চলমান ঋণ):</span></div>
+                        <table className="w-full border-collapse border border-gray-600 text-[12px] mt-1">
+                            <thead>
+                                <tr className="font-normal">
+                                    <td className="border border-gray-600 px-1 py-0.5 w-[18%]">সংস্থার/প্রতিষ্ঠানের নাম</td>
+                                    <td className="border border-gray-600 px-1 py-0.5 w-[18%]">বর্তমান গৃহীত ঋণের পরিমাণ</td>
+                                    <td className="border border-gray-600 px-1 py-0.5 w-[12%] text-center">ঋণের মেয়াদ</td>
+                                    <td className="border border-gray-600 px-1 py-0.5 w-[20%]">তথ্য প্রদানকারীর নাম</td>
+                                    <td className="border border-gray-600 px-1 py-0.5 w-[14%] text-center">মোবাইল নম্বর</td>
+                                    <td className="border border-gray-600 px-1 py-0.5 w-[18%]">মন্তব্য</td>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {(['ব্যাংক', 'এনজিও', 'গ্রামীণ বাংলাদেশ', 'আন্তর্জাতিক/বেসরকারি', 'অন্যান্য', '', ''] as string[]).map((label, idx) => (
                                     <tr key={idx}>
-                                        <td className="border border-gray-600 px-1 py-0.5"><span className="border-b border-dotted border-gray-600 inline-block w-full min-h-[12px]">{loan.loan_number || ''}</span></td>
-                                        <td className="border border-gray-600 px-1 py-0.5"><span className="border-b border-dotted border-gray-600 inline-block w-full min-h-[12px]">{fmt(loan.loan_date)}</span></td>
-                                        <td className="border border-gray-600 px-1 py-0.5"><span className="border-b border-dotted border-gray-600 inline-block w-full min-h-[12px]">{noDecimal(loan.loan_amount)}</span></td>
-                                        <td className="border border-gray-600 px-1 py-0.5"><span className="border-b border-dotted border-gray-600 inline-block w-full min-h-[12px]">{loan.project_name || ''}</span></td>
-                                        <td className="border border-gray-600 px-1 py-0.5"><span className="border-b border-dotted border-gray-600 inline-block w-full min-h-[12px]">{loan.savings_status || ''}</span></td>
+                                        <td className="border border-gray-600 px-1 py-0.5">{label}</td>
+                                        <td className="border border-gray-600 px-1 py-0.5"><span className="inline-block w-full min-h-[14px]">{d.other_loan_status?.[idx]?.current_status || ''}</span></td>
+                                        <td className="border border-gray-600 px-1 py-0.5 text-center"><span className="inline-block w-full min-h-[14px]">{d.other_loan_status?.[idx]?.round || ''}</span></td>
+                                        <td className="border border-gray-600 px-1 py-0.5"><span className="inline-block w-full min-h-[14px]">{d.other_loan_status?.[idx]?.borrower_name || ''}</span></td>
+                                        <td className="border border-gray-600 px-1 py-0.5 text-center"><span className="inline-block w-full min-h-[14px]">{d.other_loan_status?.[idx]?.mobile || ''}</span></td>
+                                        <td className="border border-gray-600 px-1 py-0.5"><span className="inline-block w-full min-h-[14px]">{d.other_loan_status?.[idx]?.remarks || ''}</span></td>
                                     </tr>
                                 ))}
+                            </tbody>
+                        </table>
+                        <div className="mt-1 text-[11px]">* উল্লেখ্য, ব্যাংক বা অন্য কোন প্রতিষ্ঠানিক উৎস এমনকি ব্যাক্তিগতভাবে গৃহীত ধার হলেও উল্লেখ করতে হবে।</div>
+                    </div>
+
+                    {/* ০৩. বিনিয়োগের পরিকল্পনা */}
+                    <div className="mt-1">
+                        <div><span>০৩. বিনিয়োগের পরিকল্পনা:</span></div>
+                        <table className="w-full border-collapse border border-gray-600 text-[12px] mt-1">
+                            <thead>
+                                <tr className="font-normal">
+                                    <td className="border border-gray-600 px-1 py-0.5 w-[30%] text-center">বিনিয়োগের খাত</td>
+                                    <td className="border border-gray-600 px-1 py-0.5 w-[15%] text-center">টাকার পরিমাণ</td>
+                                    <td className="border border-gray-600 px-1 py-0.5 w-[30%] text-center">ঋণের ব্যবহার</td>
+                                    <td className="border border-gray-600 px-1 py-0.5 w-[15%] text-center">টাকার পরিমাণ</td>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <tr>
+                                    <td className="border border-gray-600 px-1 py-0.5">সংস্থার অনুমোদনকৃত ঋণে ব্যয়ের পরিমাণ</td>
+                                    <td className="border border-gray-600 px-1 py-0.5 text-center">
+                                        <span className="inline-block min-w-[80px] min-h-[14px]">{noDecimal(d.invest_plan_applied_amount)}</span>
+                                    </td>
+                                    <td className="border border-gray-600 px-1 py-0.5">
+                                        <div>মূলধনী ব্যয়:</div>
+                                        <div className="ml-4">
+                                            <span>(ক) যন্ত্রপাতি ক্রয়</span>
+                                        </div>
+                                        <div className="ml-4">
+                                            <span>(খ) গৃহ নির্মাণ</span>
+                                        </div>
+                                    </td>
+                                    <td className="border border-gray-600 px-1 py-0.5 text-center">
+                                        <span className="inline-block min-w-[80px] min-h-[14px]">{noDecimal(d.invest_use_capital)}</span>
+                                    </td>
+                                </tr>
+                                <tr>
+                                    <td className="border border-gray-600 px-1 py-0.5">নিজস্ব তহবিল</td>
+                                    <td className="border border-gray-600 px-1 py-0.5 text-center">
+                                        <span className="inline-block min-w-[80px] min-h-[14px]">{noDecimal(d.invest_plan_own_amount)}</span>
+                                    </td>
+                                    <td className="border border-gray-600 px-1 py-0.5">উদ্যোগ পরিচালনার ব্যয়</td>
+                                    <td className="border border-gray-600 px-1 py-0.5 text-center">
+                                        <span className="inline-block min-w-[80px] min-h-[14px]">{noDecimal(d.invest_use_running)}</span>
+                                    </td>
+                                </tr>
+                                <tr>
+                                    <td className="border border-gray-600 px-1 py-0.5">অন্যান্য উৎস যদি থাকে <span className='text-xs'>(নাম উল্লেখ করতে হবে)</span></td>
+                                    <td className="border border-gray-600 px-1 py-0.5 text-center">
+                                        <span className="inline-block min-w-[80px] min-h-[14px]">{noDecimal(d.invest_plan_other_amount)}</span>
+                                    </td>
+                                    <td className="border border-gray-600 px-1 py-0.5">কাচামাল ক্রয় </td>
+                                    <td className="border border-gray-600 px-1 py-0.5 text-center">
+                                        <span className="inline-block min-w-[80px] min-h-[14px]">{noDecimal(d.invest_use_other)}</span>
+                                    </td>
+                                </tr>
+                                <tr>
+                                    <td className="border border-gray-600 px-1 py-0.5 text-center font-semibold">মোট</td>
+                                    <td className="border border-gray-600 px-1 py-0.5 text-center">
+                                        <span className="inline-block min-w-[80px] min-h-[14px]">{noDecimal(d.invest_plan_total)}</span>
+                                    </td>
+                                    <td className="border border-gray-600 px-1 py-0.5 text-center font-semibold">মোট</td>
+                                    <td className="border border-gray-600 px-1 py-0.5 text-center">
+                                        <span className="inline-block min-w-[80px] min-h-[14px]">{noDecimal(d.invest_use_total)}</span>
+                                    </td>
+                                </tr>
                             </tbody>
                         </table>
                     </div>
@@ -692,6 +956,25 @@ export default function LoanApplicationApproval({
         last_year_profit_loss: '',
         total_loans_taken: '',
         last_three_loans: [],
+        // ৭. ট্রেড লাইসেন্স ও আয়ের প্রত্যয়ন
+        license_authority_1: '',
+        license_number_1: '',
+        license_validity_1: '',
+        license_authority_2: '',
+        license_number_2: '',
+        license_validity_2: '',
+        income_tax_certification: '', // '' | 'yes' | 'no'
+        // খ.০২ অন্যান্য ঋণ গ্রহণ স্থিতি
+        other_loan_status: [],
+        // খ.০৩ বিনিয়োগের পরিকল্পনা
+        invest_plan_applied_amount: '',
+        invest_plan_own_amount: '',
+        invest_plan_other_amount: '',
+        invest_plan_total: '',
+        invest_use_capital: '',
+        invest_use_running: '',
+        invest_use_other: '',
+        invest_use_total: '',
 
         // Page 3 fields
         investigating_officer_name: '',
@@ -1129,33 +1412,34 @@ export default function LoanApplicationApproval({
                                                 const fromAdmission = !!(member && !isLegacy);
                                                 const inputClass = fromAdmission ? 'border rounded px-2 py-1.5 text-[12px] bg-gray-100 cursor-not-allowed' : 'border rounded px-2 py-1.5 text-[12px]';
                                                 return (
-                                                <div key={idx} className="grid grid-cols-4 gap-2">
-                                                    <input type="text" placeholder="স্থাবর পরিমাণ" value={data.family_assets?.[idx]?.fixed_quantity || ''} onChange={(e) => {
-                                                        const assets = [...(data.family_assets || [])];
-                                                        if (!assets[idx]) assets[idx] = {};
-                                                        assets[idx].fixed_quantity = e.target.value;
-                                                        setData('family_assets', assets);
-                                                    }} readOnly={fromAdmission} className={inputClass} title={fromAdmission ? 'অ্যাডমিশন থেকে' : ''} />
-                                                    <input type="text" placeholder="স্থাবর মূল্য" value={data.family_assets?.[idx]?.fixed_value || ''} onChange={(e) => {
-                                                        const assets = [...(data.family_assets || [])];
-                                                        if (!assets[idx]) assets[idx] = {};
-                                                        assets[idx].fixed_value = e.target.value;
-                                                        setData('family_assets', assets);
-                                                    }} readOnly={fromAdmission} className={inputClass} title={fromAdmission ? 'অ্যাডমিশন থেকে' : ''} />
-                                                    <input type="text" placeholder="অস্থাবর বিবরণ" value={data.family_assets?.[idx]?.movable_desc || ''} onChange={(e) => {
-                                                        const assets = [...(data.family_assets || [])];
-                                                        if (!assets[idx]) assets[idx] = {};
-                                                        assets[idx].movable_desc = e.target.value;
-                                                        setData('family_assets', assets);
-                                                    }} readOnly={fromAdmission} className={inputClass} title={fromAdmission ? 'অ্যাডমিশন থেকে' : ''} />
-                                                    <input type="text" placeholder="অস্থাবর মূল্য" value={data.family_assets?.[idx]?.movable_value || ''} onChange={(e) => {
-                                                        const assets = [...(data.family_assets || [])];
-                                                        if (!assets[idx]) assets[idx] = {};
-                                                        assets[idx].movable_value = e.target.value;
-                                                        setData('family_assets', assets);
-                                                    }} readOnly={fromAdmission} className={inputClass} title={fromAdmission ? 'অ্যাডমিশন থেকে' : ''} />
-                                                </div>
-                                            );})}
+                                                    <div key={idx} className="grid grid-cols-4 gap-2">
+                                                        <input type="text" placeholder="স্থাবর পরিমাণ" value={data.family_assets?.[idx]?.fixed_quantity || ''} onChange={(e) => {
+                                                            const assets = [...(data.family_assets || [])];
+                                                            if (!assets[idx]) assets[idx] = {};
+                                                            assets[idx].fixed_quantity = e.target.value;
+                                                            setData('family_assets', assets);
+                                                        }} readOnly={fromAdmission} className={inputClass} title={fromAdmission ? 'অ্যাডমিশন থেকে' : ''} />
+                                                        <input type="text" placeholder="স্থাবর মূল্য" value={data.family_assets?.[idx]?.fixed_value || ''} onChange={(e) => {
+                                                            const assets = [...(data.family_assets || [])];
+                                                            if (!assets[idx]) assets[idx] = {};
+                                                            assets[idx].fixed_value = e.target.value;
+                                                            setData('family_assets', assets);
+                                                        }} readOnly={fromAdmission} className={inputClass} title={fromAdmission ? 'অ্যাডমিশন থেকে' : ''} />
+                                                        <input type="text" placeholder="অস্থাবর বিবরণ" value={data.family_assets?.[idx]?.movable_desc || ''} onChange={(e) => {
+                                                            const assets = [...(data.family_assets || [])];
+                                                            if (!assets[idx]) assets[idx] = {};
+                                                            assets[idx].movable_desc = e.target.value;
+                                                            setData('family_assets', assets);
+                                                        }} readOnly={fromAdmission} className={inputClass} title={fromAdmission ? 'অ্যাডমিশন থেকে' : ''} />
+                                                        <input type="text" placeholder="অস্থাবর মূল্য" value={data.family_assets?.[idx]?.movable_value || ''} onChange={(e) => {
+                                                            const assets = [...(data.family_assets || [])];
+                                                            if (!assets[idx]) assets[idx] = {};
+                                                            assets[idx].movable_value = e.target.value;
+                                                            setData('family_assets', assets);
+                                                        }} readOnly={fromAdmission} className={inputClass} title={fromAdmission ? 'অ্যাডমিশন থেকে' : ''} />
+                                                    </div>
+                                                );
+                                            })}
                                         </div>
                                     </div>
 
@@ -1198,6 +1482,17 @@ export default function LoanApplicationApproval({
                                 <div className={`border-b pb-4${member && !isLegacy ? ' rounded-md ring-1 ring-amber-300 bg-amber-50/50 p-3' : ''}`}>
                                     <h3 className="font-bold text-[12px] mb-4">পৃষ্ঠা ২: প্রকল্প প্রোফাইল</h3>
                                     <div className="grid grid-cols-2 gap-4">
+                                        {/* ক. ১. প্রস্তাবিত প্রকল্পের নাম */}
+                                        <div className="col-span-2">
+                                            <label className="block text-[12px] font-medium mb-1">১. প্রস্তাবিত প্রকল্পের নাম</label>
+                                            <input
+                                                type="text"
+                                                value={data.proposed_project_name}
+                                                readOnly
+                                                className="w-full border rounded px-2 py-1.5 text-[12px] bg-gray-100 cursor-not-allowed"
+                                                title="পৃষ্ঠা ১-এর প্রস্তাবিত প্রকল্পের নাম থেকে আসছে"
+                                            />
+                                        </div>
                                         {/* ক. ২. উদ্যোক্তা - সার্বক্ষণিক/খণ্ডকালীন */}
                                         <div>
                                             <label className="block text-[12px] font-medium mb-1">২. (ক) সার্বক্ষণিক: বছর</label>
@@ -1217,51 +1512,104 @@ export default function LoanApplicationApproval({
                                         </div>
                                         {/* ৩. ঋণ গ্রহণের অভিজ্ঞতা */}
                                         <div>
-                                            <label className="block text-[12px] font-medium mb-1">৩. ঋণ গ্রহণের অভিজ্ঞতা: বছর</label>
+                                            <label className="block text-[12px] font-medium mb-1">৩. ঋণ কার্যক্রমে উদ্যোক্তার অভিজ্ঞতা: বছর</label>
                                             <input type="text" value={data.loan_experience_years} onChange={(e) => setData('loan_experience_years', e.target.value)} className="w-full border rounded px-2 py-1.5 text-[12px]" />
                                         </div>
                                         <div>
-                                            <label className="block text-[12px] font-medium mb-1">৩. ঋণ গ্রহণের অভিজ্ঞতা: মাস</label>
+                                            <label className="block text-[12px] font-medium mb-1">৩. ঋণ কার্যক্রমে উদ্যোক্তার অভিজ্ঞতা: মাস</label>
                                             <input type="text" value={data.loan_experience_months} onChange={(e) => setData('loan_experience_months', e.target.value)} className="w-full border rounded px-2 py-1.5 text-[12px]" />
                                         </div>
                                         {/* ৪. প্রকল্পে নিয়োজিত জনবল - মোট, পরিবার, বাইরের, প্রশিক্ষিত */}
                                         <div>
-                                            <label className="block text-[12px] font-medium mb-1">৪. মোট জনবল</label>
+                                            <label className="block text-[12px] font-medium mb-1">৪। প্রকল্পে নিয়োগকৃত জনব (মোট জন)</label>
                                             <input type="text" value={data.project_manpower_total} onChange={(e) => setData('project_manpower_total', e.target.value)} className="w-full border rounded px-2 py-1.5 text-[12px]" />
                                         </div>
                                         <div>
-                                            <label className="block text-[12px] font-medium mb-1">৪. পরিবারের সদস্য</label>
+                                            <label className="block text-[12px] font-medium mb-1">(ক) পরিবারের মধ্যে (জন)</label>
                                             <input type="text" value={data.project_manpower_family} onChange={(e) => setData('project_manpower_family', e.target.value)} className="w-full border rounded px-2 py-1.5 text-[12px]" />
                                         </div>
                                         <div>
-                                            <label className="block text-[12px] font-medium mb-1">৪. বাইরের</label>
+                                            <label className="block text-[12px] font-medium mb-1">(খ) পরিবারের বাইরে (জন)</label>
                                             <input type="text" value={data.project_manpower_outside} onChange={(e) => setData('project_manpower_outside', e.target.value)} className="w-full border rounded px-2 py-1.5 text-[12px]" />
                                         </div>
                                         <div>
-                                            <label className="block text-[12px] font-medium mb-1">৪. প্রশিক্ষিত</label>
+                                            <label className="block text-[12px] font-medium mb-1">(গ) প্রশিক্ষণপ্রাপ্ত লোকবল (জন)</label>
                                             <input type="text" value={data.project_manpower_trained} onChange={(e) => setData('project_manpower_trained', e.target.value)} className="w-full border rounded px-2 py-1.5 text-[12px]" />
                                         </div>
-                                        {/* ৫. কাঁচামাল ক্রয় | ৬. পণ্য বিপণন */}
+                                        {/* ৫. উৎপাদন ও বাজারজাতকরণ সংক্রান্ত তথ্য */}
+                                        <div className="col-span-2">
+                                            <label className="block text-[12px] font-medium mb-1">৫. উৎপাদন ও বাজারজাতকরণ সংক্রান্ত তথ্য</label>
+                                            <div className="grid grid-cols-1 gap-2 mt-1">
+                                                <div>
+                                                    <label className="block text-[11px] text-gray-600 mb-0.5">ব্যবহৃত কাঁচামাল ক্রয়ের স্থান (নাম ও ঠিকানাসহ)</label>
+                                                    <input type="text" value={data.raw_material_purchase_location} onChange={(e) => setData('raw_material_purchase_location', e.target.value)} className="w-full border rounded px-2 py-1.5 text-[12px]" />
+                                                </div>
+                                                <div>
+                                                    <label className="block text-[11px] text-gray-600 mb-0.5">উৎপাদিত পণ্য বাজারজাতকরণের স্থান কোথায়? (নাম ও ঠিকানাসহ)</label>
+                                                    <input type="text" value={data.product_marketing_location} onChange={(e) => setData('product_marketing_location', e.target.value)} className="w-full border rounded px-2 py-1.5 text-[12px]" />
+                                                </div>
+                                            </div>
+                                        </div>
+                                        {/* ৬. বিগত ০১ বছরের আর্থিক তথ্য */}
                                         <div>
-                                            <label className="block text-[12px] font-medium mb-1">৫. কাঁচামাল ক্রয়ের স্থান</label>
-                                            <input type="text" value={data.raw_material_purchase_location} onChange={(e) => setData('raw_material_purchase_location', e.target.value)} className="w-full border rounded px-2 py-1.5 text-[12px]" />
+                                            <label className="block text-[12px] font-medium mb-1">৬. পুঁজির পরিমাণ</label>
+                                            <input type="text" value={data.last_year_capital} onChange={(e) => setData('last_year_capital', e.target.value)} className="w-full border rounded px-2 py-1.5 text-[12px]" placeholder="পুঁজির পরিমাণ" />
                                         </div>
                                         <div>
-                                            <label className="block text-[12px] font-medium mb-1">৬. পণ্য বিপণনের স্থান</label>
-                                            <input type="text" value={data.product_marketing_location} onChange={(e) => setData('product_marketing_location', e.target.value)} className="w-full border rounded px-2 py-1.5 text-[12px]" />
-                                        </div>
-                                        {/* ৭. গত বছরের মূলধন, বিক্রয়, লাভ/ক্ষতি */}
-                                        <div>
-                                            <label className="block text-[12px] font-medium mb-1">৭. গত বছরের মূলধন</label>
-                                            <input type="text" value={data.last_year_capital} onChange={(e) => setData('last_year_capital', e.target.value)} className="w-full border rounded px-2 py-1.5 text-[12px]" />
+                                            <label className="block text-[12px] font-medium mb-1">৬. বিক্রয় (সারা বছর)</label>
+                                            <input type="text" value={data.last_year_sales} onChange={(e) => setData('last_year_sales', e.target.value)} className="w-full border rounded px-2 py-1.5 text-[12px]" placeholder="বিক্রয়" />
                                         </div>
                                         <div>
-                                            <label className="block text-[12px] font-medium mb-1">৭. গত বছরের বিক্রয়</label>
-                                            <input type="text" value={data.last_year_sales} onChange={(e) => setData('last_year_sales', e.target.value)} className="w-full border rounded px-2 py-1.5 text-[12px]" />
+                                            <label className="block text-[12px] font-medium mb-1">৬. মোট লাভ/ক্ষতি</label>
+                                            <input type="text" value={data.last_year_profit_loss} onChange={(e) => setData('last_year_profit_loss', e.target.value)} className="w-full border rounded px-2 py-1.5 text-[12px]" placeholder="লাভ/ক্ষতি" />
                                         </div>
-                                        <div>
-                                            <label className="block text-[12px] font-medium mb-1">৭. গত বছরের লাভ/ক্ষতি</label>
-                                            <input type="text" value={data.last_year_profit_loss} onChange={(e) => setData('last_year_profit_loss', e.target.value)} className="w-full border rounded px-2 py-1.5 text-[12px]" />
+                                        {/* ৭. ট্রেড লাইসেন্স ও আয়ের প্রত্যয়ন */}
+                                        <div className="col-span-2">
+                                            <label className="block text-[12px] font-medium mb-1">৭. প্রযোজ্য ক্ষেত্রে ট্রেড লাইসেন্স ও অন্যান্য লাইসেন্স এবং আয়ের প্রত্যয়ন সংক্রান্ত তথ্য</label>
+                                            <div className="space-y-2 mt-1">
+                                                <div className="grid grid-cols-3 gap-2">
+                                                    <div>
+                                                        <label className="block text-[11px] text-gray-600 mb-0.5">(ক) লাইসেন্স প্রদানকারী কর্তৃপক্ষ</label>
+                                                        <input type="text" value={data.license_authority_1} onChange={(e) => setData('license_authority_1', e.target.value)} className="w-full border rounded px-2 py-1.5 text-[12px]" />
+                                                    </div>
+                                                    <div>
+                                                        <label className="block text-[11px] text-gray-600 mb-0.5">লাইসেন্স নম্বর</label>
+                                                        <input type="text" value={data.license_number_1} onChange={(e) => setData('license_number_1', e.target.value)} className="w-full border rounded px-2 py-1.5 text-[12px]" />
+                                                    </div>
+                                                    <div>
+                                                        <label className="block text-[11px] text-gray-600 mb-0.5">মেয়াদ</label>
+                                                        <input type="text" value={data.license_validity_1} onChange={(e) => setData('license_validity_1', e.target.value)} className="w-full border rounded px-2 py-1.5 text-[12px]" />
+                                                    </div>
+                                                </div>
+                                                <div className="grid grid-cols-3 gap-2">
+                                                    <div>
+                                                        <label className="block text-[11px] text-gray-600 mb-0.5">(খ) লাইসেন্স প্রদানকারী কর্তৃপক্ষ</label>
+                                                        <input type="text" value={data.license_authority_2} onChange={(e) => setData('license_authority_2', e.target.value)} className="w-full border rounded px-2 py-1.5 text-[12px]" />
+                                                    </div>
+                                                    <div>
+                                                        <label className="block text-[11px] text-gray-600 mb-0.5">লাইসেন্স নম্বর</label>
+                                                        <input type="text" value={data.license_number_2} onChange={(e) => setData('license_number_2', e.target.value)} className="w-full border rounded px-2 py-1.5 text-[12px]" />
+                                                    </div>
+                                                    <div>
+                                                        <label className="block text-[11px] text-gray-600 mb-0.5">মেয়াদ</label>
+                                                        <input type="text" value={data.license_validity_2} onChange={(e) => setData('license_validity_2', e.target.value)} className="w-full border rounded px-2 py-1.5 text-[12px]" />
+                                                    </div>
+                                                </div>
+                                                <div>
+                                                    <label className="block text-[11px] text-gray-600 mb-0.5">(গ) আয়ের প্রত্যয়ন আছে কি?</label>
+                                                    <div className="flex gap-4 items-center">
+                                                        <label className="inline-flex items-center gap-1 cursor-pointer">
+                                                            <input type="radio" name="income_tax_certification" checked={data.income_tax_certification === 'yes'} onChange={() => setData('income_tax_certification', 'yes')} className="text-[12px]" />
+                                                            <span>হ্যাঁ</span>
+                                                        </label>
+                                                        <label className="inline-flex items-center gap-1 cursor-pointer">
+                                                            <input type="radio" name="income_tax_certification" checked={data.income_tax_certification === 'no'} onChange={() => setData('income_tax_certification', 'no')} className="text-[12px]" />
+                                                            <span>না</span>
+                                                        </label>
+                                                        <span className="text-[11px] text-gray-600">হ্যাঁ হলে, ফটোকপি গ্রহণ করতে হবে।</span>
+                                                    </div>
+                                                </div>
+                                            </div>
                                         </div>
                                         {/* খ. ১. মোট কতবার ঋণ */}
                                         <div>
@@ -1270,9 +1618,9 @@ export default function LoanApplicationApproval({
                                         </div>
                                     </div>
 
-                                    {/* খ. ২. গত তিনবারের ঋণের তথ্য */}
+                                    {/* ০১. সর্বশেষ ৩ দফার ঋণ গ্রহণ সংক্রান্ত তথ্যের ইনপুট */}
                                     <div className="mt-4">
-                                        <label className="block text-[12px] font-medium mb-2">খ.২. গত তিনবারের ঋণের তথ্য</label>
+                                        <label className="block text-[12px] font-medium mb-2">০১. সর্বশেষ ৩ দফার ঋণের তথ্য</label>
                                         <div className="space-y-2">
                                             {Array.from({ length: 3 }).map((_, idx) => (
                                                 <div key={idx} className="grid grid-cols-5 gap-2">
@@ -1308,6 +1656,109 @@ export default function LoanApplicationApproval({
                                                     }} className="border rounded px-2 py-1.5 text-[12px]" />
                                                 </div>
                                             ))}
+                                        </div>
+                                    </div>
+
+                                    {/* ০২. অন্যান্য ঋণ গ্রহণ স্থিতি */}
+                                    <div className="mt-4">
+                                        <label className="block text-[12px] font-medium mb-2">০২. অন্যান্য ঋণ গ্রহণ স্থিতি (থাকলে পূরণ করুন)</label>
+                                        <div className="space-y-2">
+                                            {(['ব্যাংক', 'এনজিও', 'গ্রামীণ বাংলাদেশ', 'আন্তর্জাতিক/বেসরকারি', 'অন্যান্য'] as string[]).map((label, idx) => (
+                                                <div key={idx} className="grid grid-cols-6 gap-2 items-start">
+                                                    <div className="text-[12px] pt-2">{label}</div>
+                                                    <input
+                                                        type="text"
+                                                        placeholder="বর্তমান ঋণ গ্রহণ স্থিতি"
+                                                        value={data.other_loan_status?.[idx]?.current_status || ''}
+                                                        onChange={(e) => {
+                                                            const rows = [...(data.other_loan_status || [])];
+                                                            if (!rows[idx]) rows[idx] = {};
+                                                            rows[idx].current_status = e.target.value;
+                                                            setData('other_loan_status', rows);
+                                                        }}
+                                                        className="border rounded px-2 py-1.5 text-[12px] col-span-2"
+                                                    />
+                                                    <input
+                                                        type="text"
+                                                        placeholder="দফা"
+                                                        value={data.other_loan_status?.[idx]?.round || ''}
+                                                        onChange={(e) => {
+                                                            const rows = [...(data.other_loan_status || [])];
+                                                            if (!rows[idx]) rows[idx] = {};
+                                                            rows[idx].round = e.target.value;
+                                                            setData('other_loan_status', rows);
+                                                        }}
+                                                        className="border rounded px-2 py-1.5 text-[12px]"
+                                                    />
+                                                    <input
+                                                        type="text"
+                                                        placeholder="ঋণ গ্রহণকারীর নাম"
+                                                        value={data.other_loan_status?.[idx]?.borrower_name || ''}
+                                                        onChange={(e) => {
+                                                            const rows = [...(data.other_loan_status || [])];
+                                                            if (!rows[idx]) rows[idx] = {};
+                                                            rows[idx].borrower_name = e.target.value;
+                                                            setData('other_loan_status', rows);
+                                                        }}
+                                                        className="border rounded px-2 py-1.5 text-[12px]"
+                                                    />
+                                                    <input
+                                                        type="text"
+                                                        placeholder="মোবাইল"
+                                                        value={data.other_loan_status?.[idx]?.mobile || ''}
+                                                        onChange={(e) => {
+                                                            const rows = [...(data.other_loan_status || [])];
+                                                            if (!rows[idx]) rows[idx] = {};
+                                                            rows[idx].mobile = e.target.value;
+                                                            setData('other_loan_status', rows);
+                                                        }}
+                                                        className="border rounded px-2 py-1.5 text-[12px]"
+                                                    />
+                                                </div>
+                                            ))}
+                                        </div>
+                                    </div>
+
+                                    {/* ০৩. বিনিয়োগের পরিকল্পনা */}
+                                    <div className="mt-4">
+                                        <label className="block text-[12px] font-medium mb-2">০৩. বিনিয়োগের পরিকল্পনা</label>
+                                        <div className="grid grid-cols-2 gap-4">
+                                            <div className="space-y-2">
+                                                <div>
+                                                    <label className="block text-[11px] text-gray-600 mb-0.5">ঋণের আবেদনকৃত অংশে ব্যয় পরিমাণ</label>
+                                                    <input type="text" value={data.invest_plan_applied_amount} onChange={(e) => setData('invest_plan_applied_amount', e.target.value)} className="w-full border rounded px-2 py-1.5 text-[12px]" />
+                                                </div>
+                                                <div>
+                                                    <label className="block text-[11px] text-gray-600 mb-0.5">নিজস্ব বিনিয়োগ</label>
+                                                    <input type="text" value={data.invest_plan_own_amount} onChange={(e) => setData('invest_plan_own_amount', e.target.value)} className="w-full border rounded px-2 py-1.5 text-[12px]" />
+                                                </div>
+                                                <div>
+                                                    <label className="block text-[11px] text-gray-600 mb-0.5">অন্যান্য উৎস থাকলে (যেমন ঋণ ব্যতীত সঞ্চয় ইত্যাদি)</label>
+                                                    <input type="text" value={data.invest_plan_other_amount} onChange={(e) => setData('invest_plan_other_amount', e.target.value)} className="w-full border rounded px-2 py-1.5 text-[12px]" />
+                                                </div>
+                                                <div>
+                                                    <label className="block text-[11px] text-gray-600 mb-0.5">মোট</label>
+                                                    <input type="text" value={data.invest_plan_total} onChange={(e) => setData('invest_plan_total', e.target.value)} className="w-full border rounded px-2 py-1.5 text-[12px]" />
+                                                </div>
+                                            </div>
+                                            <div className="space-y-2">
+                                                <div>
+                                                    <label className="block text-[11px] text-gray-600 mb-0.5">মূলধনী ব্যয়</label>
+                                                    <input type="text" value={data.invest_use_capital} onChange={(e) => setData('invest_use_capital', e.target.value)} className="w-full border rounded px-2 py-1.5 text-[12px]" />
+                                                </div>
+                                                <div>
+                                                    <label className="block text-[11px] text-gray-600 mb-0.5">চলতি ব্যয়</label>
+                                                    <input type="text" value={data.invest_use_running} onChange={(e) => setData('invest_use_running', e.target.value)} className="w-full border rounded px-2 py-1.5 text-[12px]" />
+                                                </div>
+                                                <div>
+                                                    <label className="block text-[11px] text-gray-600 mb-0.5">কিস্তি/সঞ্চয় পরিশোধের জমা</label>
+                                                    <input type="text" value={data.invest_use_other} onChange={(e) => setData('invest_use_other', e.target.value)} className="w-full border rounded px-2 py-1.5 text-[12px]" />
+                                                </div>
+                                                <div>
+                                                    <label className="block text-[11px] text-gray-600 mb-0.5">মোট</label>
+                                                    <input type="text" value={data.invest_use_total} onChange={(e) => setData('invest_use_total', e.target.value)} className="w-full border rounded px-2 py-1.5 text-[12px]" />
+                                                </div>
+                                            </div>
                                         </div>
                                     </div>
                                 </div>

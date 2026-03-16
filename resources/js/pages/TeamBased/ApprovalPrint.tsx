@@ -217,7 +217,7 @@ export default function TeamBasedApprovalPrint({ sheet, items }: Props) {
                                             {formatAmount(row.savings_total)}
                                         </td>
                                         <td className="border border-gray-300 px-2 py-1 text-right">
-                                            {formatAmount(row.repaid_loan_amount) || row.repaid_loan_amount ?? ''}
+                                            {(formatAmount(row.repaid_loan_amount) || row.repaid_loan_amount) ?? ''}
                                         </td>
                                         <td className="border border-gray-300 px-2 py-1 text-center">
                                             {row.repaid_installment_no ?? ''}
