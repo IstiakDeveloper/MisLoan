@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { Head, router } from '@inertiajs/react';
 import AdminLayout from '@/layouts/admin-layout';
-import { Plus, Search, MoreVertical, Edit, Trash2, Power, PowerOff } from 'lucide-react';
+import { Plus, Search, MoreVertical, Edit, Trash2, Power, PowerOff, Printer } from 'lucide-react';
 import ZoneModal from './Components/ZoneModal';
 import AreaModal from './Components/AreaModal';
 import BranchModal from './Components/BranchModal';
@@ -134,13 +134,23 @@ export default function Index({ zones, areas, branches }: Props) {
                             Manage your zones, areas, and branches
                         </p>
                     </div>
-                    <button
-                        onClick={handleAddNew}
-                        className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors shadow-sm"
-                    >
-                        <Plus className="w-4 h-4" />
-                        Add New
-                    </button>
+                    <div className="flex items-center gap-2">
+                        <button
+                            type="button"
+                            onClick={() => router.visit('/organizations/branches/print')}
+                            className="flex items-center gap-2 px-4 py-2 bg-white text-gray-700 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors shadow-sm"
+                        >
+                            <Printer className="w-4 h-4" />
+                            Print Branch List
+                        </button>
+                        <button
+                            onClick={handleAddNew}
+                            className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors shadow-sm"
+                        >
+                            <Plus className="w-4 h-4" />
+                            Add New
+                        </button>
+                    </div>
                 </div>
 
                 {/* Tabs & Search */}

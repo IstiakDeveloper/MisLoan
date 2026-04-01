@@ -6,6 +6,7 @@ use App\Models\Zone;
 use App\Models\Area;
 use App\Models\Branch;
 use Illuminate\Http\Request;
+use Illuminate\Support\Carbon;
 use Inertia\Inertia;
 
 class OrganizationController extends Controller
@@ -182,6 +183,25 @@ class OrganizationController extends Controller
 
         return redirect()->route('organizations.index')
             ->with('success', 'Branch status updated successfully.');
+    }
+
+    public function branchesPrint(Request $request)
+    {
+        $branches = Branch::query()
+            ->orderBy('code')
+            ->orderBy('name')
+            ->get(['id', 'name', 'code']);
+
+        return Inertia::render('Organizations/BranchPrint', [
+            'generatedAt' => Carbon::now()->toDateTimeString(),
+            'branches' => $branches->map(function (Branch $b) {
+                return [
+                    'id' => $b->id,
+                    'name' => $b->name,
+                    'code' => $b->code,
+                ];
+            })->values(),
+        ]);
     }
 
     // API Methods for cascading dropdowns
