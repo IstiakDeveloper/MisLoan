@@ -219,7 +219,7 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
     };
 
     return (
-        <div className="min-h-screen bg-gray-50">
+        <div className="min-h-screen bg-gray-50 print:bg-white">
             {/* Flash Message - hidden when printing */}
             {flashMessage && (
                 <div
@@ -540,8 +540,8 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
                     </div>
                 </header>
 
-                <main className="p-4 md:p-5 min-h-[calc(100vh-3rem)]">
-                    <div className="max-w-[1600px] mx-auto">
+                <main className="p-4 md:p-5 min-h-[calc(100vh-3rem)] print:p-0 print:min-h-0">
+                    <div className="max-w-[1600px] mx-auto print:max-w-none print:mx-0">
                         {children}
                     </div>
                 </main>

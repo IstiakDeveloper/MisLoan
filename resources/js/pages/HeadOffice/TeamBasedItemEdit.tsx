@@ -101,10 +101,17 @@ export default function HeadOfficeTeamBasedItemEdit({ branch, item }: Props) {
 
     return (
         <AdminLayout>
-            <Head title="Head Office - Edit Team Based Item" />
+            <Head title="Head Office - Edit Team Based Item">
+                <style>{`
+                    @page { margin: 5mm; }
+                    @media print {
+                        html, body { background: #fff !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+                    }
+                `}</style>
+            </Head>
 
-            <div className="max-w-4xl mx-auto py-6">
-                <div className="bg-white shadow rounded-lg border border-gray-200">
+            <div className="max-w-4xl mx-auto py-6 print:py-2 print:max-w-none print:mx-0 print:px-2">
+                <div className="bg-white shadow rounded-lg border border-gray-200 print:shadow-none print:border-gray-300">
                     <div className="px-6 py-4 border-b border-gray-200 flex items-center justify-between">
                         <div className="flex items-center gap-3">
                             <Link

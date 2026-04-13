@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import { Head, router } from '@inertiajs/react';
 import AdminLayout from '@/layouts/admin-layout';
 
@@ -57,6 +57,17 @@ interface ItemRow {
     approver_signature?: string | null;
     decided_at?: string | null;
     approvers?: { approver_name?: string | null; approver_role?: string | null; status?: string; approver_signature?: string | null; decided_at?: string | null }[];
+}
+
+function rowHasValue(
+    row: ItemRow,
+    pick: (r: ItemRow) => string | number | null | undefined,
+): boolean {
+    const v = pick(row);
+    if (v == null) return false;
+    if (typeof v === 'string') return v.trim().length > 0;
+    if (typeof v === 'number') return Number.isFinite(v);
+    return false;
 }
 
 interface ApprovalRow {
@@ -199,6 +210,83 @@ export default function TeamBasedApprovals({ approvals, filters, stats, zones, a
         });
     });
 
+    const colVis = useMemo(() => {
+        type R = (typeof flatRows)[number];
+        const rows = flatRows;
+        if (rows.length === 0) {
+            return {
+                sheet_date: true,
+                branch: true,
+                area: true,
+                zone: true,
+                member_code: true,
+                member_phone: true,
+                samity_number: true,
+                proposed: true,
+                approved: true,
+                loan_type: true,
+                project: true,
+                comments: true,
+                signature: true,
+                approver: true,
+            };
+        }
+        const anyFn = (fn: (r: R) => boolean) => rows.some(fn);
+        return {
+            sheet_date: anyFn((r) => r.sheet_date != null && String(r.sheet_date).trim().length > 0),
+            branch: anyFn(
+                (r) =>
+                    (r.branch_name != null && String(r.branch_name).trim().length > 0) ||
+                    (r.branch_code != null && String(r.branch_code).trim().length > 0),
+            ),
+            area: anyFn((r) => r.area_name != null && String(r.area_name).trim().length > 0),
+            zone: anyFn((r) => r.zone_name != null && String(r.zone_name).trim().length > 0),
+            member_code: anyFn((r) => rowHasValue(r, (x) => x.member_code)),
+            member_phone: anyFn((r) => rowHasValue(r, (x) => x.member_phone)),
+            samity_number: anyFn((r) => rowHasValue(r, (x) => x.samity_number)),
+            proposed: anyFn((r) => r.proposed_loan_amount != null),
+            approved: anyFn((r) => r.approved_amount != null),
+            loan_type: anyFn((r) => rowHasValue(r, (x) => x.loan_type)),
+            project: anyFn((r) => rowHasValue(r, (x) => x.project_name)),
+            comments: anyFn((r) => r.review_comments != null && String(r.review_comments).trim().length > 0),
+            approver: anyFn((r) => {
+                const n =
+                    (r.approvers && r.approvers.length > 0
+                        ? r.approvers.map((a) => a.approver_name).filter(Boolean).join(', ')
+                        : null) ?? r.approver_name;
+                return n != null && String(n).trim().length > 0;
+            }),
+            signature: anyFn((r) => {
+                if (r.approver_signature != null && String(r.approver_signature).trim().length > 0) return true;
+                if (r.approvers?.some((a) => a.approver_signature && String(a.approver_signature).trim().length > 0))
+                    return true;
+                if (r.decided_at != null && String(r.decided_at).trim().length > 0) return true;
+                if (r.approvers?.some((a) => a.decided_at != null && String(a.decided_at).trim().length > 0)) return true;
+                return false;
+            }),
+        };
+    }, [flatRows]);
+
+    const visibleDataColCount =
+        1 +
+        (colVis.sheet_date ? 1 : 0) +
+        (colVis.branch ? 1 : 0) +
+        (colVis.area ? 1 : 0) +
+        (colVis.zone ? 1 : 0) +
+        1 +
+        (colVis.member_code ? 1 : 0) +
+        (colVis.member_phone ? 1 : 0) +
+        (colVis.samity_number ? 1 : 0) +
+        (colVis.proposed ? 1 : 0) +
+        (colVis.approved ? 1 : 0) +
+        (colVis.loan_type ? 1 : 0) +
+        (colVis.project ? 1 : 0) +
+        (colVis.comments ? 1 : 0) +
+        (colVis.signature ? 1 : 0) +
+        1 +
+        (colVis.approver ? 1 : 0) +
+        1;
+
     const selectedBranchObj = branches.find((b) => b.id.toString() === branchId);
     const headerBranchName = selectedBranchObj
         ? `${selectedBranchObj.name} (${selectedBranchObj.code})`
@@ -249,35 +337,68 @@ export default function TeamBasedApprovals({ approvals, filters, stats, zones, a
         <AdminLayout>
             <Head title="Head Office - Team Based Approvals">
                 <style>{`
-                    .approval-index-table-wrapper table { table-layout: fixed; }
+                    .approval-index-table-wrapper table { table-layout: auto; width: max(100%, max-content); }
                     .approval-index-table-wrapper th,
                     .approval-index-table-wrapper td {
-                        overflow: hidden;
                         line-height: 1.25;
                         padding: 1px 1px;
                         font-size: 9px;
                         vertical-align: middle;
                         text-align: center;
                     }
+                    .approval-index-table-wrapper .approval-col-serial {
+                        width: 1%;
+                        max-width: 2rem;
+                        white-space: nowrap;
+                        font-size: 8px;
+                        padding-left: 2px;
+                        padding-right: 2px;
+                    }
+                    .approval-index-table-wrapper .approval-col-comment {
+                        min-width: 14rem;
+                        width: 30%;
+                        max-width: 36rem;
+                        white-space: normal;
+                        word-break: break-word;
+                    }
+                    .approval-index-table-wrapper tbody td.approval-col-comment {
+                        text-align: left;
+                    }
                     .approval-index-table-wrapper thead th {
                         font-weight: 600;
                         white-space: normal;
                         padding: 1px 2px;
+                        text-align: center !important;
                     }
                     .approval-index-table-wrapper tbody td {
                         padding: 8px 4px;
                     }
-                    @page { size: A4 landscape; margin: 0; }
+                    @page { size: legal landscape; margin: 5mm; }
                     @media print {
-                        html, body { margin: 0 !important; padding: 0 !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
-                        .approval-index-print-page { margin: 0 !important; padding: 0 !important; }
-                        .approval-index-table-wrapper { overflow: visible !important; }
-                        .approval-index-table-wrapper table { width: 100% !important; table-layout: fixed !important; font-size: 7pt !important; }
+                        html, body { margin: 0 !important; padding: 0 !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; background: #fff !important; }
+                        .approval-index-print-page { margin: 0 !important; padding: 0 !important; background: transparent !important; }
+                        .approval-index-table-wrapper {
+                            overflow: visible !important;
+                            background: transparent !important;
+                            box-shadow: none !important;
+                            border: none !important;
+                        }
+                        .approval-index-table-wrapper thead,
+                        .approval-index-table-wrapper thead th {
+                            background: transparent !important;
+                            background-color: transparent !important;
+                        }
+                        .approval-index-table-wrapper tbody tr {
+                            background: transparent !important;
+                        }
+                        .approval-index-table-wrapper table { width: 100% !important; table-layout: auto !important; font-size: 7pt !important; }
+                        .approval-index-table-wrapper .approval-col-comment { min-width: 28% !important; width: auto !important; max-width: none !important; }
                         .approval-index-table-wrapper thead th {
                             padding: 2px 4px !important;
+                            text-align: center !important;
                         }
                         .approval-index-table-wrapper tbody td {
-                            padding: 8px 4px !important;
+                            padding: 6px 3px !important;
                         }
                         .approval-index-table-wrapper th,
                         .approval-index-table-wrapper td {
@@ -293,10 +414,10 @@ export default function TeamBasedApprovals({ approvals, filters, stats, zones, a
                 `}</style>
             </Head>
 
-            <div className="mx-auto py-6 px-4 space-y-4 approval-index-print-page print:py-0 print:px-0">
+            <div className="mx-auto py-6 px-4 space-y-4 approval-index-print-page print:py-0 print:px-0 print:!m-0 print:max-w-none">
                 {/* Print-style header similar to branch ApprovalIndex */}
-                <div className="mb-4 approval-index-print-header">
-                    <div className="flex items-start justify-between gap-4 mb-2 print:flex print:mb-1">
+                <div className="mb-4 print:mb-1 approval-index-print-header">
+                    <div className="flex items-start justify-between gap-4 mb-2 print:flex print:mb-0.5">
                         <div className="flex-shrink-0">
                             <img
                                 src="/logo.png"
@@ -316,7 +437,7 @@ export default function TeamBasedApprovals({ approvals, filters, stats, zones, a
                         </div>
                         <div className="flex-shrink-0 w-12" />
                     </div>
-                    <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-1 text-xs text-gray-700 mb-4">
+                    <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-1 text-xs text-gray-700 mb-4 print:mb-1">
                         <span>
                             <span className="font-semibold">শাখার নাম:</span> {headerBranchName}
                         </span>
@@ -333,7 +454,7 @@ export default function TeamBasedApprovals({ approvals, filters, stats, zones, a
                 </div>
 
                 {/* Stats */}
-                <div className="grid grid-cols-2 md:grid-cols-5 gap-3 ho-teambased-stats">
+                <div className="grid grid-cols-2 md:grid-cols-5 gap-3 ho-teambased-stats print:hidden">
                     <div className="bg-white border rounded-md px-3 py-2">
                         <div className="text-xs text-gray-500">Total</div>
                         <div className="text-lg font-semibold text-gray-900">{stats.total}</div>
@@ -505,102 +626,155 @@ export default function TeamBasedApprovals({ approvals, filters, stats, zones, a
                     </div>
                 </div>
 
-                {/* Table - flat list of all items (similar layout to branch ApprovalIndex) */}
-                <div className="bg-white shadow-sm border border-gray-200 rounded-lg overflow-hidden approval-index-table-wrapper w-full">
-                    <table className="w-full border-collapse table-fixed" style={{ tableLayout: 'fixed' }}>
-                        <thead className="bg-gray-50">
+                {/* Table - flat list of all items (same behavior as branch ApprovalIndex) */}
+                <div className="bg-white shadow-sm border border-gray-200 rounded-lg overflow-x-auto approval-index-table-wrapper w-full print:bg-transparent print:shadow-none print:border-0 print:rounded-none">
+                    <table className="w-full border-collapse">
+                        <thead className="bg-gray-50 print:bg-transparent">
                             <tr>
-                                <th className="border px-2 py-1 text-left">ক্রম</th>
-                                <th className="border px-2 py-1 text-left">তারিখ</th>
-                                <th className="border px-2 py-1 text-left">শাখা</th>
-                                <th className="border px-2 py-1 text-left">অঞ্চল</th>
-                                <th className="border px-2 py-1 text-left">জোন</th>
-                                <th className="border px-2 py-1 text-left">সদস্যের নাম</th>
-                                <th className="border px-2 py-1 text-left">সদস্য নম্বর</th>
-                                <th className="border px-2 py-1 text-left">ফোন নম্বর</th>
-                                <th className="border px-2 py-1 text-left">সমিতি নম্বর</th>
-                                <th className="border px-2 py-1 text-right">প্রস্তাবিত ঋণ</th>
-                                <th className="border px-2 py-1 text-right">অনুমোদিত ঋণ</th>
-                                <th className="border px-2 py-1 text-left">ঋণের ধরন</th>
-                                <th className="border px-2 py-1 text-left">প্রকল্পের নাম</th>
-                                <th className="border px-2 py-1 text-left">মন্তব্য</th>
-                                <th className="border px-2 py-1 text-left">অনুমোদনকারীর স্বাক্ষর / তারিখ</th>
-                                <th className="border px-2 py-1 text-center">অবস্থা</th>
-                                <th className="border px-2 py-1 text-left">অনুমোদনকারী</th>
-                                <th className="border px-2 py-1 text-center print:hidden">কর্ম</th>
+                                <th className="border approval-col-serial">ক্র.</th>
+                                {colVis.sheet_date && <th className="border">তারিখ</th>}
+                                {colVis.branch && <th className="border">শাখা</th>}
+                                {colVis.area && <th className="border">অঞ্চল</th>}
+                                {colVis.zone && <th className="border">জোন</th>}
+                                <th className="border">সদস্যের নাম</th>
+                                {colVis.member_code && <th className="border">সদস্য নম্বর</th>}
+                                {colVis.member_phone && <th className="border">ফোন নম্বর</th>}
+                                {colVis.samity_number && <th className="border">সমিতি নম্বর</th>}
+                                {colVis.proposed && <th className="border">প্রস্তাবিত ঋণ</th>}
+                                {colVis.approved && <th className="border">অনুমোদিত ঋণ</th>}
+                                {colVis.loan_type && <th className="border">ঋণের ধরন</th>}
+                                {colVis.project && <th className="border">প্রকল্পের নাম</th>}
+                                {colVis.comments && (
+                                    <th className="border approval-col-comment">মন্তব্য</th>
+                                )}
+                                {colVis.signature && (
+                                    <th className="border">অনুমোদনকারীর স্বাক্ষর / তারিখ</th>
+                                )}
+                                <th className="border">অবস্থা</th>
+                                {colVis.approver && <th className="border">অনুমোদনকারী</th>}
+                                <th className="border print:hidden">কর্ম</th>
                             </tr>
                         </thead>
                         <tbody>
                             {flatRows.length === 0 && (
                                 <tr>
-                                    <td colSpan={14} className="border px-2 py-3 text-center text-gray-500">
+                                    <td colSpan={visibleDataColCount} className="border px-2 py-3 text-center text-gray-500">
                                         No Team Based items found for this filter.
                                     </td>
                                 </tr>
                             )}
                             {flatRows.map((row, index) => (
-                                <tr key={`${row.sheet_id}-${row.serial_no}-${index}`} className="hover:bg-gray-50">
-                                    <td className="border px-2 py-1">{index + 1}</td>
-                                    <td className="border px-2 py-1">{row.sheet_date || '-'}</td>
-                                    <td className="border px-2 py-1">
-                                        {row.branch_name} {row.branch_code ? `(${row.branch_code})` : ''}
-                                    </td>
-                                    <td className="border px-2 py-1">{row.area_name || '-'}</td>
-                                    <td className="border px-2 py-1">{row.zone_name || '-'}</td>
-                                    <td className="border px-2 py-1">{row.member_name}</td>
-                                    <td className="border px-2 py-1">{row.member_code || ''}</td>
-                                    <td className="border px-2 py-1">{row.member_phone || ''}</td>
-                                    <td className="border px-2 py-1">{row.samity_number || ''}</td>
-                                    <td className="border px-2 py-1 text-right">{formatAmount(row.proposed_loan_amount)}</td>
-                                    <td className="border px-2 py-1 text-right">{formatAmount(row.approved_amount)}</td>
-                                    <td className="border px-2 py-1">{row.loan_type || ''}</td>
-                                    <td className="border px-2 py-1">{row.project_name || ''}</td>
-                                    <td className="border px-2 py-1">{row.review_comments || ''}</td>
-                                    <td className="border px-2 py-1 align-top">
-                                        {(row.approvers && row.approvers.length > 0 ? row.approvers : [{ approver_signature: row.approver_signature, decided_at: row.decided_at, approver_name: row.approver_name }]).map((a, i) => (
-                                            <div key={i} className="flex flex-col items-start gap-0.5 py-0.5 border-b border-gray-100 last:border-0">
-                                                {a.approver_signature ? (
-                                                    <>
-                                                        <button
-                                                            type="button"
-                                                            onClick={() =>
-                                                                setZoomSignatureUrl(
-                                                                    a.approver_signature!.startsWith('http')
-                                                                        ? a.approver_signature!
-                                                                        : a.approver_signature!.startsWith('/storage/')
-                                                                        ? a.approver_signature!
-                                                                        : `/storage/${a.approver_signature!}`,
-                                                                )
-                                                            }
-                                                            className="focus:outline-none hover:scale-105 transition-transform"
-                                                            title="স্বাক্ষর বড় করে দেখুন"
-                                                        >
-                                                            <img
-                                                                src={
-                                                                    a.approver_signature.startsWith('http')
-                                                                        ? a.approver_signature
-                                                                        : a.approver_signature.startsWith('/storage/')
-                                                                        ? a.approver_signature
-                                                                        : `/storage/${a.approver_signature}`
+                                <tr
+                                    key={`${row.sheet_id}-${row.serial_no}-${index}`}
+                                    className="hover:bg-gray-50 print:hover:bg-transparent"
+                                >
+                                    <td className="border approval-col-serial">{index + 1}</td>
+                                    {colVis.sheet_date && (
+                                        <td className="border text-left whitespace-nowrap">{row.sheet_date || '-'}</td>
+                                    )}
+                                    {colVis.branch && (
+                                        <td className="border text-left max-w-[10rem]">
+                                            {row.branch_name} {row.branch_code ? `(${row.branch_code})` : ''}
+                                        </td>
+                                    )}
+                                    {colVis.area && (
+                                        <td className="border text-left max-w-[8rem]">{row.area_name || '-'}</td>
+                                    )}
+                                    {colVis.zone && (
+                                        <td className="border text-left max-w-[8rem]">{row.zone_name || '-'}</td>
+                                    )}
+                                    <td className="border text-left max-w-[12rem]">{row.member_name}</td>
+                                    {colVis.member_code && (
+                                        <td className="border whitespace-nowrap">{row.member_code || ''}</td>
+                                    )}
+                                    {colVis.member_phone && (
+                                        <td className="border whitespace-nowrap">{row.member_phone || ''}</td>
+                                    )}
+                                    {colVis.samity_number && (
+                                        <td className="border whitespace-nowrap">{row.samity_number || ''}</td>
+                                    )}
+                                    {colVis.proposed && (
+                                        <td className="border whitespace-nowrap">{formatAmount(row.proposed_loan_amount)}</td>
+                                    )}
+                                    {colVis.approved && (
+                                        <td className="border whitespace-nowrap">{formatAmount(row.approved_amount)}</td>
+                                    )}
+                                    {colVis.loan_type && (
+                                        <td className="border text-left max-w-[8rem]">{row.loan_type || ''}</td>
+                                    )}
+                                    {colVis.project && (
+                                        <td className="border text-left max-w-[12rem]">{row.project_name || ''}</td>
+                                    )}
+                                    {colVis.comments && (
+                                        <td className="border approval-col-comment align-top">
+                                            <span className="whitespace-pre-line">{row.review_comments || ''}</span>
+                                        </td>
+                                    )}
+                                    {colVis.signature && (
+                                        <td className="border align-top whitespace-nowrap">
+                                            {(row.approvers && row.approvers.length > 0
+                                                ? row.approvers
+                                                : [
+                                                      {
+                                                          approver_signature: row.approver_signature,
+                                                          decided_at: row.decided_at,
+                                                          approver_name: row.approver_name,
+                                                      },
+                                                  ]
+                                            ).map((a, i) => (
+                                                <div
+                                                    key={i}
+                                                    className="flex flex-col items-start gap-0.5 py-0.5 border-b border-gray-100 last:border-0"
+                                                >
+                                                    {a.approver_signature ? (
+                                                        <>
+                                                            <button
+                                                                type="button"
+                                                                onClick={() =>
+                                                                    setZoomSignatureUrl(
+                                                                        a.approver_signature!.startsWith('http')
+                                                                            ? a.approver_signature!
+                                                                            : a.approver_signature!.startsWith('/storage/')
+                                                                            ? a.approver_signature!
+                                                                            : `/storage/${a.approver_signature!}`,
+                                                                    )
                                                                 }
-                                                                alt="Signature"
-                                                                className="h-6 max-h-6 object-contain"
-                                                                onError={(e) => {
-                                                                    (e.target as HTMLImageElement).style.display = 'none';
-                                                                }}
-                                                            />
-                                                        </button>
-                                                        <span className="text-xs">{a.decided_at || ''}</span>
-                                                    </>
-                                                ) : (
-                                                    <span className="text-xs text-gray-500">{a.decided_at || ''}</span>
-                                                )}
-                                            </div>
-                                        ))}
-                                    </td>
-                                    <td className="border px-2 py-1 text-center capitalize">{row.status}</td>
-                                    <td className="border px-2 py-1">{row.approvers && row.approvers.length > 0 ? row.approvers.map((a) => a.approver_name).filter(Boolean).join(', ') : (row.approver_name || '-')}</td>
-                                    <td className="border px-2 py-1 text-center print:hidden">
+                                                                className="focus:outline-none hover:scale-105 transition-transform"
+                                                                title="স্বাক্ষর বড় করে দেখুন"
+                                                            >
+                                                                <img
+                                                                    src={
+                                                                        a.approver_signature.startsWith('http')
+                                                                            ? a.approver_signature
+                                                                            : a.approver_signature.startsWith('/storage/')
+                                                                            ? a.approver_signature
+                                                                            : `/storage/${a.approver_signature}`
+                                                                    }
+                                                                    alt="Signature"
+                                                                    className="h-6 max-h-6 object-contain print:!h-6 print:!max-h-6"
+                                                                    onError={(e) => {
+                                                                        (e.target as HTMLImageElement).style.display = 'none';
+                                                                    }}
+                                                                />
+                                                            </button>
+                                                            <span className="text-xs">{a.decided_at || ''}</span>
+                                                        </>
+                                                    ) : (
+                                                        <span className="text-xs text-gray-500">{a.decided_at || ''}</span>
+                                                    )}
+                                                </div>
+                                            ))}
+                                        </td>
+                                    )}
+                                    <td className="border capitalize">{row.status}</td>
+                                    {colVis.approver && (
+                                        <td className="border text-left max-w-[10rem]">
+                                            {row.approvers && row.approvers.length > 0
+                                                ? row.approvers.map((a) => a.approver_name).filter(Boolean).join(', ')
+                                                : row.approver_name || '-'}
+                                        </td>
+                                    )}
+                                    <td className="border print:hidden">
                                         <div className="flex flex-col items-center justify-center gap-1">
                                             <button
                                                 type="button"

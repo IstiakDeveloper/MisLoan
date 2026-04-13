@@ -101,6 +101,24 @@ const statusFilterOptions: { value: string; label: string }[] = [
     { value: 'rejected', label: 'Rejected' },
 ];
 
+/** Row has non-empty display value for a column (numbers: 0 counts as data). */
+function rowHasValue(
+    row: ItemRow,
+    pick: (r: ItemRow) => string | number | null | undefined,
+): boolean {
+    const v = pick(row);
+    if (v == null) return false;
+    if (typeof v === 'string') return v.trim().length > 0;
+    if (typeof v === 'number') return Number.isFinite(v);
+    return false;
+}
+
+function rowHasOtherInstitutionLoan(row: ItemRow): boolean {
+    const v = row.other_institution_loan_amount;
+    if (v == null) return false;
+    return String(v).trim().length > 0;
+}
+
 export default function TeamBasedApprovalIndex({ approvals, filters, draftCount, approverOptions, branch }: Props) {
     const currentFrom = filters.date_from || '';
     const currentTo = filters.date_to || '';
@@ -207,6 +225,91 @@ export default function TeamBasedApprovalIndex({ approvals, filters, draftCount,
         });
     });
 
+    type FlatRow = (typeof flatRows)[number];
+
+    const colVis = React.useMemo(() => {
+        const rows = flatRows as FlatRow[];
+        if (rows.length === 0) {
+            return {
+                member_code: true,
+                member_phone: true,
+                samity_number: true,
+                savings_general: true,
+                savings_other: true,
+                savings_total: true,
+                repaid_loan: true,
+                repaid_installment: true,
+                other_institution: true,
+                proposed: true,
+                term: true,
+                loan_type: true,
+                project: true,
+                approved: true,
+                comments: true,
+                approver: true,
+                signature: true,
+            };
+        }
+        const any = (fn: (r: FlatRow) => boolean) => rows.some(fn);
+        return {
+            member_code: any((r) => rowHasValue(r, (x) => x.member_code)),
+            member_phone: any((r) => rowHasValue(r, (x) => x.member_phone)),
+            samity_number: any((r) => rowHasValue(r, (x) => x.samity_number)),
+            savings_general: any((r) => r.savings_general != null),
+            savings_other: any((r) => r.savings_other != null),
+            savings_total: any((r) => r.savings_total != null),
+            repaid_loan: any((r) => r.repaid_loan_amount != null),
+            repaid_installment: any((r) => r.repaid_installment_no != null),
+            other_institution: any((r) => rowHasOtherInstitutionLoan(r)),
+            proposed: any((r) => r.proposed_loan_amount != null),
+            term: any((r) => r.loan_term_years != null),
+            loan_type: any((r) => rowHasValue(r, (x) => x.loan_type)),
+            project: any((r) => rowHasValue(r, (x) => x.project_name)),
+            approved: any((r) => r.approved_amount != null),
+            comments: any((r) => rowHasValue(r, (x) => x.review_comments)),
+            approver: any((r) => {
+                const n =
+                    (r.approvers && r.approvers.length > 0
+                        ? r.approvers.map((a) => a.approver_name).filter(Boolean).join(', ')
+                        : null) ?? r.approver_name;
+                return n != null && String(n).trim().length > 0;
+            }),
+            signature: any((r) => {
+                if (r.approver_signature != null && String(r.approver_signature).trim().length > 0) return true;
+                if (r.approvers?.some((a) => a.approver_signature && String(a.approver_signature).trim().length > 0))
+                    return true;
+                if (r.decided_at != null && String(r.decided_at).trim().length > 0) return true;
+                if (r.approvers?.some((a) => a.decided_at != null && String(a.decided_at).trim().length > 0)) return true;
+                return false;
+            }),
+        };
+    }, [flatRows]);
+
+    const savingsSubCount =
+        (colVis.savings_general ? 1 : 0) + (colVis.savings_other ? 1 : 0) + (colVis.savings_total ? 1 : 0);
+    const showSavingsGroup = savingsSubCount > 0;
+
+    const visibleDataColCount =
+        2 + // ক্র + নাম
+        (colVis.member_code ? 1 : 0) +
+        (colVis.member_phone ? 1 : 0) +
+        (colVis.samity_number ? 1 : 0) +
+        savingsSubCount +
+        (colVis.repaid_loan ? 1 : 0) +
+        (colVis.repaid_installment ? 1 : 0) +
+        (colVis.other_institution ? 1 : 0) +
+        (colVis.proposed ? 1 : 0) +
+        (colVis.term ? 1 : 0) +
+        (colVis.loan_type ? 1 : 0) +
+        (colVis.project ? 1 : 0) +
+        (colVis.approved ? 1 : 0) +
+        (colVis.comments ? 1 : 0) +
+        (colVis.approver ? 1 : 0) +
+        (colVis.signature ? 1 : 0) +
+        1; // Status (screen)
+
+    const headerRowSpan = showSavingsGroup ? 2 : 1;
+
     const [zoomSignatureUrl, setZoomSignatureUrl] = React.useState<string | null>(null);
 
     const handlePrintPage = () => {
@@ -219,36 +322,69 @@ export default function TeamBasedApprovalIndex({ approvals, filters, draftCount,
         <AdminLayout>
             <Head title="Team Based Loan Approvals">
                 <style>{`
-                    .approval-index-table-wrapper table { table-layout: fixed; }
+                    .approval-index-table-wrapper table { table-layout: auto; width: max(100%, max-content); }
                     .approval-index-table-wrapper th,
                     .approval-index-table-wrapper td {
-                        overflow: hidden;
                         line-height: 1.25;
                         padding: 1px 1px;
                         font-size: 9px;
                         vertical-align: middle;
                         text-align: center;
                     }
+                    .approval-index-table-wrapper .approval-col-serial {
+                        width: 1%;
+                        max-width: 2rem;
+                        white-space: nowrap;
+                        font-size: 8px;
+                        padding-left: 2px;
+                        padding-right: 2px;
+                    }
+                    .approval-index-table-wrapper .approval-col-comment {
+                        min-width: 14rem;
+                        width: 30%;
+                        max-width: 36rem;
+                        white-space: normal;
+                        word-break: break-word;
+                    }
+                    .approval-index-table-wrapper tbody td.approval-col-comment {
+                        text-align: left;
+                    }
                     .approval-index-table-wrapper thead th {
                         font-weight: 600;
                         white-space: normal;
                         padding: 1px 2px;
+                        text-align: center !important;
                     }
                     .approval-index-table-wrapper tbody td {
                         padding: 8px 4px;
                     }
-                    /* Legal size – টেবিল/ফর্মের জন্য জায়গা */
-                    @page { size: legal landscape; margin: 10mm; }
+                    /* Legal size – প্রিন্টে মার্জিন কম */
+                    @page { size: legal landscape; margin: 5mm; }
                     @media print {
                         html, body { margin: 0 !important; padding: 0 !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; background: #fff !important; }
-                        .approval-index-print-page { margin: 0 !important; padding: 0 !important; }
-                        .approval-index-table-wrapper { overflow: visible !important; }
-                        .approval-index-table-wrapper table { width: 100% !important; table-layout: fixed !important; font-size: 7pt !important; }
+                        .approval-index-print-page { margin: 0 !important; padding: 0 !important; background: transparent !important; }
+                        .approval-index-table-wrapper {
+                            overflow: visible !important;
+                            background: transparent !important;
+                            box-shadow: none !important;
+                            border: none !important;
+                        }
+                        .approval-index-table-wrapper thead,
+                        .approval-index-table-wrapper thead th {
+                            background: transparent !important;
+                            background-color: transparent !important;
+                        }
+                        .approval-index-table-wrapper tbody tr {
+                            background: transparent !important;
+                        }
+                        .approval-index-table-wrapper table { width: 100% !important; table-layout: auto !important; font-size: 7pt !important; }
+                        .approval-index-table-wrapper .approval-col-comment { min-width: 28% !important; width: auto !important; max-width: none !important; }
                         .approval-index-table-wrapper thead th {
                             padding: 2px 4px !important;
+                            text-align: center !important;
                         }
                         .approval-index-table-wrapper tbody td {
-                            padding: 8px 4px !important;
+                            padding: 6px 3px !important;
                         }
                         .approval-index-table-wrapper th,
                         .approval-index-table-wrapper td {
@@ -263,10 +399,10 @@ export default function TeamBasedApprovalIndex({ approvals, filters, draftCount,
                 `}</style>
             </Head>
 
-            <div className="mx-auto py-6 px-4 print:py-0 print:px-0">
+            <div className="mx-auto py-6 px-4 print:py-0 print:px-0 print:!m-0 print:max-w-none">
                 {/* Print header - matches formal document: logo left, org+title center, date right; then branch/area/zone row */}
-                <div className="mb-4 approval-index-print-header">
-                    <div className="flex items-start justify-between gap-4 mb-2 print:flex print:mb-1">
+                <div className="mb-4 print:mb-1 approval-index-print-header">
+                    <div className="flex items-start justify-between gap-4 mb-2 print:flex print:mb-0.5">
                         <div className="flex-shrink-0">
                             <img
                                 src="/logo.png"
@@ -286,7 +422,7 @@ export default function TeamBasedApprovalIndex({ approvals, filters, draftCount,
                         </div>
 
                     </div>
-                    <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-1 text-xs text-gray-700 mb-4">
+                    <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-1 text-xs text-gray-700 mb-4 print:mb-1">
                         <span><span className="font-semibold">শাখার নাম:</span> {branch.name}</span>
                         <span><span className="font-semibold">অঞ্চলের নাম:</span> {branch.area_name || '-'}</span>
                         <span><span className="font-semibold">জোনের নাম:</span> {branch.zone_name || '-'}</span>
@@ -545,107 +681,204 @@ export default function TeamBasedApprovalIndex({ approvals, filters, draftCount,
                 </div>
 
                 {/* ── DESKTOP TABLE VIEW ────────────────────────────────── */}
-                <div className="hidden md:block print:block bg-white shadow-sm border border-gray-200 rounded-lg overflow-x-auto approval-index-table-wrapper w-full approval-index-print-page">
-                    <table className="w-full border-collapse table-fixed" style={{ tableLayout: 'fixed' }}>
-                        <thead className="bg-gray-50">
+                <div className="hidden md:block print:block bg-white shadow-sm border border-gray-200 rounded-lg overflow-x-auto approval-index-table-wrapper w-full approval-index-print-page print:bg-transparent print:shadow-none print:border-0 print:rounded-none">
+                    <table className="w-full border-collapse">
+                        <thead className="bg-gray-50 print:bg-transparent">
                             <tr>
-                                <th className="border" rowSpan={2}>ক্র. নং</th>
-                                <th className="border" rowSpan={2}>সদস্যের নাম</th>
-                                <th className="border" rowSpan={2}>সদস্য নম্বর</th>
-                                <th className="border" rowSpan={2}>ফোন নম্বর</th>
-                                <th className="border" rowSpan={2}>সমিতি নম্বর</th>
-                                <th className="border text-center" colSpan={3}>সঞ্চয়ের পরিমাণ</th>
-                                <th className="border" rowSpan={2}>পরিশোধিত মূল ঋণের পরিমাণ</th>
-                                <th className="border" rowSpan={2}>পরি: দফা নম্বর</th>
-                                <th className="border px-2 py-1 min-w-[10rem]" rowSpan={2}>অন্যান্য সংস্থায় গ্রহণকৃত ঋণের পরিমাণ</th>
-                                <th className="border" rowSpan={2}>প্রস্তাবিত ঋণের পরিমাণ</th>
-                                <th className="border" rowSpan={2}>ঋণের মেয়াদ (বছর)</th>
-                                <th className="border" rowSpan={2}>ঋণের ধরন</th>
-                                <th className="border" rowSpan={2}>প্রকল্পের নাম</th>
-                                <th className="border" rowSpan={2}>অনুমোদঙ্কা ঋণ</th>
-                                <th className="border" rowSpan={2}>মন্তব্য</th>
-                                <th className="border" rowSpan={2}>অনুমোদনকারী</th>
-                                <th className="border" rowSpan={2}>অনুমোদনকারীর স্বাক্ষর / তারিখ</th>
-                                <th className="border print:hidden" rowSpan={2}>Status</th>
+                                <th className="border approval-col-serial" rowSpan={headerRowSpan}>
+                                    ক্র.
+                                </th>
+                                <th className="border" rowSpan={headerRowSpan}>
+                                    সদস্যের নাম
+                                </th>
+                                {colVis.member_code && (
+                                    <th className="border" rowSpan={headerRowSpan}>
+                                        সদস্য নম্বর
+                                    </th>
+                                )}
+                                {colVis.member_phone && (
+                                    <th className="border" rowSpan={headerRowSpan}>
+                                        ফোন নম্বর
+                                    </th>
+                                )}
+                                {colVis.samity_number && (
+                                    <th className="border" rowSpan={headerRowSpan}>
+                                        সমিতি নম্বর
+                                    </th>
+                                )}
+                                {showSavingsGroup && (
+                                    <th className="border text-center" colSpan={savingsSubCount}>
+                                        সঞ্চয়ের পরিমাণ
+                                    </th>
+                                )}
+                                {colVis.repaid_loan && (
+                                    <th className="border" rowSpan={headerRowSpan}>
+                                        পরিশোধিত মূল ঋণের পরিমাণ
+                                    </th>
+                                )}
+                                {colVis.repaid_installment && (
+                                    <th className="border" rowSpan={headerRowSpan}>
+                                        পরি: দফা নম্বর
+                                    </th>
+                                )}
+                                {colVis.other_institution && (
+                                    <th className="border px-2 py-1 whitespace-normal max-w-[14rem]" rowSpan={headerRowSpan}>
+                                        অন্যান্য সংস্থায় গ্রহণকৃত ঋণের পরিমাণ
+                                    </th>
+                                )}
+                                {colVis.proposed && (
+                                    <th className="border" rowSpan={headerRowSpan}>
+                                        প্রস্তাবিত ঋণের পরিমাণ
+                                    </th>
+                                )}
+                                {colVis.term && (
+                                    <th className="border" rowSpan={headerRowSpan}>
+                                        ঋণের মেয়াদ (বছর)
+                                    </th>
+                                )}
+                                {colVis.loan_type && (
+                                    <th className="border" rowSpan={headerRowSpan}>
+                                        ঋণের ধরন
+                                    </th>
+                                )}
+                                {colVis.project && (
+                                    <th className="border" rowSpan={headerRowSpan}>
+                                        প্রকল্পের নাম
+                                    </th>
+                                )}
+                                {colVis.approved && (
+                                    <th className="border" rowSpan={headerRowSpan}>
+                                        অনুমোদঙ্কা ঋণ
+                                    </th>
+                                )}
+                                {colVis.comments && (
+                                    <th className="border approval-col-comment" rowSpan={headerRowSpan}>
+                                        মন্তব্য
+                                    </th>
+                                )}
+                                {colVis.approver && (
+                                    <th className="border" rowSpan={headerRowSpan}>
+                                        অনুমোদনকারী
+                                    </th>
+                                )}
+                                {colVis.signature && (
+                                    <th className="border" rowSpan={headerRowSpan}>
+                                        অনুমোদনকারীর স্বাক্ষর / তারিখ
+                                    </th>
+                                )}
+                                <th className="border print:hidden" rowSpan={headerRowSpan}>
+                                    Status
+                                </th>
                             </tr>
-                            <tr>
-                                <th className="border">সাধারণ</th>
-                                <th className="border">অন্যান্য</th>
-                                <th className="border">মোট</th>
-                            </tr>
+                            {showSavingsGroup && (
+                                <tr>
+                                    {colVis.savings_general && <th className="border">সাধারণ</th>}
+                                    {colVis.savings_other && <th className="border">অন্যান্য</th>}
+                                    {colVis.savings_total && <th className="border">মোট</th>}
+                                </tr>
+                            )}
                         </thead>
                         <tbody>
                             {flatRows.length === 0 && (
                                 <tr>
-                                    <td colSpan={20} className="border text-center text-gray-500 py-4">
+                                    <td colSpan={visibleDataColCount} className="border text-center text-gray-500 py-4">
                                         কোনো Team Based তথ্য পাওয়া যায়নি।
                                     </td>
                                 </tr>
                             )}
                             {flatRows.map((row, idx) => (
-                                <tr key={`${row.sheet_id}-${idx}`} className="hover:bg-gray-50">
-                                    <td className="border">{idx + 1}</td>
-                                    <td className="border">{row.member_name}</td>
-                                    <td className="border">{row.member_code || ''}</td>
-                                    <td className="border">{row.member_phone || ''}</td>
-                                    <td className="border">{row.samity_number || ''}</td>
-                                    <td className="border">{formatAmount(row.savings_general)}</td>
-                                    <td className="border">{formatAmount(row.savings_other)}</td>
-                                    <td className="border">{formatAmount(row.savings_total)}</td>
-                                    <td className="border">{(formatAmount(row.repaid_loan_amount) || row.repaid_loan_amount) ?? ''}</td>
-                                    <td className="border">{row.repaid_installment_no ?? ''}</td>
-                                    <td className="border align-top px-2 py-1.5 min-w-[10rem]">
-                                        <span className="whitespace-pre-line block text-left">{row.other_institution_loan_amount ?? ''}</span>
-                                    </td>
-                                    <td className="border">{formatAmount(row.proposed_loan_amount)}</td>
-                                    <td className="border">{row.loan_term_years ?? ''}</td>
-                                    <td className="border">{row.loan_type || ''}</td>
-                                    <td className="border">{row.project_name || ''}</td>
-                                    <td className="border">{formatAmount(row.approved_amount)}</td>
-                                    <td className="border">{row.review_comments || ''}</td>
-                                    <td className="border">{(row.approvers && row.approvers.length > 0 ? row.approvers.map((a) => a.approver_name).filter(Boolean).join(', ') : null) ?? row.approver_name ?? ''}</td>
-                                    <td className="border align-top">
-                                        {(row.approvers && row.approvers.length > 0 ? row.approvers : [{ approver_signature: row.approver_signature, decided_at: row.decided_at }]).map((a, i) => (
-                                            <div key={i} className="flex flex-col items-center gap-0 py-0.5 border-b border-gray-100 last:border-0">
-                                                {a.approver_signature ? (
-                                                    <>
-                                                        <button
-                                                            type="button"
-                                                            onClick={() =>
-                                                                setZoomSignatureUrl(
-                                                                    a.approver_signature!.startsWith('http')
-                                                                        ? a.approver_signature!
-                                                                        : a.approver_signature!.startsWith('/storage/')
-                                                                        ? a.approver_signature!
-                                                                        : `/storage/${a.approver_signature!}`,
-                                                                )
-                                                            }
-                                                            className="focus:outline-none hover:scale-105 transition-transform"
-                                                            title="স্বাক্ষর বড় করে দেখুন"
-                                                        >
-                                                            <img
-                                                                src={
-                                                                    a.approver_signature.startsWith('http')
-                                                                        ? a.approver_signature
-                                                                        : a.approver_signature.startsWith('/storage/')
-                                                                        ? a.approver_signature
-                                                                        : `/storage/${a.approver_signature}`
+                                <tr key={`${row.sheet_id}-${idx}`} className="hover:bg-gray-50 print:hover:bg-transparent">
+                                    <td className="border approval-col-serial">{idx + 1}</td>
+                                    <td className="border text-left max-w-[12rem]">{row.member_name}</td>
+                                    {colVis.member_code && <td className="border whitespace-nowrap">{row.member_code || ''}</td>}
+                                    {colVis.member_phone && <td className="border whitespace-nowrap">{row.member_phone || ''}</td>}
+                                    {colVis.samity_number && <td className="border whitespace-nowrap">{row.samity_number || ''}</td>}
+                                    {colVis.savings_general && <td className="border whitespace-nowrap">{formatAmount(row.savings_general)}</td>}
+                                    {colVis.savings_other && <td className="border whitespace-nowrap">{formatAmount(row.savings_other)}</td>}
+                                    {colVis.savings_total && <td className="border whitespace-nowrap">{formatAmount(row.savings_total)}</td>}
+                                    {colVis.repaid_loan && (
+                                        <td className="border whitespace-nowrap">
+                                            {(formatAmount(row.repaid_loan_amount) || row.repaid_loan_amount) ?? ''}
+                                        </td>
+                                    )}
+                                    {colVis.repaid_installment && (
+                                        <td className="border whitespace-nowrap">{row.repaid_installment_no ?? ''}</td>
+                                    )}
+                                    {colVis.other_institution && (
+                                        <td className="border align-top px-2 py-1.5 max-w-[14rem]">
+                                            <span className="whitespace-pre-line block text-left">{row.other_institution_loan_amount ?? ''}</span>
+                                        </td>
+                                    )}
+                                    {colVis.proposed && (
+                                        <td className="border whitespace-nowrap">{formatAmount(row.proposed_loan_amount)}</td>
+                                    )}
+                                    {colVis.term && <td className="border whitespace-nowrap">{row.loan_term_years ?? ''}</td>}
+                                    {colVis.loan_type && <td className="border">{row.loan_type || ''}</td>}
+                                    {colVis.project && (
+                                        <td className="border text-left max-w-[12rem]">{row.project_name || ''}</td>
+                                    )}
+                                    {colVis.approved && (
+                                        <td className="border whitespace-nowrap">{formatAmount(row.approved_amount)}</td>
+                                    )}
+                                    {colVis.comments && (
+                                        <td className="border approval-col-comment align-top">
+                                            <span className="whitespace-pre-line">{row.review_comments || ''}</span>
+                                        </td>
+                                    )}
+                                    {colVis.approver && (
+                                        <td className="border text-left max-w-[10rem]">
+                                            {(row.approvers && row.approvers.length > 0
+                                                ? row.approvers.map((a) => a.approver_name).filter(Boolean).join(', ')
+                                                : null) ?? row.approver_name ?? ''}
+                                        </td>
+                                    )}
+                                    {colVis.signature && (
+                                        <td className="border align-top whitespace-nowrap">
+                                            {(row.approvers && row.approvers.length > 0
+                                                ? row.approvers
+                                                : [{ approver_signature: row.approver_signature, decided_at: row.decided_at }]
+                                            ).map((a, i) => (
+                                                <div key={i} className="flex flex-col items-center gap-0 py-0.5 border-b border-gray-100 last:border-0">
+                                                    {a.approver_signature ? (
+                                                        <>
+                                                            <button
+                                                                type="button"
+                                                                onClick={() =>
+                                                                    setZoomSignatureUrl(
+                                                                        a.approver_signature!.startsWith('http')
+                                                                            ? a.approver_signature!
+                                                                            : a.approver_signature!.startsWith('/storage/')
+                                                                            ? a.approver_signature!
+                                                                            : `/storage/${a.approver_signature!}`,
+                                                                    )
                                                                 }
-                                                                alt="Signature"
-                                                                className="h-7 max-h-7 object-contain print:!h-7 print:!max-h-7"
-                                                                onError={(e) => {
-                                                                    (e.target as HTMLImageElement).style.display = 'none';
-                                                                }}
-                                                            />
-                                                        </button>
-                                                        <span className="text-[10px] text-gray-700">{a.decided_at || ''}</span>
-                                                    </>
-                                                ) : (
-                                                    <span className="text-[10px] text-gray-500">{a.decided_at || ''}</span>
-                                                )}
-                                            </div>
-                                        ))}
-                                    </td>
+                                                                className="focus:outline-none hover:scale-105 transition-transform"
+                                                                title="স্বাক্ষর বড় করে দেখুন"
+                                                            >
+                                                                <img
+                                                                    src={
+                                                                        a.approver_signature.startsWith('http')
+                                                                            ? a.approver_signature
+                                                                            : a.approver_signature.startsWith('/storage/')
+                                                                            ? a.approver_signature
+                                                                            : `/storage/${a.approver_signature}`
+                                                                    }
+                                                                    alt="Signature"
+                                                                    className="h-7 max-h-7 object-contain print:!h-7 print:!max-h-7"
+                                                                    onError={(e) => {
+                                                                        (e.target as HTMLImageElement).style.display = 'none';
+                                                                    }}
+                                                                />
+                                                            </button>
+                                                            <span className="text-[10px] text-gray-700">{a.decided_at || ''}</span>
+                                                        </>
+                                                    ) : (
+                                                        <span className="text-[10px] text-gray-500">{a.decided_at || ''}</span>
+                                                    )}
+                                                </div>
+                                            ))}
+                                        </td>
+                                    )}
                                     <td className="border print:hidden">
                                         <span
                                             className={`inline-flex items-center px-1.5 py-0.5 rounded border ${

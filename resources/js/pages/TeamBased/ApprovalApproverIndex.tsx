@@ -46,6 +46,29 @@ interface ItemRow {
     project_name?: string | null;
 }
 
+function rowHasValue(
+    row: ItemRow,
+    pick: (r: ItemRow) => string | number | null | undefined,
+): boolean {
+    const v = pick(row);
+    if (v == null) return false;
+    if (typeof v === 'string') return v.trim().length > 0;
+    if (typeof v === 'number') return Number.isFinite(v);
+    return false;
+}
+
+function rowHasOtherInstitutionLoan(row: ItemRow): boolean {
+    const v = row.other_institution_loan_amount;
+    if (v == null) return false;
+    return String(v).trim().length > 0;
+}
+
+function hasNumericishField(v: string | number | null | undefined): boolean {
+    if (v == null) return false;
+    if (typeof v === 'number') return Number.isFinite(v);
+    return String(v).trim().length > 0;
+}
+
 interface SheetInfo {
     id: number;
     sheet_date: string | null;
@@ -453,6 +476,102 @@ export default function TeamBasedApprovalApproverIndex({ reviews, filters, branc
         });
     });
 
+    type FlatRow = (typeof flatRows)[number];
+
+    const colVis = React.useMemo(() => {
+        const rows = flatRows as FlatRow[];
+        if (rows.length === 0) {
+            return {
+                sheet_date: true,
+                branch: true,
+                member_code: true,
+                member_phone: true,
+                samity_number: true,
+                savings_general: true,
+                savings_other: true,
+                savings_total: true,
+                repaid_loan: true,
+                repaid_installment: true,
+                other_institution: true,
+                proposed: true,
+                term: true,
+                loan_type: true,
+                project: true,
+                approved: true,
+                approver: true,
+                comments: true,
+                signature: true,
+            };
+        }
+        const any = (fn: (r: FlatRow) => boolean) => rows.some(fn);
+        return {
+            sheet_date: any((r) => r.sheet_date != null && String(r.sheet_date).trim().length > 0),
+            branch: any(
+                (r) =>
+                    (r.branch_name != null && String(r.branch_name).trim().length > 0) ||
+                    (r.branch_code != null && String(r.branch_code).trim().length > 0),
+            ),
+            member_code: any((r) => rowHasValue(r, (x) => x.member_code)),
+            member_phone: any((r) => rowHasValue(r, (x) => x.member_phone)),
+            samity_number: any((r) => rowHasValue(r, (x) => x.samity_number)),
+            savings_general: any((r) => r.savings_general != null),
+            savings_other: any((r) => r.savings_other != null),
+            savings_total: any((r) => r.savings_total != null),
+            repaid_loan: any((r) => hasNumericishField(r.repaid_loan_amount)),
+            repaid_installment: any((r) => hasNumericishField(r.repaid_installment_no)),
+            other_institution: any((r) => rowHasOtherInstitutionLoan(r)),
+            proposed: any((r) => hasNumericishField(r.proposed_loan_amount)),
+            term: any((r) => r.loan_term_years != null),
+            loan_type: any((r) => rowHasValue(r, (x) => x.loan_type)),
+            project: any((r) => rowHasValue(r, (x) => x.project_name)),
+            approved: any((r) => r.approved_amount != null),
+            approver: any((r) => {
+                const n =
+                    (r.approvers && r.approvers.length > 0
+                        ? r.approvers.map((a) => a.approver_name).filter(Boolean).join(', ')
+                        : null) ?? r.approver_name;
+                return n != null && String(n).trim().length > 0;
+            }),
+            comments: any((r) => r.review_comments != null && String(r.review_comments).trim().length > 0),
+            signature: any((r) => {
+                if (r.approver_signature != null && String(r.approver_signature).trim().length > 0) return true;
+                if (r.approvers?.some((a) => a.approver_signature && String(a.approver_signature).trim().length > 0))
+                    return true;
+                if (r.decided_at != null && String(r.decided_at).trim().length > 0) return true;
+                if (r.approvers?.some((a) => a.decided_at != null && String(a.decided_at).trim().length > 0)) return true;
+                return false;
+            }),
+        };
+    }, [flatRows]);
+
+    const savingsSubCount =
+        (colVis.savings_general ? 1 : 0) + (colVis.savings_other ? 1 : 0) + (colVis.savings_total ? 1 : 0);
+    const showSavingsGroup = savingsSubCount > 0;
+
+    const visibleDataColCount =
+        1 +
+        (colVis.sheet_date ? 1 : 0) +
+        (colVis.branch ? 1 : 0) +
+        1 +
+        (colVis.member_code ? 1 : 0) +
+        (colVis.member_phone ? 1 : 0) +
+        (colVis.samity_number ? 1 : 0) +
+        savingsSubCount +
+        (colVis.repaid_loan ? 1 : 0) +
+        (colVis.repaid_installment ? 1 : 0) +
+        (colVis.other_institution ? 1 : 0) +
+        (colVis.proposed ? 1 : 0) +
+        (colVis.term ? 1 : 0) +
+        (colVis.loan_type ? 1 : 0) +
+        (colVis.project ? 1 : 0) +
+        (colVis.approved ? 1 : 0) +
+        (colVis.approver ? 1 : 0) +
+        (colVis.comments ? 1 : 0) +
+        (colVis.signature ? 1 : 0) +
+        1;
+
+    const headerRowSpan = showSavingsGroup ? 2 : 1;
+
     const openForwardModal = (sheetId: number, sheetLabel: string, reviewId: number) => {
         setForwardModal({
             open: true,
@@ -510,56 +629,86 @@ export default function TeamBasedApprovalApproverIndex({ reviews, filters, branc
         <AdminLayout>
             <Head title="Team Based Approvals - Approver">
                 <style>{`
-                    .approval-table-print-wrapper table { table-layout: fixed; }
-                    .approval-table-print-wrapper th,
-                    .approval-table-print-wrapper td {
-                        overflow: hidden;
+                    .approval-index-table-wrapper table { table-layout: auto; width: max(100%, max-content); }
+                    .approval-index-table-wrapper th,
+                    .approval-index-table-wrapper td {
                         line-height: 1.25;
                         padding: 1px 1px;
                         font-size: 9px;
                         vertical-align: middle;
                         text-align: center;
                     }
-                    .approval-table-print-wrapper thead th {
+                    .approval-index-table-wrapper .approval-col-serial {
+                        width: 1%;
+                        max-width: 2rem;
+                        white-space: nowrap;
+                        font-size: 8px;
+                        padding-left: 2px;
+                        padding-right: 2px;
+                    }
+                    .approval-index-table-wrapper .approval-col-comment {
+                        min-width: 14rem;
+                        width: 30%;
+                        max-width: 36rem;
+                        white-space: normal;
+                        word-break: break-word;
+                    }
+                    .approval-index-table-wrapper tbody td.approval-col-comment {
+                        text-align: left;
+                    }
+                    .approval-index-table-wrapper thead th {
                         font-weight: 600;
                         white-space: normal;
                         padding: 1px 2px;
+                        text-align: center !important;
                     }
-                    .approval-table-print-wrapper tbody td {
-                        padding: 0 0;
+                    .approval-index-table-wrapper tbody td {
+                        padding: 8px 4px;
                     }
-                    /* সঞ্চয়ের তিনটা কলামকে আরও টাইট, center aligned ও ছোট width */
-                    .approval-table-print-wrapper tbody td:nth-child(6),
-                    .approval-table-print-wrapper tbody td:nth-child(7),
-                    .approval-table-print-wrapper tbody td:nth-child(8) {
-                        text-align: center;
-                        padding: 0 0;
-                        width: 4%;
-                    }
-                    /* পেজে খুব সামান্য মার্জিন ০.২৫", ফন্ট ছোট – সাইড কাটা যাবে না */
-                    @page { size: legal landscape; margin: 0.25in; }
+                    @page { size: legal landscape; margin: 5mm; }
                     @media print {
-                        html, body { margin: 0 !important; padding: 0 !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
-                        .approval-print-page { margin: 0 !important; padding: 0 !important; width: 100% !important; max-width: 100% !important; box-sizing: border-box !important; }
-                        .approval-table-print-wrapper { overflow: visible !important; width: 100% !important; box-sizing: border-box !important; }
-                        .approval-table-print-wrapper table { width: 100% !important; max-width: 100% !important; table-layout: fixed !important; font-size: 6pt !important; }
-                        .approval-table-print-wrapper th,
-                        .approval-table-print-wrapper td {
-                            padding: 2px 3px !important;
-                            font-size: 6pt !important;
-                            line-height: 1.15 !important;
+                        html, body { margin: 0 !important; padding: 0 !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; background: #fff !important; }
+                        .approval-index-print-page { margin: 0 !important; padding: 0 !important; background: transparent !important; }
+                        .approval-index-table-wrapper {
+                            overflow: visible !important;
+                            background: transparent !important;
+                            box-shadow: none !important;
+                            border: none !important;
                         }
-                        .approval-print-header .text-lg { font-size: 9pt !important; }
-                        .approval-print-header .text-xs { font-size: 6pt !important; }
-                        .approval-print-header .text-sm { font-size: 7pt !important; }
+                        .approval-index-table-wrapper thead,
+                        .approval-index-table-wrapper thead th {
+                            background: transparent !important;
+                            background-color: transparent !important;
+                        }
+                        .approval-index-table-wrapper tbody tr {
+                            background: transparent !important;
+                        }
+                        .approval-index-table-wrapper table { width: 100% !important; table-layout: auto !important; font-size: 7pt !important; }
+                        .approval-index-table-wrapper .approval-col-comment { min-width: 28% !important; width: auto !important; max-width: none !important; }
+                        .approval-index-table-wrapper thead th {
+                            padding: 2px 4px !important;
+                            text-align: center !important;
+                        }
+                        .approval-index-table-wrapper tbody td {
+                            padding: 6px 3px !important;
+                        }
+                        .approval-index-table-wrapper th,
+                        .approval-index-table-wrapper td {
+                            font-size: 7pt !important;
+                            line-height: 1.2 !important;
+                        }
+                        .approval-index-print-page { width: 100%; max-width: 100%; }
+                        .approval-index-print-header .text-lg { font-size: 10pt !important; }
+                        .approval-index-print-header .text-xs { font-size: 7pt !important; }
+                        .approval-index-print-header .text-sm { font-size: 8pt !important; }
                     }
                 `}</style>
             </Head>
 
-            <div className="mx-auto py-4 sm:py-6 px-2 sm:px-4 print:py-0 print:px-0">
+            <div className="mx-auto py-4 sm:py-6 px-2 sm:px-4 print:py-0 print:px-0 print:!m-0 print:max-w-none">
                 {/* Print header - same as ApprovalIndex: logo left, org+title center; then branch/area/zone/tarikh row */}
-                <div className="mb-4 approval-print-header">
-                    <div className="flex items-start justify-between gap-4 mb-2 print:flex print:mb-1">
+                <div className="mb-4 print:mb-1 approval-index-print-header">
+                    <div className="flex items-start justify-between gap-4 mb-2 print:flex print:mb-0.5">
                         <div className="flex-shrink-0">
                             <img
                                 src="/logo.png"
@@ -579,7 +728,7 @@ export default function TeamBasedApprovalApproverIndex({ reviews, filters, branc
                         </div>
                         <div className="flex-shrink-0 w-12" />
                     </div>
-                    <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-1 text-xs text-gray-700 mb-4">
+                    <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-1 text-xs text-gray-700 mb-4 print:mb-1">
                         <span>
                             <span className="font-semibold">শাখার নাম:</span>{' '}
                             {selectedBranch
@@ -964,127 +1113,264 @@ export default function TeamBasedApprovalApproverIndex({ reviews, filters, branc
                 </div>
 
                 {/* ── DESKTOP TABLE VIEW ────────────────────────────────── */}
-                <div className="hidden md:block print:block bg-white shadow-sm border border-gray-200 rounded-lg overflow-x-auto approval-table-print-wrapper w-full approval-print-page">
-                    <table className="w-full border-collapse table-fixed" style={{ tableLayout: 'fixed' }}>
-                        <thead className="bg-gray-50">
+                <div className="hidden md:block print:block bg-white shadow-sm border border-gray-200 rounded-lg overflow-x-auto approval-index-table-wrapper w-full approval-index-print-page print:bg-transparent print:shadow-none print:border-0 print:rounded-none">
+                    <table className="w-full border-collapse">
+                        <thead className="bg-gray-50 print:bg-transparent">
                             <tr>
-                                <th className="border text-left" rowSpan={2}>ক্রম</th>
-                                <th className="border text-left" rowSpan={2}>তারিখ</th>
-                                <th className="border text-left" rowSpan={2}>শাখার নাম</th>
-                                <th className="border text-left" rowSpan={2}>সদস্যের নাম</th>
-                                <th className="border text-left" rowSpan={2}>সদস্য নম্বর</th>
-                                <th className="border text-left" rowSpan={2}>ফোন নম্বর</th>
-                                <th className="border text-left" rowSpan={2}>সমিতি নম্বর</th>
-                                <th className="border text-center" colSpan={3}>সঞ্চয়ের পরিমাণ</th>
-                                <th className="border text-right" rowSpan={2}>পরিশোধিত ঋণ</th>
-                                <th className="border text-center" rowSpan={2}>পরিশোধিত দফা</th>
-                                <th className="border text-right px-2 py-1 min-w-[10rem]" rowSpan={2}>অন্যান্য সংস্থায় ঋণ</th>
-                                <th className="border text-right" rowSpan={2}>প্রস্তাবিত ঋণ</th>
-                                <th className="border text-center" rowSpan={2}>মেয়াদ (বছর)</th>
-                                <th className="border text-left" rowSpan={2}>ঋণের ধরন</th>
-                                <th className="border text-left" rowSpan={2}>প্রকল্পের নাম</th>
-                                <th className="border text-right" rowSpan={2}>অনুমোদিত ঋণ</th>
-                        <th className="border text-left" rowSpan={2}>অনুমোদনকারী</th>
-                                <th className="border text-left" rowSpan={2}>মন্তব্য</th>
-                                <th className="border text-left" rowSpan={2}>অনুমোদনকারীর স্বাক্ষর / তারিখ</th>
-                                <th className="border text-center" rowSpan={2}>Status</th>
+                                <th className="border approval-col-serial" rowSpan={headerRowSpan}>
+                                    ক্র.
+                                </th>
+                                {colVis.sheet_date && (
+                                    <th className="border" rowSpan={headerRowSpan}>
+                                        তারিখ
+                                    </th>
+                                )}
+                                {colVis.branch && (
+                                    <th className="border" rowSpan={headerRowSpan}>
+                                        শাখার নাম
+                                    </th>
+                                )}
+                                <th className="border" rowSpan={headerRowSpan}>
+                                    সদস্যের নাম
+                                </th>
+                                {colVis.member_code && (
+                                    <th className="border" rowSpan={headerRowSpan}>
+                                        সদস্য নম্বর
+                                    </th>
+                                )}
+                                {colVis.member_phone && (
+                                    <th className="border" rowSpan={headerRowSpan}>
+                                        ফোন নম্বর
+                                    </th>
+                                )}
+                                {colVis.samity_number && (
+                                    <th className="border" rowSpan={headerRowSpan}>
+                                        সমিতি নম্বর
+                                    </th>
+                                )}
+                                {showSavingsGroup && (
+                                    <th className="border text-center" colSpan={savingsSubCount}>
+                                        সঞ্চয়ের পরিমাণ
+                                    </th>
+                                )}
+                                {colVis.repaid_loan && (
+                                    <th className="border" rowSpan={headerRowSpan}>
+                                        পরিশোধিত ঋণ
+                                    </th>
+                                )}
+                                {colVis.repaid_installment && (
+                                    <th className="border" rowSpan={headerRowSpan}>
+                                        পরিশোধিত দফা
+                                    </th>
+                                )}
+                                {colVis.other_institution && (
+                                    <th className="border whitespace-normal max-w-[14rem] px-2 py-1" rowSpan={headerRowSpan}>
+                                        অন্যান্য সংস্থায় ঋণ
+                                    </th>
+                                )}
+                                {colVis.proposed && (
+                                    <th className="border" rowSpan={headerRowSpan}>
+                                        প্রস্তাবিত ঋণ
+                                    </th>
+                                )}
+                                {colVis.term && (
+                                    <th className="border" rowSpan={headerRowSpan}>
+                                        মেয়াদ (বছর)
+                                    </th>
+                                )}
+                                {colVis.loan_type && (
+                                    <th className="border" rowSpan={headerRowSpan}>
+                                        ঋণের ধরন
+                                    </th>
+                                )}
+                                {colVis.project && (
+                                    <th className="border" rowSpan={headerRowSpan}>
+                                        প্রকল্পের নাম
+                                    </th>
+                                )}
+                                {colVis.approved && (
+                                    <th className="border" rowSpan={headerRowSpan}>
+                                        অনুমোদিত ঋণ
+                                    </th>
+                                )}
+                                {colVis.approver && (
+                                    <th className="border" rowSpan={headerRowSpan}>
+                                        অনুমোদনকারী
+                                    </th>
+                                )}
+                                {colVis.comments && (
+                                    <th className="border approval-col-comment" rowSpan={headerRowSpan}>
+                                        মন্তব্য
+                                    </th>
+                                )}
+                                {colVis.signature && (
+                                    <th className="border" rowSpan={headerRowSpan}>
+                                        অনুমোদনকারীর স্বাক্ষর / তারিখ
+                                    </th>
+                                )}
+                                <th className="border" rowSpan={headerRowSpan}>
+                                    Status
+                                </th>
                             </tr>
-                            <tr>
-                                <th className="border text-center">সাধারণ</th>
-                                <th className="border text-center">অন্যান্য</th>
-                                <th className="border text-center">মোট</th>
-                            </tr>
+                            {showSavingsGroup && (
+                                <tr>
+                                    {colVis.savings_general && <th className="border">সাধারণ</th>}
+                                    {colVis.savings_other && <th className="border">অন্যান্য</th>}
+                                    {colVis.savings_total && <th className="border">মোট</th>}
+                                </tr>
+                            )}
                         </thead>
                         <tbody>
                             {flatRows.length === 0 && (
                                 <tr>
-                                    <td colSpan={20} className="border text-center text-gray-500 py-4">
+                                    <td colSpan={visibleDataColCount} className="border text-center text-gray-500 py-4">
                                         আপনার জন্য কোনো Team Based আবেদন পাওয়া যায়নি।
                                     </td>
                                 </tr>
                             )}
                             {flatRows.map((row, index) => {
                                 const review = reviews.data.find((r) => r.review_id === row.review_id)!;
-                                const sheet = review.sheet;
                                 const rowKey = `${row.review_id}-${row.serial_no}-${index}`;
                                 const isOpen = openRowKey === rowKey;
                                 const state = decisionState[review.review_id];
 
                                 return (
                                     <React.Fragment key={`${row.review_id}-${row.serial_no}-${index}`}>
-                                        <tr className="hover:bg-gray-50">
-                                            <td className="border text-left">{index + 1}</td>
-                                            <td className="border text-left">{row.sheet_date || '-'}</td>
-                                            <td className="border text-left">{row.branch_name || '-'}</td>
-                                            <td className="border text-left">{row.member_name}</td>
-                                            <td className="border text-left">{row.member_code || ''}</td>
-                                            <td className="border text-left">{row.member_phone || ''}</td>
-                                            <td className="border text-left">{row.samity_number || ''}</td>
-                                            <td className="border text-center">{formatAmount(row.savings_general)}</td>
-                                            <td className="border text-center">{formatAmount(row.savings_other)}</td>
-                                            <td className="border text-center">{formatAmount(row.savings_total)}</td>
-                                            <td className="border text-right">{(formatAmount(row.repaid_loan_amount) || row.repaid_loan_amount) ?? ''}</td>
-                                            <td className="border text-center">{row.repaid_installment_no ?? ''}</td>
-                                            <td className="border text-left align-top px-2 py-1.5 min-w-[10rem]">
-                                                <span className="whitespace-pre-line block text-left">{row.other_institution_loan_amount ?? ''}</span>
-                                            </td>
-                                            <td className="border text-right">{formatAmount(row.proposed_loan_amount)}</td>
-                                            <td className="border text-center">{row.loan_term_years ?? ''}</td>
-                                            <td className="border text-left">{row.loan_type || ''}</td>
-                                            <td className="border text-left">{row.project_name || ''}</td>
-                                            <td className="border text-right">{formatAmount(row.approved_amount)}</td>
-                                            <td className="border text-left">
-                                                {row.approvers && row.approvers.length > 0 ? row.approvers.map((a) => a.approver_name).filter(Boolean).join(', ') : (row.approver_name ? `${row.approver_name}${row.approver_role ? ` (${row.approver_role})` : ''}` : '')}
-                                            </td>
-                                            <td className="border text-left">{row.review_comments || ''}</td>
-                                            <td className="border text-left align-top">
-                                                {(row.approvers && row.approvers.length > 0 ? row.approvers : [{ approver_signature: row.approver_signature, decided_at: row.decided_at, approver_name: row.approver_name }]).map((a, i) => (
-                                                    <div key={i} className="flex flex-col items-center gap-0 py-0.5 border-b border-gray-100 last:border-0">
-                                                        {a.approver_signature ? (
-                                                            <>
-                                                                <button
-                                                                    type="button"
-                                                                    onClick={() =>
-                                                                        setZoomSignatureUrl(
-                                                                            a.approver_signature!.startsWith('http')
-                                                                                ? a.approver_signature!
-                                                                                : a.approver_signature!.startsWith('/storage/')
-                                                                                ? a.approver_signature!
-                                                                                : `/storage/${a.approver_signature!}`,
-                                                                        )
-                                                                    }
-                                                                    className="focus:outline-none hover:scale-105 transition-transform"
-                                                                    title="স্বাক্ষর বড় করে দেখুন"
-                                                                >
-                                                                    <img
-                                                                        src={
-                                                                            a.approver_signature.startsWith('http')
-                                                                                ? a.approver_signature
-                                                                                : a.approver_signature.startsWith('/storage/')
-                                                                                ? a.approver_signature
-                                                                                : `/storage/${a.approver_signature}`
+                                        <tr className="hover:bg-gray-50 print:hover:bg-transparent">
+                                            <td className="border approval-col-serial">{index + 1}</td>
+                                            {colVis.sheet_date && (
+                                                <td className="border text-left whitespace-nowrap">{row.sheet_date || '-'}</td>
+                                            )}
+                                            {colVis.branch && (
+                                                <td className="border text-left max-w-[10rem]">{row.branch_name || '-'}</td>
+                                            )}
+                                            <td className="border text-left max-w-[12rem]">{row.member_name}</td>
+                                            {colVis.member_code && (
+                                                <td className="border whitespace-nowrap">{row.member_code || ''}</td>
+                                            )}
+                                            {colVis.member_phone && (
+                                                <td className="border whitespace-nowrap">{row.member_phone || ''}</td>
+                                            )}
+                                            {colVis.samity_number && (
+                                                <td className="border whitespace-nowrap">{row.samity_number || ''}</td>
+                                            )}
+                                            {colVis.savings_general && (
+                                                <td className="border whitespace-nowrap">{formatAmount(row.savings_general)}</td>
+                                            )}
+                                            {colVis.savings_other && (
+                                                <td className="border whitespace-nowrap">{formatAmount(row.savings_other)}</td>
+                                            )}
+                                            {colVis.savings_total && (
+                                                <td className="border whitespace-nowrap">{formatAmount(row.savings_total)}</td>
+                                            )}
+                                            {colVis.repaid_loan && (
+                                                <td className="border whitespace-nowrap">
+                                                    {(formatAmount(row.repaid_loan_amount) || row.repaid_loan_amount) ?? ''}
+                                                </td>
+                                            )}
+                                            {colVis.repaid_installment && (
+                                                <td className="border whitespace-nowrap">{row.repaid_installment_no ?? ''}</td>
+                                            )}
+                                            {colVis.other_institution && (
+                                                <td className="border align-top px-2 py-1.5 max-w-[14rem]">
+                                                    <span className="whitespace-pre-line block text-left">
+                                                        {row.other_institution_loan_amount ?? ''}
+                                                    </span>
+                                                </td>
+                                            )}
+                                            {colVis.proposed && (
+                                                <td className="border whitespace-nowrap">{formatAmount(row.proposed_loan_amount)}</td>
+                                            )}
+                                            {colVis.term && (
+                                                <td className="border whitespace-nowrap">{row.loan_term_years ?? ''}</td>
+                                            )}
+                                            {colVis.loan_type && <td className="border text-left max-w-[8rem]">{row.loan_type || ''}</td>}
+                                            {colVis.project && (
+                                                <td className="border text-left max-w-[12rem]">{row.project_name || ''}</td>
+                                            )}
+                                            {colVis.approved && (
+                                                <td className="border whitespace-nowrap">{formatAmount(row.approved_amount)}</td>
+                                            )}
+                                            {colVis.approver && (
+                                                <td className="border text-left max-w-[10rem]">
+                                                    {row.approvers && row.approvers.length > 0
+                                                        ? row.approvers.map((a) => a.approver_name).filter(Boolean).join(', ')
+                                                        : row.approver_name
+                                                        ? `${row.approver_name}${row.approver_role ? ` (${row.approver_role})` : ''}`
+                                                        : ''}
+                                                </td>
+                                            )}
+                                            {colVis.comments && (
+                                                <td className="border approval-col-comment align-top">
+                                                    <span className="whitespace-pre-line">{row.review_comments || ''}</span>
+                                                </td>
+                                            )}
+                                            {colVis.signature && (
+                                                <td className="border align-top whitespace-nowrap">
+                                                    {(row.approvers && row.approvers.length > 0
+                                                        ? row.approvers
+                                                        : [
+                                                              {
+                                                                  approver_signature: row.approver_signature,
+                                                                  decided_at: row.decided_at,
+                                                                  approver_name: row.approver_name,
+                                                              },
+                                                          ]
+                                                    ).map((a, i) => (
+                                                        <div
+                                                            key={i}
+                                                            className="flex flex-col items-center gap-0 py-0.5 border-b border-gray-100 last:border-0"
+                                                        >
+                                                            {a.approver_signature ? (
+                                                                <>
+                                                                    <button
+                                                                        type="button"
+                                                                        onClick={() =>
+                                                                            setZoomSignatureUrl(
+                                                                                a.approver_signature!.startsWith('http')
+                                                                                    ? a.approver_signature!
+                                                                                    : a.approver_signature!.startsWith('/storage/')
+                                                                                    ? a.approver_signature!
+                                                                                    : `/storage/${a.approver_signature!}`,
+                                                                            )
                                                                         }
-                                                                        alt="Signature"
-                                                                        className="h-7 max-h-7 object-contain print:!h-7 print:!max-h-7"
-                                                                        onError={(e) => {
-                                                                            (e.target as HTMLImageElement).style.display = 'none';
-                                                                        }}
-                                                                    />
-                                                                </button>
-                                                                <span className="text-[10px] text-gray-700">{formatDateOnly(a.decided_at || '')}</span>
-                                                            </>
-                                                        ) : (
-                                                            <span className="text-[10px] text-gray-500">{formatDateOnly(a.decided_at || '')}</span>
-                                                        )}
-                                                    </div>
-                                                ))}
-                                            </td>
-                                            <td className="border text-center">
+                                                                        className="focus:outline-none hover:scale-105 transition-transform"
+                                                                        title="স্বাক্ষর বড় করে দেখুন"
+                                                                    >
+                                                                        <img
+                                                                            src={
+                                                                                a.approver_signature.startsWith('http')
+                                                                                    ? a.approver_signature
+                                                                                    : a.approver_signature.startsWith('/storage/')
+                                                                                    ? a.approver_signature
+                                                                                    : `/storage/${a.approver_signature}`
+                                                                            }
+                                                                            alt="Signature"
+                                                                            className="h-7 max-h-7 object-contain print:!h-7 print:!max-h-7"
+                                                                            onError={(e) => {
+                                                                                (e.target as HTMLImageElement).style.display = 'none';
+                                                                            }}
+                                                                        />
+                                                                    </button>
+                                                                    <span className="text-[10px] text-gray-700">
+                                                                        {formatDateOnly(a.decided_at || '')}
+                                                                    </span>
+                                                                </>
+                                                            ) : (
+                                                                <span className="text-[10px] text-gray-500">
+                                                                    {formatDateOnly(a.decided_at || '')}
+                                                                </span>
+                                                            )}
+                                                        </div>
+                                                    ))}
+                                                </td>
+                                            )}
+                                            <td className="border">
                                                 {review.status === 'pending' && row.can_act ? (
                                                     <button
                                                         type="button"
                                                         onClick={() => handleToggleAction(review.review_id, rowKey)}
-                                                        className="inline-flex items-center px-1.5 py-0.5 rounded text-[9px] font-medium bg-blue-600 text-white hover:bg-blue-700"
+                                                        className="inline-flex items-center px-1.5 py-0.5 rounded text-[9px] font-medium bg-blue-600 text-white hover:bg-blue-700 print:hidden"
                                                     >
                                                         Action
                                                     </button>
@@ -1101,7 +1387,7 @@ export default function TeamBasedApprovalApproverIndex({ reviews, filters, branc
                                         </tr>
                                         {isOpen && review.status === 'pending' && (
                                             <tr className="print:hidden">
-                                                <td colSpan={20} className="border-b border-blue-100 bg-gradient-to-r from-slate-50 to-blue-50 p-0">
+                                                <td colSpan={visibleDataColCount} className="border-b border-blue-100 bg-gradient-to-r from-slate-50 to-blue-50 p-0">
                                                     <div className="px-4 py-4">
                                                         {/* Panel header */}
                                                         <div className="flex items-center gap-2 mb-3 pb-2 border-b border-slate-200">
