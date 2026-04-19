@@ -217,44 +217,44 @@ export default function TeamBasedApprovalApproverIndex({ reviews, filters, branc
         });
     };
 
-    const handleStatusFilterChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
-        const newStatus = e.target.value;
-        applyFilter(newStatus, currentFrom, currentTo || currentFrom, currentBranchId, currentApproverId, currentApprovalFlow, currentPerPage, 1);
-    };
-
-    const handleBranchChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
-        const newBranchId = e.target.value;
-        applyFilter(currentStatus, currentFrom, currentTo || currentFrom, newBranchId, currentApproverId, currentApprovalFlow, currentPerPage, 1);
-    };
-
-    const handleApproverChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
-        const newApproverId = e.target.value;
-        applyFilter(currentStatus, currentFrom, currentTo || currentFrom, currentBranchId, newApproverId, currentApprovalFlow, currentPerPage, 1);
-    };
-
-    const handleApprovalFlowChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
-        const newFlow = e.target.value;
-        applyFilter(currentStatus, currentFrom, currentTo || currentFrom, currentBranchId, currentApproverId, newFlow, currentPerPage, 1);
-    };
-
     const handleFromChange = (e: React.ChangeEvent<HTMLInputElement>) => {
         const newFrom = e.target.value;
-        applyFilter(currentStatus, newFrom, currentTo || newFrom, currentBranchId, currentApproverId, currentApprovalFlow, currentPerPage, 1);
+        applyFilter(currentStatus, newFrom, currentTo, currentBranchId, currentApproverId, currentApprovalFlow, currentPerPage, 1);
     };
 
     const handleToChange = (e: React.ChangeEvent<HTMLInputElement>) => {
         const newTo = e.target.value;
-        applyFilter(currentStatus, currentFrom || newTo, newTo, currentBranchId, currentApproverId, currentApprovalFlow, currentPerPage, 1);
+        applyFilter(currentStatus, currentFrom, newTo, currentBranchId, currentApproverId, currentApprovalFlow, currentPerPage, 1);
+    };
+
+    const handleStatusFilterChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
+        const newStatus = e.target.value;
+        applyFilter(newStatus, currentFrom, currentTo, currentBranchId, currentApproverId, currentApprovalFlow, currentPerPage, 1);
+    };
+
+    const handleBranchChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
+        const newBranchId = e.target.value;
+        applyFilter(currentStatus, currentFrom, currentTo, newBranchId, currentApproverId, currentApprovalFlow, currentPerPage, 1);
+    };
+
+    const handleApproverChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
+        const newApproverId = e.target.value;
+        applyFilter(currentStatus, currentFrom, currentTo, currentBranchId, newApproverId, currentApprovalFlow, currentPerPage, 1);
+    };
+
+    const handleApprovalFlowChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
+        const newFlow = e.target.value;
+        applyFilter(currentStatus, currentFrom, currentTo, currentBranchId, currentApproverId, newFlow, currentPerPage, 1);
     };
 
     const handlePerPageChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
         const newPerPage = Number(e.target.value) || 20;
-        applyFilter(currentStatus, currentFrom, currentTo || currentFrom, currentBranchId, currentApproverId, currentApprovalFlow, newPerPage, 1);
+        applyFilter(currentStatus, currentFrom, currentTo, currentBranchId, currentApproverId, currentApprovalFlow, newPerPage, 1);
     };
 
     const goToPage = (page: number) => {
         if (page < 1 || page > (reviews.last_page ?? 1)) return;
-        applyFilter(currentStatus, currentFrom, currentTo || currentFrom, currentBranchId, currentApproverId, currentApprovalFlow, currentPerPage, page);
+        applyFilter(currentStatus, currentFrom, currentTo, currentBranchId, currentApproverId, currentApprovalFlow, currentPerPage, page);
     };
 
     const handleToggleAction = (reviewId: number, rowKey: string) => {
@@ -391,7 +391,7 @@ export default function TeamBasedApprovalApproverIndex({ reviews, filters, branc
             onSuccess: () => {
                 closeEditModal();
                 // Reload current filter to show fresh data
-                applyFilter(currentStatus, currentFrom, currentTo || currentFrom, currentBranchId, currentApproverId, currentApprovalFlow, currentPerPage, 1);
+                applyFilter(currentStatus, currentFrom, currentTo, currentBranchId, currentApproverId, currentApprovalFlow, currentPerPage, 1);
             },
         });
     };
@@ -745,7 +745,12 @@ export default function TeamBasedApprovalApproverIndex({ reviews, filters, branc
                             <span className="font-semibold">জোনের নাম:</span>{' '}
                             {reviews.data[0]?.sheet?.zone_name ?? '-'}
                         </span>
-                        <span><span className="font-semibold">তারিখ:</span> {currentTo || currentFrom || '-'}</span>
+                        <span>
+                            <span className="font-semibold">তারিখ:</span>{' '}
+                            {currentFrom && currentTo
+                                ? `${currentFrom} – ${currentTo}`
+                                : currentFrom || currentTo || '-'}
+                        </span>
                     </div>
                     {authUser?.name && (
                         <p className="text-xs text-gray-600 mb-1 print:mb-0"><span className="font-semibold">অনুমোদনকারীর নাম:</span> {authUser.name}</p>
@@ -827,7 +832,7 @@ export default function TeamBasedApprovalApproverIndex({ reviews, filters, branc
                             </select>
                         </div>
                     </div>
-                    <div className="grid grid-cols-2 sm:flex sm:flex-wrap sm:items-center gap-2">
+                    <div className="grid grid-cols-2 sm:flex sm:flex-wrap sm:items-end gap-2">
                         <div className="flex flex-col gap-0.5">
                             <span className="text-[10px] font-semibold text-gray-500 uppercase tracking-wider">From</span>
                             <input

@@ -424,6 +424,8 @@ class TeamBasedApprovalController extends Controller
         // For RM (area manager): only own reviews.
         // For ZM: own reviews + RM reviews under accessible branches.
         // For ADMF/DMF/ED: own reviews + RM reviews + ZM reviews under accessible branches (so ADMF sees ZM's too).
+        // For ZM and up: also ADMF/DMF/ED-assigned reviews on those branches so the Approver filter matches
+        // rows for financial approvers (dropdown lists them via getApproversSelectableByBranch).
         $reviewsQuery = TeamBasedApprovalReview::with(['approval.branch', 'approval.items', 'approval.reviews.user.role', 'item', 'user.role']);
 
         if ($roleName === Role::AREA_MANAGER) {
@@ -450,11 +452,21 @@ class TeamBasedApprovalController extends Controller
                         });
                     });
                 }
+                // Financial approver (ADMF/DMF/ED) review rows — same branch scope as RM/ZM filters
+                $q->orWhere(function ($sub) use ($accessibleBranchIds) {
+                    $sub->whereHas('user.role', function ($rq) {
+                        $rq->whereIn('name', Role::approverRoleNames());
+                    })->whereHas('approval', function ($aq) use ($accessibleBranchIds) {
+                        $aq->whereIn('branch_id', $accessibleBranchIds);
+                    });
+                });
             });
         }
 
-        // Base query with filters (no ordering/pagination yet)
-        $baseQuery = $reviewsQuery
+        // List filters without approver_id — used to build Approver dropdown options so RM/ZM stay
+        // selectable after filtering by ADMF/DMF/ED (merging user_ids from the paginated query alone
+        // would shrink the dropdown to only the currently selected approver).
+        $queryForListFilters = (clone $reviewsQuery)
             ->when($status, function ($q) use ($status) {
                 $q->where('status', $status);
             })
@@ -462,9 +474,6 @@ class TeamBasedApprovalController extends Controller
                 $q->whereHas('approval', function ($qa) use ($branchId) {
                     $qa->where('branch_id', $branchId);
                 });
-            })
-            ->when($approverId, function ($q) use ($approverId) {
-                $q->where('user_id', $approverId);
             })
             ->when($dateFrom && $dateTo, function ($q) use ($dateFrom, $dateTo) {
                 $q->whereHas('approval', function ($qa) use ($dateFrom, $dateTo) {
@@ -486,6 +495,12 @@ class TeamBasedApprovalController extends Controller
                         ->groupBy('team_based_approval_id')
                         ->havingRaw('COUNT(DISTINCT user_id) >= 2');
                 });
+            });
+
+        // Base query with filters incl. approver (no ordering/pagination yet)
+        $baseQuery = (clone $queryForListFilters)
+            ->when($approverId, function ($q) use ($approverId) {
+                $q->where('user_id', $approverId);
             });
 
         // Paginated reviews list for table
@@ -620,9 +635,10 @@ class TeamBasedApprovalController extends Controller
                 User::getApproversSelectableByBranch($branch->id)->pluck('id')
             );
         }
-        // Add distinct user_ids from reviews this user can see (so RM/ZM who did reviews are always in list)
+        // Add distinct user_ids from visible reviews under current non-approver filters (not $baseQuery,
+        // which includes approver_id and would drop RM/ZM from the dropdown when a DMF/ADMF is selected).
         $approverUserIds = $approverUserIds->merge(
-            (clone $baseQuery)->select('user_id')->distinct()->pluck('user_id')
+            (clone $queryForListFilters)->select('user_id')->distinct()->pluck('user_id')
         );
         $approverUserIds = $approverUserIds->filter()->unique()->values();
 
