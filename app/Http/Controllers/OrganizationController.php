@@ -219,4 +219,11 @@ class OrganizationController extends Controller
     {
         return response()->json($zone->areas()->with('branches')->get()->pluck('branches')->flatten());
     }
+
+    // Complete organization structure with nested relationships
+    public function organizationStructure()
+    {
+        $zones = Zone::with(['areas.branches'])->get();
+        return response()->json($zones);
+    }
 }
