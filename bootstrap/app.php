@@ -7,6 +7,7 @@ use App\Http\Middleware\CheckRole;
 use App\Http\Middleware\CheckPermission;
 use App\Http\Middleware\CheckBranchUser;
 use App\Http\Middleware\CheckHeadOffice;
+use App\Http\Middleware\CheckTeamBasedApprovalReportAccess;
 use App\Http\Middleware\EnsureCanViewMemberAdmission;
 use App\Http\Middleware\CheckMaintenanceMode;
 use Illuminate\Foundation\Application;
@@ -37,6 +38,7 @@ return Application::configure(basePath: dirname(__DIR__))
             'permission' => CheckPermission::class,
             'branch.user' => CheckBranchUser::class,
             'head.office' => CheckHeadOffice::class,
+            'team-based.report' => CheckTeamBasedApprovalReportAccess::class,
             'member.admission.view' => EnsureCanViewMemberAdmission::class,
         ]);
     })

@@ -3,6 +3,7 @@ import { Head, useForm, router } from '@inertiajs/react';
 import AdminLayout from '@/layouts/admin-layout';
 import { Save, Printer, Eye, Upload, X, ArrowLeft } from 'lucide-react';
 import GeneralSavingsSection, { getRequiredSavingsPercent } from '@/components/LoanApplications/GeneralSavingsSection';
+import { formatDateBangla } from '@/utils/dateUtils';
 
 interface LoanApplicationApprovalData {
     [key: string]: any;
@@ -21,16 +22,6 @@ interface Props {
     loanRound?: number;
     isLegacy?: boolean;
 }
-
-const formatDateBangla = (dateString: string | null) => {
-    if (!dateString) return '';
-    const date = new Date(dateString);
-    const d = date.getDate();
-    const m = date.getMonth() + 1;
-    const day = String(d).padStart(2, '0');
-    const month = String(m).padStart(2, '0');
-    return `${day}/${month}/${date.getFullYear()}`;
-};
 
 /** তারিখের অঙ্ক সলিড বক্সে; তারিখ না থাকলেও ৮টা বক্স শো হবে; বক্স লেখার সাইজের সাথে মিল রেখে ছোট */
 const DATE_BOX_COUNT = 8;

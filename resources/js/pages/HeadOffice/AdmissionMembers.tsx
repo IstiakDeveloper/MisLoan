@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Head, router, Link } from '@inertiajs/react';
 import AdminLayout from '@/layouts/admin-layout';
+import { formatDate } from '@/utils/dateUtils';
 import { Badge } from '@/components/ui/badge';
 import {
     Search,
@@ -563,7 +564,7 @@ export default function AdmissionMembers({ admissions, filters, stats, zones, ar
                                             <td className="px-4 py-3 text-sm text-gray-600">
                                                 <div>
                                                     {admission.submitted_at
-                                                        ? new Date(admission.submitted_at).toLocaleDateString('bn-BD')
+                                                        ? formatDate(admission.submitted_at)
                                                         : '-'}
                                                 </div>
                                             </td>

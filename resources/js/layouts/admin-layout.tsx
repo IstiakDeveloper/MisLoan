@@ -8,7 +8,6 @@ import {
     Menu,
     X,
     ChevronDown,
-    ChevronRight,
     LogOut,
     User,
     Bell,
@@ -21,12 +20,17 @@ import {
     Landmark,
     Banknote,
     ListTree,
-    Package,
-    FileText,
     Wallet,
     Settings,
     Download,
     Wrench,
+    BarChart3,
+    // Newly imported icons:
+    PiggyBank,
+    PieChart,
+    CircleUser,
+    Coins,
+    FileCheck
 } from 'lucide-react';
 import { useIsMobile } from '@/hooks/use-mobile';
 import { usePwaInstallPrompt } from '@/hooks/usePwaInstallPrompt';
@@ -65,6 +69,18 @@ interface AdminLayoutProps {
 }
 
 const SETUP_PATHS = ['/loan-categories', '/loan-products', '/savings-products', '/organizations', '/samities', '/member-categories', '/users', '/roles'];
+const REPORT_PATHS = ['/head-office/team-based-approvals/report'];
+const TEAM_BASED_REPORT_HREF = '/head-office/team-based-approvals/report';
+
+function isNavItemActive(currentPath: string, href: string): boolean {
+    if (currentPath === href) return true;
+    if (href === '/dashboard') return false;
+    if (!currentPath.startsWith(`${href}/`)) return false;
+    if (href === '/head-office/team-based-approvals' && REPORT_PATHS.some((p) => currentPath.startsWith(p))) {
+        return false;
+    }
+    return true;
+}
 
 export default function AdminLayout({ children }: AdminLayoutProps) {
     const page = usePage<PageProps>();
@@ -81,7 +97,9 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
     const [profileDropdownOpen, setProfileDropdownOpen] = useState(false);
     const [flashMessage, setFlashMessage] = useState<{ type: string; message: string } | null>(null);
     const setupOpenDefault = useMemo(() => SETUP_PATHS.some(p => path.startsWith(p)), [path]);
+    const reportOpenDefault = useMemo(() => REPORT_PATHS.some(p => path.startsWith(p)), [path]);
     const [setupExpanded, setSetupExpanded] = useState(setupOpenDefault);
+    const [reportExpanded, setReportExpanded] = useState(reportOpenDefault);
 
     useEffect(() => {
         if (flash.success) {
@@ -104,6 +122,19 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
     useEffect(() => {
         setSetupExpanded(prev => (SETUP_PATHS.some(p => path.startsWith(p)) ? true : prev));
     }, [path]);
+
+    useEffect(() => {
+        setReportExpanded(prev => (REPORT_PATHS.some(p => path.startsWith(p)) ? true : prev));
+    }, [path]);
+
+    // Handle closing sidebar on mobile when resizing or route changes
+    useEffect(() => {
+        if (isMobile) {
+            setSidebarOpen(false);
+        } else {
+            setSidebarOpen(true);
+        }
+    }, [isMobile, path]);
 
     const roleName = auth.user.role?.name || '';
 
@@ -128,6 +159,8 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
 
     const isFieldOfficer = roleName === 'field_officer';
     const isSuperAdmin = roleName === 'super_admin';
+    const isEdRole = roleName === 'ed';
+    const canViewTeamBasedReport = auth.user.has_all_access || isSuperAdmin || roleName === 'head_office' || isEdRole;
     const { canInstall, promptInstall, isInstalled, isStandalone, platform } = usePwaInstallPrompt();
 
     const handleMaintenanceToggle = () => {
@@ -145,26 +178,24 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
         { name: 'Dashboard', href: '/dashboard', icon: LayoutDashboard },
         { name: 'Member Admissions', href: '/member-admissions', icon: UserPlus },
         { name: 'Loan Applications', href: '/member/loan-applications', icon: Banknote },
-        { name: 'Savings Applications', href: '/member/savings-applications', icon: Landmark },
-        { name: 'Team Based Approval', href: '/team-based-approvals', icon: FileText },
+        { name: 'Savings Applications', href: '/member/savings-applications', icon: PiggyBank }, // Changed Landmark -> PiggyBank
+       { name: 'Team Based Approval', href: '/team-based-approvals', icon: FileCheck }, // Changed FileText -> FileCheck
         { name: 'Pending Approvals', href: '/approvals', icon: ClipboardCheck, badge: badgeCounts.pendingApprovals || 0 },
     ];
 
-    // Field officer: only Member Admissions
+    // Field officer: Dashboard & Member Admissions
     const branchMenuItems = isFieldOfficer
-        ? branchMenuItemsFull.filter((m) => m.name === 'Member Admissions')
+        ? branchMenuItemsFull.filter((m) => m.name === 'Dashboard' || m.name === 'Member Admissions')
         : roleName === 'branch_user'
         ? branchMenuItemsFull.slice(0, 5)
-        : roleName === 'branch_manager'
-        ? branchMenuItemsFull.filter((m) => m.name === 'Pending Approvals')
         : branchMenuItemsFull;
 
     const approverMenuItems = [
-        // Team Based Approval list for approver (area/zone/ADMF/DMF/ED)
+        { name: 'Dashboard', href: '/dashboard', icon: LayoutDashboard },
         {
             name: 'Team Based Approval',
             href: '/team-based-approvals/for-approver',
-            icon: FileText,
+            icon: FileCheck, // Changed FileText -> FileCheck
             badge: badgeCounts.pendingTeamBasedApprovals || 0,
         },
         {
@@ -178,19 +209,23 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
     const headOfficeMainItems = [
         { name: 'Dashboard', href: '/dashboard', icon: LayoutDashboard },
         { name: 'Admission Members', href: '/head-office/admission-members', icon: UserPlus, badge: badgeCounts.pendingAdmissions || 0 },
-        { name: 'Loan Applications', href: '/head-office/loan-applications', icon: FileText, badge: badgeCounts.pendingLoanApplications || 0 },
-        { name: 'Team Based Approvals', href: '/head-office/team-based-approvals', icon: FileText },
-        { name: 'Savings Applications', href: '/head-office/savings-applications', icon: Landmark },
+        { name: 'Loan Applications', href: '/head-office/loan-applications', icon: Banknote, badge: badgeCounts.pendingLoanApplications || 0 }, // Changed FileText -> Banknote
+        { name: 'Team Based Approvals', href: '/head-office/team-based-approvals', icon: FileCheck }, // Changed FileText -> FileCheck
+        { name: 'Savings Applications', href: '/head-office/savings-applications', icon: PiggyBank }, // Changed Landmark -> PiggyBank
+    ];
+
+    const headOfficeReportItems = [
+        { name: 'Team Based Report', href: TEAM_BASED_REPORT_HREF, icon: PieChart }, // Changed BarChart3 -> PieChart
     ];
 
     const headOfficeSetupItems = [
         { name: 'Loan Categories', href: '/loan-categories', icon: ListTree },
-        { name: 'Loan Products', href: '/loan-products', icon: Package },
+        { name: 'Loan Products', href: '/loan-products', icon: Coins }, // Changed Package -> Coins
         { name: 'Savings Products', href: '/savings-products', icon: Wallet },
         { name: 'Organizations', href: '/organizations', icon: Landmark },
         { name: 'Samities', href: '/samities', icon: Building2 },
         { name: 'Member Categories', href: '/member-categories', icon: Users },
-        { name: 'Users', href: '/users', icon: Users },
+        { name: 'Users', href: '/users', icon: CircleUser }, // Changed Users -> CircleUser
         { name: 'Roles', href: '/roles', icon: Shield },
     ];
 
@@ -200,123 +235,186 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
 
     const getFlashIcon = (type: string) => {
         switch (type) {
-            case 'success': return <CheckCircle className="w-5 h-5" />;
-            case 'error': return <XCircle className="w-5 h-5" />;
-            case 'warning': return <AlertCircle className="w-5 h-5" />;
-            case 'info': return <Info className="w-5 h-5" />;
+            case 'success': return <CheckCircle className="w-5 h-5 stroke-[1.75]" />;
+            case 'error': return <XCircle className="w-5 h-5 stroke-[1.75]" />;
+            case 'warning': return <AlertCircle className="w-5 h-5 stroke-[1.75]" />;
+            case 'info': return <Info className="w-5 h-5 stroke-[1.75]" />;
             default: return null;
         }
     };
 
     const getFlashColor = (type: string) => {
         switch (type) {
-            case 'success': return 'bg-green-50 border-green-200 text-green-800';
-            case 'error': return 'bg-red-50 border-red-200 text-red-800';
-            case 'warning': return 'bg-yellow-50 border-yellow-200 text-yellow-800';
-            case 'info': return 'bg-blue-50 border-blue-200 text-blue-800';
-            default: return '';
+            case 'success': return 'border-l-4 border-l-emerald-500 border-slate-100 bg-white/95 text-emerald-800 shadow-xl shadow-slate-900/5';
+            case 'error': return 'border-l-4 border-l-rose-500 border-slate-100 bg-white/95 text-rose-800 shadow-xl shadow-slate-900/5';
+            case 'warning': return 'border-l-4 border-l-amber-500 border-slate-100 bg-white/95 text-amber-800 shadow-xl shadow-slate-900/5';
+            case 'info': return 'border-l-4 border-l-blue-500 border-slate-100 bg-white/95 text-blue-800 shadow-xl shadow-slate-900/5';
+            default: return 'border-l-4 border-l-slate-500 border-slate-100 bg-white/95 text-slate-800 shadow-xl shadow-slate-900/5';
         }
     };
 
+    // Grouping layout menus for ultra-minimal spacing
+    const menuGroups = useMemo(() => {
+        if (isBranchRole) {
+            const dashboardItem = branchMenuItems.find(m => m.href === '/dashboard');
+            const operationsItems = branchMenuItems.filter(m => ['/member-admissions', '/member/loan-applications', '/member/savings-applications'].includes(m.href));
+            const approvalsItems = branchMenuItems.filter(m => ['/team-based-approvals', '/approvals'].includes(m.href));
+
+            const groups = [];
+            if (dashboardItem) groups.push({ title: 'Overview', items: [dashboardItem] });
+            if (operationsItems.length > 0) groups.push({ title: 'Operations', items: operationsItems });
+            if (approvalsItems.length > 0) groups.push({ title: 'Approvals', items: approvalsItems });
+            return groups;
+        }
+
+        if (isTeamApproverRole) {
+            const dashboardItem = approverMenuItems.find(m => m.href === '/dashboard');
+            const approvalsItems = approverMenuItems.filter(m => m.href !== '/dashboard');
+
+            const groups = [];
+            if (dashboardItem) groups.push({ title: 'Overview', items: [dashboardItem] });
+            if (approvalsItems.length > 0) groups.push({ title: 'Approvals', items: approvalsItems });
+            return groups;
+        }
+
+        // Head office / default roles
+        const dashboardItem = headOfficeMainItems.find(m => m.href === '/dashboard');
+        const operationsItems = headOfficeMainItems.filter(m => ['/head-office/admission-members', '/head-office/loan-applications', '/head-office/savings-applications'].includes(m.href));
+        const approvalsItems = headOfficeMainItems.filter(m => ['/head-office/team-based-approvals'].includes(m.href));
+
+        const groups = [];
+        if (dashboardItem) groups.push({ title: 'Overview', items: [dashboardItem] });
+        if (operationsItems.length > 0) groups.push({ title: 'Operations', items: operationsItems });
+        if (approvalsItems.length > 0) groups.push({ title: 'Approvals', items: approvalsItems });
+        return groups;
+    }, [isBranchRole, isTeamApproverRole, branchMenuItems, approverMenuItems, headOfficeMainItems]);
+
+    const showReportSection = isEdRole || canViewTeamBasedReport;
+
     return (
-        <div className="min-h-screen bg-gray-50 print:bg-white">
-            {/* Flash Message - hidden when printing */}
+        <div className="min-h-screen bg-[#f8fafc] print:bg-white text-slate-800 antialiased font-sans">
+            {/* Flash Messages (Toasts) */}
             {flashMessage && (
                 <div
-                    className={`print:hidden fixed top-4 right-4 z-50 flex items-center gap-3 px-4 py-3 rounded-lg border shadow-lg transition-all duration-300 animate-in slide-in-from-top ${getFlashColor(flashMessage.type)}`}
+                    className={`print:hidden fixed top-5 right-5 z-50 flex items-center gap-3.5 px-4.5 py-4 rounded-xl border border-slate-100 backdrop-blur-md transition-all duration-300 animate-in fade-in slide-in-from-top-4 ${getFlashColor(flashMessage.type)}`}
                 >
-                    {getFlashIcon(flashMessage.type)}
-                    <span className="font-medium">{flashMessage.message}</span>
+                    <div className={`p-2 rounded-xl flex items-center justify-center flex-shrink-0 ${
+                        flashMessage.type === 'success' ? 'bg-emerald-50 text-emerald-600' :
+                        flashMessage.type === 'error' ? 'bg-rose-50 text-rose-600' :
+                        flashMessage.type === 'warning' ? 'bg-amber-50 text-amber-600' :
+                        'bg-blue-50 text-blue-600'
+                    }`}>
+                        {getFlashIcon(flashMessage.type)}
+                    </div>
+                    <div className="flex-1 min-w-0 pr-4">
+                        <p className="text-[13px] font-bold text-slate-800 leading-none">
+                            {flashMessage.type === 'success' ? 'Success' :
+                             flashMessage.type === 'error' ? 'Error' :
+                             flashMessage.type === 'warning' ? 'Warning' :
+                             'Notification'}
+                        </p>
+                        <p className="text-[11px] text-slate-500 mt-1 font-medium leading-relaxed">{flashMessage.message}</p>
+                    </div>
                     <button
                         onClick={() => setFlashMessage(null)}
-                        className="ml-2 hover:opacity-70 transition-opacity"
+                        className="text-slate-400 hover:text-slate-600 transition-colors p-1 rounded-lg hover:bg-slate-100 flex-shrink-0"
+                        aria-label="Close notification"
                     >
-                        <X className="w-4 h-4" />
+                        <X className="w-4.5 h-4.5" />
                     </button>
                 </div>
             )}
 
-            {/* Sidebar - hidden when printing; drawer on mobile */}
+            {/* Sidebar */}
             <aside
-                className={`fixed left-0 top-0 h-full bg-white border-r border-gray-200/80 shadow-sm transition-[width,transform] duration-200 ease-out z-40 print:hidden
-                    ${sidebarOpen ? 'w-56 md:w-52' : 'w-14'}
-                    ${isMobile ? (sidebarOpen ? 'translate-x-0' : '-translate-x-full') : ''}`}
+                className={`fixed left-0 top-0 h-full bg-white border-r border-slate-100 z-40 print:hidden transition-all duration-300 ease-in-out flex flex-col
+                    ${sidebarOpen ? 'w-64' : 'w-16'}
+                    ${isMobile 
+                        ? `${sidebarOpen ? 'translate-x-0 shadow-2xl' : '-translate-x-full'} w-64` 
+                        : 'translate-x-0'
+                    }`}
             >
-                <div className="flex flex-col h-full">
-                    {/* Logo bar */}
-                    <div className="flex items-center justify-between h-12 min-h-12 px-2.5 border-b border-gray-100">
-                        {sidebarOpen && (
-                            <span className="text-sm font-semibold text-gray-800 tracking-tight truncate">
-                                MIS Loan
-                            </span>
-                        )}
+                {/* Logo and Control Bar */}
+                {sidebarOpen ? (
+                    <div className="bg-gradient-to-r from-blue-600 to-indigo-600 text-white rounded-xl p-3.5 m-3 flex items-center justify-between shadow-md shadow-blue-600/10 relative overflow-hidden">
+                        <div className="absolute -right-3 -top-3 w-12 h-12 bg-white/10 rounded-full blur-md" />
+                        <div className="flex items-center gap-2.5 min-w-0 z-10">
+                            <div className="w-8 h-8 rounded-lg bg-white/15 flex items-center justify-center text-white flex-shrink-0 shadow-inner">
+                                <Building2 className="w-4.5 h-4.5 stroke-[1.75]" />
+                            </div>
+                            <div className="min-w-0">
+                                <span className="text-[13px] font-bold tracking-wide block leading-none">
+                                    MIS Loan
+                                </span>
+                                <span className="text-[9px] text-blue-100 font-medium block mt-1.5 leading-none">
+                                    Management Panel
+                                </span>
+                            </div>
+                        </div>
                         <button
                             type="button"
-                            onClick={() => setSidebarOpen(!sidebarOpen)}
-                            className="p-1.5 rounded-md hover:bg-gray-100 text-gray-500 transition-colors"
-                            aria-label={sidebarOpen ? 'Collapse sidebar' : 'Expand sidebar'}
+                            onClick={() => setSidebarOpen(false)}
+                            className="p-1 rounded-lg hover:bg-white/15 text-blue-100 hover:text-white transition-colors z-10"
+                            aria-label="Collapse sidebar"
                         >
-                            {sidebarOpen ? <X className="w-4 h-4" /> : <Menu className="w-4 h-4" />}
+                            <Menu className="w-4 h-4" />
                         </button>
                     </div>
+                ) : (
+                    <div className="flex justify-center py-4">
+                        <button
+                            type="button"
+                            onClick={() => setSidebarOpen(true)}
+                            className="w-10 h-10 rounded-xl bg-gradient-to-r from-blue-600 to-indigo-600 text-white flex items-center justify-center shadow-md shadow-blue-600/15 hover:scale-105 transition-all duration-200"
+                            aria-label="Expand sidebar"
+                        >
+                            <Building2 className="w-5 h-5 stroke-[1.75]" />
+                        </button>
+                    </div>
+                )}
 
-                    {/* Navigation */}
-                    <nav className="flex-1 overflow-y-auto overflow-x-hidden py-2 px-2">
-                        {isBranchRole ? (
+                {/* Navigation Menu */}
+                <nav className="flex-1 overflow-y-auto overflow-x-hidden py-3 px-3 space-y-4">
+                    {/* Render Grouped Menu Items */}
+                    {menuGroups.map((group) => (
+                        <div key={group.title} className="space-y-1">
+                            {sidebarOpen && (
+                                <span className="px-3 text-[10px] font-bold text-blue-500/80 tracking-wider uppercase block select-none">
+                                    {group.title}
+                                </span>
+                            )}
                             <ul className="space-y-0.5">
-                                <li className="px-1.5 py-1 text-[10px] font-medium uppercase tracking-wider text-gray-400">
-                                    {sidebarOpen && 'Main'}
-                                </li>
-                        {branchMenuItems.map((item) => {
-                            const isActive = path === item.href || (item.href !== '/dashboard' && path.startsWith(item.href));
-                            const badge = (item as { badge?: number }).badge;
-                            return (
-                                <li key={item.name}>
-                                    <Link
-                                        href={item.href}
-                                        onClick={() => isMobile && setSidebarOpen(false)}
-                                        className={`flex items-center justify-between gap-2 px-2.5 py-1.5 rounded-md text-[13px] transition-colors ${
-                                            isActive ? 'bg-blue-50 text-blue-600 font-medium' : 'text-gray-600 hover:bg-gray-100'
-                                        }`}
-                                    >
-                                        <div className="flex items-center gap-2.5 min-w-0">
-                                            <item.icon className="w-4 h-4 flex-shrink-0 opacity-80" />
-                                            {sidebarOpen && <span className="truncate">{item.name}</span>}
-                                        </div>
-                                        {sidebarOpen && badge !== undefined && badge > 0 && (
-                                            <span className="flex-shrink-0 bg-red-500 text-white text-[10px] font-medium px-1.5 py-0.5 rounded min-w-[18px] text-center">
-                                                {badge}
-                                            </span>
-                                        )}
-                                    </Link>
-                                </li>
-                            );
-                        })}
-                            </ul>
-                        ) : isTeamApproverRole ? (
-                            <ul className="space-y-0.5">
-                                <li className="px-1.5 py-1 text-[10px] font-medium uppercase tracking-wider text-gray-400">
-                                    {sidebarOpen && 'Approvals'}
-                                </li>
-                                {approverMenuItems.map((item) => {
-                                    const isActive = path === item.href || (item.href !== '/dashboard' && path.startsWith(item.href));
-                                    const badge = (item as { badge?: number }).badge;
+                                {group.items.map((item) => {
+                                    const isActive = isNavItemActive(path, item.href);
+                                    const badge = item.badge;
                                     return (
                                         <li key={item.name}>
                                             <Link
                                                 href={item.href}
                                                 onClick={() => isMobile && setSidebarOpen(false)}
-                                                className={`flex items-center justify-between gap-2 px-2.5 py-1.5 rounded-md text-[13px] transition-colors ${
-                                                    isActive ? 'bg-blue-50 text-blue-600 font-medium' : 'text-gray-600 hover:bg-gray-100'
+                                                className={`group flex items-center justify-between gap-2 px-3 py-2.5 rounded-xl text-[13px] font-medium transition-all duration-200 relative ${
+                                                    isActive
+                                                        ? 'bg-gradient-to-r from-blue-600 to-indigo-600 text-white shadow-md shadow-blue-600/15'
+                                                        : 'text-slate-600 hover:bg-blue-50/50 hover:text-blue-600'
                                                 }`}
                                             >
                                                 <div className="flex items-center gap-2.5 min-w-0">
-                                                    <item.icon className="w-4 h-4 flex-shrink-0 opacity-80" />
+                                                    <item.icon className={`w-4.5 h-4.5 flex-shrink-0 stroke-[1.75] transition-transform duration-200 ${
+                                                        isActive ? 'text-white' : 'text-slate-400 group-hover:text-blue-600 group-hover:scale-105'
+                                                    }`} />
                                                     {sidebarOpen && <span className="truncate">{item.name}</span>}
                                                 </div>
                                                 {sidebarOpen && badge !== undefined && badge > 0 && (
-                                                    <span className="flex-shrink-0 bg-red-500 text-white text-[10px] font-medium px-1.5 py-0.5 rounded min-w-[18px] text-center">
+                                                    <span className={`flex-shrink-0 text-[10px] font-semibold px-2 py-0.5 rounded-full ${
+                                                        isActive ? 'bg-white/20 text-white' : 'bg-rose-50 text-rose-600 border border-rose-100'
+                                                    }`}>
                                                         {badge}
+                                                    </span>
+                                                )}
+                                                {!sidebarOpen && badge !== undefined && badge > 0 && (
+                                                    <span className="absolute top-1 right-2.5 flex h-2 w-2">
+                                                        <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-rose-400 opacity-75"></span>
+                                                        <span className="relative inline-flex rounded-full h-2 w-2 bg-rose-500"></span>
                                                     </span>
                                                 )}
                                             </Link>
@@ -324,214 +422,281 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
                                     );
                                 })}
                             </ul>
-                        ) : (
-                            <>
-                                <ul className="space-y-0.5">
-                                    <li className="px-1.5 py-1 text-[10px] font-medium uppercase tracking-wider text-gray-400">
-                                        {sidebarOpen && 'Operations'}
-                                    </li>
-                                    {headOfficeMainItems.map((item) => {
-                                        const isActive = path === item.href || (item.href !== '/dashboard' && path.startsWith(item.href));
-                                        const badge = (item as { badge?: number }).badge;
-                                        return (
-                                            <li key={item.name}>
-                                                <Link
-                                                    href={item.href}
-                                                    onClick={() => isMobile && setSidebarOpen(false)}
-                                                    className={`flex items-center justify-between gap-2 px-2.5 py-1.5 rounded-md text-[13px] transition-colors ${
-                                                        isActive ? 'bg-blue-50 text-blue-600 font-medium' : 'text-gray-600 hover:bg-gray-100'
-                                                    }`}
-                                                >
-                                                    <div className="flex items-center gap-2.5 min-w-0">
-                                                        <item.icon className="w-4 h-4 flex-shrink-0 opacity-80" />
-                                                        {sidebarOpen && <span className="truncate">{item.name}</span>}
-                                                    </div>
-                                                    {sidebarOpen && badge !== undefined && badge > 0 && (
-                                                        <span className="flex-shrink-0 bg-red-500 text-white text-[10px] font-medium px-1.5 py-0.5 rounded min-w-[18px] text-center">
-                                                            {badge}
-                                                        </span>
-                                                    )}
-                                                </Link>
-                                            </li>
-                                        );
-                                    })}
-                                </ul>
-                                {/* Setup section with sub-nav */}
-                                <div className="mt-3 pt-2 border-t border-gray-100">
-                                    <div className="px-1.5 py-1 text-[10px] font-medium uppercase tracking-wider text-gray-400">
-                                        {sidebarOpen && 'Setup'}
-                                    </div>
-                                    <button
-                                        type="button"
-                                        onClick={() => setSetupExpanded(!setupExpanded)}
-                                        className={`flex w-full items-center gap-2.5 px-2.5 py-1.5 rounded-md text-[13px] text-gray-600 hover:bg-gray-100 transition-colors ${
-                                            SETUP_PATHS.some(p => path.startsWith(p)) ? 'bg-gray-50 font-medium text-gray-700' : ''
-                                        }`}
-                                    >
-                                        <Settings className="w-4 h-4 flex-shrink-0 opacity-80" />
-                                        {sidebarOpen && (
-                                            <>
-                                                <span className="flex-1 text-left truncate">Configuration</span>
-                                                {setupExpanded ? <ChevronDown className="w-3.5 h-3.5 flex-shrink-0" /> : <ChevronRight className="w-3.5 h-3.5 flex-shrink-0" />}
-                                            </>
-                                        )}
-                                    </button>
-                                    {setupExpanded && sidebarOpen && (
-                                        <ul className="mt-0.5 ml-1 border-l border-gray-200 pl-2.5 space-y-0.5">
-                                            {headOfficeSetupItems.map((item) => {
-                                                const isActive = path.startsWith(item.href);
-                                                return (
-                                                    <li key={item.name}>
-                                                        <Link
-                                                            href={item.href}
-                                                            onClick={() => isMobile && setSidebarOpen(false)}
-                                                            className={`flex items-center gap-2 px-2 py-1 rounded text-[12px] transition-colors ${
-                                                                isActive ? 'text-blue-600 font-medium bg-blue-50/80' : 'text-gray-500 hover:text-gray-700 hover:bg-gray-50'
-                                                            }`}
-                                                        >
-                                                            <item.icon className="w-3.5 h-3.5 flex-shrink-0 opacity-70" />
-                                                            <span className="truncate">{item.name}</span>
-                                                        </Link>
-                                                    </li>
-                                                );
-                                            })}
-                                        </ul>
-                                    )}
-                                </div>
-                            </>
-                        )}
-                    </nav>
+                        </div>
+                    ))}
 
-                    {/* Super Admin: Site maintenance switch */}
-                    {isSuperAdmin && (
-                        <div className="border-t border-gray-100 px-2 py-2">
-                            <button
-                                type="button"
-                                onClick={handleMaintenanceToggle}
-                                title={siteMaintenance ? 'মেইনটেন্যান্স বন্ধ করুন' : 'মেইনটেন্যান্স চালু করুন'}
-                                className={`flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 text-left transition-colors ${
-                                    siteMaintenance
-                                        ? 'bg-amber-100 text-amber-800 hover:bg-amber-200'
-                                        : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
-                                }`}
-                            >
-                                <Wrench className="w-4 h-4 flex-shrink-0" />
+                    {/* Reports Expandable Section */}
+                    {showReportSection && (
+                        <div className="space-y-1">
+                            {sidebarOpen && (
+                                <span className="px-3 text-[10px] font-bold text-blue-500/80 tracking-wider uppercase block select-none">
+                                    Reports
+                                </span>
+                            )}
+                            <div className="space-y-0.5">
+                                <button
+                                    type="button"
+                                    onClick={() => setReportExpanded(!reportExpanded)}
+                                    className={`group flex w-full items-center justify-between gap-2 px-3 py-2.5 rounded-xl text-[13px] font-medium transition-all duration-200 ${
+                                        REPORT_PATHS.some(p => path.startsWith(p))
+                                            ? 'bg-blue-50/70 text-blue-700 border border-blue-100/50'
+                                            : 'text-slate-600 hover:bg-blue-50/50 hover:text-blue-600'
+                                    }`}
+                                >
+                                    <div className="flex items-center gap-2.5 min-w-0">
+                                        <BarChart3 className="w-4.5 h-4.5 flex-shrink-0 stroke-[1.75] text-slate-400 group-hover:text-blue-600" />
+                                        {sidebarOpen && <span className="truncate">Reports</span>}
+                                    </div>
+                                    {sidebarOpen && (
+                                        <ChevronDown className={`w-3.5 h-3.5 flex-shrink-0 text-slate-450 transition-transform duration-200 ${reportExpanded ? 'rotate-180' : ''}`} />
+                                    )}
+                                </button>
+                                {reportExpanded && sidebarOpen && (
+                                    <ul className="mt-1 ml-4 pl-3.5 border-l border-blue-50 space-y-0.5 animate-in fade-in slide-in-from-top-1 duration-150 relative">
+                                        {headOfficeReportItems.map((item) => {
+                                            const isActive = path === item.href;
+                                            return (
+                                                <li key={item.name}>
+                                                    <Link
+                                                        href={item.href}
+                                                        onClick={() => isMobile && setSidebarOpen(false)}
+                                                        className={`group flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-[12px] font-semibold transition-colors ${
+                                                            isActive
+                                                                ? 'bg-blue-50 text-blue-750 shadow-xs border border-blue-100/30'
+                                                                : 'text-slate-500 hover:bg-blue-50/30 hover:text-blue-600'
+                                                        }`}
+                                                    >
+                                                        <item.icon className="w-3.5 h-3.5 flex-shrink-0 stroke-[1.75]" />
+                                                        <span className="truncate">{item.name}</span>
+                                                    </Link>
+                                                </li>
+                                            );
+                                        })}
+                                    </ul>
+                                )}
+                            </div>
+                        </div>
+                    )}
+
+                    {/* Setup/Configuration Expandable Section */}
+                    {!isBranchRole && !isTeamApproverRole && (
+                        <div className="space-y-1">
+                            {sidebarOpen && (
+                                <span className="px-3 text-[10px] font-bold text-blue-500/80 tracking-wider uppercase block select-none">
+                                    Settings
+                                </span>
+                            )}
+                            <div className="space-y-0.5">
+                                <button
+                                    type="button"
+                                    onClick={() => setSetupExpanded(!setupExpanded)}
+                                    className={`group flex w-full items-center justify-between gap-2 px-3 py-2.5 rounded-xl text-[13px] font-medium transition-all duration-200 ${
+                                        SETUP_PATHS.some(p => path.startsWith(p))
+                                            ? 'bg-blue-50/70 text-blue-700 border border-blue-100/50'
+                                            : 'text-slate-600 hover:bg-blue-50/50 hover:text-blue-650'
+                                    }`}
+                                >
+                                    <div className="flex items-center gap-2.5 min-w-0">
+                                        <Settings className="w-4.5 h-4.5 flex-shrink-0 stroke-[1.75] text-slate-400 group-hover:text-blue-600" />
+                                        {sidebarOpen && <span className="truncate">Configuration</span>}
+                                    </div>
+                                    {sidebarOpen && (
+                                        <ChevronDown className={`w-3.5 h-3.5 flex-shrink-0 text-slate-450 transition-transform duration-200 ${setupExpanded ? 'rotate-180' : ''}`} />
+                                    )}
+                                </button>
+                                {setupExpanded && sidebarOpen && (
+                                    <ul className="mt-1 ml-4 pl-3.5 border-l border-blue-50 space-y-0.5 animate-in fade-in slide-in-from-top-1 duration-150 relative font-medium">
+                                        {headOfficeSetupItems.map((item) => {
+                                            const isActive = path === item.href;
+                                            return (
+                                                <li key={item.name}>
+                                                    <Link
+                                                        href={item.href}
+                                                        onClick={() => isMobile && setSidebarOpen(false)}
+                                                        className={`group flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-[12px] font-semibold transition-colors ${
+                                                            isActive
+                                                                ? 'bg-blue-50 text-blue-750 shadow-xs border border-blue-100/30'
+                                                                : 'text-slate-500 hover:bg-blue-50/30 hover:text-blue-600'
+                                                        }`}
+                                                    >
+                                                        <item.icon className="w-3.5 h-3.5 flex-shrink-0 stroke-[1.75]" />
+                                                        <span className="truncate">{item.name}</span>
+                                                    </Link>
+                                                </li>
+                                            );
+                                        })}
+                                    </ul>
+                                )}
+                            </div>
+                        </div>
+                    )}
+                </nav>
+
+                {/* Super Admin Maintenance Controls */}
+                {isSuperAdmin && (
+                    <div className="border-t border-slate-100 px-3 py-3">
+                        <button
+                            type="button"
+                            onClick={handleMaintenanceToggle}
+                            title={siteMaintenance ? 'মেইনটেন্যান্স বন্ধ করুন' : 'মেইনটেন্যান্স চালু করুন'}
+                            className={`flex w-full items-center justify-between rounded-lg p-2 text-left transition-all duration-200 ${
+                                siteMaintenance
+                                    ? 'bg-amber-50/70 border border-amber-100 text-amber-900'
+                                    : 'bg-slate-50/70 border border-slate-100 text-slate-600 hover:bg-slate-100/50'
+                            }`}
+                        >
+                            <div className="flex items-center gap-2.5 min-w-0">
+                                <Wrench className={`w-4 h-4 flex-shrink-0 ${siteMaintenance ? 'text-amber-600' : 'text-slate-400'}`} />
                                 {sidebarOpen && (
-                                    <span className="text-xs font-medium truncate flex-1">
-                                        {siteMaintenance ? 'মেইনটেন্যান্স চালু' : 'মেইনটেন্যান্স'}
+                                    <span className="text-[11px] font-semibold truncate">
+                                        {siteMaintenance ? 'Maintenance Active' : 'Maintenance'}
                                     </span>
                                 )}
+                            </div>
+                            {sidebarOpen && (
                                 <span
-                                    className={`flex h-5 w-9 flex-shrink-0 rounded-full border transition-colors ${
-                                        siteMaintenance ? 'border-amber-400 bg-amber-500' : 'border-gray-300 bg-gray-300'
+                                    className={`flex h-4 w-7 flex-shrink-0 items-center rounded-full transition-colors duration-200 ease-in-out p-0.5 ${
+                                        siteMaintenance ? 'bg-amber-500' : 'bg-slate-200'
                                     }`}
                                     aria-hidden
                                 >
                                     <span
-                                        className={`mt-0.5 block h-4 w-4 rounded-full bg-white shadow-sm transition-transform ${
-                                            siteMaintenance ? 'translate-x-4' : 'translate-x-0.5'
+                                        className={`block h-3 w-3 rounded-full bg-white shadow-xs transition-transform duration-200 ease-in-out ${
+                                            siteMaintenance ? 'translate-x-3' : 'translate-x-0'
                                         }`}
                                     />
                                 </span>
-                            </button>
-                        </div>
-                    )}
+                            )}
+                        </button>
+                    </div>
+                )}
 
-                    {/* User footer */}
-                    <div className="border-t border-gray-100 p-2">
-                        {sidebarOpen ? (
-                            <div className="flex items-center gap-2 min-w-0">
-                                <div className="w-8 h-8 rounded-full bg-slate-100 flex items-center justify-center text-slate-600 text-xs font-medium flex-shrink-0">
-                                    {auth.user?.name?.charAt(0)?.toUpperCase() || 'U'}
-                                </div>
-                                <div className="min-w-0 flex-1">
-                                    <p className="text-[12px] font-medium text-gray-800 truncate">{auth.user?.name || 'User'}</p>
-                                    <p className="text-[11px] text-gray-500 truncate">{auth.user?.role?.name || 'Admin'}</p>
-                                </div>
-                            </div>
-                        ) : (
-                            <div className="w-8 h-8 rounded-full bg-slate-100 flex items-center justify-center text-slate-600 text-xs font-medium mx-auto">
+                {/* Sidebar User Footer */}
+                <div className="border-t border-slate-100 p-3 bg-gradient-to-b from-transparent to-blue-50/10">
+                    {sidebarOpen ? (
+                        <div className="flex items-center gap-2.5 min-w-0 bg-white border border-slate-100 rounded-xl p-2.5 shadow-xs">
+                            <div className="w-8.5 h-8.5 rounded-full bg-gradient-to-tr from-blue-500 to-indigo-600 text-white flex items-center justify-center text-xs font-bold flex-shrink-0 shadow-sm shadow-blue-500/10">
                                 {auth.user?.name?.charAt(0)?.toUpperCase() || 'U'}
                             </div>
-                        )}
-                    </div>
+                            <div className="min-w-0 flex-1">
+                                <p className="text-[11px] font-bold text-slate-800 truncate">{auth.user?.name || 'User'}</p>
+                                <p className="text-[9px] text-blue-600 font-semibold capitalize truncate mt-0.5">{auth.user?.role?.name?.replace('_', ' ') || 'Admin'}</p>
+                            </div>
+                        </div>
+                    ) : (
+                        <div className="flex justify-center">
+                            <div className="w-9 h-9 rounded-full bg-gradient-to-tr from-blue-500 to-indigo-600 text-white flex items-center justify-center text-xs font-bold shadow-md shadow-blue-500/10 hover:scale-105 transition-transform duration-205">
+                                {auth.user?.name?.charAt(0)?.toUpperCase() || 'U'}
+                            </div>
+                        </div>
+                    )}
                 </div>
             </aside>
 
-            {/* Main Content - responsive margin; full width when printing */}
+            {/* Main Content Area */}
             <div
-                className={`transition-[margin] duration-200 ease-out print:ml-0 ${
-                    isMobile ? 'ml-0' : sidebarOpen ? 'md:ml-52' : 'md:ml-14'
+                className={`transition-all duration-300 ease-in-out min-h-screen flex flex-col bg-[#f8fafc] print:ml-0 ${
+                    isMobile ? 'ml-0' : sidebarOpen ? 'md:ml-64' : 'md:ml-16'
                 }`}
             >
-                {/* Header - hidden when printing */}
-                <header className="print:hidden bg-white border-b border-gray-100 sticky top-0 z-30 shadow-sm/30">
-                    <div className="flex items-center justify-between h-12 min-h-12 px-4 md:px-5">
+                {/* Header */}
+                <header className="print:hidden sticky top-0 z-35 bg-white/80 backdrop-blur-md border-b border-slate-100/80">
+                    <div className="flex items-center justify-between h-14 px-4 md:px-6">
                         <div className="flex items-center gap-3">
                             {isMobile && (
                                 <button
                                     type="button"
                                     onClick={() => setSidebarOpen(true)}
-                                    className="p-1.5 rounded-md hover:bg-gray-100 text-gray-600"
+                                    className="p-1.5 rounded-lg hover:bg-slate-50 text-slate-650 transition-colors"
                                     aria-label="Open menu"
                                 >
-                                    <Menu className="w-5 h-5" />
+                                    <Menu className="w-5 h-5 stroke-[1.75]" />
                                 </button>
                             )}
-                            <h2 className="text-sm font-semibold text-gray-800 truncate">
-                                {auth.user?.name?.split(' ')[0] || 'User'}
+                            <h2 className="text-sm font-bold text-slate-800">
+                                {isMobile ? 'MIS Loan' : 'Dashboard'}
                             </h2>
                         </div>
 
-                        <div className="flex items-center gap-1.5">
+                        <div className="flex items-center gap-2">
                             {canInstall && (
                                 <button
                                     type="button"
-                                    onClick={() => {
-                                        console.log('[PWA] Install button clicked, canInstall:', canInstall, 'isInstalled:', isInstalled, 'isStandalone:', isStandalone);
-                                        setShowInstallDialog(true);
-                                    }}
-                                    className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-md border border-blue-500 text-[11px] font-medium text-blue-700 hover:bg-blue-50"
+                                    onClick={() => setShowInstallDialog(true)}
+                                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-slate-200 text-xs font-bold text-slate-700 hover:bg-slate-50 hover:border-slate-300 transition-all duration-200 shadow-xs"
                                 >
-                                    <Download className="w-3.5 h-3.5" />
-                                    Install app
+                                    <Download className="w-3.5 h-3.5 stroke-[1.75] text-slate-500" />
+                                    <span className="hidden sm:inline">Install App</span>
                                 </button>
                             )}
-                            <button type="button" className="relative p-1.5 rounded-md hover:bg-gray-100 text-gray-500 transition-colors" aria-label="Notifications">
-                                <Bell className="w-4 h-4" />
-                                <span className="absolute top-1 right-1 w-1.5 h-1.5 bg-red-500 rounded-full" />
+
+                            {/* Notifications Toggle */}
+                            <button
+                                type="button"
+                                className="relative p-2 rounded-lg hover:bg-slate-50 text-slate-550 hover:text-slate-800 transition-colors"
+                                aria-label="Notifications"
+                            >
+                                <Bell className="w-4.5 h-4.5 stroke-[1.75]" />
+                                <span className="absolute top-1.5 right-1.5 flex h-2 w-2">
+                                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-rose-400 opacity-75"></span>
+                                    <span className="relative inline-flex rounded-full h-2 w-2 bg-rose-500"></span>
+                                </span>
                             </button>
+
+                            {/* Profile Dropdown */}
                             <div className="relative">
                                 <button
                                     type="button"
                                     onClick={() => setProfileDropdownOpen(!profileDropdownOpen)}
-                                    className="flex items-center gap-1.5 p-1.5 rounded-md hover:bg-gray-100 text-gray-600 transition-colors"
+                                    className="flex items-center gap-1.5 p-1 rounded-xl hover:bg-slate-50 transition-all duration-200"
                                 >
-                                    <div className="w-7 h-7 rounded-full bg-slate-100 flex items-center justify-center text-slate-600 text-xs font-medium">
-                                        {auth.user?.name?.charAt(0)?.toUpperCase() || 'U'}
+                                    <div className="relative p-0.5 rounded-full bg-gradient-to-tr from-blue-500 to-indigo-655 shadow-xs shadow-blue-500/10">
+                                        <div className="w-7.5 h-7.5 rounded-full bg-white flex items-center justify-center text-slate-700 text-xs font-bold">
+                                            {auth.user?.name?.charAt(0)?.toUpperCase() || 'U'}
+                                        </div>
                                     </div>
-                                    <ChevronDown className="w-3.5 h-3.5 hidden sm:block" />
+                                    <ChevronDown className={`w-3.5 h-3.5 text-slate-400 transition-transform duration-200 ${profileDropdownOpen ? 'rotate-180' : ''} hidden sm:block`} />
                                 </button>
+
                                 {profileDropdownOpen && (
                                     <>
-                                        <div className="fixed inset-0 z-40" aria-hidden onClick={() => setProfileDropdownOpen(false)} />
-                                        <div className="absolute right-0 mt-1 w-44 bg-white rounded-lg shadow-lg border border-gray-100 py-1 z-50 text-[13px]">
-                                            <Link
-                                                href="/profile"
-                                                className="flex items-center gap-2 px-3 py-2 text-gray-700 hover:bg-gray-50"
-                                                onClick={() => setProfileDropdownOpen(false)}
-                                            >
-                                                <User className="w-3.5 h-3.5" />
-                                                Profile
-                                            </Link>
-                                            <button
-                                                type="button"
-                                                onClick={handleLogout}
-                                                className="w-full flex items-center gap-2 px-3 py-2 text-red-600 hover:bg-red-50"
-                                            >
-                                                <LogOut className="w-3.5 h-3.5" />
-                                                Logout
-                                            </button>
+                                        <div className="fixed inset-0 z-45" aria-hidden onClick={() => setProfileDropdownOpen(false)} />
+                                        <div className="absolute right-0 mt-2.5 w-60 bg-white rounded-xl shadow-xl border border-slate-100 overflow-hidden z-50 text-[13px] animate-in fade-in slide-in-from-top-2 duration-150">
+                                            <div className="bg-gradient-to-r from-blue-600 to-indigo-600 text-white p-4 select-none relative overflow-hidden">
+                                                <div className="absolute -right-4 -top-4 w-16 h-16 bg-white/10 rounded-full blur-md" />
+                                                <div className="flex items-center gap-3 relative z-10">
+                                                    <div className="w-9 h-9 rounded-full bg-white/20 flex items-center justify-center text-white text-xs font-bold shadow-inner">
+                                                        {auth.user?.name?.charAt(0)?.toUpperCase() || 'U'}
+                                                    </div>
+                                                    <div className="min-w-0">
+                                                        <p className="text-[13px] font-bold truncate leading-snug">{auth.user?.name || 'User'}</p>
+                                                        <p className="text-[10px] text-blue-100 truncate mt-0.5">{auth.user?.email || 'admin@misloan.com'}</p>
+                                                    </div>
+                                                </div>
+                                                <div className="mt-3 relative z-10 flex items-center justify-between">
+                                                    <span className="inline-block bg-white/15 text-white text-[9px] font-bold px-2 py-0.5 rounded-md uppercase tracking-wider">
+                                                        {auth.user?.role?.name?.replace('_', ' ') || 'Admin'}
+                                                    </span>
+                                                </div>
+                                            </div>
+                                            <div className="p-1">
+                                                <Link
+                                                    href="/profile"
+                                                    className="flex items-center gap-2.5 px-3 py-2.5 rounded-lg text-slate-650 hover:bg-slate-50 hover:text-slate-900 transition-colors font-medium"
+                                                    onClick={() => setProfileDropdownOpen(false)}
+                                                >
+                                                    <User className="w-4.5 h-4.5 stroke-[1.75] text-slate-400" />
+                                                    Profile Settings
+                                                </Link>
+                                                <button
+                                                    type="button"
+                                                    onClick={handleLogout}
+                                                    className="w-full flex items-center gap-2.5 px-3 py-2.5 rounded-lg text-rose-600 hover:bg-rose-50 hover:text-rose-700 transition-colors text-left font-medium"
+                                                >
+                                                    <LogOut className="w-4.5 h-4.5 stroke-[1.75] text-rose-450" />
+                                                    Sign Out
+                                                </button>
+                                            </div>
                                         </div>
                                     </>
                                 )}
@@ -540,71 +705,92 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
                     </div>
                 </header>
 
-                <main className="p-4 md:p-5 min-h-[calc(100vh-3rem)] print:p-0 print:min-h-0">
-                    <div className="max-w-[1600px] mx-auto print:max-w-none print:mx-0">
+                {/* Main Content Layout Container */}
+                <main className="flex-1 p-4 md:p-6 lg:p-8 print:p-0">
+                    <div className="max-w-[1600px] mx-auto w-full print:max-w-none print:mx-0">
                         {children}
                     </div>
                 </main>
             </div>
 
-            {/* Mobile overlay when sidebar open */}
+            {/* Mobile Drawer Overlay */}
             {isMobile && sidebarOpen && (
                 <div
-                    className="fixed inset-0 bg-black/40 z-30 md:hidden backdrop-blur-[1px]"
+                    className="fixed inset-0 bg-slate-950/45 backdrop-blur-xs z-30 md:hidden transition-opacity duration-300 animate-in fade-in"
                     onClick={() => setSidebarOpen(false)}
                     aria-hidden
                 />
             )}
-            {/* PWA Install Dialog */}
+
+            {/* PWA Install Modal Dialog */}
             {canInstall && showInstallDialog && (
-                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
-                    <div className="bg-white rounded-xl shadow-2xl max-w-sm w-[90%] p-5 border border-gray-200">
-                        <div className="flex items-start justify-between gap-3 mb-3">
-                            <div>
-                                <h3 className="text-sm font-semibold text-gray-900">Install Mis Loan</h3>
-                                <p className="text-xs text-gray-600 mt-1">
-                                    Add Mis Loan to your home screen or desktop for a full‑screen, app‑like experience.
-                                </p>
+                <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/40 backdrop-blur-xs animate-in fade-in duration-200">
+                    <div className="bg-white rounded-2xl shadow-2xl border border-slate-100 max-w-sm w-full relative overflow-hidden animate-in zoom-in-95 duration-200">
+                        <div className="bg-gradient-to-r from-blue-600 to-indigo-600 text-white p-5 relative overflow-hidden">
+                            <div className="absolute -right-4 -top-4 w-16 h-16 bg-white/10 rounded-full blur-md" />
+                            <div className="flex items-start justify-between gap-4 relative z-10">
+                                <div className="flex items-center gap-3">
+                                    <div className="w-10 h-10 rounded-xl bg-white/15 flex items-center justify-center text-white shadow-inner">
+                                        <Building2 className="w-5 h-5 stroke-[1.75]" />
+                                    </div>
+                                    <div>
+                                        <h3 className="text-sm font-bold tracking-wide">MIS Loan Web App</h3>
+                                        <p className="text-[10px] text-blue-100 font-medium mt-0.5">Install on your device</p>
+                                    </div>
+                                </div>
+                                <button
+                                    type="button"
+                                    onClick={() => setShowInstallDialog(false)}
+                                    className="p-1 rounded-lg hover:bg-white/10 text-blue-100 hover:text-white transition-colors"
+                                    aria-label="Close"
+                                >
+                                    <X className="w-4.5 h-4.5" />
+                                </button>
                             </div>
-                            <button
-                                type="button"
-                                onClick={() => setShowInstallDialog(false)}
-                                className="text-gray-400 hover:text-gray-600"
-                                aria-label="Close"
-                            >
-                                <X className="w-4 h-4" />
-                            </button>
                         </div>
-                        <div className="space-y-2 text-xs text-gray-600 mb-4">
-                            <p>• Faster access – open Mis Loan directly from your home screen.</p>
-                            <p>• Cleaner UI – runs without browser address bar.</p>
-                            {isInstalled || isStandalone ? (
-                                <p className="text-green-700 font-medium">This app is already installed.</p>
-                            ) : (
-                                <p className="text-gray-600">Click “Install now” to install this app.</p>
-                            )}
-                        </div>
-                        <div className="flex items-center justify-end gap-2">
-                            <button
-                                type="button"
-                                onClick={() => setShowInstallDialog(false)}
-                                className="px-3 py-1.5 rounded-md text-xs font-medium text-gray-600 hover:bg-gray-100"
-                            >
-                                Later
-                            </button>
-                            <button
-                                type="button"
-                                onClick={async () => {
-                                    console.log('[PWA] Install now clicked, canInstall:', canInstall, 'platform:', platform);
-                                    await promptInstall();
-                                    setShowInstallDialog(false);
-                                }}
-                                disabled={isInstalled || isStandalone}
-                                className="inline-flex items-center gap-1 px-3 py-1.5 rounded-md bg-blue-600 text-white text-xs font-semibold hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
-                            >
-                                <Download className="w-3.5 h-3.5" />
-                                Install now
-                            </button>
+
+                        <div className="p-6">
+                            <p className="text-xs text-slate-500 leading-relaxed mb-5">
+                                Install MIS Loan to your home screen or desktop for a fast, full‑screen app‑like experience with cleaner UI and swift operations.
+                            </p>
+                            
+                            <div className="space-y-3 mb-6">
+                                <div className="flex items-center gap-2.5 text-xs text-slate-650 font-semibold">
+                                    <CheckCircle className="w-4 h-4 text-emerald-500 stroke-[1.75] flex-shrink-0" />
+                                    <span>Quick launcher icon on home screen</span>
+                                </div>
+                                <div className="flex items-center gap-2.5 text-xs text-slate-650 font-semibold">
+                                    <CheckCircle className="w-4 h-4 text-emerald-500 stroke-[1.75] flex-shrink-0" />
+                                    <span>No browser URL bar or controls</span>
+                                </div>
+                                <div className="flex items-center gap-2.5 text-xs text-slate-650 font-semibold">
+                                    <CheckCircle className="w-4 h-4 text-emerald-500 stroke-[1.75] flex-shrink-0" />
+                                    <span>Optimized local device performance</span>
+                                </div>
+                            </div>
+                            
+                            <div className="flex items-center justify-end gap-2.5">
+                                <button
+                                    type="button"
+                                    onClick={() => setShowInstallDialog(false)}
+                                    className="px-4 py-2 rounded-xl text-xs font-bold text-slate-500 hover:bg-slate-50 transition-colors"
+                                >
+                                    Later
+                                </button>
+                                <button
+                                    type="button"
+                                    onClick={async () => {
+                                        console.log('[PWA] Install now clicked, canInstall:', canInstall, 'platform:', platform);
+                                        await promptInstall();
+                                        setShowInstallDialog(false);
+                                    }}
+                                    disabled={isInstalled || isStandalone}
+                                    className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-gradient-to-r from-blue-600 to-indigo-600 text-white text-xs font-bold hover:opacity-95 disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-200 shadow-md shadow-blue-500/10"
+                                >
+                                    <Download className="w-3.5 h-3.5 stroke-[1.75]" />
+                                    Install Now
+                                </button>
+                            </div>
                         </div>
                     </div>
                 </div>

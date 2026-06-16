@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Head, router } from '@inertiajs/react';
 import AdminLayout from '@/layouts/admin-layout';
+import { formatDate } from '@/utils/dateUtils';
 import {
     Building2,
     MapPin,
@@ -110,11 +111,11 @@ export default function Dashboard({
 
     const periodLabel =
         period === 'today'
-            ? 'Today (আজ)'
+            ? 'Today'
             : period === 'monthly'
-              ? 'This month (এই মাসে)'
+              ? 'This Month'
               : dateFrom && dateTo
-                ? `${dateFrom} – ${dateTo}`
+                ? `${formatDate(dateFrom)} – ${formatDate(dateTo)}`
                 : 'Period';
 
     return (
@@ -130,15 +131,15 @@ export default function Dashboard({
                     </div>
                     <div className="flex flex-wrap items-end gap-3">
                         <div className="flex items-center gap-2">
-                            <label className="text-sm text-gray-600 whitespace-nowrap">Period (পিরিয়ড):</label>
+                            <label className="text-sm text-gray-600 whitespace-nowrap">Period:</label>
                             <select
                                 value={periodSelect}
                                 onChange={(e) => setPeriodSelect(e.target.value as 'today' | 'monthly' | 'date_to_date')}
                                 className="rounded-lg border border-gray-300 text-sm py-2 pl-3 pr-8 focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                             >
-                                <option value="today">Today (আজ)</option>
-                                <option value="monthly">Monthly (মাসিক)</option>
-                                <option value="date_to_date">Date to date (তারিখ থেকে তারিখ)</option>
+                                <option value="today">Today</option>
+                                <option value="monthly">Monthly</option>
+                                <option value="date_to_date">Date to Date</option>
                             </select>
                         </div>
                         {periodSelect === 'date_to_date' && (
@@ -164,7 +165,7 @@ export default function Dashboard({
                             className="inline-flex items-center gap-2 px-4 py-2 bg-blue-600 text-white text-sm font-medium rounded-lg hover:bg-blue-700 focus:ring-2 focus:ring-blue-500 focus:ring-offset-2"
                         >
                             <Calendar size={16} />
-                            Apply (দেখুন)
+                            Apply
                         </button>
                     </div>
                 </div>
@@ -178,7 +179,7 @@ export default function Dashboard({
                             </div>
                             <div>
                                 <p className="text-2xl font-semibold text-gray-900">{branchSummary.total_branches}</p>
-                                <p className="text-xs text-gray-500">Total branches (মোট শাখা)</p>
+                                <p className="text-xs text-gray-500">Total branches</p>
                             </div>
                         </div>
                     </div>
@@ -189,7 +190,7 @@ export default function Dashboard({
                             </div>
                             <div>
                                 <p className="text-2xl font-semibold text-gray-900">{branchSummary.submitted_in_period}</p>
-                                <p className="text-xs text-gray-500">Submitted in period (পিরিয়ডে পঠানো)</p>
+                                <p className="text-xs text-gray-500">Submitted in period</p>
                             </div>
                         </div>
                     </div>
@@ -200,7 +201,7 @@ export default function Dashboard({
                             </div>
                             <div>
                                 <p className="text-2xl font-semibold text-gray-900">{branchSummary.pending_in_period}</p>
-                                <p className="text-xs text-gray-500">Pending (বাকি)</p>
+                                <p className="text-xs text-gray-500">Pending</p>
                             </div>
                         </div>
                     </div>
@@ -275,7 +276,7 @@ export default function Dashboard({
                     <div className="lg:col-span-2 space-y-4">
                         <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
                             <div className="px-5 py-4 border-b border-gray-100">
-                                <h2 className="text-sm font-semibold text-gray-900">Branches submitted in period (পিরিয়ডে পঠানো শাখা)</h2>
+                                <h2 className="text-sm font-semibold text-gray-900">Branches submitted in period</h2>
                             </div>
                             <div className="p-5 max-h-48 overflow-y-auto">
                                 {branchSummary.submitted_branches.length === 0 ? (
@@ -300,7 +301,7 @@ export default function Dashboard({
                         </div>
                         <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
                             <div className="px-5 py-4 border-b border-gray-100">
-                                <h2 className="text-sm font-semibold text-gray-900">Branches not submitted (পঠানো হয়নি)</h2>
+                                <h2 className="text-sm font-semibold text-gray-900">Branches not submitted</h2>
                             </div>
                             <div className="p-5 max-h-48 overflow-y-auto">
                                 {branchSummary.missing_branches.length === 0 ? (

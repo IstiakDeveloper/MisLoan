@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { Head, useForm, router } from '@inertiajs/react';
 import AdminLayout from '@/layouts/admin-layout';
 import { Save, Printer, Eye, Upload, X, ArrowLeft } from 'lucide-react';
+import { formatDateBangla } from '@/utils/dateUtils';
 
 interface DeathRiskFundData {
     // Branch & Date
@@ -61,12 +62,6 @@ interface Props {
     onlyPreview?: boolean;
     isLegacy?: boolean;
 }
-
-const formatDateBangla = (dateString: string) => {
-    if (!dateString) return '';
-    const date = new Date(dateString);
-    return `${date.getDate()}/${date.getMonth() + 1}/${date.getFullYear()}`;
-};
 
 /** Module-level so Show page can use with savedData for onlyPreview */
 function renderDeathRiskFundPreviewPart(partNumber: 1 | 2, formData: any) {

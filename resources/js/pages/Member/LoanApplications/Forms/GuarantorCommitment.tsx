@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Head, useForm, router } from '@inertiajs/react';
 import AdminLayout from '@/layouts/admin-layout';
+import { formatDateBangla } from '@/utils/dateUtils';
 import { Save, Printer, Eye, Upload, X, ArrowLeft } from 'lucide-react';
 
 interface GuarantorCommitmentData {
@@ -54,12 +55,6 @@ interface Props {
     /** Show page: only render print view with this data (no layout/inputs) */
     onlyPreview?: boolean;
 }
-
-const formatDateBangla = (dateString: string) => {
-    if (!dateString) return '';
-    const date = new Date(dateString);
-    return `${date.getDate()}/${date.getMonth() + 1}/${date.getFullYear()}`;
-};
 
 function formSelectionUrl(isLegacy: boolean, member: any, loanProduct: any, loanCategory: any, requestedAmount: number) {
     const params = new URLSearchParams({ loan_product_id: String(loanProduct.id), loan_category_id: String(loanCategory.id), requested_amount: String(requestedAmount) });
@@ -711,11 +706,6 @@ export default function GuarantorCommitment({
 
 /** Show/Print view – font/size tuned for 1 page (scaled up ~40% from compact). */
 export function GuarantorCommitmentPrintView({ data }: { data: any }) {
-    const formatDateBangla = (dateString: string) => {
-        if (!dateString) return '';
-        const date = new Date(dateString);
-        return `${date.getDate()}/${date.getMonth() + 1}/${date.getFullYear()}`;
-    };
     const d = data || {};
     const s = { fontSize: '15px', lineHeight: 1.4 } as const;
     const sTitle = { fontSize: '17px', fontWeight: 'bold' as const };

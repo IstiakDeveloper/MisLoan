@@ -199,7 +199,7 @@
                             -
                         @endif
                     </td>
-                    <td class="text-center nowrap">{{ $member->approval_date ?? '-' }}</td>
+                    <td class="text-center nowrap">{{ \App\Helpers\DateFormatter::displayDate($member->approval_date) }}</td>
                 </tr>
                 @endforeach
             @empty
@@ -213,7 +213,7 @@
     </table>
 
     <div class="footer">
-        তৈরির তারিখ: {{ toBanglaNumber(date('d-m-Y H:i:s')) }} | পৃষ্ঠা: <span class="pageNumber"></span>
+        তৈরির তারিখ: {{ toBanglaNumber(\App\Helpers\DateFormatter::displayDateTime(now())) }} | পৃষ্ঠা: <span class="pageNumber"></span>
     </div>
 
     <script>

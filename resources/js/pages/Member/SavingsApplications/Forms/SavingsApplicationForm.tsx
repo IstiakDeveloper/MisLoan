@@ -3,6 +3,7 @@ import { Head, useForm, router, usePage } from '@inertiajs/react';
 import AdminLayout from '@/layouts/admin-layout';
 import { Plus, Printer, Save, Upload, X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { formatDateBangla } from '@/utils/dateUtils';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
@@ -74,12 +75,6 @@ interface Props {
     savedData?: any;
     onlyPreview?: boolean;
 }
-
-const formatDateBangla = (dateString: string) => {
-    if (!dateString) return '';
-    const date = new Date(dateString);
-    return `${date.getDate()}/${date.getMonth() + 1}/${date.getFullYear()}`;
-};
 
 /** Print/Preview view - matches the exact form layout */
 export function SavingsApplicationPrintView({ data }: { data: SavingsFormData }) {

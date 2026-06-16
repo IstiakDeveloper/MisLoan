@@ -188,24 +188,35 @@ class TeamBasedApprovalController extends Controller
         $approverId = $request->input('approver_id');
         $status = $request->input('status');
         $status = $status ? strtolower(trim((string) $status)) : '';
+        $perPage = (int) $request->input('per_page', 100);
 
-        $approvals = TeamBasedApproval::with(['branch', 'creator', 'areaManager', 'zoneManager', 'admf', 'dmf', 'ed', 'items', 'reviews.user.role'])
-            ->where('branch_id', $branch->id)
-            ->where('status', '!=', 'draft')
-            ->when($dateFrom && $dateTo, function ($q) use ($dateFrom, $dateTo) {
+        // Base query on items
+        $query = TeamBasedApprovalItem::query()
+            ->with([
+                'approval.branch',
+                'approval.creator',
+                'approval.areaManager',
+                'approval.zoneManager',
+                'approval.admf',
+                'approval.dmf',
+                'approval.ed',
+                'approval.reviews.user.role',
+            ])
+            ->whereHas('approval', function ($q) use ($branch) {
+                $q->where('branch_id', $branch->id)
+                  ->where('status', '!=', 'draft');
+            });
+
+        // Date range filter on sheet_date
+        if ($dateFrom && $dateTo) {
+            $query->whereHas('approval', function ($q) use ($dateFrom, $dateTo) {
                 $q->whereBetween('sheet_date', [$dateFrom, $dateTo]);
-            })
-            ->when($status, function ($q) use ($status) {
-                // Filter by team_based_approval_reviews.status (case-insensitive); under_review = forwarded in DB
-                $q->whereHas('reviews', function ($sub) use ($status) {
-                    if ($status === 'under_review') {
-                        $sub->whereRaw('LOWER(status) IN (?, ?)', ['under_review', 'forwarded']);
-                    } else {
-                        $sub->whereRaw('LOWER(status) = ?', [$status]);
-                    }
-                });
-            })
-            ->when($approverId, function ($q) use ($approverId) {
+            });
+        }
+
+        // Approver filter
+        if ($approverId) {
+            $query->whereHas('approval', function ($q) use ($approverId) {
                 $q->where(function ($inner) use ($approverId) {
                     $inner->where('area_manager_id', $approverId)
                         ->orWhere('zone_manager_id', $approverId)
@@ -213,126 +224,129 @@ class TeamBasedApprovalController extends Controller
                         ->orWhere('dmf_id', $approverId)
                         ->orWhere('ed_id', $approverId);
                 });
-            })
-            ->latest()
-            ->paginate(20)
-            ->through(function (TeamBasedApproval $approval) use ($status) {
+            });
+        }
+
+        // Status filter
+        if ($status) {
+            $query->where(function ($q) use ($status) {
+                $q->whereHas('approval.reviews', function ($sub) use ($status) {
+                    $sub->whereColumn('team_based_approval_item_id', 'team_based_approval_items.id');
+                    if ($status === 'under_review') {
+                        $sub->whereIn('status', ['under_review', 'forwarded']);
+                    } else {
+                        $sub->where('status', $status);
+                    }
+                    $sub->whereRaw('id = (SELECT MAX(id) FROM team_based_approval_reviews WHERE team_based_approval_item_id = team_based_approval_items.id)');
+                })
+                ->orWhere(function ($sub) use ($status) {
+                    $sub->whereNotExists(function ($sub2) {
+                        $sub2->select(DB::raw(1))
+                            ->from('team_based_approval_reviews')
+                            ->whereColumn('team_based_approval_item_id', 'team_based_approval_items.id');
+                    })
+                    ->whereHas('approval', function ($sub3) use ($status) {
+                        if ($status === 'under_review') {
+                            $sub3->whereIn('status', ['under_review', 'forwarded']);
+                        } else {
+                            $sub3->where('status', $status);
+                        }
+                    });
+                });
+            });
+        }
+
+        $approvals = $query
+            ->orderBy('id', 'desc')
+            ->paginate($perPage)
+            ->withQueryString()
+            ->through(function (TeamBasedApprovalItem $item) {
+                $approval = $item->approval;
                 $approverUser = $approval->areaManager
                     ?? $approval->zoneManager
                     ?? $approval->admf
                     ?? $approval->dmf
                     ?? $approval->ed;
 
-                // All reviews per item (for multi-approver signature chain)
-                $reviewsByItem = $approval->reviews
-                    ->whereNotNull('team_based_approval_item_id')
-                    ->groupBy('team_based_approval_item_id');
+                $reviewsForItem = $approval->reviews
+                    ->where('team_based_approval_item_id', $item->id)
+                    ->sortBy('id')
+                    ->values();
+
+                $review = $reviewsForItem->last();
+                $itemStatus = $review?->status ?? $approval->status;
 
                 $snapshot = $approval->last_items_snapshot ?? [];
-
-                $items = $approval->items->map(function (TeamBasedApprovalItem $item) use ($reviewsByItem, $approval, $snapshot) {
-                        $reviewsForItem = $reviewsByItem->get($item->id, collect())->sortBy('id')->values();
-                        $review = $reviewsForItem->last(); // latest for status/comments
-
-                        $original = null;
-                        if (! empty($snapshot) && $item->serial_no !== null) {
-                            $index = max(0, $item->serial_no - 1);
-                            $original = $snapshot[$index] ?? null;
-                        }
-
-                        $changedFields = [];
-                        if (is_array($original)) {
-                            $fieldsToCheck = [
-                                'member_name',
-                                'member_code',
-                                'member_phone',
-                                'samity_number',
-                                'savings_general',
-                                'savings_other',
-                                'savings_total',
-                                'repaid_loan_amount',
-                                'repaid_installment_no',
-                                'other_institution_loan_amount',
-                                'proposed_loan_amount',
-                                'loan_term_years',
-                                'loan_type',
-                                'project_name',
-                            ];
-
-                            foreach ($fieldsToCheck as $field) {
-                                $currentValue = $item->{$field};
-                                $originalValue = $original[$field] ?? null;
-
-                                $currentStr = $currentValue === null ? '' : (string) $currentValue;
-                                $originalStr = $originalValue === null ? '' : (string) $originalValue;
-
-                                if ($currentStr !== $originalStr) {
-                                    $changedFields[] = $field;
-                                }
+                $changedFields = [];
+                if (! empty($snapshot) && $item->serial_no !== null) {
+                    $index = max(0, $item->serial_no - 1);
+                    $original = $snapshot[$index] ?? null;
+                    if (is_array($original)) {
+                        $fieldsToCheck = [
+                            'member_name', 'member_code', 'member_phone', 'samity_number',
+                            'savings_general', 'savings_other', 'savings_total',
+                            'repaid_loan_amount', 'repaid_installment_no',
+                            'other_institution_loan_amount', 'proposed_loan_amount',
+                            'loan_term_years', 'loan_type', 'project_name',
+                        ];
+                        foreach ($fieldsToCheck as $field) {
+                            $currentValue = $item->{$field};
+                            $originalValue = $original[$field] ?? null;
+                            $currentStr = $currentValue === null ? '' : (string) $currentValue;
+                            $originalStr = $originalValue === null ? '' : (string) $originalValue;
+                            if ($currentStr !== $originalStr) {
+                                $changedFields[] = $field;
                             }
                         }
-
-                        return [
-                            'serial_no' => $item->serial_no,
-                            'member_name' => $item->member_name,
-                            'member_code' => $item->member_code,
-                            'member_phone' => $item->member_phone,
-                            'samity_number' => $item->samity_number,
-                            'savings_general' => $item->savings_general !== null ? (int) round((float) $item->savings_general) : null,
-                            'savings_other' => $item->savings_other !== null ? (int) round((float) $item->savings_other) : null,
-                            'savings_total' => $item->savings_total !== null ? (int) round((float) $item->savings_total) : null,
-                            'repaid_loan_amount' => $item->repaid_loan_amount,
-                            'repaid_installment_no' => $item->repaid_installment_no,
-                            'other_institution_loan_amount' => $item->other_institution_loan_amount,
-                            'proposed_loan_amount' => $item->proposed_loan_amount,
-                            'loan_term_years' => $item->loan_term_years,
-                            'loan_type' => $item->loan_type,
-                            'project_name' => $item->project_name,
-                            // Per-loan approval info
-                            'status' => $review?->status ?? $approval->status,
-                            'approved_amount' => $item->approved_amount !== null ? (int) round((float) $item->approved_amount) : null,
-                            'review_comments' => $review?->comments,
-                            'approver_signature' => $this->reviewSignatureForDisplay($review),
-                            'decided_at' => optional($review?->decided_at)->toDateString(),
-                            'approvers' => $reviewsForItem->map(function ($r) {
-                                return [
-                                    'approver_name' => $r->user?->name,
-                                    'approver_role' => $r->user?->role?->display_name ?? $r->user?->role?->name,
-                                    'status' => $r->status,
-                                    'approved_amount' => $r->approved_amount !== null ? (int) round((float) $r->approved_amount) : null,
-                                    'comments' => $r->comments,
-                                    'approver_signature' => $this->reviewSignatureForDisplay($r),
-                                    'decided_at' => optional($r->decided_at)->toDateString(),
-                                ];
-                            })->values()->all(),
-                            'changed_fields' => $changedFields,
-                        ];
-                    })->values()
-                    ->filter(function ($itemData) use ($status) {
-                        if (! $status) {
-                            return true;
-                        }
-                        $itemStatus = strtolower((string) ($itemData['status'] ?? ''));
-
-                        return $itemStatus === $status || ($status === 'under_review' && $itemStatus === 'forwarded');
-                    })
-                    ->values()
-                    ->all();
+                    }
+                }
 
                 return [
-                    'id' => $approval->id,
+                    'id' => $item->id,
+                    'serial_no' => $item->serial_no,
+                    'member_name' => $item->member_name,
+                    'member_code' => $item->member_code,
+                    'member_phone' => $item->member_phone,
+                    'samity_number' => $item->samity_number,
+                    'savings_general' => $item->savings_general !== null ? (int) round((float) $item->savings_general) : null,
+                    'savings_other' => $item->savings_other !== null ? (int) round((float) $item->savings_other) : null,
+                    'savings_total' => $item->savings_total !== null ? (int) round((float) $item->savings_total) : null,
+                    'repaid_loan_amount' => $item->repaid_loan_amount,
+                    'repaid_installment_no' => $item->repaid_installment_no,
+                    'other_institution_loan_amount' => $item->other_institution_loan_amount,
+                    'proposed_loan_amount' => $item->proposed_loan_amount,
+                    'loan_term_years' => $item->loan_term_years,
+                    'loan_type' => $item->loan_type,
+                    'project_name' => $item->project_name,
+                    'status' => $itemStatus,
+                    'approved_amount' => $item->approved_amount !== null ? (int) round((float) $item->approved_amount) : null,
+                    'review_comments' => $review?->comments,
+                    'approver_signature' => $this->reviewSignatureForDisplay($review),
+                    'decided_at' => optional($review?->decided_at)->toDateString(),
+                    'approvers' => $reviewsForItem->map(function ($r) {
+                        return [
+                            'approver_name' => $r->user?->name,
+                            'approver_role' => $r->user?->role?->display_name ?? $r->user?->role?->name,
+                            'status' => $r->status,
+                            'approved_amount' => $r->approved_amount !== null ? (int) round((float) $r->approved_amount) : null,
+                            'comments' => $r->comments,
+                            'approver_signature' => $this->reviewSignatureForDisplay($r),
+                            'decided_at' => optional($r->decided_at)->toDateString(),
+                        ];
+                    })->values()->all(),
+                    'changed_fields' => $changedFields,
+                    // Parent sheet fields
+                    'sheet_id' => $approval->id,
                     'sheet_date' => optional($approval->sheet_date)->toDateString(),
-                    'status' => $approval->status,
-                    'created_at' => $approval->created_at?->toDateTimeString(),
                     'approver_name' => $approverUser?->name,
-                    'items' => $items,
+                    'created_at' => $approval->created_at?->toDateTimeString(),
                 ];
             });
 
-        // Draft count for badge on All Applications page
-        $draftCount = TeamBasedApproval::where('branch_id', $branch->id)
-            ->where('status', 'draft')
-            ->count();
+        // Draft count for badge on All Applications page based on items
+        $draftCount = TeamBasedApprovalItem::whereHas('approval', function ($q) use ($branch) {
+            $q->where('branch_id', $branch->id)->where('status', 'draft');
+        })->count();
 
         // Build approver filter options (same logic as create)
         $branch->loadMissing(['area.zone']);
@@ -410,6 +424,8 @@ class TeamBasedApprovalController extends Controller
 
         $status = $request->input('status');
         $branchId = $request->input('branch_id');
+        $areaId = $request->input('area_id');
+        $zoneId = $request->input('zone_id');
         $approverId = $request->input('approver_id');
         $dateFrom = $request->input('date_from');
         $dateTo = $request->input('date_to');
@@ -463,16 +479,21 @@ class TeamBasedApprovalController extends Controller
             });
         }
 
-        // List filters without approver_id — used to build Approver dropdown options so RM/ZM stay
-        // selectable after filtering by ADMF/DMF/ED (merging user_ids from the paginated query alone
-        // would shrink the dropdown to only the currently selected approver).
-        $queryForListFilters = (clone $reviewsQuery)
-            ->when($status, function ($q) use ($status) {
-                $q->where('status', $status);
-            })
+        // Base query for stats (without status filter and without approver filter, unless requested)
+        $statsQuery = (clone $reviewsQuery)
             ->when($branchId, function ($q) use ($branchId) {
                 $q->whereHas('approval', function ($qa) use ($branchId) {
                     $qa->where('branch_id', $branchId);
+                });
+            })
+            ->when($areaId, function ($q) use ($areaId) {
+                $q->whereHas('approval.branch', function ($qa) use ($areaId) {
+                    $qa->where('area_id', $areaId);
+                });
+            })
+            ->when($zoneId, function ($q) use ($zoneId) {
+                $q->whereHas('approval.branch.area', function ($qa) use ($zoneId) {
+                    $qa->where('zone_id', $zoneId);
                 });
             })
             ->when($dateFrom && $dateTo, function ($q) use ($dateFrom, $dateTo) {
@@ -495,6 +516,68 @@ class TeamBasedApprovalController extends Controller
                         ->groupBy('team_based_approval_id')
                         ->havingRaw('COUNT(DISTINCT user_id) >= 2');
                 });
+            })
+            ->when($approverId, function ($q) use ($approverId) {
+                $q->where('user_id', $approverId);
+            });
+
+        // Calculate stats
+        $rawCounts = (clone $statsQuery)
+            ->select('status', \DB::raw('COUNT(*) as count'))
+            ->groupBy('status')
+            ->pluck('count', 'status')
+            ->toArray();
+
+        $stats = [
+            'total' => array_sum($rawCounts),
+            'pending' => $rawCounts['pending'] ?? 0,
+            'approved' => $rawCounts['approved'] ?? 0,
+            'rejected' => $rawCounts['rejected'] ?? 0,
+            'forwarded' => $rawCounts['forwarded'] ?? 0,
+        ];
+
+        // List filters without status
+        $queryForListFiltersWithoutStatus = (clone $reviewsQuery)
+            ->when($branchId, function ($q) use ($branchId) {
+                $q->whereHas('approval', function ($qa) use ($branchId) {
+                    $qa->where('branch_id', $branchId);
+                });
+            })
+            ->when($areaId, function ($q) use ($areaId) {
+                $q->whereHas('approval.branch', function ($qa) use ($areaId) {
+                    $qa->where('area_id', $areaId);
+                });
+            })
+            ->when($zoneId, function ($q) use ($zoneId) {
+                $q->whereHas('approval.branch.area', function ($qa) use ($zoneId) {
+                    $qa->where('zone_id', $zoneId);
+                });
+            })
+            ->when($dateFrom && $dateTo, function ($q) use ($dateFrom, $dateTo) {
+                $q->whereHas('approval', function ($qa) use ($dateFrom, $dateTo) {
+                    $qa->whereBetween('sheet_date', [$dateFrom, $dateTo]);
+                });
+            })
+            ->when($approvalFlow === 'single', function ($q) {
+                $q->whereIn('team_based_approval_id', function ($sub) {
+                    $sub->select('team_based_approval_id')
+                        ->from('team_based_approval_reviews')
+                        ->groupBy('team_based_approval_id')
+                        ->havingRaw('COUNT(DISTINCT user_id) = 1');
+                });
+            })
+            ->when($approvalFlow === 'multiple', function ($q) {
+                $q->whereIn('team_based_approval_id', function ($sub) {
+                    $sub->select('team_based_approval_id')
+                        ->from('team_based_approval_reviews')
+                        ->groupBy('team_based_approval_id')
+                        ->havingRaw('COUNT(DISTINCT user_id) >= 2');
+                });
+            });
+
+        $queryForListFilters = (clone $queryForListFiltersWithoutStatus)
+            ->when($status, function ($q) use ($status) {
+                $q->where('status', $status);
             });
 
         // Base query with filters incl. approver (no ordering/pagination yet)
@@ -703,6 +786,7 @@ class TeamBasedApprovalController extends Controller
             'branches' => $branches,
             'approverOptions' => $approverOptions,
             'forwardToOptions' => $forwardToOptions,
+            'stats' => $stats,
         ]);
     }
 

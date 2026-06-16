@@ -400,43 +400,46 @@ export default function UserModal({ isOpen, onClose, user, roles, zones, areas, 
                     </div>
 
                     {/* Password Section */}
-                    {!user && (
-                        <div>
-                            <h4 className="text-sm font-semibold text-gray-900 mb-3">Password</h4>
-                            <div className="grid grid-cols-2 gap-4">
-                                <div>
-                                    <label htmlFor="password" className="block text-sm font-medium text-gray-700 mb-1">
-                                        Password <span className="text-red-500">*</span>
-                                    </label>
-                                    <input
-                                        id="password"
-                                        type="password"
-                                        value={data.password}
-                                        onChange={(e) => setData('password', e.target.value)}
-                                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
-                                        placeholder="••••••••"
-                                        required={!user}
-                                    />
-                                    {errors.password && <p className="text-red-500 text-sm mt-1">{errors.password}</p>}
-                                </div>
+                    <div>
+                        <h4 className="text-sm font-semibold text-gray-900 mb-3">Password</h4>
+                        {user && (
+                            <p className="text-xs text-gray-500 mb-3">
+                                Leave blank to keep the current password.
+                            </p>
+                        )}
+                        <div className="grid grid-cols-2 gap-4">
+                            <div>
+                                <label htmlFor="password" className="block text-sm font-medium text-gray-700 mb-1">
+                                    Password {!user && <span className="text-red-500">*</span>}
+                                </label>
+                                <input
+                                    id="password"
+                                    type="password"
+                                    value={data.password}
+                                    onChange={(e) => setData('password', e.target.value)}
+                                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
+                                    placeholder="••••••••"
+                                    required={!user}
+                                />
+                                {errors.password && <p className="text-red-500 text-sm mt-1">{errors.password}</p>}
+                            </div>
 
-                                <div>
-                                    <label htmlFor="password_confirmation" className="block text-sm font-medium text-gray-700 mb-1">
-                                        Confirm Password <span className="text-red-500">*</span>
-                                    </label>
-                                    <input
-                                        id="password_confirmation"
-                                        type="password"
-                                        value={data.password_confirmation}
-                                        onChange={(e) => setData('password_confirmation', e.target.value)}
-                                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
-                                        placeholder="••••••••"
-                                        required={!user}
-                                    />
-                                </div>
+                            <div>
+                                <label htmlFor="password_confirmation" className="block text-sm font-medium text-gray-700 mb-1">
+                                    Confirm Password {!user && <span className="text-red-500">*</span>}
+                                </label>
+                                <input
+                                    id="password_confirmation"
+                                    type="password"
+                                    value={data.password_confirmation}
+                                    onChange={(e) => setData('password_confirmation', e.target.value)}
+                                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
+                                    placeholder="••••••••"
+                                    required={!user}
+                                />
                             </div>
                         </div>
-                    )}
+                    </div>
 
                     {/* Organization Assignment */}
                     <div>

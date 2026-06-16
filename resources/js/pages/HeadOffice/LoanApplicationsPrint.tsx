@@ -1,5 +1,6 @@
 import { Head } from '@inertiajs/react';
 import { useEffect } from 'react';
+import { formatDate, formatDateTime } from '@/utils/dateUtils';
 
 interface Branch {
     id: number;
@@ -98,35 +99,6 @@ export default function LoanApplicationsPrint({ loans, filters, zones, areas, br
             disbursed: 'Disbursed',
         };
         return labels[status] || status;
-    };
-
-    const formatDate = (dateString: string | null) => {
-        if (!dateString) return '-';
-        try {
-            return new Date(dateString).toLocaleDateString('en-GB', {
-                day: '2-digit',
-                month: '2-digit',
-                year: 'numeric',
-            });
-        } catch {
-            return '-';
-        }
-    };
-
-    const formatDateTime = (dateString: string | null) => {
-        if (!dateString) return '-';
-        try {
-            return new Date(dateString).toLocaleDateString('en-GB', {
-                day: '2-digit',
-                month: '2-digit',
-                year: 'numeric',
-                hour: '2-digit',
-                minute: '2-digit',
-                hour12: true,
-            });
-        } catch {
-            return '-';
-        }
     };
 
     const formatAmount = (amount: number | null) => {
@@ -432,7 +404,7 @@ export default function LoanApplicationsPrint({ loans, filters, zones, areas, br
                         Page: ___ of ___
                     </div>
                     <div style={{ textAlign: 'right' }}>
-                        Date: {new Date().toLocaleDateString('en-GB')}
+                        Date: {formatDate(new Date())}
                     </div>
                 </div>
             </div>

@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Head, useForm, router } from '@inertiajs/react';
 import AdminLayout from '@/layouts/admin-layout';
+import { formatDateBangla } from '@/utils/dateUtils';
 import { Save, Printer, Eye, Upload, X, ArrowLeft } from 'lucide-react';
 import GeneralSavingsSection, { getRequiredSavingsPercent } from '@/components/LoanApplications/GeneralSavingsSection';
 
@@ -74,12 +75,6 @@ interface Props {
     loanRound?: number;
     isLegacy?: boolean;
 }
-
-const formatDateBangla = (dateString: string) => {
-    if (!dateString) return '';
-    const date = new Date(dateString);
-    return `${date.getDate()}/${date.getMonth() + 1}/${date.getFullYear()}`;
-};
 
 const dofaLabel = (round: number | undefined): string => {
     if (round == null || round < 1) return '১ম দফা';

@@ -1,6 +1,7 @@
 import { Head, router, usePage } from '@inertiajs/react';
 import AdminLayout from '@/layouts/admin-layout';
 import React from 'react';
+import { formatDate } from '@/utils/dateUtils';
 
 // বাংলা সংখ্যাকে ইংরেজিতে রূপান্তর (সঞ্চয় ফিল্ডে হিসাবের জন্য)
 function normalizeNumericInput(value: string): string {
@@ -137,9 +138,16 @@ interface Props {
         name: string;
         role_name: string;
     }[];
+    stats: {
+        total: number;
+        pending: number;
+        approved: number;
+        rejected: number;
+        forwarded: number;
+    };
 }
 
-export default function TeamBasedApprovalApproverIndex({ reviews, filters, branches, approverOptions, forwardToOptions = [] }: Props) {
+export default function TeamBasedApprovalApproverIndex({ reviews, filters, branches, approverOptions, forwardToOptions = [], stats }: Props) {
     const currentStatus = filters.status ?? '';
     const currentBranchId = (filters.branch_id ?? '').toString();
     const currentApproverId = (filters.approver_id ?? '').toString();
@@ -255,6 +263,15 @@ export default function TeamBasedApprovalApproverIndex({ reviews, filters, branc
     const goToPage = (page: number) => {
         if (page < 1 || page > (reviews.last_page ?? 1)) return;
         applyFilter(currentStatus, currentFrom, currentTo, currentBranchId, currentApproverId, currentApprovalFlow, currentPerPage, page);
+    };
+
+    const getPageNumbers = (): (number | 'ellipsis')[] => {
+        const totalPages = reviews.last_page ?? 1;
+        const current = reviews.current_page ?? 1;
+        if (totalPages <= 7) return Array.from({ length: totalPages }, (_, i) => i + 1);
+        if (current <= 3) return [1, 2, 3, 4, 'ellipsis', totalPages];
+        if (current >= totalPages - 2) return [1, 'ellipsis', totalPages - 3, totalPages - 2, totalPages - 1, totalPages];
+        return [1, 'ellipsis', current - 1, current, current + 1, 'ellipsis', totalPages];
     };
 
     const handleToggleAction = (reviewId: number, rowKey: string) => {
@@ -611,12 +628,6 @@ export default function TeamBasedApprovalApproverIndex({ reviews, filters, branc
         }
     };
 
-    const formatDateOnly = (value?: string | null) => {
-        if (!value) return '';
-        // Expecting "YYYY-MM-DD HH:MM:SS" or ISO string; take only date part
-        return value.split('T')[0].split(' ')[0];
-    };
-
     const page = usePage<any>();
     const authUser = (page.props as any)?.auth?.user;
 
@@ -630,40 +641,42 @@ export default function TeamBasedApprovalApproverIndex({ reviews, filters, branc
             <Head title="Team Based Approvals - Approver">
                 <style>{`
                     .approval-index-table-wrapper table { table-layout: auto; width: max(100%, max-content); }
-                    .approval-index-table-wrapper th,
+                    .approval-index-table-wrapper th {
+                        font-size: 10px;
+                        font-weight: 600;
+                        color: #1e3a8a;
+                        background: linear-gradient(to right, #eff6ff, #f8fafc) !important;
+                        border-bottom: 1px solid #bfdbfe !important;
+                        padding: 10px 8px !important;
+                        white-space: normal;
+                    }
                     .approval-index-table-wrapper td {
-                        line-height: 1.25;
-                        padding: 1px 1px;
-                        font-size: 9px;
+                        font-size: 10px;
+                        line-height: 1.35;
+                        padding: 8px 6px !important;
                         vertical-align: middle;
                         text-align: center;
+                        border-bottom: 1px solid #e2e8f0;
+                        color: #334155;
                     }
                     .approval-index-table-wrapper .approval-col-serial {
                         width: 1%;
                         max-width: 2rem;
                         white-space: nowrap;
-                        font-size: 8px;
-                        padding-left: 2px;
-                        padding-right: 2px;
+                        font-size: 9px;
+                        font-weight: 600;
+                        color: #64748b;
+                        padding-left: 4px;
+                        padding-right: 4px;
                     }
                     .approval-index-table-wrapper .approval-col-comment {
                         min-width: 14rem;
-                        width: 30%;
-                        max-width: 36rem;
+                        width: auto;
                         white-space: normal;
                         word-break: break-word;
                     }
                     .approval-index-table-wrapper tbody td.approval-col-comment {
                         text-align: left;
-                    }
-                    .approval-index-table-wrapper thead th {
-                        font-weight: 600;
-                        white-space: normal;
-                        padding: 1px 2px;
-                        text-align: center !important;
-                    }
-                    .approval-index-table-wrapper tbody td {
-                        padding: 8px 4px;
                     }
                     @page { size: legal landscape; margin: 5mm; }
                     @media print {
@@ -679,18 +692,33 @@ export default function TeamBasedApprovalApproverIndex({ reviews, filters, branc
                         .approval-index-table-wrapper thead th {
                             background: transparent !important;
                             background-color: transparent !important;
+                            color: #000 !important;
+                            border: 1px solid #000 !important;
                         }
                         .approval-index-table-wrapper tbody tr {
                             background: transparent !important;
                         }
                         .approval-index-table-wrapper table { width: 100% !important; table-layout: auto !important; font-size: 7pt !important; }
-                        .approval-index-table-wrapper .approval-col-comment { min-width: 28% !important; width: auto !important; max-width: none !important; }
+                        .approval-index-table-wrapper .approval-col-comment {
+                            width: auto !important;
+                            min-width: 160px !important;
+                            max-width: none !important;
+                            white-space: normal !important;
+                            word-break: break-word !important;
+                        }
+                        .approval-index-table-wrapper td.approval-col-comment span {
+                            font-size: 8.5pt !important;
+                            color: #000 !important;
+                            font-weight: 600 !important;
+                            line-height: 1.35 !important;
+                        }
                         .approval-index-table-wrapper thead th {
                             padding: 2px 4px !important;
                             text-align: center !important;
                         }
                         .approval-index-table-wrapper tbody td {
                             padding: 6px 3px !important;
+                            border: 1px solid #000 !important;
                         }
                         .approval-index-table-wrapper th,
                         .approval-index-table-wrapper td {
@@ -748,8 +776,8 @@ export default function TeamBasedApprovalApproverIndex({ reviews, filters, branc
                         <span>
                             <span className="font-semibold">তারিখ:</span>{' '}
                             {currentFrom && currentTo
-                                ? `${currentFrom} – ${currentTo}`
-                                : currentFrom || currentTo || '-'}
+                                ? `${formatDate(currentFrom)} – ${formatDate(currentTo)}`
+                                : formatDate(currentFrom || currentTo, '-')}
                         </span>
                     </div>
                     {authUser?.name && (
@@ -757,15 +785,31 @@ export default function TeamBasedApprovalApproverIndex({ reviews, filters, branc
                     )}
                 </div>
 
+                {/* Stats */}
+                <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-4 ho-teambased-stats print:hidden mb-4">
+                    {[
+                        { label: 'Total Members', value: stats.total, color: 'text-blue-600', bg: 'bg-blue-50/40 border-blue-100/70' },
+                        { label: 'Pending', value: stats.pending, color: 'text-amber-600', bg: 'bg-amber-50/40 border-amber-100/70' },
+                        { label: 'Approved', value: stats.approved, color: 'text-green-600', bg: 'bg-green-50/40 border-green-100/70' },
+                        { label: 'Rejected', value: stats.rejected, color: 'text-rose-600', bg: 'bg-rose-50/40 border-rose-100/70' },
+                        { label: 'Forwarded', value: stats.forwarded, color: 'text-slate-600', bg: 'bg-slate-50/50 border-slate-100/70' },
+                    ].map((stat, i) => (
+                        <div key={i} className={`p-4 rounded-xl border bg-white shadow-sm flex flex-col justify-between transition-all hover:shadow-md ${stat.bg}`}>
+                            <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">{stat.label}</span>
+                            <span className={`text-2xl font-extrabold mt-1 leading-none ${stat.color}`}>{stat.value}</span>
+                        </div>
+                    ))}
+                </div>
+
                 {/* Filters - only visible on screen */}
-                <div className="flex flex-col gap-2 mb-4 print:hidden">
-                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-2">
-                        <div className="flex flex-col gap-0.5">
-                            <span className="text-[10px] font-semibold text-gray-500 uppercase tracking-wider">Branch</span>
+                <div className="bg-slate-50/50 border border-slate-200/80 rounded-2xl p-4 space-y-4 mb-4 print:hidden shadow-sm">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-3">
+                        <div className="flex flex-col gap-1">
+                            <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Branch</span>
                             <select
                                 value={currentBranchId}
                                 onChange={handleBranchChange}
-                                className="w-full border border-gray-300 rounded-md px-2 py-1.5 text-xs bg-white"
+                                className="w-full border border-slate-300 rounded-lg px-3 py-2 text-xs bg-white focus:outline-none focus:ring-2 focus:ring-blue-500/15 focus:border-blue-500 transition-all text-slate-800"
                             >
                                 <option value="">All Branches</option>
                                 {branches.map((branch) => (
@@ -776,12 +820,12 @@ export default function TeamBasedApprovalApproverIndex({ reviews, filters, branc
                             </select>
                         </div>
                         {approverOptions.length > 1 && (
-                            <div className="flex flex-col gap-0.5">
-                                <span className="text-[10px] font-semibold text-gray-500 uppercase tracking-wider">Approver</span>
+                            <div className="flex flex-col gap-1">
+                                <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Approver</span>
                                 <select
                                     value={currentApproverId}
                                     onChange={handleApproverChange}
-                                    className="w-full border border-gray-300 rounded-md px-2 py-1.5 text-xs bg-white"
+                                    className="w-full border border-slate-300 rounded-lg px-3 py-2 text-xs bg-white focus:outline-none focus:ring-2 focus:ring-blue-500/15 focus:border-blue-500 transition-all text-slate-800"
                                 >
                                     <option value="">All Approvers</option>
                                     {approverOptions.map((opt) => (
@@ -792,12 +836,12 @@ export default function TeamBasedApprovalApproverIndex({ reviews, filters, branc
                                 </select>
                             </div>
                         )}
-                        <div className="flex flex-col gap-0.5">
-                            <span className="text-[10px] font-semibold text-gray-500 uppercase tracking-wider">Status</span>
+                        <div className="flex flex-col gap-1">
+                            <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Status</span>
                             <select
                                 value={currentStatus}
                                 onChange={handleStatusFilterChange}
-                                className="w-full border border-gray-300 rounded-md px-2 py-1.5 text-xs bg-white"
+                                className="w-full border border-slate-300 rounded-lg px-3 py-2 text-xs bg-white focus:outline-none focus:ring-2 focus:ring-blue-500/15 focus:border-blue-500 transition-all text-slate-800"
                             >
                                 <option value="">All Status</option>
                                 <option value="pending">Pending</option>
@@ -806,25 +850,26 @@ export default function TeamBasedApprovalApproverIndex({ reviews, filters, branc
                                 <option value="forwarded">Forwarded</option>
                             </select>
                         </div>
-                        <div className="flex flex-col gap-0.5">
-                            <span className="text-[10px] font-semibold text-gray-500 uppercase tracking-wider">Per page</span>
+                        <div className="flex flex-col gap-1">
+                            <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Per page</span>
                             <select
                                 value={currentPerPage}
                                 onChange={handlePerPageChange}
-                                className="w-full border border-gray-300 rounded-md px-2 py-1.5 text-xs bg-white"
+                                className="w-full border border-slate-300 rounded-lg px-3 py-2 text-xs bg-white focus:outline-none focus:ring-2 focus:ring-blue-500/15 focus:border-blue-500 transition-all text-slate-800"
                             >
-                                <option value={10}>10</option>
-                                <option value={20}>20</option>
-                                <option value={50}>50</option>
-                                <option value={100}>100</option>
+                                <option value="20">20</option>
+                                <option value="50">50</option>
+                                <option value="100">100</option>
+                                <option value="200">200</option>
+                                <option value="500">500</option>
                             </select>
                         </div>
-                        <div className="flex flex-col gap-0.5">
-                            <span className="text-[10px] font-semibold text-gray-500 uppercase tracking-wider">Select type</span>
+                        <div className="flex flex-col gap-1">
+                            <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Select type</span>
                             <select
                                 value={currentApprovalFlow}
                                 onChange={handleApprovalFlowChange}
-                                className="w-full border border-gray-300 rounded-md px-2 py-1.5 text-xs bg-white"
+                                className="w-full border border-slate-300 rounded-lg px-3 py-2 text-xs bg-white focus:outline-none focus:ring-2 focus:ring-blue-500/15 focus:border-blue-500 transition-all text-slate-800"
                             >
                                 <option value="">All</option>
                                 <option value="single">Single Approver</option>
@@ -832,32 +877,38 @@ export default function TeamBasedApprovalApproverIndex({ reviews, filters, branc
                             </select>
                         </div>
                     </div>
-                    <div className="grid grid-cols-2 sm:flex sm:flex-wrap sm:items-end gap-2">
-                        <div className="flex flex-col gap-0.5">
-                            <span className="text-[10px] font-semibold text-gray-500 uppercase tracking-wider">From</span>
-                            <input
-                                type="date"
-                                value={currentFrom}
-                                onChange={handleFromChange}
-                                className="w-full border border-gray-300 rounded-md px-2 py-1.5 text-sm"
-                            />
+
+                    <div className="flex flex-wrap items-center justify-between gap-4 pt-1 border-t border-slate-200/50">
+                        <div className="flex flex-wrap gap-3">
+                            <div className="flex flex-col gap-1">
+                                <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">From Date</span>
+                                <input
+                                    type="date"
+                                    value={currentFrom}
+                                    onChange={handleFromChange}
+                                    className="border border-slate-300 rounded-lg px-3 py-2 text-xs focus:outline-none focus:ring-2 focus:ring-blue-500/15 focus:border-blue-500 transition-all text-slate-800"
+                                />
+                            </div>
+                            <div className="flex flex-col gap-1">
+                                <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">To Date</span>
+                                <input
+                                    type="date"
+                                    value={currentTo}
+                                    onChange={handleToChange}
+                                    className="border border-slate-300 rounded-lg px-3 py-2 text-xs focus:outline-none focus:ring-2 focus:ring-blue-500/15 focus:border-blue-500 transition-all text-slate-800"
+                                />
+                            </div>
                         </div>
-                        <div className="flex flex-col gap-0.5">
-                            <span className="text-[10px] font-semibold text-gray-500 uppercase tracking-wider">To</span>
-                            <input
-                                type="date"
-                                value={currentTo}
-                                onChange={handleToChange}
-                                className="w-full border border-gray-300 rounded-md px-2 py-1.5 text-sm"
-                            />
+
+                        <div className="flex items-end self-end gap-2">
+                            <button
+                                type="button"
+                                onClick={handlePrintPage}
+                                className="px-5 py-2 rounded-lg bg-slate-800 text-white text-xs font-semibold hover:bg-slate-900 transition-all shadow-sm hover:shadow active:scale-[0.98]"
+                            >
+                                Print List
+                            </button>
                         </div>
-                        <button
-                            type="button"
-                            onClick={handlePrintPage}
-                            className="col-span-2 sm:col-span-1 mt-auto px-4 py-1.5 rounded-md bg-gray-800 text-white text-xs font-medium hover:bg-black"
-                        >
-                            Print List
-                        </button>
                     </div>
                 </div>
 
@@ -882,7 +933,7 @@ export default function TeamBasedApprovalApproverIndex({ reviews, filters, branc
                                         <span className="flex items-center justify-center w-5 h-5 rounded-full bg-slate-200 text-slate-600 text-[10px] font-bold">{index + 1}</span>
                                         <div>
                                             <p className="text-xs font-semibold text-gray-900 leading-tight">{row.member_name}</p>
-                                            <p className="text-[10px] text-gray-500 leading-tight">{row.sheet_date || ''}{row.branch_name ? ` · ${row.branch_name}` : ''}</p>
+                                            <p className="text-[10px] text-gray-500 leading-tight">{formatDate(row.sheet_date, '')}{row.branch_name ? ` · ${row.branch_name}` : ''}</p>
                                         </div>
                                     </div>
                                     <div>
@@ -976,7 +1027,7 @@ export default function TeamBasedApprovalApproverIndex({ reviews, filters, branc
                                                             />
                                                         </button>
                                                     )}
-                                                    <span className="text-[10px] text-gray-500">{formatDateOnly(a.decided_at || '')}</span>
+                                                    <span className="text-[10px] text-gray-500">{formatDate(a.decided_at, '')}</span>
                                                 </div>
                                             ))}
                                         </div>
@@ -1016,7 +1067,7 @@ export default function TeamBasedApprovalApproverIndex({ reviews, filters, branc
                                                                 <div className="text-slate-700">
                                                                     <span className="text-slate-500">অনুমোদিত ঋণ:</span>{' '}
                                                                     <span className="font-semibold">{formatAmount(a.approved_amount) || '—'}</span>
-                                                                    {a.decided_at ? <span className="text-slate-500"> · {a.decided_at}</span> : null}
+                                                                    {a.decided_at ? <span className="text-slate-500"> · {formatDate(a.decided_at)}</span> : null}
                                                                 </div>
                                                                 {a.comments ? (
                                                                     <div className="text-slate-700 whitespace-pre-line">
@@ -1118,7 +1169,7 @@ export default function TeamBasedApprovalApproverIndex({ reviews, filters, branc
                 </div>
 
                 {/* ── DESKTOP TABLE VIEW ────────────────────────────────── */}
-                <div className="hidden md:block print:block bg-white shadow-sm border border-gray-200 rounded-lg overflow-x-auto approval-index-table-wrapper w-full approval-index-print-page print:bg-transparent print:shadow-none print:border-0 print:rounded-none">
+                <div className="hidden md:block print:block bg-white border border-slate-200/80 rounded-2xl overflow-hidden shadow-sm hover:shadow-md transition-shadow duration-300 approval-index-table-wrapper w-full approval-index-print-page print:bg-transparent print:shadow-none print:border-0 print:rounded-none">
                     <table className="w-full border-collapse">
                         <thead className="bg-gray-50 print:bg-transparent">
                             <tr>
@@ -1241,17 +1292,17 @@ export default function TeamBasedApprovalApproverIndex({ reviews, filters, branc
 
                                 return (
                                     <React.Fragment key={`${row.review_id}-${row.serial_no}-${index}`}>
-                                        <tr className="hover:bg-gray-50 print:hover:bg-transparent">
+                                        <tr className="hover:bg-slate-50/50 print:hover:bg-transparent transition-colors">
                                             <td className="border approval-col-serial">{index + 1}</td>
                                             {colVis.sheet_date && (
-                                                <td className="border text-left whitespace-nowrap">{row.sheet_date || '-'}</td>
+                                                <td className="border text-left whitespace-nowrap">{formatDate(row.sheet_date)}</td>
                                             )}
                                             {colVis.branch && (
                                                 <td className="border text-left max-w-[10rem]">{row.branch_name || '-'}</td>
                                             )}
-                                            <td className="border text-left max-w-[12rem]">{row.member_name}</td>
+                                            <td className="border text-left max-w-[12rem] font-medium text-slate-800">{row.member_name}</td>
                                             {colVis.member_code && (
-                                                <td className="border whitespace-nowrap">{row.member_code || ''}</td>
+                                                <td className="border whitespace-nowrap font-mono">{row.member_code || ''}</td>
                                             )}
                                             {colVis.member_phone && (
                                                 <td className="border whitespace-nowrap">{row.member_phone || ''}</td>
@@ -1266,10 +1317,10 @@ export default function TeamBasedApprovalApproverIndex({ reviews, filters, branc
                                                 <td className="border whitespace-nowrap">{formatAmount(row.savings_other)}</td>
                                             )}
                                             {colVis.savings_total && (
-                                                <td className="border whitespace-nowrap">{formatAmount(row.savings_total)}</td>
+                                                <td className="border whitespace-nowrap font-semibold text-slate-700">{formatAmount(row.savings_total)}</td>
                                             )}
                                             {colVis.repaid_loan && (
-                                                <td className="border whitespace-nowrap">
+                                                <td className="border whitespace-nowrap font-mono">
                                                     {(formatAmount(row.repaid_loan_amount) || row.repaid_loan_amount) ?? ''}
                                                 </td>
                                             )}
@@ -1278,13 +1329,13 @@ export default function TeamBasedApprovalApproverIndex({ reviews, filters, branc
                                             )}
                                             {colVis.other_institution && (
                                                 <td className="border align-top px-2 py-1.5 max-w-[14rem]">
-                                                    <span className="whitespace-pre-line block text-left">
+                                                    <span className="whitespace-pre-line block text-left text-[9px] text-slate-500 leading-normal">
                                                         {row.other_institution_loan_amount ?? ''}
                                                     </span>
                                                 </td>
                                             )}
                                             {colVis.proposed && (
-                                                <td className="border whitespace-nowrap">{formatAmount(row.proposed_loan_amount)}</td>
+                                                <td className="border whitespace-nowrap font-semibold text-slate-900">{formatAmount(row.proposed_loan_amount)}</td>
                                             )}
                                             {colVis.term && (
                                                 <td className="border whitespace-nowrap">{row.loan_term_years ?? ''}</td>
@@ -1294,7 +1345,7 @@ export default function TeamBasedApprovalApproverIndex({ reviews, filters, branc
                                                 <td className="border text-left max-w-[12rem]">{row.project_name || ''}</td>
                                             )}
                                             {colVis.approved && (
-                                                <td className="border whitespace-nowrap">{formatAmount(row.approved_amount)}</td>
+                                                <td className="border whitespace-nowrap font-semibold text-blue-700">{formatAmount(row.approved_amount)}</td>
                                             )}
                                             {colVis.approver && (
                                                 <td className="border text-left max-w-[10rem]">
@@ -1307,7 +1358,7 @@ export default function TeamBasedApprovalApproverIndex({ reviews, filters, branc
                                             )}
                                             {colVis.comments && (
                                                 <td className="border approval-col-comment align-top">
-                                                    <span className="whitespace-pre-line">{row.review_comments || ''}</span>
+                                                    <span className="whitespace-pre-line text-[9px] text-slate-500 leading-normal block text-left">{row.review_comments || ''}</span>
                                                 </td>
                                             )}
                                             {colVis.signature && (
@@ -1357,34 +1408,30 @@ export default function TeamBasedApprovalApproverIndex({ reviews, filters, branc
                                                                             }}
                                                                         />
                                                                     </button>
-                                                                    <span className="text-[10px] text-gray-700">
-                                                                        {formatDateOnly(a.decided_at || '')}
+                                                                    <span className="text-[9px] text-slate-500">
+                                                                        {formatDate(a.decided_at, '')}
                                                                     </span>
                                                                 </>
                                                             ) : (
-                                                                <span className="text-[10px] text-gray-500">
-                                                                    {formatDateOnly(a.decided_at || '')}
+                                                                <span className="text-[9px] text-slate-500">
+                                                                    {formatDate(a.decided_at, '')}
                                                                 </span>
                                                             )}
                                                         </div>
                                                     ))}
                                                 </td>
                                             )}
-                                            <td className="border">
+                                            <td className="border px-2 py-1.5">
                                                 {review.status === 'pending' && row.can_act ? (
                                                     <button
                                                         type="button"
                                                         onClick={() => handleToggleAction(review.review_id, rowKey)}
-                                                        className="inline-flex items-center px-1.5 py-0.5 rounded text-[9px] font-medium bg-blue-600 text-white hover:bg-blue-700 print:hidden"
+                                                        className="inline-flex items-center px-3 py-1 rounded-lg text-[10px] font-bold bg-blue-600 text-white hover:bg-blue-700 transition-all shadow-sm active:scale-[0.98] print:hidden"
                                                     >
                                                         Action
                                                     </button>
                                                 ) : (
-                                                    <span
-                                                        className={`inline-flex items-center px-1.5 py-0.5 rounded border ${
-                                                            statusClass[review.status] || statusClass.pending
-                                                        }`}
-                                                    >
+                                                    <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[9px] font-semibold uppercase tracking-wider border ${statusClass[review.status] || 'bg-slate-100 text-slate-800 border-slate-200'}`}>
                                                         {statusLabel[review.status] || review.status}
                                                     </span>
                                                 )}
@@ -1453,7 +1500,7 @@ export default function TeamBasedApprovalApproverIndex({ reviews, filters, branc
                                                                                     <div className="rounded-md bg-slate-50 border border-slate-200 px-2 py-1.5">
                                                                                         <p className="text-[10px] font-semibold text-slate-500 uppercase tracking-wider">তারিখ</p>
                                                                                         <p className="font-medium text-slate-700">
-                                                                                            {a.decided_at ? formatDateOnly(a.decided_at) : '—'}
+                                                                                            {a.decided_at ? formatDate(a.decided_at) : '—'}
                                                                                         </p>
                                                                                     </div>
                                                                                 </div>
@@ -1615,52 +1662,52 @@ export default function TeamBasedApprovalApproverIndex({ reviews, filters, branc
                     </table>
                 </div>
 
-                {/* Pagination - below table */}
+                {/* Pagination - only when multiple pages */}
                 {(reviews.last_page ?? 0) > 1 && (
-                    <div className="flex flex-wrap items-center justify-between gap-2 py-4 border-t border-gray-200 print:hidden">
-                        <p className="text-xs text-gray-600">
-                            Showing{' '}
-                            <span className="font-medium">
-                                {(reviews.total ?? 0) === 0
-                                    ? '0'
-                                    : `${(reviews.current_page - 1) * (reviews.per_page ?? 20) + 1}–${Math.min(reviews.current_page * (reviews.per_page ?? 20), reviews.total ?? 0)}`}
-                            </span>{' '}
-                            of {reviews.total ?? 0}
+                    <div className="mt-4 print:hidden flex flex-col sm:flex-row items-center justify-between gap-3 px-4 py-3 border border-slate-200 bg-slate-50/30 rounded-2xl">
+                        <p className="text-xs text-slate-600 order-2 sm:order-1 font-medium font-mono">
+                            Showing <span className="text-slate-900 font-semibold">{(reviews.total ?? 0) === 0 ? '0' : (reviews.current_page - 1) * (reviews.per_page ?? 100) + 1}</span> to <span className="text-slate-900 font-semibold">{Math.min(reviews.current_page * (reviews.per_page ?? 100), reviews.total ?? 0)}</span> of <span className="text-slate-900 font-semibold">{reviews.total ?? 0}</span> items
                         </p>
-                        <div className="flex items-center gap-1">
+                        <nav className="flex items-center gap-2 order-1 sm:order-2" aria-label="Pagination">
                             <button
                                 type="button"
                                 onClick={() => goToPage((reviews.current_page ?? 1) - 1)}
                                 disabled={(reviews.current_page ?? 1) <= 1}
-                                className="px-2.5 py-1.5 rounded border border-gray-300 bg-white text-xs font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
+                                className="px-3 py-1.5 text-xs font-semibold rounded-lg border border-slate-300 bg-white text-slate-700 hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed transition-all shadow-sm"
                             >
                                 Previous
                             </button>
-                            {reviews.links?.map((link, i) => {
-                                if (link.label === '&laquo; Previous' || link.label === 'Previous' || link.label === '...' || link.label === 'Next &raquo;' || link.label === 'Next') return null;
-                                const p = parseInt(link.label, 10);
-                                if (Number.isNaN(p)) return null;
-                                const isActive = link.active;
-                                return (
-                                    <button
-                                        key={i}
-                                        type="button"
-                                        onClick={() => goToPage(p)}
-                                        className={`min-w-[2rem] px-2 py-1.5 rounded text-xs font-medium border ${isActive ? 'bg-gray-800 text-white border-gray-800' : 'border-gray-300 bg-white text-gray-700 hover:bg-gray-50'}`}
-                                    >
-                                        {p}
-                                    </button>
-                                );
-                            })}
+                            <div className="flex items-center gap-1">
+                                {getPageNumbers().map((page, i) => {
+                                    if (page === 'ellipsis') {
+                                        return <span key={`ellipsis-${i}`} className="px-2 py-1.5 text-slate-400 text-xs">…</span>;
+                                    }
+                                    const isActive = page === reviews.current_page;
+                                    return (
+                                        <button
+                                            key={page}
+                                            type="button"
+                                            onClick={() => goToPage(page)}
+                                            className={`w-8 h-8 flex items-center justify-center text-xs font-semibold rounded-lg border transition-all ${
+                                                isActive
+                                                    ? 'bg-blue-600 text-white border-blue-600 shadow-sm shadow-blue-500/20'
+                                                    : 'bg-white text-slate-700 border-slate-300 hover:bg-slate-50'
+                                            }`}
+                                        >
+                                            {page}
+                                        </button>
+                                    );
+                                })}
+                            </div>
                             <button
                                 type="button"
                                 onClick={() => goToPage((reviews.current_page ?? 1) + 1)}
                                 disabled={(reviews.current_page ?? 1) >= (reviews.last_page ?? 1)}
-                                className="px-2.5 py-1.5 rounded border border-gray-300 bg-white text-xs font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
+                                className="px-3 py-1.5 text-xs font-semibold rounded-lg border border-slate-300 bg-white text-slate-700 hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed transition-all shadow-sm"
                             >
                                 Next
                             </button>
-                        </div>
+                        </nav>
                     </div>
                 )}
             </div>
@@ -1909,7 +1956,7 @@ export default function TeamBasedApprovalApproverIndex({ reviews, filters, branc
                                         setForwardModal({
                                             open: true,
                                             sheetId: row.sheet_id,
-                                            sheetLabel: `${row.sheet_date || ''} · ${row.branch_name || ''}`,
+                                            sheetLabel: `${formatDate(row.sheet_date, '')} · ${row.branch_name || ''}`,
                                             reviewId: review.review_id,
                                             forwardToUserId: '',
                                             comments: '',

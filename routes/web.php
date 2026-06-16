@@ -298,6 +298,11 @@ Route::middleware(['auth', 'verified'])->group(function () {
         Route::delete('team-based-approvals/items/{item}', [HeadOfficeTeamBasedApprovalController::class, 'destroyItem'])->name('team-based-approvals.items.destroy');
     });
 
+    // Team Based Approval Report - Head Office, SuperAdmin, ED
+    Route::get('head-office/team-based-approvals/report', [HeadOfficeTeamBasedApprovalController::class, 'report'])
+        ->middleware('team-based.report')
+        ->name('head-office.team-based-approvals.report');
+
     // Loan Submissions Management - Only for SuperAdmin/Head Office
     Route::prefix('submissions')->name('submissions.')->middleware('head.office')->group(function () {
         Route::get('/', [LoanApplicationController::class, 'submissions'])->name('index');

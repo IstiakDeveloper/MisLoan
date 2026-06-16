@@ -1,5 +1,6 @@
 import { Head, Link, router, useForm } from '@inertiajs/react';
 import AdminLayout from '@/layouts/admin-layout';
+import { formatDate } from '@/utils/dateUtils';
 import { Save } from 'lucide-react';
 
 interface BranchInfo {
@@ -130,7 +131,7 @@ export default function HeadOfficeTeamBasedItemEdit({ branch, item }: Props) {
                                     {branch.zone_name && `, জোন: ${branch.zone_name}`}
                                 </p>
                                 <p className="text-xs text-gray-500">
-                                    শিটের তারিখ: <span className="font-semibold">{item.sheet_date}</span> ·
+                                    শিটের তারিখ: <span className="font-semibold">{formatDate(item.sheet_date)}</span> ·
                                     স্ট্যাটাস: <span className="font-semibold uppercase">{item.status}</span>
                                 </p>
                             </div>

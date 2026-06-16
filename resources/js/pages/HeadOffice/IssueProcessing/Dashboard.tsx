@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Head, router } from '@inertiajs/react';
 import axios from 'axios';
 import AdminLayout from '@/layouts/admin-layout';
+import { formatDate } from '@/utils/dateUtils';
 import { Save, Send, AlertCircle, CheckCircle, Trash2, X, Eye, XCircle, Check } from 'lucide-react';
 import { useFetchData } from '@/hooks/useAutoRefresh';
 
@@ -751,7 +752,7 @@ const Dashboard = ({ members: initialMembers, selectedDate, applicationType }: P
                                                                     </span>
                                                                 </p>
                                                                 <p className="text-xs text-gray-500">
-                                                                    {new Date(msg.created_at).toLocaleDateString()}
+                                                                    {formatDate(msg.created_at)}
                                                                 </p>
                                                             </div>
                                                             <p className="text-gray-700">{msg.content}</p>

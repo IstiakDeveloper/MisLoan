@@ -1,6 +1,7 @@
 import React, { useMemo, useState } from 'react';
 import { Head, router } from '@inertiajs/react';
 import AdminLayout from '@/layouts/admin-layout';
+import { formatDate } from '@/utils/dateUtils';
 
 /** কোনো অ্যামাউন্টে ডেসিমাল থাকবে না – রাউন্ড নম্বর রিটার্ন */
 function formatAmount(val: number | string | null | undefined): string {
@@ -125,24 +126,67 @@ export default function TeamBasedApprovals({ approvals, filters, stats, zones, a
     const [zoneId, setZoneId] = useState((filters.zone_id ?? '').toString());
     const [areaId, setAreaId] = useState((filters.area_id ?? '').toString());
     const [branchId, setBranchId] = useState((filters.branch_id ?? '').toString());
-    const [dateFrom, setDateFrom] = useState(filters.date_from || new Date().toISOString().slice(0, 10));
-    const [dateTo, setDateTo] = useState(filters.date_to || new Date().toISOString().slice(0, 10));
+    const [dateFrom, setDateFrom] = useState(filters.date_from || '');
+    const [dateTo, setDateTo] = useState(filters.date_to || '');
+    const [perPage, setPerPage] = useState((filters.per_page ?? 100).toString());
     const [zoomSignatureUrl, setZoomSignatureUrl] = useState<string | null>(null);
 
+    // Sync state with props on update (especially when actions occur)
+    React.useEffect(() => {
+        setStatusFilter(filters.status || '');
+        setSearch(filters.search || '');
+        setZoneId((filters.zone_id ?? '').toString());
+        setAreaId((filters.area_id ?? '').toString());
+        setBranchId((filters.branch_id ?? '').toString());
+        setDateFrom(filters.date_from || '');
+        setDateTo(filters.date_to || '');
+        setPerPage((filters.per_page ?? 100).toString());
+    }, [filters]);
+
+    const getActiveParams = (extra = {}) => {
+        return {
+            status: statusFilter || undefined,
+            search: search || undefined,
+            zone_id: zoneId || undefined,
+            area_id: areaId || undefined,
+            branch_id: branchId || undefined,
+            date_from: dateFrom || undefined,
+            date_to: dateTo || undefined,
+            per_page: perPage || undefined,
+            ...extra,
+        };
+    };
+
     const applyFilters = () => {
-        router.get(
-            '/head-office/team-based-approvals',
-            {
-                status: statusFilter || undefined,
-                search: search || undefined,
-                zone_id: zoneId || undefined,
-                area_id: areaId || undefined,
-                branch_id: branchId || undefined,
-                date_from: dateFrom || undefined,
-                date_to: dateTo || undefined,
-            },
-            { preserveState: true }
-        );
+        router.get('/head-office/team-based-approvals', getActiveParams({ page: 1 }), { preserveState: true });
+    };
+
+    const handleStatusChange = (status: string) => {
+        setStatusFilter(status);
+        router.get('/head-office/team-based-approvals', getActiveParams({ status: status || undefined, page: 1 }), { preserveState: true });
+    };
+
+    const handleZoneChange = (zone: string) => {
+        setZoneId(zone);
+        setAreaId('');
+        setBranchId('');
+        router.get('/head-office/team-based-approvals', getActiveParams({ zone_id: zone || undefined, area_id: undefined, branch_id: undefined, page: 1 }), { preserveState: true });
+    };
+
+    const handleAreaChange = (area: string) => {
+        setAreaId(area);
+        setBranchId('');
+        router.get('/head-office/team-based-approvals', getActiveParams({ area_id: area || undefined, branch_id: undefined, page: 1 }), { preserveState: true });
+    };
+
+    const handleBranchChange = (branch: string) => {
+        setBranchId(branch);
+        router.get('/head-office/team-based-approvals', getActiveParams({ branch_id: branch || undefined, page: 1 }), { preserveState: true });
+    };
+
+    const handlePerPageChange = (newPerPage: string) => {
+        setPerPage(newPerPage);
+        router.get('/head-office/team-based-approvals', getActiveParams({ per_page: newPerPage || undefined, page: 1 }), { preserveState: true });
     };
 
     const filteredAreas = areas.filter((a) => !zoneId || a.zone_id.toString() === zoneId);
@@ -152,25 +196,12 @@ export default function TeamBasedApprovals({ approvals, filters, stats, zones, a
 
     const handlePageChange = (page: number) => {
         if (page < 1 || page > approvals.last_page) return;
-        router.get(
-            '/head-office/team-based-approvals',
-            {
-                page,
-                status: statusFilter || undefined,
-                search: search || undefined,
-                zone_id: zoneId || undefined,
-                area_id: areaId || undefined,
-                branch_id: branchId || undefined,
-                date_from: dateFrom || undefined,
-                date_to: dateTo || undefined,
-            },
-            { preserveState: true }
-        );
+        router.get('/head-office/team-based-approvals', getActiveParams({ page }), { preserveState: true });
     };
 
-    const perPage = approvals.per_page ?? 20;
-    const from = approvals.total === 0 ? 0 : (approvals.current_page - 1) * perPage + 1;
-    const to = Math.min(approvals.current_page * perPage, approvals.total);
+    const perPageNum = approvals.per_page ?? 100;
+    const from = approvals.total === 0 ? 0 : (approvals.current_page - 1) * perPageNum + 1;
+    const to = Math.min(approvals.current_page * perPageNum, approvals.total);
 
     const getPageNumbers = (): (number | 'ellipsis')[] => {
         const totalPages = approvals.last_page;
@@ -181,7 +212,7 @@ export default function TeamBasedApprovals({ approvals, filters, stats, zones, a
         return [1, 'ellipsis', current - 1, current, current + 1, 'ellipsis', totalPages];
     };
 
-    // Flatten all items (similar to branch TeamBased ApprovalIndex)
+    // approvals.data is already flat and contains the items themselves
     const flatRows: (ItemRow & {
         sheet_id: number;
         sheet_date: string | null;
@@ -191,24 +222,13 @@ export default function TeamBasedApprovals({ approvals, filters, stats, zones, a
         zone_name?: string | null;
         approver_name?: string | null;
         status: string;
-    })[] = [];
-
-    approvals.data.forEach((sheet) => {
-        sheet.items.forEach((item, idx) => {
-            flatRows.push({
-                ...item,
-                serial_no: item.serial_no || idx + 1,
-                sheet_id: sheet.id,
-                sheet_date: sheet.sheet_date,
-                branch_name: sheet.branch.name,
-                branch_code: sheet.branch.code,
-                area_name: sheet.branch.area_name,
-                zone_name: sheet.branch.zone_name,
-                approver_name: sheet.approver_name,
-                status: item.status || sheet.status,
-            });
-        });
-    });
+    })[] = approvals.data.map((item: any) => ({
+        ...item,
+        branch_name: item.branch?.name,
+        branch_code: item.branch?.code,
+        area_name: item.branch?.area_name,
+        zone_name: item.branch?.zone_name,
+    }));
 
     const colVis = useMemo(() => {
         type R = (typeof flatRows)[number];
@@ -330,7 +350,11 @@ export default function TeamBasedApprovals({ approvals, filters, stats, zones, a
         if (!confirm('আপনি কি নিশ্চিত যে এই লোন সারিটি মুছে ফেলতে চান?')) {
             return;
         }
-        router.delete(`/head-office/team-based-approvals/items/${itemId}`);
+        router.delete(`/head-office/team-based-approvals/items/${itemId}`, {
+            data: getActiveParams({ page: approvals.current_page }),
+            preserveState: true,
+            preserveScroll: true,
+        });
     };
 
     return (
@@ -338,40 +362,42 @@ export default function TeamBasedApprovals({ approvals, filters, stats, zones, a
             <Head title="Head Office - Team Based Approvals">
                 <style>{`
                     .approval-index-table-wrapper table { table-layout: auto; width: max(100%, max-content); }
-                    .approval-index-table-wrapper th,
+                    .approval-index-table-wrapper th {
+                        font-size: 10px;
+                        font-weight: 600;
+                        color: #1e3a8a;
+                        background: linear-gradient(to right, #eff6ff, #f8fafc) !important;
+                        border-bottom: 1px solid #bfdbfe !important;
+                        padding: 10px 8px !important;
+                        white-space: normal;
+                    }
                     .approval-index-table-wrapper td {
-                        line-height: 1.25;
-                        padding: 1px 1px;
-                        font-size: 9px;
+                        font-size: 10px;
+                        line-height: 1.35;
+                        padding: 8px 6px !important;
                         vertical-align: middle;
                         text-align: center;
+                        border-bottom: 1px solid #e2e8f0;
+                        color: #334155;
                     }
                     .approval-index-table-wrapper .approval-col-serial {
                         width: 1%;
                         max-width: 2rem;
                         white-space: nowrap;
-                        font-size: 8px;
-                        padding-left: 2px;
-                        padding-right: 2px;
+                        font-size: 9px;
+                        font-weight: 600;
+                        color: #64748b;
+                        padding-left: 4px;
+                        padding-right: 4px;
                     }
                     .approval-index-table-wrapper .approval-col-comment {
                         min-width: 14rem;
-                        width: 30%;
-                        max-width: 36rem;
+                        width: auto;
                         white-space: normal;
                         word-break: break-word;
                     }
                     .approval-index-table-wrapper tbody td.approval-col-comment {
                         text-align: left;
-                    }
-                    .approval-index-table-wrapper thead th {
-                        font-weight: 600;
-                        white-space: normal;
-                        padding: 1px 2px;
-                        text-align: center !important;
-                    }
-                    .approval-index-table-wrapper tbody td {
-                        padding: 8px 4px;
                     }
                     @page { size: legal landscape; margin: 5mm; }
                     @media print {
@@ -387,18 +413,33 @@ export default function TeamBasedApprovals({ approvals, filters, stats, zones, a
                         .approval-index-table-wrapper thead th {
                             background: transparent !important;
                             background-color: transparent !important;
+                            color: #000 !important;
+                            border: 1px solid #000 !important;
                         }
                         .approval-index-table-wrapper tbody tr {
                             background: transparent !important;
                         }
                         .approval-index-table-wrapper table { width: 100% !important; table-layout: auto !important; font-size: 7pt !important; }
-                        .approval-index-table-wrapper .approval-col-comment { min-width: 28% !important; width: auto !important; max-width: none !important; }
+                        .approval-index-table-wrapper .approval-col-comment {
+                            width: auto !important;
+                            min-width: 160px !important;
+                            max-width: none !important;
+                            white-space: normal !important;
+                            word-break: break-word !important;
+                        }
+                        .approval-index-table-wrapper td.approval-col-comment span {
+                            font-size: 8.5pt !important;
+                            color: #000 !important;
+                            font-weight: 600 !important;
+                            line-height: 1.35 !important;
+                        }
                         .approval-index-table-wrapper thead th {
                             padding: 2px 4px !important;
                             text-align: center !important;
                         }
                         .approval-index-table-wrapper tbody td {
                             padding: 6px 3px !important;
+                            border: 1px solid #000 !important;
                         }
                         .approval-index-table-wrapper th,
                         .approval-index-table-wrapper td {
@@ -448,186 +489,161 @@ export default function TeamBasedApprovals({ approvals, filters, stats, zones, a
                             <span className="font-semibold">জোনের নাম:</span> {headerZoneName}
                         </span>
                         <span>
-                            <span className="font-semibold">তারিখ:</span> {dateTo || dateFrom || '-'}
+                            <span className="font-semibold">তারিখ:</span> {formatDate(dateTo || dateFrom, '-')}
                         </span>
                     </div>
                 </div>
 
                 {/* Stats */}
-                <div className="grid grid-cols-2 md:grid-cols-5 gap-3 ho-teambased-stats print:hidden">
-                    <div className="bg-white border rounded-md px-3 py-2">
-                        <div className="text-xs text-gray-500">Total</div>
-                        <div className="text-lg font-semibold text-gray-900">{stats.total}</div>
-                    </div>
-                    <div className="bg-white border rounded-md px-3 py-2">
-                        <div className="text-xs text-gray-500">Draft</div>
-                        <div className="text-lg font-semibold text-gray-900">{stats.draft}</div>
-                    </div>
-                    <div className="bg-white border rounded-md px-3 py-2">
-                        <div className="text-xs text-gray-500">Pending</div>
-                        <div className="text-lg font-semibold text-gray-900">{stats.pending}</div>
-                    </div>
-                    <div className="bg-white border rounded-md px-3 py-2">
-                        <div className="text-xs text-gray-500">Approved</div>
-                        <div className="text-lg font-semibold text-gray-900">{stats.approved}</div>
-                    </div>
-                    <div className="bg-white border rounded-md px-3 py-2">
-                        <div className="text-xs text-gray-500">Rejected</div>
-                        <div className="text-lg font-semibold text-gray-900">{stats.rejected}</div>
-                    </div>
+                <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-4 ho-teambased-stats print:hidden">
+                    {[
+                        { label: 'Total Members', value: stats.total, color: 'text-blue-600', bg: 'bg-blue-50/40 border-blue-100/70' },
+                        { label: 'Draft', value: stats.draft, color: 'text-slate-600', bg: 'bg-slate-50/50 border-slate-100/70' },
+                        { label: 'Pending', value: stats.pending, color: 'text-amber-600', bg: 'bg-amber-50/40 border-amber-100/70' },
+                        { label: 'Approved', value: stats.approved, color: 'text-green-600', bg: 'bg-green-50/40 border-green-100/70' },
+                        { label: 'Rejected', value: stats.rejected, color: 'text-rose-600', bg: 'bg-rose-50/40 border-rose-100/70' },
+                    ].map((stat, i) => (
+                        <div key={i} className={`p-4 rounded-xl border bg-white shadow-sm flex flex-col justify-between transition-all hover:shadow-md ${stat.bg}`}>
+                            <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">{stat.label}</span>
+                            <span className={`text-2xl font-extrabold mt-1 leading-none ${stat.color}`}>{stat.value}</span>
+                        </div>
+                    ))}
                 </div>
 
                 {/* Filters */}
-                <div className="bg-white border rounded-md p-3 space-y-2 ho-teambased-filters">
-                    <div className="flex flex-wrap gap-2 items-center">
-                        <input
-                            type="text"
-                            value={search}
-                            onChange={(e) => setSearch(e.target.value)}
-                            placeholder="Member name / code / project"
-                            className="border border-gray-300 rounded-md px-2 py-1 text-xs min-w-[180px]"
-                        />
-                        <select
-                            value={statusFilter}
-                            onChange={(e) => {
-                                const v = e.target.value;
-                                setStatusFilter(v);
-                                router.get('/head-office/team-based-approvals', {
-                                    status: v || undefined,
-                                    search: search || undefined,
-                                    zone_id: zoneId || undefined,
-                                    area_id: areaId || undefined,
-                                    branch_id: branchId || undefined,
-                                    date_from: dateFrom || undefined,
-                                    date_to: dateTo || undefined,
-                                }, { preserveState: true });
-                            }}
-                            className="border border-gray-300 rounded-md px-2 py-1 text-xs"
-                        >
-                            <option value="">All Status</option>
-                            <option value="draft">Draft</option>
-                            <option value="pending">Pending</option>
-                            <option value="approved">Approved</option>
-                            <option value="rejected">Rejected</option>
-                        </select>
-                        <select
-                            value={zoneId}
-                            onChange={(e) => {
-                                const v = e.target.value;
-                                setZoneId(v);
-                                setAreaId('');
-                                setBranchId('');
-                                router.get('/head-office/team-based-approvals', {
-                                    status: statusFilter || undefined,
-                                    search: search || undefined,
-                                    zone_id: v || undefined,
-                                    area_id: undefined,
-                                    branch_id: undefined,
-                                    date_from: dateFrom || undefined,
-                                    date_to: dateTo || undefined,
-                                }, { preserveState: true });
-                            }}
-                            className="border border-gray-300 rounded-md px-2 py-1 text-xs"
-                        >
-                            <option value="">All Zones</option>
-                            {zones.map((z) => (
-                                <option key={z.id} value={z.id}>
-                                    {z.name}
-                                </option>
-                            ))}
-                        </select>
-                        <select
-                            value={areaId}
-                            onChange={(e) => {
-                                const v = e.target.value;
-                                setAreaId(v);
-                                setBranchId('');
-                                router.get('/head-office/team-based-approvals', {
-                                    status: statusFilter || undefined,
-                                    search: search || undefined,
-                                    zone_id: zoneId || undefined,
-                                    area_id: v || undefined,
-                                    branch_id: undefined,
-                                    date_from: dateFrom || undefined,
-                                    date_to: dateTo || undefined,
-                                }, { preserveState: true });
-                            }}
-                            className="border border-gray-300 rounded-md px-2 py-1 text-xs"
-                        >
-                            <option value="">All Areas</option>
-                            {areas
-                                .filter((a) => !zoneId || a.zone_id.toString() === zoneId)
-                                .map((a) => (
-                                    <option key={a.id} value={a.id}>
-                                        {a.name}
-                                    </option>
+                <div className="bg-slate-50/50 border border-slate-200/80 rounded-2xl p-4 space-y-4 ho-teambased-filters print:hidden shadow-sm">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-3">
+                        <div className="flex flex-col gap-1">
+                            <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Search Member</span>
+                            <input
+                                type="text"
+                                value={search}
+                                onChange={(e) => setSearch(e.target.value)}
+                                onKeyDown={(e) => { if (e.key === 'Enter') applyFilters(); }}
+                                placeholder="Name / code / project"
+                                className="w-full border border-slate-300 rounded-lg px-3 py-2 text-xs bg-white focus:outline-none focus:ring-2 focus:ring-blue-500/15 focus:border-blue-500 transition-all placeholder:text-slate-400 text-slate-800"
+                            />
+                        </div>
+
+                        <div className="flex flex-col gap-1">
+                            <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Status</span>
+                            <select
+                                value={statusFilter}
+                                onChange={(e) => handleStatusChange(e.target.value)}
+                                className="w-full border border-slate-300 rounded-lg px-3 py-2 text-xs bg-white focus:outline-none focus:ring-2 focus:ring-blue-500/15 focus:border-blue-500 transition-all text-slate-800"
+                            >
+                                <option value="">All Statuses</option>
+                                <option value="draft">Draft</option>
+                                <option value="pending">Pending</option>
+                                <option value="approved">Approved</option>
+                                <option value="rejected">Rejected</option>
+                            </select>
+                        </div>
+
+                        <div className="flex flex-col gap-1">
+                            <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Zone</span>
+                            <select
+                                value={zoneId}
+                                onChange={(e) => handleZoneChange(e.target.value)}
+                                className="w-full border border-slate-300 rounded-lg px-3 py-2 text-xs bg-white focus:outline-none focus:ring-2 focus:ring-blue-500/15 focus:border-blue-500 transition-all text-slate-800"
+                            >
+                                <option value="">All Zones</option>
+                                {zones.map((z) => (
+                                    <option key={z.id} value={z.id}>{z.name}</option>
                                 ))}
-                        </select>
-                        <select
-                            value={branchId}
-                            onChange={(e) => {
-                                const v = e.target.value;
-                                setBranchId(v);
-                                router.get('/head-office/team-based-approvals', {
-                                    status: statusFilter || undefined,
-                                    search: search || undefined,
-                                    zone_id: zoneId || undefined,
-                                    area_id: areaId || undefined,
-                                    branch_id: v || undefined,
-                                    date_from: dateFrom || undefined,
-                                    date_to: dateTo || undefined,
-                                }, { preserveState: true });
-                            }}
-                            className="border border-gray-300 rounded-md px-2 py-1 text-xs"
-                        >
-                            <option value="">All Branches</option>
-                            {branches
-                                .filter((b) => !areaId || b.area_id.toString() === areaId)
-                                .map((b) => (
-                                    <option key={b.id} value={b.id}>
-                                        {b.name} ({b.code})
-                                    </option>
-                                ))}
-                        </select>
+                            </select>
+                        </div>
+
+                        <div className="flex flex-col gap-1">
+                            <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Area</span>
+                            <select
+                                value={areaId}
+                                onChange={(e) => handleAreaChange(e.target.value)}
+                                className="w-full border border-slate-300 rounded-lg px-3 py-2 text-xs bg-white focus:outline-none focus:ring-2 focus:ring-blue-500/15 focus:border-blue-500 transition-all text-slate-800"
+                            >
+                                <option value="">All Areas</option>
+                                {areas
+                                    .filter((a) => !zoneId || a.zone_id.toString() === zoneId)
+                                    .map((a) => (
+                                        <option key={a.id} value={a.id}>{a.name}</option>
+                                    ))}
+                            </select>
+                        </div>
+
+                        <div className="flex flex-col gap-1">
+                            <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Branch</span>
+                            <select
+                                value={branchId}
+                                onChange={(e) => handleBranchChange(e.target.value)}
+                                className="w-full border border-slate-300 rounded-lg px-3 py-2 text-xs bg-white focus:outline-none focus:ring-2 focus:ring-blue-500/15 focus:border-blue-500 transition-all text-slate-800"
+                            >
+                                <option value="">All Branches</option>
+                                {branches
+                                    .filter((b) => !areaId || b.area_id.toString() === areaId)
+                                    .map((b) => (
+                                        <option key={b.id} value={b.id}>{b.name} ({b.code})</option>
+                                    ))}
+                            </select>
+                        </div>
                     </div>
-                    <div className="flex flex-wrap gap-2 items-center">
-                        <div className="flex items-center gap-1">
-                            <span className="text-xs text-gray-600">From:</span>
-                            <input
-                                type="date"
-                                value={dateFrom}
-                                onChange={(e) => setDateFrom(e.target.value)}
-                                className="border border-gray-300 rounded-md px-2 py-1 text-xs"
-                            />
+
+                    <div className="flex flex-wrap items-end justify-between gap-4 pt-1 border-t border-slate-200/50">
+                        <div className="flex flex-wrap gap-3 items-center">
+                            <div className="flex flex-col gap-1">
+                                <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">From Date</span>
+                                <input
+                                    type="date"
+                                    value={dateFrom}
+                                    onChange={(e) => setDateFrom(e.target.value)}
+                                    className="border border-slate-300 rounded-lg px-3 py-1.5 text-xs bg-white focus:outline-none focus:ring-2 focus:ring-blue-500/15 focus:border-blue-500 transition-all text-slate-800"
+                                />
+                            </div>
+                            <div className="flex flex-col gap-1">
+                                <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">To Date</span>
+                                <input
+                                    type="date"
+                                    value={dateTo}
+                                    onChange={(e) => setDateTo(e.target.value)}
+                                    className="border border-slate-300 rounded-lg px-3 py-1.5 text-xs bg-white focus:outline-none focus:ring-2 focus:ring-blue-500/15 focus:border-blue-500 transition-all text-slate-800"
+                                />
+                            </div>
+                            <div className="flex flex-col gap-1">
+                                <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Per Page</span>
+                                <select
+                                    value={perPage}
+                                    onChange={(e) => handlePerPageChange(e.target.value)}
+                                    className="border border-slate-300 rounded-lg px-3 py-1.5 text-xs bg-white focus:outline-none focus:ring-2 focus:ring-blue-500/15 focus:border-blue-500 transition-all text-slate-800"
+                                >
+                                    <option value="20">20</option>
+                                    <option value="50">50</option>
+                                    <option value="100">100</option>
+                                    <option value="200">200</option>
+                                    <option value="500">500</option>
+                                </select>
+                            </div>
                         </div>
-                        <div className="flex items-center gap-1">
-                            <span className="text-xs text-gray-600">To:</span>
-                            <input
-                                type="date"
-                                value={dateTo}
-                                onChange={(e) => setDateTo(e.target.value)}
-                                className="border border-gray-300 rounded-md px-2 py-1 text-xs"
-                            />
+
+                        <div className="flex gap-2">
+                            <button
+                                type="button"
+                                onClick={applyFilters}
+                                className="px-5 py-2 rounded-lg bg-blue-600 text-white text-xs font-semibold hover:bg-blue-700 shadow-sm hover:shadow active:scale-[0.98] transition-all"
+                            >
+                                Apply Filters
+                            </button>
+                            <button
+                                type="button"
+                                onClick={handlePrint}
+                                className="px-5 py-2 rounded-lg bg-slate-800 text-white text-xs font-medium hover:bg-slate-900 shadow-sm hover:shadow active:scale-[0.98] transition-all"
+                            >
+                                Print List
+                            </button>
                         </div>
-                        <button
-                            type="button"
-                            onClick={applyFilters}
-                            className="px-3 py-1.5 rounded-md bg-gray-800 text-white text-xs font-medium hover:bg-black"
-                        >
-                            Apply
-                        </button>
-                        <button
-                            type="button"
-                            onClick={handlePrint}
-                            className="px-3 py-1.5 rounded-md bg-gray-600 text-white text-xs font-medium hover:bg-black"
-                        >
-                            Print
-                        </button>
                     </div>
                 </div>
 
                 {/* Table - flat list of all items (same behavior as branch ApprovalIndex) */}
-                <div className="bg-white shadow-sm border border-gray-200 rounded-lg overflow-x-auto approval-index-table-wrapper w-full print:bg-transparent print:shadow-none print:border-0 print:rounded-none">
+                <div className="bg-white border border-slate-200/80 rounded-2xl overflow-hidden shadow-sm hover:shadow-md transition-shadow duration-300 approval-index-table-wrapper w-full print:bg-transparent print:shadow-none print:border-0 print:rounded-none">
                     <table className="w-full border-collapse">
                         <thead className="bg-gray-50 print:bg-transparent">
                             <tr>
@@ -666,11 +682,11 @@ export default function TeamBasedApprovals({ approvals, filters, stats, zones, a
                             {flatRows.map((row, index) => (
                                 <tr
                                     key={`${row.sheet_id}-${row.serial_no}-${index}`}
-                                    className="hover:bg-gray-50 print:hover:bg-transparent"
+                                    className="hover:bg-slate-50/50 print:hover:bg-transparent transition-colors"
                                 >
                                     <td className="border approval-col-serial">{index + 1}</td>
                                     {colVis.sheet_date && (
-                                        <td className="border text-left whitespace-nowrap">{row.sheet_date || '-'}</td>
+                                        <td className="border text-left whitespace-nowrap">{formatDate(row.sheet_date)}</td>
                                     )}
                                     {colVis.branch && (
                                         <td className="border text-left max-w-[10rem]">
@@ -683,9 +699,9 @@ export default function TeamBasedApprovals({ approvals, filters, stats, zones, a
                                     {colVis.zone && (
                                         <td className="border text-left max-w-[8rem]">{row.zone_name || '-'}</td>
                                     )}
-                                    <td className="border text-left max-w-[12rem]">{row.member_name}</td>
+                                    <td className="border text-left max-w-[12rem] font-medium text-slate-800">{row.member_name}</td>
                                     {colVis.member_code && (
-                                        <td className="border whitespace-nowrap">{row.member_code || ''}</td>
+                                        <td className="border whitespace-nowrap font-mono">{row.member_code || ''}</td>
                                     )}
                                     {colVis.member_phone && (
                                         <td className="border whitespace-nowrap">{row.member_phone || ''}</td>
@@ -694,10 +710,10 @@ export default function TeamBasedApprovals({ approvals, filters, stats, zones, a
                                         <td className="border whitespace-nowrap">{row.samity_number || ''}</td>
                                     )}
                                     {colVis.proposed && (
-                                        <td className="border whitespace-nowrap">{formatAmount(row.proposed_loan_amount)}</td>
+                                        <td className="border whitespace-nowrap font-semibold text-slate-900">{formatAmount(row.proposed_loan_amount)}</td>
                                     )}
                                     {colVis.approved && (
-                                        <td className="border whitespace-nowrap">{formatAmount(row.approved_amount)}</td>
+                                        <td className="border whitespace-nowrap font-semibold text-blue-700">{formatAmount(row.approved_amount)}</td>
                                     )}
                                     {colVis.loan_type && (
                                         <td className="border text-left max-w-[8rem]">{row.loan_type || ''}</td>
@@ -707,7 +723,7 @@ export default function TeamBasedApprovals({ approvals, filters, stats, zones, a
                                     )}
                                     {colVis.comments && (
                                         <td className="border approval-col-comment align-top">
-                                            <span className="whitespace-pre-line">{row.review_comments || ''}</span>
+                                            <span className="whitespace-pre-line text-[9px] text-slate-500 leading-normal block text-left">{row.review_comments || ''}</span>
                                         </td>
                                     )}
                                     {colVis.signature && (
@@ -721,10 +737,10 @@ export default function TeamBasedApprovals({ approvals, filters, stats, zones, a
                                                           approver_name: row.approver_name,
                                                       },
                                                   ]
-                                            ).map((a, i) => (
+                                             ).map((a, i) => (
                                                 <div
                                                     key={i}
-                                                    className="flex flex-col items-start gap-0.5 py-0.5 border-b border-gray-100 last:border-0"
+                                                    className="flex flex-col items-center gap-0.5 py-0.5 border-b border-gray-100 last:border-0"
                                                 >
                                                     {a.approver_signature ? (
                                                         <>
@@ -757,16 +773,20 @@ export default function TeamBasedApprovals({ approvals, filters, stats, zones, a
                                                                     }}
                                                                 />
                                                             </button>
-                                                            <span className="text-xs">{a.decided_at || ''}</span>
+                                                            <span className="text-[9px] text-slate-500">{formatDate(a.decided_at, '')}</span>
                                                         </>
                                                     ) : (
-                                                        <span className="text-xs text-gray-500">{a.decided_at || ''}</span>
+                                                        <span className="text-[9px] text-slate-500">{formatDate(a.decided_at, '')}</span>
                                                     )}
                                                 </div>
                                             ))}
                                         </td>
                                     )}
-                                    <td className="border capitalize">{row.status}</td>
+                                    <td className="border px-2 py-1">
+                                        <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[9px] font-semibold uppercase tracking-wider border ${statusClass[row.status] || 'bg-slate-100 text-slate-800 border-slate-200'}`}>
+                                            {statusLabel[row.status] || row.status}
+                                        </span>
+                                    </td>
                                     {colVis.approver && (
                                         <td className="border text-left max-w-[10rem]">
                                             {row.approvers && row.approvers.length > 0
@@ -775,18 +795,18 @@ export default function TeamBasedApprovals({ approvals, filters, stats, zones, a
                                         </td>
                                     )}
                                     <td className="border print:hidden">
-                                        <div className="flex flex-col items-center justify-center gap-1">
+                                        <div className="flex items-center justify-center gap-1.5">
                                             <button
                                                 type="button"
                                                 onClick={() => handleEditItem(row.id)}
-                                                className="px-2 py-0.5 text-[11px] rounded border border-blue-500 text-blue-600 hover:bg-blue-50 w-full sm:w-auto"
+                                                className="inline-flex items-center justify-center px-2 py-1 text-[10px] font-medium rounded-md border border-blue-200 text-blue-600 bg-blue-50/30 hover:bg-blue-600 hover:text-white transition-all shadow-sm hover:shadow"
                                             >
                                                 Edit
                                             </button>
                                             <button
                                                 type="button"
                                                 onClick={() => handleDeleteItem(row.id)}
-                                                className="px-2 py-0.5 text-[11px] rounded border border-red-500 text-red-600 hover:bg-red-50 w-full sm:w-auto"
+                                                className="inline-flex items-center justify-center px-2 py-1 text-[10px] font-medium rounded-md border border-red-200 text-red-600 bg-red-50/30 hover:bg-red-600 hover:text-white transition-all shadow-sm hover:shadow"
                                             >
                                                 Delete
                                             </button>
@@ -800,36 +820,36 @@ export default function TeamBasedApprovals({ approvals, filters, stats, zones, a
 
                 {/* Pagination - professional with page numbers */}
                 {approvals.last_page > 1 && (
-                    <div className="mt-4 flex flex-col sm:flex-row items-center justify-between gap-3 px-1 py-3 border-t border-gray-200 bg-white rounded-b-lg">
-                        <p className="text-sm text-gray-600 order-2 sm:order-1">
+                    <div className="mt-4 flex flex-col sm:flex-row items-center justify-between gap-3 px-4 py-3 border border-slate-200 bg-slate-50/30 rounded-2xl print:hidden">
+                        <p className="text-xs text-slate-600 order-2 sm:order-1 font-medium">
                             {approvals.total > 0 ? (
-                                <>Showing <span className="font-medium">{from}</span>–<span className="font-medium">{to}</span> of <span className="font-medium">{approvals.total}</span> sheets</>
+                                <>Showing <span className="text-slate-900 font-semibold">{from}</span> to <span className="text-slate-900 font-semibold">{to}</span> of <span className="text-slate-900 font-semibold">{approvals.total}</span> members</>
                             ) : (
                                 <>No results</>
                             )}
                         </p>
-                        <nav className="flex items-center gap-1 order-1 sm:order-2" aria-label="Pagination">
+                        <nav className="flex items-center gap-2 order-1 sm:order-2" aria-label="Pagination">
                             <button
                                 type="button"
                                 onClick={() => handlePageChange(approvals.current_page - 1)}
                                 disabled={approvals.current_page <= 1}
-                                className="px-3 py-1.5 text-sm font-medium rounded-l-md border border-gray-300 bg-white text-gray-700 hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-white"
+                                className="px-3 py-1.5 text-xs font-semibold rounded-lg border border-slate-300 bg-white text-slate-700 hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed transition-all shadow-sm"
                             >
                                 Previous
                             </button>
-                            <div className="flex items-center border-y border-gray-300">
+                            <div className="flex items-center gap-1">
                                 {getPageNumbers().map((p, i) =>
                                     p === 'ellipsis' ? (
-                                        <span key={`ellipsis-${i}`} className="px-2 py-1.5 text-gray-400">…</span>
+                                        <span key={`ellipsis-${i}`} className="px-2 py-1.5 text-slate-400 text-xs">…</span>
                                     ) : (
                                         <button
                                             key={p}
                                             type="button"
                                             onClick={() => handlePageChange(p)}
-                                            className={`min-w-[2.25rem] px-2 py-1.5 text-sm font-medium border-x border-gray-300 ${
+                                            className={`w-8 h-8 flex items-center justify-center text-xs font-semibold rounded-lg border transition-all ${
                                                 approvals.current_page === p
-                                                    ? 'bg-blue-600 text-white border-blue-600'
-                                                    : 'bg-white text-gray-700 hover:bg-gray-50'
+                                                    ? 'bg-blue-600 text-white border-blue-600 shadow-sm shadow-blue-500/20'
+                                                    : 'bg-white text-slate-700 border-slate-300 hover:bg-slate-50'
                                             }`}
                                         >
                                             {p}
@@ -841,7 +861,7 @@ export default function TeamBasedApprovals({ approvals, filters, stats, zones, a
                                 type="button"
                                 onClick={() => handlePageChange(approvals.current_page + 1)}
                                 disabled={approvals.current_page >= approvals.last_page}
-                                className="px-3 py-1.5 text-sm font-medium rounded-r-md border border-gray-300 bg-white text-gray-700 hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-white"
+                                className="px-3 py-1.5 text-xs font-semibold rounded-lg border border-slate-300 bg-white text-slate-700 hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed transition-all shadow-sm"
                             >
                                 Next
                             </button>
@@ -849,7 +869,7 @@ export default function TeamBasedApprovals({ approvals, filters, stats, zones, a
                     </div>
                 )}
                 {approvals.last_page <= 1 && approvals.total > 0 && (
-                    <p className="text-xs text-gray-500 mt-2">এই পাতায় {flatRows.length}টি আইটেম</p>
+                    <p className="text-xs text-slate-500 mt-2 font-medium">এই পাতায় {flatRows.length}টি আইটেম</p>
                 )}
             </div>
 

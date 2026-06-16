@@ -1,5 +1,6 @@
 import { Head } from '@inertiajs/react';
 import AdminLayout from '@/layouts/admin-layout';
+import { formatDate } from '@/utils/dateUtils';
 
 interface Sheet {
     id: number;
@@ -130,14 +131,14 @@ export default function TeamBasedApprovalPrint({ sheet, items }: Props) {
                                 </p>
                             </div>
                             <div className="flex-shrink-0 text-right text-xs text-gray-700">
-                                <p>তারিখ: {sheet.sheet_date || '-'}</p>
+                                <p>তারিখ: {formatDate(sheet.sheet_date)}</p>
                             </div>
                         </div>
                         <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-1 text-xs text-gray-700">
                             <span><span className="font-semibold">শাখার নাম:</span> {sheet.branch.name}</span>
                             <span><span className="font-semibold">অঞ্চলের নাম:</span> {sheet.branch.area_name || '-'}</span>
                             <span><span className="font-semibold">জোনের নাম:</span> {sheet.branch.zone_name || '-'}</span>
-                            <span><span className="font-semibold">তারিখ:</span> {sheet.sheet_date || '-'}</span>
+                            <span><span className="font-semibold">তারিখ:</span> {formatDate(sheet.sheet_date)}</span>
                         </div>
                         {sheet.approver_name && (
                             <p className="text-xs text-gray-600 mt-1">অনুমোদনকারী: {sheet.approver_name}</p>
@@ -248,7 +249,7 @@ export default function TeamBasedApprovalPrint({ sheet, items }: Props) {
                                                             onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}
                                                         />
                                                     )}
-                                                    <span className="text-gray-700">{a.decided_at || ''}</span>
+                                                    <span className="text-gray-700">{formatDate(a.decided_at, '')}</span>
                                                 </div>
                                             ))}
                                         </td>

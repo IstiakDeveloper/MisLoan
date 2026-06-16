@@ -10,6 +10,9 @@ use App\Models\Role;
 use App\Models\LoanApplication;
 use App\Models\LoanApplicationIssue;
 use App\Models\MemberAdmission;
+use App\Models\TeamBasedApproval;
+use App\Models\TeamBasedApprovalItem;
+use App\Models\TeamBasedApprovalReview;
 use Carbon\Carbon;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
@@ -21,26 +24,160 @@ class DashboardController extends Controller
     public function index(Request $request)
     {
         $user = Auth::user();
+        $user->loadMissing('role');
+        $roleName = $user->role?->name;
 
-        // Check if user is Head Office/SuperAdmin or Branch User
-        $isHeadOffice = $user->has_all_access;
-
-        if ($isHeadOffice) {
-            return $this->headOfficeDashboard($user, $request);
-        } else {
-            return $this->branchDashboard($user, $request);
+        // Check if user is Area Manager
+        if ($roleName === Role::AREA_MANAGER) {
+            return $this->areaManagerDashboard($user, $request);
         }
+
+        // Check if user is Zone Manager
+        if ($roleName === Role::ZONE_MANAGER) {
+            return $this->zoneManagerDashboard($user, $request);
+        }
+
+        // Check if user is an Approver (ADMF / DMF / ED)
+        if (in_array($roleName, [Role::ADMF, Role::DMF, Role::ED], true)) {
+            return $this->financialApproverDashboard($user, $request);
+        }
+
+        // Check if user is Head Office / SuperAdmin
+        if ($user->has_all_access || $roleName === Role::SUPER_ADMIN || $roleName === Role::HEAD_OFFICE) {
+            return $this->headOfficeDashboard($user, $request);
+        }
+
+        return $this->branchDashboard($user, $request);
     }
 
     /**
-     * Head Office / SuperAdmin Dashboard
-     * Period filter (Today / Monthly / Date to Date), branch submission summary, system stats
+     * Approver Dashboard
+     * Statistics for Team Based reviews assigned to this approver
      */
-    private function headOfficeDashboard($user, Request $request)
+    private function approverDashboard($user, Request $request)
     {
-        $period = trim((string) $request->query('period', 'today'));
+        $reviewsQuery = \App\Models\TeamBasedApprovalReview::where('user_id', $user->id);
+
+        $rawCounts = (clone $reviewsQuery)
+            ->select('status', \DB::raw('COUNT(*) as count'))
+            ->groupBy('status')
+            ->pluck('count', 'status')
+            ->toArray();
+
+        $stats = [
+            'pending_count' => $rawCounts['pending'] ?? 0,
+            'approved_count' => $rawCounts['approved'] ?? 0,
+            'rejected_count' => $rawCounts['rejected'] ?? 0,
+            'forwarded_count' => $rawCounts['forwarded'] ?? 0,
+            'total_count' => array_sum($rawCounts),
+        ];
+
+        // Sum of proposed loan amount of items where they have pending reviews.
+        $stats['pending_proposed_amount'] = (int) (clone $reviewsQuery)
+            ->where('status', 'pending')
+            ->whereHas('item')
+            ->join('team_based_approval_items', 'team_based_approval_reviews.team_based_approval_item_id', '=', 'team_based_approval_items.id')
+            ->sum('team_based_approval_items.proposed_loan_amount');
+
+        // Sum of approved amount decided by this user
+        $stats['approved_amount'] = (int) (clone $reviewsQuery)
+            ->where('status', 'approved')
+            ->sum('approved_amount');
+
+        // Recent 5 Pending Reviews
+        $recentPending = \App\Models\TeamBasedApprovalReview::with(['approval.branch', 'item'])
+            ->where('user_id', $user->id)
+            ->where('status', 'pending')
+            ->latest('id')
+            ->take(5)
+            ->get();
+
+        $recentPendingFormatted = $recentPending->map(function ($review) {
+            $item = $review->item;
+            return [
+                'review_id' => $review->id,
+                'member_name' => $item?->member_name ?? '—',
+                'member_code' => $item?->member_code,
+                'proposed_amount' => $item ? (int) $item->proposed_loan_amount : 0,
+                'branch_name' => $review->approval?->branch?->name ?? '—',
+                'sheet_date' => $review->approval?->sheet_date ? $review->approval->sheet_date->toDateString() : '—',
+            ];
+        })->values()->toArray();
+
+        // Recent 5 Decisions
+        $recentDecisions = \App\Models\TeamBasedApprovalReview::with(['approval.branch', 'item'])
+            ->where('user_id', $user->id)
+            ->whereIn('status', ['approved', 'rejected', 'forwarded'])
+            ->latest('decided_at')
+            ->take(5)
+            ->get();
+
+        $recentDecisionsFormatted = $recentDecisions->map(function ($review) {
+            $item = $review->item;
+            return [
+                'review_id' => $review->id,
+                'member_name' => $item?->member_name ?? '—',
+                'member_code' => $item?->member_code,
+                'status' => $review->status,
+                'approved_amount' => $review->approved_amount !== null ? (int) $review->approved_amount : ($item ? (int) $item->approved_amount : null),
+                'branch_name' => $review->approval?->branch?->name ?? '—',
+                'decided_at' => $review->decided_at ? $review->decided_at->toDateTimeString() : '—',
+            ];
+        })->values()->toArray();
+
+        return Inertia::render('Dashboard/ApproverIndex', [
+            'stats' => $stats,
+            'recentPending' => $recentPendingFormatted,
+            'recentDecisions' => $recentDecisionsFormatted,
+        ]);
+    }
+
+    private function financialApproverDashboard($user, Request $request)
+    {
+        $branchIds = Branch::pluck('id')->toArray();
+        $data = $this->getAreaOrZoneDashboardData($user, $branchIds, $request);
+        $data['approverRoleName'] = strtoupper($user->role?->name ?? 'APPROVER');
+        return Inertia::render('Dashboard/FinancialApproverIndex', $data);
+    }
+
+    /**
+     * Area Manager Dashboard
+     */
+    private function areaManagerDashboard($user, Request $request)
+    {
+        $areaIds = $user->area_id ? [$user->area_id] : $user->areas()->pluck('areas.id')->toArray();
+        $branchIds = Branch::whereIn('area_id', $areaIds)->pluck('id')->toArray();
+
+        $data = $this->getAreaOrZoneDashboardData($user, $branchIds, $request);
+        $data['areaName'] = $user->area?->name ?? 'আমার এরিয়া';
+
+        return Inertia::render('Dashboard/AreaManagerIndex', $data);
+    }
+
+    /**
+     * Zone Manager Dashboard
+     */
+    private function zoneManagerDashboard($user, Request $request)
+    {
+        $zoneIds = $user->zone_id ? [$user->zone_id] : $user->zones()->pluck('zones.id')->toArray();
+        $branchIds = Branch::whereHas('area', function ($q) use ($zoneIds) {
+            $q->whereIn('zone_id', $zoneIds);
+        })->pluck('id')->toArray();
+
+        $data = $this->getAreaOrZoneDashboardData($user, $branchIds, $request);
+        $data['zoneName'] = $user->zone?->name ?? 'আমার জোন';
+
+        return Inertia::render('Dashboard/ZoneManagerIndex', $data);
+    }
+
+    /**
+     * Get combined Branch Operations + Approver review stats for Area/Zone Managers
+     */
+    private function getAreaOrZoneDashboardData($user, array $branchIds, Request $request)
+    {
+        $period = trim((string) $request->query('period', 'monthly'));
         if (! in_array($period, ['today', 'monthly', 'date_to_date'], true)) {
-            $period = 'today';
+            $period = 'monthly';
         }
         $dateFrom = $request->query('from_date') ? trim((string) $request->query('from_date')) : null;
         $dateTo = $request->query('to_date') ? trim((string) $request->query('to_date')) : null;
@@ -56,9 +193,286 @@ class DashboardController extends Controller
                 $start = $end->copy()->startOfDay();
             }
         } else {
-            $start = $today->copy()->startOfDay();
+            $start = $today->copy()->startOfMonth();
             $end = $today->copy()->endOfDay();
-            $period = 'today';
+            $period = 'monthly';
+        }
+        $startStr = $start->toDateTimeString();
+        $endStr = $end->toDateTimeString();
+
+        // 1. Fetch all branches under this user's jurisdiction for mapping
+        $myBranches = Branch::whereIn('id', $branchIds)
+            ->with('area:id,name,code,zone_id', 'area.zone:id,name,code')
+            ->get(['id', 'name', 'code', 'area_id']);
+
+        // Fetch all items under these branches within the date range (excluding draft)
+        $allItems = TeamBasedApprovalItem::whereHas('approval', function ($q) use ($branchIds, $startStr, $endStr) {
+            $q->whereIn('branch_id', $branchIds)
+              ->where('status', '!=', 'draft')
+              ->whereBetween('sheet_date', [$startStr, $endStr]);
+        })->with(['approval', 'approval.reviews' => function ($query) {
+            $query->orderBy('id', 'asc');
+        }])->get();
+
+        // Calculate statuses in-memory
+        $jurisdictionStats = [
+            'total' => 0,
+            'pending' => 0,
+            'approved' => 0,
+            'rejected' => 0,
+            'forwarded' => 0,
+        ];
+
+        // We will also prepare status counts grouped by branch_id
+        $branchStatusCounts = [];
+        foreach ($branchIds as $bid) {
+            $branchStatusCounts[$bid] = [
+                'total' => 0,
+                'pending' => 0,
+                'approved' => 0,
+                'rejected' => 0,
+                'forwarded' => 0,
+            ];
+        }
+
+        foreach ($allItems as $item) {
+            $lastReview = $item->approval->reviews
+                ->where('team_based_approval_item_id', $item->id)
+                ->last();
+
+            $status = $lastReview ? $lastReview->status : $item->approval->status;
+            $status = strtolower(trim((string) $status));
+            if ($status === 'submitted' || $status === 'under_review') {
+                $status = 'pending';
+            }
+
+            if (!in_array($status, ['pending', 'approved', 'rejected', 'forwarded'], true)) {
+                $status = 'pending';
+            }
+
+            // Global stats under their jurisdiction
+            $jurisdictionStats['total']++;
+            $jurisdictionStats[$status]++;
+
+            // Branch stats
+            $bid = $item->approval->branch_id;
+            if (isset($branchStatusCounts[$bid])) {
+                $branchStatusCounts[$bid]['total']++;
+                $branchStatusCounts[$bid][$status]++;
+            }
+        }
+
+        // 1. Fetch personal counts (assigned directly to THIS user)
+        $personalReviewsQuery = \App\Models\TeamBasedApprovalReview::where('user_id', $user->id)
+            ->whereHas('approval', function ($q) use ($branchIds, $startStr, $endStr) {
+                $q->whereIn('branch_id', $branchIds)->whereBetween('sheet_date', [$startStr, $endStr]);
+            });
+
+        $personalRawCounts = (clone $personalReviewsQuery)
+            ->select('status', \DB::raw('COUNT(*) as count'))
+            ->groupBy('status')
+            ->pluck('count', 'status')
+            ->toArray();
+
+        $personalStats = [
+            'total_count' => array_sum($personalRawCounts),
+            'pending_count' => $personalRawCounts['pending'] ?? 0,
+            'approved_count' => $personalRawCounts['approved'] ?? 0,
+            'rejected_count' => $personalRawCounts['rejected'] ?? 0,
+            'forwarded_count' => $personalRawCounts['forwarded'] ?? 0,
+        ];
+
+        // Overall jurisdiction stats
+        $jurisdictionStatsFormatted = [
+            'total_count' => $jurisdictionStats['total'],
+            'pending_count' => $jurisdictionStats['pending'],
+            'approved_count' => $jurisdictionStats['approved'],
+            'rejected_count' => $jurisdictionStats['rejected'],
+            'forwarded_count' => $jurisdictionStats['forwarded'],
+        ];
+
+        $approverStats = [
+            'personal' => $personalStats,
+            'jurisdiction' => $jurisdictionStatsFormatted,
+        ];
+
+        // Recent 5 Pending Reviews (assigned directly to THIS user)
+        $recentPending = \App\Models\TeamBasedApprovalReview::with(['approval.branch', 'item'])
+            ->where('user_id', $user->id)
+            ->where('status', 'pending')
+            ->latest('id')
+            ->take(5)
+            ->get();
+
+        $recentPendingFormatted = $recentPending->map(function ($review) {
+            $item = $review->item;
+            return [
+                'review_id' => $review->id,
+                'member_name' => $item?->member_name ?? '—',
+                'member_code' => $item?->member_code,
+                'branch_name' => $review->approval?->branch?->name ?? '—',
+                'sheet_date' => $review->approval?->sheet_date ? $review->approval->sheet_date->toDateString() : '—',
+            ];
+        })->values()->toArray();
+
+        // Recent 5 Decisions (decided by THIS user)
+        $recentDecisions = \App\Models\TeamBasedApprovalReview::with(['approval.branch', 'item'])
+            ->where('user_id', $user->id)
+            ->whereIn('status', ['approved', 'rejected', 'forwarded'])
+            ->latest('decided_at')
+            ->take(5)
+            ->get();
+
+        $recentDecisionsFormatted = $recentDecisions->map(function ($review) {
+            $item = $review->item;
+            return [
+                'review_id' => $review->id,
+                'member_name' => $item?->member_name ?? '—',
+                'member_code' => $item?->member_code,
+                'status' => $review->status,
+                'branch_name' => $review->approval?->branch?->name ?? '—',
+                'decided_at' => $review->decided_at ? $review->decided_at->toDateTimeString() : '—',
+            ];
+        })->values()->toArray();
+
+        // 2. Breakdown calculation
+        $roleName = $user->role?->name;
+        $breakdown = [];
+
+        if (in_array($roleName, [Role::ADMF, Role::DMF, Role::ED], true)) {
+            // Breakdown by Zone
+            $breakdown = Zone::where('is_active', true)->get()->map(function ($zone) use ($myBranches, $branchStatusCounts) {
+                // Get all branch IDs under this zone
+                $zoneBranchIds = $myBranches->filter(function ($b) use ($zone) {
+                    return $b->area?->zone_id == $zone->id;
+                })->pluck('id')->toArray();
+
+                $total = 0;
+                $approved = 0;
+                $rejected = 0;
+                $pending = 0;
+                $forwarded = 0;
+
+                foreach ($zoneBranchIds as $bid) {
+                    if (isset($branchStatusCounts[$bid])) {
+                        $total += $branchStatusCounts[$bid]['total'];
+                        $approved += $branchStatusCounts[$bid]['approved'];
+                        $rejected += $branchStatusCounts[$bid]['rejected'];
+                        $pending += $branchStatusCounts[$bid]['pending'];
+                        $forwarded += $branchStatusCounts[$bid]['forwarded'];
+                    }
+                }
+
+                return [
+                    'id' => $zone->id,
+                    'name' => $zone->name,
+                    'code' => $zone->code,
+                    'total_items' => $total,
+                    'approved_items' => $approved,
+                    'rejected_items' => $rejected,
+                    'pending_items' => $pending,
+                    'forwarded_items' => $forwarded,
+                ];
+            })->toArray();
+        } elseif ($roleName === Role::ZONE_MANAGER) {
+            // Breakdown by Area
+            $zoneIds = $user->zone_id ? [$user->zone_id] : $user->zones()->pluck('zones.id')->toArray();
+            $breakdown = Area::whereIn('zone_id', $zoneIds)->where('is_active', true)->get()->map(function ($area) use ($myBranches, $branchStatusCounts) {
+                // Get all branch IDs under this area
+                $areaBranchIds = $myBranches->filter(function ($b) use ($area) {
+                    return $b->area_id == $area->id;
+                })->pluck('id')->toArray();
+
+                $total = 0;
+                $approved = 0;
+                $rejected = 0;
+                $pending = 0;
+                $forwarded = 0;
+
+                foreach ($areaBranchIds as $bid) {
+                    if (isset($branchStatusCounts[$bid])) {
+                        $total += $branchStatusCounts[$bid]['total'];
+                        $approved += $branchStatusCounts[$bid]['approved'];
+                        $rejected += $branchStatusCounts[$bid]['rejected'];
+                        $pending += $branchStatusCounts[$bid]['pending'];
+                        $forwarded += $branchStatusCounts[$bid]['forwarded'];
+                    }
+                }
+
+                return [
+                    'id' => $area->id,
+                    'name' => $area->name,
+                    'code' => $area->code,
+                    'total_items' => $total,
+                    'approved_items' => $approved,
+                    'rejected_items' => $rejected,
+                    'pending_items' => $pending,
+                    'forwarded_items' => $forwarded,
+                ];
+            })->toArray();
+        } elseif ($roleName === Role::AREA_MANAGER) {
+            // Breakdown by Branch
+            $breakdown = Branch::whereIn('id', $branchIds)->where('is_active', true)->get()->map(function ($branch) use ($branchStatusCounts) {
+                $counts = $branchStatusCounts[$branch->id] ?? [
+                    'total' => 0,
+                    'approved' => 0,
+                    'rejected' => 0,
+                    'pending' => 0,
+                    'forwarded' => 0,
+                ];
+
+                return [
+                    'id' => $branch->id,
+                    'name' => $branch->name,
+                    'code' => $branch->code,
+                    'total_items' => $counts['total'],
+                    'approved_items' => $counts['approved'],
+                    'rejected_items' => $counts['rejected'],
+                    'pending_items' => $counts['pending'],
+                    'forwarded_items' => $counts['forwarded'],
+                ];
+            })->toArray();
+        }
+
+        return [
+            'approverStats' => $approverStats,
+            'recentPending' => $recentPendingFormatted,
+            'recentDecisions' => $recentDecisionsFormatted,
+            'myBranches' => $myBranches,
+            'breakdown' => $breakdown,
+            'period' => $period,
+            'dateFrom' => $period === 'date_to_date' ? $dateFrom : null,
+            'dateTo' => $period === 'date_to_date' ? $dateTo : null,
+        ];
+    }
+
+    /**
+     * Head Office / SuperAdmin Dashboard
+     * Period filter (Today / Monthly / Date to Date), branch submission summary, system stats
+     */
+    private function headOfficeDashboard($user, Request $request)
+    {
+        $period = trim((string) $request->query('period', 'monthly'));
+        if (! in_array($period, ['today', 'monthly', 'date_to_date'], true)) {
+            $period = 'monthly';
+        }
+        $dateFrom = $request->query('from_date') ? trim((string) $request->query('from_date')) : null;
+        $dateTo = $request->query('to_date') ? trim((string) $request->query('to_date')) : null;
+
+        $today = Carbon::today();
+        if ($period === 'monthly') {
+            $start = $today->copy()->startOfMonth();
+            $end = $today->copy()->endOfDay();
+        } elseif ($period === 'date_to_date' && $dateFrom !== '' && $dateFrom !== null && $dateTo !== '' && $dateTo !== null) {
+            $start = Carbon::parse($dateFrom)->startOfDay();
+            $end = Carbon::parse($dateTo)->endOfDay();
+            if ($start->isAfter($end)) {
+                $start = $end->copy()->startOfDay();
+            }
+        } else {
+            $start = $today->copy()->startOfMonth();
+            $end = $today->copy()->endOfDay();
+            $period = 'monthly';
         }
         $startStr = $start->toDateTimeString();
         $endStr = $end->toDateTimeString();
@@ -149,9 +563,9 @@ class DashboardController extends Controller
             ]);
         }
 
-        $period = trim((string) $request->query('period', 'today'));
+        $period = trim((string) $request->query('period', 'monthly'));
         if (! in_array($period, ['today', 'monthly', 'date_to_date'], true)) {
-            $period = 'today';
+            $period = 'monthly';
         }
         $dateFrom = $request->query('from_date') ? trim((string) $request->query('from_date')) : null;
         $dateTo = $request->query('to_date') ? trim((string) $request->query('to_date')) : null;
@@ -168,9 +582,9 @@ class DashboardController extends Controller
                 $start = $end->copy()->startOfDay();
             }
         } else {
-            $start = $today->copy()->startOfDay();
+            $start = $today->copy()->startOfMonth();
             $end = $today->copy()->endOfDay();
-            $period = 'today';
+            $period = 'monthly';
         }
 
         $startStr = $start->toDateTimeString();
@@ -238,6 +652,23 @@ class DashboardController extends Controller
             ->get(['id', 'name', 'code', 'area_id'])
             ->toArray();
 
+        // Calculate Team-Based stats for branch Dashboard
+        $teamBasedQuery = \App\Models\TeamBasedApproval::whereIn('branch_id', $branchIds);
+        if ($period === 'monthly') {
+            $teamBasedQuery->whereBetween('sheet_date', [$startStr, $endStr]);
+        } elseif ($period === 'date_to_date' && $dateFrom && $dateTo) {
+            $teamBasedQuery->whereBetween('sheet_date', [$startStr, $endStr]);
+        } else {
+            $teamBasedQuery->whereDate('sheet_date', $today);
+        }
+
+        $teamBasedStats = [
+            'draft_count' => (clone $teamBasedQuery)->where('status', 'draft')->count(),
+            'pending_count' => (clone $teamBasedQuery)->where('status', 'submitted')->count(),
+            'approved_count' => (clone $teamBasedQuery)->where('status', 'approved')->count(),
+            'rejected_count' => (clone $teamBasedQuery)->where('status', 'rejected')->count(),
+        ];
+
         return Inertia::render('Dashboard/BranchIndex', [
             'stats' => ['my_branches' => count($branchIds)],
             'periodStats' => $periodStats,
@@ -247,6 +678,7 @@ class DashboardController extends Controller
             'dateTo' => $period === 'date_to_date' ? $dateTo : null,
             'myBranches' => $myBranches,
             'dashboardType' => 'branch',
+            'teamBasedStats' => $teamBasedStats,
         ]);
     }
 

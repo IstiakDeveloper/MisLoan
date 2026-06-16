@@ -1,6 +1,7 @@
 import { Head, Link, router } from '@inertiajs/react';
 import AdminLayout from '@/layouts/admin-layout';
 import React from 'react';
+import { formatDate, formatDateTime } from '@/utils/dateUtils';
 
 interface ApprovalRow {
     id: number;
@@ -154,7 +155,7 @@ export default function TeamBasedApprovalDraftIndex({ approvals, filters }: Prop
                                     </span>
                                     <div>
                                         <p className="text-xs font-semibold text-gray-900 leading-tight">
-                                            {row.sheet_date || '-'}
+                                            {formatDate(row.sheet_date)}
                                         </p>
                                         <p className="text-[10px] text-gray-500 leading-tight">
                                             Approver: {row.approver_name || '-'}
@@ -169,7 +170,7 @@ export default function TeamBasedApprovalDraftIndex({ approvals, filters }: Prop
                             <div className="px-3 py-2.5 grid grid-cols-2 gap-x-4 gap-y-2 text-xs">
                                 <div className="col-span-2">
                                     <span className="text-gray-400">Created</span>
-                                    <p className="font-medium text-gray-800">{row.created_at ? row.created_at : '-'}</p>
+                                    <p className="font-medium text-gray-800">{row.created_at ? formatDateTime(row.created_at) : '-'}</p>
                                 </div>
                             </div>
 
@@ -235,7 +236,7 @@ export default function TeamBasedApprovalDraftIndex({ approvals, filters }: Prop
                                     <td className="px-4 py-2 border-b align-middle">
                                         {(approvals.current_page - 1) * 20 + idx + 1}
                                     </td>
-                                    <td className="px-4 py-2 border-b align-middle">{row.sheet_date || '-'}</td>
+                                    <td className="px-4 py-2 border-b align-middle">{formatDate(row.sheet_date)}</td>
                                     <td className="px-4 py-2 border-b align-middle">
                                         {row.approver_name || '-'}
                                     </td>
@@ -245,7 +246,7 @@ export default function TeamBasedApprovalDraftIndex({ approvals, filters }: Prop
                                         </span>
                                     </td>
                                     <td className="px-4 py-2 border-b align-middle text-xs text-gray-500">
-                                        {row.created_at ? row.created_at : '-'}
+                                        {row.created_at ? formatDateTime(row.created_at) : '-'}
                                     </td>
                                     <td className="px-4 py-2 border-b align-middle text-right text-xs text-gray-700 space-x-2">
                                         <Link

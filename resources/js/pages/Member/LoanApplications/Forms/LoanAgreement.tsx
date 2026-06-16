@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { Head, useForm, router } from '@inertiajs/react';
 import AdminLayout from '@/layouts/admin-layout';
+import { formatDateBangla } from '@/utils/dateUtils';
 import { Printer, Save, Eye, Calculator, Upload, X, ArrowLeft } from 'lucide-react';
 
 interface LoanAgreementData {
@@ -68,16 +69,10 @@ interface Props {
     isLegacy?: boolean;
 }
 
-const formatDateBanglaModule = (dateString: string) => {
-    if (!dateString) return '';
-    const date = new Date(dateString);
-    return `${date.getDate()}/${date.getMonth() + 1}/${date.getFullYear()}`;
-};
-
 /** Show/Print view only – matches Show page (compact logo + sizes for view/print). */
 export function LoanAgreementPrintView({ data }: { data: any }) {
     const d = data || {};
-    const fmt = formatDateBanglaModule;
+    const fmt = formatDateBangla;
     const num = (v: any) => (v != null && v !== '' ? Number(v) : 0);
     const str = (v: any) => (v != null && v !== '' ? String(v) : '');
     return (
@@ -318,12 +313,6 @@ export default function LoanAgreement({ member, loanProduct, loanCategory, reque
         setTimeout(() => {
             setShowPreview(true);
         }, 100);
-    };
-
-    const formatDateBangla = (dateString: string) => {
-        if (!dateString) return '';
-        const date = new Date(dateString);
-        return `${date.getDate()}/${date.getMonth() + 1}/${date.getFullYear()}`;
     };
 
     const handleImageUpload = (field: string, file: File | null) => {

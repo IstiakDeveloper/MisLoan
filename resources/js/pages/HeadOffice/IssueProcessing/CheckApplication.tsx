@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { Head, router } from '@inertiajs/react';
 import AdminLayout from '@/layouts/admin-layout';
+import { formatDate } from '@/utils/dateUtils';
 import {
     ChevronRight,
     MapPin,
@@ -168,7 +169,7 @@ export default function CheckApplication({ application, applicationType }: Props
                                         <div>
                                             <p className="text-sm text-gray-600">তারিখ</p>
                                             <p className="font-medium text-gray-900">
-                                                {new Date(application.submitted_at).toLocaleDateString('bn-BD')}
+                                                {formatDate(application.submitted_at)}
                                             </p>
                                         </div>
                                         <div>

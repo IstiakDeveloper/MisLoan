@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Head, router, Link, usePage } from '@inertiajs/react';
 import AdminLayout from '@/layouts/admin-layout';
+import { formatDate, formatDateTime } from '@/utils/dateUtils';
 import { Badge } from '@/components/ui/badge';
 import {
     Search,
@@ -286,7 +287,7 @@ export default function Index({ admissions, filters, stats }: Props) {
                         {(fromDate || toDate) && (
                             <p className="text-sm text-gray-600">তারিখ: {fromDate || 'শুরু'} – {toDate || 'শেষ'}</p>
                         )}
-                        <p className="text-xs text-gray-500">প্রিন্টের সময়: {new Date().toLocaleString('bn-BD')}</p>
+                        <p className="text-xs text-gray-500">প্রিন্টের সময়: {formatDateTime(new Date())}</p>
                     </div>
                     <div className="member-admission-index-table-wrap overflow-x-auto print:overflow-visible">
                         <table className="w-full text-sm member-admission-index-table">
@@ -331,7 +332,7 @@ export default function Index({ admissions, filters, stats }: Props) {
                                             <td className="px-2.5 py-2 text-gray-700 text-xs">
                                                 {admission.tracking_state?.label ?? '—'}
                                             </td>
-                                            <td className="px-2.5 py-2 text-gray-600 whitespace-nowrap">{new Date(admission.created_at).toLocaleDateString('bn-BD')}</td>
+                                            <td className="px-2.5 py-2 text-gray-600 whitespace-nowrap">{formatDate(admission.created_at)}</td>
                                             <td className="px-2.5 py-2 print:hidden">
                                                 <div className="flex items-center gap-0.5">
                                                     <Link href={`/member-admissions/${admission.id}`} className="p-1.5 text-blue-600 hover:bg-blue-50 rounded" title="দেখুন"><Eye className="w-3.5 h-3.5" /></Link>

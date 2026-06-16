@@ -1,6 +1,7 @@
 import { useState, useEffect, useMemo } from 'react';
 import { Head, router, Link } from '@inertiajs/react';
 import AdminLayout from '@/layouts/admin-layout';
+import { formatDate } from '@/utils/dateUtils';
 import { Plus, Calendar, FileText, CheckCircle, XCircle, Clock, Search, Eye, Edit, Trash2, X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -404,7 +405,7 @@ export default function Index({ products, applications, flash }: Props) {
                                                     )}
                                                 </td>
                                                 <td className="px-3 py-2 text-gray-600">
-                                                    {new Date(application.created_at).toLocaleDateString('en-GB')}
+                                                    {formatDate(application.created_at)}
                                                 </td>
                                                 <td className="px-3 py-2">
                                                     {application.savingsProduct ? (
@@ -428,7 +429,7 @@ export default function Index({ products, applications, flash }: Props) {
                                                     </div>
                                                     {application.maturity_date && (
                                                         <div className="text-[10px] text-gray-500">
-                                                            {new Date(application.maturity_date).toLocaleDateString('en-GB')}
+                                                            {formatDate(application.maturity_date)}
                                                         </div>
                                                     )}
                                                 </td>

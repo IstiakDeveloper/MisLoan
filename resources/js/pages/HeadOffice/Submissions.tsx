@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import AdminLayout from '@/layouts/admin-layout';
+import { formatDate, formatDateTime } from '@/utils/dateUtils';
 import { Head, Link, router } from '@inertiajs/react';
 import {
     FileSpreadsheet,
@@ -276,8 +277,8 @@ export default function Submissions({ applications, zones, areas, branches, unre
                                     <td class="text-center">${member.loan_duration || '-'}</td>
                                     <td class="text-center">${member.phase_no || '-'}</td>
                                     <td>${member.project_name || '-'}</td>
-                                    <td>${member.loan_release_or_approval_date ? new Date(member.loan_release_or_approval_date).toLocaleDateString('bn-BD') : '-'}</td>
-                                    <td>${member.loan_distribution_date ? new Date(member.loan_distribution_date).toLocaleDateString('bn-BD') : '-'}</td>
+                                    <td>${member.loan_release_or_approval_date ? formatDate(member.loan_release_or_approval_date) : '-'}</td>
+                                    <td>${member.loan_distribution_date ? formatDate(member.loan_distribution_date) : '-'}</td>
                                     <td>${member.approved_by || '-'}</td>
                                     <td>${member.remarks || '-'}</td>
                                 </tr>
@@ -285,7 +286,7 @@ export default function Submissions({ applications, zones, areas, branches, unre
                         ).join('')}
                     </tbody>
                 </table>
-                <p style="margin-top: 15px; font-size: 9px; color: #666;">Generated on: ${new Date().toLocaleString()}</p>
+                <p style="margin-top: 15px; font-size: 9px; color: #666;">Generated on: ${formatDateTime(new Date())}</p>
             </body>
             </html>
         `;
@@ -594,10 +595,10 @@ export default function Submissions({ applications, zones, areas, branches, unre
                                                             {member.project_name || '-'}
                                                         </td>
                                                         <td className="px-3 py-3 text-sm text-gray-700">
-                                                            {member.loan_release_or_approval_date ? new Date(member.loan_release_or_approval_date).toLocaleDateString('bn-BD') : '-'}
+                                                            {member.loan_release_or_approval_date ? formatDate(member.loan_release_or_approval_date) : '-'}
                                                         </td>
                                                         <td className="px-3 py-3 text-sm text-gray-700">
-                                                            {member.loan_distribution_date ? new Date(member.loan_distribution_date).toLocaleDateString('bn-BD') : '-'}
+                                                            {member.loan_distribution_date ? formatDate(member.loan_distribution_date) : '-'}
                                                         </td>
                                                         <td className="px-3 py-3 text-sm text-gray-700">
                                                             {member.approved_by || '-'}

@@ -1,5 +1,6 @@
 import React from 'react';
 import { MemberAdmission } from '@/types/memberAdmission';
+import { formatDate } from '@/utils/dateUtils';
 
 interface Props {
     admission: MemberAdmission & {
@@ -28,15 +29,6 @@ interface Props {
     };
     /** Compact layout for print (smaller fonts, no photo box size) */
     printMode?: boolean;
-}
-
-function formatDate(dateStr: string | null | undefined): string {
-    if (!dateStr) return '';
-    try {
-        return new Date(dateStr).toLocaleDateString('en-GB', { day: '2-digit', month: '2-digit', year: 'numeric' });
-    } catch {
-        return '';
-    }
 }
 
 function num(v: number | null | undefined): string {

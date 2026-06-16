@@ -1,6 +1,7 @@
 import React, { useState, useRef } from 'react';
 import { Head, router, useForm } from '@inertiajs/react';
 import AdminLayout from '@/layouts/admin-layout';
+import { formatDate, formatDateTime } from '@/utils/dateUtils';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -202,15 +203,6 @@ export default function LoanApplicationShow({ loan, flash }: Props) {
     const printFormContent = () => {
         if (!formPrintRef.current || !selectedFormId) return;
         window.print();
-    };
-
-    const formatDate = (date: string | null) => {
-        if (!date) return 'N/A';
-        return new Date(date).toLocaleDateString('bn-BD', {
-            year: 'numeric',
-            month: 'long',
-            day: 'numeric'
-        });
     };
 
     const handleSubmitIssue = (e: React.FormEvent) => {
@@ -446,7 +438,7 @@ export default function LoanApplicationShow({ loan, flash }: Props) {
                                                                 <div class="header">
                                                                     <h1>ঋণ আবেদন সমস্যা ও উত্তর</h1>
                                                                     <p>আবেদন নং: ${loan.application_no}</p>
-                                                                    <p>তারিখ: ${new Date().toLocaleDateString('bn-BD')}</p>
+                                                                    <p>তারিখ: ${formatDate(new Date())}</p>
                                                                 </div>
                                                                 ${Array.from(printContent.children).map((item: any) => item.outerHTML).join('')}
                                                             </body>
@@ -530,7 +522,7 @@ export default function LoanApplicationShow({ loan, flash }: Props) {
                                                                 ? 'text-green-700'
                                                                 : 'text-red-700'
                                                         }`}>
-                                                            — {issue.reporter?.name}, {new Date(issue.created_at).toLocaleString('bn-BD')}
+                                                            — {issue.reporter?.name}, {formatDateTime(issue.created_at)}
                                                         </p>
                                                     </div>
                                                 </div>
@@ -547,7 +539,7 @@ export default function LoanApplicationShow({ loan, flash }: Props) {
                                                     {issue.responder && (
                                                         <p className="text-xs text-blue-700 mt-2">
                                                             — {issue.responder.name}
-                                                            {issue.responded_at && `, ${new Date(issue.responded_at).toLocaleString('bn-BD')}`}
+                                                            {issue.responded_at && `, ${formatDateTime(issue.responded_at)}`}
                                                         </p>
                                                     )}
                                                 </div>

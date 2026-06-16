@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Head, router, Link } from '@inertiajs/react';
 import AdminLayout from '@/layouts/admin-layout';
+import { formatDate } from '@/utils/dateUtils';
 import { Badge } from '@/components/ui/badge';
 import {
     Search,
@@ -556,7 +557,7 @@ export default function LoanApplications({ loans, filters, stats, zones, areas, 
                                             <td className="px-4 py-3 text-sm text-gray-600">
                                                 <div>
                                                     {loan.submitted_at
-                                                        ? new Date(loan.submitted_at).toLocaleDateString('bn-BD')
+                                                        ? formatDate(loan.submitted_at)
                                                         : '-'}
                                                 </div>
                                             </td>

@@ -292,7 +292,7 @@ export default function Index({ users, roles, zones, areas, branches, filters }:
                                     <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
                                     <input
                                         type="text"
-                                        placeholder="Search by name, email, or phone..."
+                                        placeholder="Search by name, username, email, or phone..."
                                         value={searchQuery}
                                         onChange={(e) => setSearchQuery(e.target.value)}
                                         className="pl-10 pr-4 py-2 w-full border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
@@ -436,6 +436,9 @@ export default function Index({ users, roles, zones, areas, branches, filters }:
                                                             </span>
                                                         )}
                                                     </div>
+                                                    {user.username && (
+                                                        <div className="text-sm text-gray-600">@{user.username}</div>
+                                                    )}
                                                     <div className="text-sm text-gray-500">{user.email}</div>
                                                 </div>
                                             </div>

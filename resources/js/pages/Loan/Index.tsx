@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Head, router } from '@inertiajs/react';
 import axios from 'axios';
 import AdminLayout from '@/layouts/admin-layout';
+import { formatDate, formatDateTime } from '@/utils/dateUtils';
 import {
     Search,
     Calendar,
@@ -457,7 +458,7 @@ export default function LoanIndex({
                                                         {issue.issue_description}
                                                     </p>
                                                     <p className="text-xs text-gray-500 mt-1">
-                                                        {issue.created_at}
+                                                        {formatDateTime(issue.created_at)}
                                                     </p>
 
                                                     {/* Show resolution response if available */}
@@ -665,7 +666,7 @@ export default function LoanIndex({
                                         <p className="text-xs text-gray-500">ঋণ ছাড়ের/অনুমোদনের তারিখ</p>
                                         <p className="font-medium text-gray-900">
                                             {viewMember.loan_release_or_approval_date
-                                                ? new Date(viewMember.loan_release_or_approval_date).toLocaleDateString('bn-BD')
+                                                ? formatDate(viewMember.loan_release_or_approval_date)
                                                 : '-'}
                                         </p>
                                     </div>
@@ -673,7 +674,7 @@ export default function LoanIndex({
                                         <p className="text-xs text-gray-500">ঋণ বিতরণের নতুন তারিখ</p>
                                         <p className="font-medium text-gray-900">
                                             {viewMember.loan_distribution_date
-                                                ? new Date(viewMember.loan_distribution_date).toLocaleDateString('bn-BD')
+                                                ? formatDate(viewMember.loan_distribution_date)
                                                 : '-'}
                                         </p>
                                     </div>
@@ -709,7 +710,7 @@ export default function LoanIndex({
                                                 }`}
                                             >
                                                 <p className="text-sm text-gray-800 font-medium">{issue.issue_description}</p>
-                                                <p className="text-xs text-gray-500 mt-1">{issue.created_at}</p>
+                                                <p className="text-xs text-gray-500 mt-1">{formatDateTime(issue.created_at)}</p>
                                                 {issue.resolution_notes && (
                                                     <p className="text-xs text-gray-700 mt-2 pt-2 border-t border-gray-300">
                                                         <strong>{issue.status === 'resolved' ? '✓ সমাধান:' : '✗ প্রত্যাখ্যান:'}</strong> {issue.resolution_notes}

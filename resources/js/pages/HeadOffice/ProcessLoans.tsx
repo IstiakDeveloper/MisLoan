@@ -1,6 +1,7 @@
 import React from 'react';
 import { Head, router } from '@inertiajs/react';
 import AdminLayout from '@/layouts/admin-layout';
+import { formatDate } from '@/utils/dateUtils';
 import { Search, Calendar, FileText, Eye, AlertCircle, CheckCircle } from 'lucide-react';
 
 interface Issue {
@@ -147,7 +148,7 @@ export default function ProcessLoans({ loans, filters }: Props) {
                                             <td className="px-4 py-3 text-sm font-medium">৳{Number(loan.requested_amount).toLocaleString()}</td>
                                             <td className="px-4 py-3 text-sm">{loan.branch?.name}</td>
                                             <td className="px-4 py-3 text-sm text-gray-600">
-                                                {loan.submitted_at ? new Date(loan.submitted_at).toLocaleDateString('bn-BD') : '-'}
+                                                {loan.submitted_at ? formatDate(loan.submitted_at) : '-'}
                                             </td>
                                             <td className="px-4 py-3">
                                                 {loan.issues?.length > 0 ? (

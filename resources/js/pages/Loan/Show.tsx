@@ -2,6 +2,7 @@ import React from 'react';
 import AdminLayout from '@/layouts/admin-layout';
 import { Head, Link } from '@inertiajs/react';
 import { ArrowLeft, Download, FileText, Building2, User, Calendar, CheckCircle, XCircle, Clock } from 'lucide-react';
+import { formatDate } from '@/utils/dateUtils';
 
 interface LoanMember {
     id: number;
@@ -81,15 +82,6 @@ export default function Show({ application }: Props) {
                 {config.label}
             </span>
         );
-    };
-
-    const formatDate = (dateString?: string) => {
-        if (!dateString) return 'N/A';
-        try {
-            return new Date(dateString).toLocaleDateString('en-GB');
-        } catch {
-            return dateString;
-        }
     };
 
     const formatCurrency = (amount: string | number) => {
@@ -264,7 +256,7 @@ export default function Show({ application }: Props) {
                                         </td>
                                         <td className="px-4 py-3 text-sm text-gray-700">{member.phase_no || '-'}</td>
                                         <td className="px-4 py-3 text-sm text-right text-gray-700">
-                                            {member.loan_distribution_date ? new Date(member.loan_distribution_date).toLocaleDateString('bn-BD') : '-'}
+                                            {member.loan_distribution_date ? formatDate(member.loan_distribution_date) : '-'}
                                         </td>
                                         <td className="px-4 py-3 text-sm">
                                             {member.approved_by ? (
@@ -276,7 +268,7 @@ export default function Show({ application }: Props) {
                                                 </div>
                                             ) : '-'}
                                         </td>
-                                        <td className="px-4 py-3 text-sm text-gray-700">{member.approval_date || '-'}</td>
+                                        <td className="px-4 py-3 text-sm text-gray-700">{formatDate(member.approval_date)}</td>
                                         <td className="px-4 py-3 text-sm">
                                             {member.guarantor_name ? (
                                                 <div>
@@ -287,7 +279,7 @@ export default function Show({ application }: Props) {
                                                 </div>
                                             ) : '-'}
                                         </td>
-                                        <td className="px-4 py-3 text-sm text-gray-700">{member.disbursement_date || '-'}</td>
+                                        <td className="px-4 py-3 text-sm text-gray-700">{formatDate(member.disbursement_date)}</td>
                                     </tr>
                                 ))
                             )}

@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import AdminLayout from '@/layouts/admin-layout';
+import { formatDate } from '@/utils/dateUtils';
 import { Head, router } from '@inertiajs/react';
 import {
     Building2,
@@ -52,6 +53,12 @@ interface Props {
     dateTo: string | null;
     myBranches: MyBranch[];
     dashboardType: string;
+    teamBasedStats?: {
+        draft_count: number;
+        pending_count: number;
+        approved_count: number;
+        rejected_count: number;
+    };
 }
 
 export default function BranchDashboard({
@@ -62,6 +69,7 @@ export default function BranchDashboard({
     dateFrom,
     dateTo,
     myBranches,
+    teamBasedStats,
 }: Props) {
     const [periodSelect, setPeriodSelect] = useState<'today' | 'monthly' | 'date_to_date'>(period);
     const [fromDate, setFromDate] = useState(dateFrom ?? '');
@@ -89,11 +97,11 @@ export default function BranchDashboard({
 
     const periodLabel =
         period === 'today'
-            ? 'Today (আজ)'
+            ? 'Today'
             : period === 'monthly'
-              ? 'This month (এই মাসে)'
+              ? 'This Month'
               : dateFrom && dateTo
-                ? `${dateFrom} – ${dateTo}`
+                ? `${formatDate(dateFrom)} – ${formatDate(dateTo)}`
                 : 'Period';
 
     return (
@@ -112,15 +120,15 @@ export default function BranchDashboard({
 
                     <div className="flex flex-wrap items-end gap-3">
                         <div className="flex items-center gap-2">
-                            <label className="text-sm text-gray-600 whitespace-nowrap">Period (পিরিয়ড):</label>
+                            <label className="text-sm text-gray-600 whitespace-nowrap">Period:</label>
                             <select
                                 value={periodSelect}
                                 onChange={(e) => setPeriodSelect(e.target.value as 'today' | 'monthly' | 'date_to_date')}
                                 className="rounded-lg border border-gray-300 text-sm py-2 pl-3 pr-8 focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                             >
-                                <option value="today">Today (আজ)</option>
-                                <option value="monthly">Monthly (মাসিক)</option>
-                                <option value="date_to_date">Date to date (তারিখ থেকে তারিখ)</option>
+                                <option value="today">Today</option>
+                                <option value="monthly">Monthly</option>
+                                <option value="date_to_date">Date to Date</option>
                             </select>
                         </div>
                         {periodSelect === 'date_to_date' && (
@@ -146,12 +154,12 @@ export default function BranchDashboard({
                             className="inline-flex items-center gap-2 px-4 py-2 bg-blue-600 text-white text-sm font-medium rounded-lg hover:bg-blue-700 focus:ring-2 focus:ring-blue-500 focus:ring-offset-2"
                         >
                             <Calendar size={16} />
-                            Apply (দেখুন)
+                            Apply
                         </button>
                     </div>
                 </div>
 
-                {/* Today badges – Check = পঠানো হয়েছে, CircleSlash + নাই = পঠানো হয়নি */}
+                {/* Today badges */}
                 <div className="flex flex-wrap gap-4">
                     <div
                         className={`flex items-center gap-3 px-4 py-3 rounded-lg border ${
@@ -162,9 +170,9 @@ export default function BranchDashboard({
                     >
                         <UserPlus size={20} className="flex-shrink-0" />
                         <span className="text-sm font-medium">
-                            Today&apos;s admissions submitted (আজকের অ্যাডমিশন পঠানো)
+                            Today&apos;s admissions submitted
                         </span>
-                        <span className="flex items-center gap-1.5 flex-shrink-0" title={todayBadges.today_admission_submitted ? 'পঠানো হয়েছে' : 'পঠানো হয়নি'}>
+                        <span className="flex items-center gap-1.5 flex-shrink-0" title={todayBadges.today_admission_submitted ? 'Submitted' : 'None'}>
                             {todayBadges.today_admission_submitted ? (
                                 <>
                                     <Check size={20} strokeWidth={2.5} className="text-emerald-600" />
@@ -177,7 +185,7 @@ export default function BranchDashboard({
                             ) : (
                                 <>
                                     <CircleSlash size={20} strokeWidth={2} className="text-gray-500" />
-                                    <span className="text-xs font-medium text-gray-500">নাই</span>
+                                    <span className="text-xs font-medium text-gray-500">None</span>
                                 </>
                             )}
                         </span>
@@ -191,9 +199,9 @@ export default function BranchDashboard({
                     >
                         <Send size={20} className="flex-shrink-0" />
                         <span className="text-sm font-medium">
-                            Today&apos;s loans submitted (আজকের লোন পঠানো)
+                            Today&apos;s loans submitted
                         </span>
-                        <span className="flex items-center gap-1.5 flex-shrink-0" title={todayBadges.today_loan_submitted ? 'পঠানো হয়েছে' : 'পঠানো হয়নি'}>
+                        <span className="flex items-center gap-1.5 flex-shrink-0" title={todayBadges.today_loan_submitted ? 'Submitted' : 'None'}>
                             {todayBadges.today_loan_submitted ? (
                                 <>
                                     <Check size={20} strokeWidth={2.5} className="text-emerald-600" />
@@ -206,7 +214,7 @@ export default function BranchDashboard({
                             ) : (
                                 <>
                                     <CircleSlash size={20} strokeWidth={2} className="text-gray-500" />
-                                    <span className="text-xs font-medium text-gray-500">নাই</span>
+                                    <span className="text-xs font-medium text-gray-500">None</span>
                                 </>
                             )}
                         </span>
@@ -230,7 +238,7 @@ export default function BranchDashboard({
                                     <p className="text-2xl font-semibold text-gray-900">
                                         {periodStats.loan_applications_submitted}
                                     </p>
-                                    <p className="text-xs text-gray-500">Loan applications submitted (লোন আবেদন পঠানো)</p>
+                                    <p className="text-xs text-gray-500">Loans Submitted</p>
                                 </div>
                             </div>
                         </div>
@@ -243,7 +251,7 @@ export default function BranchDashboard({
                                     <p className="text-2xl font-semibold text-gray-900">
                                         {periodStats.member_admissions_submitted}
                                     </p>
-                                    <p className="text-xs text-gray-500">Member admissions submitted (মেম্বার অ্যাডমিশন পঠানো)</p>
+                                    <p className="text-xs text-gray-500">Admissions Submitted</p>
                                 </div>
                             </div>
                         </div>
@@ -254,7 +262,7 @@ export default function BranchDashboard({
                                 </div>
                                 <div>
                                     <p className="text-2xl font-semibold text-gray-900">{periodStats.approved}</p>
-                                    <p className="text-xs text-gray-500">Approved (অনুমোদন)</p>
+                                    <p className="text-xs text-gray-500">Approved</p>
                                 </div>
                             </div>
                         </div>
@@ -265,7 +273,7 @@ export default function BranchDashboard({
                                 </div>
                                 <div>
                                     <p className="text-2xl font-semibold text-gray-900">{periodStats.issues_count}</p>
-                                    <p className="text-xs text-gray-500">Issues pending (সমস্যা)</p>
+                                    <p className="text-xs text-gray-500">Issues Pending</p>
                                 </div>
                             </div>
                         </div>
@@ -276,8 +284,42 @@ export default function BranchDashboard({
                                 </div>
                                 <div>
                                     <p className="text-2xl font-semibold text-gray-900">{periodStats.rejected}</p>
-                                    <p className="text-xs text-gray-500">Rejected (রিজেক্ট)</p>
+                                    <p className="text-xs text-gray-500">Rejected</p>
                                 </div>
+                            </div>
+                        </div>
+                    </div>
+                )}
+
+                {/* Team Based Approvals Stats */}
+                {teamBasedStats && (
+                    <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden mt-6">
+                        <div className="px-5 py-4 border-b border-gray-100 bg-slate-50/50 flex items-center justify-between">
+                            <h2 className="text-sm font-bold text-slate-800 flex items-center gap-2">
+                                <span className="w-2.5 h-2.5 rounded-full bg-blue-600 animate-pulse" />
+                                Team-Based Approvals Status
+                            </h2>
+                        </div>
+                        <div className="p-5 grid grid-cols-2 md:grid-cols-4 gap-4">
+                            <div className="p-4 rounded-xl border border-slate-100 bg-[#f8fafc] hover:shadow-md hover:border-slate-200 transition-all duration-300">
+                                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Draft</span>
+                                <h3 className="text-2xl font-extrabold text-slate-700 mt-1">{teamBasedStats.draft_count}</h3>
+                                <p className="text-[10px] text-slate-450 mt-1">Awaiting corrections</p>
+                            </div>
+                            <div className="p-4 rounded-xl border border-slate-100 bg-amber-50/30 hover:shadow-md hover:border-amber-100 transition-all duration-300">
+                                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Submitted</span>
+                                <h3 className="text-2xl font-extrabold text-amber-600 mt-1">{teamBasedStats.pending_count}</h3>
+                                <p className="text-[10px] text-amber-550 mt-1">Awaiting approval</p>
+                            </div>
+                            <div className="p-4 rounded-xl border border-slate-100 bg-emerald-50/30 hover:shadow-md hover:border-emerald-100 transition-all duration-300">
+                                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Approved</span>
+                                <h3 className="text-2xl font-extrabold text-emerald-600 mt-1">{teamBasedStats.approved_count}</h3>
+                                <p className="text-[10px] text-emerald-550 mt-1">Successfully approved</p>
+                            </div>
+                            <div className="p-4 rounded-xl border border-slate-100 bg-rose-50/30 hover:shadow-md hover:border-rose-100 transition-all duration-300">
+                                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Rejected</span>
+                                <h3 className="text-2xl font-extrabold text-rose-600 mt-1">{teamBasedStats.rejected_count}</h3>
+                                <p className="text-[10px] text-rose-555 mt-1">Returned/Rejected</p>
                             </div>
                         </div>
                     </div>
@@ -285,15 +327,15 @@ export default function BranchDashboard({
 
                 {!hasData && (
                     <div className="bg-white rounded-xl border border-gray-200 p-8 text-center text-gray-500 text-sm">
-                        No data for this branch. (এই শাখার জন্য কোনো ডেটা নেই।)
+                        No data available for this branch.
                     </div>
                 )}
 
-                {/* My branch(es) – Zone, Area & Branch name only */}
+                {/* My branch(es) */}
                 <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
                     <div className="px-5 py-4 border-b border-gray-100">
                         <h2 className="text-sm font-semibold text-gray-900">
-                            My branch (আমার শাখা) – Zone, Area & Branch
+                            Assigned Branches
                         </h2>
                     </div>
                     <div className="p-5">
@@ -314,12 +356,12 @@ export default function BranchDashboard({
                                             {branch.code && (
                                                 <p className="text-xs text-gray-500 mt-0.5">Code: {branch.code}</p>
                                             )}
-                                            <p className="text-sm text-gray-600 mt-1.5">
-                                                <span className="font-medium text-gray-700">{branch.area?.zone?.name}</span>
+                                            <p className="text-sm text-gray-600 mt-1.5 font-medium">
+                                                <span>{branch.area?.zone?.name}</span>
                                                 <span className="mx-1.5 text-gray-400">→</span>
-                                                <span className="font-medium text-gray-700">{branch.area?.name}</span>
+                                                <span>{branch.area?.name}</span>
                                                 <span className="mx-1.5 text-gray-400">→</span>
-                                                <span className="font-medium text-gray-700">{branch.name}</span>
+                                                <span>{branch.name}</span>
                                             </p>
                                         </div>
                                     </div>

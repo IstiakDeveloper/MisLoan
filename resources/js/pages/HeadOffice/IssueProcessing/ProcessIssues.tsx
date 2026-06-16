@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Head, router } from '@inertiajs/react';
 import axios from 'axios';
 import AdminLayout from '@/layouts/admin-layout';
+import { formatDateTime } from '@/utils/dateUtils';
 import {
     ChevronRight,
     MessageCircle,
@@ -369,7 +370,7 @@ export default function ProcessIssues({
                                                         <p className="font-medium text-gray-900">{msg.user_name}</p>
                                                         <p className="text-gray-700 mt-1">{msg.message}</p>
                                                         <p className="text-xs text-gray-500 mt-1">
-                                                            {new Date(msg.created_at).toLocaleString('bn-BD')}
+                                                            {formatDateTime(msg.created_at)}
                                                         </p>
                                                     </div>
                                                 ))}

@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { Head, router, useForm } from '@inertiajs/react';
 import AdminLayout from '@/layouts/admin-layout';
+import { formatDate, formatDateTime } from '@/utils/dateUtils';
 import { Search, Calendar, FileText, CheckCircle, AlertCircle, X, Eye, UserPlus, XCircle } from 'lucide-react';
 
 interface Issue {
@@ -298,7 +299,7 @@ export default function ProcessAdmissions({ admissions, filters }: Props) {
                                                 </div>
                                             </td>
                                             <td className="px-4 py-3 text-sm text-gray-600">
-                                                {new Date(admission.submitted_at).toLocaleDateString()}
+                                                {formatDate(admission.submitted_at)}
                                             </td>
                                             <td className="px-4 py-3">
                                                 {admission.issues.length > 0 ? (
@@ -437,7 +438,7 @@ export default function ProcessAdmissions({ admissions, filters }: Props) {
                                             <div key={issue.id} className="p-3 bg-gray-50 border border-gray-200 rounded text-sm">
                                                 <p className="text-gray-900">{issue.issue_description}</p>
                                                 <p className="text-xs text-gray-600 mt-1">
-                                                    By: {issue.reporter.name} on {new Date(issue.created_at).toLocaleString()}
+                                                    By: {issue.reporter.name} on {formatDateTime(issue.created_at)}
                                                 </p>
                                             </div>
                                         ))}
@@ -516,7 +517,7 @@ export default function ProcessAdmissions({ admissions, filters }: Props) {
                                 </div>
                                 <div>
                                     <p className="text-sm text-gray-600">Submitted At</p>
-                                    <p className="font-medium">{new Date(selectedAdmission.submitted_at).toLocaleString()}</p>
+                                    <p className="font-medium">{formatDateTime(selectedAdmission.submitted_at)}</p>
                                 </div>
                                 {selectedAdmission.revision_count && selectedAdmission.revision_count > 0 && (
                                     <div className="col-span-2">

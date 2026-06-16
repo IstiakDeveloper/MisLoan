@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Head, router, Link } from '@inertiajs/react';
 import AdminLayout from '@/layouts/admin-layout';
 import { Search, Filter, ChevronLeft, ChevronRight, FileText, X, Landmark, Eye } from 'lucide-react';
+import { formatDate } from '@/utils/dateUtils';
 
 interface Zone {
     id: number;
@@ -433,7 +434,7 @@ export default function SavingsApplications({
                                                     </span>
                                                 </td>
                                                 <td className="px-4 py-3 text-sm text-gray-600">
-                                                    {new Date(app.created_at).toLocaleDateString('bn-BD')}
+                                                    {formatDate(app.created_at)}
                                                 </td>
                                                 <td className="px-4 py-3 text-center">
                                                     <Link

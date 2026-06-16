@@ -1,4 +1,5 @@
 import AdminLayout from '@/layouts/admin-layout';
+import { formatDate } from '@/utils/dateUtils';
 import { Head, Link, router } from '@inertiajs/react';
 import { useMemo } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -284,18 +285,18 @@ export default function Show({ application, fromHeadOffice = false, backUrl = '/
                                 <span className="text-gray-500">Maturity Date (পরিপক্কতা তারিখ)</span>
                                 <p className="font-medium">
                                     {application.maturity_date
-                                        ? new Date(application.maturity_date).toLocaleDateString('en-GB')
+                                        ? formatDate(application.maturity_date)
                                         : '—'}
                                 </p>
                             </div>
                             <div>
                                 <span className="text-gray-500">Created At (তৈরির তারিখ)</span>
-                                <p className="font-medium">{new Date(application.created_at).toLocaleDateString('en-GB')}</p>
+                                <p className="font-medium">{formatDate(application.created_at)}</p>
                             </div>
                             {application.submitted_at && (
                                 <div>
                                     <span className="text-gray-500">Submitted At (জমার তারিখ)</span>
-                                    <p className="font-medium">{new Date(application.submitted_at).toLocaleDateString('en-GB')}</p>
+                                    <p className="font-medium">{formatDate(application.submitted_at)}</p>
                                 </div>
                             )}
                         </div>

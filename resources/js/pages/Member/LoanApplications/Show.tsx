@@ -1,4 +1,5 @@
 import AdminLayout from '@/layouts/admin-layout';
+import { formatDate } from '@/utils/dateUtils';
 import { Head, Link, router, usePage } from '@inertiajs/react';
 import { useState, useRef } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -202,15 +203,6 @@ export default function Show({ application, availableApprovers = [], routes }: P
         if (!formPrintRef.current || !selectedFormId) return;
         // একই পেজ থেকে প্রিন্ট = দেখতে যেমন, প্রিন্টও তেমন (WYSIWYG)। প্রিন্ট CSS শুধু ফর্মটুকু দেখায়।
         window.print();
-    };
-
-    const formatDate = (date: string | null) => {
-        if (!date) return 'N/A';
-        return new Date(date).toLocaleDateString('bn-BD', {
-            year: 'numeric',
-            month: 'long',
-            day: 'numeric'
-        });
     };
 
     const StatusIcon = statusConfig[application.status as keyof typeof statusConfig]?.icon || AlertCircle;

@@ -1,5 +1,6 @@
 import { Head } from '@inertiajs/react';
 import { useEffect } from 'react';
+import { formatDate } from '@/utils/dateUtils';
 
 interface Zone {
     id: number;
@@ -113,19 +114,6 @@ export default function AdmissionMembersPrint({ admissions, filters, zones, area
         return () => clearTimeout(timer);
     }, []);
 
-    const formatDate = (dateString: string | null | undefined) => {
-        if (!dateString) return '—';
-        try {
-            return new Date(dateString).toLocaleDateString('bn-BD', {
-                day: '2-digit',
-                month: '2-digit',
-                year: 'numeric',
-            });
-        } catch {
-            return '—';
-        }
-    };
-
     const selectedZone = filters.zone_id ? zones.find(z => z.id === filters.zone_id) : null;
     const selectedArea = filters.area_id ? areas.find(a => a.id === filters.area_id) : null;
     const selectedBranch = filters.branch_id ? branches.find(b => b.id === filters.branch_id) : null;
@@ -144,7 +132,7 @@ export default function AdmissionMembersPrint({ admissions, filters, zones, area
         ? `${formatDate(filters.date_from)} - ${formatDate(filters.date_to)}`
         : filters.date_to
         ? formatDate(filters.date_to)
-        : formatDate(new Date().toISOString());
+        : formatDate(new Date());
 
     const statusLabels: Record<string, string> = {
         draft: 'খসড়া',

@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { Head, router } from '@inertiajs/react';
 import AdminLayout from '@/layouts/admin-layout';
+import { formatDate } from '@/utils/dateUtils';
 import { CheckCircle, XCircle, RotateCcw, Eye, MessageSquare, Share2 } from 'lucide-react';
 
 interface EscalationApprover {
@@ -235,7 +236,7 @@ export default function Index({ approvals, loanApprovals = [] }: Props) {
                                             )}
                                         </td>
                                         <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                                            {new Date(approval.submitted_at).toLocaleDateString()}
+                                            {formatDate(approval.submitted_at)}
                                         </td>
                                         <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
                                             <div className="flex items-center justify-end gap-2">
@@ -313,7 +314,7 @@ export default function Index({ approvals, loanApprovals = [] }: Props) {
                                             <td className="px-6 py-4 text-sm text-gray-900">{la.branch_name}</td>
                                             <td className="px-6 py-4 text-sm">৳{Number(la.requested_amount).toLocaleString()}</td>
                                             <td className="px-6 py-4 text-sm text-gray-500">
-                                                {la.submitted_at ? new Date(la.submitted_at).toLocaleDateString('bn-BD') : '-'}
+                                                {la.submitted_at ? formatDate(la.submitted_at) : '-'}
                                             </td>
                                             <td className="px-6 py-4 text-right">
                                                 <div className="flex items-center justify-end gap-2">

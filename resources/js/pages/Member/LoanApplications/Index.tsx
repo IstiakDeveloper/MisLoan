@@ -1,6 +1,7 @@
 import { useState, useMemo, useEffect } from 'react';
 import { Head, router, useForm, usePage } from '@inertiajs/react';
 import AdminLayout from '@/layouts/admin-layout';
+import { formatDate } from '@/utils/dateUtils';
 import {
     Plus, Calendar, FileText, CheckCircle, XCircle, Clock,
     Search, Eye, Edit, Trash2, X, AlertTriangle, MessageSquare
@@ -682,7 +683,7 @@ export default function Index({ categories, applications, stats, selectedDate, d
                                                 })()}
                                             </td>
                                             <td className="px-3 py-2 text-gray-600">
-                                                {new Date(app.created_at).toLocaleDateString('en-GB')}
+                                                {formatDate(app.created_at)}
                                             </td>
                                             <td className="px-3 py-2">
                                                 <div className="font-medium text-gray-900">{app.loan_product.product_name}</div>
@@ -953,7 +954,7 @@ export default function Index({ categories, applications, stats, selectedDate, d
                                                                                 <div key={idx} className="text-[10px] ml-2">
                                                                                     • {loan.product_name_bn || loan.product_name} - আবেদন: {loan.application_no}
                                                                                     {loan.expected_end_date && (
-                                                                                        <span className="text-gray-600"> - মেয়াদ শেষ: {new Date(loan.expected_end_date).toLocaleDateString('bn-BD')}</span>
+                                                                                        <span className="text-gray-600"> - মেয়াদ শেষ: {formatDate(loan.expected_end_date)}</span>
                                                                                     )}
                                                                                     {loan.loan_term_months && (
                                                                                         <span className="text-gray-600"> ({loan.loan_term_months} মাস)</span>
@@ -1030,7 +1031,7 @@ export default function Index({ categories, applications, stats, selectedDate, d
                                                                     <div key={idx} className="text-[10px] ml-2">
                                                                         • {loan.product_name_bn || loan.product_name} - {loan.application_no}
                                                                         {loan.expected_end_date && (
-                                                                            <span> (মেয়াদ শেষ: {new Date(loan.expected_end_date).toLocaleDateString('bn-BD')})</span>
+                                                                            <span> (মেয়াদ শেষ: {formatDate(loan.expected_end_date)})</span>
                                                                         )}
                                                                         {loan.loan_term_months && !loan.expected_end_date && (
                                                                             <span> ({loan.loan_term_months} মাস)</span>

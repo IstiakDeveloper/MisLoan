@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { Head, router } from '@inertiajs/react';
 import axios from 'axios';
 import AdminLayout from '@/layouts/admin-layout';
+import { formatDate } from '@/utils/dateUtils';
 import { ChevronRight, CheckCircle, Trophy, Mail, Calendar, ArrowLeft } from 'lucide-react';
 
 interface Props {
@@ -206,7 +207,7 @@ export default function ApprovalPage({
                                 <p className="text-sm text-gray-600">আবেদনের তারিখ</p>
                                 <p className="text-lg font-semibold text-gray-900 flex items-center gap-2">
                                     <Calendar className="w-4 h-4" />
-                                    {new Date(application.created_at).toLocaleDateString('bn-BD')}
+                                    {formatDate(application.created_at)}
                                 </p>
                             </div>
                             <div>
