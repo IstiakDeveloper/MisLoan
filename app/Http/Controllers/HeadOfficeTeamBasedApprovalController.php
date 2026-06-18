@@ -25,9 +25,9 @@ class HeadOfficeTeamBasedApprovalController extends Controller
         // Default date filter - current date
         $dateFrom = $request->input('date_from', now()->toDateString());
         $dateTo = $request->input('date_to', now()->toDateString());
-
-        $startOfDay = Carbon::parse($dateFrom)->startOfDay();
-        $endOfDay = Carbon::parse($dateTo)->endOfDay();
+        $approverId = $request->filled('approver_id') ? (int) $request->input('approver_id') : null;
+        $perPage = (int) $request->input('per_page', 100);
+        $perPage = in_array($perPage, [20, 50, 100, 200, 500], true) ? $perPage : 100;
 
         // Base query on items
         $query = TeamBasedApprovalItem::query()
@@ -46,16 +46,29 @@ class HeadOfficeTeamBasedApprovalController extends Controller
 
         // Date range filter on sheet_date
         if ($dateFrom && $dateTo) {
-            $query->whereHas('approval', function ($q) use ($startOfDay, $endOfDay) {
-                $q->whereBetween('sheet_date', [$startOfDay, $endOfDay]);
+            $query->whereHas('approval', function ($q) use ($dateFrom, $dateTo) {
+                $q->whereBetween('sheet_date', [$dateFrom, $dateTo]);
             });
         } elseif ($dateFrom) {
-            $query->whereHas('approval', function ($q) use ($startOfDay) {
-                $q->where('sheet_date', '>=', $startOfDay);
+            $query->whereHas('approval', function ($q) use ($dateFrom) {
+                $q->where('sheet_date', '>=', $dateFrom);
             });
         } elseif ($dateTo) {
-            $query->whereHas('approval', function ($q) use ($endOfDay) {
-                $q->where('sheet_date', '<=', $endOfDay);
+            $query->whereHas('approval', function ($q) use ($dateTo) {
+                $q->where('sheet_date', '<=', $dateTo);
+            });
+        }
+
+        // Approver filter (assigned on sheet)
+        if ($approverId) {
+            $query->whereHas('approval', function ($q) use ($approverId) {
+                $q->where(function ($inner) use ($approverId) {
+                    $inner->where('area_manager_id', $approverId)
+                        ->orWhere('zone_manager_id', $approverId)
+                        ->orWhere('admf_id', $approverId)
+                        ->orWhere('dmf_id', $approverId)
+                        ->orWhere('ed_id', $approverId);
+                });
             });
         }
 
@@ -128,11 +141,11 @@ class HeadOfficeTeamBasedApprovalController extends Controller
             ->join('team_based_approvals', 'team_based_approvals.id', '=', 'team_based_approval_items.team_based_approval_id');
 
         if ($dateFrom && $dateTo) {
-            $statsItemsQuery->whereBetween('team_based_approvals.sheet_date', [$startOfDay, $endOfDay]);
+            $statsItemsQuery->whereBetween('team_based_approvals.sheet_date', [$dateFrom, $dateTo]);
         } elseif ($dateFrom) {
-            $statsItemsQuery->where('team_based_approvals.sheet_date', '>=', $startOfDay);
+            $statsItemsQuery->where('team_based_approvals.sheet_date', '>=', $dateFrom);
         } elseif ($dateTo) {
-            $statsItemsQuery->where('team_based_approvals.sheet_date', '<=', $endOfDay);
+            $statsItemsQuery->where('team_based_approvals.sheet_date', '<=', $dateTo);
         }
 
         if ($request->filled('zone_id')) {
@@ -151,6 +164,16 @@ class HeadOfficeTeamBasedApprovalController extends Controller
 
         if ($request->filled('branch_id')) {
             $statsItemsQuery->where('team_based_approvals.branch_id', (int) $request->input('branch_id'));
+        }
+
+        if ($approverId) {
+            $statsItemsQuery->where(function ($q) use ($approverId) {
+                $q->where('team_based_approvals.area_manager_id', $approverId)
+                    ->orWhere('team_based_approvals.zone_manager_id', $approverId)
+                    ->orWhere('team_based_approvals.admf_id', $approverId)
+                    ->orWhere('team_based_approvals.dmf_id', $approverId)
+                    ->orWhere('team_based_approvals.ed_id', $approverId);
+            });
         }
 
         if ($request->filled('search')) {
@@ -176,18 +199,13 @@ class HeadOfficeTeamBasedApprovalController extends Controller
             ->pluck('count', 'computed_status')
             ->toArray();
 
-        $stats = [
-            'total' => array_sum($rawCounts),
-            'draft' => $rawCounts['draft'] ?? 0,
-            'pending' => ($rawCounts['pending'] ?? 0) + ($rawCounts['under_review'] ?? 0) + ($rawCounts['forwarded'] ?? 0),
-            'approved' => $rawCounts['approved'] ?? 0,
-            'rejected' => $rawCounts['rejected'] ?? 0,
-        ];
+        $stats = $this->buildItemStatusStats($rawCounts);
 
         // Paginated items response
         $approvals = $query
             ->orderBy('id', 'desc')
-            ->paginate(100)
+            ->paginate($perPage)
+            ->withQueryString()
             ->through(function (TeamBasedApprovalItem $item) {
                 $approval = $item->approval;
                 $approver = $approval->areaManager
@@ -247,7 +265,9 @@ class HeadOfficeTeamBasedApprovalController extends Controller
                         'area_name' => $approval->branch?->area?->name,
                         'zone_name' => $approval->branch?->area?->zone?->name,
                     ],
-                    'proposed_total' => $approval->items->sum('proposed_loan_amount'),
+                    'proposed_total' => $item->proposed_loan_amount !== null
+                        ? (int) round((float) $item->proposed_loan_amount)
+                        : 0,
                     'approved_total_amount' => $approval->approved_total_amount !== null ? (int) round((float) $approval->approved_total_amount) : null,
                     'creator_name' => $approval->creator?->name,
                     'approver_name' => $approver?->name,
@@ -257,21 +277,85 @@ class HeadOfficeTeamBasedApprovalController extends Controller
         $zones = Zone::active()->orderBy('name')->get();
         $areas = Area::active()->with('zone')->orderBy('name')->get();
         $branches = Branch::active()->with('area.zone')->orderBy('name')->get();
+        $approverOptions = $this->buildHeadOfficeApproverOptions();
 
         return Inertia::render('HeadOffice/TeamBasedApprovals', [
             'approvals' => $approvals,
             'filters' => array_merge(
-                $request->only(['status', 'search', 'zone_id', 'area_id', 'branch_id', 'date_from', 'date_to']),
+                $request->only(['status', 'search', 'zone_id', 'area_id', 'branch_id', 'date_from', 'date_to', 'approver_id', 'per_page']),
                 [
                     'date_from' => $dateFrom,
                     'date_to' => $dateTo,
+                    'per_page' => $perPage,
                 ]
             ),
             'stats' => $stats,
             'zones' => $zones,
             'areas' => $areas,
             'branches' => $branches,
+            'approverOptions' => $approverOptions,
         ]);
+    }
+
+    /**
+     * @param  array<string, mixed>  $rawCounts
+     * @return array{total: int, draft: int, pending: int, approved: int, rejected: int}
+     */
+    private function buildItemStatusStats(array $rawCounts): array
+    {
+        $countFor = fn (string $key): int => (int) ($rawCounts[$key] ?? 0);
+
+        return [
+            'total' => array_sum(array_map('intval', array_values($rawCounts))),
+            'draft' => $countFor('draft'),
+            'pending' => $countFor('pending') + $countFor('under_review') + $countFor('forwarded'),
+            'approved' => $countFor('approved'),
+            'rejected' => $countFor('rejected'),
+        ];
+    }
+
+    /**
+     * @return array<int, array{id: int, name: string, role_name: string}>
+     */
+    private function buildHeadOfficeApproverOptions(): array
+    {
+        $approverRoleOrder = [Role::ED, Role::DMF, Role::ADMF, Role::ZONE_MANAGER, Role::AREA_MANAGER];
+
+        $approverUserIds = User::query()
+            ->active()
+            ->whereHas('role', function ($q) {
+                $q->whereIn('name', array_merge(
+                    [Role::AREA_MANAGER, Role::ZONE_MANAGER],
+                    Role::approverRoleNames()
+                ));
+            })
+            ->pluck('id');
+
+        $reviewerIds = TeamBasedApprovalReview::query()
+            ->whereHas('approval', fn ($q) => $q->where('status', '!=', 'draft'))
+            ->distinct()
+            ->pluck('user_id');
+
+        $approverUserIds = $approverUserIds->merge($reviewerIds)->filter()->unique()->values();
+
+        return User::query()
+            ->with('role:id,name,display_name')
+            ->whereIn('id', $approverUserIds)
+            ->get()
+            ->sortBy(function (User $u) use ($approverRoleOrder) {
+                $roleName = $u->role?->name ?? '';
+                $rank = array_search($roleName, $approverRoleOrder, true);
+
+                return ($rank !== false ? $rank : 99).'_'.$u->name;
+            })
+            ->values()
+            ->map(fn (User $u) => [
+                'id' => $u->id,
+                'name' => $u->name,
+                'role_name' => $u->role->display_name ?? $u->role->name,
+            ])
+            ->values()
+            ->all();
     }
 
     /**

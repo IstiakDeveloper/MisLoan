@@ -107,6 +107,8 @@ interface Props {
         branch_id?: number | string;
         date_from?: string;
         date_to?: string;
+        approver_id?: number | string;
+        per_page?: number | string;
     };
     stats: {
         total: number;
@@ -118,14 +120,16 @@ interface Props {
     zones: Zone[];
     areas: Area[];
     branches: Branch[];
+    approverOptions: { id: number; name: string; role_name: string }[];
 }
 
-export default function TeamBasedApprovals({ approvals, filters, stats, zones, areas, branches }: Props) {
+export default function TeamBasedApprovals({ approvals, filters, stats, zones, areas, branches, approverOptions }: Props) {
     const [statusFilter, setStatusFilter] = useState(filters.status || '');
     const [search, setSearch] = useState(filters.search || '');
     const [zoneId, setZoneId] = useState((filters.zone_id ?? '').toString());
     const [areaId, setAreaId] = useState((filters.area_id ?? '').toString());
     const [branchId, setBranchId] = useState((filters.branch_id ?? '').toString());
+    const [approverId, setApproverId] = useState((filters.approver_id ?? '').toString());
     const [dateFrom, setDateFrom] = useState(filters.date_from || '');
     const [dateTo, setDateTo] = useState(filters.date_to || '');
     const [perPage, setPerPage] = useState((filters.per_page ?? 100).toString());
@@ -138,6 +142,7 @@ export default function TeamBasedApprovals({ approvals, filters, stats, zones, a
         setZoneId((filters.zone_id ?? '').toString());
         setAreaId((filters.area_id ?? '').toString());
         setBranchId((filters.branch_id ?? '').toString());
+        setApproverId((filters.approver_id ?? '').toString());
         setDateFrom(filters.date_from || '');
         setDateTo(filters.date_to || '');
         setPerPage((filters.per_page ?? 100).toString());
@@ -150,6 +155,7 @@ export default function TeamBasedApprovals({ approvals, filters, stats, zones, a
             zone_id: zoneId || undefined,
             area_id: areaId || undefined,
             branch_id: branchId || undefined,
+            approver_id: approverId || undefined,
             date_from: dateFrom || undefined,
             date_to: dateTo || undefined,
             per_page: perPage || undefined,
@@ -182,6 +188,11 @@ export default function TeamBasedApprovals({ approvals, filters, stats, zones, a
     const handleBranchChange = (branch: string) => {
         setBranchId(branch);
         router.get('/head-office/team-based-approvals', getActiveParams({ branch_id: branch || undefined, page: 1 }), { preserveState: true });
+    };
+
+    const handleApproverChange = (approver: string) => {
+        setApproverId(approver);
+        router.get('/head-office/team-based-approvals', getActiveParams({ approver_id: approver || undefined, page: 1 }), { preserveState: true });
     };
 
     const handlePerPageChange = (newPerPage: string) => {
@@ -512,7 +523,7 @@ export default function TeamBasedApprovals({ approvals, filters, stats, zones, a
 
                 {/* Filters */}
                 <div className="bg-slate-50/50 border border-slate-200/80 rounded-2xl p-4 space-y-4 ho-teambased-filters print:hidden shadow-sm">
-                    <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-3">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
                         <div className="flex flex-col gap-1">
                             <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Search Member</span>
                             <input
@@ -583,6 +594,22 @@ export default function TeamBasedApprovals({ approvals, filters, stats, zones, a
                                     .map((b) => (
                                         <option key={b.id} value={b.id}>{b.name} ({b.code})</option>
                                     ))}
+                            </select>
+                        </div>
+
+                        <div className="flex flex-col gap-1">
+                            <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Approver</span>
+                            <select
+                                value={approverId}
+                                onChange={(e) => handleApproverChange(e.target.value)}
+                                className="w-full border border-slate-300 rounded-lg px-3 py-2 text-xs bg-white focus:outline-none focus:ring-2 focus:ring-blue-500/15 focus:border-blue-500 transition-all text-slate-800"
+                            >
+                                <option value="">All Approvers</option>
+                                {approverOptions.map((u) => (
+                                    <option key={u.id} value={u.id}>
+                                        {u.name} ({u.role_name})
+                                    </option>
+                                ))}
                             </select>
                         </div>
                     </div>
