@@ -1,35 +1,36 @@
 <?php
 
-use Illuminate\Support\Facades\Route;
-use Illuminate\Support\Facades\Redirect;
-use Inertia\Inertia;
-use App\Http\Controllers\OrganizationController;
-use App\Http\Controllers\RoleController;
-use App\Http\Controllers\UserController;
-use App\Http\Controllers\DashboardController;
-use App\Http\Controllers\LoanApplicationController;
-use App\Http\Controllers\IssueProcessingController;
-use App\Http\Controllers\SamityController;
-use App\Http\Controllers\MemberCategoryController;
-use App\Http\Controllers\MemberAdmissionController;
 use App\Http\Controllers\ApprovalController;
-use App\Http\Controllers\ProfileController;
+use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\HeadOfficeAdmissionController;
 use App\Http\Controllers\HeadOfficeLoanController;
-use App\Http\Controllers\HeadOfficeTeamBasedApprovalController;
 use App\Http\Controllers\HeadOfficeSavingsController;
-use App\Http\Controllers\TeamBasedApprovalController;
-use App\Http\Controllers\TeamBasedApprovalPrintController;
+use App\Http\Controllers\HeadOfficeTeamBasedApprovalController;
+use App\Http\Controllers\IssueProcessingController;
+use App\Http\Controllers\LoanApplicationController;
 use App\Http\Controllers\LoanCategoryController;
 use App\Http\Controllers\LoanProductController;
-use App\Http\Controllers\SavingsProductController;
 use App\Http\Controllers\MaintenanceController;
+use App\Http\Controllers\MemberAdmissionController;
+use App\Http\Controllers\MemberCategoryController;
+use App\Http\Controllers\OrganizationController;
+use App\Http\Controllers\ProfileController;
+use App\Http\Controllers\RoleController;
+use App\Http\Controllers\SamityController;
+use App\Http\Controllers\SavingsProductController;
+use App\Http\Controllers\TeamBasedApprovalController;
+use App\Http\Controllers\TeamBasedApprovalPrintController;
+use App\Http\Controllers\UserController;
+use Illuminate\Support\Facades\Redirect;
+use Illuminate\Support\Facades\Route;
+use Inertia\Inertia;
 
 // Home: unauthenticated → login; authenticated → dashboard (no Inertia, plain redirect)
 Route::get('/', function () {
     if (auth()->check()) {
         return Redirect::route('dashboard', [], 302);
     }
+
     return Redirect::route('login', [], 302);
 })->name('home');
 
@@ -81,10 +82,10 @@ Route::middleware(['auth', 'verified'])->group(function () {
 
     // Role Management Routes - Only for SuperAdmin/Head Office
     Route::middleware('head.office')->group(function () {
-    Route::get('roles', [RoleController::class, 'index'])->name('roles.index');
-    Route::post('roles', [RoleController::class, 'store'])->name('roles.store');
-    Route::put('roles/{role}', [RoleController::class, 'update'])->name('roles.update');
-    Route::delete('roles/{role}', [RoleController::class, 'destroy'])->name('roles.destroy');
+        Route::get('roles', [RoleController::class, 'index'])->name('roles.index');
+        Route::post('roles', [RoleController::class, 'store'])->name('roles.store');
+        Route::put('roles/{role}', [RoleController::class, 'update'])->name('roles.update');
+        Route::delete('roles/{role}', [RoleController::class, 'destroy'])->name('roles.destroy');
     });
 
     // User Management Routes - Only for SuperAdmin/Head Office
@@ -184,6 +185,7 @@ Route::middleware(['auth', 'verified'])->group(function () {
 
         // Approver-side: list & decision
         Route::get('for-approver', [TeamBasedApprovalController::class, 'approverIndex'])->name('approver-index');
+        Route::post('reviews/clear-history', [TeamBasedApprovalController::class, 'clearReviewHistory'])->name('reviews.clear-history');
         Route::post('reviews/{review}/decide', [TeamBasedApprovalController::class, 'decide'])->name('reviews.decide');
         Route::post('reviews/{review}/update-item', [TeamBasedApprovalController::class, 'updateItem'])->name('reviews.update-item');
         Route::post('{teamBasedApproval}/forward', [TeamBasedApprovalController::class, 'forward'])->name('forward');
@@ -293,6 +295,8 @@ Route::middleware(['auth', 'verified'])->group(function () {
         Route::put('team-based-approvals/{teamBasedApproval}', [HeadOfficeTeamBasedApprovalController::class, 'update'])->name('team-based-approvals.update');
         Route::delete('team-based-approvals/{teamBasedApproval}', [HeadOfficeTeamBasedApprovalController::class, 'destroy'])->name('team-based-approvals.destroy');
         // Single item (row) actions from overview
+        Route::delete('team-based-approvals/items/bulk', [HeadOfficeTeamBasedApprovalController::class, 'destroyItems'])->name('team-based-approvals.items.bulk-destroy');
+        Route::post('team-based-approvals/items/clear-history', [HeadOfficeTeamBasedApprovalController::class, 'clearItemsReviewHistory'])->name('team-based-approvals.items.clear-history');
         Route::get('team-based-approvals/items/{item}/edit', [HeadOfficeTeamBasedApprovalController::class, 'editItem'])->name('team-based-approvals.items.edit');
         Route::put('team-based-approvals/items/{item}', [HeadOfficeTeamBasedApprovalController::class, 'updateItem'])->name('team-based-approvals.items.update');
         Route::delete('team-based-approvals/items/{item}', [HeadOfficeTeamBasedApprovalController::class, 'destroyItem'])->name('team-based-approvals.items.destroy');
@@ -311,8 +315,6 @@ Route::middleware(['auth', 'verified'])->group(function () {
         Route::get('export/excel', [LoanApplicationController::class, 'exportExcel'])->name('export.excel');
         Route::get('export/pdf', [LoanApplicationController::class, 'exportPdf'])->name('export.pdf');
     });
-
-
 
     // Issue Processing Workflow - Only for Head Office
     Route::prefix('issue-processing')->name('issue-processing.')->middleware('head.office')->group(function () {
@@ -344,8 +346,6 @@ Route::middleware(['auth', 'verified'])->group(function () {
         Route::get('application/{id}/issues', [IssueProcessingController::class, 'getUpdatedIssues'])->name('api.application.issues');
     });
 
-
-
     // Loan Application Routes - Only for Branch Users (not SuperAdmin/Head Office)
     Route::prefix('loan')->name('loan.')->middleware('branch.user')->group(function () {
         Route::get('/', [LoanApplicationController::class, 'index'])->name('index');
@@ -370,16 +370,17 @@ Route::middleware(['auth', 'verified'])->group(function () {
 Route::get('/storage-link', function () {
     try {
         \Illuminate\Support\Facades\Artisan::call('storage:link');
+
         return response()->json([
             'success' => true,
             'message' => 'Storage link created successfully!',
-            'output' => \Illuminate\Support\Facades\Artisan::output()
+            'output' => \Illuminate\Support\Facades\Artisan::output(),
         ]);
     } catch (\Exception $e) {
         return response()->json([
             'success' => false,
             'message' => 'Failed to create storage link',
-            'error' => $e->getMessage()
+            'error' => $e->getMessage(),
         ], 500);
     }
 })->name('utility.storage-link');
@@ -387,16 +388,17 @@ Route::get('/storage-link', function () {
 Route::get('/migrate', function () {
     try {
         \Illuminate\Support\Facades\Artisan::call('migrate', ['--force' => true]);
+
         return response()->json([
             'success' => true,
             'message' => 'Migration completed successfully!',
-            'output' => \Illuminate\Support\Facades\Artisan::output()
+            'output' => \Illuminate\Support\Facades\Artisan::output(),
         ]);
     } catch (\Exception $e) {
         return response()->json([
             'success' => false,
             'message' => 'Migration failed',
-            'error' => $e->getMessage()
+            'error' => $e->getMessage(),
         ], 500);
     }
 })->name('utility.migrate');
@@ -412,6 +414,7 @@ Route::get('/clear', function () {
         $output['view'] = trim(\Illuminate\Support\Facades\Artisan::output());
         \Illuminate\Support\Facades\Artisan::call('route:clear');
         $output['route'] = trim(\Illuminate\Support\Facades\Artisan::output());
+
         return response()->json([
             'success' => true,
             'message' => 'Config, cache, view & route cleared successfully.',
@@ -427,4 +430,3 @@ Route::get('/clear', function () {
 })->name('utility.clear');
 
 require __DIR__.'/settings.php';
-

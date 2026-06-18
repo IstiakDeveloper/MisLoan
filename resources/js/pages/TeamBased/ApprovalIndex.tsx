@@ -319,20 +319,20 @@ export default function TeamBasedApprovalIndex({ approvals, filters, draftCount,
         <AdminLayout>
             <Head title="Team Based Loan Approvals">
                 <style>{`
-                    .approval-index-table-wrapper table { table-layout: auto; width: max(100%, max-content); }
+                    .approval-index-table-wrapper table { table-layout: auto; width: 100%; }
                     .approval-index-table-wrapper th {
                         font-size: 10px;
                         font-weight: 600;
                         color: #1e3a8a;
                         background: linear-gradient(to right, #eff6ff, #f8fafc) !important;
                         border-bottom: 1px solid #bfdbfe !important;
-                        padding: 10px 8px !important;
+                        padding: 8px 6px !important;
                         white-space: normal;
                     }
                     .approval-index-table-wrapper td {
                         font-size: 10px;
                         line-height: 1.35;
-                        padding: 8px 6px !important;
+                        padding: 7px 5px !important;
                         vertical-align: middle;
                         text-align: center;
                         border-bottom: 1px solid #e2e8f0;
@@ -357,6 +357,78 @@ export default function TeamBasedApprovalIndex({ approvals, filters, draftCount,
                     .approval-index-table-wrapper tbody td.approval-col-comment {
                         text-align: left;
                     }
+
+                    /* Dynamically scale table content based on screen size */
+                    @media (max-width: 1440px) {
+                        .approval-index-table-wrapper th {
+                            font-size: 9px;
+                            padding: 6px 4px !important;
+                        }
+                        .approval-index-table-wrapper td {
+                            font-size: 9px;
+                            padding: 5px 3px !important;
+                        }
+                        .approval-index-table-wrapper td span.text-\\[9px\\] {
+                            font-size: 8px !important;
+                        }
+                        .approval-index-table-wrapper td span.text-\\[10px\\],
+                        .approval-index-table-wrapper td button.text-\\[10px\\] {
+                            font-size: 8.5px !important;
+                        }
+                        .approval-index-table-wrapper .approval-col-serial {
+                            font-size: 8px;
+                        }
+                        .approval-index-table-wrapper .approval-col-comment {
+                            min-width: 10rem;
+                        }
+                    }
+                    @media (max-width: 1280px) {
+                        .approval-index-table-wrapper th {
+                            font-size: 8px;
+                            padding: 5px 3px !important;
+                        }
+                        .approval-index-table-wrapper td {
+                            font-size: 8px;
+                            padding: 4px 2px !important;
+                        }
+                        .approval-index-table-wrapper td span.text-\\[9px\\] {
+                            font-size: 7.5px !important;
+                        }
+                        .approval-index-table-wrapper td span.text-\\[10px\\],
+                        .approval-index-table-wrapper td button.text-\\[10px\\] {
+                            font-size: 7.5px !important;
+                        }
+                        .approval-index-table-wrapper .approval-col-serial {
+                            font-size: 7.5px;
+                        }
+                        .approval-index-table-wrapper .approval-col-comment {
+                            min-width: 8rem;
+                        }
+                    }
+                    @media (max-width: 1100px) {
+                        .approval-index-table-wrapper th {
+                            font-size: 7.5px;
+                            padding: 4px 2px !important;
+                        }
+                        .approval-index-table-wrapper td {
+                            font-size: 7.5px;
+                            padding: 3.5px 1.5px !important;
+                        }
+                        .approval-index-table-wrapper td span.text-\\[9px\\] {
+                            font-size: 7px !important;
+                        }
+                        .approval-index-table-wrapper td span.text-\\[10px\\],
+                        .approval-index-table-wrapper td button.text-\\[10px\\] {
+                            font-size: 7px !important;
+                        }
+                        .approval-index-table-wrapper .approval-col-serial {
+                            font-size: 7px;
+                        }
+                        .approval-index-table-wrapper .approval-col-comment {
+                            min-width: 7rem;
+                        }
+                    }
+
                     /* Legal size – প্রিন্টে মার্জিন কম */
                     @page { size: legal landscape; margin: 5mm; }
                     @media print {
@@ -708,7 +780,7 @@ export default function TeamBasedApprovalIndex({ approvals, filters, draftCount,
                 </div>
 
                 {/* ── DESKTOP TABLE VIEW ────────────────────────────────── */}
-                <div className="hidden md:block print:block bg-white border border-slate-200/80 rounded-2xl overflow-hidden shadow-sm hover:shadow-md transition-shadow duration-300 approval-index-table-wrapper w-full approval-index-print-page print:bg-transparent print:shadow-none print:border-0 print:rounded-none">
+                <div className="hidden md:block print:block bg-white border border-slate-200/80 rounded-2xl overflow-x-auto shadow-sm hover:shadow-md transition-shadow duration-300 approval-index-table-wrapper w-full approval-index-print-page print:bg-transparent print:shadow-none print:border-0 print:rounded-none">
                     <table className="w-full border-collapse">
                         <thead className="bg-gray-50 print:bg-transparent">
                             <tr>

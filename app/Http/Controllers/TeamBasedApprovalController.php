@@ -204,7 +204,7 @@ class TeamBasedApprovalController extends Controller
             ])
             ->whereHas('approval', function ($q) use ($branch) {
                 $q->where('branch_id', $branch->id)
-                  ->where('status', '!=', 'draft');
+                    ->where('status', '!=', 'draft');
             });
 
         // Date range filter on sheet_date
@@ -239,20 +239,20 @@ class TeamBasedApprovalController extends Controller
                     }
                     $sub->whereRaw('id = (SELECT MAX(id) FROM team_based_approval_reviews WHERE team_based_approval_item_id = team_based_approval_items.id)');
                 })
-                ->orWhere(function ($sub) use ($status) {
-                    $sub->whereNotExists(function ($sub2) {
-                        $sub2->select(DB::raw(1))
-                            ->from('team_based_approval_reviews')
-                            ->whereColumn('team_based_approval_item_id', 'team_based_approval_items.id');
-                    })
-                    ->whereHas('approval', function ($sub3) use ($status) {
-                        if ($status === 'under_review') {
-                            $sub3->whereIn('status', ['under_review', 'forwarded']);
-                        } else {
-                            $sub3->where('status', $status);
-                        }
+                    ->orWhere(function ($sub) use ($status) {
+                        $sub->whereNotExists(function ($sub2) {
+                            $sub2->select(DB::raw(1))
+                                ->from('team_based_approval_reviews')
+                                ->whereColumn('team_based_approval_item_id', 'team_based_approval_items.id');
+                        })
+                            ->whereHas('approval', function ($sub3) use ($status) {
+                                if ($status === 'under_review') {
+                                    $sub3->whereIn('status', ['under_review', 'forwarded']);
+                                } else {
+                                    $sub3->where('status', $status);
+                                }
+                            });
                     });
-                });
             });
         }
 
@@ -603,6 +603,7 @@ class TeamBasedApprovalController extends Controller
                         ->values();
 
                     $itemsPayload = [[
+                        'id' => $item->id,
                         'serial_no' => $item->serial_no,
                         'member_name' => $item->member_name,
                         'member_code' => $item->member_code,
@@ -641,6 +642,7 @@ class TeamBasedApprovalController extends Controller
                         $reviewsForItem = $reviewsByItem->get($item->id, collect())->sortBy('id')->values();
 
                         return [
+                            'id' => $item->id,
                             'serial_no' => $item->serial_no,
                             'member_name' => $item->member_name,
                             'member_code' => $item->member_code,
@@ -864,20 +866,90 @@ class TeamBasedApprovalController extends Controller
             }
         });
 
-        return redirect()
-            ->route('team-based-approvals.approver-index')
-            ->with('success', 'সিদ্ধান্ত সফলভাবে সংরক্ষণ হয়েছে।');
+        return $this->redirectToApproverIndex($request, 'সিদ্ধান্ত সফলভাবে সংরক্ষণ হয়েছে।');
     }
 
     /**
-     * Forward entire sheet to a superior (উর্ধ্বতন). Current user's pending reviews become 'forwarded',
-     * new pending reviews are created for the selected user.
+     * Clear approval/forward history for one or more loan rows and reset to initial pending approver.
+     */
+    public function clearReviewHistory(Request $request)
+    {
+        $user = $request->user();
+        $isHeadOffice = $user->has_all_access || in_array($user->role?->name, [Role::SUPER_ADMIN, Role::HEAD_OFFICE], true);
+
+        $validated = $request->validate([
+            'review_ids' => ['nullable', 'array'],
+            'review_ids.*' => ['integer', 'exists:team_based_approval_reviews,id'],
+            'item_ids' => ['nullable', 'array'],
+            'item_ids.*' => ['integer', 'exists:team_based_approval_items,id'],
+        ]);
+
+        $reviewIds = $validated['review_ids'] ?? [];
+        $itemIds = collect($validated['item_ids'] ?? []);
+
+        if (! empty($reviewIds)) {
+            $itemIds = $itemIds->merge(
+                TeamBasedApprovalReview::query()
+                    ->whereIn('id', $reviewIds)
+                    ->whereNotNull('team_based_approval_item_id')
+                    ->pluck('team_based_approval_item_id')
+            );
+        }
+
+        $itemIds = $itemIds->filter()->unique()->values();
+
+        if ($itemIds->isEmpty()) {
+            return redirect()
+                ->back()
+                ->with('error', 'কোনো সারি নির্বাচন করা হয়নি।');
+        }
+
+        $cleared = 0;
+        $skipped = 0;
+
+        DB::transaction(function () use ($itemIds, $user, $isHeadOffice, &$cleared, &$skipped) {
+            foreach ($itemIds as $itemId) {
+                /** @var TeamBasedApprovalItem|null $item */
+                $item = TeamBasedApprovalItem::with('approval')->find($itemId);
+                if (! $item || ! $this->userCanClearItemReviewHistory($user, $item, $isHeadOffice)) {
+                    $skipped++;
+
+                    continue;
+                }
+
+                $this->resetItemReviewHistory($item);
+                $cleared++;
+            }
+        });
+
+        if ($cleared === 0) {
+            return redirect()
+                ->back()
+                ->with('error', 'নির্বাচিত সারিগুলোর ইতিহাস মুছতে পারা যায়নি।');
+        }
+
+        $message = "{$cleared} টি সারির অনুমোদন/ফরওয়ার্ড ইতিহাস মুছে ফেলা হয়েছে।";
+        if ($skipped > 0) {
+            $message .= " ({$skipped} টি এড়িয়ে যাওয়া হয়েছে)";
+        }
+
+        if ($request->routeIs('head-office.*')) {
+            return redirect()->back()->with('success', $message);
+        }
+
+        return $this->redirectToApproverIndex($request, $message);
+    }
+
+    /**
+     * Forward a single loan item to a superior (উর্ধ্বতন). Current user's pending review for that item
+     * becomes 'forwarded', and a new pending review is created for the selected user on the same item.
      */
     public function forward(Request $request, TeamBasedApproval $teamBasedApproval)
     {
         $user = $request->user();
 
         $validated = $request->validate([
+            'review_id' => ['required', 'integer'],
             'forward_to_user_id' => ['required', 'integer', 'exists:users,id'],
             'comments' => ['nullable', 'string', 'max:1000'],
             'approved_amount' => ['required', 'numeric', 'min:0'],
@@ -906,42 +978,48 @@ class TeamBasedApprovalController extends Controller
             return redirect()->back()->with('error', 'নির্বাচিত ব্যবহারকারীর এই শাখায় অ্যাক্সেস নেই।');
         }
 
-        $pendingReviews = TeamBasedApprovalReview::where('team_based_approval_id', $teamBasedApproval->id)
+        $review = TeamBasedApprovalReview::query()
+            ->where('id', $validated['review_id'])
+            ->where('team_based_approval_id', $teamBasedApproval->id)
             ->where('user_id', $user->id)
             ->where('status', 'pending')
-            ->get();
+            ->whereNotNull('team_based_approval_item_id')
+            ->first();
 
-        if ($pendingReviews->isEmpty()) {
-            return redirect()->back()->with('error', 'এই শিটের জন্য আপনার কোনো পেন্ডিং রিভিউ নেই।');
+        if (! $review) {
+            return redirect()->back()->with('error', 'এই লোন সারির জন্য আপনার কোনো পেন্ডিং রিভিউ নেই।');
         }
 
-        DB::transaction(function () use ($teamBasedApproval, $user, $forwardTo, $pendingReviews, $validated) {
+        DB::transaction(function () use ($teamBasedApproval, $user, $forwardTo, $review, $validated) {
             $now = now();
-            foreach ($pendingReviews as $review) {
-                $review->update([
-                    'status' => 'forwarded',
-                    'comments' => ($review->comments ? $review->comments."\n" : '').'ফরওয়ার্ড: '.($validated['comments'] ?? ''),
-                    'approved_amount' => $validated['approved_amount'],
-                    'approver_signature' => $user->signature,
-                    'decided_at' => $now,
-                ]);
-            }
 
-            $level = $forwardTo->role?->name;
-            foreach ($teamBasedApproval->items as $item) {
+            $review->update([
+                'status' => 'forwarded',
+                'comments' => ($review->comments ? $review->comments."\n" : '').'ফরওয়ার্ড: '.($validated['comments'] ?? ''),
+                'approved_amount' => $validated['approved_amount'],
+                'approver_signature' => $user->signature,
+                'decided_at' => $now,
+            ]);
+
+            $alreadyPendingForForwardTo = TeamBasedApprovalReview::query()
+                ->where('team_based_approval_id', $teamBasedApproval->id)
+                ->where('team_based_approval_item_id', $review->team_based_approval_item_id)
+                ->where('user_id', $forwardTo->id)
+                ->where('status', 'pending')
+                ->exists();
+
+            if (! $alreadyPendingForForwardTo) {
                 TeamBasedApprovalReview::create([
                     'team_based_approval_id' => $teamBasedApproval->id,
-                    'team_based_approval_item_id' => $item->id,
+                    'team_based_approval_item_id' => $review->team_based_approval_item_id,
                     'user_id' => $forwardTo->id,
-                    'level' => $level,
+                    'level' => $forwardTo->role?->name,
                     'status' => 'pending',
                 ]);
             }
         });
 
-        return redirect()
-            ->route('team-based-approvals.approver-index')
-            ->with('success', 'শিট সফলভাবে '.$forwardTo->name.' এর কাছে ফরওয়ার্ড হয়েছে।');
+        return $this->redirectToApproverIndex($request, 'লোন সারি সফলভাবে '.$forwardTo->name.' এর কাছে ফরওয়ার্ড হয়েছে।');
     }
 
     /**
@@ -980,9 +1058,7 @@ class TeamBasedApprovalController extends Controller
 
         $item->update($this->roundItemNumbers($data));
 
-        return redirect()
-            ->back()
-            ->with('success', 'সারি তথ্য সফলভাবে হালনাগাদ হয়েছে।');
+        return $this->redirectToApproverIndex($request, 'সারি তথ্য সফলভাবে হালনাগাদ হয়েছে।');
     }
 
     /**
@@ -1287,6 +1363,75 @@ class TeamBasedApprovalController extends Controller
     /**
      * Round numeric item fields to integers (no decimals).
      */
+    /**
+     * @return \Illuminate\Http\RedirectResponse
+     */
+    private function redirectToApproverIndex(Request $request, string $message, string $flashKey = 'success')
+    {
+        $params = array_filter(
+            $request->only(['status', 'branch_id', 'approver_id', 'date_from', 'date_to', 'approval_flow', 'per_page', 'page']),
+            fn ($v) => $v !== null && $v !== ''
+        );
+
+        return redirect()
+            ->route('team-based-approvals.approver-index', $params)
+            ->with($flashKey, $message);
+    }
+
+    private function userCanClearItemReviewHistory(User $user, TeamBasedApprovalItem $item, bool $isHeadOffice): bool
+    {
+        if ($isHeadOffice) {
+            return true;
+        }
+
+        return TeamBasedApprovalReview::query()
+            ->where('team_based_approval_item_id', $item->id)
+            ->where('user_id', $user->id)
+            ->where('status', 'pending')
+            ->exists();
+    }
+
+    private function resetItemReviewHistory(TeamBasedApprovalItem $item): void
+    {
+        $approval = $item->approval;
+        if (! $approval) {
+            return;
+        }
+
+        TeamBasedApprovalReview::where('team_based_approval_item_id', $item->id)->delete();
+
+        $approverUserId = $approval->area_manager_id
+            ?? $approval->zone_manager_id
+            ?? $approval->admf_id
+            ?? $approval->dmf_id
+            ?? $approval->ed_id;
+
+        if ($approverUserId) {
+            $approver = User::find($approverUserId);
+            TeamBasedApprovalReview::create([
+                'team_based_approval_id' => $approval->id,
+                'team_based_approval_item_id' => $item->id,
+                'user_id' => $approverUserId,
+                'level' => $approver?->role?->name,
+                'status' => 'pending',
+            ]);
+        }
+
+        $item->update(['approved_amount' => null]);
+
+        $approvalHasNonPending = TeamBasedApprovalReview::query()
+            ->where('team_based_approval_id', $approval->id)
+            ->whereIn('status', ['approved', 'rejected', 'forwarded'])
+            ->exists();
+
+        if (! $approvalHasNonPending && $approval->status !== 'draft') {
+            $approval->update([
+                'status' => 'pending',
+                'approved_total_amount' => null,
+            ]);
+        }
+    }
+
     private function roundItemNumbers(array $item): array
     {
         $numericKeys = ['savings_general', 'savings_other', 'savings_total', 'approved_amount'];
@@ -1314,4 +1459,3 @@ class TeamBasedApprovalController extends Controller
         return $review->approver_signature ?? $review->user?->signature;
     }
 }
-

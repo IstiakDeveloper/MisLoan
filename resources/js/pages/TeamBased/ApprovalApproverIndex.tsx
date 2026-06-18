@@ -3,6 +3,18 @@ import AdminLayout from '@/layouts/admin-layout';
 import React from 'react';
 import { formatDate } from '@/utils/dateUtils';
 
+function rowHasReviewHistory(row: {
+    review_status?: string;
+    status?: string;
+    approvers?: { status?: string | null }[];
+}): boolean {
+    if (row.approvers?.some((a) => a.status && a.status !== 'pending')) {
+        return true;
+    }
+    const status = String(row.review_status || row.status || '').toLowerCase();
+    return status === 'approved' || status === 'rejected' || status === 'forwarded' || status === 'under_review';
+}
+
 // বাংলা সংখ্যাকে ইংরেজিতে রূপান্তর (সঞ্চয় ফিল্ডে হিসাবের জন্য)
 function normalizeNumericInput(value: string): string {
     if (!value) return '';
@@ -29,6 +41,7 @@ function formatAmount(val: number | string | null | undefined): string {
 }
 
 interface ItemRow {
+    id?: number;
     serial_no: number;
     member_name: string;
     member_code?: string | null;
@@ -200,6 +213,26 @@ export default function TeamBasedApprovalApproverIndex({ reviews, filters, branc
         row: (ItemRow & { review_id: number; sheet_id: number; sheet_date: string | null; branch_name?: string | null }) | null;
     }>({ open: false, review: null, row: null });
 
+    const [showFiltersMobile, setShowFiltersMobile] = React.useState(false);
+    const [selectedItemIds, setSelectedItemIds] = React.useState<number[]>([]);
+    const [mobileDecisionModal, setMobileDecisionModal] = React.useState<{
+        open: boolean;
+        review: ReviewRow | null;
+        row: any | null;
+    }>({ open: false, review: null, row: null });
+
+    const getActiveFilterParams = (extra: Record<string, unknown> = {}) => ({
+        status: currentStatus || undefined,
+        date_from: currentFrom || undefined,
+        date_to: currentTo || undefined,
+        branch_id: currentBranchId || undefined,
+        approver_id: currentApproverId || undefined,
+        approval_flow: currentApprovalFlow || undefined,
+        per_page: currentPerPage || undefined,
+        page: reviews.current_page ?? 1,
+        ...extra,
+    });
+
     const applyFilter = (
         status: string,
         from: string,
@@ -210,18 +243,18 @@ export default function TeamBasedApprovalApproverIndex({ reviews, filters, branc
         perPage?: number,
         page?: number,
     ) => {
-        router.visit('/team-based-approvals/for-approver', {
-            data: {
-                status: status || undefined,
-                date_from: from || undefined,
-                date_to: to || undefined,
-                branch_id: branchId || undefined,
-                approver_id: approverId || undefined,
-                approval_flow: approvalFlow || undefined,
-                per_page: perPage ?? currentPerPage,
-                page: page ?? 1,
-            },
+        router.get('/team-based-approvals/for-approver', getActiveFilterParams({
+            status: status || undefined,
+            date_from: from || undefined,
+            date_to: to || undefined,
+            branch_id: branchId || undefined,
+            approver_id: approverId || undefined,
+            approval_flow: approvalFlow || undefined,
+            per_page: perPage ?? currentPerPage,
+            page: page ?? reviews.current_page ?? 1,
+        }), {
             preserveScroll: true,
+            preserveState: true,
         });
     };
 
@@ -403,13 +436,12 @@ export default function TeamBasedApprovalApproverIndex({ reviews, filters, branc
             project_name: row.project_name ?? '',
         };
 
-        router.post(`/team-based-approvals/reviews/${reviewId}/update-item`, payload, {
+        router.post(`/team-based-approvals/reviews/${reviewId}/update-item`, {
+            ...payload,
+            ...getActiveFilterParams(),
+        }, {
             preserveScroll: true,
-            onSuccess: () => {
-                closeEditModal();
-                // Reload current filter to show fresh data
-                applyFilter(currentStatus, currentFrom, currentTo, currentBranchId, currentApproverId, currentApprovalFlow, currentPerPage, 1);
-            },
+            onSuccess: () => closeEditModal(),
         });
     };
 
@@ -429,8 +461,12 @@ export default function TeamBasedApprovalApproverIndex({ reviews, filters, branc
             payload.approved_amount = state.approved_amount ? Math.round(parseFloat(state.approved_amount)) : undefined;
         }
 
-        router.post(`/team-based-approvals/reviews/${review.review_id}/decide`, payload, {
+        router.post(`/team-based-approvals/reviews/${review.review_id}/decide`, {
+            ...payload,
+            ...getActiveFilterParams(),
+        }, {
             preserveScroll: true,
+            preserveState: true,
         });
     };
 
@@ -494,6 +530,64 @@ export default function TeamBasedApprovalApproverIndex({ reviews, filters, branc
     });
 
     type FlatRow = (typeof flatRows)[number];
+
+    React.useEffect(() => {
+        setSelectedItemIds([]);
+    }, [reviews.data]);
+
+    const isRowSelectableForHistoryClear = (row: FlatRow) =>
+        Boolean(row.id) &&
+        row.can_act &&
+        row.review_status === 'pending' &&
+        rowHasReviewHistory(row);
+
+    const selectableItemIds = flatRows
+        .filter(isRowSelectableForHistoryClear)
+        .map((row) => row.id!)
+        .filter((id, index, arr) => arr.indexOf(id) === index);
+
+    const allSelectablePageSelected =
+        selectableItemIds.length > 0 && selectableItemIds.every((id) => selectedItemIds.includes(id));
+    const someSelectablePageSelected = selectableItemIds.some((id) => selectedItemIds.includes(id));
+
+    const toggleSelectAllOnPage = () => {
+        if (allSelectablePageSelected) {
+            setSelectedItemIds((prev) => prev.filter((id) => !selectableItemIds.includes(id)));
+            return;
+        }
+        setSelectedItemIds((prev) => [...new Set([...prev, ...selectableItemIds])]);
+    };
+
+    const toggleSelectItem = (itemId: number) => {
+        setSelectedItemIds((prev) =>
+            prev.includes(itemId) ? prev.filter((id) => id !== itemId) : [...prev, itemId],
+        );
+    };
+
+    const handleClearReviewHistory = () => {
+        if (selectedItemIds.length === 0) {
+            return;
+        }
+        if (
+            !confirm(
+                `নির্বাচিত ${selectedItemIds.length} টি সারির অনুমোদন/ফরওয়ার্ড ইতিহাস মুছে ফেলতে চান? প্রাথমিক pending অবস্থায় ফিরে যাবে।`,
+            )
+        ) {
+            return;
+        }
+        router.post(
+            '/team-based-approvals/reviews/clear-history',
+            {
+                item_ids: selectedItemIds,
+                ...getActiveFilterParams(),
+            },
+            {
+                preserveScroll: true,
+                preserveState: true,
+                onSuccess: () => setSelectedItemIds([]),
+            },
+        );
+    };
 
     const colVis = React.useMemo(() => {
         const rows = flatRows as FlatRow[];
@@ -567,6 +661,7 @@ export default function TeamBasedApprovalApproverIndex({ reviews, filters, branc
 
     const visibleDataColCount =
         1 +
+        1 +
         (colVis.sheet_date ? 1 : 0) +
         (colVis.branch ? 1 : 0) +
         1 +
@@ -613,11 +708,14 @@ export default function TeamBasedApprovalApproverIndex({ reviews, filters, branc
         if (!Number.isFinite(approvedAmount)) return;
 
         router.post(`/team-based-approvals/${forwardModal.sheetId}/forward`, {
+            review_id: forwardModal.reviewId,
             forward_to_user_id: Number(forwardModal.forwardToUserId),
             comments: forwardModal.comments || undefined,
             approved_amount: approvedAmount,
+            ...getActiveFilterParams(),
         }, {
             preserveScroll: true,
+            preserveState: true,
             onSuccess: () => setForwardModal((p) => ({ ...p, open: false, sheetId: null, sheetLabel: '', reviewId: null, forwardToUserId: '', comments: '' })),
         });
     };
@@ -640,20 +738,20 @@ export default function TeamBasedApprovalApproverIndex({ reviews, filters, branc
         <AdminLayout>
             <Head title="Team Based Approvals - Approver">
                 <style>{`
-                    .approval-index-table-wrapper table { table-layout: auto; width: max(100%, max-content); }
+                    .approval-index-table-wrapper table { table-layout: auto; width: 100%; }
                     .approval-index-table-wrapper th {
                         font-size: 10px;
                         font-weight: 600;
                         color: #1e3a8a;
                         background: linear-gradient(to right, #eff6ff, #f8fafc) !important;
                         border-bottom: 1px solid #bfdbfe !important;
-                        padding: 10px 8px !important;
+                        padding: 8px 6px !important;
                         white-space: normal;
                     }
                     .approval-index-table-wrapper td {
                         font-size: 10px;
                         line-height: 1.35;
-                        padding: 8px 6px !important;
+                        padding: 7px 5px !important;
                         vertical-align: middle;
                         text-align: center;
                         border-bottom: 1px solid #e2e8f0;
@@ -678,6 +776,78 @@ export default function TeamBasedApprovalApproverIndex({ reviews, filters, branc
                     .approval-index-table-wrapper tbody td.approval-col-comment {
                         text-align: left;
                     }
+
+                    /* Dynamically scale table content based on screen size */
+                    @media (max-width: 1440px) {
+                        .approval-index-table-wrapper th {
+                            font-size: 9px;
+                            padding: 6px 4px !important;
+                        }
+                        .approval-index-table-wrapper td {
+                            font-size: 9px;
+                            padding: 5px 3px !important;
+                        }
+                        .approval-index-table-wrapper td span.text-\\[9px\\] {
+                            font-size: 8px !important;
+                        }
+                        .approval-index-table-wrapper td span.text-\\[10px\\],
+                        .approval-index-table-wrapper td button.text-\\[10px\\] {
+                            font-size: 8.5px !important;
+                        }
+                        .approval-index-table-wrapper .approval-col-serial {
+                            font-size: 8px;
+                        }
+                        .approval-index-table-wrapper .approval-col-comment {
+                            min-width: 10rem;
+                        }
+                    }
+                    @media (max-width: 1280px) {
+                        .approval-index-table-wrapper th {
+                            font-size: 8px;
+                            padding: 5px 3px !important;
+                        }
+                        .approval-index-table-wrapper td {
+                            font-size: 8px;
+                            padding: 4px 2px !important;
+                        }
+                        .approval-index-table-wrapper td span.text-\\[9px\\] {
+                            font-size: 7.5px !important;
+                        }
+                        .approval-index-table-wrapper td span.text-\\[10px\\],
+                        .approval-index-table-wrapper td button.text-\\[10px\\] {
+                            font-size: 7.5px !important;
+                        }
+                        .approval-index-table-wrapper .approval-col-serial {
+                            font-size: 7.5px;
+                        }
+                        .approval-index-table-wrapper .approval-col-comment {
+                            min-width: 8rem;
+                        }
+                    }
+                    @media (max-width: 1100px) {
+                        .approval-index-table-wrapper th {
+                            font-size: 7.5px;
+                            padding: 4px 2px !important;
+                        }
+                        .approval-index-table-wrapper td {
+                            font-size: 7.5px;
+                            padding: 3.5px 1.5px !important;
+                        }
+                        .approval-index-table-wrapper td span.text-\\[9px\\] {
+                            font-size: 7px !important;
+                        }
+                        .approval-index-table-wrapper td span.text-\\[10px\\],
+                        .approval-index-table-wrapper td button.text-\\[10px\\] {
+                            font-size: 7px !important;
+                        }
+                        .approval-index-table-wrapper .approval-col-serial {
+                            font-size: 7px;
+                        }
+                        .approval-index-table-wrapper .approval-col-comment {
+                            min-width: 7rem;
+                        }
+                    }
+
                     @page { size: legal landscape; margin: 5mm; }
                     @media print {
                         html, body { margin: 0 !important; padding: 0 !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; background: #fff !important; }
@@ -786,7 +956,7 @@ export default function TeamBasedApprovalApproverIndex({ reviews, filters, branc
                 </div>
 
                 {/* Stats */}
-                <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-4 ho-teambased-stats print:hidden mb-4">
+                <div className="flex overflow-x-auto pb-2 gap-3 md:grid md:grid-cols-5 ho-teambased-stats print:hidden mb-4 scrollbar-thin scrollbar-thumb-slate-200 scrollbar-track-transparent">
                     {[
                         { label: 'Total Members', value: stats.total, color: 'text-blue-600', bg: 'bg-blue-50/40 border-blue-100/70' },
                         { label: 'Pending', value: stats.pending, color: 'text-amber-600', bg: 'bg-amber-50/40 border-amber-100/70' },
@@ -794,209 +964,357 @@ export default function TeamBasedApprovalApproverIndex({ reviews, filters, branc
                         { label: 'Rejected', value: stats.rejected, color: 'text-rose-600', bg: 'bg-rose-50/40 border-rose-100/70' },
                         { label: 'Forwarded', value: stats.forwarded, color: 'text-slate-600', bg: 'bg-slate-50/50 border-slate-100/70' },
                     ].map((stat, i) => (
-                        <div key={i} className={`p-4 rounded-xl border bg-white shadow-sm flex flex-col justify-between transition-all hover:shadow-md ${stat.bg}`}>
-                            <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">{stat.label}</span>
-                            <span className={`text-2xl font-extrabold mt-1 leading-none ${stat.color}`}>{stat.value}</span>
+                        <div key={i} className={`flex-shrink-0 w-32 md:w-auto p-4 rounded-xl border bg-white shadow-sm flex flex-col justify-between transition-all hover:shadow-md ${stat.bg}`}>
+                            <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider whitespace-nowrap">{stat.label}</span>
+                            <span className={`text-xl md:text-2xl font-extrabold mt-1 leading-none ${stat.color}`}>{stat.value}</span>
                         </div>
                     ))}
                 </div>
 
                 {/* Filters - only visible on screen */}
-                <div className="bg-slate-50/50 border border-slate-200/80 rounded-2xl p-4 space-y-4 mb-4 print:hidden shadow-sm">
-                    <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-3">
-                        <div className="flex flex-col gap-1">
-                            <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Branch</span>
-                            <select
-                                value={currentBranchId}
-                                onChange={handleBranchChange}
-                                className="w-full border border-slate-300 rounded-lg px-3 py-2 text-xs bg-white focus:outline-none focus:ring-2 focus:ring-blue-500/15 focus:border-blue-500 transition-all text-slate-800"
-                            >
-                                <option value="">All Branches</option>
-                                {branches.map((branch) => (
-                                    <option key={branch.id} value={branch.id}>
-                                        {branch.name} {branch.code ? `(${branch.code})` : ''}
-                                    </option>
-                                ))}
-                            </select>
+                <div className="bg-white border border-slate-200/80 rounded-2xl p-4 mb-4 print:hidden shadow-sm">
+                    {/* Mobile filter header toggle */}
+                    <div 
+                        className="flex md:hidden items-center justify-between cursor-pointer select-none"
+                        onClick={() => setShowFiltersMobile(!showFiltersMobile)}
+                    >
+                        <div className="flex items-center gap-2">
+                            <svg className="w-4 h-4 text-slate-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2.586a1 1 0 01-.293.707l-6.414 6.414a1 1 0 00-.293.707V17l-4 4v-6.586a1 1 0 00-.293-.707L3.293 7.293A1 1 0 013 6.586V4z"/></svg>
+                            <span className="text-xs font-bold text-slate-700 uppercase tracking-wider">ফিল্টার এবং অনুসন্ধান</span>
+                            {(() => {
+                                let activeCount = 0;
+                                if (currentBranchId) activeCount++;
+                                if (currentApproverId) activeCount++;
+                                if (currentStatus) activeCount++;
+                                if (currentApprovalFlow) activeCount++;
+                                if (currentFrom) activeCount++;
+                                if (currentTo) activeCount++;
+                                if (activeCount > 0) {
+                                    return (
+                                        <span className="bg-blue-600 text-white text-[10px] font-bold px-2 py-0.5 rounded-full">
+                                            {activeCount}
+                                        </span>
+                                    );
+                                }
+                                return null;
+                            })()}
                         </div>
-                        {approverOptions.length > 1 && (
+                        <button type="button" className="text-slate-400 focus:outline-none">
+                            {showFiltersMobile ? (
+                                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 15l7-7 7 7"/></svg>
+                            ) : (
+                                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7"/></svg>
+                            )}
+                        </button>
+                    </div>
+
+                    <div className={`${showFiltersMobile ? 'block' : 'hidden'} md:block mt-4 md:mt-0 space-y-4`}>
+                        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-3">
                             <div className="flex flex-col gap-1">
-                                <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Approver</span>
+                                <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Branch</span>
                                 <select
-                                    value={currentApproverId}
-                                    onChange={handleApproverChange}
+                                    value={currentBranchId}
+                                    onChange={handleBranchChange}
                                     className="w-full border border-slate-300 rounded-lg px-3 py-2 text-xs bg-white focus:outline-none focus:ring-2 focus:ring-blue-500/15 focus:border-blue-500 transition-all text-slate-800"
                                 >
-                                    <option value="">All Approvers</option>
-                                    {approverOptions.map((opt) => (
-                                        <option key={opt.id} value={opt.id}>
-                                            {opt.name} ({opt.role_name})
+                                    <option value="">All Branches</option>
+                                    {branches.map((branch) => (
+                                        <option key={branch.id} value={branch.id}>
+                                            {branch.name} {branch.code ? `(${branch.code})` : ''}
                                         </option>
                                     ))}
                                 </select>
                             </div>
-                        )}
-                        <div className="flex flex-col gap-1">
-                            <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Status</span>
-                            <select
-                                value={currentStatus}
-                                onChange={handleStatusFilterChange}
-                                className="w-full border border-slate-300 rounded-lg px-3 py-2 text-xs bg-white focus:outline-none focus:ring-2 focus:ring-blue-500/15 focus:border-blue-500 transition-all text-slate-800"
-                            >
-                                <option value="">All Status</option>
-                                <option value="pending">Pending</option>
-                                <option value="approved">Approved</option>
-                                <option value="rejected">Rejected</option>
-                                <option value="forwarded">Forwarded</option>
-                            </select>
-                        </div>
-                        <div className="flex flex-col gap-1">
-                            <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Per page</span>
-                            <select
-                                value={currentPerPage}
-                                onChange={handlePerPageChange}
-                                className="w-full border border-slate-300 rounded-lg px-3 py-2 text-xs bg-white focus:outline-none focus:ring-2 focus:ring-blue-500/15 focus:border-blue-500 transition-all text-slate-800"
-                            >
-                                <option value="20">20</option>
-                                <option value="50">50</option>
-                                <option value="100">100</option>
-                                <option value="200">200</option>
-                                <option value="500">500</option>
-                            </select>
-                        </div>
-                        <div className="flex flex-col gap-1">
-                            <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Select type</span>
-                            <select
-                                value={currentApprovalFlow}
-                                onChange={handleApprovalFlowChange}
-                                className="w-full border border-slate-300 rounded-lg px-3 py-2 text-xs bg-white focus:outline-none focus:ring-2 focus:ring-blue-500/15 focus:border-blue-500 transition-all text-slate-800"
-                            >
-                                <option value="">All</option>
-                                <option value="single">Single Approver</option>
-                                <option value="multiple">Multiple Approver</option>
-                            </select>
-                        </div>
-                    </div>
-
-                    <div className="flex flex-wrap items-center justify-between gap-4 pt-1 border-t border-slate-200/50">
-                        <div className="flex flex-wrap gap-3">
+                            {approverOptions.length > 1 && (
+                                <div className="flex flex-col gap-1">
+                                    <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Approver</span>
+                                    <select
+                                        value={currentApproverId}
+                                        onChange={handleApproverChange}
+                                        className="w-full border border-slate-300 rounded-lg px-3 py-2 text-xs bg-white focus:outline-none focus:ring-2 focus:ring-blue-500/15 focus:border-blue-500 transition-all text-slate-800"
+                                    >
+                                        <option value="">All Approvers</option>
+                                        {approverOptions.map((opt) => (
+                                            <option key={opt.id} value={opt.id}>
+                                                {opt.name} ({opt.role_name})
+                                            </option>
+                                        ))}
+                                    </select>
+                                </div>
+                            )}
                             <div className="flex flex-col gap-1">
-                                <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">From Date</span>
-                                <input
-                                    type="date"
-                                    value={currentFrom}
-                                    onChange={handleFromChange}
-                                    className="border border-slate-300 rounded-lg px-3 py-2 text-xs focus:outline-none focus:ring-2 focus:ring-blue-500/15 focus:border-blue-500 transition-all text-slate-800"
-                                />
+                                <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Status</span>
+                                <select
+                                    value={currentStatus}
+                                    onChange={handleStatusFilterChange}
+                                    className="w-full border border-slate-300 rounded-lg px-3 py-2 text-xs bg-white focus:outline-none focus:ring-2 focus:ring-blue-500/15 focus:border-blue-500 transition-all text-slate-800"
+                                >
+                                    <option value="">All Status</option>
+                                    <option value="pending">Pending</option>
+                                    <option value="approved">Approved</option>
+                                    <option value="rejected">Rejected</option>
+                                    <option value="forwarded">Forwarded</option>
+                                </select>
                             </div>
                             <div className="flex flex-col gap-1">
-                                <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">To Date</span>
-                                <input
-                                    type="date"
-                                    value={currentTo}
-                                    onChange={handleToChange}
-                                    className="border border-slate-300 rounded-lg px-3 py-2 text-xs focus:outline-none focus:ring-2 focus:ring-blue-500/15 focus:border-blue-500 transition-all text-slate-800"
-                                />
+                                <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Per page</span>
+                                <select
+                                    value={currentPerPage}
+                                    onChange={handlePerPageChange}
+                                    className="w-full border border-slate-300 rounded-lg px-3 py-2 text-xs bg-white focus:outline-none focus:ring-2 focus:ring-blue-500/15 focus:border-blue-500 transition-all text-slate-800"
+                                >
+                                    <option value="20">20</option>
+                                    <option value="50">50</option>
+                                    <option value="100">100</option>
+                                    <option value="200">200</option>
+                                    <option value="500">500</option>
+                                </select>
+                            </div>
+                            <div className="flex flex-col gap-1">
+                                <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Select type</span>
+                                <select
+                                    value={currentApprovalFlow}
+                                    onChange={handleApprovalFlowChange}
+                                    className="w-full border border-slate-300 rounded-lg px-3 py-2 text-xs bg-white focus:outline-none focus:ring-2 focus:ring-blue-500/15 focus:border-blue-500 transition-all text-slate-800"
+                                >
+                                    <option value="">All</option>
+                                    <option value="single">Single Approver</option>
+                                    <option value="multiple">Multiple Approver</option>
+                                </select>
                             </div>
                         </div>
 
-                        <div className="flex items-end self-end gap-2">
-                            <button
-                                type="button"
-                                onClick={handlePrintPage}
-                                className="px-5 py-2 rounded-lg bg-slate-800 text-white text-xs font-semibold hover:bg-slate-900 transition-all shadow-sm hover:shadow active:scale-[0.98]"
-                            >
-                                Print List
-                            </button>
+                        <div className="flex flex-wrap items-center justify-between gap-4 pt-1 border-t border-slate-200/50">
+                            <div className="flex flex-wrap gap-3">
+                                <div className="flex flex-col gap-1">
+                                    <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">From Date</span>
+                                    <input
+                                        type="date"
+                                        value={currentFrom}
+                                        onChange={handleFromChange}
+                                        className="border border-slate-300 rounded-lg px-3 py-2 text-xs focus:outline-none focus:ring-2 focus:ring-blue-500/15 focus:border-blue-500 transition-all text-slate-800"
+                                    />
+                                </div>
+                                <div className="flex flex-col gap-1">
+                                    <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">To Date</span>
+                                    <input
+                                        type="date"
+                                        value={currentTo}
+                                        onChange={handleToChange}
+                                        className="border border-slate-300 rounded-lg px-3 py-2 text-xs focus:outline-none focus:ring-2 focus:ring-blue-500/15 focus:border-blue-500 transition-all text-slate-800"
+                                    />
+                                </div>
+                            </div>
+
+                            <div className="flex items-end self-end gap-2">
+                                <button
+                                    type="button"
+                                    onClick={handlePrintPage}
+                                    className="px-5 py-2 rounded-lg bg-slate-800 text-white text-xs font-semibold hover:bg-slate-900 transition-all shadow-sm hover:shadow active:scale-[0.98]"
+                                >
+                                    Print List
+                                </button>
+                            </div>
                         </div>
                     </div>
                 </div>
 
+                {selectedItemIds.length > 0 && (
+                    <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-amber-200 bg-amber-50/60 px-4 py-3 print:hidden">
+                        <p className="text-sm text-amber-900 font-medium">
+                            {selectedItemIds.length} টি সারি নির্বাচিত
+                        </p>
+                        <div className="flex flex-wrap gap-2">
+                            <button
+                                type="button"
+                                onClick={() => setSelectedItemIds([])}
+                                className="px-4 py-2 rounded-lg border border-slate-300 bg-white text-xs font-medium text-slate-700 hover:bg-slate-50"
+                            >
+                                Clear Selection
+                            </button>
+                            <button
+                                type="button"
+                                onClick={handleClearReviewHistory}
+                                className="px-4 py-2 rounded-lg bg-amber-600 text-white text-xs font-semibold hover:bg-amber-700 shadow-sm"
+                            >
+                                Remove Approval/Forward History
+                            </button>
+                        </div>
+                    </div>
+                )}
+
                 {/* ── MOBILE CARD VIEW ─────────────────────────────────── */}
-                <div className="md:hidden flex flex-col gap-3 print:hidden">
+                <div className="md:hidden flex flex-col gap-4 print:hidden">
                     {flatRows.length === 0 && (
-                        <div className="bg-white border border-gray-200 rounded-lg p-6 text-center text-sm text-gray-500">
+                        <div className="bg-white border border-slate-200 rounded-2xl p-8 text-center text-sm text-slate-500 shadow-sm">
                             আপনার জন্য কোনো Team Based আবেদন পাওয়া যায়নি।
                         </div>
                     )}
                     {flatRows.map((row, index) => {
                         const review = reviews.data.find((r) => r.review_id === row.review_id)!;
                         const rowKey = `${row.review_id}-${row.serial_no}-${index}`;
-                        const isOpen = openRowKey === rowKey;
                         const state = decisionState[review.review_id];
+                        const rowSelectable = isRowSelectableForHistoryClear(row);
+                        const rowSelected = row.id != null && selectedItemIds.includes(row.id);
 
                         return (
-                            <div key={rowKey} className="bg-white border border-gray-200 rounded-xl shadow-sm overflow-hidden">
+                            <div key={rowKey} className={`relative overflow-hidden bg-white border rounded-2xl shadow-sm hover:shadow-md transition-all duration-200 ${rowSelected ? 'border-amber-300 ring-1 ring-amber-200' : 'border-slate-100'}`}>
                                 {/* Card header */}
-                                <div className="flex items-center justify-between px-3 py-2 bg-slate-50 border-b border-gray-200">
-                                    <div className="flex items-center gap-2">
-                                        <span className="flex items-center justify-center w-5 h-5 rounded-full bg-slate-200 text-slate-600 text-[10px] font-bold">{index + 1}</span>
+                                <div className="flex items-center justify-between px-4 py-3 bg-slate-50/50 border-b border-slate-100">
+                                    <div className="flex items-center gap-2.5">
+                                        {rowSelectable && row.id != null ? (
+                                            <input
+                                                type="checkbox"
+                                                checked={rowSelected}
+                                                onChange={() => toggleSelectItem(row.id!)}
+                                                className="rounded border-slate-300 text-amber-600 focus:ring-amber-500"
+                                                aria-label="Select row for history clear"
+                                            />
+                                        ) : (
+                                            <span className="w-4" />
+                                        )}
+                                        <span className="flex items-center justify-center w-6 h-6 rounded-lg bg-slate-100 text-slate-600 text-xs font-bold">{index + 1}</span>
                                         <div>
-                                            <p className="text-xs font-semibold text-gray-900 leading-tight">{row.member_name}</p>
-                                            <p className="text-[10px] text-gray-500 leading-tight">{formatDate(row.sheet_date, '')}{row.branch_name ? ` · ${row.branch_name}` : ''}</p>
+                                            <p className="text-xs font-bold text-slate-800 leading-tight">{row.member_name}</p>
+                                            <p className="text-[10px] text-slate-500 font-semibold mt-0.5">
+                                                {formatDate(row.sheet_date, '')}
+                                                {row.branch_name ? ` · ${row.branch_name}` : ''}
+                                            </p>
                                         </div>
                                     </div>
                                     <div>
-                                        {review.status === 'pending' && row.can_act ? (
-                                            <button
-                                                type="button"
-                                                onClick={() => handleToggleAction(review.review_id, rowKey)}
-                                                className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-semibold transition-all ${
-                                                    isOpen ? 'bg-slate-700 text-white' : 'bg-blue-600 text-white hover:bg-blue-700'
-                                                }`}
-                                            >
-                                                {isOpen ? 'বন্ধ করুন' : 'সিদ্ধান্ত দিন'}
-                                            </button>
-                                        ) : (
-                                            <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold border ${statusClass[review.status] || statusClass.pending}`}>
-                                                {statusLabel[review.status] || review.status}
-                                            </span>
-                                        )}
+                                        <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-[10px] font-bold border shadow-2xs ${statusClass[review.status] || statusClass.pending}`}>
+                                            {statusLabel[review.status] || review.status}
+                                        </span>
                                     </div>
                                 </div>
 
                                 {/* Card body */}
-                                <div className="px-3 py-2.5 grid grid-cols-2 gap-x-4 gap-y-1.5 text-xs">
-                                    {row.member_code && (
-                                        <div><span className="text-gray-400">সদস্য নম্বর</span><p className="font-medium text-gray-800">{row.member_code}</p></div>
-                                    )}
-                                    {row.member_phone && (
-                                        <div><span className="text-gray-400">ফোন নম্বর</span><p className="font-medium text-gray-800">{row.member_phone}</p></div>
-                                    )}
-                                    {row.samity_number && (
-                                        <div><span className="text-gray-400">সমিতি নম্বর</span><p className="font-medium text-gray-800">{row.samity_number}</p></div>
-                                    )}
-                                    <div><span className="text-gray-400">সঞ্চয় (সা/অ/মো)</span><p className="font-medium text-gray-800">{formatAmount(row.savings_general) || '—'} / {formatAmount(row.savings_other) || '—'} / {formatAmount(row.savings_total) || '—'}</p></div>
+                                <div className="p-4 space-y-3.5">
+                                    <div className="grid grid-cols-2 gap-3.5 text-xs">
+                                        {row.member_code && (
+                                            <div>
+                                                <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wider block">সদস্য নম্বর</span>
+                                                <p className="font-semibold text-slate-700 font-mono mt-0.5">{row.member_code}</p>
+                                            </div>
+                                        )}
+                                        {row.member_phone && (
+                                            <div>
+                                                <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wider block">ফোন নম্বর</span>
+                                                <a href={`tel:${row.member_phone}`} className="inline-flex items-center gap-1 font-semibold text-blue-600 hover:text-blue-800 mt-0.5 transition-colors">
+                                                    <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 5a2 2 0 012-2h3.28a1 1 0 01.94.725l.548 2.2a1 1 0 01-.321.988l-1.305.98a10.582 10.582 0 004.872 4.872l.98-1.305a1 1 0 01.988-.321l2.2.548a1 1 0 01.725.94V19a2 2 0 01-2 2h-1C9.716 21 3 14.284 3 6V5z"/></svg>
+                                                    {row.member_phone}
+                                                </a>
+                                            </div>
+                                        )}
+                                        {row.samity_number && (
+                                            <div>
+                                                <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wider block">সমিতি নম্বর</span>
+                                                <p className="font-semibold text-slate-700 mt-0.5">{row.samity_number}</p>
+                                            </div>
+                                        )}
+                                        {row.loan_type && (
+                                            <div>
+                                                <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wider block">ঋণের ধরন</span>
+                                                <p className="font-semibold text-slate-700 mt-0.5">{row.loan_type}</p>
+                                            </div>
+                                        )}
+                                        {row.project_name && (
+                                            <div className="col-span-2">
+                                                <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wider block">প্রকল্পের নাম</span>
+                                                <p className="font-semibold text-slate-700 mt-0.5">{row.project_name}</p>
+                                            </div>
+                                        )}
+                                    </div>
+
+                                    {/* Savings block */}
+                                    <div className="bg-slate-50 border border-slate-100 rounded-xl p-3">
+                                        <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block mb-2">সঞ্চয়ের পরিমাণ</span>
+                                        <div className="grid grid-cols-3 gap-2 text-center">
+                                            <div className="bg-white rounded-lg p-2 border border-slate-100/50 shadow-2xs">
+                                                <span className="text-[9px] text-slate-400 block font-semibold">সাধারণ</span>
+                                                <span className="text-xs font-bold text-slate-700 mt-0.5 block">{formatAmount(row.savings_general) ? `৳${formatAmount(row.savings_general)}` : '—'}</span>
+                                            </div>
+                                            <div className="bg-white rounded-lg p-2 border border-slate-100/50 shadow-2xs">
+                                                <span className="text-[9px] text-slate-400 block font-semibold">অন্যান্য</span>
+                                                <span className="text-xs font-bold text-slate-700 mt-0.5 block">{formatAmount(row.savings_other) ? `৳${formatAmount(row.savings_other)}` : '—'}</span>
+                                            </div>
+                                            <div className="bg-blue-50/50 rounded-lg p-2 border border-blue-100/60 shadow-2xs">
+                                                <span className="text-[9px] text-blue-600 block font-bold">মোট</span>
+                                                <span className="text-xs font-extrabold text-blue-700 mt-0.5 block">{formatAmount(row.savings_total) ? `৳${formatAmount(row.savings_total)}` : '—'}</span>
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    {/* Repaid Loan & Installment */}
                                     {row.repaid_loan_amount != null && (
-                                        <div><span className="text-gray-400">পরিশোধিত মূল ঋণ</span><p className="font-medium text-gray-800">{formatAmount(row.repaid_loan_amount) || row.repaid_loan_amount}{row.repaid_installment_no != null ? ` (${row.repaid_installment_no} দফা)` : ''}</p></div>
+                                        <div className="bg-amber-50/30 border border-amber-100 rounded-xl p-3 flex justify-between items-center text-xs">
+                                            <div>
+                                                <span className="text-[10px] text-amber-700 font-bold uppercase tracking-wider block mb-1">পরিশোধিত ঋণ</span>
+                                                <span className="font-semibold text-slate-700">৳ {formatAmount(row.repaid_loan_amount) || row.repaid_loan_amount}</span>
+                                            </div>
+                                            {row.repaid_installment_no != null && (
+                                                <div className="text-right">
+                                                    <span className="text-[10px] text-amber-700 font-bold uppercase tracking-wider block mb-1">পরিশোধিত দফা</span>
+                                                    <span className="font-semibold text-slate-700">{row.repaid_installment_no} দফা</span>
+                                                </div>
+                                            )}
+                                        </div>
                                     )}
-                                    {row.other_institution_loan_amount != null && (
-                                        <div><span className="text-gray-400">অন্য সংস্থায় ঋণ</span><p className="font-medium text-gray-800 whitespace-pre-line">{String(row.other_institution_loan_amount)}</p></div>
+
+                                    {/* Other Institution Loan */}
+                                    {row.other_institution_loan_amount != null && String(row.other_institution_loan_amount).trim().length > 0 && (
+                                        <div className="bg-rose-50/30 border border-rose-100 rounded-xl p-3">
+                                            <span className="text-[10px] text-rose-700 font-bold uppercase tracking-wider block mb-1">অন্যান্য সংস্থায় ঋণ</span>
+                                            <p className="text-xs text-slate-700 whitespace-pre-line leading-relaxed">{String(row.other_institution_loan_amount)}</p>
+                                        </div>
                                     )}
-                                    <div><span className="text-gray-400">প্রস্তাবিত ঋণ</span><p className="font-semibold text-blue-700">{formatAmount(row.proposed_loan_amount) || '—'}</p></div>
-                                    {row.loan_term_years != null && (
-                                        <div><span className="text-gray-400">মেয়াদ</span><p className="font-medium text-gray-800">{row.loan_term_years} বছর</p></div>
-                                    )}
-                                    {row.loan_type && (
-                                        <div><span className="text-gray-400">ঋণের ধরন</span><p className="font-medium text-gray-800">{row.loan_type}</p></div>
-                                    )}
-                                    {row.project_name && (
-                                        <div className="col-span-2"><span className="text-gray-400">প্রকল্প</span><p className="font-medium text-gray-800">{row.project_name}</p></div>
-                                    )}
+
+                                    {/* Proposed Loan Details Box */}
+                                    <div className="bg-gradient-to-r from-blue-50 to-indigo-50/40 border border-blue-100 rounded-xl p-3.5 flex justify-between items-center">
+                                        <div>
+                                            <span className="text-[10px] text-indigo-600 font-bold uppercase tracking-wider block">প্রস্তাবিত ঋণ</span>
+                                            <span className="text-base font-black text-indigo-700 mt-0.5 block">৳ {formatAmount(row.proposed_loan_amount) || '—'}</span>
+                                        </div>
+                                        {row.loan_term_years != null && (
+                                            <div className="text-right">
+                                                <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wider block">ঋণের মেয়াদ</span>
+                                                <span className="text-xs font-extrabold text-slate-700 mt-0.5 block">{row.loan_term_years} বছর</span>
+                                            </div>
+                                        )}
+                                    </div>
+
+                                    {/* Approved Loan Details Box */}
                                     {row.approved_amount != null && (
-                                        <div><span className="text-gray-400">অনুমোদিত ঋণ</span><p className="font-semibold text-green-700">৳ {formatAmount(row.approved_amount)}</p></div>
+                                        <div className="bg-gradient-to-r from-green-50 to-emerald-50/40 border border-green-100 rounded-xl p-3.5 flex justify-between items-center animate-in fade-in duration-200">
+                                            <div>
+                                                <span className="text-[10px] text-emerald-600 font-bold uppercase tracking-wider block">অনুমোদিত ঋণ</span>
+                                                <span className="text-base font-black text-emerald-700 mt-0.5 block">৳ {formatAmount(row.approved_amount)}</span>
+                                            </div>
+                                            {row.approver_name && (
+                                                <div className="text-right">
+                                                    <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wider block">অনুমোদনকারী</span>
+                                                    <span className="text-xs font-bold text-slate-700 mt-0.5 block">{row.approver_name}</span>
+                                                </div>
+                                            )}
+                                        </div>
                                     )}
-                                    {((row.approvers && row.approvers.length > 0) || row.approver_name) && (
-                                        <div><span className="text-gray-400">অনুমোদনকারী</span><p className="font-medium text-gray-800">{(row.approvers && row.approvers.length > 0 ? row.approvers.map((a) => a.approver_name).filter(Boolean).join(', ') : row.approver_name) || ''}{row.approver_role && !(row.approvers && row.approvers.length > 0) ? ` (${row.approver_role})` : ''}</p></div>
-                                    )}
+
+                                    {/* Comments Box */}
                                     {row.review_comments && (
-                                        <div className="col-span-2"><span className="text-gray-400">মন্তব্য</span><p className="font-medium text-gray-800">{row.review_comments}</p></div>
+                                        <div className="bg-slate-50 border border-slate-100 rounded-xl p-3">
+                                            <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block mb-1">মন্তব্য</span>
+                                            <p className="text-xs text-slate-700 leading-normal">{row.review_comments}</p>
+                                        </div>
                                     )}
+
+                                    {/* Signature History */}
                                     {((row.approvers && row.approvers.length > 0) || row.approver_signature || row.decided_at) && (
-                                        <div className="col-span-2 flex flex-col gap-1.5">
+                                        <div className="pt-3 border-t border-slate-100 flex flex-wrap gap-2 items-center">
+                                            <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mr-1">অনুমোদনকারীর স্বাক্ষর:</span>
                                             {(row.approvers && row.approvers.length > 0 ? row.approvers : [{ approver_signature: row.approver_signature, decided_at: row.decided_at, approver_name: row.approver_name }]).map((a, i) => (
-                                                <div key={i} className="flex items-center gap-2">
-                                                    {a.approver_signature && (
+                                                <div key={i} className="flex items-center gap-2 bg-slate-50/80 border border-slate-200 rounded-lg px-2 py-1 shadow-2xs">
+                                                    {a.approver_signature ? (
                                                         <button
                                                             type="button"
                                                             onClick={() =>
@@ -1020,159 +1338,86 @@ export default function TeamBasedApprovalApproverIndex({ reviews, filters, branc
                                                                         : `/storage/${a.approver_signature}`
                                                                 }
                                                                 alt="Signature"
-                                                                className="h-7 object-contain"
+                                                                className="h-6 object-contain"
                                                                 onError={(e) => {
                                                                     (e.target as HTMLImageElement).style.display = 'none';
                                                                 }}
                                                             />
                                                         </button>
-                                                    )}
-                                                    <span className="text-[10px] text-gray-500">{formatDate(a.decided_at, '')}</span>
+                                                    ) : null}
+                                                    <div className="text-[9px] text-slate-500 leading-tight">
+                                                        <p className="font-semibold text-slate-600">{a.approver_name || 'Approver'}</p>
+                                                        <p>{formatDate(a.decided_at, '')}</p>
+                                                    </div>
                                                 </div>
                                             ))}
                                         </div>
                                     )}
-                                </div>
 
-                                {/* Mobile action panel */}
-                                {isOpen && review.status === 'pending' && (
-                                    <div className="border-t border-blue-100 bg-gradient-to-b from-slate-50 to-blue-50 px-3 py-3">
-                                        {/* Header row */}
-                                        <div className="flex items-center justify-between mb-3">
-                                            <div className="flex items-center gap-1.5">
-                                                <div className="flex items-center justify-center w-4 h-4 rounded-full bg-blue-600 text-white text-[8px] font-bold">✓</div>
-                                                <span className="text-[10px] font-semibold text-slate-700 uppercase tracking-wide">অনুমোদন সিদ্ধান্ত</span>
-                                            </div>
+                                    {/* Action Buttons for Pending Review */}
+                                    {review.status === 'pending' && row.can_act && (
+                                        <div className="pt-3 border-t border-slate-100 flex gap-2.5">
                                             <button
                                                 type="button"
                                                 onClick={() => openEditModal(review.review_id, { ...row, review_id: review.review_id })}
-                                                className="inline-flex items-center gap-1 px-2 py-1 rounded-md border border-slate-300 bg-white text-[10px] font-medium text-slate-600 hover:bg-slate-50 shadow-sm"
+                                                className="flex-1 inline-flex items-center justify-center gap-1.5 px-3 py-2.5 rounded-xl border border-slate-200 bg-white text-xs font-semibold text-slate-600 hover:bg-slate-50 transition-all active:scale-[0.97]"
                                             >
-                                                <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/></svg>
+                                                <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/></svg>
                                                 সম্পাদনা
                                             </button>
-                                        </div>
-
-                                        {/* Previous approver history (when forwarded / multi-step) */}
-                                        {Array.isArray(row.approvers) && row.approvers.some((a) => a?.status && a.status !== 'pending') && (
-                                            <div className="mb-3 rounded-lg border border-slate-200 bg-white/70 p-2">
-                                                <p className="text-[10px] font-semibold text-slate-500 uppercase tracking-wider mb-1">পূর্ববর্তী অনুমোদন</p>
-                                                <div className="space-y-1">
-                                                    {row.approvers
-                                                        .filter((a) => a?.status && a.status !== 'pending')
-                                                        .map((a, i) => (
-                                                            <div key={`${a.approver_name || 'approver'}-${i}`} className="text-[11px] text-slate-700">
-                                                                <span className="font-semibold">{a.approver_name || '—'}</span>
-                                                                {a.approver_role ? <span className="text-slate-500"> ({a.approver_role})</span> : null}
-                                                                <div className="text-slate-700">
-                                                                    <span className="text-slate-500">অনুমোদিত ঋণ:</span>{' '}
-                                                                    <span className="font-semibold">{formatAmount(a.approved_amount) || '—'}</span>
-                                                                    {a.decided_at ? <span className="text-slate-500"> · {formatDate(a.decided_at)}</span> : null}
-                                                                </div>
-                                                                {a.comments ? (
-                                                                    <div className="text-slate-700 whitespace-pre-line">
-                                                                        <span className="text-slate-500">মন্তব্য:</span> {a.comments}
-                                                                    </div>
-                                                                ) : null}
-                                                            </div>
-                                                        ))}
-                                                </div>
-                                            </div>
-                                        )}
-
-                                        {/* Decision toggle */}
-                                        <p className="text-[10px] font-semibold text-slate-500 uppercase tracking-wider mb-1.5">সিদ্ধান্ত</p>
-                                        <div className="flex gap-2 mb-3">
                                             <button
                                                 type="button"
-                                                onClick={() => handleDecisionChange(review.review_id, 'approved')}
-                                                className={`flex-1 flex items-center justify-center gap-1.5 py-2 rounded-lg border-2 text-xs font-semibold transition-all ${(!state || state.decision === 'approved') ? 'border-green-500 bg-green-50 text-green-700' : 'border-slate-200 bg-white text-slate-500'}`}
+                                                onClick={() => {
+                                                    setDecisionState((prev) => {
+                                                        if (prev[review.review_id]) return prev;
+                                                        return {
+                                                            ...prev,
+                                                            [review.review_id]: {
+                                                                decision: 'approved',
+                                                                approved_amount: '',
+                                                                comments: '',
+                                                            },
+                                                        };
+                                                    });
+                                                    setMobileDecisionModal({
+                                                        open: true,
+                                                        review,
+                                                        row,
+                                                    });
+                                                }}
+                                                className="flex-[1.3] inline-flex items-center justify-center gap-1.5 px-3 py-2.5 rounded-xl bg-gradient-to-r from-blue-600 to-indigo-600 text-white text-xs font-bold shadow-sm hover:from-blue-700 hover:to-indigo-700 transition-all active:scale-[0.97]"
                                             >
-                                                <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
-                                                অনুমোদন
-                                            </button>
-                                            <button
-                                                type="button"
-                                                onClick={() => handleDecisionChange(review.review_id, 'rejected')}
-                                                className={`flex-1 flex items-center justify-center gap-1.5 py-2 rounded-lg border-2 text-xs font-semibold transition-all ${state?.decision === 'rejected' ? 'border-red-500 bg-red-50 text-red-700' : 'border-slate-200 bg-white text-slate-500'}`}
-                                            >
-                                                <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2m7-2a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
-                                                প্রত্যাখ্যান
-                                            </button>
-                                        </div>
-
-                                        {/* Amount + comments */}
-                                        <div className="flex flex-col gap-2 mb-3">
-                                            {(!state || state.decision === 'approved') && (
-                                                <div>
-                                                    <label className="text-[10px] font-semibold text-slate-500 uppercase tracking-wider block mb-1">অনুমোদিত ঋণ <span className="text-red-500">*</span></label>
-                                                    <div className="flex items-center border border-slate-300 rounded-lg overflow-hidden bg-white shadow-sm">
-                                                        <span className="px-2.5 py-2 bg-slate-100 border-r border-slate-300 text-[10px] font-semibold text-slate-600 select-none">৳</span>
-                                                        <input
-                                                            type="number"
-                                                            min={0}
-                                                            value={state?.approved_amount ?? ''}
-                                                            onChange={(e) => handleAmountChange(review.review_id, e.target.value)}
-                                                            placeholder="পরিমাণ লিখুন"
-                                                            className="flex-1 px-2 py-2 text-xs outline-none bg-transparent text-slate-800 placeholder-slate-400"
-                                                        />
-                                                    </div>
-                                                </div>
-                                            )}
-                                            <div>
-                                                <label className="text-[10px] font-semibold text-slate-500 uppercase tracking-wider block mb-1">
-                                                    মন্তব্য {state?.decision === 'rejected' && <span className="text-red-500">*</span>}
-                                                </label>
-                                                <textarea
-                                                    rows={3}
-                                                    value={state?.comments ?? ''}
-                                                    onChange={(e) => handleCommentsChange(review.review_id, e.target.value)}
-                                                    placeholder={state?.decision === 'rejected' ? 'প্রত্যাখ্যানের কারণ লিখুন...' : 'মন্তব্য লিখুন (ঐচ্ছিক)'}
-                                                    className="w-full border border-slate-300 rounded-lg px-3 py-2 text-xs text-slate-800 placeholder-slate-400 bg-white shadow-sm resize-none focus:outline-none focus:border-blue-400 focus:ring-1 focus:ring-blue-200"
-                                                />
-                                            </div>
-                                        </div>
-
-                                        {/* Action buttons */}
-                                        <div className="flex gap-2">
-                                            {(() => {
-                                                const isApprove = !state || state.decision === 'approved';
-                                                const isDisabled = isApprove ? !state?.approved_amount : !state?.comments;
-                                                return (
-                                                    <button
-                                                        type="button"
-                                                        onClick={() => {
-                                                            if (isApprove) setApproveChoiceModal({ open: true, review, row });
-                                                            else handleSubmitDecision(review);
-                                                        }}
-                                                        disabled={isDisabled}
-                                                        className={`flex-1 inline-flex items-center justify-center gap-1.5 py-2.5 rounded-lg text-xs font-semibold shadow-sm transition-all ${isDisabled ? 'bg-slate-200 text-slate-400 cursor-not-allowed' : isApprove ? 'bg-green-600 text-white hover:bg-green-700' : 'bg-red-600 text-white hover:bg-red-700'}`}
-                                                    >
-                                                        {isApprove ? <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M5 13l4 4L19 7"/></svg> : <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M6 18L18 6M6 6l12 12"/></svg>}
-                                                        {isApprove ? 'অনুমোদন দিন' : 'প্রত্যাখ্যান করুন'}
-                                                    </button>
-                                                );
-                                            })()}
-                                            <button
-                                                type="button"
-                                                onClick={() => setOpenRowKey(null)}
-                                                className="inline-flex items-center justify-center gap-1 px-4 py-2.5 rounded-lg border border-slate-300 bg-white text-xs font-medium text-slate-600 hover:bg-slate-50 shadow-sm"
-                                            >
-                                                বাতিল
+                                                <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+                                                সিদ্ধান্ত দিন
                                             </button>
                                         </div>
-                                    </div>
-                                )}
+                                    )}
+                                </div>
                             </div>
                         );
                     })}
                 </div>
 
                 {/* ── DESKTOP TABLE VIEW ────────────────────────────────── */}
-                <div className="hidden md:block print:block bg-white border border-slate-200/80 rounded-2xl overflow-hidden shadow-sm hover:shadow-md transition-shadow duration-300 approval-index-table-wrapper w-full approval-index-print-page print:bg-transparent print:shadow-none print:border-0 print:rounded-none">
+                <div className="hidden md:block print:block bg-white border border-slate-200/80 rounded-2xl overflow-x-auto shadow-sm hover:shadow-md transition-shadow duration-300 approval-index-table-wrapper w-full approval-index-print-page print:bg-transparent print:shadow-none print:border-0 print:rounded-none">
                     <table className="w-full border-collapse">
                         <thead className="bg-gray-50 print:bg-transparent">
                             <tr>
+                                <th className="border print:hidden w-8" rowSpan={headerRowSpan}>
+                                    <input
+                                        type="checkbox"
+                                        checked={allSelectablePageSelected}
+                                        ref={(el) => {
+                                            if (el) {
+                                                el.indeterminate = someSelectablePageSelected && !allSelectablePageSelected;
+                                            }
+                                        }}
+                                        onChange={toggleSelectAllOnPage}
+                                        disabled={selectableItemIds.length === 0}
+                                        className="rounded border-slate-300 text-amber-600 focus:ring-amber-500 disabled:opacity-40"
+                                        aria-label="Select all rows on page"
+                                    />
+                                </th>
                                 <th className="border approval-col-serial" rowSpan={headerRowSpan}>
                                     ক্র.
                                 </th>
@@ -1289,10 +1534,23 @@ export default function TeamBasedApprovalApproverIndex({ reviews, filters, branc
                                 const rowKey = `${row.review_id}-${row.serial_no}-${index}`;
                                 const isOpen = openRowKey === rowKey;
                                 const state = decisionState[review.review_id];
+                                const rowSelectable = isRowSelectableForHistoryClear(row);
+                                const rowSelected = row.id != null && selectedItemIds.includes(row.id);
 
                                 return (
                                     <React.Fragment key={`${row.review_id}-${row.serial_no}-${index}`}>
-                                        <tr className="hover:bg-slate-50/50 print:hover:bg-transparent transition-colors">
+                                        <tr className={`hover:bg-slate-50/50 print:hover:bg-transparent transition-colors ${rowSelected ? 'bg-amber-50/40' : ''}`}>
+                                            <td className="border print:hidden">
+                                                {rowSelectable && row.id != null ? (
+                                                    <input
+                                                        type="checkbox"
+                                                        checked={rowSelected}
+                                                        onChange={() => toggleSelectItem(row.id!)}
+                                                        className="rounded border-slate-300 text-amber-600 focus:ring-amber-500"
+                                                        aria-label="Select row for history clear"
+                                                    />
+                                                ) : null}
+                                            </td>
                                             <td className="border approval-col-serial">{index + 1}</td>
                                             {colVis.sheet_date && (
                                                 <td className="border text-left whitespace-nowrap">{formatDate(row.sheet_date)}</td>
@@ -2070,6 +2328,208 @@ export default function TeamBasedApprovalApproverIndex({ reviews, filters, branc
                     </div>
                 </div>
             )}
+
+            {/* Mobile Decision Modal */}
+            {mobileDecisionModal.open && mobileDecisionModal.review && mobileDecisionModal.row && (() => {
+                const review = mobileDecisionModal.review;
+                const row = mobileDecisionModal.row;
+                const state = decisionState[review.review_id] || {
+                    decision: 'approved' as const,
+                    approved_amount: '',
+                    comments: '',
+                };
+                const isApprove = state.decision === 'approved';
+                const isDisabled = isApprove ? !state.approved_amount : !state.comments;
+
+                const handleMobileEdit = () => {
+                    setMobileDecisionModal({ open: false, review: null, row: null });
+                    openEditModal(review.review_id, { ...row, review_id: review.review_id });
+                };
+
+                return (
+                    <div className="fixed inset-0 z-40 flex items-center justify-center bg-slate-900/60 backdrop-blur-xs p-4 print:hidden">
+                        <div 
+                            className="bg-white rounded-2xl shadow-xl w-full max-w-md max-h-[85vh] flex flex-col overflow-hidden animate-in fade-in zoom-in-95 duration-200"
+                            onClick={(e) => e.stopPropagation()}
+                        >
+                            {/* Modal Header */}
+                            <div className="px-4 py-3.5 border-b border-slate-100 flex items-center justify-between bg-slate-50">
+                                <div>
+                                    <h3 className="text-sm font-bold text-slate-800">অনুমোদন সিদ্ধান্ত</h3>
+                                    <p className="text-[11px] text-slate-500 font-semibold mt-0.5">সদস্য: {row.member_name}</p>
+                                </div>
+                                <button
+                                    type="button"
+                                    onClick={() => setMobileDecisionModal({ open: false, review: null, row: null })}
+                                    className="text-slate-400 hover:text-slate-600 transition-colors p-1.5 rounded-full hover:bg-slate-100"
+                                >
+                                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12"/></svg>
+                                </button>
+                            </div>
+
+                            {/* Modal Content */}
+                            <div className="p-4 space-y-4 overflow-y-auto flex-1">
+                                {/* Previous approver history if forwarded */}
+                                {Array.isArray(row.approvers) && row.approvers.some((a: any) => a?.status && a.status !== 'pending') && (
+                                    <div className="rounded-xl border border-slate-200 bg-amber-50/20 p-3">
+                                        <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-2">পূর্ববর্তী অনুমোদন</p>
+                                        <div className="space-y-2">
+                                            {row.approvers
+                                                .filter((a: any) => a?.status && a.status !== 'pending')
+                                                .map((a: any, i: number) => (
+                                                    <div key={i} className="text-xs text-slate-700 bg-white border border-slate-100 rounded-lg p-2 shadow-2xs">
+                                                        <div className="flex justify-between items-center">
+                                                            <span className="font-semibold text-slate-800">{a.approver_name}</span>
+                                                            <span className="text-[10px] text-slate-400">{a.approver_role}</span>
+                                                        </div>
+                                                        <div className="mt-1 flex justify-between">
+                                                            <span>অনুমোদিত: <strong className="text-green-700">৳{formatAmount(a.approved_amount)}</strong></span>
+                                                            <span className="text-[10px] text-slate-400">{formatDate(a.decided_at, '')}</span>
+                                                        </div>
+                                                        {a.comments && (
+                                                            <p className="mt-1 text-[11px] text-slate-500 italic border-t border-slate-50 pt-1">
+                                                                মন্তব্য: {a.comments}
+                                                            </p>
+                                                        )}
+                                                    </div>
+                                                ))}
+                                        </div>
+                                    </div>
+                                )}
+
+                                {/* Proposed Loan info helper */}
+                                <div className="bg-slate-50 border border-slate-100 rounded-xl p-3 flex justify-between items-center">
+                                    <div>
+                                        <span className="text-[10px] text-slate-400 block font-semibold">প্রস্তাবিত ঋণ</span>
+                                        <span className="text-sm font-bold text-slate-850">৳ {formatAmount(row.proposed_loan_amount) || '—'}</span>
+                                    </div>
+                                    {row.loan_term_years != null && (
+                                        <div className="text-right">
+                                            <span className="text-[10px] text-slate-400 block font-semibold">মেয়াদ</span>
+                                            <span className="text-sm font-bold text-slate-800">{row.loan_term_years} বছর</span>
+                                        </div>
+                                    )}
+                                </div>
+
+                                {/* Decision Tab Toggle */}
+                                <div className="space-y-1.5">
+                                    <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block">সিদ্ধান্ত</label>
+                                    <div className="flex gap-2">
+                                        <button
+                                            type="button"
+                                            onClick={() => handleDecisionChange(review.review_id, 'approved')}
+                                            className={`flex-1 flex items-center justify-center gap-1.5 py-2.5 rounded-xl border-2 text-xs font-bold transition-all ${
+                                                isApprove
+                                                    ? 'border-green-500 bg-green-50 text-green-700 shadow-sm'
+                                                    : 'border-slate-200 bg-white text-slate-500 hover:bg-slate-50'
+                                            }`}
+                                        >
+                                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+                                            অনুমোদন
+                                        </button>
+                                        <button
+                                            type="button"
+                                            onClick={() => handleDecisionChange(review.review_id, 'rejected')}
+                                            className={`flex-1 flex items-center justify-center gap-1.5 py-2.5 rounded-xl border-2 text-xs font-bold transition-all ${
+                                                !isApprove
+                                                    ? 'border-red-500 bg-red-50 text-red-700 shadow-sm'
+                                                    : 'border-slate-200 bg-white text-slate-500 hover:bg-slate-50'
+                                            }`}
+                                        >
+                                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M10 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2m7-2a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+                                            প্রত্যাখ্যান
+                                        </button>
+                                    </div>
+                                </div>
+
+                                {/* Form Fields */}
+                                <div className="space-y-3">
+                                    {isApprove && (
+                                        <div className="space-y-1.5">
+                                            <div className="flex items-center justify-between">
+                                                <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">
+                                                    অনুমোদিত ঋণ <span className="text-red-500">*</span>
+                                                </label>
+                                                {row.proposed_loan_amount && (
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => handleAmountChange(review.review_id, String(row.proposed_loan_amount))}
+                                                        className="text-[10px] font-bold text-blue-600 hover:text-blue-800 bg-blue-50 hover:bg-blue-100 px-2 py-0.5 rounded-md transition-colors"
+                                                    >
+                                                        প্রস্তাবিত ঋণ বসান
+                                                    </button>
+                                                )}
+                                            </div>
+                                            <div className="flex items-center border border-slate-300 rounded-xl overflow-hidden bg-white shadow-sm focus-within:border-blue-500 focus-within:ring-2 focus-within:ring-blue-100 transition-all">
+                                                <span className="px-3 py-2 bg-slate-100 border-r border-slate-300 text-xs font-semibold text-slate-500 select-none">৳</span>
+                                                <input
+                                                    type="number"
+                                                    min={0}
+                                                    value={state.approved_amount ?? ''}
+                                                    onChange={(e) => handleAmountChange(review.review_id, e.target.value)}
+                                                    placeholder="অনুমোদিত ঋণের পরিমাণ লিখুন"
+                                                    className="flex-1 px-3 py-2 text-xs outline-none bg-transparent text-slate-800 placeholder-slate-400"
+                                                />
+                                            </div>
+                                        </div>
+                                    )}
+
+                                    <div className="space-y-1.5">
+                                        <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">
+                                            মন্তব্য {!isApprove && <span className="text-red-500">*</span>}
+                                        </label>
+                                        <textarea
+                                            rows={3}
+                                            value={state.comments ?? ''}
+                                            onChange={(e) => handleCommentsChange(review.review_id, e.target.value)}
+                                            placeholder={!isApprove ? 'প্রত্যাখ্যানের কারণ লিখুন...' : 'মন্তব্য লিখুন (ঐচ্ছিক)'}
+                                            className="w-full border border-slate-300 rounded-xl px-3 py-2 text-xs text-slate-800 placeholder-slate-400 bg-white shadow-sm resize-none focus:outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100 transition-all"
+                                        />
+                                    </div>
+                                </div>
+                            </div>
+
+                            {/* Modal Footer Actions */}
+                            <div className="p-4 border-t border-slate-100 bg-slate-50 flex gap-2">
+                                <button
+                                    type="button"
+                                    onClick={() => {
+                                        setMobileDecisionModal({ open: false, review: null, row: null });
+                                        if (isApprove) {
+                                            setApproveChoiceModal({ open: true, review, row });
+                                        } else {
+                                            handleSubmitDecision(review);
+                                        }
+                                    }}
+                                    disabled={isDisabled}
+                                    className={`flex-1 inline-flex items-center justify-center gap-1.5 py-2.5 rounded-xl text-xs font-bold shadow-sm transition-all ${
+                                        isDisabled
+                                            ? 'bg-slate-200 text-slate-400 cursor-not-allowed'
+                                            : isApprove
+                                            ? 'bg-green-600 text-white hover:bg-green-700'
+                                            : 'bg-red-600 text-white hover:bg-red-700'
+                                    }`}
+                                >
+                                    {isApprove ? (
+                                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M5 13l4 4L19 7"/></svg>
+                                    ) : (
+                                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M6 18L18 6M6 6l12 12"/></svg>
+                                    )}
+                                    {isApprove ? 'অনুমোদন দিন' : 'প্রত্যাখ্যান করুন'}
+                                </button>
+                                <button
+                                    type="button"
+                                    onClick={handleMobileEdit}
+                                    className="inline-flex items-center justify-center gap-1.5 px-3 py-2.5 rounded-xl border border-slate-200 bg-white text-xs font-bold text-slate-600 hover:bg-slate-50 shadow-sm transition-all active:scale-[0.97]"
+                                >
+                                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/></svg>
+                                    সম্পাদনা
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                );
+            })()}
         </AdminLayout>
     );
 }

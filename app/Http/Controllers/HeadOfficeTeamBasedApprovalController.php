@@ -119,20 +119,20 @@ class HeadOfficeTeamBasedApprovalController extends Controller
                     }
                     $sub->whereRaw('id = (SELECT MAX(id) FROM team_based_approval_reviews WHERE team_based_approval_item_id = team_based_approval_items.id)');
                 })
-                ->orWhere(function ($sub) use ($statusFilter) {
-                    $sub->whereNotExists(function ($sub2) {
-                        $sub2->select(DB::raw(1))
-                            ->from('team_based_approval_reviews')
-                            ->whereColumn('team_based_approval_item_id', 'team_based_approval_items.id');
-                    })
-                    ->whereHas('approval', function ($sub3) use ($statusFilter) {
-                        if ($statusFilter === 'under_review') {
-                            $sub3->whereIn('status', ['under_review', 'forwarded']);
-                        } else {
-                            $sub3->where('status', $statusFilter);
-                        }
+                    ->orWhere(function ($sub) use ($statusFilter) {
+                        $sub->whereNotExists(function ($sub2) {
+                            $sub2->select(DB::raw(1))
+                                ->from('team_based_approval_reviews')
+                                ->whereColumn('team_based_approval_item_id', 'team_based_approval_items.id');
+                        })
+                            ->whereHas('approval', function ($sub3) use ($statusFilter) {
+                                if ($statusFilter === 'under_review') {
+                                    $sub3->whereIn('status', ['under_review', 'forwarded']);
+                                } else {
+                                    $sub3->where('status', $statusFilter);
+                                }
+                            });
                     });
-                });
             });
         }
 
@@ -193,7 +193,7 @@ class HeadOfficeTeamBasedApprovalController extends Controller
                      ORDER BY id DESC LIMIT 1),
                     team_based_approvals.status
                 ))) as computed_status'),
-                DB::raw('COUNT(*) as count')
+                DB::raw('COUNT(*) as count'),
             ])
             ->groupBy('computed_status')
             ->pluck('count', 'computed_status')
@@ -659,6 +659,38 @@ class HeadOfficeTeamBasedApprovalController extends Controller
     }
 
     /**
+     * Head Office: bulk delete selected loan item rows.
+     */
+    public function destroyItems(Request $request)
+    {
+        $validated = $request->validate([
+            'item_ids' => ['required', 'array', 'min:1'],
+            'item_ids.*' => ['integer', 'exists:team_based_approval_items,id'],
+        ]);
+
+        $itemIds = $validated['item_ids'];
+
+        DB::transaction(function () use ($itemIds) {
+            TeamBasedApprovalReview::whereIn('team_based_approval_item_id', $itemIds)->delete();
+            TeamBasedApprovalItem::whereIn('id', $itemIds)->delete();
+        });
+
+        $count = count($itemIds);
+
+        return redirect()
+            ->back()
+            ->with('success', "{$count} টি লোন সারি সফলভাবে মুছে ফেলা হয়েছে।");
+    }
+
+    /**
+     * Head Office: clear approval/forward history for selected loan rows.
+     */
+    public function clearItemsReviewHistory(Request $request)
+    {
+        return app(TeamBasedApprovalController::class)->clearReviewHistory($request);
+    }
+
+    /**
      * Head Office: delete a Team Based sheet (any status; Head Office override).
      */
     public function destroy(TeamBasedApproval $teamBasedApproval)
@@ -771,4 +803,3 @@ class HeadOfficeTeamBasedApprovalController extends Controller
         ]);
     }
 }
-

@@ -3,6 +3,17 @@ import { Head, router } from '@inertiajs/react';
 import AdminLayout from '@/layouts/admin-layout';
 import { formatDate } from '@/utils/dateUtils';
 
+function rowHasReviewHistory(row: {
+    status?: string;
+    approvers?: { status?: string | null }[];
+}): boolean {
+    if (row.approvers?.some((a) => a.status && a.status !== 'pending')) {
+        return true;
+    }
+    const status = String(row.status || '').toLowerCase();
+    return status === 'approved' || status === 'rejected' || status === 'forwarded' || status === 'under_review';
+}
+
 /** কোনো অ্যামাউন্টে ডেসিমাল থাকবে না – রাউন্ড নম্বর রিটার্ন */
 function formatAmount(val: number | string | null | undefined): string {
     if (val == null || val === '') return '';
@@ -133,6 +144,7 @@ export default function TeamBasedApprovals({ approvals, filters, stats, zones, a
     const [dateFrom, setDateFrom] = useState(filters.date_from || '');
     const [dateTo, setDateTo] = useState(filters.date_to || '');
     const [perPage, setPerPage] = useState((filters.per_page ?? 100).toString());
+    const [selectedIds, setSelectedIds] = useState<number[]>([]);
     const [zoomSignatureUrl, setZoomSignatureUrl] = useState<string | null>(null);
 
     // Sync state with props on update (especially when actions occur)
@@ -147,6 +159,10 @@ export default function TeamBasedApprovals({ approvals, filters, stats, zones, a
         setDateTo(filters.date_to || '');
         setPerPage((filters.per_page ?? 100).toString());
     }, [filters]);
+
+    React.useEffect(() => {
+        setSelectedIds([]);
+    }, [approvals.data]);
 
     const getActiveParams = (extra = {}) => {
         return {
@@ -299,7 +315,7 @@ export default function TeamBasedApprovals({ approvals, filters, stats, zones, a
     }, [flatRows]);
 
     const visibleDataColCount =
-        1 +
+        2 +
         (colVis.sheet_date ? 1 : 0) +
         (colVis.branch ? 1 : 0) +
         (colVis.area ? 1 : 0) +
@@ -365,27 +381,92 @@ export default function TeamBasedApprovals({ approvals, filters, stats, zones, a
             data: getActiveParams({ page: approvals.current_page }),
             preserveState: true,
             preserveScroll: true,
+            onSuccess: () => setSelectedIds((prev) => prev.filter((id) => id !== itemId)),
         });
     };
+
+    const pageItemIds = flatRows.map((row) => row.id);
+    const allPageSelected = pageItemIds.length > 0 && pageItemIds.every((id) => selectedIds.includes(id));
+    const somePageSelected = pageItemIds.some((id) => selectedIds.includes(id));
+
+    const toggleSelectAllOnPage = () => {
+        if (allPageSelected) {
+            setSelectedIds((prev) => prev.filter((id) => !pageItemIds.includes(id)));
+            return;
+        }
+        setSelectedIds((prev) => [...new Set([...prev, ...pageItemIds])]);
+    };
+
+    const toggleSelectRow = (itemId: number) => {
+        setSelectedIds((prev) =>
+            prev.includes(itemId) ? prev.filter((id) => id !== itemId) : [...prev, itemId],
+        );
+    };
+
+    const handleBulkDelete = () => {
+        if (selectedIds.length === 0) {
+            return;
+        }
+        if (!confirm(`আপনি কি নিশ্চিত যে নির্বাচিত ${selectedIds.length} টি লোন সারি মুছে ফেলতে চান?`)) {
+            return;
+        }
+        router.delete('/head-office/team-based-approvals/items/bulk', {
+            data: {
+                item_ids: selectedIds,
+                ...getActiveParams({ page: approvals.current_page }),
+            },
+            preserveState: true,
+            preserveScroll: true,
+            onSuccess: () => setSelectedIds([]),
+        });
+    };
+
+    const selectedWithHistory = selectedIds.filter((id) => {
+        const row = flatRows.find((r) => r.id === id);
+        return row ? rowHasReviewHistory(row) : false;
+    });
+
+    const handleClearHistory = () => {
+        if (selectedWithHistory.length === 0) {
+            return;
+        }
+        if (
+            !confirm(
+                `নির্বাচিত ${selectedWithHistory.length} টি সারির অনুমোদন/ফরওয়ার্ড ইতিহাস মুছে ফেলতে চান? প্রাথমিক pending অবস্থায় ফিরে যাবে।`,
+            )
+        ) {
+            return;
+        }
+        router.post('/head-office/team-based-approvals/items/clear-history', {
+            item_ids: selectedWithHistory,
+            ...getActiveParams({ page: approvals.current_page }),
+        }, {
+            preserveState: true,
+            preserveScroll: true,
+            onSuccess: () => setSelectedIds([]),
+        });
+    };
+
+    const handleClearSelection = () => setSelectedIds([]);
 
     return (
         <AdminLayout>
             <Head title="Head Office - Team Based Approvals">
                 <style>{`
-                    .approval-index-table-wrapper table { table-layout: auto; width: max(100%, max-content); }
+                    .approval-index-table-wrapper table { table-layout: auto; width: 100%; }
                     .approval-index-table-wrapper th {
                         font-size: 10px;
                         font-weight: 600;
                         color: #1e3a8a;
                         background: linear-gradient(to right, #eff6ff, #f8fafc) !important;
                         border-bottom: 1px solid #bfdbfe !important;
-                        padding: 10px 8px !important;
+                        padding: 8px 6px !important;
                         white-space: normal;
                     }
                     .approval-index-table-wrapper td {
                         font-size: 10px;
                         line-height: 1.35;
-                        padding: 8px 6px !important;
+                        padding: 7px 5px !important;
                         vertical-align: middle;
                         text-align: center;
                         border-bottom: 1px solid #e2e8f0;
@@ -410,6 +491,78 @@ export default function TeamBasedApprovals({ approvals, filters, stats, zones, a
                     .approval-index-table-wrapper tbody td.approval-col-comment {
                         text-align: left;
                     }
+
+                    /* Dynamically scale table content based on screen size */
+                    @media (max-width: 1440px) {
+                        .approval-index-table-wrapper th {
+                            font-size: 9px;
+                            padding: 6px 4px !important;
+                        }
+                        .approval-index-table-wrapper td {
+                            font-size: 9px;
+                            padding: 5px 3px !important;
+                        }
+                        .approval-index-table-wrapper td span.text-\\[9px\\] {
+                            font-size: 8px !important;
+                        }
+                        .approval-index-table-wrapper td span.text-\\[10px\\],
+                        .approval-index-table-wrapper td button.text-\\[10px\\] {
+                            font-size: 8.5px !important;
+                        }
+                        .approval-index-table-wrapper .approval-col-serial {
+                            font-size: 8px;
+                        }
+                        .approval-index-table-wrapper .approval-col-comment {
+                            min-width: 10rem;
+                        }
+                    }
+                    @media (max-width: 1280px) {
+                        .approval-index-table-wrapper th {
+                            font-size: 8px;
+                            padding: 5px 3px !important;
+                        }
+                        .approval-index-table-wrapper td {
+                            font-size: 8px;
+                            padding: 4px 2px !important;
+                        }
+                        .approval-index-table-wrapper td span.text-\\[9px\\] {
+                            font-size: 7.5px !important;
+                        }
+                        .approval-index-table-wrapper td span.text-\\[10px\\],
+                        .approval-index-table-wrapper td button.text-\\[10px\\] {
+                            font-size: 7.5px !important;
+                        }
+                        .approval-index-table-wrapper .approval-col-serial {
+                            font-size: 7.5px;
+                        }
+                        .approval-index-table-wrapper .approval-col-comment {
+                            min-width: 8rem;
+                        }
+                    }
+                    @media (max-width: 1100px) {
+                        .approval-index-table-wrapper th {
+                            font-size: 7.5px;
+                            padding: 4px 2px !important;
+                        }
+                        .approval-index-table-wrapper td {
+                            font-size: 7.5px;
+                            padding: 3.5px 1.5px !important;
+                        }
+                        .approval-index-table-wrapper td span.text-\\[9px\\] {
+                            font-size: 7px !important;
+                        }
+                        .approval-index-table-wrapper td span.text-\\[10px\\],
+                        .approval-index-table-wrapper td button.text-\\[10px\\] {
+                            font-size: 7px !important;
+                        }
+                        .approval-index-table-wrapper .approval-col-serial {
+                            font-size: 7px;
+                        }
+                        .approval-index-table-wrapper .approval-col-comment {
+                            min-width: 7rem;
+                        }
+                    }
+
                     @page { size: legal landscape; margin: 5mm; }
                     @media print {
                         html, body { margin: 0 !important; padding: 0 !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; background: #fff !important; }
@@ -669,11 +822,61 @@ export default function TeamBasedApprovals({ approvals, filters, stats, zones, a
                     </div>
                 </div>
 
+                {selectedIds.length > 0 && (
+                    <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-blue-200 bg-blue-50/60 px-4 py-3 print:hidden">
+                        <p className="text-sm text-blue-800 font-medium">
+                            {selectedIds.length} টি সারি নির্বাচিত
+                            {selectedWithHistory.length > 0 && selectedWithHistory.length !== selectedIds.length
+                                ? ` (${selectedWithHistory.length} টিতে ইতিহাস আছে)`
+                                : ''}
+                        </p>
+                        <div className="flex flex-wrap gap-2">
+                            <button
+                                type="button"
+                                onClick={handleClearSelection}
+                                className="px-4 py-2 rounded-lg border border-slate-300 bg-white text-xs font-medium text-slate-700 hover:bg-slate-50"
+                            >
+                                Clear Selection
+                            </button>
+                            {selectedWithHistory.length > 0 && (
+                                <button
+                                    type="button"
+                                    onClick={handleClearHistory}
+                                    className="px-4 py-2 rounded-lg bg-amber-600 text-white text-xs font-semibold hover:bg-amber-700 shadow-sm"
+                                >
+                                    Remove Approval/Forward History
+                                </button>
+                            )}
+                            <button
+                                type="button"
+                                onClick={handleBulkDelete}
+                                className="px-4 py-2 rounded-lg bg-red-600 text-white text-xs font-semibold hover:bg-red-700 shadow-sm"
+                            >
+                                Delete Selected
+                            </button>
+                        </div>
+                    </div>
+                )}
+
                 {/* Table - flat list of all items (same behavior as branch ApprovalIndex) */}
-                <div className="bg-white border border-slate-200/80 rounded-2xl overflow-hidden shadow-sm hover:shadow-md transition-shadow duration-300 approval-index-table-wrapper w-full print:bg-transparent print:shadow-none print:border-0 print:rounded-none">
+                <div className="bg-white border border-slate-200/80 rounded-2xl overflow-x-auto shadow-sm hover:shadow-md transition-shadow duration-300 approval-index-table-wrapper w-full print:bg-transparent print:shadow-none print:border-0 print:rounded-none">
                     <table className="w-full border-collapse">
                         <thead className="bg-gray-50 print:bg-transparent">
                             <tr>
+                                <th className="border print:hidden w-8">
+                                    <input
+                                        type="checkbox"
+                                        checked={allPageSelected}
+                                        ref={(el) => {
+                                            if (el) {
+                                                el.indeterminate = !allPageSelected && somePageSelected;
+                                            }
+                                        }}
+                                        onChange={toggleSelectAllOnPage}
+                                        aria-label="Select all rows on this page"
+                                        className="h-3.5 w-3.5 rounded border-slate-300 text-blue-600 focus:ring-blue-500"
+                                    />
+                                </th>
                                 <th className="border approval-col-serial">ক্র.</th>
                                 {colVis.sheet_date && <th className="border">তারিখ</th>}
                                 {colVis.branch && <th className="border">শাখা</th>}
@@ -709,8 +912,17 @@ export default function TeamBasedApprovals({ approvals, filters, stats, zones, a
                             {flatRows.map((row, index) => (
                                 <tr
                                     key={`${row.sheet_id}-${row.serial_no}-${index}`}
-                                    className="hover:bg-slate-50/50 print:hover:bg-transparent transition-colors"
+                                    className={`hover:bg-slate-50/50 print:hover:bg-transparent transition-colors ${selectedIds.includes(row.id) ? 'bg-blue-50/40' : ''}`}
                                 >
+                                    <td className="border print:hidden">
+                                        <input
+                                            type="checkbox"
+                                            checked={selectedIds.includes(row.id)}
+                                            onChange={() => toggleSelectRow(row.id)}
+                                            aria-label={`Select ${row.member_name}`}
+                                            className="h-3.5 w-3.5 rounded border-slate-300 text-blue-600 focus:ring-blue-500"
+                                        />
+                                    </td>
                                     <td className="border approval-col-serial">{index + 1}</td>
                                     {colVis.sheet_date && (
                                         <td className="border text-left whitespace-nowrap">{formatDate(row.sheet_date)}</td>
