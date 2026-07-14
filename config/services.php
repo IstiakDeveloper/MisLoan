@@ -35,4 +35,9 @@ return [
         ],
     ],
 
+    'block_list' => [
+        'url' => env('BLOCK_LIST_API_URL', 'http://block.mousumibd.org/api'),
+        'token' => env('BLOCK_LIST_API_TOKEN'),
+    ],
+
 ];

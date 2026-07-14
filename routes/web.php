@@ -185,12 +185,15 @@ Route::middleware(['auth', 'verified'])->group(function () {
 
         // Approver-side: list & decision
         Route::get('for-approver', [TeamBasedApprovalController::class, 'approverIndex'])->name('approver-index');
+        Route::get('block-list/verify', [TeamBasedApprovalController::class, 'verifyBlockList'])->name('block-list.verify');
         Route::post('reviews/clear-history', [TeamBasedApprovalController::class, 'clearReviewHistory'])->name('reviews.clear-history');
         Route::post('reviews/{review}/decide', [TeamBasedApprovalController::class, 'decide'])->name('reviews.decide');
         Route::post('reviews/{review}/update-item', [TeamBasedApprovalController::class, 'updateItem'])->name('reviews.update-item');
         Route::post('{teamBasedApproval}/forward', [TeamBasedApprovalController::class, 'forward'])->name('forward');
 
         // Shared print view
+        Route::get('export/items', [TeamBasedApprovalController::class, 'exportItems'])->name('export.items');
+        Route::get('for-approver/export', [TeamBasedApprovalController::class, 'exportApproverItems'])->name('approver-export');
         Route::get('{teamBasedApproval}/print', [TeamBasedApprovalPrintController::class, 'show'])->name('print');
     });
 
@@ -290,6 +293,7 @@ Route::middleware(['auth', 'verified'])->group(function () {
         Route::get('savings-applications/{id}', [HeadOfficeSavingsController::class, 'show'])->name('savings-applications.show');
 
         // Head Office Team Based Approvals overview + management
+        Route::get('team-based-approvals/export', [HeadOfficeTeamBasedApprovalController::class, 'exportItems'])->name('team-based-approvals.export');
         Route::get('team-based-approvals', [HeadOfficeTeamBasedApprovalController::class, 'index'])->name('team-based-approvals');
         Route::get('team-based-approvals/{teamBasedApproval}/edit', [HeadOfficeTeamBasedApprovalController::class, 'edit'])->name('team-based-approvals.edit');
         Route::put('team-based-approvals/{teamBasedApproval}', [HeadOfficeTeamBasedApprovalController::class, 'update'])->name('team-based-approvals.update');

@@ -1,5 +1,7 @@
 import { Head, router, usePage } from '@inertiajs/react';
 import AdminLayout from '@/layouts/admin-layout';
+import TeamBasedExportBar from '@/components/team-based/TeamBasedExportBar';
+import TeamBasedDecisionModal, { type DecisionFormState } from '@/components/team-based/TeamBasedDecisionModal';
 import React from 'react';
 import { formatDate } from '@/utils/dateUtils';
 
@@ -44,6 +46,13 @@ interface ItemRow {
     id?: number;
     serial_no: number;
     member_name: string;
+    name_bn?: string | null;
+    father_name?: string | null;
+    mother_name?: string | null;
+    spouse_name?: string | null;
+    dob?: string | null;
+    nid_number?: string | null;
+    address?: string | null;
     member_code?: string | null;
     member_phone?: string | null;
     samity_number?: string | null;
@@ -169,14 +178,12 @@ export default function TeamBasedApprovalApproverIndex({ reviews, filters, branc
     const currentApprovalFlow = filters.approval_flow ?? '';
     const currentPerPage = filters.per_page ?? 20;
 
-    const [openRowKey, setOpenRowKey] = React.useState<string | null>(null);
-    const [decisionState, setDecisionState] = React.useState<{
-        [key: number]: {
-            decision: 'approved' | 'rejected';
-            approved_amount: string;
-            comments: string;
-        };
-    }>({});
+    const [decisionModal, setDecisionModal] = React.useState<{
+        open: boolean;
+        review: ReviewRow | null;
+        row: any | null;
+    }>({ open: false, review: null, row: null });
+    const [decisionState, setDecisionState] = React.useState<Record<number, DecisionFormState>>({});
 
     const [editModal, setEditModal] = React.useState<{
         open: boolean;
@@ -215,11 +222,6 @@ export default function TeamBasedApprovalApproverIndex({ reviews, filters, branc
 
     const [showFiltersMobile, setShowFiltersMobile] = React.useState(false);
     const [selectedItemIds, setSelectedItemIds] = React.useState<number[]>([]);
-    const [mobileDecisionModal, setMobileDecisionModal] = React.useState<{
-        open: boolean;
-        review: ReviewRow | null;
-        row: any | null;
-    }>({ open: false, review: null, row: null });
 
     const getActiveFilterParams = (extra: Record<string, unknown> = {}) => ({
         status: currentStatus || undefined,
@@ -307,49 +309,31 @@ export default function TeamBasedApprovalApproverIndex({ reviews, filters, branc
         return [1, 'ellipsis', current - 1, current, current + 1, 'ellipsis', totalPages];
     };
 
-    const handleToggleAction = (reviewId: number, rowKey: string) => {
-        setOpenRowKey((prev) => (prev === rowKey ? null : rowKey));
-        setDecisionState((prev) => {
-            if (prev[reviewId]) return prev;
-            return {
-                ...prev,
-                [reviewId]: {
-                    decision: 'approved',
-                    approved_amount: '',
-                    comments: '',
-                },
-            };
+    const openDecisionModal = (review: ReviewRow, row: ItemRow & { review_id?: number }) => {
+        setDecisionModal({ open: true, review, row });
+    };
+
+    const closeDecisionModal = () => {
+        setDecisionModal({ open: false, review: null, row: null });
+    };
+
+    const handleRequestApprove = (formState: DecisionFormState) => {
+        if (!decisionModal.review || !decisionModal.row) return;
+        setDecisionState((prev) => ({
+            ...prev,
+            [decisionModal.review!.review_id]: formState,
+        }));
+        closeDecisionModal();
+        setApproveChoiceModal({
+            open: true,
+            review: decisionModal.review,
+            row: decisionModal.row,
         });
     };
 
-    const handleDecisionChange = (reviewId: number, value: 'approved' | 'rejected') => {
-        setDecisionState((prev) => ({
-            ...prev,
-            [reviewId]: {
-                ...(prev[reviewId] || { approved_amount: '', comments: '' }),
-                decision: value,
-            },
-        }));
-    };
-
-    const handleAmountChange = (reviewId: number, value: string) => {
-        setDecisionState((prev) => ({
-            ...prev,
-            [reviewId]: {
-                ...(prev[reviewId] || { decision: 'approved', comments: '' }),
-                approved_amount: value,
-            },
-        }));
-    };
-
-    const handleCommentsChange = (reviewId: number, value: string) => {
-        setDecisionState((prev) => ({
-            ...prev,
-            [reviewId]: {
-                ...(prev[reviewId] || { decision: 'approved', approved_amount: '' }),
-                comments: value,
-            },
-        }));
+    const handleSubmitReject = (formState: DecisionFormState) => {
+        if (!decisionModal.review || !decisionModal.row) return;
+        handleSubmitDecision(decisionModal.review, decisionModal.row, formState);
     };
 
     const openEditModal = (reviewId: number, row: ItemRow & { review_id: number }) => {
@@ -358,7 +342,7 @@ export default function TeamBasedApprovalApproverIndex({ reviews, filters, branc
             reviewId,
             row: { ...row },
         });
-        setOpenRowKey(null);
+        closeDecisionModal();
     };
 
     const closeEditModal = () => {
@@ -445,21 +429,32 @@ export default function TeamBasedApprovalApproverIndex({ reviews, filters, branc
         });
     };
 
-    const handleSubmitDecision = (review: ReviewRow) => {
-        const state = decisionState[review.review_id] || {
-            decision: 'approved' as const,
-            approved_amount: '',
-            comments: '',
+    const handleSubmitDecision = (review: ReviewRow, row: ItemRow, formState: DecisionFormState) => {
+        const payload: Record<string, unknown> = {
+            decision: formState.decision,
+            comments: formState.comments || undefined,
         };
 
-        const payload: any = {
-            decision: state.decision,
-            comments: state.comments || undefined,
-        };
-
-        if (state.decision === 'approved') {
-            payload.approved_amount = state.approved_amount ? Math.round(parseFloat(state.approved_amount)) : undefined;
+        if (formState.decision === 'approved') {
+            payload.approved_amount = formState.approved_amount ? Math.round(parseFloat(formState.approved_amount)) : undefined;
+        } else {
+            payload.push_to_block_list = formState.push_to_block_list;
+            if (formState.push_to_block_list) {
+                const bl = formState.block_list;
+                payload.block_list = {
+                    name_bn: bl.name_bn || undefined,
+                    father_name: bl.father_name || undefined,
+                    mother_name: bl.mother_name || undefined,
+                    spouse_name: bl.spouse_name || undefined,
+                    dob: bl.dob || undefined,
+                    nid_number: bl.nid_number,
+                    phone_number: bl.phone_number?.replace(/\D/g, ''),
+                    address: bl.address || undefined,
+                };
+            }
         }
+
+        closeDecisionModal();
 
         router.post(`/team-based-approvals/reviews/${review.review_id}/decide`, {
             ...payload,
@@ -472,6 +467,7 @@ export default function TeamBasedApprovalApproverIndex({ reviews, filters, branc
 
     const statusLabel: Record<string, string> = {
         pending: 'Pending',
+        waiting: 'Waiting',
         approved: 'Approved',
         rejected: 'Rejected',
         forwarded: 'Forwarded',
@@ -481,6 +477,7 @@ export default function TeamBasedApprovalApproverIndex({ reviews, filters, branc
 
     const statusClass: Record<string, string> = {
         pending: 'bg-yellow-50 text-yellow-800 border-yellow-200',
+        waiting: 'bg-amber-50 text-amber-800 border-amber-200',
         approved: 'bg-green-50 text-green-800 border-green-200',
         rejected: 'bg-red-50 text-red-800 border-red-200',
         forwarded: 'bg-slate-100 text-slate-700 border-slate-300',
@@ -734,6 +731,29 @@ export default function TeamBasedApprovalApproverIndex({ reviews, filters, branc
             ? branches.find((b) => b.id.toString() === currentBranchId)
             : null;
 
+    const exportMeta = {
+        filename: `team-based-approver-${currentTo || currentFrom || 'report'}.xlsx`,
+        branchName: selectedBranch
+            ? `${selectedBranch.name}${selectedBranch.code ? ` (${selectedBranch.code})` : ''}`
+            : currentBranchId
+            ? reviews.data[0]?.sheet?.branch_name ?? 'বহু শাখা'
+            : 'All Branch',
+        areaName: reviews.data[0]?.sheet?.area_name ?? undefined,
+        zoneName: reviews.data[0]?.sheet?.zone_name ?? undefined,
+        dateFrom: currentFrom || undefined,
+        dateTo: currentTo || currentFrom || undefined,
+        approverName: authUser?.name || undefined,
+    };
+
+    const exportFilterParams = {
+        status: currentStatus || undefined,
+        date_from: currentFrom || undefined,
+        date_to: currentTo || undefined,
+        branch_id: currentBranchId || undefined,
+        approver_id: currentApproverId || undefined,
+        approval_flow: currentApprovalFlow || undefined,
+    };
+
     return (
         <AdminLayout>
             <Head title="Team Based Approvals - Approver">
@@ -956,10 +976,11 @@ export default function TeamBasedApprovalApproverIndex({ reviews, filters, branc
                 </div>
 
                 {/* Stats */}
-                <div className="flex overflow-x-auto pb-2 gap-3 md:grid md:grid-cols-5 ho-teambased-stats print:hidden mb-4 scrollbar-thin scrollbar-thumb-slate-200 scrollbar-track-transparent">
+                <div className="flex overflow-x-auto pb-2 gap-3 md:grid md:grid-cols-6 ho-teambased-stats print:hidden mb-4 scrollbar-thin scrollbar-thumb-slate-200 scrollbar-track-transparent">
                     {[
                         { label: 'Total Members', value: stats.total, color: 'text-blue-600', bg: 'bg-blue-50/40 border-blue-100/70' },
                         { label: 'Pending', value: stats.pending, color: 'text-amber-600', bg: 'bg-amber-50/40 border-amber-100/70' },
+                        { label: 'Waiting', value: stats.waiting || 0, color: 'text-orange-600', bg: 'bg-orange-50/40 border-orange-100/70' },
                         { label: 'Approved', value: stats.approved, color: 'text-green-600', bg: 'bg-green-50/40 border-green-100/70' },
                         { label: 'Rejected', value: stats.rejected, color: 'text-rose-600', bg: 'bg-rose-50/40 border-rose-100/70' },
                         { label: 'Forwarded', value: stats.forwarded, color: 'text-slate-600', bg: 'bg-slate-50/50 border-slate-100/70' },
@@ -1051,6 +1072,7 @@ export default function TeamBasedApprovalApproverIndex({ reviews, filters, branc
                                 >
                                     <option value="">All Status</option>
                                     <option value="pending">Pending</option>
+                                    <option value="waiting">Waiting</option>
                                     <option value="approved">Approved</option>
                                     <option value="rejected">Rejected</option>
                                     <option value="forwarded">Forwarded</option>
@@ -1114,6 +1136,14 @@ export default function TeamBasedApprovalApproverIndex({ reviews, filters, branc
                                 >
                                     Print List
                                 </button>
+                                <TeamBasedExportBar
+                                    exportUrl="/team-based-approvals/for-approver/export"
+                                    filterParams={exportFilterParams}
+                                    totalCount={stats.total}
+                                    colVisVariant="approver"
+                                    meta={exportMeta}
+                                    compact
+                                />
                             </div>
                         </div>
                     </div>
@@ -1153,7 +1183,6 @@ export default function TeamBasedApprovalApproverIndex({ reviews, filters, branc
                     {flatRows.map((row, index) => {
                         const review = reviews.data.find((r) => r.review_id === row.review_id)!;
                         const rowKey = `${row.review_id}-${row.serial_no}-${index}`;
-                        const state = decisionState[review.review_id];
                         const rowSelectable = isRowSelectableForHistoryClear(row);
                         const rowSelected = row.id != null && selectedItemIds.includes(row.id);
 
@@ -1354,8 +1383,8 @@ export default function TeamBasedApprovalApproverIndex({ reviews, filters, branc
                                         </div>
                                     )}
 
-                                    {/* Action Buttons for Pending Review */}
-                                    {review.status === 'pending' && row.can_act && (
+                                    {/* Action Buttons for Pending / Waiting Review */}
+                                    {(review.status === 'pending' || review.status === 'waiting') && row.can_act && (
                                         <div className="pt-3 border-t border-slate-100 flex gap-2.5">
                                             <button
                                                 type="button"
@@ -1367,24 +1396,7 @@ export default function TeamBasedApprovalApproverIndex({ reviews, filters, branc
                                             </button>
                                             <button
                                                 type="button"
-                                                onClick={() => {
-                                                    setDecisionState((prev) => {
-                                                        if (prev[review.review_id]) return prev;
-                                                        return {
-                                                            ...prev,
-                                                            [review.review_id]: {
-                                                                decision: 'approved',
-                                                                approved_amount: '',
-                                                                comments: '',
-                                                            },
-                                                        };
-                                                    });
-                                                    setMobileDecisionModal({
-                                                        open: true,
-                                                        review,
-                                                        row,
-                                                    });
-                                                }}
+                                                onClick={() => openDecisionModal(review, row)}
                                                 className="flex-[1.3] inline-flex items-center justify-center gap-1.5 px-3 py-2.5 rounded-xl bg-gradient-to-r from-blue-600 to-indigo-600 text-white text-xs font-bold shadow-sm hover:from-blue-700 hover:to-indigo-700 transition-all active:scale-[0.97]"
                                             >
                                                 <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
@@ -1531,9 +1543,6 @@ export default function TeamBasedApprovalApproverIndex({ reviews, filters, branc
                             )}
                             {flatRows.map((row, index) => {
                                 const review = reviews.data.find((r) => r.review_id === row.review_id)!;
-                                const rowKey = `${row.review_id}-${row.serial_no}-${index}`;
-                                const isOpen = openRowKey === rowKey;
-                                const state = decisionState[review.review_id];
                                 const rowSelectable = isRowSelectableForHistoryClear(row);
                                 const rowSelected = row.id != null && selectedItemIds.includes(row.id);
 
@@ -1680,13 +1689,14 @@ export default function TeamBasedApprovalApproverIndex({ reviews, filters, branc
                                                 </td>
                                             )}
                                             <td className="border px-2 py-1.5">
-                                                {review.status === 'pending' && row.can_act ? (
+                                                {(review.status === 'pending' || review.status === 'waiting') && row.can_act ? (
                                                     <button
                                                         type="button"
-                                                        onClick={() => handleToggleAction(review.review_id, rowKey)}
-                                                        className="inline-flex items-center px-3 py-1 rounded-lg text-[10px] font-bold bg-blue-600 text-white hover:bg-blue-700 transition-all shadow-sm active:scale-[0.98] print:hidden"
+                                                        onClick={() => openDecisionModal(review, row)}
+                                                        className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[10px] font-bold bg-gradient-to-r from-blue-600 to-indigo-600 text-white hover:from-blue-700 hover:to-indigo-700 transition-all shadow-sm shadow-blue-500/20 active:scale-[0.98] print:hidden"
                                                     >
-                                                        Action
+                                                        <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+                                                        সিদ্ধান্ত
                                                     </button>
                                                 ) : (
                                                     <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[9px] font-semibold uppercase tracking-wider border ${statusClass[review.status] || 'bg-slate-100 text-slate-800 border-slate-200'}`}>
@@ -1695,230 +1705,20 @@ export default function TeamBasedApprovalApproverIndex({ reviews, filters, branc
                                                 )}
                                             </td>
                                         </tr>
-                                        {isOpen && review.status === 'pending' && (
-                                            <tr className="print:hidden">
-                                                <td colSpan={visibleDataColCount} className="border-b border-blue-100 bg-gradient-to-r from-slate-50 to-blue-50 p-0">
-                                                    <div className="px-4 py-4">
-                                                        {/* Panel header */}
-                                                        <div className="flex items-center gap-2 mb-3 pb-2 border-b border-slate-200">
-                                                            <div className="flex items-center justify-center w-5 h-5 rounded-full bg-blue-600 text-white text-[9px] font-bold">✓</div>
-                                                            <span className="text-xs font-semibold text-slate-700 uppercase tracking-wide">অনুমোদন সিদ্ধান্ত</span>
-                                                            <span className="text-[10px] text-slate-400 ml-1">— {row.member_name}</span>
-                                                            <div className="ml-auto">
-                                                                <button
-                                                                    type="button"
-                                                                    onClick={() =>
-                                                                        openEditModal(review.review_id, {
-                                                                            ...row,
-                                                                            review_id: review.review_id,
-                                                                        })
-                                                                    }
-                                                                    className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md border border-slate-300 bg-white text-[10px] font-medium text-slate-600 hover:bg-slate-50 hover:border-slate-400 shadow-sm transition-colors"
-                                                                >
-                                                                    <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/></svg>
-                                                                    সারি সম্পাদনা
-                                                                </button>
-                                                            </div>
-                                                        </div>
-
-                                                        {/* Previous approver history (when forwarded / multi-step) */}
-                                                        {Array.isArray(row.approvers) && row.approvers.some((a) => a?.status && a.status !== 'pending') && (
-                                                            <div className="mb-4 rounded-xl border border-slate-200 bg-white/70 p-3">
-                                                                <div className="flex items-center gap-2 mb-2">
-                                                                    <div className="w-2 h-2 rounded-full bg-amber-500" />
-                                                                    <p className="text-[11px] font-semibold text-slate-600 uppercase tracking-wider">পূর্ববর্তী অনুমোদন</p>
-                                                                </div>
-                                                                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                                                                    {row.approvers
-                                                                        .filter((a) => a?.status && a.status !== 'pending')
-                                                                        .map((a, i) => (
-                                                                            <div key={`${a.approver_name || 'approver'}-${i}`} className="rounded-lg border border-slate-200 bg-white p-3 shadow-sm">
-                                                                                <div className="flex items-start justify-between gap-2">
-                                                                                    <div className="min-w-0">
-                                                                                        <p className="text-sm font-semibold text-slate-800 truncate">
-                                                                                            {a.approver_name || '—'}
-                                                                                        </p>
-                                                                                        {a.approver_role ? (
-                                                                                            <p className="text-xs text-slate-500">
-                                                                                                {a.approver_role}
-                                                                                            </p>
-                                                                                        ) : null}
-                                                                                    </div>
-                                                                                    <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold bg-slate-100 text-slate-700 border border-slate-200">
-                                                                                        {a.status}
-                                                                                    </span>
-                                                                                </div>
-                                                                                <div className="mt-2 grid grid-cols-2 gap-2 text-xs">
-                                                                                    <div className="rounded-md bg-slate-50 border border-slate-200 px-2 py-1.5">
-                                                                                        <p className="text-[10px] font-semibold text-slate-500 uppercase tracking-wider">অনুমোদিত</p>
-                                                                                        <p className="font-semibold text-green-700">
-                                                                                            ৳ {formatAmount(a.approved_amount) || '—'}
-                                                                                        </p>
-                                                                                    </div>
-                                                                                    <div className="rounded-md bg-slate-50 border border-slate-200 px-2 py-1.5">
-                                                                                        <p className="text-[10px] font-semibold text-slate-500 uppercase tracking-wider">তারিখ</p>
-                                                                                        <p className="font-medium text-slate-700">
-                                                                                            {a.decided_at ? formatDate(a.decided_at) : '—'}
-                                                                                        </p>
-                                                                                    </div>
-                                                                                </div>
-                                                                                {a.comments ? (
-                                                                                    <div className="mt-2 rounded-md bg-amber-50 border border-amber-200 px-2.5 py-2 text-xs text-amber-900 whitespace-pre-line">
-                                                                                        <span className="text-[10px] font-semibold uppercase tracking-wider text-amber-700">মন্তব্য</span>
-                                                                                        <div className="mt-0.5">{a.comments}</div>
-                                                                                    </div>
-                                                                                ) : (
-                                                                                    <div className="mt-2 text-xs text-slate-500">
-                                                                                        মন্তব্য: —
-                                                                                    </div>
-                                                                                )}
-                                                                            </div>
-                                                                        ))}
-                                                                </div>
-                                                            </div>
-                                                        )}
-
-                                                        <div className="flex flex-col lg:flex-row gap-4">
-                                                            {/* Decision selection */}
-                                                            <div className="flex flex-col gap-2">
-                                                                <p className="text-[10px] font-semibold text-slate-500 uppercase tracking-wider">সিদ্ধান্ত নির্বাচন করুন</p>
-                                                                <div className="flex gap-2">
-                                                                    {/* Approve card */}
-                                                                    <button
-                                                                        type="button"
-                                                                        onClick={() => handleDecisionChange(review.review_id, 'approved')}
-                                                                        className={`flex items-center gap-2 px-4 py-2.5 rounded-lg border-2 text-xs font-semibold transition-all ${
-                                                                            (!state || state.decision === 'approved')
-                                                                                ? 'border-green-500 bg-green-50 text-green-700 shadow-sm'
-                                                                                : 'border-slate-200 bg-white text-slate-500 hover:border-green-300 hover:bg-green-50/50'
-                                                                        }`}
-                                                                    >
-                                                                        <span className={`flex items-center justify-center w-4 h-4 rounded-full border-2 transition-all ${
-                                                                            (!state || state.decision === 'approved')
-                                                                                ? 'border-green-500 bg-green-500'
-                                                                                : 'border-slate-300 bg-white'
-                                                                        }`}>
-                                                                            {(!state || state.decision === 'approved') && (
-                                                                                <svg className="w-2.5 h-2.5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7"/></svg>
-                                                                            )}
-                                                                        </span>
-                                                                        <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
-                                                                        অনুমোদন
-                                                                    </button>
-                                                                    {/* Reject card */}
-                                                                    <button
-                                                                        type="button"
-                                                                        onClick={() => handleDecisionChange(review.review_id, 'rejected')}
-                                                                        className={`flex items-center gap-2 px-4 py-2.5 rounded-lg border-2 text-xs font-semibold transition-all ${
-                                                                            state?.decision === 'rejected'
-                                                                                ? 'border-red-500 bg-red-50 text-red-700 shadow-sm'
-                                                                                : 'border-slate-200 bg-white text-slate-500 hover:border-red-300 hover:bg-red-50/50'
-                                                                        }`}
-                                                                    >
-                                                                        <span className={`flex items-center justify-center w-4 h-4 rounded-full border-2 transition-all ${
-                                                                            state?.decision === 'rejected'
-                                                                                ? 'border-red-500 bg-red-500'
-                                                                                : 'border-slate-300 bg-white'
-                                                                        }`}>
-                                                                            {state?.decision === 'rejected' && (
-                                                                                <svg className="w-2.5 h-2.5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7"/></svg>
-                                                                            )}
-                                                                        </span>
-                                                                        <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2m7-2a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
-                                                                        প্রত্যাখ্যান
-                                                                    </button>
-                                                                </div>
-
-                                                            </div>
-
-                                                            {/* Amount + Comments — separate labeled fields */}
-                                                            <div className="flex-1 flex items-start gap-3">
-                                                                {(!state || state.decision === 'approved') && (
-                                                                    <div className="flex flex-col gap-1">
-                                                                        <label className="text-[10px] font-semibold text-slate-500 uppercase tracking-wider whitespace-nowrap">
-                                                                            অনুমোদিত ঋণ <span className="text-red-500">*</span>
-                                                                        </label>
-                                                                        <div className="flex items-center border border-slate-300 rounded-lg overflow-hidden bg-white shadow-sm focus-within:border-green-400 focus-within:ring-1 focus-within:ring-green-200 transition-all w-44">
-                                                                            <span className="flex items-center px-2.5 py-2 bg-slate-100 border-r border-slate-300 text-[10px] font-semibold text-slate-600 select-none">৳</span>
-                                                                            <input
-                                                                                type="number"
-                                                                                min={0}
-                                                                                value={state?.approved_amount ?? ''}
-                                                                                onChange={(e) =>
-                                                                                    handleAmountChange(review.review_id, e.target.value)
-                                                                                }
-                                                                                placeholder="পরিমাণ"
-                                                                                className="flex-1 px-2 py-2 text-xs outline-none bg-transparent text-slate-800 placeholder-slate-400"
-                                                                            />
-                                                                        </div>
-                                                                    </div>
-                                                                )}
-                                                                <div className="flex flex-col gap-1 flex-1">
-                                                                    <label className="text-[10px] font-semibold text-slate-500 uppercase tracking-wider">
-                                                                        মন্তব্য {state?.decision === 'rejected' && <span className="text-red-500">*</span>}
-                                                                    </label>
-                                                                    <textarea
-                                                                        rows={2}
-                                                                        value={state?.comments ?? ''}
-                                                                        onChange={(e) =>
-                                                                            handleCommentsChange(review.review_id, e.target.value)
-                                                                        }
-                                                                        placeholder={state?.decision === 'rejected' ? 'প্রত্যাখ্যানের কারণ লিখুন...' : 'মন্তব্য লিখুন (ঐচ্ছিক)'}
-                                                                        className="w-full border border-slate-300 rounded-lg px-3 py-2 text-xs text-slate-800 placeholder-slate-400 bg-white shadow-sm resize-none focus:outline-none focus:border-blue-400 focus:ring-1 focus:ring-blue-200 transition-all"
-                                                                    />
-                                                                </div>
-                                                            </div>
-
-                                                            {/* Action buttons */}
-                                                            <div className="flex flex-col justify-end gap-2 pt-5 lg:pt-0 lg:pb-0.5 self-end">
-                                                                {(() => {
-                                                                    const isApprove = !state || state.decision === 'approved';
-                                                                    const isDisabled = isApprove ? !state?.approved_amount : !state?.comments;
-                                                                    return (
-                                                                        <button
-                                                                            type="button"
-                                                                            onClick={() => {
-                                                                                if (isApprove) setApproveChoiceModal({ open: true, review, row });
-                                                                                else handleSubmitDecision(review);
-                                                                            }}
-                                                                            disabled={isDisabled}
-                                                                            className={`inline-flex items-center justify-center gap-1.5 px-5 py-2 rounded-lg text-xs font-semibold shadow-sm transition-all ${
-                                                                                isDisabled
-                                                                                    ? 'bg-slate-200 text-slate-400 cursor-not-allowed'
-                                                                                    : isApprove
-                                                                                    ? 'bg-green-600 text-white hover:bg-green-700 active:bg-green-800'
-                                                                                    : 'bg-red-600 text-white hover:bg-red-700 active:bg-red-800'
-                                                                            }`}
-                                                                        >
-                                                                            {isApprove ? (
-                                                                                <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M5 13l4 4L19 7"/></svg>
-                                                                            ) : (
-                                                                                <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M6 18L18 6M6 6l12 12"/></svg>
-                                                                            )}
-                                                                            {isApprove ? 'অনুমোদন দিন' : 'প্রত্যাখ্যান করুন'}
-                                                                        </button>
-                                                                    );
-                                                                })()}
-                                                                <button
-                                                                    type="button"
-                                                                    onClick={() => setOpenRowKey(null)}
-                                                                    className="inline-flex items-center justify-center gap-1.5 px-5 py-2 rounded-lg border border-slate-300 bg-white text-xs font-medium text-slate-600 hover:bg-slate-50 hover:border-slate-400 shadow-sm transition-all"
-                                                                >
-                                                                    <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12"/></svg>
-                                                                    বাতিল
-                                                                </button>
-                                                            </div>
-                                                        </div>
-                                                    </div>
-                                                </td>
-                                            </tr>
-                                        )}
                                     </React.Fragment>
                                 );
                             })}
                         </tbody>
                     </table>
                 </div>
+
+                <TeamBasedExportBar
+                    exportUrl="/team-based-approvals/for-approver/export"
+                    filterParams={exportFilterParams}
+                    totalCount={stats.total}
+                    colVisVariant="approver"
+                    meta={exportMeta}
+                />
 
                 {/* Pagination - only when multiple pages */}
                 {(reviews.last_page ?? 0) > 1 && (
@@ -2194,9 +1994,10 @@ export default function TeamBasedApprovalApproverIndex({ reviews, filters, branc
                             <button
                                 type="button"
                                 onClick={() => {
-                                    handleSubmitDecision(approveChoiceModal.review!);
+                                    const saved = decisionState[approveChoiceModal.review!.review_id];
+                                    if (!saved) return;
+                                    handleSubmitDecision(approveChoiceModal.review!, approveChoiceModal.row!, saved);
                                     setApproveChoiceModal({ open: false, review: null, row: null });
-                                    setOpenRowKey(null);
                                 }}
                                 className="w-full inline-flex items-center justify-center gap-2 px-4 py-3 rounded-lg bg-green-600 text-white text-sm font-medium hover:bg-green-700"
                             >
@@ -2210,7 +2011,6 @@ export default function TeamBasedApprovalApproverIndex({ reviews, filters, branc
                                         const row = approveChoiceModal.row!;
                                         const review = approveChoiceModal.review!;
                                         setApproveChoiceModal({ open: false, review: null, row: null });
-                                        setOpenRowKey(null);
                                         setForwardModal({
                                             open: true,
                                             sheetId: row.sheet_id,
@@ -2329,207 +2129,24 @@ export default function TeamBasedApprovalApproverIndex({ reviews, filters, branc
                 </div>
             )}
 
-            {/* Mobile Decision Modal */}
-            {mobileDecisionModal.open && mobileDecisionModal.review && mobileDecisionModal.row && (() => {
-                const review = mobileDecisionModal.review;
-                const row = mobileDecisionModal.row;
-                const state = decisionState[review.review_id] || {
-                    decision: 'approved' as const,
-                    approved_amount: '',
-                    comments: '',
-                };
-                const isApprove = state.decision === 'approved';
-                const isDisabled = isApprove ? !state.approved_amount : !state.comments;
-
-                const handleMobileEdit = () => {
-                    setMobileDecisionModal({ open: false, review: null, row: null });
-                    openEditModal(review.review_id, { ...row, review_id: review.review_id });
-                };
-
-                return (
-                    <div className="fixed inset-0 z-40 flex items-center justify-center bg-slate-900/60 backdrop-blur-xs p-4 print:hidden">
-                        <div 
-                            className="bg-white rounded-2xl shadow-xl w-full max-w-md max-h-[85vh] flex flex-col overflow-hidden animate-in fade-in zoom-in-95 duration-200"
-                            onClick={(e) => e.stopPropagation()}
-                        >
-                            {/* Modal Header */}
-                            <div className="px-4 py-3.5 border-b border-slate-100 flex items-center justify-between bg-slate-50">
-                                <div>
-                                    <h3 className="text-sm font-bold text-slate-800">অনুমোদন সিদ্ধান্ত</h3>
-                                    <p className="text-[11px] text-slate-500 font-semibold mt-0.5">সদস্য: {row.member_name}</p>
-                                </div>
-                                <button
-                                    type="button"
-                                    onClick={() => setMobileDecisionModal({ open: false, review: null, row: null })}
-                                    className="text-slate-400 hover:text-slate-600 transition-colors p-1.5 rounded-full hover:bg-slate-100"
-                                >
-                                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12"/></svg>
-                                </button>
-                            </div>
-
-                            {/* Modal Content */}
-                            <div className="p-4 space-y-4 overflow-y-auto flex-1">
-                                {/* Previous approver history if forwarded */}
-                                {Array.isArray(row.approvers) && row.approvers.some((a: any) => a?.status && a.status !== 'pending') && (
-                                    <div className="rounded-xl border border-slate-200 bg-amber-50/20 p-3">
-                                        <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-2">পূর্ববর্তী অনুমোদন</p>
-                                        <div className="space-y-2">
-                                            {row.approvers
-                                                .filter((a: any) => a?.status && a.status !== 'pending')
-                                                .map((a: any, i: number) => (
-                                                    <div key={i} className="text-xs text-slate-700 bg-white border border-slate-100 rounded-lg p-2 shadow-2xs">
-                                                        <div className="flex justify-between items-center">
-                                                            <span className="font-semibold text-slate-800">{a.approver_name}</span>
-                                                            <span className="text-[10px] text-slate-400">{a.approver_role}</span>
-                                                        </div>
-                                                        <div className="mt-1 flex justify-between">
-                                                            <span>অনুমোদিত: <strong className="text-green-700">৳{formatAmount(a.approved_amount)}</strong></span>
-                                                            <span className="text-[10px] text-slate-400">{formatDate(a.decided_at, '')}</span>
-                                                        </div>
-                                                        {a.comments && (
-                                                            <p className="mt-1 text-[11px] text-slate-500 italic border-t border-slate-50 pt-1">
-                                                                মন্তব্য: {a.comments}
-                                                            </p>
-                                                        )}
-                                                    </div>
-                                                ))}
-                                        </div>
-                                    </div>
-                                )}
-
-                                {/* Proposed Loan info helper */}
-                                <div className="bg-slate-50 border border-slate-100 rounded-xl p-3 flex justify-between items-center">
-                                    <div>
-                                        <span className="text-[10px] text-slate-400 block font-semibold">প্রস্তাবিত ঋণ</span>
-                                        <span className="text-sm font-bold text-slate-850">৳ {formatAmount(row.proposed_loan_amount) || '—'}</span>
-                                    </div>
-                                    {row.loan_term_years != null && (
-                                        <div className="text-right">
-                                            <span className="text-[10px] text-slate-400 block font-semibold">মেয়াদ</span>
-                                            <span className="text-sm font-bold text-slate-800">{row.loan_term_years} বছর</span>
-                                        </div>
-                                    )}
-                                </div>
-
-                                {/* Decision Tab Toggle */}
-                                <div className="space-y-1.5">
-                                    <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block">সিদ্ধান্ত</label>
-                                    <div className="flex gap-2">
-                                        <button
-                                            type="button"
-                                            onClick={() => handleDecisionChange(review.review_id, 'approved')}
-                                            className={`flex-1 flex items-center justify-center gap-1.5 py-2.5 rounded-xl border-2 text-xs font-bold transition-all ${
-                                                isApprove
-                                                    ? 'border-green-500 bg-green-50 text-green-700 shadow-sm'
-                                                    : 'border-slate-200 bg-white text-slate-500 hover:bg-slate-50'
-                                            }`}
-                                        >
-                                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
-                                            অনুমোদন
-                                        </button>
-                                        <button
-                                            type="button"
-                                            onClick={() => handleDecisionChange(review.review_id, 'rejected')}
-                                            className={`flex-1 flex items-center justify-center gap-1.5 py-2.5 rounded-xl border-2 text-xs font-bold transition-all ${
-                                                !isApprove
-                                                    ? 'border-red-500 bg-red-50 text-red-700 shadow-sm'
-                                                    : 'border-slate-200 bg-white text-slate-500 hover:bg-slate-50'
-                                            }`}
-                                        >
-                                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M10 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2m7-2a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
-                                            প্রত্যাখ্যান
-                                        </button>
-                                    </div>
-                                </div>
-
-                                {/* Form Fields */}
-                                <div className="space-y-3">
-                                    {isApprove && (
-                                        <div className="space-y-1.5">
-                                            <div className="flex items-center justify-between">
-                                                <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">
-                                                    অনুমোদিত ঋণ <span className="text-red-500">*</span>
-                                                </label>
-                                                {row.proposed_loan_amount && (
-                                                    <button
-                                                        type="button"
-                                                        onClick={() => handleAmountChange(review.review_id, String(row.proposed_loan_amount))}
-                                                        className="text-[10px] font-bold text-blue-600 hover:text-blue-800 bg-blue-50 hover:bg-blue-100 px-2 py-0.5 rounded-md transition-colors"
-                                                    >
-                                                        প্রস্তাবিত ঋণ বসান
-                                                    </button>
-                                                )}
-                                            </div>
-                                            <div className="flex items-center border border-slate-300 rounded-xl overflow-hidden bg-white shadow-sm focus-within:border-blue-500 focus-within:ring-2 focus-within:ring-blue-100 transition-all">
-                                                <span className="px-3 py-2 bg-slate-100 border-r border-slate-300 text-xs font-semibold text-slate-500 select-none">৳</span>
-                                                <input
-                                                    type="number"
-                                                    min={0}
-                                                    value={state.approved_amount ?? ''}
-                                                    onChange={(e) => handleAmountChange(review.review_id, e.target.value)}
-                                                    placeholder="অনুমোদিত ঋণের পরিমাণ লিখুন"
-                                                    className="flex-1 px-3 py-2 text-xs outline-none bg-transparent text-slate-800 placeholder-slate-400"
-                                                />
-                                            </div>
-                                        </div>
-                                    )}
-
-                                    <div className="space-y-1.5">
-                                        <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">
-                                            মন্তব্য {!isApprove && <span className="text-red-500">*</span>}
-                                        </label>
-                                        <textarea
-                                            rows={3}
-                                            value={state.comments ?? ''}
-                                            onChange={(e) => handleCommentsChange(review.review_id, e.target.value)}
-                                            placeholder={!isApprove ? 'প্রত্যাখ্যানের কারণ লিখুন...' : 'মন্তব্য লিখুন (ঐচ্ছিক)'}
-                                            className="w-full border border-slate-300 rounded-xl px-3 py-2 text-xs text-slate-800 placeholder-slate-400 bg-white shadow-sm resize-none focus:outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100 transition-all"
-                                        />
-                                    </div>
-                                </div>
-                            </div>
-
-                            {/* Modal Footer Actions */}
-                            <div className="p-4 border-t border-slate-100 bg-slate-50 flex gap-2">
-                                <button
-                                    type="button"
-                                    onClick={() => {
-                                        setMobileDecisionModal({ open: false, review: null, row: null });
-                                        if (isApprove) {
-                                            setApproveChoiceModal({ open: true, review, row });
-                                        } else {
-                                            handleSubmitDecision(review);
-                                        }
-                                    }}
-                                    disabled={isDisabled}
-                                    className={`flex-1 inline-flex items-center justify-center gap-1.5 py-2.5 rounded-xl text-xs font-bold shadow-sm transition-all ${
-                                        isDisabled
-                                            ? 'bg-slate-200 text-slate-400 cursor-not-allowed'
-                                            : isApprove
-                                            ? 'bg-green-600 text-white hover:bg-green-700'
-                                            : 'bg-red-600 text-white hover:bg-red-700'
-                                    }`}
-                                >
-                                    {isApprove ? (
-                                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M5 13l4 4L19 7"/></svg>
-                                    ) : (
-                                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M6 18L18 6M6 6l12 12"/></svg>
-                                    )}
-                                    {isApprove ? 'অনুমোদন দিন' : 'প্রত্যাখ্যান করুন'}
-                                </button>
-                                <button
-                                    type="button"
-                                    onClick={handleMobileEdit}
-                                    className="inline-flex items-center justify-center gap-1.5 px-3 py-2.5 rounded-xl border border-slate-200 bg-white text-xs font-bold text-slate-600 hover:bg-slate-50 shadow-sm transition-all active:scale-[0.97]"
-                                >
-                                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/></svg>
-                                    সম্পাদনা
-                                </button>
-                            </div>
-                        </div>
-                    </div>
-                );
-            })()}
+            <TeamBasedDecisionModal
+                key={decisionModal.review?.review_id ?? 'closed'}
+                open={decisionModal.open}
+                review={decisionModal.review}
+                row={decisionModal.row}
+                authUsername={authUser?.username as string | undefined}
+                branchCode={decisionModal.row?.branch_code ?? null}
+                onClose={closeDecisionModal}
+                onEdit={() => {
+                    if (!decisionModal.review || !decisionModal.row) return;
+                    openEditModal(decisionModal.review.review_id, {
+                        ...decisionModal.row,
+                        review_id: decisionModal.review.review_id,
+                    });
+                }}
+                onRequestApprove={handleRequestApprove}
+                onSubmitReject={handleSubmitReject}
+            />
         </AdminLayout>
     );
 }

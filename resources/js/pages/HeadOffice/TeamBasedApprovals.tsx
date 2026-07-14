@@ -1,6 +1,7 @@
 import React, { useMemo, useState } from 'react';
 import { Head, router } from '@inertiajs/react';
 import AdminLayout from '@/layouts/admin-layout';
+import TeamBasedExportBar from '@/components/team-based/TeamBasedExportBar';
 import { formatDate } from '@/utils/dateUtils';
 
 function rowHasReviewHistory(row: {
@@ -367,6 +368,26 @@ export default function TeamBasedApprovals({ approvals, filters, stats, zones, a
         if (typeof window !== 'undefined') {
             window.print();
         }
+    };
+
+    const exportMeta = {
+        filename: `team-based-head-office-${dateTo || dateFrom || 'report'}.xlsx`,
+        branchName: headerBranchName,
+        areaName: headerAreaName !== '-' ? headerAreaName : undefined,
+        zoneName: headerZoneName !== '-' ? headerZoneName : undefined,
+        dateFrom: dateFrom || undefined,
+        dateTo: dateTo || dateFrom || undefined,
+    };
+
+    const exportFilterParams = {
+        status: statusFilter || undefined,
+        search: search || undefined,
+        zone_id: zoneId || undefined,
+        area_id: areaId || undefined,
+        branch_id: branchId || undefined,
+        approver_id: approverId || undefined,
+        date_from: dateFrom || undefined,
+        date_to: dateTo || undefined,
     };
 
     const handleEditItem = (itemId: number) => {
@@ -818,6 +839,14 @@ export default function TeamBasedApprovals({ approvals, filters, stats, zones, a
                             >
                                 Print List
                             </button>
+                            <TeamBasedExportBar
+                                exportUrl="/head-office/team-based-approvals/export"
+                                filterParams={exportFilterParams}
+                                totalCount={approvals.total}
+                                colVisVariant="headOffice"
+                                meta={exportMeta}
+                                compact
+                            />
                         </div>
                     </div>
                 </div>
@@ -1056,6 +1085,14 @@ export default function TeamBasedApprovals({ approvals, filters, stats, zones, a
                         </tbody>
                     </table>
                 </div>
+
+                <TeamBasedExportBar
+                    exportUrl="/head-office/team-based-approvals/export"
+                    filterParams={exportFilterParams}
+                    totalCount={approvals.total}
+                    colVisVariant="headOffice"
+                    meta={exportMeta}
+                />
 
                 {/* Pagination - professional with page numbers */}
                 {approvals.last_page > 1 && (

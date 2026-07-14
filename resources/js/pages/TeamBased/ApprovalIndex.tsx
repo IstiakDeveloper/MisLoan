@@ -1,5 +1,6 @@
 import { Head, Link, router } from '@inertiajs/react';
 import AdminLayout from '@/layouts/admin-layout';
+import TeamBasedExportBar from '@/components/team-based/TeamBasedExportBar';
 import { formatDate, formatDateTime } from '@/utils/dateUtils';
 import React from 'react';
 
@@ -315,6 +316,22 @@ export default function TeamBasedApprovalIndex({ approvals, filters, draftCount,
         }
     };
 
+    const exportMeta = {
+        filename: `team-based-approvals-${currentTo || currentFrom || 'report'}.xlsx`,
+        branchName: branch.name,
+        areaName: branch.area_name || undefined,
+        zoneName: branch.zone_name || undefined,
+        dateFrom: currentFrom || undefined,
+        dateTo: currentTo || currentFrom || undefined,
+    };
+
+    const exportFilterParams = {
+        date_from: currentFrom || undefined,
+        date_to: currentTo || currentFrom || undefined,
+        approver_id: currentApprover || undefined,
+        status: currentStatus || undefined,
+    };
+
     return (
         <AdminLayout>
             <Head title="Team Based Loan Approvals">
@@ -620,6 +637,14 @@ export default function TeamBasedApprovalIndex({ approvals, filters, draftCount,
                             >
                                 Print List
                             </button>
+                            <TeamBasedExportBar
+                                exportUrl="/team-based-approvals/export/items"
+                                filterParams={exportFilterParams}
+                                totalCount={total}
+                                colVisVariant="branch"
+                                meta={exportMeta}
+                                compact
+                            />
                         </div>
                     </div>
                 </div>
@@ -988,6 +1013,14 @@ export default function TeamBasedApprovalIndex({ approvals, filters, draftCount,
                         </tbody>
                     </table>
                 </div>
+
+                <TeamBasedExportBar
+                    exportUrl="/team-based-approvals/export/items"
+                    filterParams={exportFilterParams}
+                    totalCount={total}
+                    colVisVariant="branch"
+                    meta={exportMeta}
+                />
 
                 {/* Pagination - only when multiple pages */}
                 {approvals.last_page > 1 && (

@@ -14,6 +14,13 @@ class TeamBasedApprovalItem extends Model
         'team_based_approval_id',
         'serial_no',
         'member_name',
+        'name_bn',
+        'father_name',
+        'mother_name',
+        'spouse_name',
+        'dob',
+        'nid_number',
+        'address',
         'member_code',
         'member_phone',
         'samity_number',
@@ -37,6 +44,7 @@ class TeamBasedApprovalItem extends Model
         // repaid_loan_amount, repaid_installment_no, other_institution_loan_amount, proposed_loan_amount: stored as string (text+number)
         'approved_amount' => 'integer',
         'loan_term_years' => 'float',
+        'dob' => 'date',
     ];
 
     public function approval(): BelongsTo

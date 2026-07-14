@@ -206,73 +206,7 @@ class HeadOfficeTeamBasedApprovalController extends Controller
             ->orderBy('id', 'desc')
             ->paginate($perPage)
             ->withQueryString()
-            ->through(function (TeamBasedApprovalItem $item) {
-                $approval = $item->approval;
-                $approver = $approval->areaManager
-                    ?? $approval->zoneManager
-                    ?? $approval->admf
-                    ?? $approval->dmf
-                    ?? $approval->ed;
-
-                // All reviews per item
-                $reviewsForItem = $approval->reviews
-                    ->where('team_based_approval_item_id', $item->id)
-                    ->sortBy('id')
-                    ->values();
-
-                $review = $reviewsForItem->last();
-                $itemStatus = $review?->status ?? $approval->status;
-
-                return [
-                    'id' => $item->id,
-                    'serial_no' => $item->serial_no,
-                    'member_name' => $item->member_name,
-                    'member_code' => $item->member_code,
-                    'member_phone' => $item->member_phone,
-                    'samity_number' => $item->samity_number,
-                    'savings_general' => $item->savings_general !== null ? (int) round((float) $item->savings_general) : null,
-                    'savings_other' => $item->savings_other !== null ? (int) round((float) $item->savings_other) : null,
-                    'savings_total' => $item->savings_total !== null ? (int) round((float) $item->savings_total) : null,
-                    'repaid_loan_amount' => $item->repaid_loan_amount,
-                    'repaid_installment_no' => $item->repaid_installment_no,
-                    'other_institution_loan_amount' => $item->other_institution_loan_amount,
-                    'proposed_loan_amount' => $item->proposed_loan_amount,
-                    'approved_amount' => $item->approved_amount !== null ? (int) round((float) $item->approved_amount) : null,
-                    'loan_term_years' => $item->loan_term_years,
-                    'loan_type' => $item->loan_type,
-                    'project_name' => $item->project_name,
-                    'status' => $itemStatus,
-                    'review_comments' => $review?->comments,
-                    'approver_signature' => $review && in_array($review->status, ['approved', 'rejected', 'forwarded'], true) ? ($review->approver_signature ?? $review->user?->signature) : null,
-                    'decided_at' => optional($review?->decided_at)->toDateString(),
-                    'approvers' => $reviewsForItem->map(function ($r) {
-                        return [
-                            'approver_name' => $r->user?->name,
-                            'approver_role' => $r->user?->role?->display_name ?? $r->user?->role?->name,
-                            'status' => $r->status,
-                            'approved_amount' => $r->approved_amount !== null ? (int) round((float) $r->approved_amount) : null,
-                            'comments' => $r->comments,
-                            'approver_signature' => in_array($r->status, ['approved', 'rejected', 'forwarded'], true) ? ($r->approver_signature ?? $r->user?->signature) : null,
-                            'decided_at' => optional($r->decided_at)->toDateString(),
-                        ];
-                    })->values()->all(),
-                    // Sheet level attributes
-                    'sheet_id' => $approval->id,
-                    'sheet_date' => optional($approval->sheet_date)->toDateString(),
-                    'branch' => [
-                        'name' => $approval->branch?->name,
-                        'code' => $approval->branch?->code,
-                        'area_name' => $approval->branch?->area?->name,
-                        'zone_name' => $approval->branch?->area?->zone?->name,
-                    ],
-                    'proposed_total' => $item->proposed_loan_amount !== null
-                        ? (int) round((float) $item->proposed_loan_amount)
-                        : 0,
-                    'approved_total_amount' => $approval->approved_total_amount !== null ? (int) round((float) $approval->approved_total_amount) : null,
-                    'creator_name' => $approval->creator?->name,
-                    'approver_name' => $approver?->name,
-                ];
-            });
+            ->through(fn (TeamBasedApprovalItem $item) => $this->formatHeadOfficeIndexItem($item));
 
         $zones = Zone::active()->orderBy('name')->get();
         $areas = Area::active()->with('zone')->orderBy('name')->get();
@@ -295,6 +229,200 @@ class HeadOfficeTeamBasedApprovalController extends Controller
             'branches' => $branches,
             'approverOptions' => $approverOptions,
         ]);
+    }
+
+    /**
+     * Export all items matching current filters (no pagination).
+     */
+    public function exportItems(Request $request)
+    {
+        $dateFrom = $request->input('date_from', now()->toDateString());
+        $dateTo = $request->input('date_to', now()->toDateString());
+        $approverId = $request->filled('approver_id') ? (int) $request->input('approver_id') : null;
+
+        $query = TeamBasedApprovalItem::query()
+            ->with([
+                'approval.branch',
+                'approval.branch.area:id,name,zone_id',
+                'approval.branch.area.zone:id,name',
+                'approval.creator:id,name',
+                'approval.areaManager:id,name,role_id',
+                'approval.zoneManager:id,name,role_id',
+                'approval.admf:id,name,role_id',
+                'approval.dmf:id,name,role_id',
+                'approval.ed:id,name,role_id',
+                'approval.reviews.user.role',
+            ]);
+
+        if ($dateFrom && $dateTo) {
+            $query->whereHas('approval', function ($q) use ($dateFrom, $dateTo) {
+                $q->whereBetween('sheet_date', [$dateFrom, $dateTo]);
+            });
+        } elseif ($dateFrom) {
+            $query->whereHas('approval', function ($q) use ($dateFrom) {
+                $q->where('sheet_date', '>=', $dateFrom);
+            });
+        } elseif ($dateTo) {
+            $query->whereHas('approval', function ($q) use ($dateTo) {
+                $q->where('sheet_date', '<=', $dateTo);
+            });
+        }
+
+        if ($approverId) {
+            $query->whereHas('approval', function ($q) use ($approverId) {
+                $q->where(function ($inner) use ($approverId) {
+                    $inner->where('area_manager_id', $approverId)
+                        ->orWhere('zone_manager_id', $approverId)
+                        ->orWhere('admf_id', $approverId)
+                        ->orWhere('dmf_id', $approverId)
+                        ->orWhere('ed_id', $approverId);
+                });
+            });
+        }
+
+        if ($request->filled('zone_id')) {
+            $zoneId = (int) $request->input('zone_id');
+            $query->whereHas('approval.branch.area', function ($q) use ($zoneId) {
+                $q->where('zone_id', $zoneId);
+            });
+        }
+
+        if ($request->filled('area_id')) {
+            $areaId = (int) $request->input('area_id');
+            $query->whereHas('approval.branch', function ($q) use ($areaId) {
+                $q->where('area_id', $areaId);
+            });
+        }
+
+        if ($request->filled('branch_id')) {
+            $query->whereHas('approval', function ($q) use ($request) {
+                $q->where('branch_id', (int) $request->input('branch_id'));
+            });
+        }
+
+        if ($request->filled('search')) {
+            $search = $request->input('search');
+            $query->where(function ($q) use ($search) {
+                $q->where('member_name', 'like', "%{$search}%")
+                    ->orWhere('member_code', 'like', "%{$search}%")
+                    ->orWhere('project_name', 'like', "%{$search}%");
+            });
+        }
+
+        if ($request->filled('status')) {
+            $statusFilter = strtolower(trim((string) $request->input('status')));
+            $query->where(function ($q) use ($statusFilter) {
+                $q->whereHas('approval.reviews', function ($sub) use ($statusFilter) {
+                    $sub->whereColumn('team_based_approval_item_id', 'team_based_approval_items.id');
+                    if ($statusFilter === 'under_review') {
+                        $sub->whereIn('status', ['under_review', 'forwarded']);
+                    } else {
+                        $sub->where('status', $statusFilter);
+                    }
+                    $sub->whereRaw('id = (SELECT MAX(id) FROM team_based_approval_reviews WHERE team_based_approval_item_id = team_based_approval_items.id)');
+                })
+                    ->orWhere(function ($sub) use ($statusFilter) {
+                        $sub->whereNotExists(function ($sub2) {
+                            $sub2->select(DB::raw(1))
+                                ->from('team_based_approval_reviews')
+                                ->whereColumn('team_based_approval_item_id', 'team_based_approval_items.id');
+                        })
+                            ->whereHas('approval', function ($sub3) use ($statusFilter) {
+                                if ($statusFilter === 'under_review') {
+                                    $sub3->whereIn('status', ['under_review', 'forwarded']);
+                                } else {
+                                    $sub3->where('status', $statusFilter);
+                                }
+                            });
+                    });
+            });
+        }
+
+        $rows = $query
+            ->orderBy('id', 'desc')
+            ->get()
+            ->map(fn (TeamBasedApprovalItem $item) => $this->formatHeadOfficeIndexItem($item))
+            ->values();
+
+        return response()->json([
+            'rows' => $rows,
+            'total' => $rows->count(),
+        ]);
+    }
+
+    /**
+     * @param  array<string, mixed>  $rawCounts
+     * @return array{total: int, draft: int, pending: int, approved: int, rejected: int}
+     */
+    private function formatHeadOfficeIndexItem(TeamBasedApprovalItem $item): array
+    {
+        $approval = $item->approval;
+        $approver = $approval->areaManager
+            ?? $approval->zoneManager
+            ?? $approval->admf
+            ?? $approval->dmf
+            ?? $approval->ed;
+
+        $reviewsForItem = $approval->reviews
+            ->where('team_based_approval_item_id', $item->id)
+            ->sortBy('id')
+            ->values();
+
+        $review = $reviewsForItem->last();
+        $itemStatus = $review?->status ?? $approval->status;
+
+        return [
+            'id' => $item->id,
+            'serial_no' => $item->serial_no,
+            'member_name' => $item->member_name,
+            'member_code' => $item->member_code,
+            'member_phone' => $item->member_phone,
+            'samity_number' => $item->samity_number,
+            'savings_general' => $item->savings_general !== null ? (int) round((float) $item->savings_general) : null,
+            'savings_other' => $item->savings_other !== null ? (int) round((float) $item->savings_other) : null,
+            'savings_total' => $item->savings_total !== null ? (int) round((float) $item->savings_total) : null,
+            'repaid_loan_amount' => $item->repaid_loan_amount,
+            'repaid_installment_no' => $item->repaid_installment_no,
+            'other_institution_loan_amount' => $item->other_institution_loan_amount,
+            'proposed_loan_amount' => $item->proposed_loan_amount,
+            'approved_amount' => $item->approved_amount !== null ? (int) round((float) $item->approved_amount) : null,
+            'loan_term_years' => $item->loan_term_years,
+            'loan_type' => $item->loan_type,
+            'project_name' => $item->project_name,
+            'status' => $itemStatus,
+            'review_comments' => $review?->comments,
+            'approver_signature' => $review && in_array($review->status, ['approved', 'rejected', 'forwarded'], true) ? ($review->approver_signature ?? $review->user?->signature) : null,
+            'decided_at' => optional($review?->decided_at)->toDateString(),
+            'approvers' => $reviewsForItem->map(function ($r) {
+                return [
+                    'approver_name' => $r->user?->name,
+                    'approver_role' => $r->user?->role?->display_name ?? $r->user?->role?->name,
+                    'status' => $r->status,
+                    'approved_amount' => $r->approved_amount !== null ? (int) round((float) $r->approved_amount) : null,
+                    'comments' => $r->comments,
+                    'approver_signature' => in_array($r->status, ['approved', 'rejected', 'forwarded'], true) ? ($r->approver_signature ?? $r->user?->signature) : null,
+                    'decided_at' => optional($r->decided_at)->toDateString(),
+                ];
+            })->values()->all(),
+            'sheet_id' => $approval->id,
+            'sheet_date' => optional($approval->sheet_date)->toDateString(),
+            'branch_name' => $approval->branch?->name,
+            'branch_code' => $approval->branch?->code,
+            'area_name' => $approval->branch?->area?->name,
+            'zone_name' => $approval->branch?->area?->zone?->name,
+            'branch' => [
+                'name' => $approval->branch?->name,
+                'code' => $approval->branch?->code,
+                'area_name' => $approval->branch?->area?->name,
+                'zone_name' => $approval->branch?->area?->zone?->name,
+            ],
+            'proposed_total' => $item->proposed_loan_amount !== null
+                ? (int) round((float) $item->proposed_loan_amount)
+                : 0,
+            'approved_total_amount' => $approval->approved_total_amount !== null ? (int) round((float) $approval->approved_total_amount) : null,
+            'creator_name' => $approval->creator?->name,
+            'approver_name' => $approver?->name,
+        ];
     }
 
     /**
@@ -744,6 +872,7 @@ class HeadOfficeTeamBasedApprovalController extends Controller
                 'u.name as user_name',
                 DB::raw('COALESCE(ro.display_name, ro.name) as role_name'),
                 DB::raw("SUM(CASE WHEN LOWER(r.status) = 'pending' THEN 1 ELSE 0 END) as pending_count"),
+                DB::raw("SUM(CASE WHEN LOWER(r.status) = 'waiting' THEN 1 ELSE 0 END) as waiting_count"),
                 DB::raw("SUM(CASE WHEN LOWER(r.status) = 'approved' THEN 1 ELSE 0 END) as approved_count"),
                 DB::raw("SUM(CASE WHEN LOWER(r.status) IN ('forwarded', 'under_review') THEN 1 ELSE 0 END) as forwarded_count"),
                 DB::raw("SUM(CASE WHEN LOWER(r.status) = 'rejected' THEN 1 ELSE 0 END) as rejected_count"),
@@ -768,6 +897,7 @@ class HeadOfficeTeamBasedApprovalController extends Controller
                     'user_name' => $row->user_name,
                     'role_name' => $row->role_name,
                     'pending' => (int) $row->pending_count,
+                    'waiting' => (int) $row->waiting_count,
                     'approved' => (int) $row->approved_count,
                     'forwarded' => (int) $row->forwarded_count,
                     'rejected' => (int) $row->rejected_count,
@@ -779,6 +909,7 @@ class HeadOfficeTeamBasedApprovalController extends Controller
                 'zone_id' => $zone->id,
                 'zone_name' => $zone->name,
                 'pending' => (int) $zoneRows->sum('pending_count'),
+                'waiting' => (int) $zoneRows->sum('waiting_count'),
                 'approved' => (int) $zoneRows->sum('approved_count'),
                 'forwarded' => (int) $zoneRows->sum('forwarded_count'),
                 'rejected' => (int) $zoneRows->sum('rejected_count'),
@@ -789,6 +920,7 @@ class HeadOfficeTeamBasedApprovalController extends Controller
 
         $grandTotals = [
             'pending' => (int) collect($zoneReports)->sum('pending'),
+            'waiting' => (int) collect($zoneReports)->sum('waiting'),
             'approved' => (int) collect($zoneReports)->sum('approved'),
             'forwarded' => (int) collect($zoneReports)->sum('forwarded'),
             'rejected' => (int) collect($zoneReports)->sum('rejected'),

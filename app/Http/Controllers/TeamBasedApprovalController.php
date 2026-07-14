@@ -8,6 +8,7 @@ use App\Models\TeamBasedApproval;
 use App\Models\TeamBasedApprovalItem;
 use App\Models\TeamBasedApprovalReview;
 use App\Models\User;
+use App\Services\BlockListService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Inertia\Inertia;
@@ -260,88 +261,7 @@ class TeamBasedApprovalController extends Controller
             ->orderBy('id', 'desc')
             ->paginate($perPage)
             ->withQueryString()
-            ->through(function (TeamBasedApprovalItem $item) {
-                $approval = $item->approval;
-                $approverUser = $approval->areaManager
-                    ?? $approval->zoneManager
-                    ?? $approval->admf
-                    ?? $approval->dmf
-                    ?? $approval->ed;
-
-                $reviewsForItem = $approval->reviews
-                    ->where('team_based_approval_item_id', $item->id)
-                    ->sortBy('id')
-                    ->values();
-
-                $review = $reviewsForItem->last();
-                $itemStatus = $review?->status ?? $approval->status;
-
-                $snapshot = $approval->last_items_snapshot ?? [];
-                $changedFields = [];
-                if (! empty($snapshot) && $item->serial_no !== null) {
-                    $index = max(0, $item->serial_no - 1);
-                    $original = $snapshot[$index] ?? null;
-                    if (is_array($original)) {
-                        $fieldsToCheck = [
-                            'member_name', 'member_code', 'member_phone', 'samity_number',
-                            'savings_general', 'savings_other', 'savings_total',
-                            'repaid_loan_amount', 'repaid_installment_no',
-                            'other_institution_loan_amount', 'proposed_loan_amount',
-                            'loan_term_years', 'loan_type', 'project_name',
-                        ];
-                        foreach ($fieldsToCheck as $field) {
-                            $currentValue = $item->{$field};
-                            $originalValue = $original[$field] ?? null;
-                            $currentStr = $currentValue === null ? '' : (string) $currentValue;
-                            $originalStr = $originalValue === null ? '' : (string) $originalValue;
-                            if ($currentStr !== $originalStr) {
-                                $changedFields[] = $field;
-                            }
-                        }
-                    }
-                }
-
-                return [
-                    'id' => $item->id,
-                    'serial_no' => $item->serial_no,
-                    'member_name' => $item->member_name,
-                    'member_code' => $item->member_code,
-                    'member_phone' => $item->member_phone,
-                    'samity_number' => $item->samity_number,
-                    'savings_general' => $item->savings_general !== null ? (int) round((float) $item->savings_general) : null,
-                    'savings_other' => $item->savings_other !== null ? (int) round((float) $item->savings_other) : null,
-                    'savings_total' => $item->savings_total !== null ? (int) round((float) $item->savings_total) : null,
-                    'repaid_loan_amount' => $item->repaid_loan_amount,
-                    'repaid_installment_no' => $item->repaid_installment_no,
-                    'other_institution_loan_amount' => $item->other_institution_loan_amount,
-                    'proposed_loan_amount' => $item->proposed_loan_amount,
-                    'loan_term_years' => $item->loan_term_years,
-                    'loan_type' => $item->loan_type,
-                    'project_name' => $item->project_name,
-                    'status' => $itemStatus,
-                    'approved_amount' => $item->approved_amount !== null ? (int) round((float) $item->approved_amount) : null,
-                    'review_comments' => $review?->comments,
-                    'approver_signature' => $this->reviewSignatureForDisplay($review),
-                    'decided_at' => optional($review?->decided_at)->toDateString(),
-                    'approvers' => $reviewsForItem->map(function ($r) {
-                        return [
-                            'approver_name' => $r->user?->name,
-                            'approver_role' => $r->user?->role?->display_name ?? $r->user?->role?->name,
-                            'status' => $r->status,
-                            'approved_amount' => $r->approved_amount !== null ? (int) round((float) $r->approved_amount) : null,
-                            'comments' => $r->comments,
-                            'approver_signature' => $this->reviewSignatureForDisplay($r),
-                            'decided_at' => optional($r->decided_at)->toDateString(),
-                        ];
-                    })->values()->all(),
-                    'changed_fields' => $changedFields,
-                    // Parent sheet fields
-                    'sheet_id' => $approval->id,
-                    'sheet_date' => optional($approval->sheet_date)->toDateString(),
-                    'approver_name' => $approverUser?->name,
-                    'created_at' => $approval->created_at?->toDateTimeString(),
-                ];
-            });
+            ->through(fn (TeamBasedApprovalItem $item) => $this->formatBranchIndexItem($item));
 
         // Draft count for badge on All Applications page based on items
         $draftCount = TeamBasedApprovalItem::whereHas('approval', function ($q) use ($branch) {
@@ -534,6 +454,7 @@ class TeamBasedApprovalController extends Controller
             'approved' => $rawCounts['approved'] ?? 0,
             'rejected' => $rawCounts['rejected'] ?? 0,
             'forwarded' => $rawCounts['forwarded'] ?? 0,
+            'waiting' => $rawCounts['waiting'] ?? 0,
         ];
 
         // List filters without status
@@ -606,6 +527,13 @@ class TeamBasedApprovalController extends Controller
                         'id' => $item->id,
                         'serial_no' => $item->serial_no,
                         'member_name' => $item->member_name,
+                        'name_bn' => $item->name_bn,
+                        'father_name' => $item->father_name,
+                        'mother_name' => $item->mother_name,
+                        'spouse_name' => $item->spouse_name,
+                        'dob' => $item->dob?->toDateString(),
+                        'nid_number' => $item->nid_number,
+                        'address' => $item->address,
                         'member_code' => $item->member_code,
                         'member_phone' => $item->member_phone,
                         'samity_number' => $item->samity_number,
@@ -645,6 +573,13 @@ class TeamBasedApprovalController extends Controller
                             'id' => $item->id,
                             'serial_no' => $item->serial_no,
                             'member_name' => $item->member_name,
+                            'name_bn' => $item->name_bn,
+                            'father_name' => $item->father_name,
+                            'mother_name' => $item->mother_name,
+                            'spouse_name' => $item->spouse_name,
+                            'dob' => $item->dob?->toDateString(),
+                            'nid_number' => $item->nid_number,
+                            'address' => $item->address,
                             'member_code' => $item->member_code,
                             'member_phone' => $item->member_phone,
                             'samity_number' => $item->samity_number,
@@ -793,9 +728,235 @@ class TeamBasedApprovalController extends Controller
     }
 
     /**
+     * Export all branch items matching current filters (no pagination).
+     */
+    public function exportItems(Request $request)
+    {
+        $user = $request->user();
+        $branch = $user->branch;
+        if (! $branch) {
+            abort(403, 'এই তালিকা শুধুমাত্র শাখা ব্যবহারকারীদের জন্য।');
+        }
+
+        $dateFrom = $request->input('date_from', now()->toDateString());
+        $dateTo = $request->input('date_to', now()->toDateString());
+        $approverId = $request->input('approver_id');
+        $status = $request->input('status');
+        $status = $status ? strtolower(trim((string) $status)) : '';
+
+        $query = TeamBasedApprovalItem::query()
+            ->with([
+                'approval.branch',
+                'approval.creator',
+                'approval.areaManager',
+                'approval.zoneManager',
+                'approval.admf',
+                'approval.dmf',
+                'approval.ed',
+                'approval.reviews.user.role',
+            ])
+            ->whereHas('approval', function ($q) use ($branch) {
+                $q->where('branch_id', $branch->id)
+                    ->where('status', '!=', 'draft');
+            });
+
+        if ($dateFrom && $dateTo) {
+            $query->whereHas('approval', function ($q) use ($dateFrom, $dateTo) {
+                $q->whereBetween('sheet_date', [$dateFrom, $dateTo]);
+            });
+        }
+
+        if ($approverId) {
+            $query->whereHas('approval', function ($q) use ($approverId) {
+                $q->where(function ($inner) use ($approverId) {
+                    $inner->where('area_manager_id', $approverId)
+                        ->orWhere('zone_manager_id', $approverId)
+                        ->orWhere('admf_id', $approverId)
+                        ->orWhere('dmf_id', $approverId)
+                        ->orWhere('ed_id', $approverId);
+                });
+            });
+        }
+
+        if ($status) {
+            $query->where(function ($q) use ($status) {
+                $q->whereHas('approval.reviews', function ($sub) use ($status) {
+                    $sub->whereColumn('team_based_approval_item_id', 'team_based_approval_items.id');
+                    if ($status === 'under_review') {
+                        $sub->whereIn('status', ['under_review', 'forwarded']);
+                    } else {
+                        $sub->where('status', $status);
+                    }
+                    $sub->whereRaw('id = (SELECT MAX(id) FROM team_based_approval_reviews WHERE team_based_approval_item_id = team_based_approval_items.id)');
+                })
+                    ->orWhere(function ($sub) use ($status) {
+                        $sub->whereNotExists(function ($sub2) {
+                            $sub2->select(DB::raw(1))
+                                ->from('team_based_approval_reviews')
+                                ->whereColumn('team_based_approval_item_id', 'team_based_approval_items.id');
+                        })
+                            ->whereHas('approval', function ($sub3) use ($status) {
+                                if ($status === 'under_review') {
+                                    $sub3->whereIn('status', ['under_review', 'forwarded']);
+                                } else {
+                                    $sub3->where('status', $status);
+                                }
+                            });
+                    });
+            });
+        }
+
+        $rows = $query
+            ->orderBy('id', 'desc')
+            ->get()
+            ->map(fn (TeamBasedApprovalItem $item) => $this->formatBranchIndexItem($item))
+            ->values();
+
+        return response()->json([
+            'rows' => $rows,
+            'total' => $rows->count(),
+        ]);
+    }
+
+    /**
+     * Export all approver-visible item rows matching current filters (no pagination).
+     */
+    public function exportApproverItems(Request $request)
+    {
+        $user = $request->user();
+        $roleName = $user->role?->name;
+
+        if (! in_array($roleName, [
+            Role::AREA_MANAGER,
+            Role::ZONE_MANAGER,
+            Role::ADMF,
+            Role::DMF,
+            Role::ED,
+        ], true)) {
+            abort(403, 'আপনার জন্য এই অনুমোদন তালিকা প্রযোজ্য নয়।');
+        }
+
+        $status = $request->input('status');
+        $branchId = $request->input('branch_id');
+        $areaId = $request->input('area_id');
+        $zoneId = $request->input('zone_id');
+        $approverId = $request->input('approver_id');
+        $dateFrom = $request->input('date_from');
+        $dateTo = $request->input('date_to');
+        $approvalFlow = $request->input('approval_flow');
+        $approvalFlow = in_array($approvalFlow, ['single', 'multiple'], true) ? $approvalFlow : null;
+
+        $reviewsQuery = TeamBasedApprovalReview::with(['approval.branch.area.zone', 'approval.items', 'approval.reviews.user.role', 'item', 'user.role']);
+
+        if ($roleName === Role::AREA_MANAGER) {
+            $reviewsQuery->where('user_id', $user->id);
+        } else {
+            $accessibleBranchIds = $user->getAccessibleBranches()->pluck('id');
+
+            $reviewsQuery->where(function ($q) use ($user, $accessibleBranchIds, $roleName) {
+                $q->where('user_id', $user->id)
+                    ->orWhere(function ($sub) use ($accessibleBranchIds) {
+                        $sub->whereHas('user.role', function ($rq) {
+                            $rq->where('name', Role::AREA_MANAGER);
+                        })->whereHas('approval', function ($aq) use ($accessibleBranchIds) {
+                            $aq->whereIn('branch_id', $accessibleBranchIds);
+                        });
+                    });
+                if (in_array($roleName, [Role::ADMF, Role::DMF, Role::ED], true)) {
+                    $q->orWhere(function ($sub) use ($accessibleBranchIds) {
+                        $sub->whereHas('user.role', function ($rq) {
+                            $rq->where('name', Role::ZONE_MANAGER);
+                        })->whereHas('approval', function ($aq) use ($accessibleBranchIds) {
+                            $aq->whereIn('branch_id', $accessibleBranchIds);
+                        });
+                    });
+                }
+                $q->orWhere(function ($sub) use ($accessibleBranchIds) {
+                    $sub->whereHas('user.role', function ($rq) {
+                        $rq->whereIn('name', Role::approverRoleNames());
+                    })->whereHas('approval', function ($aq) use ($accessibleBranchIds) {
+                        $aq->whereIn('branch_id', $accessibleBranchIds);
+                    });
+                });
+            });
+        }
+
+        $baseQuery = (clone $reviewsQuery)
+            ->when($branchId, function ($q) use ($branchId) {
+                $q->whereHas('approval', function ($qa) use ($branchId) {
+                    $qa->where('branch_id', $branchId);
+                });
+            })
+            ->when($areaId, function ($q) use ($areaId) {
+                $q->whereHas('approval.branch', function ($qa) use ($areaId) {
+                    $qa->where('area_id', $areaId);
+                });
+            })
+            ->when($zoneId, function ($q) use ($zoneId) {
+                $q->whereHas('approval.branch.area', function ($qa) use ($zoneId) {
+                    $qa->where('zone_id', $zoneId);
+                });
+            })
+            ->when($dateFrom && $dateTo, function ($q) use ($dateFrom, $dateTo) {
+                $q->whereHas('approval', function ($qa) use ($dateFrom, $dateTo) {
+                    $qa->whereBetween('sheet_date', [$dateFrom, $dateTo]);
+                });
+            })
+            ->when($approvalFlow === 'single', function ($q) {
+                $q->whereIn('team_based_approval_id', function ($sub) {
+                    $sub->select('team_based_approval_id')
+                        ->from('team_based_approval_reviews')
+                        ->groupBy('team_based_approval_id')
+                        ->havingRaw('COUNT(DISTINCT user_id) = 1');
+                });
+            })
+            ->when($approvalFlow === 'multiple', function ($q) {
+                $q->whereIn('team_based_approval_id', function ($sub) {
+                    $sub->select('team_based_approval_id')
+                        ->from('team_based_approval_reviews')
+                        ->groupBy('team_based_approval_id')
+                        ->havingRaw('COUNT(DISTINCT user_id) >= 2');
+                });
+            })
+            ->when($status, function ($q) use ($status) {
+                $q->where('status', $status);
+            })
+            ->when($approverId, function ($q) use ($approverId) {
+                $q->where('user_id', $approverId);
+            });
+
+        $reviews = $baseQuery->latest()->get();
+        $rows = collect();
+
+        foreach ($reviews as $review) {
+            $rows = $rows->merge($this->flattenApproverReviewToExportRows($review, $user));
+        }
+
+        return response()->json([
+            'rows' => $rows->values(),
+            'total' => $rows->count(),
+        ]);
+    }
+
+    /**
+     * Live-check logged-in approver username against block_list (and optional branch).
+     */
+    public function verifyBlockList(Request $request, BlockListService $blockListService)
+    {
+        $branchCode = $request->query('branch_code');
+
+        return response()->json(
+            $blockListService->verifyApprover(
+                $request->user(),
+                is_string($branchCode) ? $branchCode : null,
+            )
+        );
+    }
+
+    /**
      * Approver decision: approve or reject with comments & optional approved amount.
      */
-    public function decide(Request $request, TeamBasedApprovalReview $review)
+    public function decide(Request $request, TeamBasedApprovalReview $review, BlockListService $blockListService)
     {
         $user = $request->user();
 
@@ -803,30 +964,96 @@ class TeamBasedApprovalController extends Controller
             abort(403, 'আপনি এই আবেদনটির অনুমোদনকারী নন।');
         }
 
-        if ($review->status !== 'pending') {
+        if ($review->status !== 'pending' && $review->status !== 'waiting') {
             return redirect()
                 ->back()
                 ->with('error', 'এই আবেদনের সিদ্ধান্ত ইতিমধ্যে নেওয়া হয়েছে।');
         }
 
-        $data = $request->validate([
-            'decision' => ['required', 'in:approved,rejected'],
-            // Reject korle obosshoi montobbo dibe
-            'comments' => ['required_if:decision,rejected', 'nullable', 'string', 'max:1000'],
-            // Approve korle obosshoi amount dite hobe (round number)
+        $rules = [
+            'decision' => ['required', 'in:approved,rejected,waiting'],
+            'comments' => ['required', 'string', 'max:1000'],
             'approved_amount' => ['required_if:decision,approved', 'numeric', 'min:0'],
+            'push_to_block_list' => ['sometimes', 'boolean'],
+        ];
+
+        $pushToBlockList = $request->boolean('push_to_block_list', true);
+
+        if ($request->input('decision') === 'rejected' && $pushToBlockList) {
+            $rules = array_merge($rules, [
+                'block_list.nid_number' => ['required', 'string', 'max:50'],
+                'block_list.phone_number' => ['required', 'string', 'regex:/^[0-9]{10,14}$/'],
+                'block_list.name_bn' => ['nullable', 'string', 'max:255'],
+                'block_list.father_name' => ['nullable', 'string', 'max:255'],
+                'block_list.mother_name' => ['nullable', 'string', 'max:255'],
+                'block_list.spouse_name' => ['nullable', 'string', 'max:255'],
+                'block_list.dob' => ['nullable', 'date', 'before:today'],
+                'block_list.address' => ['nullable', 'string', 'max:500'],
+            ]);
+        }
+
+        $data = $request->validate($rules, [
+            'block_list.nid_number.required' => 'Block list-এ যোগ করতে NID নম্বর প্রয়োজন।',
+            'block_list.phone_number.required' => 'Block list-এ যোগ করতে ফোন নম্বর প্রয়োজন।',
+            'block_list.phone_number.regex' => 'ফোন নম্বর ১০–১৪ অঙ্কের হতে হবে।',
+            'comments.required' => 'মন্তব্য লিখতে হবে।',
         ]);
         if (isset($data['approved_amount'])) {
             $data['approved_amount'] = (int) round((float) $data['approved_amount']);
         }
 
-        $approval = $review->approval;
+        $approval = $review->approval()->with('branch')->first();
         $item = $review->item;
 
-        DB::transaction(function () use ($data, $review, $approval, $item, $user) {
+        if ($data['decision'] === 'rejected' && $pushToBlockList) {
+            if (! $item) {
+                return redirect()
+                    ->back()
+                    ->with('error', 'এই রিভিউয়ের সাথে কোনো সদস্যের সারি যুক্ত নেই।');
+            }
+
+            if (! $approval?->branch) {
+                return redirect()
+                    ->back()
+                    ->with('error', 'শাখার তথ্য পাওয়া যায়নি।');
+            }
+
+            $blockListData = $data['block_list'];
+
+            try {
+                $blockListService->pushRejectedMember(
+                    $user,
+                    $item,
+                    $approval->branch,
+                    $blockListData,
+                    (string) ($data['comments'] ?? ''),
+                );
+            } catch (\RuntimeException $e) {
+                return redirect()
+                    ->back()
+                    ->with('error', $e->getMessage());
+            }
+        }
+
+        DB::transaction(function () use ($data, $review, $approval, $item, $user, $pushToBlockList) {
             $now = now();
 
             if ($data['decision'] === 'rejected') {
+                if ($pushToBlockList && isset($data['block_list'])) {
+                    $blockListData = $data['block_list'];
+
+                    $item?->update([
+                        'name_bn' => $blockListData['name_bn'] ?? null,
+                        'father_name' => $blockListData['father_name'] ?? null,
+                        'mother_name' => $blockListData['mother_name'] ?? null,
+                        'spouse_name' => $blockListData['spouse_name'] ?? null,
+                        'dob' => $blockListData['dob'] ?? null,
+                        'nid_number' => $blockListData['nid_number'],
+                        'address' => $blockListData['address'] ?? null,
+                        'member_phone' => $blockListData['phone_number'],
+                    ]);
+                }
+
                 $review->update([
                     'status' => 'rejected',
                     'comments' => $data['comments'] ?? null,
@@ -834,8 +1061,14 @@ class TeamBasedApprovalController extends Controller
                     'approver_signature' => $user->signature,
                     'decided_at' => $now,
                 ]);
-
-                // Sheet status change optional; keep as-is for now
+            } elseif ($data['decision'] === 'waiting') {
+                $review->update([
+                    'status' => 'waiting',
+                    'comments' => $data['comments'] ?? null,
+                    'approved_amount' => null,
+                    'approver_signature' => $user->signature,
+                    'decided_at' => $now,
+                ]);
             } else {
                 $approvedAmount = $data['approved_amount'];
 
@@ -1447,6 +1680,175 @@ class TeamBasedApprovalController extends Controller
     /**
      * শুধু approved/rejected/forwarded রিভিউতে সাইনেচার দাও; pending এ সাইনেচার দেখাবে না।
      */
+    private function formatBranchIndexItem(TeamBasedApprovalItem $item): array
+    {
+        $approval = $item->approval;
+        $approverUser = $approval->areaManager
+            ?? $approval->zoneManager
+            ?? $approval->admf
+            ?? $approval->dmf
+            ?? $approval->ed;
+
+        $reviewsForItem = $approval->reviews
+            ->where('team_based_approval_item_id', $item->id)
+            ->sortBy('id')
+            ->values();
+
+        $review = $reviewsForItem->last();
+        $itemStatus = $review?->status ?? $approval->status;
+
+        $snapshot = $approval->last_items_snapshot ?? [];
+        $changedFields = [];
+        if (! empty($snapshot) && $item->serial_no !== null) {
+            $index = max(0, $item->serial_no - 1);
+            $original = $snapshot[$index] ?? null;
+            if (is_array($original)) {
+                $fieldsToCheck = [
+                    'member_name', 'member_code', 'member_phone', 'samity_number',
+                    'savings_general', 'savings_other', 'savings_total',
+                    'repaid_loan_amount', 'repaid_installment_no',
+                    'other_institution_loan_amount', 'proposed_loan_amount',
+                    'loan_term_years', 'loan_type', 'project_name',
+                ];
+                foreach ($fieldsToCheck as $field) {
+                    $currentValue = $item->{$field};
+                    $originalValue = $original[$field] ?? null;
+                    $currentStr = $currentValue === null ? '' : (string) $currentValue;
+                    $originalStr = $originalValue === null ? '' : (string) $originalValue;
+                    if ($currentStr !== $originalStr) {
+                        $changedFields[] = $field;
+                    }
+                }
+            }
+        }
+
+        return [
+            'id' => $item->id,
+            'serial_no' => $item->serial_no,
+            'member_name' => $item->member_name,
+            'member_code' => $item->member_code,
+            'member_phone' => $item->member_phone,
+            'samity_number' => $item->samity_number,
+            'savings_general' => $item->savings_general !== null ? (int) round((float) $item->savings_general) : null,
+            'savings_other' => $item->savings_other !== null ? (int) round((float) $item->savings_other) : null,
+            'savings_total' => $item->savings_total !== null ? (int) round((float) $item->savings_total) : null,
+            'repaid_loan_amount' => $item->repaid_loan_amount,
+            'repaid_installment_no' => $item->repaid_installment_no,
+            'other_institution_loan_amount' => $item->other_institution_loan_amount,
+            'proposed_loan_amount' => $item->proposed_loan_amount,
+            'loan_term_years' => $item->loan_term_years,
+            'loan_type' => $item->loan_type,
+            'project_name' => $item->project_name,
+            'status' => $itemStatus,
+            'approved_amount' => $item->approved_amount !== null ? (int) round((float) $item->approved_amount) : null,
+            'review_comments' => $review?->comments,
+            'approver_signature' => $this->reviewSignatureForDisplay($review),
+            'decided_at' => optional($review?->decided_at)->toDateString(),
+            'approvers' => $reviewsForItem->map(function ($r) {
+                return [
+                    'approver_name' => $r->user?->name,
+                    'approver_role' => $r->user?->role?->display_name ?? $r->user?->role?->name,
+                    'status' => $r->status,
+                    'approved_amount' => $r->approved_amount !== null ? (int) round((float) $r->approved_amount) : null,
+                    'comments' => $r->comments,
+                    'approver_signature' => $this->reviewSignatureForDisplay($r),
+                    'decided_at' => optional($r->decided_at)->toDateString(),
+                ];
+            })->values()->all(),
+            'changed_fields' => $changedFields,
+            'sheet_id' => $approval->id,
+            'sheet_date' => optional($approval->sheet_date)->toDateString(),
+            'approver_name' => $approverUser?->name,
+            'created_at' => $approval->created_at?->toDateTimeString(),
+        ];
+    }
+
+    /**
+     * @return \Illuminate\Support\Collection<int, array<string, mixed>>
+     */
+    private function flattenApproverReviewToExportRows(TeamBasedApprovalReview $review, User $user)
+    {
+        $approval = $review->approval;
+        $rows = collect();
+
+        if ($review->team_based_approval_item_id && $review->item) {
+            $item = $review->item;
+            $reviewsForItem = $approval->reviews
+                ->where('team_based_approval_item_id', $item->id)
+                ->sortBy('id')
+                ->values();
+
+            $rows->push($this->formatApproverExportRow($review, $item, $reviewsForItem, $user, $approval));
+
+            return $rows;
+        }
+
+        $reviewsByItem = $approval->reviews->whereNotNull('team_based_approval_item_id')->groupBy('team_based_approval_item_id');
+
+        foreach ($approval->items as $index => $item) {
+            $reviewsForItem = $reviewsByItem->get($item->id, collect())->sortBy('id')->values();
+            $rows->push($this->formatApproverExportRow($review, $item, $reviewsForItem, $user, $approval, $index));
+        }
+
+        return $rows;
+    }
+
+    /**
+     * @param  \Illuminate\Support\Collection<int, TeamBasedApprovalReview>  $reviewsForItem
+     * @return array<string, mixed>
+     */
+    private function formatApproverExportRow(
+        TeamBasedApprovalReview $review,
+        TeamBasedApprovalItem $item,
+        $reviewsForItem,
+        User $user,
+        TeamBasedApproval $approval,
+        int $index = 0,
+    ): array {
+        return [
+            'id' => $item->id,
+            'serial_no' => $item->serial_no ?: ($index + 1),
+            'member_name' => $item->member_name,
+            'member_code' => $item->member_code,
+            'member_phone' => $item->member_phone,
+            'samity_number' => $item->samity_number,
+            'savings_general' => $item->savings_general !== null ? (int) round((float) $item->savings_general) : null,
+            'savings_other' => $item->savings_other !== null ? (int) round((float) $item->savings_other) : null,
+            'savings_total' => $item->savings_total !== null ? (int) round((float) $item->savings_total) : null,
+            'repaid_loan_amount' => $item->repaid_loan_amount,
+            'repaid_installment_no' => $item->repaid_installment_no,
+            'other_institution_loan_amount' => $item->other_institution_loan_amount,
+            'proposed_loan_amount' => $item->proposed_loan_amount,
+            'approved_amount' => $item->approved_amount !== null ? (int) round((float) $item->approved_amount) : null,
+            'loan_term_years' => $item->loan_term_years,
+            'loan_type' => $item->loan_type,
+            'project_name' => $item->project_name,
+            'review_id' => $review->id,
+            'sheet_id' => $approval->id,
+            'sheet_date' => optional($approval->sheet_date)->toDateString(),
+            'branch_name' => $approval->branch?->name,
+            'branch_code' => $approval->branch?->code,
+            'review_status' => $review->status,
+            'review_comments' => $review->comments,
+            'approver_signature' => $this->reviewSignatureForDisplay($review),
+            'decided_at' => $review->decided_at?->toDateString(),
+            'can_act' => $review->user_id === $user->id,
+            'approver_name' => $review->user?->name,
+            'approver_role' => $review->user?->role?->display_name ?? $review->user?->role?->name,
+            'approvers' => $reviewsForItem->map(function ($r) {
+                return [
+                    'approver_name' => $r->user?->name,
+                    'approver_role' => $r->user?->role?->display_name ?? $r->user?->role?->name,
+                    'status' => $r->status,
+                    'approved_amount' => $r->approved_amount !== null ? (int) round((float) $r->approved_amount) : null,
+                    'comments' => $r->comments,
+                    'approver_signature' => $this->reviewSignatureForDisplay($r),
+                    'decided_at' => $r->decided_at?->toDateString(),
+                ];
+            })->values()->all(),
+        ];
+    }
+
     private function reviewSignatureForDisplay(?TeamBasedApprovalReview $review): ?string
     {
         if (! $review) {

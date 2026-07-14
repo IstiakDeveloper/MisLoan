@@ -14,6 +14,7 @@ interface UserRow {
     user_name: string;
     role_name: string | null;
     pending: number;
+    waiting: number;
     approved: number;
     forwarded: number;
     rejected: number;
@@ -24,6 +25,7 @@ interface ZoneReport {
     zone_id: number;
     zone_name: string;
     pending: number;
+    waiting: number;
     approved: number;
     forwarded: number;
     rejected: number;
@@ -33,6 +35,7 @@ interface ZoneReport {
 
 interface GrandTotals {
     pending: number;
+    waiting: number;
     approved: number;
     forwarded: number;
     rejected: number;
@@ -357,8 +360,9 @@ export default function TeamBasedApprovalReport({ zoneReports, grandTotals, filt
                     <span className="font-semibold">মোট রেকর্ড:</span> {grandTotals.total}
                 </div>
 
-                <div className="tba-report-stats grid grid-cols-2 md:grid-cols-5 gap-4 print:gap-1">
+                <div className="tba-report-stats grid grid-cols-2 md:grid-cols-6 gap-4 print:gap-1">
                     <StatCard label="Pending" value={grandTotals.pending} color="yellow" />
+                    <StatCard label="Waiting" value={grandTotals.waiting} color="orange" />
                     <StatCard label="Approved" value={grandTotals.approved} color="green" />
                     <StatCard label="Forwarded" value={grandTotals.forwarded} color="blue" />
                     <StatCard label="Rejected" value={grandTotals.rejected} color="red" />
@@ -408,6 +412,7 @@ export default function TeamBasedApprovalReport({ zoneReports, grandTotals, filt
                                                             <th className="px-3 py-2 text-left">ব্যবহারকারী</th>
                                                             <th className="px-3 py-2 text-left">ভূমিকা</th>
                                                             <th className="px-3 py-2 text-center">Pending</th>
+                                                            <th className="px-3 py-2 text-center">Waiting</th>
                                                             <th className="px-3 py-2 text-center">Approved</th>
                                                             <th className="px-3 py-2 text-center">Forwarded</th>
                                                             <th className="px-3 py-2 text-center">Rejected</th>
@@ -417,7 +422,7 @@ export default function TeamBasedApprovalReport({ zoneReports, grandTotals, filt
                                                     <tbody>
                                                         {zone.users.length === 0 ? (
                                                             <tr>
-                                                                <td colSpan={7} className="px-3 py-4 text-center text-gray-500">
+                                                                <td colSpan={8} className="px-3 py-4 text-center text-gray-500">
                                                                     এই জোনে কোনো রিভিউ নেই
                                                                 </td>
                                                             </tr>
@@ -428,6 +433,9 @@ export default function TeamBasedApprovalReport({ zoneReports, grandTotals, filt
                                                                     <td className="px-3 py-2 text-gray-600">{user.role_name || '-'}</td>
                                                                     <td className="px-3 py-2 text-center">
                                                                         <CountBadge value={user.pending} tone="yellow" />
+                                                                    </td>
+                                                                    <td className="px-3 py-2 text-center">
+                                                                        <CountBadge value={user.waiting} tone="orange" />
                                                                     </td>
                                                                     <td className="px-3 py-2 text-center">
                                                                         <CountBadge value={user.approved} tone="green" />
@@ -450,6 +458,7 @@ export default function TeamBasedApprovalReport({ zoneReports, grandTotals, filt
                                                                     জোন মোট
                                                                 </td>
                                                                 <td className="px-3 py-2 text-center">{zone.pending}</td>
+                                                                <td className="px-3 py-2 text-center">{zone.waiting}</td>
                                                                 <td className="px-3 py-2 text-center">{zone.approved}</td>
                                                                 <td className="px-3 py-2 text-center">{zone.forwarded}</td>
                                                                 <td className="px-3 py-2 text-center">{zone.rejected}</td>
@@ -470,9 +479,10 @@ export default function TeamBasedApprovalReport({ zoneReports, grandTotals, filt
     );
 }
 
-function StatCard({ label, value, color }: { label: string; value: number; color: 'yellow' | 'green' | 'blue' | 'red' | 'gray' }) {
+function StatCard({ label, value, color }: { label: string; value: number; color: 'yellow' | 'green' | 'blue' | 'red' | 'gray' | 'orange' }) {
     const colors = {
         yellow: 'bg-yellow-50 border-yellow-200 text-yellow-800',
+        orange: 'bg-orange-50 border-orange-200 text-orange-800',
         green: 'bg-green-50 border-green-200 text-green-800',
         blue: 'bg-blue-50 border-blue-200 text-blue-800',
         red: 'bg-red-50 border-red-200 text-red-800',
@@ -491,6 +501,7 @@ function ZoneCounts({ zone }: { zone: ZoneReport }) {
     return (
         <div className="tba-report-zone-counts flex flex-wrap gap-2 text-xs">
             <span className="px-2 py-1 rounded bg-yellow-100 text-yellow-800">Pending: {zone.pending}</span>
+            <span className="px-2 py-1 rounded bg-orange-100 text-orange-800">Waiting: {zone.waiting}</span>
             <span className="px-2 py-1 rounded bg-green-100 text-green-800">Approved: {zone.approved}</span>
             <span className="px-2 py-1 rounded bg-blue-100 text-blue-800">Forwarded: {zone.forwarded}</span>
             <span className="px-2 py-1 rounded bg-red-100 text-red-800">Rejected: {zone.rejected}</span>
@@ -499,13 +510,14 @@ function ZoneCounts({ zone }: { zone: ZoneReport }) {
     );
 }
 
-function CountBadge({ value, tone }: { value: number; tone: 'yellow' | 'green' | 'blue' | 'red' }) {
+function CountBadge({ value, tone }: { value: number; tone: 'yellow' | 'green' | 'blue' | 'red' | 'orange' }) {
     if (value === 0) {
         return <span className="text-gray-400">0</span>;
     }
 
     const tones = {
         yellow: 'bg-yellow-100 text-yellow-800',
+        orange: 'bg-orange-100 text-orange-800',
         green: 'bg-green-100 text-green-800',
         blue: 'bg-blue-100 text-blue-800',
         red: 'bg-red-100 text-red-800',
