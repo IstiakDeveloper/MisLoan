@@ -289,6 +289,19 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
         return groups;
     }, [isBranchRole, isTeamApproverRole, branchMenuItems, approverMenuItems, headOfficeMainItems]);
 
+    // Compute items for mobile bottom nav (top 4 items)
+    const mobileBottomNavItems = useMemo(() => {
+        let items = [];
+        if (isBranchRole) {
+            items = [...branchMenuItems];
+        } else if (isTeamApproverRole) {
+            items = [...approverMenuItems];
+        } else {
+            items = [...headOfficeMainItems];
+        }
+        return items.slice(0, 4);
+    }, [isBranchRole, isTeamApproverRole, branchMenuItems, approverMenuItems, headOfficeMainItems]);
+
     const showReportSection = isEdRole || canViewTeamBasedReport;
 
     return (
@@ -338,7 +351,11 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
                 {sidebarOpen ? (
                     <div className="bg-gradient-to-r from-blue-600 to-indigo-600 text-white rounded-xl p-3.5 m-3 flex items-center justify-between shadow-md shadow-blue-600/10 relative overflow-hidden">
                         <div className="absolute -right-3 -top-3 w-12 h-12 bg-white/10 rounded-full blur-md" />
-                        <div className="flex items-center gap-2.5 min-w-0 z-10">
+                        <Link
+                            href="/"
+                            className="flex items-center gap-2.5 min-w-0 z-10 rounded-lg outline-none focus:outline-none focus-visible:outline-none"
+                            aria-label="Go to home"
+                        >
                             <div className="w-8 h-8 rounded-lg bg-white/15 flex items-center justify-center text-white flex-shrink-0 shadow-inner">
                                 <Building2 className="w-4.5 h-4.5 stroke-[1.75]" />
                             </div>
@@ -350,7 +367,7 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
                                     Management Panel
                                 </span>
                             </div>
-                        </div>
+                        </Link>
                         <button
                             type="button"
                             onClick={() => setSidebarOpen(false)}
@@ -603,16 +620,6 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
                 <header className="print:hidden sticky top-0 z-35 bg-white/80 backdrop-blur-md border-b border-slate-100/80">
                     <div className="flex items-center justify-between h-14 px-4 md:px-6">
                         <div className="flex items-center gap-3">
-                            {isMobile && (
-                                <button
-                                    type="button"
-                                    onClick={() => setSidebarOpen(true)}
-                                    className="p-1.5 rounded-lg hover:bg-slate-50 text-slate-650 transition-colors"
-                                    aria-label="Open menu"
-                                >
-                                    <Menu className="w-5 h-5 stroke-[1.75]" />
-                                </button>
-                            )}
                             <h2 className="text-sm font-bold text-slate-800">
                                 {isMobile ? 'MIS Loan' : 'Dashboard'}
                             </h2>
@@ -706,8 +713,8 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
                 </header>
 
                 {/* Main Content Layout Container */}
-                <main className="flex-1 p-4 md:p-6 lg:p-8 print:p-0">
-                    <div className="max-w-[1600px] mx-auto w-full print:max-w-none print:mx-0">
+                <main className="flex-1 p-4 md:p-6 lg:p-8 pb-20 md:pb-6 lg:pb-8 print:p-0 print:block relative">
+                    <div className="max-w-[1600px] mx-auto w-full print:max-w-none print:mx-0 print:block">
                         {children}
                     </div>
                 </main>
@@ -794,6 +801,43 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
                         </div>
                     </div>
                 </div>
+            )}
+
+            {/* Mobile Bottom Navigation */}
+            {isMobile && (
+                <nav className="md:hidden fixed bottom-0 left-0 right-0 z-40 bg-white border-t border-slate-200 shadow-[0_-4px_10px_rgba(0,0,0,0.05)] pb-safe">
+                    <div className="flex items-center justify-around h-16 px-2">
+                        {mobileBottomNavItems.map((item) => {
+                            const isActive = isNavItemActive(path, item.href);
+                            const Icon = item.icon;
+                            return (
+                                <Link
+                                    key={item.name}
+                                    href={item.href}
+                                    className={`flex flex-col items-center justify-center w-full h-full space-y-1 relative ${isActive ? 'text-blue-600' : 'text-slate-500 hover:text-slate-900'}`}
+                                >
+                                    <div className="relative">
+                                        <Icon className={`w-5 h-5 ${isActive ? 'stroke-[2]' : 'stroke-[1.5]'}`} />
+                                        {item.badge != null && item.badge > 0 && (
+                                            <span className="absolute -top-1 -right-1.5 flex h-3.5 min-w-[14px] items-center justify-center rounded-full bg-rose-500 px-1 text-[8px] font-bold text-white shadow-xs">
+                                                {item.badge}
+                                            </span>
+                                        )}
+                                    </div>
+                                    <span className="text-[9px] font-medium text-center leading-tight max-w-[60px] truncate">{item.name}</span>
+                                </Link>
+                            );
+                        })}
+                        <button
+                            type="button"
+                            onClick={() => setSidebarOpen(true)}
+                            className="flex flex-col items-center justify-center w-full h-full space-y-1 text-slate-500 hover:text-slate-900"
+                        >
+                            <Menu className="w-5 h-5 stroke-[1.5]" />
+                            <span className="text-[9px] font-medium">Menu</span>
+                        </button>
+                    </div>
+                </nav>
             )}
         </div>
     );

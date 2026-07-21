@@ -20,7 +20,7 @@ class MemberCategoryController extends Controller
             });
         }
 
-        $categories = $query->orderBy('category_name')->paginate(15);
+        $categories = $query->orderBy('category_name')->paginate($request->integer('per_page', 50))->withQueryString();
 
         return Inertia::render('Organization/MemberCategory/Index', [
             'categories' => $categories,

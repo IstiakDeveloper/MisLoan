@@ -1,7 +1,31 @@
-import { useState, useRef, ChangeEvent } from 'react';
-import { Head, router, usePage } from '@inertiajs/react';
+import {
+    ConfigurationCard,
+    ConfigurationHeader,
+    ConfigurationPage,
+    EmptyState,
+    ServerPagination,
+    StatusBadge,
+} from '@/components/configuration';
 import AdminLayout from '@/layouts/admin-layout';
-import { Plus, Search, MoreVertical, Edit, Trash2, Power, PowerOff, KeyRound, Filter, Send, X } from 'lucide-react';
+import { Head, router, usePage } from '@inertiajs/react';
+import {
+    Edit,
+    Filter,
+    KeyRound,
+    MoreVertical,
+    Plus,
+    Power,
+    PowerOff,
+    Search,
+    Send,
+    Trash2,
+    UsersRound,
+    X,
+    ToggleLeft,
+    ToggleRight,
+    PenTool,
+} from 'lucide-react';
+import { ChangeEvent, useRef, useState } from 'react';
 import UserModal from './Components/UserModal';
 
 interface Role {
@@ -79,7 +103,14 @@ interface Props {
     };
 }
 
-export default function Index({ users, roles, zones, areas, branches, filters }: Props) {
+export default function Index({
+    users,
+    roles,
+    zones,
+    areas,
+    branches,
+    filters,
+}: Props) {
     const [searchQuery, setSearchQuery] = useState(filters.search || '');
     const [openDropdown, setOpenDropdown] = useState<number | null>(null);
     const [userModalOpen, setUserModalOpen] = useState(false);
@@ -94,10 +125,14 @@ export default function Index({ users, roles, zones, areas, branches, filters }:
     const [bulkMailModalOpen, setBulkMailModalOpen] = useState(false);
     const [excludeRoleIds, setExcludeRoleIds] = useState<number[]>([]);
     const [branchSummaryModalOpen, setBranchSummaryModalOpen] = useState(false);
-    const [selectedBranchIdForSummary, setSelectedBranchIdForSummary] = useState<string>('');
-    const [targetEmailForSummary, setTargetEmailForSummary] = useState<string>('');
+    const [selectedBranchIdForSummary, setSelectedBranchIdForSummary] =
+        useState<string>('');
+    const [targetEmailForSummary, setTargetEmailForSummary] =
+        useState<string>('');
 
-    const page = usePage() as { props: { auth?: { user?: { has_all_access?: boolean } } } };
+    const page = usePage() as {
+        props: { auth?: { user?: { has_all_access?: boolean } } };
+    };
     const authUser = page.props.auth?.user;
     const canUpdateSignature = !!authUser?.has_all_access;
 
@@ -147,14 +182,20 @@ export default function Index({ users, roles, zones, areas, branches, filters }:
 
     const toggleExcludeRole = (roleId: number) => {
         setExcludeRoleIds((prev) =>
-            prev.includes(roleId) ? prev.filter((id) => id !== roleId) : [...prev, roleId]
+            prev.includes(roleId)
+                ? prev.filter((id) => id !== roleId)
+                : [...prev, roleId],
         );
     };
 
     const handleSendAllCredentials = () => {
-        router.post('/users/send-credentials-all', { exclude_role_ids: excludeRoleIds }, {
-            onSuccess: () => setBulkMailModalOpen(false),
-        });
+        router.post(
+            '/users/send-credentials-all',
+            { exclude_role_ids: excludeRoleIds },
+            {
+                onSuccess: () => setBulkMailModalOpen(false),
+            },
+        );
     };
 
     const handleOpenBranchSummaryModal = () => {
@@ -175,12 +216,12 @@ export default function Index({ users, roles, zones, areas, branches, filters }:
             '/users/send-branch-summary',
             {
                 branch_id: isAll ? undefined : selectedBranchIdForSummary,
-                email: isAll ? undefined : (targetEmailForSummary || undefined),
+                email: isAll ? undefined : targetEmailForSummary || undefined,
                 all_branches: isAll,
             },
             {
                 onSuccess: () => setBranchSummaryModalOpen(false),
-            }
+            },
         );
     };
 
@@ -200,7 +241,7 @@ export default function Index({ users, roles, zones, areas, branches, filters }:
                 branch_id: filterBranch,
                 is_active: filterStatus,
             },
-            { preserveState: true }
+            { preserveState: true },
         );
     };
 
@@ -227,7 +268,10 @@ export default function Index({ users, roles, zones, areas, branches, filters }:
         }
     };
 
-    const handleSignatureChange = (userId: number, event: ChangeEvent<HTMLInputElement>) => {
+    const handleSignatureChange = (
+        userId: number,
+        event: ChangeEvent<HTMLInputElement>,
+    ) => {
         const file = event.target.files?.[0];
         if (!file) return;
 
@@ -248,76 +292,81 @@ export default function Index({ users, roles, zones, areas, branches, filters }:
         <AdminLayout>
             <Head title="User Management" />
 
-            <div className="space-y-6">
-                {/* Header */}
-                <div className="flex items-center justify-between">
-                    <div>
-                        <h1 className="text-2xl font-bold text-gray-900">User Management</h1>
-                        <p className="text-sm text-gray-600 mt-1">
-                            Manage system users and their access
-                        </p>
-                    </div>
-                    <div className="flex items-center gap-3">
-                        <button
-                            onClick={handleOpenBranchSummaryModal}
-                            className="flex items-center gap-2 px-4 py-2 bg-teal-600 text-white rounded-lg hover:bg-teal-700 transition-colors shadow-sm"
-                        >
-                            <Send className="w-4 h-4" />
-                            Branch User List Mail
-                        </button>
-                        <button
-                            onClick={handleOpenBulkMailModal}
-                            className="flex items-center gap-2 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors shadow-sm"
-                        >
-                            <Send className="w-4 h-4" />
-                            Send Login Info (All)
-                        </button>
-                        <button
-                            onClick={handleAddNew}
-                            className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors shadow-sm"
-                        >
-                            <Plus className="w-4 h-4" />
-                            Add New User
-                        </button>
-                    </div>
-                </div>
+            <ConfigurationPage>
+                <ConfigurationHeader
+                    title="User Management"
+                    description="Manage user access, organizational assignments, credentials, and signatures."
+                    icon={UsersRound}
+                    actions={
+                        <>
+                            <button
+                                onClick={handleOpenBranchSummaryModal}
+                                className="flex min-h-10 flex-1 items-center justify-center gap-2 rounded-lg border border-white/30 bg-white/10 px-3 py-2 text-sm font-semibold text-white backdrop-blur hover:bg-white/20 sm:flex-none"
+                            >
+                                <Send className="h-4 w-4" />
+                                Branch User List Mail
+                            </button>
+                            <button
+                                onClick={handleOpenBulkMailModal}
+                                className="flex min-h-10 flex-1 items-center justify-center gap-2 rounded-lg border border-white/30 bg-white/10 px-3 py-2 text-sm font-semibold text-white backdrop-blur hover:bg-white/20 sm:flex-none"
+                            >
+                                <Send className="h-4 w-4" />
+                                Send Login Info (All)
+                            </button>
+                            <button
+                                onClick={handleAddNew}
+                                className="flex min-h-10 flex-1 items-center justify-center gap-2 rounded-lg bg-white px-3 py-2 text-sm font-semibold text-blue-700 shadow-sm hover:bg-blue-50 sm:flex-none"
+                            >
+                                <Plus className="h-4 w-4" />
+                                Add New User
+                            </button>
+                        </>
+                    }
+                />
 
                 {/* Content Card */}
-                <div className="bg-white rounded-lg shadow-sm border border-gray-200">
+                <ConfigurationCard>
                     {/* Search & Filters */}
-                    <div className="px-6 py-4 border-b border-gray-200 space-y-4">
-                        <div className="flex items-center gap-3">
-                            <form onSubmit={handleSearch} className="flex-1 max-w-md">
+                    <div className="space-y-4 border-b border-slate-200 bg-slate-50/70 p-4">
+                        <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
+                            <form
+                                onSubmit={handleSearch}
+                                className="w-full sm:max-w-md sm:flex-1"
+                            >
                                 <div className="relative">
-                                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+                                    <Search className="absolute top-1/2 left-3 h-4 w-4 -translate-y-1/2 text-gray-400" />
                                     <input
                                         type="text"
                                         placeholder="Search by name, username, email, or phone..."
                                         value={searchQuery}
-                                        onChange={(e) => setSearchQuery(e.target.value)}
-                                        className="pl-10 pr-4 py-2 w-full border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
+                                        onChange={(e) =>
+                                            setSearchQuery(e.target.value)
+                                        }
+                                        className="h-10 w-full rounded-lg border border-slate-300 bg-white pr-4 pl-10 text-sm outline-none focus:border-blue-500 focus:ring-4 focus:ring-blue-100"
                                     />
                                 </div>
                             </form>
                             <button
                                 onClick={() => setShowFilters(!showFilters)}
-                                className={`flex items-center gap-2 px-4 py-2 border rounded-lg transition-colors ${
+                                className={`flex min-h-10 items-center justify-center gap-2 rounded-lg border px-4 py-2 text-sm font-semibold transition-colors ${
                                     showFilters
-                                        ? 'bg-blue-50 border-blue-300 text-blue-700'
+                                        ? 'border-blue-300 bg-blue-50 text-blue-700'
                                         : 'border-gray-300 text-gray-700 hover:bg-gray-50'
                                 }`}
                             >
-                                <Filter className="w-4 h-4" />
+                                <Filter className="h-4 w-4" />
                                 Filters
                             </button>
                         </div>
 
                         {showFilters && (
-                            <div className="grid grid-cols-5 gap-3 p-4 bg-gray-50 rounded-lg">
+                            <div className="grid grid-cols-1 gap-3 rounded-xl border border-slate-200 bg-white p-4 sm:grid-cols-2 xl:grid-cols-5">
                                 <select
                                     value={filterRole}
-                                    onChange={(e) => setFilterRole(e.target.value)}
-                                    className="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                                    onChange={(e) =>
+                                        setFilterRole(e.target.value)
+                                    }
+                                    className="rounded-lg border border-gray-300 px-3 py-2 focus:border-transparent focus:ring-2 focus:ring-blue-500"
                                 >
                                     <option value="">All Roles</option>
                                     {roles.map((role) => (
@@ -329,8 +378,10 @@ export default function Index({ users, roles, zones, areas, branches, filters }:
 
                                 <select
                                     value={filterZone}
-                                    onChange={(e) => setFilterZone(e.target.value)}
-                                    className="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                                    onChange={(e) =>
+                                        setFilterZone(e.target.value)
+                                    }
+                                    className="rounded-lg border border-gray-300 px-3 py-2 focus:border-transparent focus:ring-2 focus:ring-blue-500"
                                 >
                                     <option value="">All Zones</option>
                                     {zones.map((zone) => (
@@ -342,8 +393,10 @@ export default function Index({ users, roles, zones, areas, branches, filters }:
 
                                 <select
                                     value={filterArea}
-                                    onChange={(e) => setFilterArea(e.target.value)}
-                                    className="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                                    onChange={(e) =>
+                                        setFilterArea(e.target.value)
+                                    }
+                                    className="rounded-lg border border-gray-300 px-3 py-2 focus:border-transparent focus:ring-2 focus:ring-blue-500"
                                 >
                                     <option value="">All Areas</option>
                                     {areas.map((area) => (
@@ -355,12 +408,17 @@ export default function Index({ users, roles, zones, areas, branches, filters }:
 
                                 <select
                                     value={filterBranch}
-                                    onChange={(e) => setFilterBranch(e.target.value)}
-                                    className="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                                    onChange={(e) =>
+                                        setFilterBranch(e.target.value)
+                                    }
+                                    className="rounded-lg border border-gray-300 px-3 py-2 focus:border-transparent focus:ring-2 focus:ring-blue-500"
                                 >
                                     <option value="">All Branches</option>
                                     {branches.map((branch) => (
-                                        <option key={branch.id} value={branch.id}>
+                                        <option
+                                            key={branch.id}
+                                            value={branch.id}
+                                        >
                                             {branch.name}
                                         </option>
                                     ))}
@@ -368,24 +426,26 @@ export default function Index({ users, roles, zones, areas, branches, filters }:
 
                                 <select
                                     value={filterStatus}
-                                    onChange={(e) => setFilterStatus(e.target.value)}
-                                    className="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                                    onChange={(e) =>
+                                        setFilterStatus(e.target.value)
+                                    }
+                                    className="rounded-lg border border-gray-300 px-3 py-2 focus:border-transparent focus:ring-2 focus:ring-blue-500"
                                 >
                                     <option value="">All Status</option>
                                     <option value="1">Active</option>
                                     <option value="0">Inactive</option>
                                 </select>
 
-                                <div className="col-span-5 flex justify-end gap-2">
+                                <div className="flex flex-col-reverse gap-2 sm:col-span-2 sm:flex-row sm:justify-end xl:col-span-5">
                                     <button
                                         onClick={handleClearFilters}
-                                        className="px-4 py-2 text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors"
+                                        className="rounded-lg border border-gray-300 bg-white px-4 py-2 text-gray-700 transition-colors hover:bg-gray-50"
                                     >
                                         Clear
                                     </button>
                                     <button
                                         onClick={handleFilter}
-                                        className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+                                        className="rounded-lg bg-blue-600 px-4 py-2 text-white transition-colors hover:bg-blue-700"
                                     >
                                         Apply Filters
                                     </button>
@@ -396,233 +456,323 @@ export default function Index({ users, roles, zones, areas, branches, filters }:
 
                     {/* Table */}
                     <div className="overflow-x-auto">
-                        <table className="w-full">
-                            <thead className="bg-gray-50 border-b border-gray-200">
+                        <table className="w-full min-w-[980px]">
+                            <thead className="border-b border-gray-200 bg-gray-50">
                                 <tr>
-                                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                                    <th className="px-6 py-3 text-left text-xs font-medium tracking-wider text-gray-500 uppercase">
                                         User
                                     </th>
-                                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                                    <th className="px-6 py-3 text-left text-xs font-medium tracking-wider text-gray-500 uppercase">
                                         Role
                                     </th>
-                                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                                    <th className="px-6 py-3 text-left text-xs font-medium tracking-wider text-gray-500 uppercase">
                                         Organization
                                     </th>
-                                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                                    <th className="px-6 py-3 text-left text-xs font-medium tracking-wider text-gray-500 uppercase">
                                         Phone
                                     </th>
-                                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                                    <th className="px-6 py-3 text-left text-xs font-medium tracking-wider text-gray-500 uppercase">
                                         Status
                                     </th>
-                                    <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
-                                        Actions
+                                    <th className="px-6 py-3 text-right text-xs font-medium tracking-wider text-gray-500 uppercase">
+                                        
                                     </th>
                                 </tr>
                             </thead>
-                            <tbody className="bg-white divide-y divide-gray-200">
+                            <tbody className="divide-y divide-gray-200 bg-white">
                                 {users.data.map((user) => (
-                                    <tr key={user.id} className="hover:bg-gray-50 transition-colors">
+                                    <tr
+                                        key={user.id}
+                                        className="transition-colors hover:bg-gray-50"
+                                    >
                                         <td className="px-6 py-4 whitespace-nowrap">
                                             <div className="flex items-center gap-3">
-                                                <div className="w-10 h-10 rounded-full bg-blue-100 flex items-center justify-center text-blue-600 font-semibold">
-                                                    {user.name.charAt(0).toUpperCase()}
+                                                <div className="flex h-10 w-10 items-center justify-center rounded-full bg-blue-100 font-semibold text-blue-600">
+                                                    {user.name
+                                                        .charAt(0)
+                                                        .toUpperCase()}
                                                 </div>
                                                 <div>
                                                     <div className="text-sm font-medium text-gray-900">
                                                         {user.name}
                                                         {user.has_all_access && (
-                                                            <span className="ml-2 text-xs bg-purple-100 text-purple-800 px-2 py-0.5 rounded-full">
+                                                            <span className="ml-2 rounded-full bg-purple-100 px-2 py-0.5 text-xs text-purple-800">
                                                                 Super Admin
                                                             </span>
                                                         )}
                                                     </div>
                                                     {user.username && (
-                                                        <div className="text-sm text-gray-600">@{user.username}</div>
+                                                        <div className="text-sm text-gray-600">
+                                                            @{user.username}
+                                                        </div>
                                                     )}
-                                                    <div className="text-sm text-gray-500">{user.email}</div>
+                                                    <div className="text-sm text-gray-500">
+                                                        {user.email}
+                                                    </div>
                                                 </div>
                                             </div>
                                         </td>
                                         <td className="px-6 py-4 whitespace-nowrap">
-                                            <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
+                                            <span className="inline-flex items-center rounded-full bg-blue-100 px-2.5 py-0.5 text-xs font-medium text-blue-800">
                                                 {user.role.display_name}
                                             </span>
                                         </td>
                                         <td className="px-6 py-4">
                                             <div className="text-sm text-gray-900">
                                                 {/* Single assignment (for branch-level users) */}
-                                                {user.branch && !user.branches?.length ? (
+                                                {user.branch &&
+                                                !user.branches?.length ? (
                                                     <>
-                                                        <div className="font-medium">{user.branch.name}</div>
+                                                        <div className="font-medium">
+                                                            {user.branch.name}
+                                                        </div>
                                                         <div className="text-xs text-gray-500">
-                                                            {user.area?.name} • {user.zone?.name}
+                                                            {user.area?.name} •{' '}
+                                                            {user.zone?.name}
                                                         </div>
                                                     </>
-                                                ) : user.area && !user.areas?.length ? (
+                                                ) : user.area &&
+                                                  !user.areas?.length ? (
                                                     <>
-                                                        <div className="font-medium">{user.area.name}</div>
-                                                        <div className="text-xs text-gray-500">{user.zone?.name}</div>
+                                                        <div className="font-medium">
+                                                            {user.area.name}
+                                                        </div>
+                                                        <div className="text-xs text-gray-500">
+                                                            {user.zone?.name}
+                                                        </div>
                                                     </>
-                                                ) : user.zone && !user.zones?.length ? (
-                                                    <div className="font-medium">{user.zone.name}</div>
+                                                ) : user.zone &&
+                                                  !user.zones?.length ? (
+                                                    <div className="font-medium">
+                                                        {user.zone.name}
+                                                    </div>
                                                 ) : null}
 
                                                 {/* Multi-assignments */}
-                                                {(user.zones?.length || user.areas?.length || user.branches?.length) ? (
+                                                {user.zones?.length ||
+                                                user.areas?.length ||
+                                                user.branches?.length ? (
                                                     <div className="space-y-2">
-                                                        {user.zones && user.zones.length > 0 && (
-                                                            <div>
-                                                                <div className="text-xs font-medium text-gray-500 mb-1">Zones:</div>
-                                                                <div className="flex flex-wrap gap-1">
-                                                                    {user.zones.slice(0, 2).map((zone) => (
-                                                                        <span key={zone.id} className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-purple-100 text-purple-800">
-                                                                            {zone.name}
-                                                                        </span>
-                                                                    ))}
-                                                                    {user.zones.length > 2 && (
-                                                                        <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-gray-100 text-gray-600">
-                                                                            +{user.zones.length - 2} more
-                                                                        </span>
-                                                                    )}
+                                                        {user.zones &&
+                                                            user.zones.length >
+                                                                0 && (
+                                                                <div>
+                                                                    <div className="mb-1 text-xs font-medium text-gray-500">
+                                                                        Zones:
+                                                                    </div>
+                                                                    <div className="flex flex-wrap gap-1">
+                                                                        {user.zones
+                                                                            .slice(
+                                                                                0,
+                                                                                2,
+                                                                            )
+                                                                            .map(
+                                                                                (
+                                                                                    zone,
+                                                                                ) => (
+                                                                                    <span
+                                                                                        key={
+                                                                                            zone.id
+                                                                                        }
+                                                                                        className="inline-flex items-center rounded bg-purple-100 px-2 py-0.5 text-xs font-medium text-purple-800"
+                                                                                    >
+                                                                                        {
+                                                                                            zone.name
+                                                                                        }
+                                                                                    </span>
+                                                                                ),
+                                                                            )}
+                                                                        {user
+                                                                            .zones
+                                                                            .length >
+                                                                            2 && (
+                                                                            <span className="inline-flex items-center rounded bg-gray-100 px-2 py-0.5 text-xs font-medium text-gray-600">
+                                                                                +
+                                                                                {user
+                                                                                    .zones
+                                                                                    .length -
+                                                                                    2}{' '}
+                                                                                more
+                                                                            </span>
+                                                                        )}
+                                                                    </div>
                                                                 </div>
-                                                            </div>
-                                                        )}
-                                                        {user.areas && user.areas.length > 0 && (
-                                                            <div>
-                                                                <div className="text-xs font-medium text-gray-500 mb-1">Areas:</div>
-                                                                <div className="flex flex-wrap gap-1">
-                                                                    {user.areas.slice(0, 2).map((area) => (
-                                                                        <span key={area.id} className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-blue-100 text-blue-800">
-                                                                            {area.name}
-                                                                        </span>
-                                                                    ))}
-                                                                    {user.areas.length > 2 && (
-                                                                        <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-gray-100 text-gray-600">
-                                                                            +{user.areas.length - 2} more
-                                                                        </span>
-                                                                    )}
+                                                            )}
+                                                        {user.areas &&
+                                                            user.areas.length >
+                                                                0 && (
+                                                                <div>
+                                                                    <div className="mb-1 text-xs font-medium text-gray-500">
+                                                                        Areas:
+                                                                    </div>
+                                                                    <div className="flex flex-wrap gap-1">
+                                                                        {user.areas
+                                                                            .slice(
+                                                                                0,
+                                                                                2,
+                                                                            )
+                                                                            .map(
+                                                                                (
+                                                                                    area,
+                                                                                ) => (
+                                                                                    <span
+                                                                                        key={
+                                                                                            area.id
+                                                                                        }
+                                                                                        className="inline-flex items-center rounded bg-blue-100 px-2 py-0.5 text-xs font-medium text-blue-800"
+                                                                                    >
+                                                                                        {
+                                                                                            area.name
+                                                                                        }
+                                                                                    </span>
+                                                                                ),
+                                                                            )}
+                                                                        {user
+                                                                            .areas
+                                                                            .length >
+                                                                            2 && (
+                                                                            <span className="inline-flex items-center rounded bg-gray-100 px-2 py-0.5 text-xs font-medium text-gray-600">
+                                                                                +
+                                                                                {user
+                                                                                    .areas
+                                                                                    .length -
+                                                                                    2}{' '}
+                                                                                more
+                                                                            </span>
+                                                                        )}
+                                                                    </div>
                                                                 </div>
-                                                            </div>
-                                                        )}
-                                                        {user.branches && user.branches.length > 0 && (
-                                                            <div>
-                                                                <div className="text-xs font-medium text-gray-500 mb-1">Branches:</div>
-                                                                <div className="flex flex-wrap gap-1">
-                                                                    {user.branches.slice(0, 2).map((branch) => (
-                                                                        <span key={branch.id} className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-green-100 text-green-800">
-                                                                            {branch.name}
-                                                                        </span>
-                                                                    ))}
-                                                                    {user.branches.length > 2 && (
-                                                                        <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-gray-100 text-gray-600">
-                                                                            +{user.branches.length - 2} more
-                                                                        </span>
-                                                                    )}
+                                                            )}
+                                                        {user.branches &&
+                                                            user.branches
+                                                                .length > 0 && (
+                                                                <div>
+                                                                    <div className="mb-1 text-xs font-medium text-gray-500">
+                                                                        Branches:
+                                                                    </div>
+                                                                    <div className="flex flex-wrap gap-1">
+                                                                        {user.branches
+                                                                            .slice(
+                                                                                0,
+                                                                                2,
+                                                                            )
+                                                                            .map(
+                                                                                (
+                                                                                    branch,
+                                                                                ) => (
+                                                                                    <span
+                                                                                        key={
+                                                                                            branch.id
+                                                                                        }
+                                                                                        className="inline-flex items-center rounded bg-green-100 px-2 py-0.5 text-xs font-medium text-green-800"
+                                                                                    >
+                                                                                        {
+                                                                                            branch.name
+                                                                                        }
+                                                                                    </span>
+                                                                                ),
+                                                                            )}
+                                                                        {user
+                                                                            .branches
+                                                                            .length >
+                                                                            2 && (
+                                                                            <span className="inline-flex items-center rounded bg-gray-100 px-2 py-0.5 text-xs font-medium text-gray-600">
+                                                                                +
+                                                                                {user
+                                                                                    .branches
+                                                                                    .length -
+                                                                                    2}{' '}
+                                                                                more
+                                                                            </span>
+                                                                        )}
+                                                                    </div>
                                                                 </div>
-                                                            </div>
-                                                        )}
+                                                            )}
                                                     </div>
                                                 ) : null}
 
                                                 {/* No assignment */}
-                                                {!user.branch && !user.area && !user.zone &&
-                                                 !user.branches?.length && !user.areas?.length && !user.zones?.length && (
-                                                    <span className="text-gray-400">-</span>
-                                                )}
+                                                {!user.branch &&
+                                                    !user.area &&
+                                                    !user.zone &&
+                                                    !user.branches?.length &&
+                                                    !user.areas?.length &&
+                                                    !user.zones?.length && (
+                                                        <span className="text-gray-400">
+                                                            -
+                                                        </span>
+                                                    )}
                                             </div>
                                         </td>
                                         <td className="px-6 py-4 whitespace-nowrap">
-                                            <span className="text-sm text-gray-600">{user.phone || '-'}</span>
-                                        </td>
-                                        <td className="px-6 py-4 whitespace-nowrap">
-                                            <span
-                                                className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${
-                                                    user.is_active
-                                                        ? 'bg-green-100 text-green-800'
-                                                        : 'bg-gray-100 text-gray-800'
-                                                }`}
-                                            >
-                                                {user.is_active ? 'Active' : 'Inactive'}
+                                            <span className="text-sm text-gray-600">
+                                                {user.phone || '-'}
                                             </span>
                                         </td>
-                                        <td className="px-6 py-4 whitespace-nowrap text-right">
-                                            <div className="relative inline-block">
+                                        <td className="px-6 py-4 whitespace-nowrap">
+                                            <StatusBadge
+                                                active={user.is_active}
+                                            />
+                                        </td>
+                                        <td className="px-6 py-4 text-right whitespace-nowrap">
+                                            <div className="flex items-center justify-end gap-1">
                                                 <button
-                                                    onClick={() =>
-                                                        setOpenDropdown(openDropdown === user.id ? null : user.id)
-                                                    }
-                                                    className="p-1 rounded hover:bg-gray-100 transition-colors"
+                                                    onClick={() => handleToggleStatus(user.id)}
+                                                    className={`flex h-7 w-7 items-center justify-center rounded-md transition-colors ${
+                                                        user.is_active ? 'text-emerald-600 hover:bg-emerald-50' : 'text-slate-400 hover:bg-slate-100'
+                                                    }`}
+                                                    title={user.is_active ? "Deactivate" : "Activate"}
                                                 >
-                                                    <MoreVertical className="w-4 h-4 text-gray-600" />
+                                                    {user.is_active ? <ToggleRight className="size-4" /> : <ToggleLeft className="size-4" />}
                                                 </button>
-                                                {openDropdown === user.id && (
-                                                    <div className="absolute right-0 mt-2 w-56 bg-white rounded-lg shadow-lg border border-gray-200 py-1 z-10 animate-in fade-in slide-in-from-top-2 duration-200">
+                                                <button
+                                                    onClick={() => handleEdit(user)}
+                                                    className="flex h-7 w-7 items-center justify-center rounded-md text-blue-600 transition-colors hover:bg-blue-50"
+                                                    title="Edit"
+                                                >
+                                                    <Edit className="size-4" />
+                                                </button>
+                                                <button
+                                                    onClick={() => handleResetPassword(user.id, user.name)}
+                                                    className="flex h-7 w-7 items-center justify-center rounded-md text-orange-600 transition-colors hover:bg-orange-50"
+                                                    title="Reset Password"
+                                                >
+                                                    <KeyRound className="size-4" />
+                                                </button>
+                                                <button
+                                                    onClick={() => handleSendCredentials(user.id, user.name)}
+                                                    className="flex h-7 w-7 items-center justify-center rounded-md text-indigo-600 transition-colors hover:bg-indigo-50"
+                                                    title="Send Login Email"
+                                                >
+                                                    <Send className="size-4" />
+                                                </button>
+                                                {canUpdateSignature && (
+                                                    <>
                                                         <button
-                                                            onClick={() => handleEdit(user)}
-                                                            className="w-full flex items-center gap-2 px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 transition-colors"
+                                                            onClick={() => handleOpenSignaturePicker(user.id)}
+                                                            className="flex h-7 w-7 items-center justify-center rounded-md text-teal-600 transition-colors hover:bg-teal-50"
+                                                            title="Update Signature"
                                                         >
-                                                            <Edit className="w-4 h-4" />
-                                                            Edit
+                                                            <PenTool className="size-4" />
                                                         </button>
-                                                        <button
-                                                            onClick={() => handleToggleStatus(user.id)}
-                                                            className="w-full flex items-center gap-2 px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 transition-colors"
-                                                        >
-                                                            {user.is_active ? (
-                                                                <>
-                                                                    <PowerOff className="w-4 h-4" />
-                                                                    Deactivate
-                                                                </>
-                                                            ) : (
-                                                                <>
-                                                                    <Power className="w-4 h-4" />
-                                                                    Activate
-                                                                </>
-                                                            )}
-                                                        </button>
-                                                        <button
-                                                            onClick={() => handleResetPassword(user.id, user.name)}
-                                                            className="w-full flex items-center gap-2 px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 transition-colors"
-                                                        >
-                                                            <KeyRound className="w-4 h-4" />
-                                                            Reset Password
-                                                        </button>
-                                                        <button
-                                                            onClick={() => handleSendCredentials(user.id, user.name)}
-                                                            className="w-full flex items-center gap-2 px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 transition-colors"
-                                                        >
-                                                            <Send className="w-4 h-4" />
-                                                            Send Login Email
-                                                        </button>
-                                                        {canUpdateSignature && (
-                                                            <>
-                                                                <button
-                                                                    onClick={() => handleOpenSignaturePicker(user.id)}
-                                                                    className="w-full flex items-center gap-2 px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 transition-colors"
-                                                                >
-                                                                    <KeyRound className="w-4 h-4" />
-                                                                    Update Signature
-                                                                </button>
-                                                                <input
-                                                                    type="file"
-                                                                    accept="image/png,image/jpg,image/jpeg,image/gif"
-                                                                    className="hidden"
-                                                                    ref={(el) => {
-                                                                        fileInputRefs.current[user.id] = el;
-                                                                    }}
-                                                                    onChange={(e) => handleSignatureChange(user.id, e)}
-                                                                />
-                                                            </>
-                                                        )}
-                                                        <button
-                                                            onClick={() => handleDelete(user.id, user.name)}
-                                                            className="w-full flex items-center gap-2 px-4 py-2 text-sm text-red-600 hover:bg-red-50 transition-colors"
-                                                        >
-                                                            <Trash2 className="w-4 h-4" />
-                                                            Delete
-                                                        </button>
-                                                    </div>
+                                                        <input
+                                                            type="file"
+                                                            accept="image/png,image/jpg,image/jpeg,image/gif"
+                                                            className="hidden"
+                                                            ref={(el) => {
+                                                                fileInputRefs.current[user.id] = el;
+                                                            }}
+                                                            onChange={(e) => handleSignatureChange(user.id, e)}
+                                                        />
+                                                    </>
                                                 )}
+                                                <button
+                                                    onClick={() => handleDelete(user.id, user.name)}
+                                                    className="flex h-7 w-7 items-center justify-center rounded-md text-red-600 transition-colors hover:bg-red-50"
+                                                    title="Delete"
+                                                >
+                                                    <Trash2 className="size-4" />
+                                                </button>
                                             </div>
                                         </td>
                                     </tr>
@@ -630,68 +780,64 @@ export default function Index({ users, roles, zones, areas, branches, filters }:
                             </tbody>
                         </table>
                         {users.data.length === 0 && (
-                            <div className="text-center py-12 text-gray-500">No users found</div>
+                            <EmptyState
+                                icon={UsersRound}
+                                title="No users found"
+                                description="Adjust the filters or add a new user."
+                            />
                         )}
                     </div>
 
-                    {/* Pagination */}
-                    {users.last_page > 1 && (
-                        <div className="px-6 py-4 border-t border-gray-200 flex items-center justify-between">
-                            <div className="text-sm text-gray-600">
-                                Showing {users.data.length} of {users.total} users
-                            </div>
-                            <div className="flex items-center gap-2">
-                                {users.links.map((link, index) => (
-                                    <button
-                                        key={index}
-                                        onClick={() => handlePageChange(link.url)}
-                                        disabled={!link.url || link.active}
-                                        className={`px-3 py-1 text-sm rounded transition-colors ${
-                                            link.active
-                                                ? 'bg-blue-600 text-white'
-                                                : link.url
-                                                ? 'bg-white border border-gray-300 text-gray-700 hover:bg-gray-50'
-                                                : 'bg-gray-100 text-gray-400 cursor-not-allowed'
-                                        }`}
-                                        dangerouslySetInnerHTML={{ __html: link.label }}
-                                    />
-                                ))}
-                            </div>
-                        </div>
-                    )}
-                </div>
-            </div>
+                    <ServerPagination
+                        links={users.links}
+                        summary={`Page ${users.current_page} of ${users.last_page}`}
+                        perPage={users.per_page || 50}
+                        onPerPageChange={(size) => {
+                            router.get(
+                                '/users',
+                                { ...filters, search: searchQuery, per_page: size },
+                                { preserveState: true, replace: true }
+                            );
+                        }}
+                    />
+                </ConfigurationCard>
+            </ConfigurationPage>
 
             {/* Bulk Mail Modal - Role অনুযায়ী বাদ */}
             {bulkMailModalOpen && (
-                <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50">
-                    <div className="bg-white rounded-xl shadow-xl max-w-md w-full p-6">
-                        <div className="flex items-center justify-between mb-4">
+                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+                    <div className="w-full max-w-md rounded-xl bg-white p-6 shadow-xl">
+                        <div className="mb-4 flex items-center justify-between">
                             <h3 className="text-lg font-semibold text-gray-900">
                                 Bulk Mail – কাদের বাদ দেবেন?
                             </h3>
                             <button
                                 type="button"
                                 onClick={() => setBulkMailModalOpen(false)}
-                                className="p-1 rounded-lg text-gray-500 hover:bg-gray-100"
+                                className="rounded-lg p-1 text-gray-500 hover:bg-gray-100"
                             >
-                                <X className="w-5 h-5" />
+                                <X className="h-5 w-5" />
                             </button>
                         </div>
-                        <p className="text-sm text-gray-600 mb-4">
-                            নিচের যে রোলগুলো বাদ দিতে চান সেগুলো সিলেক্ট করুন। বাদ দেওয়া রোলের কোনো ইউজারকে মেইল যাবে না।
+                        <p className="mb-4 text-sm text-gray-600">
+                            নিচের যে রোলগুলো বাদ দিতে চান সেগুলো সিলেক্ট করুন।
+                            বাদ দেওয়া রোলের কোনো ইউজারকে মেইল যাবে না।
                         </p>
-                        <div className="space-y-2 max-h-48 overflow-y-auto mb-5">
+                        <div className="mb-5 max-h-48 space-y-2 overflow-y-auto">
                             {roles.map((role) => (
                                 <label
                                     key={role.id}
-                                    className="flex items-center gap-3 p-2 rounded-lg hover:bg-gray-50 cursor-pointer"
+                                    className="flex cursor-pointer items-center gap-3 rounded-lg p-2 hover:bg-gray-50"
                                 >
                                     <input
                                         type="checkbox"
-                                        checked={excludeRoleIds.includes(role.id)}
-                                        onChange={() => toggleExcludeRole(role.id)}
-                                        className="w-4 h-4 rounded border-gray-300 text-green-600 focus:ring-green-500"
+                                        checked={excludeRoleIds.includes(
+                                            role.id,
+                                        )}
+                                        onChange={() =>
+                                            toggleExcludeRole(role.id)
+                                        }
+                                        className="h-4 w-4 rounded border-gray-300 text-green-600 focus:ring-green-500"
                                     />
                                     <span className="text-sm font-medium text-gray-800">
                                         {role.display_name}
@@ -699,20 +845,20 @@ export default function Index({ users, roles, zones, areas, branches, filters }:
                                 </label>
                             ))}
                         </div>
-                        <div className="flex gap-2 justify-end">
+                        <div className="flex justify-end gap-2">
                             <button
                                 type="button"
                                 onClick={() => setBulkMailModalOpen(false)}
-                                className="px-4 py-2 text-gray-700 bg-gray-100 rounded-lg hover:bg-gray-200"
+                                className="rounded-lg bg-gray-100 px-4 py-2 text-gray-700 hover:bg-gray-200"
                             >
                                 বাতিল
                             </button>
                             <button
                                 type="button"
                                 onClick={handleSendAllCredentials}
-                                className="flex items-center gap-2 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700"
+                                className="flex items-center gap-2 rounded-lg bg-green-600 px-4 py-2 text-white hover:bg-green-700"
                             >
-                                <Send className="w-4 h-4" />
+                                <Send className="h-4 w-4" />
                                 মেইল পাঠান
                             </button>
                         </div>
@@ -722,72 +868,89 @@ export default function Index({ users, roles, zones, areas, branches, filters }:
 
             {/* Branch Summary Mail Modal */}
             {branchSummaryModalOpen && (
-                <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50">
-                    <div className="bg-white rounded-xl shadow-xl max-w-md w-full p-6">
-                        <div className="flex items-center justify-between mb-4">
+                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+                    <div className="w-full max-w-md rounded-xl bg-white p-6 shadow-xl">
+                        <div className="mb-4 flex items-center justify-between">
                             <h3 className="text-lg font-semibold text-gray-900">
                                 Branch User List – ইমেইল পাঠান
                             </h3>
                             <button
                                 type="button"
                                 onClick={() => setBranchSummaryModalOpen(false)}
-                                className="p-1 rounded-lg text-gray-500 hover:bg-gray-100"
+                                className="rounded-lg p-1 text-gray-500 hover:bg-gray-100"
                             >
-                                <X className="w-5 h-5" />
+                                <X className="h-5 w-5" />
                             </button>
                         </div>
-                        <p className="text-sm text-gray-600 mb-4">
-                            নির্বাচিত শাখার Branch User, Branch Manager এবং Field Officer দের তথ্যসহ সুন্দর grid আকারে ইমেইল যাবে।
+                        <p className="mb-4 text-sm text-gray-600">
+                            নির্বাচিত শাখার Branch User, Branch Manager এবং
+                            Field Officer দের তথ্যসহ সুন্দর grid আকারে ইমেইল
+                            যাবে।
                         </p>
-                        <div className="space-y-4 mb-5">
+                        <div className="mb-5 space-y-4">
                             <div>
-                                <label className="block text-sm font-medium text-gray-700 mb-1">
+                                <label className="mb-1 block text-sm font-medium text-gray-700">
                                     Branch নির্বাচন করুন
                                 </label>
                                 <select
                                     value={selectedBranchIdForSummary}
-                                    onChange={(e) => setSelectedBranchIdForSummary(e.target.value)}
-                                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-teal-500 focus:border-transparent"
+                                    onChange={(e) =>
+                                        setSelectedBranchIdForSummary(
+                                            e.target.value,
+                                        )
+                                    }
+                                    className="w-full rounded-lg border border-gray-300 px-3 py-2 focus:border-transparent focus:ring-2 focus:ring-teal-500"
                                 >
-                                    <option value="">-- Select Branch --</option>
-                                    <option value="all">All Branches (prottek branch er jonno alada mail)</option>
+                                    <option value="">
+                                        -- Select Branch --
+                                    </option>
+                                    <option value="all">
+                                        All Branches (prottek branch er jonno
+                                        alada mail)
+                                    </option>
                                     {branches.map((branch) => (
-                                        <option key={branch.id} value={branch.id}>
+                                        <option
+                                            key={branch.id}
+                                            value={branch.id}
+                                        >
                                             {branch.name}
                                         </option>
                                     ))}
                                 </select>
                                 <p className="mt-1 text-xs text-gray-500">
-                                    আগের ফিল্টারের branch থাকলে সেটাই auto select হয়ে যাবে।
+                                    আগের ফিল্টারের branch থাকলে সেটাই auto
+                                    select হয়ে যাবে।
                                 </p>
                             </div>
                             <div>
-                                <label className="block text-sm font-medium text-gray-700 mb-1">
+                                <label className="mb-1 block text-sm font-medium text-gray-700">
                                     Target Email (optional)
                                 </label>
                                 <input
                                     type="email"
                                     value={targetEmailForSummary}
-                                    onChange={(e) => setTargetEmailForSummary(e.target.value)}
-                                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-teal-500 focus:border-transparent"
+                                    onChange={(e) =>
+                                        setTargetEmailForSummary(e.target.value)
+                                    }
+                                    className="w-full rounded-lg border border-gray-300 px-3 py-2 focus:border-transparent focus:ring-2 focus:ring-teal-500"
                                     placeholder="যদি নির্দিষ্ট ইমেইল এ পাঠাতে চান (না দিলে branch এর ইমেইল ব্যবহার হবে)"
                                 />
                             </div>
                         </div>
-                        <div className="flex gap-2 justify-end">
+                        <div className="flex justify-end gap-2">
                             <button
                                 type="button"
                                 onClick={() => setBranchSummaryModalOpen(false)}
-                                className="px-4 py-2 text-gray-700 bg-gray-100 rounded-lg hover:bg-gray-200"
+                                className="rounded-lg bg-gray-100 px-4 py-2 text-gray-700 hover:bg-gray-200"
                             >
                                 বাতিল
                             </button>
                             <button
                                 type="button"
                                 onClick={handleSendBranchSummary}
-                                className="flex items-center gap-2 px-4 py-2 bg-teal-600 text-white rounded-lg hover:bg-teal-700"
+                                className="flex items-center gap-2 rounded-lg bg-teal-600 px-4 py-2 text-white hover:bg-teal-700"
                             >
-                                <Send className="w-4 h-4" />
+                                <Send className="h-4 w-4" />
                                 মেইল পাঠান
                             </button>
                         </div>

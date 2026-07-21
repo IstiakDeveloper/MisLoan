@@ -1,7 +1,30 @@
-import { useState, useMemo } from 'react';
-import { Head, router } from '@inertiajs/react';
+import {
+    ConfigurationCard,
+    ConfigurationHeader,
+    ConfigurationPage,
+    ConfigurationToolbar,
+    EmptyState,
+    LocalPagination,
+    SearchField,
+    StatCard,
+    StatGrid,
+    StatusBadge,
+    TableScroll,
+} from '@/components/configuration';
 import AdminLayout from '@/layouts/admin-layout';
-import { Plus, Search, MoreVertical, Edit, Trash2, ListTree, ToggleLeft, ToggleRight, Users, Package, ChevronLeft, ChevronRight } from 'lucide-react';
+import { Head, router } from '@inertiajs/react';
+import {
+    Edit,
+    ListTree,
+    MoreVertical,
+    Package,
+    Plus,
+    ToggleLeft,
+    ToggleRight,
+    Trash2,
+    Users,
+} from 'lucide-react';
+import { useMemo, useState } from 'react';
 import CategoryModal from './Components/CategoryModal';
 
 interface LoanCategory {
@@ -23,18 +46,28 @@ interface Props {
 }
 
 const targetGroupLabels: Record<string, { label: string; color: string }> = {
-    both: { label: 'Both', color: 'bg-blue-50 text-blue-700 border border-blue-200' },
-    female: { label: 'Female', color: 'bg-pink-50 text-pink-700 border border-pink-200' },
-    male: { label: 'Male', color: 'bg-indigo-50 text-indigo-700 border border-indigo-200' },
+    both: {
+        label: 'Both',
+        color: 'bg-blue-50 text-blue-700 border border-blue-200',
+    },
+    female: {
+        label: 'Female',
+        color: 'bg-pink-50 text-pink-700 border border-pink-200',
+    },
+    male: {
+        label: 'Male',
+        color: 'bg-indigo-50 text-indigo-700 border border-indigo-200',
+    },
 };
 
 export default function Index({ categories, filters }: Props) {
     const [searchQuery, setSearchQuery] = useState(filters.search || '');
     const [openDropdown, setOpenDropdown] = useState<number | null>(null);
     const [modalOpen, setModalOpen] = useState(false);
-    const [selectedCategory, setSelectedCategory] = useState<LoanCategory | null>(null);
+    const [selectedCategory, setSelectedCategory] =
+        useState<LoanCategory | null>(null);
     const [currentPage, setCurrentPage] = useState(1);
-    const itemsPerPage = 10;
+    const [itemsPerPage, setItemsPerPage] = useState(50);
 
     const categoriesList = Array.isArray(categories) ? categories : [];
 
@@ -50,7 +83,11 @@ export default function Index({ categories, filters }: Props) {
     };
 
     const handleDelete = (id: number, name: string) => {
-        if (confirm(`Are you sure you want to delete category "${name}"? (আপনি কি "${name}" ক্যাটাগরি মুছে ফেলতে চান?)`)) {
+        if (
+            confirm(
+                `Are you sure you want to delete category "${name}"? (আপনি কি "${name}" ক্যাটাগরি মুছে ফেলতে চান?)`,
+            )
+        ) {
             router.delete(`/loan-categories/${id}`);
         }
         setOpenDropdown(null);
@@ -63,16 +100,18 @@ export default function Index({ categories, filters }: Props) {
 
     const filteredCategories = categoriesList.filter(
         (cat) =>
-            cat.category_name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+            cat.category_name
+                .toLowerCase()
+                .includes(searchQuery.toLowerCase()) ||
             cat.category_name_bn.includes(searchQuery) ||
-            cat.category_code.toLowerCase().includes(searchQuery.toLowerCase())
+            cat.category_code.toLowerCase().includes(searchQuery.toLowerCase()),
     );
 
     const totalPages = Math.ceil(filteredCategories.length / itemsPerPage);
     const paginatedCategories = useMemo(() => {
         const startIndex = (currentPage - 1) * itemsPerPage;
         return filteredCategories.slice(startIndex, startIndex + itemsPerPage);
-    }, [filteredCategories, currentPage]);
+    }, [filteredCategories, currentPage, itemsPerPage]);
 
     const handlePageChange = (page: number) => {
         setCurrentPage(page);
@@ -83,178 +122,173 @@ export default function Index({ categories, filters }: Props) {
         <AdminLayout>
             <Head title="Loan Categories" />
 
-            <div className="space-y-4">
-                {/* Header */}
-                <div className="flex items-center justify-between">
-                    <div>
-                        <h1 className="text-xl font-bold text-gray-900">Loan Categories</h1>
-                        <p className="text-xs text-gray-500 mt-0.5">Manage loan categories</p>
-                    </div>
-                    <button
-                        onClick={handleAddNew}
-                        className="flex items-center gap-1.5 px-3 py-1.5 text-sm bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors"
-                    >
-                        <Plus className="w-3.5 h-3.5" />
-                        Add New
-                    </button>
-                </div>
+            <ConfigurationPage>
+                <ConfigurationHeader
+                    title="Loan Categories"
+                    description="Organize lending programs into clear, reusable categories."
+                    icon={ListTree}
+                    actions={
+                        <button
+                            onClick={handleAddNew}
+                            className="flex min-h-10 w-full items-center justify-center gap-2 rounded-lg bg-white px-4 py-2 text-sm font-semibold text-blue-700 shadow-sm transition hover:bg-blue-50 focus:ring-4 focus:ring-white/30 focus:outline-none sm:w-auto"
+                        >
+                            <Plus className="size-4" />
+                            Add Category
+                        </button>
+                    }
+                />
 
                 {/* Stats */}
-                <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
-                    <div className="bg-white rounded-lg shadow-sm border p-4">
-                        <div className="flex items-center gap-3">
-                            <div className="w-10 h-10 rounded-lg bg-blue-100 flex items-center justify-center">
-                                <ListTree className="w-5 h-5 text-blue-600" />
-                            </div>
-                            <div>
-                                <p className="text-2xl font-bold text-gray-900">{categoriesList.length}</p>
-                                <p className="text-sm text-gray-600">Total Categories (মোট ক্যাটাগরি)</p>
-                            </div>
-                        </div>
-                    </div>
-                    <div className="bg-white rounded-lg shadow-sm border p-4">
-                        <div className="flex items-center gap-3">
-                            <div className="w-10 h-10 rounded-lg bg-green-100 flex items-center justify-center">
-                                <ToggleRight className="w-5 h-5 text-green-600" />
-                            </div>
-                            <div>
-                                <p className="text-2xl font-bold text-gray-900">{categoriesList.filter(c => c.is_active).length}</p>
-                                <p className="text-sm text-gray-600">Active (সক্রিয়)</p>
-                            </div>
-                        </div>
-                    </div>
-                    <div className="bg-white rounded-lg shadow-sm border p-4">
-                        <div className="flex items-center gap-3">
-                            <div className="w-10 h-10 rounded-lg bg-pink-100 flex items-center justify-center">
-                                <Users className="w-5 h-5 text-pink-600" />
-                            </div>
-                            <div>
-                                <p className="text-2xl font-bold text-gray-900">{categoriesList.filter(c => c.target_group === 'female').length}</p>
-                                <p className="text-sm text-gray-600">Female Only (শুধু মহিলা)</p>
-                            </div>
-                        </div>
-                    </div>
-                    <div className="bg-white rounded-lg shadow-sm border p-4">
-                        <div className="flex items-center gap-3">
-                            <div className="w-10 h-10 rounded-lg bg-purple-100 flex items-center justify-center">
-                                <Package className="w-5 h-5 text-purple-600" />
-                            </div>
-                            <div>
-                                <p className="text-2xl font-bold text-gray-900">{categoriesList.reduce((sum, c) => sum + (c.loan_products_count || 0), 0)}</p>
-                                <p className="text-sm text-gray-600">Total Products (মোট পণ্য)</p>
-                            </div>
-                        </div>
-                    </div>
-                </div>
+                <StatGrid>
+                    <StatCard
+                        label="Total categories"
+                        value={categoriesList.length}
+                        icon={ListTree}
+                    />
+                    <StatCard
+                        label="Active categories"
+                        value={categoriesList.filter((c) => c.is_active).length}
+                        icon={ToggleRight}
+                        tone="green"
+                    />
+                    <StatCard
+                        label="Female only"
+                        value={
+                            categoriesList.filter(
+                                (c) => c.target_group === 'female',
+                            ).length
+                        }
+                        icon={Users}
+                        tone="pink"
+                    />
+                    <StatCard
+                        label="Linked products"
+                        value={categoriesList.reduce(
+                            (sum, c) => sum + (c.loan_products_count || 0),
+                            0,
+                        )}
+                        icon={Package}
+                        tone="purple"
+                    />
+                </StatGrid>
 
                 {/* Content Card */}
-                <div className="bg-white rounded-md border">
-                    <div className="px-4 py-3 border-b">
-                        <div className="relative max-w-xs">
-                            <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-400" />
-                            <input
-                                type="text"
-                                placeholder="Search categories..."
-                                value={searchQuery}
-                                onChange={(e) => { setSearchQuery(e.target.value); setCurrentPage(1); }}
-                                className="pl-8 pr-3 py-1.5 text-sm w-full border rounded focus:ring-1 focus:ring-blue-500 focus:border-blue-500"
-                            />
-                        </div>
-                    </div>
+                <ConfigurationCard>
+                    <ConfigurationToolbar>
+                        <SearchField
+                            placeholder="Search by name or code..."
+                            value={searchQuery}
+                            onChange={(value) => {
+                                setSearchQuery(value);
+                                setCurrentPage(1);
+                            }}
+                        />
+                    </ConfigurationToolbar>
 
-                    <div className="overflow-x-auto">
-                        <table className="w-full text-xs">
-                            <thead className="bg-gray-50 border-b">
+                    <TableScroll>
+                        <table className="w-full min-w-[760px] text-sm">
+                            <thead className="border-b border-slate-200 bg-slate-50/90">
                                 <tr>
-                                    <th className="px-2 py-2 text-left text-[10px] font-semibold text-gray-600 uppercase">SL</th>
-                                    <th className="px-2 py-2 text-left text-[10px] font-semibold text-gray-600 uppercase">Order</th>
-                                    <th className="px-2 py-2 text-left text-[10px] font-semibold text-gray-600 uppercase">Category</th>
-                                    <th className="px-2 py-2 text-left text-[10px] font-semibold text-gray-600 uppercase">Code</th>
-                                    <th className="px-2 py-2 text-left text-[10px] font-semibold text-gray-600 uppercase">Target Group</th>
-                                    <th className="px-2 py-2 text-left text-[10px] font-semibold text-gray-600 uppercase">Products</th>
-                                    <th className="px-2 py-2 text-left text-[10px] font-semibold text-gray-600 uppercase">Status</th>
-                                    <th className="px-2 py-2 text-right text-[10px] font-semibold text-gray-600 uppercase">Actions</th>
+                                    <th className="px-2 py-2 text-left text-[10px] font-semibold text-gray-600 uppercase">
+                                        SL
+                                    </th>
+                                    <th className="px-2 py-2 text-left text-[10px] font-semibold text-gray-600 uppercase">
+                                        Order
+                                    </th>
+                                    <th className="px-2 py-2 text-left text-[10px] font-semibold text-gray-600 uppercase">
+                                        Category
+                                    </th>
+                                    <th className="px-2 py-2 text-left text-[10px] font-semibold text-gray-600 uppercase">
+                                        Code
+                                    </th>
+                                    <th className="px-2 py-2 text-left text-[10px] font-semibold text-gray-600 uppercase">
+                                        Target Group
+                                    </th>
+                                    <th className="px-2 py-2 text-left text-[10px] font-semibold text-gray-600 uppercase">
+                                        Products
+                                    </th>
+                                    <th className="px-2 py-2 text-left text-[10px] font-semibold text-gray-600 uppercase">
+                                        Status
+                                    </th>
+                                    <th className="px-2 py-2 text-right text-[10px] font-semibold text-gray-600 uppercase">
+                                        
+                                    </th>
                                 </tr>
                             </thead>
                             <tbody className="divide-y">
                                 {paginatedCategories.map((category, index) => {
-                                    const targetInfo = targetGroupLabels[category.target_group] || targetGroupLabels.both;
-                                    const slNo = (currentPage - 1) * itemsPerPage + index + 1;
+                                    const targetInfo =
+                                        targetGroupLabels[
+                                            category.target_group
+                                        ] || targetGroupLabels.both;
+                                    const slNo =
+                                        (currentPage - 1) * itemsPerPage +
+                                        index +
+                                        1;
                                     return (
-                                        <tr key={category.id} className="hover:bg-gray-50">
-                                            <td className="px-2 py-2 text-gray-500 font-medium">{slNo}</td>
-                                            <td className="px-2 py-2 text-gray-600">{category.display_order}</td>
-                                            <td className="px-2 py-2">
-                                                <div className="font-medium text-gray-900 leading-tight">{category.category_name}</div>
+                                        <tr
+                                            key={category.id}
+                                            className="border-b border-slate-100 transition-colors last:border-0 hover:bg-blue-50/40"
+                                        >
+                                            <td className="px-2 py-2 font-medium text-gray-500">
+                                                {slNo}
+                                            </td>
+                                            <td className="px-2 py-2 text-gray-600">
+                                                {category.display_order}
                                             </td>
                                             <td className="px-2 py-2">
-                                                <span className="inline-block px-1.5 py-0.5 rounded text-[10px] font-mono font-medium bg-gray-100 text-gray-800">
+                                                <div className="leading-tight font-medium text-gray-900">
+                                                    {category.category_name}
+                                                </div>
+                                            </td>
+                                            <td className="px-2 py-2">
+                                                <span className="inline-block rounded bg-gray-100 px-1.5 py-0.5 font-mono text-[10px] font-medium text-gray-800">
                                                     {category.category_code}
                                                 </span>
                                             </td>
                                             <td className="px-2 py-2">
-                                                <span className={`inline-block px-1.5 py-0.5 rounded text-[10px] font-medium ${targetInfo.color}`}>
+                                                <span
+                                                    className={`inline-block rounded px-1.5 py-0.5 text-[10px] font-medium ${targetInfo.color}`}
+                                                >
                                                     {targetInfo.label}
                                                 </span>
                                             </td>
                                             <td className="px-2 py-2">
-                                                <span className="inline-block px-1.5 py-0.5 rounded text-[10px] font-medium bg-purple-50 text-purple-700 border border-purple-200">
-                                                    {category.loan_products_count || 0}
+                                                <span className="inline-block rounded border border-purple-200 bg-purple-50 px-1.5 py-0.5 text-[10px] font-medium text-purple-700">
+                                                    {category.loan_products_count ||
+                                                        0}
                                                 </span>
                                             </td>
                                             <td className="px-2 py-2">
-                                                {category.is_active ? (
-                                                    <span className="inline-block px-1.5 py-0.5 rounded text-[10px] font-medium bg-green-50 text-green-700 border border-green-200">
-                                                        Active
-                                                    </span>
-                                                ) : (
-                                                    <span className="inline-block px-1.5 py-0.5 rounded text-[10px] font-medium bg-red-50 text-red-700 border border-red-200">
-                                                        Inactive
-                                                    </span>
-                                                )}
+                                                <StatusBadge
+                                                    active={category.is_active}
+                                                />
                                             </td>
                                             <td className="px-2 py-2 text-right">
-                                                <div className="relative inline-block">
+                                                <div className="flex items-center justify-end gap-1">
                                                     <button
-                                                        onClick={() => setOpenDropdown(openDropdown === category.id ? null : category.id)}
-                                                        className="p-1 rounded hover:bg-gray-100"
+                                                        onClick={() => handleToggleStatus(category.id)}
+                                                        className={`flex h-7 w-7 items-center justify-center rounded-md transition-colors ${
+                                                            category.is_active ? 'text-emerald-600 hover:bg-emerald-50' : 'text-slate-400 hover:bg-slate-100'
+                                                        }`}
+                                                        title={category.is_active ? "Deactivate" : "Activate"}
                                                     >
-                                                        <MoreVertical className="w-3.5 h-3.5 text-gray-600" />
+                                                        {category.is_active ? <ToggleRight className="size-4" /> : <ToggleLeft className="size-4" />}
                                                     </button>
-                                                    {openDropdown === category.id && (
-                                                        <div className="absolute right-0 mt-1 w-36 bg-white rounded-md shadow-lg border py-1 z-10">
-                                                            <button
-                                                                onClick={() => handleEdit(category)}
-                                                                className="w-full flex items-center gap-1.5 px-3 py-1.5 text-xs text-gray-700 hover:bg-gray-50"
-                                                            >
-                                                                <Edit className="w-3 h-3" />
-                                                                Edit
-                                                            </button>
-                                                            <button
-                                                                onClick={() => handleToggleStatus(category.id)}
-                                                                className="w-full flex items-center gap-1.5 px-3 py-1.5 text-xs text-gray-700 hover:bg-gray-50"
-                                                            >
-                                                                {category.is_active ? (
-                                                                    <>
-                                                                        <ToggleLeft className="w-3 h-3" />
-                                                                        Deactivate
-                                                                    </>
-                                                                ) : (
-                                                                    <>
-                                                                        <ToggleRight className="w-3 h-3" />
-                                                                        Activate
-                                                                    </>
-                                                                )}
-                                                            </button>
-                                                            <button
-                                                                onClick={() => handleDelete(category.id, category.category_name)}
-                                                                className="w-full flex items-center gap-1.5 px-3 py-1.5 text-xs text-red-600 hover:bg-red-50"
-                                                            >
-                                                                <Trash2 className="w-3 h-3" />
-                                                                Delete
-                                                            </button>
-                                                        </div>
-                                                    )}
+                                                    <button
+                                                        onClick={() => handleEdit(category)}
+                                                        className="flex h-7 w-7 items-center justify-center rounded-md text-blue-600 transition-colors hover:bg-blue-50"
+                                                        title="Edit"
+                                                    >
+                                                        <Edit className="size-4" />
+                                                    </button>
+                                                    <button
+                                                        onClick={() => handleDelete(category.id, category.category_name)}
+                                                        className="flex h-7 w-7 items-center justify-center rounded-md text-red-600 transition-colors hover:bg-red-50"
+                                                        title="Delete"
+                                                    >
+                                                        <Trash2 className="size-4" />
+                                                    </button>
                                                 </div>
                                             </td>
                                         </tr>
@@ -263,64 +297,28 @@ export default function Index({ categories, filters }: Props) {
                             </tbody>
                         </table>
                         {filteredCategories.length === 0 && (
-                            <div className="text-center py-8 text-gray-500">
-                                <ListTree className="w-8 h-8 mx-auto mb-2 text-gray-400" />
-                                <p className="text-xs">No categories found</p>
-                            </div>
+                            <EmptyState
+                                icon={ListTree}
+                                title="No categories found"
+                                description="Try a different search or add a category."
+                            />
                         )}
-                    </div>
+                    </TableScroll>
 
-                    {/* Pagination */}
-                    {totalPages > 1 && (
-                        <div className="px-4 py-3 border-t bg-gray-50 flex items-center justify-between">
-                            <div className="text-xs text-gray-600">
-                                Showing {((currentPage - 1) * itemsPerPage) + 1} to {Math.min(currentPage * itemsPerPage, filteredCategories.length)} of {filteredCategories.length} categories
-                            </div>
-                            <div className="flex items-center gap-1">
-                                <button
-                                    onClick={() => handlePageChange(currentPage - 1)}
-                                    disabled={currentPage === 1}
-                                    className="p-1 rounded border disabled:opacity-50 disabled:cursor-not-allowed hover:bg-white"
-                                >
-                                    <ChevronLeft className="w-4 h-4" />
-                                </button>
-                                {[...Array(totalPages)].map((_, i) => {
-                                    const page = i + 1;
-                                    if (
-                                        page === 1 ||
-                                        page === totalPages ||
-                                        (page >= currentPage - 1 && page <= currentPage + 1)
-                                    ) {
-                                        return (
-                                            <button
-                                                key={page}
-                                                onClick={() => handlePageChange(page)}
-                                                className={`px-2 py-1 text-xs rounded border ${
-                                                    currentPage === page
-                                                        ? 'bg-blue-600 text-white border-blue-600'
-                                                        : 'hover:bg-white'
-                                                }`}
-                                            >
-                                                {page}
-                                            </button>
-                                        );
-                                    } else if (page === currentPage - 2 || page === currentPage + 2) {
-                                        return <span key={page} className="px-1">...</span>;
-                                    }
-                                    return null;
-                                })}
-                                <button
-                                    onClick={() => handlePageChange(currentPage + 1)}
-                                    disabled={currentPage === totalPages}
-                                    className="p-1 rounded border disabled:opacity-50 disabled:cursor-not-allowed hover:bg-white"
-                                >
-                                    <ChevronRight className="w-4 h-4" />
-                                </button>
-                            </div>
-                        </div>
-                    )}
-                </div>
-            </div>
+                    <LocalPagination
+                        currentPage={currentPage}
+                        totalPages={totalPages}
+                        totalItems={filteredCategories.length}
+                        perPage={itemsPerPage}
+                        itemLabel="categories"
+                        onPageChange={handlePageChange}
+                        onPerPageChange={(size) => {
+                            setItemsPerPage(size);
+                            setCurrentPage(1);
+                        }}
+                    />
+                </ConfigurationCard>
+            </ConfigurationPage>
 
             <CategoryModal
                 isOpen={modalOpen}

@@ -1017,51 +1017,50 @@ class TeamBasedApprovalController extends Controller
                     ->back()
                     ->with('error', 'শাখার তথ্য পাওয়া যায়নি।');
             }
-
-            $blockListData = $data['block_list'];
-
-            try {
-                $blockListService->pushRejectedMember(
-                    $user,
-                    $item,
-                    $approval->branch,
-                    $blockListData,
-                    (string) ($data['comments'] ?? ''),
-                );
-            } catch (\RuntimeException $e) {
-                return redirect()
-                    ->back()
-                    ->with('error', $e->getMessage());
-            }
         }
 
-        DB::transaction(function () use ($data, $review, $approval, $item, $user, $pushToBlockList) {
-            $now = now();
+        // Both systems must update together, or neither. The block_list push runs
+        // inside the DB transaction, so if it fails the local rejection is rolled
+        // back (and vice versa). The block_list API is idempotent, so a retry after
+        // a partial failure succeeds even if the entry already exists there.
+        try {
+            DB::transaction(function () use ($data, $review, $approval, $item, $user, $pushToBlockList, $blockListService) {
+                $now = now();
 
-            if ($data['decision'] === 'rejected') {
-                if ($pushToBlockList && isset($data['block_list'])) {
-                    $blockListData = $data['block_list'];
+                if ($data['decision'] === 'rejected') {
+                    if ($pushToBlockList && isset($data['block_list'])) {
+                        $blockListData = $data['block_list'];
 
-                    $item?->update([
-                        'name_bn' => $blockListData['name_bn'] ?? null,
-                        'father_name' => $blockListData['father_name'] ?? null,
-                        'mother_name' => $blockListData['mother_name'] ?? null,
-                        'spouse_name' => $blockListData['spouse_name'] ?? null,
-                        'dob' => $blockListData['dob'] ?? null,
-                        'nid_number' => $blockListData['nid_number'],
-                        'address' => $blockListData['address'] ?? null,
-                        'member_phone' => $blockListData['phone_number'],
+                        $item?->update([
+                            'name_bn' => $blockListData['name_bn'] ?? null,
+                            'father_name' => $blockListData['father_name'] ?? null,
+                            'mother_name' => $blockListData['mother_name'] ?? null,
+                            'spouse_name' => $blockListData['spouse_name'] ?? null,
+                            'dob' => $blockListData['dob'] ?? null,
+                            'nid_number' => $blockListData['nid_number'],
+                            'address' => $blockListData['address'] ?? null,
+                            'member_phone' => $blockListData['phone_number'],
+                        ]);
+                    }
+
+                    $review->update([
+                        'status' => 'rejected',
+                        'comments' => $data['comments'] ?? null,
+                        'approved_amount' => null,
+                        'approver_signature' => $user->signature,
+                        'decided_at' => $now,
                     ]);
-                }
 
-                $review->update([
-                    'status' => 'rejected',
-                    'comments' => $data['comments'] ?? null,
-                    'approved_amount' => null,
-                    'approver_signature' => $user->signature,
-                    'decided_at' => $now,
-                ]);
-            } elseif ($data['decision'] === 'waiting') {
+                    if ($pushToBlockList && isset($data['block_list']) && $item && $approval?->branch) {
+                        $blockListService->pushRejectedMember(
+                            $user,
+                            $item,
+                            $approval->branch,
+                            $data['block_list'],
+                            (string) ($data['comments'] ?? ''),
+                        );
+                    }
+                } elseif ($data['decision'] === 'waiting') {
                 $review->update([
                     'status' => 'waiting',
                     'comments' => $data['comments'] ?? null,
@@ -1098,6 +1097,11 @@ class TeamBasedApprovalController extends Controller
                 }
             }
         });
+        } catch (\RuntimeException $e) {
+            return redirect()
+                ->back()
+                ->with('error', $e->getMessage());
+        }
 
         return $this->redirectToApproverIndex($request, 'সিদ্ধান্ত সফলভাবে সংরক্ষণ হয়েছে।');
     }

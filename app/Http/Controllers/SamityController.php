@@ -26,7 +26,7 @@ class SamityController extends Controller
             });
         }
 
-        $samities = $query->orderBy('created_at', 'desc')->paginate(15);
+        $samities = $query->orderBy('created_at', 'desc')->paginate($request->integer('per_page', 50))->withQueryString();
 
         return Inertia::render('Organization/Samity/Index', [
             'samities' => $samities,

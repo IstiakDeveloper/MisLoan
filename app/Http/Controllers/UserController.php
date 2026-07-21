@@ -53,7 +53,7 @@ class UserController extends Controller
                 $query->where('is_active', $isActive);
             })
             ->latest()
-            ->paginate(15)
+            ->paginate($request->integer('per_page', 50))
             ->withQueryString();
 
         $roles = Role::select(['id', 'name', 'display_name'])->get();

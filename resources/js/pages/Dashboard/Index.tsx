@@ -122,149 +122,151 @@ export default function Dashboard({
         <AdminLayout>
             <Head title="Head Office Dashboard" />
 
-            <div className="max-w-6xl mx-auto space-y-6">
-                {/* Header + Period filter (same as Branch) */}
-                <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-                    <div>
-                        <h1 className="text-xl font-semibold text-gray-900">Head Office Dashboard</h1>
-                        <p className="text-sm text-gray-500 mt-0.5">System overview and branch submission status</p>
+            <div className="max-w-7xl mx-auto space-y-6 pb-12">
+                {/* Header */}
+                <div className="bg-white p-5 md:p-6 rounded-2xl border border-slate-200/80 shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-4">
+                    <div className="space-y-1">
+                        <h1 className="text-xl font-bold text-slate-800 tracking-tight">Head Office Dashboard</h1>
+                        <p className="text-xs text-slate-500 font-medium">System overview and branch submission status</p>
                     </div>
-                    <div className="flex flex-wrap items-end gap-3">
-                        <div className="flex items-center gap-2">
-                            <label className="text-sm text-gray-600 whitespace-nowrap">Period:</label>
+
+                    <div className="flex flex-wrap items-center gap-3">
+                        <div className="flex items-center gap-2 bg-slate-50 border border-slate-200 rounded-xl p-1 px-2">
+                            <span className="text-xs text-slate-500 font-medium">Period:</span>
                             <select
                                 value={periodSelect}
                                 onChange={(e) => setPeriodSelect(e.target.value as 'today' | 'monthly' | 'date_to_date')}
-                                className="rounded-lg border border-gray-300 text-sm py-2 pl-3 pr-8 focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                                className="bg-transparent border-0 text-xs py-1 pl-1 pr-6 font-semibold text-slate-700 focus:ring-0 cursor-pointer"
                             >
                                 <option value="today">Today</option>
                                 <option value="monthly">Monthly</option>
-                                <option value="date_to_date">Date to Date</option>
+                                <option value="date_to_date">Custom Range</option>
                             </select>
                         </div>
                         {periodSelect === 'date_to_date' && (
-                            <>
+                            <div className="flex items-center gap-2">
                                 <input
                                     type="date"
                                     value={fromDate}
                                     onChange={(e) => setFromDate(e.target.value)}
-                                    className="rounded-lg border border-gray-300 text-sm py-2 px-3 focus:ring-2 focus:ring-blue-500"
+                                    className="rounded-xl border border-slate-200 text-xs py-1.5 px-2.5 text-slate-600 focus:ring-2 focus:ring-blue-500"
                                 />
-                                <span className="text-gray-400">–</span>
+                                <span className="text-slate-400 text-xs">–</span>
                                 <input
                                     type="date"
                                     value={toDate}
                                     onChange={(e) => setToDate(e.target.value)}
-                                    className="rounded-lg border border-gray-300 text-sm py-2 px-3 focus:ring-2 focus:ring-blue-500"
+                                    className="rounded-xl border border-slate-200 text-xs py-1.5 px-2.5 text-slate-600 focus:ring-2 focus:ring-blue-500"
                                 />
-                            </>
+                            </div>
                         )}
                         <button
                             type="button"
                             onClick={applyFilter}
-                            className="inline-flex items-center gap-2 px-4 py-2 bg-blue-600 text-white text-sm font-medium rounded-lg hover:bg-blue-700 focus:ring-2 focus:ring-blue-500 focus:ring-offset-2"
+                            className="inline-flex items-center gap-1.5 px-4 py-2 bg-blue-600 text-white text-xs font-semibold rounded-xl hover:bg-blue-700 active:scale-95 transition-all shadow-sm"
                         >
-                            <Calendar size={16} />
+                            <Calendar size={14} />
                             Apply
                         </button>
                     </div>
                 </div>
 
-                {/* Branch submission summary: কত শাখা আজকে submit করছে, কত বাকি */}
+                {/* Branch submission summary */}
                 <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                    <div className="bg-white rounded-xl border border-gray-200 p-5 shadow-sm">
+                    <div className="bg-white rounded-xl border border-slate-200/80 p-5 shadow-sm hover:shadow-md transition-shadow">
                         <div className="flex items-center gap-3">
-                            <div className="w-10 h-10 rounded-lg bg-slate-100 flex items-center justify-center">
+                            <div className="w-10 h-10 rounded-lg bg-slate-50 border border-slate-100 flex items-center justify-center shrink-0">
                                 <Building2 size={20} className="text-slate-600" />
                             </div>
                             <div>
-                                <p className="text-2xl font-semibold text-gray-900">{branchSummary.total_branches}</p>
-                                <p className="text-xs text-gray-500">Total branches</p>
+                                <p className="text-2xl font-bold text-slate-800">{branchSummary.total_branches}</p>
+                                <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400 mt-0.5">Total branches</p>
                             </div>
                         </div>
                     </div>
-                    <div className="rounded-xl border border-emerald-200 p-5 shadow-sm bg-emerald-50/50">
+                    <div className="bg-white rounded-xl border border-slate-200/80 p-5 shadow-sm hover:shadow-md transition-shadow">
                         <div className="flex items-center gap-3">
-                            <div className="w-10 h-10 rounded-lg bg-emerald-100 flex items-center justify-center">
+                            <div className="w-10 h-10 rounded-lg bg-emerald-50 border border-emerald-100 flex items-center justify-center shrink-0">
                                 <CheckCircle size={20} className="text-emerald-600" />
                             </div>
                             <div>
-                                <p className="text-2xl font-semibold text-gray-900">{branchSummary.submitted_in_period}</p>
-                                <p className="text-xs text-gray-500">Submitted in period</p>
+                                <p className="text-2xl font-bold text-emerald-700">{branchSummary.submitted_in_period}</p>
+                                <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400 mt-0.5">Submitted in period</p>
                             </div>
                         </div>
                     </div>
-                    <div className="rounded-xl border border-amber-200 p-5 shadow-sm bg-amber-50/50">
+                    <div className="bg-white rounded-xl border border-slate-200/80 p-5 shadow-sm hover:shadow-md transition-shadow">
                         <div className="flex items-center gap-3">
-                            <div className="w-10 h-10 rounded-lg bg-amber-100 flex items-center justify-center">
+                            <div className="w-10 h-10 rounded-lg bg-amber-50 border border-amber-100 flex items-center justify-center shrink-0">
                                 <Clock size={20} className="text-amber-600" />
                             </div>
                             <div>
-                                <p className="text-2xl font-semibold text-gray-900">{branchSummary.pending_in_period}</p>
-                                <p className="text-xs text-gray-500">Pending</p>
+                                <p className="text-2xl font-bold text-amber-700">{branchSummary.pending_in_period}</p>
+                                <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400 mt-0.5">Pending</p>
                             </div>
                         </div>
                     </div>
                 </div>
 
-                <p className="text-sm text-gray-500">
-                    Statistics below for: <strong>{periodLabel}</strong>
+                <p className="text-xs text-slate-500 font-medium flex items-center gap-1.5">
+                    <span className="w-1.5 h-1.5 rounded-full bg-slate-300"></span>
+                    Statistics below for: <span className="font-bold text-slate-700">{periodLabel}</span>
                 </p>
 
-                {/* Period stats: loan apps, admissions, approved, rejected, issues */}
+                {/* Period stats */}
                 <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4">
-                    <div className="bg-white rounded-xl border border-gray-200 p-5 shadow-sm">
+                    <div className="bg-white rounded-xl border border-slate-200/80 p-5 shadow-sm hover:shadow-md transition-shadow">
                         <div className="flex items-center gap-3">
-                            <div className="w-10 h-10 rounded-lg bg-blue-50 flex items-center justify-center">
-                                <FileText size={20} className="text-blue-600" />
+                            <div className="w-10 h-10 rounded-lg bg-blue-50 border border-blue-100 flex items-center justify-center shrink-0">
+                                <FileText size={18} className="text-blue-600" />
                             </div>
                             <div>
-                                <p className="text-2xl font-semibold text-gray-900">{periodStats.loan_applications_submitted}</p>
-                                <p className="text-xs text-gray-500">Loan applications submitted</p>
+                                <p className="text-2xl font-bold text-slate-800">{periodStats.loan_applications_submitted}</p>
+                                <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400 mt-0.5">Loans Submitted</p>
                             </div>
                         </div>
                     </div>
-                    <div className="bg-white rounded-xl border border-gray-200 p-5 shadow-sm">
+                    <div className="bg-white rounded-xl border border-slate-200/80 p-5 shadow-sm hover:shadow-md transition-shadow">
                         <div className="flex items-center gap-3">
-                            <div className="w-10 h-10 rounded-lg bg-violet-50 flex items-center justify-center">
-                                <UserPlus size={20} className="text-violet-600" />
+                            <div className="w-10 h-10 rounded-lg bg-violet-50 border border-violet-100 flex items-center justify-center shrink-0">
+                                <UserPlus size={18} className="text-violet-600" />
                             </div>
                             <div>
-                                <p className="text-2xl font-semibold text-gray-900">{periodStats.member_admissions_submitted}</p>
-                                <p className="text-xs text-gray-500">Member admissions submitted</p>
+                                <p className="text-2xl font-bold text-slate-800">{periodStats.member_admissions_submitted}</p>
+                                <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400 mt-0.5">Admissions</p>
                             </div>
                         </div>
                     </div>
-                    <div className="bg-white rounded-xl border border-gray-200 p-5 shadow-sm">
+                    <div className="bg-white rounded-xl border border-slate-200/80 p-5 shadow-sm hover:shadow-md transition-shadow">
                         <div className="flex items-center gap-3">
-                            <div className="w-10 h-10 rounded-lg bg-emerald-50 flex items-center justify-center">
-                                <CheckCircle size={20} className="text-emerald-600" />
+                            <div className="w-10 h-10 rounded-lg bg-emerald-50 border border-emerald-100 flex items-center justify-center shrink-0">
+                                <CheckCircle size={18} className="text-emerald-600" />
                             </div>
                             <div>
-                                <p className="text-2xl font-semibold text-gray-900">{periodStats.approved}</p>
-                                <p className="text-xs text-gray-500">Approved</p>
+                                <p className="text-2xl font-bold text-slate-800">{periodStats.approved}</p>
+                                <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400 mt-0.5">Approved</p>
                             </div>
                         </div>
                     </div>
-                    <div className="bg-white rounded-xl border border-gray-200 p-5 shadow-sm">
+                    <div className="bg-white rounded-xl border border-slate-200/80 p-5 shadow-sm hover:shadow-md transition-shadow">
                         <div className="flex items-center gap-3">
-                            <div className="w-10 h-10 rounded-lg bg-red-50 flex items-center justify-center">
-                                <XCircle size={20} className="text-red-600" />
+                            <div className="w-10 h-10 rounded-lg bg-rose-50 border border-rose-100 flex items-center justify-center shrink-0">
+                                <XCircle size={18} className="text-rose-600" />
                             </div>
                             <div>
-                                <p className="text-2xl font-semibold text-gray-900">{periodStats.rejected}</p>
-                                <p className="text-xs text-gray-500">Rejected</p>
+                                <p className="text-2xl font-bold text-slate-800">{periodStats.rejected}</p>
+                                <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400 mt-0.5">Rejected</p>
                             </div>
                         </div>
                     </div>
-                    <div className="bg-white rounded-xl border border-gray-200 p-5 shadow-sm">
+                    <div className="bg-white rounded-xl border border-slate-200/80 p-5 shadow-sm hover:shadow-md transition-shadow">
                         <div className="flex items-center gap-3">
-                            <div className="w-10 h-10 rounded-lg bg-amber-50 flex items-center justify-center">
-                                <AlertCircle size={20} className="text-amber-600" />
+                            <div className="w-10 h-10 rounded-lg bg-amber-50 border border-amber-100 flex items-center justify-center shrink-0">
+                                <AlertCircle size={18} className="text-amber-600" />
                             </div>
                             <div>
-                                <p className="text-2xl font-semibold text-gray-900">{periodStats.issues_pending}</p>
-                                <p className="text-xs text-gray-500">Issues pending</p>
+                                <p className="text-2xl font-bold text-slate-800">{periodStats.issues_pending}</p>
+                                <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400 mt-0.5">Issues pending</p>
                             </div>
                         </div>
                     </div>
@@ -274,50 +276,71 @@ export default function Dashboard({
                 <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
                     {/* Branches submitted vs missing */}
                     <div className="lg:col-span-2 space-y-4">
-                        <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
-                            <div className="px-5 py-4 border-b border-gray-100">
-                                <h2 className="text-sm font-semibold text-gray-900">Branches submitted in period</h2>
+                        <div className="bg-white rounded-2xl border border-slate-200/80 shadow-sm overflow-hidden h-fit">
+                            <div className="px-5 py-4 border-b border-slate-100">
+                                <h2 className="text-sm font-bold text-slate-800">Branches submitted in period</h2>
                             </div>
-                            <div className="p-5 max-h-48 overflow-y-auto">
+                            <div className="p-5 max-h-60 overflow-y-auto custom-scrollbar">
                                 {branchSummary.submitted_branches.length === 0 ? (
-                                    <p className="text-sm text-gray-500">None in this period.</p>
+                                    <p className="text-sm text-slate-500 text-center py-4">None in this period.</p>
                                 ) : (
-                                    <ul className="space-y-1.5">
+                                    <ul className="space-y-3">
                                         {branchSummary.submitted_branches.map((b) => (
-                                            <li key={b.id} className="flex items-center gap-2 text-sm">
-                                                <CheckCircle size={14} className="text-emerald-600 flex-shrink-0" />
-                                                <span className="font-medium text-gray-900">{b.name}</span>
-                                                {b.area?.name && (
-                                                    <span className="text-gray-500">· {b.area.name}</span>
-                                                )}
-                                                {b.area?.zone?.name && (
-                                                    <span className="text-gray-400">· {b.area.zone.name}</span>
-                                                )}
+                                            <li key={b.id} className="flex flex-col sm:flex-row sm:items-center gap-1.5 sm:gap-2 text-sm pb-2 border-b border-slate-50 last:border-0 last:pb-0">
+                                                <div className="flex items-center gap-2">
+                                                    <CheckCircle size={16} className="text-emerald-600 shrink-0" />
+                                                    <span className="font-bold text-slate-800">{b.name}</span>
+                                                </div>
+                                                <div className="flex items-center gap-1.5 pl-6 sm:pl-0 text-xs font-medium text-slate-500">
+                                                    {b.area?.name && (
+                                                        <>
+                                                            <span className="hidden sm:inline text-slate-300">•</span>
+                                                            <span>{b.area.name}</span>
+                                                        </>
+                                                    )}
+                                                    {b.area?.zone?.name && (
+                                                        <>
+                                                            <span className="text-slate-300">•</span>
+                                                            <span>{b.area.zone.name}</span>
+                                                        </>
+                                                    )}
+                                                </div>
                                             </li>
                                         ))}
                                     </ul>
                                 )}
                             </div>
                         </div>
-                        <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
-                            <div className="px-5 py-4 border-b border-gray-100">
-                                <h2 className="text-sm font-semibold text-gray-900">Branches not submitted</h2>
+                        
+                        <div className="bg-white rounded-2xl border border-slate-200/80 shadow-sm overflow-hidden h-fit">
+                            <div className="px-5 py-4 border-b border-slate-100">
+                                <h2 className="text-sm font-bold text-slate-800">Branches not submitted</h2>
                             </div>
-                            <div className="p-5 max-h-48 overflow-y-auto">
+                            <div className="p-5 max-h-60 overflow-y-auto custom-scrollbar">
                                 {branchSummary.missing_branches.length === 0 ? (
-                                    <p className="text-sm text-emerald-600">All branches submitted.</p>
+                                    <p className="text-sm font-semibold text-emerald-600 text-center py-4">All branches submitted.</p>
                                 ) : (
-                                    <ul className="space-y-1.5">
+                                    <ul className="space-y-3">
                                         {branchSummary.missing_branches.map((b) => (
-                                            <li key={b.id} className="flex items-center gap-2 text-sm text-gray-600">
-                                                <Clock size={14} className="text-amber-500 flex-shrink-0" />
-                                                <span className="font-medium text-gray-800">{b.name}</span>
-                                                {b.area?.name && (
-                                                    <span className="text-gray-500">· {b.area.name}</span>
-                                                )}
-                                                {b.area?.zone?.name && (
-                                                    <span className="text-gray-400">· {b.area.zone.name}</span>
-                                                )}
+                                            <li key={b.id} className="flex flex-col sm:flex-row sm:items-center gap-1.5 sm:gap-2 text-sm pb-2 border-b border-slate-50 last:border-0 last:pb-0">
+                                                <div className="flex items-center gap-2">
+                                                    <Clock size={16} className="text-amber-500 shrink-0" />
+                                                    <span className="font-bold text-slate-800">{b.name}</span>
+                                                </div>
+                                                <div className="flex items-center gap-1.5 pl-6 sm:pl-0 text-xs font-medium text-slate-500">
+                                                    {b.area?.name && (
+                                                        <>
+                                                            <span className="hidden sm:inline text-slate-300">•</span>
+                                                            <span>{b.area.name}</span>
+                                                        </>
+                                                    )}
+                                                    {b.area?.zone?.name && (
+                                                        <>
+                                                            <span className="text-slate-300">•</span>
+                                                            <span>{b.area.zone.name}</span>
+                                                        </>
+                                                    )}
+                                                </div>
                                             </li>
                                         ))}
                                     </ul>
@@ -328,30 +351,30 @@ export default function Dashboard({
 
                     {/* Right column: System summary */}
                     <div>
-                        <div className="bg-white rounded-xl border border-gray-200 shadow-sm">
-                            <div className="px-5 py-4 border-b border-gray-100">
-                                <h2 className="text-sm font-semibold text-gray-900">System summary</h2>
+                        <div className="bg-white rounded-2xl border border-slate-200/80 shadow-sm overflow-hidden h-fit sticky top-24">
+                            <div className="px-5 py-4 border-b border-slate-100">
+                                <h2 className="text-sm font-bold text-slate-800">System summary</h2>
                             </div>
-                            <div className="p-5 space-y-3">
-                                <div className="flex justify-between text-sm">
-                                    <span className="text-gray-600">Total users</span>
-                                    <span className="font-medium text-gray-900">{stats.total_users}</span>
+                            <div className="p-5 space-y-4">
+                                <div className="flex items-center justify-between">
+                                    <span className="text-xs font-bold text-slate-400 uppercase tracking-wider">Total users</span>
+                                    <span className="font-bold text-slate-800 tabular-nums">{stats.total_users}</span>
                                 </div>
-                                <div className="flex justify-between text-sm">
-                                    <span className="text-gray-600">Zones / Areas</span>
-                                    <span className="font-medium text-gray-900">{stats.total_zones} / {stats.total_areas}</span>
+                                <div className="flex items-center justify-between">
+                                    <span className="text-xs font-bold text-slate-400 uppercase tracking-wider">Zones / Areas</span>
+                                    <span className="font-bold text-slate-800 tabular-nums">{stats.total_zones} / {stats.total_areas}</span>
                                 </div>
-                                <div className="flex justify-between text-sm">
-                                    <span className="text-gray-600">Total applications</span>
-                                    <span className="font-medium text-gray-900">{stats.total_applications}</span>
+                                <div className="flex items-center justify-between">
+                                    <span className="text-xs font-bold text-slate-400 uppercase tracking-wider">Total applications</span>
+                                    <span className="font-bold text-slate-800 tabular-nums">{stats.total_applications}</span>
                                 </div>
-                                <div className="flex justify-between text-sm">
-                                    <span className="text-gray-600">Pending (all time)</span>
-                                    <span className="font-medium text-amber-600">{stats.pending_applications}</span>
+                                <div className="flex items-center justify-between">
+                                    <span className="text-xs font-bold text-slate-400 uppercase tracking-wider">Pending (all time)</span>
+                                    <span className="font-bold text-amber-600 tabular-nums">{stats.pending_applications}</span>
                                 </div>
-                                <div className="flex justify-between text-sm">
-                                    <span className="text-gray-600">Approved (all time)</span>
-                                    <span className="font-medium text-emerald-600">{stats.approved_applications}</span>
+                                <div className="flex items-center justify-between">
+                                    <span className="text-xs font-bold text-slate-400 uppercase tracking-wider">Approved (all time)</span>
+                                    <span className="font-bold text-emerald-600 tabular-nums">{stats.approved_applications}</span>
                                 </div>
                             </div>
                         </div>

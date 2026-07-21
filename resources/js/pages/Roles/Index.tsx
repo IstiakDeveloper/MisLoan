@@ -1,7 +1,16 @@
-import { useState } from 'react';
-import { Head, router } from '@inertiajs/react';
+import {
+    ConfigurationCard,
+    ConfigurationHeader,
+    ConfigurationPage,
+    ConfigurationToolbar,
+    EmptyState,
+    LocalPagination,
+    SearchField,
+} from '@/components/configuration';
 import AdminLayout from '@/layouts/admin-layout';
-import { Plus, Search, MoreVertical, Edit, Trash2, Shield } from 'lucide-react';
+import { Head, router } from '@inertiajs/react';
+import { Edit, Plus, Shield, Trash2 } from 'lucide-react';
+import { useState } from 'react';
 import RoleModal from './Components/RoleModal';
 
 interface Role {
@@ -30,6 +39,14 @@ export default function Index({ roles, permissions }: Props) {
     const [roleModalOpen, setRoleModalOpen] = useState(false);
     const [selectedRole, setSelectedRole] = useState<Role | null>(null);
 
+    const [currentPage, setCurrentPage] = useState(1);
+    const [itemsPerPage, setItemsPerPage] = useState(50);
+
+    const handlePageChange = (page: number) => {
+        setCurrentPage(page);
+        window.scrollTo({ top: 0, behavior: 'smooth' });
+    };
+
     // Ensure roles is always an array
     const rolesList = Array.isArray(roles) ? roles : [];
 
@@ -54,8 +71,10 @@ export default function Index({ roles, permissions }: Props) {
     const filteredRoles = rolesList.filter(
         (role) =>
             role.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-            role.display_name.toLowerCase().includes(searchQuery.toLowerCase())
+            role.display_name.toLowerCase().includes(searchQuery.toLowerCase()),
     );
+
+    const paginatedRoles = filteredRoles.slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage);
 
     const getPermissionCount = (role: Role) => {
         return role.permissions ? role.permissions.length : 0;
@@ -65,74 +84,76 @@ export default function Index({ roles, permissions }: Props) {
         <AdminLayout>
             <Head title="Role Management" />
 
-            <div className="space-y-6">
-                {/* Header */}
-                <div className="flex items-center justify-between">
-                    <div>
-                        <h1 className="text-2xl font-bold text-gray-900">Role Management</h1>
-                        <p className="text-sm text-gray-600 mt-1">
-                            Manage roles and permissions for your system
-                        </p>
-                    </div>
-                    <button
-                        onClick={handleAddNew}
-                        className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors shadow-sm"
-                    >
-                        <Plus className="w-4 h-4" />
-                        Add New Role
-                    </button>
-                </div>
+            <ConfigurationPage>
+                <ConfigurationHeader
+                    title="Role Management"
+                    description="Define clear access profiles and permission sets for system users."
+                    icon={Shield}
+                    actions={
+                        <button
+                            onClick={handleAddNew}
+                            className="flex min-h-10 w-full items-center justify-center gap-2 rounded-lg bg-white px-4 py-2 text-sm font-semibold text-blue-700 shadow-sm hover:bg-blue-50 focus:ring-4 focus:ring-white/30 focus:outline-none sm:w-auto"
+                        >
+                            <Plus className="h-4 w-4" />
+                            Add New Role
+                        </button>
+                    }
+                />
 
                 {/* Content Card */}
-                <div className="bg-white rounded-lg shadow-sm border border-gray-200">
+                <ConfigurationCard>
                     {/* Search Bar */}
-                    <div className="px-6 py-4 border-b border-gray-200">
-                        <div className="relative max-w-md">
-                            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
-                            <input
-                                type="text"
-                                placeholder="Search roles..."
-                                value={searchQuery}
-                                onChange={(e) => setSearchQuery(e.target.value)}
-                                className="pl-10 pr-4 py-2 w-full border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
-                            />
-                        </div>
-                    </div>
+                    <ConfigurationToolbar>
+                        <SearchField
+                            placeholder="Search roles..."
+                            value={searchQuery}
+                            onChange={(value) => {
+                                setSearchQuery(value);
+                                setCurrentPage(1);
+                            }}
+                        />
+                        <p className="text-xs text-slate-500 sm:ml-auto">
+                            {filteredRoles.length} of {rolesList.length} roles
+                        </p>
+                    </ConfigurationToolbar>
 
                     {/* Table */}
                     <div className="overflow-x-auto">
-                        <table className="w-full">
-                            <thead className="bg-gray-50 border-b border-gray-200">
+                        <table className="w-full min-w-[820px]">
+                            <thead className="border-b border-gray-200 bg-gray-50">
                                 <tr>
-                                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                                    <th className="px-6 py-3 text-left text-xs font-medium tracking-wider text-gray-500 uppercase">
                                         Role Name
                                     </th>
-                                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                                    <th className="px-6 py-3 text-left text-xs font-medium tracking-wider text-gray-500 uppercase">
                                         Display Name
                                     </th>
-                                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                                    <th className="px-6 py-3 text-left text-xs font-medium tracking-wider text-gray-500 uppercase">
                                         Description
                                     </th>
-                                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                                    <th className="px-6 py-3 text-left text-xs font-medium tracking-wider text-gray-500 uppercase">
                                         Permissions
                                     </th>
-                                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                                    <th className="px-6 py-3 text-left text-xs font-medium tracking-wider text-gray-500 uppercase">
                                         Users
                                     </th>
-                                    <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
-                                        Actions
+                                    <th className="px-6 py-3 text-right text-xs font-medium tracking-wider text-gray-500 uppercase">
+                                        
                                     </th>
                                 </tr>
                             </thead>
-                            <tbody className="bg-white divide-y divide-gray-200">
-                                {filteredRoles.map((role) => (
-                                    <tr key={role.id} className="hover:bg-gray-50 transition-colors">
+                            <tbody className="divide-y divide-gray-200 bg-white">
+                                {paginatedRoles.map((role) => (
+                                    <tr
+                                        key={role.id}
+                                        className="transition-colors hover:bg-gray-50"
+                                    >
                                         <td className="px-6 py-4 whitespace-nowrap">
                                             <div className="flex items-center gap-2">
-                                                <div className="w-8 h-8 rounded-full bg-blue-100 flex items-center justify-center">
-                                                    <Shield className="w-4 h-4 text-blue-600" />
+                                                <div className="flex h-8 w-8 items-center justify-center rounded-full bg-blue-100">
+                                                    <Shield className="h-4 w-4 text-blue-600" />
                                                 </div>
-                                                <span className="text-sm font-medium text-gray-900 font-mono">
+                                                <span className="font-mono text-sm font-medium text-gray-900">
                                                     {role.name}
                                                 </span>
                                             </div>
@@ -143,13 +164,14 @@ export default function Index({ roles, permissions }: Props) {
                                             </div>
                                         </td>
                                         <td className="px-6 py-4">
-                                            <div className="text-sm text-gray-600 max-w-xs truncate">
+                                            <div className="max-w-xs truncate text-sm text-gray-600">
                                                 {role.description || '-'}
                                             </div>
                                         </td>
                                         <td className="px-6 py-4 whitespace-nowrap">
-                                            <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-purple-100 text-purple-800">
-                                                {getPermissionCount(role)} permissions
+                                            <span className="inline-flex items-center rounded-full bg-purple-100 px-2.5 py-0.5 text-xs font-medium text-purple-800">
+                                                {getPermissionCount(role)}{' '}
+                                                permissions
                                             </span>
                                         </td>
                                         <td className="px-6 py-4 whitespace-nowrap">
@@ -157,38 +179,22 @@ export default function Index({ roles, permissions }: Props) {
                                                 {role.users_count || 0} users
                                             </span>
                                         </td>
-                                        <td className="px-6 py-4 whitespace-nowrap text-right">
-                                            <div className="relative inline-block">
+                                        <td className="px-6 py-4 text-right whitespace-nowrap">
+                                            <div className="flex items-center justify-end gap-1">
                                                 <button
-                                                    onClick={() =>
-                                                        setOpenDropdown(
-                                                            openDropdown === role.id ? null : role.id
-                                                        )
-                                                    }
-                                                    className="p-1 rounded hover:bg-gray-100 transition-colors"
+                                                    onClick={() => handleEdit(role)}
+                                                    className="flex h-7 w-7 items-center justify-center rounded-md text-blue-600 transition-colors hover:bg-blue-50"
+                                                    title="Edit"
                                                 >
-                                                    <MoreVertical className="w-4 h-4 text-gray-600" />
+                                                    <Edit className="size-4" />
                                                 </button>
-                                                {openDropdown === role.id && (
-                                                    <div className="absolute right-0 mt-2 w-48 bg-white rounded-lg shadow-lg border border-gray-200 py-1 z-10 animate-in fade-in slide-in-from-top-2 duration-200">
-                                                        <button
-                                                            onClick={() => handleEdit(role)}
-                                                            className="w-full flex items-center gap-2 px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 transition-colors"
-                                                        >
-                                                            <Edit className="w-4 h-4" />
-                                                            Edit
-                                                        </button>
-                                                        <button
-                                                            onClick={() =>
-                                                                handleDelete(role.id, role.display_name)
-                                                            }
-                                                            className="w-full flex items-center gap-2 px-4 py-2 text-sm text-red-600 hover:bg-red-50 transition-colors"
-                                                        >
-                                                            <Trash2 className="w-4 h-4" />
-                                                            Delete
-                                                        </button>
-                                                    </div>
-                                                )}
+                                                <button
+                                                    onClick={() => handleDelete(role.id, role.display_name)}
+                                                    className="flex h-7 w-7 items-center justify-center rounded-md text-red-600 transition-colors hover:bg-red-50"
+                                                    title="Delete"
+                                                >
+                                                    <Trash2 className="size-4" />
+                                                </button>
                                             </div>
                                         </td>
                                     </tr>
@@ -196,13 +202,28 @@ export default function Index({ roles, permissions }: Props) {
                             </tbody>
                         </table>
                         {filteredRoles.length === 0 && (
-                            <div className="text-center py-12 text-gray-500">
-                                No roles found
-                            </div>
+                            <EmptyState
+                                icon={Shield}
+                                title="No roles found"
+                                description="Try a different search or add a role."
+                            />
                         )}
                     </div>
-                </div>
-            </div>
+
+                    <LocalPagination
+                        currentPage={currentPage}
+                        totalPages={Math.ceil(filteredRoles.length / itemsPerPage)}
+                        totalItems={filteredRoles.length}
+                        perPage={itemsPerPage}
+                        itemLabel="roles"
+                        onPageChange={handlePageChange}
+                        onPerPageChange={(size) => {
+                            setItemsPerPage(size);
+                            setCurrentPage(1);
+                        }}
+                    />
+                </ConfigurationCard>
+            </ConfigurationPage>
 
             {/* Modal */}
             <RoleModal

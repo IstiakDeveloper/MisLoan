@@ -1,8 +1,18 @@
-import React, { useState } from 'react';
+import {
+    ConfigurationCard,
+    ConfigurationHeader,
+    ConfigurationPage,
+    ConfigurationToolbar,
+    EmptyState,
+    ServerPagination,
+    StatusBadge,
+} from '@/components/configuration';
 import AdminLayout from '@/layouts/admin-layout';
-import { Head, Link, router } from '@inertiajs/react';
-import { Samity } from '@/types/samity';
 import { PageProps } from '@/types';
+import { Samity } from '@/types/samity';
+import { Head, Link, router } from '@inertiajs/react';
+import { Building2, Plus, Search, Edit, Trash2 } from 'lucide-react';
+import React, { useState } from 'react';
 
 interface Props extends PageProps {
     samities: {
@@ -10,6 +20,8 @@ interface Props extends PageProps {
         links: any[];
         current_page: number;
         last_page: number;
+        per_page: number;
+        total: number;
     };
     filters: {
         search?: string;
@@ -35,207 +47,172 @@ export default function Index({ auth, samities, filters }: Props) {
         <AdminLayout>
             <Head title="Samities" />
 
-            <div className="p-6">
-                <div className="max-w-7xl mx-auto">
-                    {/* Header */}
-                    <div className="mb-8">
-                        <div className="flex items-center justify-between">
-                            <div>
-                                <h1 className="text-2xl font-bold text-gray-900">Samities</h1>
-                                <p className="mt-1 text-sm text-gray-500">Manage samities across all branches</p>
+            <ConfigurationPage>
+                <ConfigurationHeader
+                    title="Samities"
+                    description="Manage samity records and their branch assignments across the organization."
+                    icon={Building2}
+                    actions={
+                        <Link
+                            href="/samities/create"
+                            className="inline-flex min-h-10 w-full items-center justify-center gap-2 rounded-lg bg-white px-4 py-2 text-sm font-semibold text-blue-700 shadow-sm hover:bg-blue-50 focus:ring-4 focus:ring-white/30 focus:outline-none sm:w-auto"
+                        >
+                            <Plus className="size-4" />
+                            Add Samity
+                        </Link>
+                    }
+                />
+
+                <ConfigurationCard>
+                    <ConfigurationToolbar>
+                        <form
+                            onSubmit={handleSearch}
+                            className="flex w-full flex-col gap-2 sm:flex-row"
+                        >
+                            <div className="relative flex-1">
+                                <Search className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-slate-400" />
+                                <input
+                                    type="text"
+                                    value={search}
+                                    onChange={(e) => setSearch(e.target.value)}
+                                    placeholder="Search by samity name or code..."
+                                    className="h-10 w-full rounded-lg border border-slate-300 bg-white pr-3 pl-9 text-sm outline-none focus:border-blue-500 focus:ring-4 focus:ring-blue-100"
+                                />
                             </div>
-                            <Link
-                                href="/samities/create"
-                                className="inline-flex items-center px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium rounded-lg shadow-sm transition-colors duration-150"
+                            <button
+                                type="submit"
+                                className="min-h-10 rounded-lg bg-blue-600 px-5 py-2 text-sm font-semibold text-white hover:bg-blue-700 focus:ring-4 focus:ring-blue-100 focus:outline-none"
                             >
-                                <svg className="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-                                </svg>
-                                Add Samity
-                            </Link>
-                        </div>
-                    </div>
-
-                    {/* Search Bar */}
-                    <div className="bg-white rounded-lg shadow-sm border border-gray-200 mb-6">
-                        <div className="p-4">
-                            <form onSubmit={handleSearch} className="flex gap-3">
-                                <div className="flex-1 relative">
-                                    <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                                        <svg className="h-5 w-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-                                        </svg>
-                                    </div>
-                                    <input
-                                        type="text"
-                                        value={search}
-                                        onChange={(e) => setSearch(e.target.value)}
-                                        placeholder="Search by samity name or code..."
-                                        className="block w-full pl-10 pr-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm"
-                                    />
-                                </div>
-                                <button
-                                    type="submit"
-                                    className="px-6 py-2 bg-gray-900 hover:bg-gray-800 text-white text-sm font-medium rounded-lg transition-colors duration-150"
+                                Search
+                            </button>
+                            {filters.search && (
+                                <Link
+                                    href="/samities"
+                                    className="inline-flex min-h-10 items-center justify-center rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-100"
                                 >
-                                    Search
-                                </button>
-                                {filters.search && (
-                                    <Link
-                                        href="/samities"
-                                        className="px-4 py-2 bg-gray-100 hover:bg-gray-200 text-gray-700 text-sm font-medium rounded-lg transition-colors duration-150"
-                                    >
-                                        Clear
-                                    </Link>
-                                )}
-                            </form>
-                        </div>
-                    </div>
+                                    Clear
+                                </Link>
+                            )}
+                        </form>
+                    </ConfigurationToolbar>
 
-                    {/* Table */}
-                    <div className="bg-white rounded-lg shadow-sm border border-gray-200 overflow-hidden">
-                        <div className="overflow-x-auto">
-                            <table className="min-w-full divide-y divide-gray-200">
-                                <thead className="bg-gray-50">
+                    <div className="overflow-x-auto">
+                        <table className="w-full min-w-[760px] divide-y divide-slate-200">
+                            <thead className="bg-gray-50">
+                                <tr>
+                                    <th className="px-6 py-3 text-left text-xs font-medium tracking-wider text-gray-500 uppercase">
+                                        Code
+                                    </th>
+                                    <th className="px-6 py-3 text-left text-xs font-medium tracking-wider text-gray-500 uppercase">
+                                        Samity Name
+                                    </th>
+                                    <th className="px-6 py-3 text-left text-xs font-medium tracking-wider text-gray-500 uppercase">
+                                        Branch
+                                    </th>
+                                    <th className="px-6 py-3 text-left text-xs font-medium tracking-wider text-gray-500 uppercase">
+                                        Status
+                                    </th>
+                                    <th className="px-6 py-3 text-right text-xs font-medium tracking-wider text-gray-500 uppercase">
+                                        
+                                    </th>
+                                </tr>
+                            </thead>
+                            <tbody className="divide-y divide-gray-200 bg-white">
+                                {samities.data.length === 0 ? (
                                     <tr>
-                                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                                            Code
-                                        </th>
-                                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                                            Samity Name
-                                        </th>
-                                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                                            Branch
-                                        </th>
-                                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                                            Status
-                                        </th>
-                                        <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
-                                            Actions
-                                        </th>
+                                        <td
+                                            colSpan={5}
+                                            className="px-6 py-12 text-center"
+                                        >
+                                            <EmptyState
+                                                icon={Building2}
+                                                title="No samities found"
+                                                description="Get started by creating a new samity."
+                                            />
+                                        </td>
                                     </tr>
-                                </thead>
-                                <tbody className="bg-white divide-y divide-gray-200">
-                                    {samities.data.length === 0 ? (
-                                        <tr>
-                                            <td colSpan={5} className="px-6 py-12 text-center">
-                                                <svg className="mx-auto h-12 w-12 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4" />
-                                                </svg>
-                                                <p className="mt-2 text-sm text-gray-500">No samities found</p>
-                                                <p className="text-xs text-gray-400">Get started by creating a new samity</p>
+                                ) : (
+                                    samities.data.map((samity) => (
+                                        <tr
+                                            key={samity.id}
+                                            className="transition-colors duration-150 hover:bg-gray-50"
+                                        >
+                                            <td className="px-6 py-4 whitespace-nowrap">
+                                                <span className="inline-flex items-center rounded-md bg-gray-100 px-2.5 py-0.5 text-xs font-medium text-gray-800">
+                                                    {samity.samity_code}
+                                                </span>
                                             </td>
-                                        </tr>
-                                    ) : (
-                                        samities.data.map((samity) => (
-                                            <tr key={samity.id} className="hover:bg-gray-50 transition-colors duration-150">
-                                                <td className="px-6 py-4 whitespace-nowrap">
-                                                    <span className="inline-flex items-center px-2.5 py-0.5 rounded-md text-xs font-medium bg-gray-100 text-gray-800">
-                                                        {samity.samity_code}
-                                                    </span>
-                                                </td>
-                                                <td className="px-6 py-4">
-                                                    <div className="text-sm font-medium text-gray-900">{samity.samity_name}</div>
-                                                    {samity.samity_name_bn && (
-                                                        <div className="text-xs text-gray-500 mt-0.5">{samity.samity_name_bn}</div>
-                                                    )}
-                                                </td>
-                                                <td className="px-6 py-4">
-                                                    {samity.branch && (
-                                                        <div>
-                                                            <div className="text-sm text-gray-900">{samity.branch.name}</div>
-                                                            <div className="text-xs text-gray-500 mt-0.5">
-                                                                {samity.branch.area?.name}, {samity.branch.area?.zone?.name}
-                                                            </div>
+                                            <td className="px-6 py-4">
+                                                <div className="text-sm font-medium text-gray-900">
+                                                    {samity.samity_name}
+                                                </div>
+                                                {samity.samity_name_bn && (
+                                                    <div className="mt-0.5 text-xs text-gray-500">
+                                                        {samity.samity_name_bn}
+                                                    </div>
+                                                )}
+                                            </td>
+                                            <td className="px-6 py-4">
+                                                {samity.branch && (
+                                                    <div>
+                                                        <div className="text-sm text-gray-900">
+                                                            {samity.branch.name}
                                                         </div>
-                                                    )}
-                                                </td>
-                                                <td className="px-6 py-4 whitespace-nowrap">
-                                                    <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
-                                                        samity.is_active
-                                                            ? 'bg-green-100 text-green-800'
-                                                            : 'bg-gray-100 text-gray-800'
-                                                    }`}>
-                                                        {samity.is_active ? 'Active' : 'Inactive'}
-                                                    </span>
-                                                </td>
-                                                <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
+                                                        <div className="mt-0.5 text-xs text-gray-500">
+                                                            {
+                                                                samity.branch
+                                                                    .area?.name
+                                                            }
+                                                            ,{' '}
+                                                            {
+                                                                samity.branch
+                                                                    .area?.zone
+                                                                    ?.name
+                                                            }
+                                                        </div>
+                                                    </div>
+                                                )}
+                                            </td>
+                                            <td className="px-6 py-4 whitespace-nowrap">
+                                                <StatusBadge
+                                                    active={samity.is_active}
+                                                />
+                                            </td>
+                                            <td className="px-6 py-4 text-right whitespace-nowrap">
+                                                <div className="flex items-center justify-end gap-1">
                                                     <Link
                                                         href={`/samities/${samity.id}/edit`}
-                                                        className="text-blue-600 hover:text-blue-900 mr-4 transition-colors duration-150"
+                                                        className="flex h-7 w-7 items-center justify-center rounded-md text-blue-600 transition-colors hover:bg-blue-50"
+                                                        title="Edit"
                                                     >
-                                                        Edit
+                                                        <Edit className="size-4" />
                                                     </Link>
                                                     <button
                                                         onClick={() => handleDelete(samity)}
-                                                        className="text-red-600 hover:text-red-900 transition-colors duration-150"
+                                                        className="flex h-7 w-7 items-center justify-center rounded-md text-red-600 transition-colors hover:bg-red-50"
+                                                        title="Delete"
                                                     >
-                                                        Delete
+                                                        <Trash2 className="size-4" />
                                                     </button>
-                                                </td>
-                                            </tr>
-                                        ))
-                                    )}
-                                </tbody>
-                            </table>
-                        </div>
-
-                        {/* Pagination */}
-                        {samities.last_page > 1 && (
-                            <div className="bg-white px-4 py-3 border-t border-gray-200">
-                                <div className="flex items-center justify-between">
-                                    <div className="flex-1 flex justify-between sm:hidden">
-                                        {samities.links[0].url ? (
-                                            <Link
-                                                href={samities.links[0].url}
-                                                className="relative inline-flex items-center px-4 py-2 border border-gray-300 text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50"
-                                            >
-                                                Previous
-                                            </Link>
-                                        ) : (
-                                            <span className="relative inline-flex items-center px-4 py-2 border border-gray-300 text-sm font-medium rounded-md text-gray-400 bg-gray-50 cursor-not-allowed">
-                                                Previous
-                                            </span>
-                                        )}
-                                        {samities.links[samities.links.length - 1].url ? (
-                                            <Link
-                                                href={samities.links[samities.links.length - 1].url}
-                                                className="ml-3 relative inline-flex items-center px-4 py-2 border border-gray-300 text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50"
-                                            >
-                                                Next
-                                            </Link>
-                                        ) : (
-                                            <span className="ml-3 relative inline-flex items-center px-4 py-2 border border-gray-300 text-sm font-medium rounded-md text-gray-400 bg-gray-50 cursor-not-allowed">
-                                                Next
-                                            </span>
-                                        )}
-                                    </div>
-                                    <div className="hidden sm:flex-1 sm:flex sm:items-center sm:justify-center">
-                                        <nav className="relative z-0 inline-flex rounded-md shadow-sm -space-x-px">
-                                            {samities.links.map((link, index) => (
-                                                <Link
-                                                    key={index}
-                                                    href={link.url || '#'}
-                                                    className={`relative inline-flex items-center px-4 py-2 border text-sm font-medium ${
-                                                        link.active
-                                                            ? 'z-10 bg-blue-600 border-blue-600 text-white'
-                                                            : 'bg-white border-gray-300 text-gray-500 hover:bg-gray-50'
-                                                    } ${
-                                                        index === 0 ? 'rounded-l-md' : ''
-                                                    } ${
-                                                        index === samities.links.length - 1 ? 'rounded-r-md' : ''
-                                                    } ${!link.url && 'cursor-not-allowed opacity-50'}`}
-                                                    dangerouslySetInnerHTML={{ __html: link.label }}
-                                                />
-                                            ))}
-                                        </nav>
-                                    </div>
-                                </div>
-                            </div>
-                        )}
+                                                </div>
+                                            </td>
+                                        </tr>
+                                    ))
+                                )}
+                            </tbody>
+                        </table>
                     </div>
-                </div>
-            </div>
+
+                    <ServerPagination
+                        links={samities.links}
+                        summary={`Page ${samities.current_page} of ${samities.last_page}`}
+                        perPage={samities.per_page || 50}
+                        onPerPageChange={(size) => {
+                            router.get('/samities', { search: filters.search, per_page: size }, { preserveState: true });
+                        }}
+                    />
+                </ConfigurationCard>
+            </ConfigurationPage>
         </AdminLayout>
     );
 }

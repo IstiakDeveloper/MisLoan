@@ -194,74 +194,76 @@ export default function Index({ admissions, filters, stats }: Props) {
 
             <div className="space-y-3 print:block">
                 {/* Header + Search row - compact - hidden when printing */}
-                <div className="flex flex-wrap items-center justify-between gap-2 print:hidden">
-                    <div className="flex items-center gap-3 flex-wrap">
+                <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 print:hidden">
+                    <div className="flex items-center justify-between md:justify-start gap-3 flex-wrap">
                         <h1 className="text-lg font-semibold text-gray-800">সদস্য ভর্তি আবেদন</h1>
                         <Link
                             href="/member-admissions/create"
-                            className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-blue-600 text-white text-sm rounded-md hover:bg-blue-700 transition-colors"
+                            className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-blue-600 text-white text-sm rounded-md hover:bg-blue-700 transition-colors shrink-0"
                         >
                             <Plus className="w-3.5 h-3.5" />
                             নতুন আবেদন
                         </Link>
                     </div>
-                    <form onSubmit={handleSearch} className="flex items-center gap-2">
-                        <div className="relative">
+                    <form onSubmit={handleSearch} className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 w-full md:w-auto">
+                        <div className="relative flex-grow sm:flex-grow-0">
                             <Search className="absolute left-2 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
                             <input
                                 type="text"
                                 value={searchQuery}
                                 onChange={(e) => setSearchQuery(e.target.value)}
                                 placeholder="আবেদন নং, নাম, মোবাইল, এনআইডি..."
-                                className="w-56 sm:w-64 pl-8 pr-2.5 py-1.5 text-sm border border-gray-300 rounded-md focus:ring-1 focus:ring-blue-500 focus:border-blue-500"
+                                className="w-full sm:w-64 pl-8 pr-2.5 py-1.5 text-sm border border-gray-300 rounded-md focus:ring-1 focus:ring-blue-500 focus:border-blue-500"
                             />
                         </div>
-                        <button type="submit" className="px-3 py-1.5 text-sm bg-slate-600 text-white rounded-md hover:bg-slate-700">
-                            খুঁজুন
-                        </button>
-                        <input
-                            type="date"
-                            value={fromDate}
-                            onChange={(e) => setFromDate(e.target.value)}
-                            className="px-2 py-1.5 text-sm border border-gray-300 rounded-md"
-                            title="তারিখ থেকে"
-                        />
-                        <span className="text-gray-500 text-sm">–</span>
-                        <input
-                            type="date"
-                            value={toDate}
-                            onChange={(e) => setToDate(e.target.value)}
-                            className="px-2 py-1.5 text-sm border border-gray-300 rounded-md"
-                            title="তারিখ পর্যন্ত"
-                        />
-                        <button
-                            type="button"
-                            onClick={handlePrint}
-                            className="print:hidden inline-flex items-center gap-1.5 px-3 py-1.5 text-sm text-gray-700 border border-gray-300 rounded-md hover:bg-gray-50"
-                        >
-                            <Printer className="w-4 h-4" />
-                            প্রিন্ট
-                        </button>
-                        {(searchQuery || statusFilter || fromDate || toDate) && (
+                        <div className="flex flex-wrap items-center gap-2">
+                            <button type="submit" className="px-3 py-1.5 text-sm bg-slate-600 text-white rounded-md hover:bg-slate-700 flex-grow sm:flex-grow-0 text-center justify-center">
+                                খুঁজুন
+                            </button>
+                            <input
+                                type="date"
+                                value={fromDate}
+                                onChange={(e) => setFromDate(e.target.value)}
+                                className="px-2 py-1.5 text-sm border border-gray-300 rounded-md flex-grow sm:flex-grow-0"
+                                title="তারিখ থেকে"
+                            />
+                            <span className="text-gray-500 text-sm hidden sm:inline">–</span>
+                            <input
+                                type="date"
+                                value={toDate}
+                                onChange={(e) => setToDate(e.target.value)}
+                                className="px-2 py-1.5 text-sm border border-gray-300 rounded-md flex-grow sm:flex-grow-0"
+                                title="তারিখ পর্যন্ত"
+                            />
                             <button
                                 type="button"
-                                onClick={() => {
-                                    setSearchQuery('');
-                                    setStatusFilter('');
-                                    setFromDate('');
-                                    setToDate('');
-                                    router.get('/member-admissions');
-                                }}
-                                className="px-2.5 py-1.5 text-xs text-gray-600 border border-gray-300 rounded-md hover:bg-gray-50"
+                                onClick={handlePrint}
+                                className="print:hidden inline-flex flex-grow sm:flex-grow-0 justify-center items-center gap-1.5 px-3 py-1.5 text-sm text-gray-700 border border-gray-300 rounded-md hover:bg-gray-50"
                             >
-                                রিসেট
+                                <Printer className="w-4 h-4" />
+                                প্রিন্ট
                             </button>
-                        )}
+                            {(searchQuery || statusFilter || fromDate || toDate) && (
+                                <button
+                                    type="button"
+                                    onClick={() => {
+                                        setSearchQuery('');
+                                        setStatusFilter('');
+                                        setFromDate('');
+                                        setToDate('');
+                                        router.get('/member-admissions');
+                                    }}
+                                    className="px-2.5 py-1.5 text-sm sm:text-xs flex-grow sm:flex-grow-0 text-center text-gray-600 border border-gray-300 rounded-md hover:bg-gray-50"
+                                >
+                                    রিসেট
+                                </button>
+                            )}
+                        </div>
                     </form>
                 </div>
 
                 {/* Summary - compact inline chips - hidden when printing */}
-                <div className="flex flex-wrap items-center gap-1.5 print:hidden">
+                <div className="flex overflow-x-auto pb-1 -mb-1 hide-scrollbar items-center gap-1.5 print:hidden">
                     {statCards.map((stat) => (
                         <button
                             key={stat.label}
@@ -272,10 +274,10 @@ export default function Index({ admissions, filters, stats }: Props) {
                                     : 'bg-white border border-gray-200 text-gray-600 hover:bg-gray-50'
                             }`}
                         >
-                            <span className={`w-5 h-5 rounded flex items-center justify-center text-white text-xs font-semibold ${stat.color}`}>
+                            <span className={`flex-shrink-0 w-5 h-5 rounded flex items-center justify-center text-white text-xs font-semibold ${stat.color}`}>
                                 {stat.count}
                             </span>
-                            {stat.label}
+                            <span className="whitespace-nowrap">{stat.label}</span>
                         </button>
                     ))}
                 </div>
@@ -289,7 +291,78 @@ export default function Index({ admissions, filters, stats }: Props) {
                         )}
                         <p className="text-xs text-gray-500">প্রিন্টের সময়: {formatDateTime(new Date())}</p>
                     </div>
-                    <div className="member-admission-index-table-wrap overflow-x-auto print:overflow-visible">
+                    {/* Mobile View (Cards) */}
+                    <div className="md:hidden divide-y divide-gray-100">
+                        {admissions.data.length === 0 ? (
+                            <div className="px-4 py-8 text-center text-gray-500 text-sm">
+                                কোনো আবেদন পাওয়া যায়নি
+                            </div>
+                        ) : (
+                            admissions.data.map((admission) => (
+                                <div key={admission.id} className="p-4 bg-white hover:bg-gray-50/50 transition-colors">
+                                    <div className="flex justify-between items-start mb-2 gap-2">
+                                        <div>
+                                            <div className="font-semibold text-blue-600 text-sm">{admission.application_no}</div>
+                                            <div className="font-medium text-gray-900">{admission.applicant_name_bn || admission.applicant_name_en}</div>
+                                            {(admission.applicant_name_bn && admission.applicant_name_en) && (
+                                                <div className="text-gray-500 text-xs">{admission.applicant_name_en}</div>
+                                            )}
+                                        </div>
+                                        <div className="flex-shrink-0">{getStatusBadge(admission.status)}</div>
+                                    </div>
+                                    
+                                    <div className="grid grid-cols-2 gap-y-1.5 gap-x-2 text-xs mb-3">
+                                        <div><span className="text-gray-400">মোবাইল:</span> <span className="text-gray-700">{admission.mobile_number}</span></div>
+                                        <div><span className="text-gray-400">শাখা:</span> <span className="text-gray-700">{admission.branch?.name || '–'}</span></div>
+                                        <div><span className="text-gray-400">সামিতি:</span> <span className="text-gray-700">{admission.samity?.samity_name || '–'}</span></div>
+                                        <div><span className="text-gray-400">তারিখ:</span> <span className="text-gray-600">{formatDate(admission.created_at)}</span></div>
+                                        <div className="col-span-2"><span className="text-gray-400">পেন্ডিং:</span> <span className="text-gray-600">{admission.tracking_state?.label ?? '—'}</span></div>
+                                    </div>
+                                    
+                                    <div className="flex items-center gap-1 pt-2 border-t border-gray-50">
+                                        <Link href={`/member-admissions/${admission.id}`} className="flex-1 flex justify-center items-center gap-1.5 py-1.5 text-blue-600 bg-blue-50 hover:bg-blue-100 rounded text-xs font-medium" title="দেখুন"><Eye className="w-3.5 h-3.5" /> দেখুন</Link>
+                                        {(admission.status === 'draft' || admission.status === 'rejected') && (
+                                            <>
+                                                <Link href={`/member-admissions/${admission.id}/edit`} className="p-1.5 text-amber-600 bg-amber-50 hover:bg-amber-100 rounded" title="সম্পাদনা"><Edit className="w-3.5 h-3.5" /></Link>
+                                                {admission.status === 'draft' && (
+                                                    <button onClick={() => handleSubmit(admission.id, admission.application_no)} className="p-1.5 text-green-600 bg-green-50 hover:bg-green-100 rounded" title="জমা দিন"><Send className="w-3.5 h-3.5" /></button>
+                                                )}
+                                            </>
+                                        )}
+                                        {admission.status === 'needs_revision' && (
+                                            <>
+                                                {!isFieldOfficer && (
+                                                    <>
+                                                        <button onClick={() => openResubmitModal(admission)} className="p-1.5 text-green-600 bg-green-50 hover:bg-green-100 rounded" title="পুনরায় জমা"><RotateCcw className="w-3.5 h-3.5" /></button>
+                                                        <button onClick={() => openRejectModal(admission)} className="p-1.5 text-red-600 bg-red-50 hover:bg-red-100 rounded" title="প্রত্যাখ্যান"><Ban className="w-3.5 h-3.5" /></button>
+                                                    </>
+                                                )}
+                                            </>
+                                        )}
+                                        {admission.status === 'ready_for_head_office' && !isFieldOfficer && (
+                                            <button
+                                                onClick={() => {
+                                                    if (confirm(`এই আবেদনটি Head Office এ পাঠাতে চান? (${admission.application_no})`)) {
+                                                        router.patch(`/member-admissions/${admission.id}/send-to-head-office`);
+                                                    }
+                                                }}
+                                                className="p-1.5 text-purple-600 bg-purple-50 hover:bg-purple-100 rounded"
+                                                title="Head Office এ পাঠান"
+                                            >
+                                                <Send className="w-3.5 h-3.5" />
+                                            </button>
+                                        )}
+                                        {admission.status === 'draft' && (
+                                            <button onClick={() => handleDelete(admission.id, admission.application_no)} className="p-1.5 text-red-600 bg-red-50 hover:bg-red-100 rounded" title="মুছুন"><Trash2 className="w-3.5 h-3.5" /></button>
+                                        )}
+                                    </div>
+                                </div>
+                            ))
+                        )}
+                    </div>
+
+                    {/* Desktop View (Table) */}
+                    <div className="hidden md:block member-admission-index-table-wrap overflow-x-auto print:overflow-visible print:block">
                         <table className="w-full text-sm member-admission-index-table">
                             <thead className="bg-gray-50/80 border-b border-gray-200">
                                 <tr>
@@ -381,7 +454,7 @@ export default function Index({ admissions, filters, stats }: Props) {
 
                     {/* Pagination - compact - hidden when printing */}
                     {admissions.last_page > 1 && (
-                        <div className="px-2.5 py-2 border-t border-gray-100 bg-gray-50/50 flex items-center justify-between text-xs text-gray-600 print:hidden">
+                        <div className="px-2.5 py-3 md:py-2 border-t border-gray-100 bg-gray-50/50 flex flex-col sm:flex-row items-center justify-between gap-3 text-xs text-gray-600 print:hidden">
                             <span>{admissions.from}–{admissions.to} / {admissions.total}</span>
                             <div className="flex items-center gap-1">
                                 <Link
