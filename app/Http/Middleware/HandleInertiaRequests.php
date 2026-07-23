@@ -72,6 +72,7 @@ class HandleInertiaRequests extends Middleware
                 'email' => $this->sanitizeString($user->email ?? ''),
                 'username' => $this->sanitizeString($user->username ?? ''),
                 'has_all_access' => (bool)$user->has_all_access,
+                'is_read_only' => $user->isReadOnlyAdmin(),
                 'is_active' => (bool)$user->is_active,
                 'role' => null,
                 'zone' => null,
@@ -156,21 +157,46 @@ class HandleInertiaRequests extends Middleware
             }
         }
 
-        // Calculate badge counts for Head Office users only
+        // Calculate badge counts for Head Office / SuperAdmin / organizational viewers
         $badgeCounts = [
             'pendingLoanApplications' => 0,
             'pendingAdmissions' => 0,
             'pendingApprovals' => 0,
         ];
 
-        if ($userData && $userData['has_all_access']) {
+        $roleNameForBadges = $userData['role']['name'] ?? null;
+        $canViewHeadOfficeBadges = $userData && (
+            ($userData['has_all_access'] ?? false)
+            || in_array($roleNameForBadges, [
+                'super_admin',
+                'head_office',
+                'ed',
+                'admf',
+                'dmf',
+                'area_manager',
+                'zone_manager',
+            ], true)
+        );
+
+        if ($canViewHeadOfficeBadges) {
             $today = Carbon::today();
+            $authUser = $request->user();
+            $restrictBranches = $authUser
+                && ! $authUser->has_all_access
+                && ! $authUser->isSuperAdmin()
+                && ! $authUser->isHeadOffice();
+            $accessibleBranchIds = $restrictBranches
+                ? $authUser->getAccessibleBranches()->pluck('id')->all()
+                : null;
 
             // Pending Loan Applications: status = pending_head_office, submitted_at = today, no pending issues
             // Note: Only pending applications are counted, approved applications are excluded
-            $pendingLoanIds = LoanApplication::where('status', 'pending_head_office')
-                ->whereDate('submitted_at', $today)
-                ->pluck('id');
+            $pendingLoanQuery = LoanApplication::where('status', 'pending_head_office')
+                ->whereDate('submitted_at', $today);
+            if (is_array($accessibleBranchIds)) {
+                $pendingLoanQuery->whereIn('branch_id', $accessibleBranchIds ?: [0]);
+            }
+            $pendingLoanIds = $pendingLoanQuery->pluck('id');
 
             if ($pendingLoanIds->isNotEmpty()) {
                 // Get loan IDs that have pending issues
@@ -185,9 +211,12 @@ class HandleInertiaRequests extends Middleware
 
             // Pending Member Admissions: status = pending_head_office, submitted_at = today, no pending issues
             // Note: Only pending admissions are counted, approved admissions are excluded
-            $pendingAdmissionIds = MemberAdmission::where('status', 'pending_head_office')
-                ->whereDate('submitted_at', $today)
-                ->pluck('id');
+            $pendingAdmissionQuery = MemberAdmission::where('status', 'pending_head_office')
+                ->whereDate('submitted_at', $today);
+            if (is_array($accessibleBranchIds)) {
+                $pendingAdmissionQuery->whereIn('branch_id', $accessibleBranchIds ?: [0]);
+            }
+            $pendingAdmissionIds = $pendingAdmissionQuery->pluck('id');
 
             if ($pendingAdmissionIds->isNotEmpty()) {
                 // Get admission IDs that have pending issues
@@ -217,7 +246,11 @@ class HandleInertiaRequests extends Middleware
         }
 
         // যার কাছে পেন্ডিং আছে শুধু তারই ব্যাজ: every authenticated user gets their own pending count (branch_manager, area, zone, admf, dmf, ed)
-        if ($userData && $request->user() && ! ($userData['has_all_access'] ?? false)) {
+        // Organizational viewers with has_all_access still need personal pending badge on Approvals nav.
+        if ($userData && $request->user() && (
+            ! ($userData['has_all_access'] ?? false)
+            || in_array($roleNameForBadges, ['ed', 'admf', 'dmf', 'area_manager', 'zone_manager'], true)
+        )) {
             $approvalService = app(\App\Services\ApprovalService::class);
             $memberCount = $approvalService->getPendingApprovalsForUser($request->user())->count();
             $loanCount = \App\Models\LoanApplicationApproval::where('user_id', $request->user()->id)

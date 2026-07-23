@@ -7,6 +7,7 @@ import {
     SearchField,
     StatusBadge,
 } from '@/components/configuration';
+import { useCanMutate } from '@/hooks/use-can-mutate';
 import AdminLayout from '@/layouts/admin-layout';
 import { Head, router } from '@inertiajs/react';
 import {
@@ -63,6 +64,7 @@ interface Props {
 type TabType = 'zones' | 'areas' | 'branches';
 
 export default function Index({ zones, areas, branches }: Props) {
+    const canMutate = useCanMutate();
     const [activeTab, setActiveTab] = useState<TabType>('zones');
     const [searchQuery, setSearchQuery] = useState('');
     const [openDropdown, setOpenDropdown] = useState<number | null>(null);
@@ -178,6 +180,7 @@ export default function Index({ zones, areas, branches }: Props) {
                                 <Printer className="h-4 w-4" />
                                 Print Branch List
                             </button>
+                            {canMutate && (
                             <button
                                 onClick={handleAddNew}
                                 className="flex min-h-10 flex-1 items-center justify-center gap-2 rounded-lg bg-white px-4 py-2 text-sm font-semibold text-blue-700 shadow-sm hover:bg-blue-50 focus:ring-4 focus:ring-white/30 focus:outline-none sm:flex-none"
@@ -185,6 +188,7 @@ export default function Index({ zones, areas, branches }: Props) {
                                 <Plus className="h-4 w-4" />
                                 Add New
                             </button>
+                            )}
                         </>
                     }
                 />
@@ -287,6 +291,8 @@ export default function Index({ zones, areas, branches }: Props) {
                                             </td>
                                             <td className="px-6 py-4 text-right whitespace-nowrap">
                                                 <div className="flex items-center justify-end gap-1">
+                                                    {canMutate ? (
+                                                    <>
                                                     <button
                                                         onClick={() => handleToggleStatus('zones', zone.id)}
                                                         className={`flex h-7 w-7 items-center justify-center rounded-md transition-colors ${
@@ -310,6 +316,10 @@ export default function Index({ zones, areas, branches }: Props) {
                                                     >
                                                         <Trash2 className="size-4" />
                                                     </button>
+                                                    </>
+                                                    ) : (
+                                                        <span className="text-xs text-slate-400">View only</span>
+                                                    )}
                                                 </div>
                                             </td>
                                         </tr>
@@ -394,6 +404,8 @@ export default function Index({ zones, areas, branches }: Props) {
                                             </td>
                                             <td className="px-6 py-4 text-right whitespace-nowrap">
                                                 <div className="flex items-center justify-end gap-1">
+                                                    {canMutate ? (
+                                                    <>
                                                     <button
                                                         onClick={() => handleToggleStatus('areas', area.id)}
                                                         className={`flex h-7 w-7 items-center justify-center rounded-md transition-colors ${
@@ -417,6 +429,10 @@ export default function Index({ zones, areas, branches }: Props) {
                                                     >
                                                         <Trash2 className="size-4" />
                                                     </button>
+                                                    </>
+                                                    ) : (
+                                                        <span className="text-xs text-slate-400">View only</span>
+                                                    )}
                                                 </div>
                                             </td>
                                         </tr>
@@ -510,6 +526,8 @@ export default function Index({ zones, areas, branches }: Props) {
                                             </td>
                                             <td className="px-6 py-4 text-right whitespace-nowrap">
                                                 <div className="flex items-center justify-end gap-1">
+                                                    {canMutate ? (
+                                                    <>
                                                     <button
                                                         onClick={() => handleToggleStatus('branches', branch.id)}
                                                         className={`flex h-7 w-7 items-center justify-center rounded-md transition-colors ${
@@ -533,6 +551,10 @@ export default function Index({ zones, areas, branches }: Props) {
                                                     >
                                                         <Trash2 className="size-4" />
                                                     </button>
+                                                    </>
+                                                    ) : (
+                                                        <span className="text-xs text-slate-400">View only</span>
+                                                    )}
                                                 </div>
                                             </td>
                                         </tr>

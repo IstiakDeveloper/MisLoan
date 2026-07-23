@@ -14,8 +14,10 @@ use Carbon\Carbon;
 
 class HeadOfficeAdmissionController extends Controller
 {
+    use Concerns\ScopesToAccessibleBranches;
+
     /**
-     * Display all admissions from all branches
+     * Display admissions (all branches for HO; assigned zone/area for approvers/managers)
      */
     public function index(Request $request)
     {
@@ -25,6 +27,8 @@ class HeadOfficeAdmissionController extends Controller
             'memberCategory',
             'submittedBy'
         ])->whereIn('status', ['pending_head_office', 'approved', 'rejected', 'needs_revision']);
+
+        $this->applyAccessibleBranchScope($query);
 
         // Default date filter - current date
         $dateFrom = $request->date_from ?? now()->toDateString();
@@ -100,6 +104,7 @@ class HeadOfficeAdmissionController extends Controller
 
         // Calculate stats based on current filters (excluding status filter for stats)
         $statsQuery = MemberAdmission::query()->whereIn('status', ['pending_head_office', 'approved', 'rejected', 'needs_revision']);
+        $this->applyAccessibleBranchScope($statsQuery);
 
         // Apply same date filter to stats
         if ($dateFrom && $dateTo) {
@@ -149,10 +154,7 @@ class HeadOfficeAdmissionController extends Controller
 
         $admissions = $query->orderBy('created_at', 'desc')->paginate(20);
 
-        // Get zones, areas, and branches for filters
-        $zones = Zone::active()->orderBy('name')->get();
-        $areas = Area::active()->with('zone')->orderBy('name')->get();
-        $branches = Branch::active()->with('area.zone')->orderBy('name')->get();
+        $orgFilters = $this->organizationFilterOptions();
 
         return Inertia::render('HeadOffice/AdmissionMembers', [
             'admissions' => $admissions,
@@ -164,9 +166,9 @@ class HeadOfficeAdmissionController extends Controller
                 ]
             ),
             'stats' => $stats,
-            'zones' => $zones,
-            'areas' => $areas,
-            'branches' => $branches,
+            'zones' => $orgFilters['zones'],
+            'areas' => $orgFilters['areas'],
+            'branches' => $orgFilters['branches'],
         ]);
     }
 
@@ -182,6 +184,8 @@ class HeadOfficeAdmissionController extends Controller
             'submittedBy',
             'createdBy',
         ]);
+
+        $this->applyAccessibleBranchScope($query);
 
         // Apply same filters as index
         $dateFrom = $request->date_from ?? now()->toDateString();
@@ -238,17 +242,14 @@ class HeadOfficeAdmissionController extends Controller
         // Get all matching records (no pagination for print)
         $admissions = $query->orderBy('created_at', 'desc')->get();
 
-        // Get zones, areas, and branches for filter display
-        $zones = Zone::active()->orderBy('name')->get();
-        $areas = Area::active()->with('zone')->orderBy('name')->get();
-        $branches = Branch::active()->with('area.zone')->orderBy('name')->get();
+        $orgFilters = $this->organizationFilterOptions();
 
         return Inertia::render('HeadOffice/AdmissionMembersPrint', [
             'admissions' => $admissions,
             'filters' => $request->only(['status', 'search', 'zone_id', 'area_id', 'branch_id', 'date_from', 'date_to', 'had_issues']),
-            'zones' => $zones,
-            'areas' => $areas,
-            'branches' => $branches,
+            'zones' => $orgFilters['zones'],
+            'areas' => $orgFilters['areas'],
+            'branches' => $orgFilters['branches'],
         ]);
     }
 
@@ -319,6 +320,8 @@ class HeadOfficeAdmissionController extends Controller
         ])
         ->where('status', 'pending_head_office');
 
+        $this->applyAccessibleBranchScope($query);
+
         // Date filter (default: today)
         $date = $request->input('date', now()->toDateString());
         if ($date) {
@@ -353,6 +356,8 @@ class HeadOfficeAdmissionController extends Controller
      */
     public function show(MemberAdmission $admission)
     {
+        $this->ensureCanAccessBranch($admission->branch_id);
+
         $admission->load([
             'branch.area.zone',
             'samity',
@@ -382,6 +387,8 @@ class HeadOfficeAdmissionController extends Controller
      */
     public function printSingle(MemberAdmission $admission)
     {
+        $this->ensureCanAccessBranch($admission->branch_id);
+
         $admission->load([
             'branch.area.zone',
             'samity',

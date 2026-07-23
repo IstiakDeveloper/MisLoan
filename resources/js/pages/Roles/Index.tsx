@@ -7,6 +7,7 @@ import {
     LocalPagination,
     SearchField,
 } from '@/components/configuration';
+import { useCanMutate } from '@/hooks/use-can-mutate';
 import AdminLayout from '@/layouts/admin-layout';
 import { Head, router } from '@inertiajs/react';
 import { Edit, Plus, Shield, Trash2 } from 'lucide-react';
@@ -34,6 +35,7 @@ interface Props {
 }
 
 export default function Index({ roles, permissions }: Props) {
+    const canMutate = useCanMutate();
     const [searchQuery, setSearchQuery] = useState('');
     const [openDropdown, setOpenDropdown] = useState<number | null>(null);
     const [roleModalOpen, setRoleModalOpen] = useState(false);
@@ -90,6 +92,7 @@ export default function Index({ roles, permissions }: Props) {
                     description="Define clear access profiles and permission sets for system users."
                     icon={Shield}
                     actions={
+                        canMutate ? (
                         <button
                             onClick={handleAddNew}
                             className="flex min-h-10 w-full items-center justify-center gap-2 rounded-lg bg-white px-4 py-2 text-sm font-semibold text-blue-700 shadow-sm hover:bg-blue-50 focus:ring-4 focus:ring-white/30 focus:outline-none sm:w-auto"
@@ -97,6 +100,7 @@ export default function Index({ roles, permissions }: Props) {
                             <Plus className="h-4 w-4" />
                             Add New Role
                         </button>
+                        ) : undefined
                     }
                 />
 
@@ -181,6 +185,8 @@ export default function Index({ roles, permissions }: Props) {
                                         </td>
                                         <td className="px-6 py-4 text-right whitespace-nowrap">
                                             <div className="flex items-center justify-end gap-1">
+                                                {canMutate ? (
+                                                <>
                                                 <button
                                                     onClick={() => handleEdit(role)}
                                                     className="flex h-7 w-7 items-center justify-center rounded-md text-blue-600 transition-colors hover:bg-blue-50"
@@ -195,6 +201,10 @@ export default function Index({ roles, permissions }: Props) {
                                                 >
                                                     <Trash2 className="size-4" />
                                                 </button>
+                                                </>
+                                                ) : (
+                                                    <span className="text-xs text-slate-400">View only</span>
+                                                )}
                                             </div>
                                         </td>
                                     </tr>

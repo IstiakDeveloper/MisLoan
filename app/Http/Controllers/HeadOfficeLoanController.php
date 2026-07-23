@@ -14,8 +14,10 @@ use Carbon\Carbon;
 
 class HeadOfficeLoanController extends Controller
 {
+    use Concerns\ScopesToAccessibleBranches;
+
     /**
-     * Display all loan applications from all branches
+     * Display loan applications (all for HO; assigned zone/area for approvers/managers)
      */
     public function index(Request $request)
     {
@@ -50,6 +52,8 @@ class HeadOfficeLoanController extends Controller
             'created_at',
             'submitted_at',
         ]);
+
+        $this->applyAccessibleBranchScope($query);
 
         // Date range filter
         if ($dateFrom && $dateTo) {
@@ -113,6 +117,7 @@ class HeadOfficeLoanController extends Controller
         // Calculate stats based on current filters (excluding status filter for stats)
         // Use select to avoid loading large columns
         $statsQuery = LoanApplication::select('id', 'status', 'created_at', 'branch_id');
+        $this->applyAccessibleBranchScope($statsQuery);
 
         // Apply same date filter to stats
         if ($dateFrom && $dateTo) {
@@ -163,10 +168,7 @@ class HeadOfficeLoanController extends Controller
 
         $loans = $query->orderBy('created_at', 'desc')->paginate(20);
 
-        // Get zones, areas, and branches for filters
-        $zones = Zone::active()->orderBy('name')->get();
-        $areas = Area::active()->with('zone')->orderBy('name')->get();
-        $branches = Branch::active()->with('area.zone')->orderBy('name')->get();
+        $orgFilters = $this->organizationFilterOptions();
 
         return Inertia::render('HeadOffice/LoanApplications', [
             'loans' => $loans,
@@ -178,9 +180,9 @@ class HeadOfficeLoanController extends Controller
                 ]
             ),
             'stats' => $stats,
-            'zones' => $zones,
-            'areas' => $areas,
-            'branches' => $branches,
+            'zones' => $orgFilters['zones'],
+            'areas' => $orgFilters['areas'],
+            'branches' => $orgFilters['branches'],
         ]);
     }
 
@@ -218,6 +220,8 @@ class HeadOfficeLoanController extends Controller
             'created_at',
             'submitted_at',
         ]);
+
+        $this->applyAccessibleBranchScope($query);
 
         if ($dateFrom && $dateTo) {
             $query->whereBetween('created_at', [$startOfDay, $endOfDay]);
@@ -274,17 +278,14 @@ class HeadOfficeLoanController extends Controller
         // Get all matching records (no pagination for print)
         $loans = $query->orderBy('created_at', 'desc')->get();
 
-        // Get zones, areas, and branches for filter display
-        $zones = Zone::active()->orderBy('name')->get();
-        $areas = Area::active()->with('zone')->orderBy('name')->get();
-        $branches = Branch::active()->with('area.zone')->orderBy('name')->get();
+        $orgFilters = $this->organizationFilterOptions();
 
         return Inertia::render('HeadOffice/LoanApplicationsPrint', [
             'loans' => $loans,
             'filters' => $request->only(['status', 'search', 'zone_id', 'area_id', 'branch_id', 'date_from', 'date_to', 'had_issues']),
-            'zones' => $zones,
-            'areas' => $areas,
-            'branches' => $branches,
+            'zones' => $orgFilters['zones'],
+            'areas' => $orgFilters['areas'],
+            'branches' => $orgFilters['branches'],
         ]);
     }
     /**
@@ -296,6 +297,8 @@ class HeadOfficeLoanController extends Controller
 
         $query = LoanApplication::query()
             ->where('status', LoanApplication::STATUS_PENDING_HEAD_OFFICE);
+
+        $this->applyAccessibleBranchScope($query);
 
         if ($date) {
             $query->whereDate('submitted_at', $date);
@@ -344,6 +347,8 @@ class HeadOfficeLoanController extends Controller
      */
     public function show(LoanApplication $loanApplication)
     {
+        $this->ensureCanAccessBranch($loanApplication->branch_id);
+
         $loanApplication->load([
             'branch.area.zone',
             'loanProduct',

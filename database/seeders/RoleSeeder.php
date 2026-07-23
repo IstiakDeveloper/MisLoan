@@ -128,11 +128,14 @@ class RoleSeeder extends Seeder
             [
                 'name' => 'ed',
                 'display_name' => 'Executive Director (ED)',
-                'description' => 'Executive Director - can approve/reject when selected by branch',
+                'description' => 'Executive Director - approver rights plus SuperAdmin-like view access (no edit)',
                 'permissions' => [
                     'vittik_approve',
                     'view_vittik_requests',
                     'receive_notifications',
+                    'view_all_applications',
+                    'view_all_reports',
+                    'generate_reports',
                 ],
             ],
         ];

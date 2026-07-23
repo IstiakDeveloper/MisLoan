@@ -6,6 +6,7 @@ import {
     ServerPagination,
     StatusBadge,
 } from '@/components/configuration';
+import { useCanMutate } from '@/hooks/use-can-mutate';
 import AdminLayout from '@/layouts/admin-layout';
 import { Head, router, usePage } from '@inertiajs/react';
 import {
@@ -134,7 +135,8 @@ export default function Index({
         props: { auth?: { user?: { has_all_access?: boolean } } };
     };
     const authUser = page.props.auth?.user;
-    const canUpdateSignature = !!authUser?.has_all_access;
+    const canMutate = useCanMutate();
+    const canUpdateSignature = canMutate && !!authUser?.has_all_access;
 
     const fileInputRefs = useRef<Record<number, HTMLInputElement | null>>({});
 
@@ -298,6 +300,7 @@ export default function Index({
                     description="Manage user access, organizational assignments, credentials, and signatures."
                     icon={UsersRound}
                     actions={
+                        canMutate ? (
                         <>
                             <button
                                 onClick={handleOpenBranchSummaryModal}
@@ -321,6 +324,7 @@ export default function Index({
                                 Add New User
                             </button>
                         </>
+                        ) : undefined
                     }
                 />
 
@@ -716,6 +720,8 @@ export default function Index({
                                         </td>
                                         <td className="px-6 py-4 text-right whitespace-nowrap">
                                             <div className="flex items-center justify-end gap-1">
+                                                {canMutate ? (
+                                                <>
                                                 <button
                                                     onClick={() => handleToggleStatus(user.id)}
                                                     className={`flex h-7 w-7 items-center justify-center rounded-md transition-colors ${
@@ -773,6 +779,10 @@ export default function Index({
                                                 >
                                                     <Trash2 className="size-4" />
                                                 </button>
+                                                </>
+                                                ) : (
+                                                    <span className="text-xs text-slate-400">View only</span>
+                                                )}
                                             </div>
                                         </td>
                                     </tr>

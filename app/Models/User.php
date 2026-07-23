@@ -230,6 +230,37 @@ class User extends Authenticatable
     }
 
     /**
+     * Check if user is Executive Director (ED)
+     */
+    public function isEd(): bool
+    {
+        return $this->role?->name === Role::ED;
+    }
+
+    /**
+     * Approver / manager roles that may view HO lists (scoped to assignment).
+     */
+    public function isOrganizationalViewer(): bool
+    {
+        return in_array($this->role?->name, [
+            Role::ED,
+            Role::ADMF,
+            Role::DMF,
+            Role::AREA_MANAGER,
+            Role::ZONE_MANAGER,
+        ], true);
+    }
+
+    /**
+     * These roles can view Head Office modules but cannot mutate them.
+     * Approver writes (team-based) use separate routes.
+     */
+    public function isReadOnlyAdmin(): bool
+    {
+        return $this->isOrganizationalViewer();
+    }
+
+    /**
      * Scope for active users
      */
     public function scopeActive($query)

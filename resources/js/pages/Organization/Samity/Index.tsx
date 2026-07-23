@@ -7,6 +7,7 @@ import {
     ServerPagination,
     StatusBadge,
 } from '@/components/configuration';
+import { useCanMutate } from '@/hooks/use-can-mutate';
 import AdminLayout from '@/layouts/admin-layout';
 import { PageProps } from '@/types';
 import { Samity } from '@/types/samity';
@@ -30,6 +31,7 @@ interface Props extends PageProps {
 }
 
 export default function Index({ auth, samities, filters }: Props) {
+    const canMutate = useCanMutate();
     const [search, setSearch] = useState(filters.search || '');
 
     const handleSearch = (e: React.FormEvent) => {
@@ -53,6 +55,7 @@ export default function Index({ auth, samities, filters }: Props) {
                     description="Manage samity records and their branch assignments across the organization."
                     icon={Building2}
                     actions={
+                        canMutate ? (
                         <Link
                             href="/samities/create"
                             className="inline-flex min-h-10 w-full items-center justify-center gap-2 rounded-lg bg-white px-4 py-2 text-sm font-semibold text-blue-700 shadow-sm hover:bg-blue-50 focus:ring-4 focus:ring-white/30 focus:outline-none sm:w-auto"
@@ -60,6 +63,7 @@ export default function Index({ auth, samities, filters }: Props) {
                             <Plus className="size-4" />
                             Add Samity
                         </Link>
+                        ) : undefined
                     }
                 />
 
@@ -180,6 +184,8 @@ export default function Index({ auth, samities, filters }: Props) {
                                             </td>
                                             <td className="px-6 py-4 text-right whitespace-nowrap">
                                                 <div className="flex items-center justify-end gap-1">
+                                                    {canMutate ? (
+                                                    <>
                                                     <Link
                                                         href={`/samities/${samity.id}/edit`}
                                                         className="flex h-7 w-7 items-center justify-center rounded-md text-blue-600 transition-colors hover:bg-blue-50"
@@ -194,6 +200,10 @@ export default function Index({ auth, samities, filters }: Props) {
                                                     >
                                                         <Trash2 className="size-4" />
                                                     </button>
+                                                    </>
+                                                    ) : (
+                                                        <span className="text-xs text-slate-400">View only</span>
+                                                    )}
                                                 </div>
                                             </td>
                                         </tr>

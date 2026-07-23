@@ -995,7 +995,7 @@ export default function TeamBasedApprovalApproverIndex({ reviews, filters, branc
                 {/* Filters - only visible on screen */}
                 <div className="bg-white border border-slate-200/80 rounded-2xl p-4 mb-4 print:hidden shadow-sm">
                     {/* Mobile filter header toggle */}
-                    <div 
+                    <div
                         className="flex md:hidden items-center justify-between cursor-pointer select-none"
                         onClick={() => setShowFiltersMobile(!showFiltersMobile)}
                     >

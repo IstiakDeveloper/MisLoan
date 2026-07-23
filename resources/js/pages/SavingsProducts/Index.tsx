@@ -9,6 +9,7 @@ import {
     StatusBadge,
     TableScroll,
 } from '@/components/configuration';
+import { useCanMutate } from '@/hooks/use-can-mutate';
 import AdminLayout from '@/layouts/admin-layout';
 import { Head, router } from '@inertiajs/react';
 import {
@@ -79,6 +80,7 @@ export default function Index({ products, filters }: Props) {
     const [itemsPerPage, setItemsPerPage] = useState(50);
 
     const productsList = Array.isArray(products) ? products : [];
+    const canMutate = useCanMutate();
 
     const handleAddNew = () => {
         setSelectedProduct(null);
@@ -138,6 +140,7 @@ export default function Index({ products, filters }: Props) {
                     description="সঞ্চয় পণ্যের মেয়াদ, জমার ধরন, সীমা এবং সুদের হার পরিচালনা করুন।"
                     icon={Wallet}
                     actions={
+                        canMutate ? (
                         <button
                             onClick={handleAddNew}
                             className="flex min-h-10 w-full items-center justify-center gap-2 rounded-lg bg-white px-4 py-2 text-sm font-semibold text-blue-700 shadow-sm hover:bg-blue-50 focus:ring-4 focus:ring-white/30 focus:outline-none sm:w-auto"
@@ -145,6 +148,7 @@ export default function Index({ products, filters }: Props) {
                             <Plus className="size-4" />
                             Add New (নতুন যোগ করুন)
                         </button>
+                        ) : undefined
                     }
                 />
 
@@ -359,6 +363,8 @@ export default function Index({ products, filters }: Props) {
                                             </td>
                                             <td className="px-2 py-2 text-right">
                                                 <div className="flex items-center justify-end gap-1">
+                                                    {canMutate ? (
+                                                    <>
                                                     <button
                                                         onClick={() => handleToggleStatus(product.id)}
                                                         className={`flex h-7 w-7 items-center justify-center rounded-md transition-colors ${
@@ -382,6 +388,10 @@ export default function Index({ products, filters }: Props) {
                                                     >
                                                         <Trash2 className="size-4" />
                                                     </button>
+                                                    </>
+                                                    ) : (
+                                                        <span className="text-xs text-slate-400">View only</span>
+                                                    )}
                                                 </div>
                                             </td>
                                         </tr>

@@ -11,6 +11,7 @@ import {
     StatusBadge,
     TableScroll,
 } from '@/components/configuration';
+import { useCanMutate } from '@/hooks/use-can-mutate';
 import AdminLayout from '@/layouts/admin-layout';
 import { Head, router } from '@inertiajs/react';
 import {
@@ -61,6 +62,7 @@ const targetGroupLabels: Record<string, { label: string; color: string }> = {
 };
 
 export default function Index({ categories, filters }: Props) {
+    const canMutate = useCanMutate();
     const [searchQuery, setSearchQuery] = useState(filters.search || '');
     const [openDropdown, setOpenDropdown] = useState<number | null>(null);
     const [modalOpen, setModalOpen] = useState(false);
@@ -128,6 +130,7 @@ export default function Index({ categories, filters }: Props) {
                     description="Organize lending programs into clear, reusable categories."
                     icon={ListTree}
                     actions={
+                        canMutate ? (
                         <button
                             onClick={handleAddNew}
                             className="flex min-h-10 w-full items-center justify-center gap-2 rounded-lg bg-white px-4 py-2 text-sm font-semibold text-blue-700 shadow-sm transition hover:bg-blue-50 focus:ring-4 focus:ring-white/30 focus:outline-none sm:w-auto"
@@ -135,6 +138,7 @@ export default function Index({ categories, filters }: Props) {
                             <Plus className="size-4" />
                             Add Category
                         </button>
+                        ) : undefined
                     }
                 />
 
@@ -266,6 +270,8 @@ export default function Index({ categories, filters }: Props) {
                                             </td>
                                             <td className="px-2 py-2 text-right">
                                                 <div className="flex items-center justify-end gap-1">
+                                                    {canMutate ? (
+                                                    <>
                                                     <button
                                                         onClick={() => handleToggleStatus(category.id)}
                                                         className={`flex h-7 w-7 items-center justify-center rounded-md transition-colors ${
@@ -289,6 +295,10 @@ export default function Index({ categories, filters }: Props) {
                                                     >
                                                         <Trash2 className="size-4" />
                                                     </button>
+                                                    </>
+                                                    ) : (
+                                                        <span className="text-xs text-slate-400">View only</span>
+                                                    )}
                                                 </div>
                                             </td>
                                         </tr>

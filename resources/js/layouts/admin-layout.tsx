@@ -41,6 +41,7 @@ interface User {
     email: string;
     role?: { name: string };
     has_all_access: boolean;
+    is_read_only?: boolean;
     branch_id?: number | null;
 }
 
@@ -150,17 +151,18 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
         roleName === 'branch_user' ||
         roleName === 'field_officer';
 
+    // ADMF/DMF/Area/Zone: approver-only menu. ED keeps approver menu + full Head Office navigation.
     const isTeamApproverRole =
         roleName === 'area_manager' ||
         roleName === 'zone_manager' ||
         roleName === 'admf' ||
-        roleName === 'dmf' ||
-        roleName === 'ed';
+        roleName === 'dmf';
 
     const isFieldOfficer = roleName === 'field_officer';
     const isSuperAdmin = roleName === 'super_admin';
     const isEdRole = roleName === 'ed';
     const canViewTeamBasedReport = auth.user.has_all_access || isSuperAdmin || roleName === 'head_office' || isEdRole;
+    const showConfigurationSection = (!isBranchRole && !isTeamApproverRole) || isEdRole;
     const { canInstall, promptInstall, isInstalled, isStandalone, platform } = usePwaInstallPrompt();
 
     const handleMaintenanceToggle = () => {
@@ -204,6 +206,13 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
             icon: ClipboardCheck,
             badge: badgeCounts.pendingApprovals || 0,
         },
+    ];
+
+    // Admission / Loan / Savings for approvers & managers (scoped by assigned zone/area on backend)
+    const approverOperationsItems = [
+        { name: 'Admission Members', href: '/head-office/admission-members', icon: UserPlus, badge: badgeCounts.pendingAdmissions || 0 },
+        { name: 'Loan Applications', href: '/head-office/loan-applications', icon: Banknote, badge: badgeCounts.pendingLoanApplications || 0 },
+        { name: 'Savings Applications', href: '/head-office/savings-applications', icon: PiggyBank },
     ];
 
     const headOfficeMainItems = [
@@ -267,12 +276,31 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
             return groups;
         }
 
+        // ED: keep approver queues + full Head Office navigation
+        if (isEdRole) {
+            const dashboardItem = headOfficeMainItems.find(m => m.href === '/dashboard');
+            const operationsItems = headOfficeMainItems.filter(m =>
+                ['/head-office/admission-members', '/head-office/loan-applications', '/head-office/savings-applications'].includes(m.href)
+            );
+            const approvalsItems = [
+                ...approverMenuItems.filter(m => m.href !== '/dashboard'),
+                ...headOfficeMainItems.filter(m => m.href === '/head-office/team-based-approvals'),
+            ];
+
+            const groups = [];
+            if (dashboardItem) groups.push({ title: 'Overview', items: [dashboardItem] });
+            if (operationsItems.length > 0) groups.push({ title: 'Operations', items: operationsItems });
+            if (approvalsItems.length > 0) groups.push({ title: 'Approvals', items: approvalsItems });
+            return groups;
+        }
+
         if (isTeamApproverRole) {
             const dashboardItem = approverMenuItems.find(m => m.href === '/dashboard');
             const approvalsItems = approverMenuItems.filter(m => m.href !== '/dashboard');
 
             const groups = [];
             if (dashboardItem) groups.push({ title: 'Overview', items: [dashboardItem] });
+            if (approverOperationsItems.length > 0) groups.push({ title: 'Operations', items: approverOperationsItems });
             if (approvalsItems.length > 0) groups.push({ title: 'Approvals', items: approvalsItems });
             return groups;
         }
@@ -287,20 +315,25 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
         if (operationsItems.length > 0) groups.push({ title: 'Operations', items: operationsItems });
         if (approvalsItems.length > 0) groups.push({ title: 'Approvals', items: approvalsItems });
         return groups;
-    }, [isBranchRole, isTeamApproverRole, branchMenuItems, approverMenuItems, headOfficeMainItems]);
+    }, [isBranchRole, isEdRole, isTeamApproverRole, branchMenuItems, approverMenuItems, approverOperationsItems, headOfficeMainItems]);
 
     // Compute items for mobile bottom nav (top 4 items)
     const mobileBottomNavItems = useMemo(() => {
         let items = [];
         if (isBranchRole) {
             items = [...branchMenuItems];
+        } else if (isEdRole) {
+            items = [
+                ...approverMenuItems,
+                ...headOfficeMainItems.filter(m => m.href !== '/dashboard'),
+            ];
         } else if (isTeamApproverRole) {
-            items = [...approverMenuItems];
+            items = [...approverMenuItems, ...approverOperationsItems];
         } else {
             items = [...headOfficeMainItems];
         }
         return items.slice(0, 4);
-    }, [isBranchRole, isTeamApproverRole, branchMenuItems, approverMenuItems, headOfficeMainItems]);
+    }, [isBranchRole, isEdRole, isTeamApproverRole, branchMenuItems, approverMenuItems, approverOperationsItems, headOfficeMainItems]);
 
     const showReportSection = isEdRole || canViewTeamBasedReport;
 
@@ -496,7 +529,7 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
                     )}
 
                     {/* Setup/Configuration Expandable Section */}
-                    {!isBranchRole && !isTeamApproverRole && (
+                    {showConfigurationSection && (
                         <div className="space-y-1">
                             {sidebarOpen && (
                                 <span className="px-3 text-[10px] font-bold text-blue-500/80 tracking-wider uppercase block select-none">

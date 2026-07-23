@@ -12,8 +12,10 @@ use Carbon\Carbon;
 
 class HeadOfficeSavingsController extends Controller
 {
+    use Concerns\ScopesToAccessibleBranches;
+
     /**
-     * Display all savings applications from all branches (view only; no HO approval).
+     * Display savings applications (all for HO; assigned zone/area for approvers/managers).
      * Date range, zone/area/branch and status filters. Branch-wise summary.
      */
     public function index(Request $request)
@@ -47,6 +49,8 @@ class HeadOfficeSavingsController extends Controller
                 'submitted_at',
                 'reviewed_at',
             ]);
+
+        $this->applyAccessibleBranchScope($query);
 
         if ($dateFrom && $dateTo) {
             $query->whereBetween('created_at', [$startOfDay, $endOfDay]);
@@ -96,6 +100,7 @@ class HeadOfficeSavingsController extends Controller
         }
 
         $statsQuery = SavingsApplication::select('id', 'status', 'created_at', 'branch_id');
+        $this->applyAccessibleBranchScope($statsQuery);
         if ($dateFrom && $dateTo) {
             $statsQuery->whereBetween('created_at', [$startOfDay, $endOfDay]);
         } elseif ($dateFrom) {
@@ -132,6 +137,7 @@ class HeadOfficeSavingsController extends Controller
         $branchSummaryQuery = SavingsApplication::query()
             ->selectRaw('branch_id, count(*) as count')
             ->whereBetween('created_at', [$startOfDay, $endOfDay]);
+        $this->applyAccessibleBranchScope($branchSummaryQuery);
         if ($request->filled('zone_id')) {
             $branchSummaryQuery->whereHas('branch.area', function ($q) use ($request) {
                 $q->where('zone_id', $request->zone_id);
@@ -164,9 +170,7 @@ class HeadOfficeSavingsController extends Controller
 
         $applications = $query->orderBy('created_at', 'desc')->paginate(20);
 
-        $zones = Zone::active()->orderBy('name')->get();
-        $areas = Area::active()->with('zone')->orderBy('name')->get();
-        $branches = Branch::active()->with('area.zone')->orderBy('name')->get();
+        $orgFilters = $this->organizationFilterOptions();
 
         return Inertia::render('HeadOffice/SavingsApplications', [
             'applications' => $applications,
@@ -176,9 +180,9 @@ class HeadOfficeSavingsController extends Controller
             ),
             'stats' => $stats,
             'branchSummary' => $branchSummaryList,
-            'zones' => $zones,
-            'areas' => $areas,
-            'branches' => $branches,
+            'zones' => $orgFilters['zones'],
+            'areas' => $orgFilters['areas'],
+            'branches' => $orgFilters['branches'],
         ]);
     }
 
@@ -193,6 +197,8 @@ class HeadOfficeSavingsController extends Controller
             'branch.area',
             'samity',
         ])->findOrFail($id);
+
+        $this->ensureCanAccessBranch($application->branch_id);
 
         $app = $application->toArray();
         $app['savings_product'] = $application->savingsProduct;
