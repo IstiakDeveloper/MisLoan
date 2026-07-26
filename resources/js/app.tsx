@@ -6,6 +6,7 @@ import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
 import { initializeTheme } from './hooks/use-appearance';
 import { AuthProvider } from './contexts/AuthContext';
+import { stripWholeNumberDecimals } from './utils/formatAmount';
 
 const rawAppName = import.meta.env.VITE_APP_NAME || 'Mis Loan';
 const appName = rawAppName === 'MisLoan' ? 'Mis Loan' : rawAppName;
@@ -19,6 +20,28 @@ createInertiaApp({
         ),
     setup({ el, App, props }) {
         const root = createRoot(el);
+
+        // First full page load (data-page in blade): 0.00 → 0
+        props.initialPage.props = stripWholeNumberDecimals(
+            props.initialPage.props,
+        );
+
+        // Number input: scroll must not change value
+        el.addEventListener(
+            'wheel',
+            (event) => {
+                const target = event.target;
+
+                if (
+                    target instanceof HTMLInputElement &&
+                    target.type === 'number' &&
+                    document.activeElement === target
+                ) {
+                    target.blur();
+                }
+            },
+            { capture: true },
+        );
 
         root.render(
             <StrictMode>

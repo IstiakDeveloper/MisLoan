@@ -112,6 +112,9 @@ export interface MemberAdmission {
     interviewer_name?: string;
     employee_name?: string;
     other_loan_info?: string;
+    requested_loan_amount?: number;
+    project_name?: string;
+    estimated_annual_project_income?: number;
     collector_comment?: string;
     guardian_name?: string;
     applicant_signature?: string | File | null;
@@ -119,6 +122,10 @@ export interface MemberAdmission {
     customer_nid_photo?: File | null;
     guardian_photo?: File | null;
     guardian_nid_photo?: File | null;
+
+    // Legacy / old member data entry
+    is_legacy?: boolean;
+    loan_dofa?: number | string | null;
 
     // Status
     status: 'draft' | 'submitted' | 'under_review' | 'ready_for_head_office' | 'approved' | 'rejected' | 'needs_revision' | 'pending_head_office';
@@ -133,6 +140,9 @@ export interface MemberAdmission {
     updated_at: string;
     printed_at?: string | null;
 
+    // Number of loan applications linked to this member (used to guard delete)
+    loan_applications_count?: number;
+
     // Tracking: কার কাছে পেন্ডিং / কোন অবস্থায় (for branch user list)
     tracking_state?: { label: string; pending_with_name: string | null };
 
@@ -140,7 +150,7 @@ export interface MemberAdmission {
     branch?: any;
     samity?: any;
     member_category?: any;
-    created_by?: number | null;
+    created_by?: number | { id: number; name: string } | null;
     createdBy?: { id: number; name: string } | null;
     submitted_by?: any;
     reviewed_by?: any;

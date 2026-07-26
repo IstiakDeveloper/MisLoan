@@ -25,13 +25,14 @@ class HeadOfficeAdmissionController extends Controller
             'branch.area.zone',
             'samity',
             'memberCategory',
-            'submittedBy'
-        ])->whereIn('status', ['pending_head_office', 'approved', 'rejected', 'needs_revision']);
+            'submittedBy',
+            'createdBy',
+        ])->withCount('loanApplications');
 
         $this->applyAccessibleBranchScope($query);
 
-        // Default date filter - current date
-        $dateFrom = $request->date_from ?? now()->toDateString();
+        // Default date filter - current month (1st of month .. today)
+        $dateFrom = $request->date_from ?? now()->startOfMonth()->toDateString();
         $dateTo = $request->date_to ?? now()->toDateString();
 
         // Date range filter
@@ -65,9 +66,12 @@ class HeadOfficeAdmissionController extends Controller
             $query->where('branch_id', $request->branch_id);
         }
 
-        // Status filter
-        if ($request->has('status') && $request->status) {
+        // Status filter. Drafts are hidden from the default "All" list, but a Head
+        // Office user can view every draft by explicitly selecting the draft filter.
+        if ($request->filled('status')) {
             $query->where('status', $request->status);
+        } else {
+            $query->where('status', '!=', 'draft');
         }
 
         // Search filter
@@ -103,7 +107,7 @@ class HeadOfficeAdmissionController extends Controller
         }
 
         // Calculate stats based on current filters (excluding status filter for stats)
-        $statsQuery = MemberAdmission::query()->whereIn('status', ['pending_head_office', 'approved', 'rejected', 'needs_revision']);
+        $statsQuery = MemberAdmission::query();
         $this->applyAccessibleBranchScope($statsQuery);
 
         // Apply same date filter to stats
@@ -142,7 +146,8 @@ class HeadOfficeAdmissionController extends Controller
         }
 
         $stats = [
-            'total' => (clone $statsQuery)->count(),
+            // "Total" mirrors the default (All) list, which excludes drafts.
+            'total' => (clone $statsQuery)->where('status', '!=', 'draft')->count(),
             'draft' => (clone $statsQuery)->where('status', 'draft')->count(),
             'submitted' => (clone $statsQuery)->where('status', 'submitted')->count(),
             'under_review' => (clone $statsQuery)->where('status', 'under_review')->count(),
@@ -188,7 +193,7 @@ class HeadOfficeAdmissionController extends Controller
         $this->applyAccessibleBranchScope($query);
 
         // Apply same filters as index
-        $dateFrom = $request->date_from ?? now()->toDateString();
+        $dateFrom = $request->date_from ?? now()->startOfMonth()->toDateString();
         $dateTo = $request->date_to ?? now()->toDateString();
 
         if ($dateFrom && $dateTo) {
@@ -214,8 +219,10 @@ class HeadOfficeAdmissionController extends Controller
             $query->where('branch_id', $request->branch_id);
         }
 
-        if ($request->status) {
+        if ($request->filled('status')) {
             $query->where('status', $request->status);
+        } else {
+            $query->where('status', '!=', 'draft');
         }
 
         if ($request->search) {
@@ -260,7 +267,7 @@ class HeadOfficeAdmissionController extends Controller
     {
         $query = MemberAdmission::query();
 
-        $dateFrom = $request->date_from ?? now()->toDateString();
+        $dateFrom = $request->date_from ?? now()->startOfMonth()->toDateString();
         $dateTo = $request->date_to ?? now()->toDateString();
         if ($dateFrom && $dateTo) {
             $query->whereBetween('created_at', [
@@ -277,8 +284,10 @@ class HeadOfficeAdmissionController extends Controller
         if ($request->branch_id) {
             $query->where('branch_id', $request->branch_id);
         }
-        if ($request->status) {
+        if ($request->filled('status')) {
             $query->where('status', $request->status);
+        } else {
+            $query->where('status', '!=', 'draft');
         }
         if ($request->search) {
             $search = $request->search;
@@ -522,13 +531,15 @@ class HeadOfficeAdmissionController extends Controller
     }
 
     /**
-     * Delete admission (only draft and submitted status)
+     * Delete admission. A member with any loan application cannot be deleted.
      */
     public function destroy(MemberAdmission $admission)
     {
-        // Only draft and submitted admissions can be deleted
-        if (!in_array($admission->status, ['draft', 'submitted'])) {
-            return back()->with('error', 'Only draft and submitted admissions can be deleted!');
+        $this->ensureCanAccessBranch($admission->branch_id);
+
+        // A member linked to any loan application cannot be deleted.
+        if ($admission->loanApplications()->exists()) {
+            return back()->with('error', 'এই সদস্যের ঋণ আবেদন থাকায় মুছে ফেলা যাবে না।');
         }
 
         $admission->delete();

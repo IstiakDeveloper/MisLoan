@@ -3,6 +3,7 @@ import AdminLayout from '@/layouts/admin-layout';
 import { Head, Link } from '@inertiajs/react';
 import { ArrowLeft, Download, FileText, Building2, User, Calendar, CheckCircle, XCircle, Clock } from 'lucide-react';
 import { formatDate } from '@/utils/dateUtils';
+import { formatCurrency } from '@/utils/formatAmount';
 
 interface LoanMember {
     id: number;
@@ -82,14 +83,6 @@ export default function Show({ application }: Props) {
                 {config.label}
             </span>
         );
-    };
-
-    const formatCurrency = (amount: string | number) => {
-        const num = typeof amount === 'string' ? parseFloat(amount) : amount;
-        return new Intl.NumberFormat('en-BD', {
-            minimumFractionDigits: 2,
-            maximumFractionDigits: 2
-        }).format(num);
     };
 
     const totalLoanAmount = application.loan_members.reduce((sum, member) => {

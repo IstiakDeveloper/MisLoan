@@ -3,6 +3,7 @@ import { Head, router } from '@inertiajs/react';
 import axios from 'axios';
 import AdminLayout from '@/layouts/admin-layout';
 import { formatDate, formatDateTime } from '@/utils/dateUtils';
+import { formatCurrency as formatCurrencyBase } from '@/utils/formatAmount';
 import {
     Search,
     Calendar,
@@ -195,10 +196,7 @@ export default function LoanIndex({
 
     const formatCurrency = (amount: number | undefined) => {
         if (!amount) return '-';
-        return new Intl.NumberFormat('en-BD', {
-            minimumFractionDigits: 2,
-            maximumFractionDigits: 2
-        }).format(amount);
+        return formatCurrencyBase(amount) || '-';
     };
 
     const handleViewMember = (member: Member, e: React.MouseEvent) => {

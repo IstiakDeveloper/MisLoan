@@ -24,7 +24,7 @@ class TeamBasedApprovalReview extends Model
 
     protected $casts = [
         'decided_at' => 'datetime',
-        'approved_amount' => 'decimal:2',
+        'approved_amount' => 'integer',
     ];
 
     public function approval(): BelongsTo

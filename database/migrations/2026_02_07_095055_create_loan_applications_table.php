@@ -95,6 +95,7 @@ return new class extends Migration
                 'pending',
                 'submitted',
                 'under_review',
+                'ready_for_head_office',
                 'pending_head_office',
                 'approved',
                 'rejected',

@@ -1,4 +1,4 @@
-import React from 'react';
+﻿import React from 'react';
 import { MemberAdmission } from '@/types/memberAdmission';
 import { formatDate } from '@/utils/dateUtils';
 
@@ -62,9 +62,9 @@ function FormRow({
 }) {
     const v = value != null && value !== '' ? String(value) : '';
     return (
-        <div className={`flex items-baseline gap-2 print:gap-1.5 ${className}`}>
+        <div className={`flex flex-col sm:flex-row sm:items-baseline gap-0.5 sm:gap-2 print:flex-row print:items-baseline print:gap-1.5 ${className}`}>
             <span className="text-xs print:text-[14px] shrink-0">{label}</span>
-            <span className="border-b border-dotted border-gray-700 flex-1 min-w-0 overflow-hidden text-ellipsis text-xs print:text-[14px] print:leading-relaxed">
+            <span className="border-b border-dotted border-gray-700 flex-1 min-w-0 break-words text-xs print:text-[14px] print:leading-relaxed">
                 {v}
             </span>
         </div>
@@ -84,16 +84,16 @@ function FormRow2({
     value2: string | number;
 }) {
     return (
-        <div className="flex gap-6">
-            <div className="flex items-baseline gap-2 flex-1">
+        <div className="flex flex-col sm:flex-row gap-2 sm:gap-6 print:flex-row print:gap-6">
+            <div className="flex items-baseline gap-2 flex-1 min-w-0">
                 <span className="text-sm shrink-0">{label1}</span>
-                <span className="border-b border-dotted border-gray-700 flex-1 min-w-0">
+                <span className="border-b border-dotted border-gray-700 flex-1 min-w-0 break-words">
                     {value1 != null && value1 !== '' ? String(value1) : ''}
                 </span>
             </div>
-            <div className="flex items-baseline gap-2 flex-1">
+            <div className="flex items-baseline gap-2 flex-1 min-w-0">
                 <span className="text-sm shrink-0">{label2}</span>
-                <span className="border-b border-dotted border-gray-700 flex-1 min-w-0">
+                <span className="border-b border-dotted border-gray-700 flex-1 min-w-0 break-words">
                     {value2 != null && value2 !== '' ? String(value2) : ''}
                 </span>
             </div>
@@ -119,24 +119,66 @@ export default function MemberAdmissionFormView({ admission, printMode }: Props)
 
     return (
         <div
-            className={`bg-white text-gray-900 ${isPrint ? 'text-[11pt]' : 'text-sm'} max-w-[210mm] mx-auto border border-gray-400 form-print-document print:pt-8 print:leading-relaxed`}
+            className={`bg-white text-gray-900 ${isPrint ? 'text-[11pt]' : 'text-sm'} w-full max-w-[210mm] mx-auto border-0 sm:border border-gray-400 form-print-document print:border print:pt-8 print:leading-relaxed overflow-hidden sm:overflow-visible`}
             style={{ fontFamily: 'Noto Sans Bengali, Arial, sans-serif' }}
         >
-            {/* ========== HEADER (প্রথম ছবি A–Z): লোগো | তারিখ | মাঝে মৌসুমী+ঠিকানা | ডানে ছবি বক্স (উপরেই); নিচে কালো বার + সদস্য নং ========== */}
-            <header className="form-print-section p-4 print:p-2 print:py-2 print:mb-3 mb-4">
-                <div className="grid grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-stretch w-full">
+            {/* ========== HEADER ========== */}
+            <header className="form-print-section p-3 sm:p-4 print:p-2 print:py-2 print:mb-3 mb-3 sm:mb-4">
+                {/* Mobile header */}
+                <div className="flex flex-col gap-3 sm:hidden print:hidden">
+                    <div className="flex items-start justify-between gap-3">
+                        <div className="flex items-center gap-2 min-w-0">
+                            <img src="/logo.png" alt="Logo" className="h-11 w-11 object-contain shrink-0" />
+                            <div className="flex flex-col gap-1 min-w-0">
+                                <div className="flex items-baseline gap-1.5">
+                                    <span className="text-[11px] text-gray-900 shrink-0">জরিপ:</span>
+                                    <span className="border-b border-dotted border-gray-700 text-[11px] min-w-0 truncate">
+                                        {formatDate(admission.survey_date)}
+                                    </span>
+                                </div>
+                                <div className="flex items-baseline gap-1.5">
+                                    <span className="text-[11px] text-gray-900 shrink-0">ভর্তি:</span>
+                                    <span className="border-b border-dotted border-gray-700 text-[11px] min-w-0 truncate">
+                                        {formatDate(admission.admission_date)}
+                                    </span>
+                                </div>
+                            </div>
+                        </div>
+                        <div
+                            className="border border-gray-800 flex items-center justify-center bg-white overflow-hidden text-gray-600 text-[10px] font-medium shrink-0"
+                            style={{ width: 64, height: 64 }}
+                        >
+                            {admission.customer_photo_path ? (
+                                <img src={`/storage/${admission.customer_photo_path}`} alt="" className="w-full h-full object-cover" />
+                            ) : (
+                                <span>ছবি</span>
+                            )}
+                        </div>
+                    </div>
+                    <div className="text-center">
+                        <h1 className="text-xl font-bold text-gray-900">মৌসুমী</h1>
+                        <p className="text-xs text-gray-900 mt-0.5">উকিলপাড়া, নওগাঁ।</p>
+                        <div className="mt-2 bg-gray-900 text-white px-2 py-1.5 rounded">
+                            <h2 className="font-bold text-xs m-0">জরিপ ও সদস্য ভর্তির আবেদন পত্র</h2>
+                        </div>
+                        <p className="text-[11px] text-gray-900 font-medium mt-1.5">
+                            সদস্য নং: {admission.application_no}
+                        </p>
+                    </div>
+                </div>
+
+                {/* Desktop / Print header */}
+                <div className="hidden sm:grid print:grid grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-stretch w-full">
                     {/* Left: Logo and Dates */}
                     <div
                         className="flex flex-row items-center justify-self-start min-w-0"
                         style={{ minWidth: isPrint ? 200 : 210 }}
                     >
-                        {/* Left: Logo */}
                         <img
                             src="/logo.png"
                             alt="Logo"
                             className="h-12 w-12 object-contain print:h-12 print:w-12"
                         />
-                        {/* Right: Dates Centered Vertically */}
                         <div className="flex flex-col justify-center items-start gap-1 min-w-[125px] ml-2">
                             <div className="flex items-baseline gap-2 justify-center">
                                 <span className="text-xs text-gray-900 shrink-0">জরিপের তারিখ:</span>
@@ -150,15 +192,21 @@ export default function MemberAdmissionFormView({ admission, printMode }: Props)
                                     {formatDate(admission.admission_date)}
                                 </span>
                             </div>
+                            {admission.is_legacy && (
+                                <div className="flex items-baseline gap-2 justify-center">
+                                    <span className="text-xs text-amber-800 shrink-0">সদস্য ধরন:</span>
+                                    <span className="text-xs font-semibold text-amber-800">
+                                        পুরাতন{admission.loan_dofa ? ` (দফা ${admission.loan_dofa})` : ''}
+                                    </span>
+                                </div>
+                            )}
                         </div>
                     </div>
 
-                    {/* Middle: মৌসুমী + ঠিকানা + টাইটেল বার একই সেন্টার অক্ষে; সদস্য নং আলাদা ডানে */}
                     <div className="flex flex-col items-center justify-center min-w-0 relative justify-self-center">
                         <div className="flex flex-col items-center text-center w-full max-w-full">
                             <h1 className="text-2xl font-bold text-gray-900 print:text-xl w-full text-center">মৌসুমী</h1>
                             <p className="text-sm text-gray-900 mt-0.5 w-full text-center">উকিলপাড়া, নওগাঁ।</p>
-                            {/* Title bar: আগের জায়গায় (মাঝে সেন্টার); সদস্য নং ডানে আলাদা */}
                             <div className="mt-2 w-full grid grid-cols-[1fr_auto_1fr] items-center gap-2">
                                 <div className="min-w-0" />
                                 <div className="bg-gray-900 text-white px-2 py-1.5 print:py-2 flex items-center rounded whitespace-nowrap shrink-0">
@@ -171,10 +219,8 @@ export default function MemberAdmissionFormView({ admission, printMode }: Props)
                                 </div>
                             </div>
                         </div>
-
                     </div>
 
-                    {/* Right: Photo box */}
                     <div
                         className="border border-gray-800 flex items-center justify-center bg-white overflow-hidden text-gray-600 text-xs font-medium shrink-0 justify-self-end"
                         style={{ width: isPrint ? 72 : 88, height: isPrint ? 72 : 88 }}
@@ -186,8 +232,6 @@ export default function MemberAdmissionFormView({ admission, printMode }: Props)
                         )}
                     </div>
                 </div>
-
-
             </header>
 
             {/* Declaration */}
@@ -203,7 +247,7 @@ export default function MemberAdmissionFormView({ admission, printMode }: Props)
 
             {/* ========== SECTION: Personal (1–9) — ২ গ্রিড: বাম = বাংলা, ডান = ইংরেজি ========== */}
             <div className="form-print-section px-3 py-2 print:py-1.5 print:px-2 space-y-2 print:space-y-3 ">
-                <div className="grid grid-cols-2 gap-x-8 gap-y-1.5 print:gap-y-2.5">
+                <div className="grid grid-cols-1 sm:grid-cols-2 print:grid-cols-2 gap-x-8 gap-y-1.5 print:gap-y-2.5">
                     <FormRow label="1. Samity Name :" value={admission.samity?.samity_name ?? ''} />
                     <FormRow label="2. Member Category:" value={admission.member_category?.category_name ?? ''} />
                 </div>
@@ -234,7 +278,7 @@ export default function MemberAdmissionFormView({ admission, printMode }: Props)
             {/* ========== SECTION: Present Address (10) — ৩ কলাম গ্রিড (৬টা = ২ সারি) ========== */}
             <div className="form-print-section px-3 py-2 print:py-1.5 print:px-2 space-y-1.5 print:space-y-2.5 ">
                 <p className="font-medium text-xs text-gray-700">10. Present Address (বর্তমান ঠিকানা):</p>
-                <div className="grid grid-cols-3 gap-x-3 gap-y-1.5 print:gap-x-4 print:gap-y-2">
+                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 print:grid-cols-3 gap-x-3 gap-y-1.5 print:gap-x-4 print:gap-y-2">
                     <FormRow label="বিভাগ:" value={admission.present_division} />
                     <FormRow label="জেলা:" value={admission.present_district} />
                     <FormRow label="উপজেলা:" value={admission.present_upazila} />
@@ -249,7 +293,7 @@ export default function MemberAdmissionFormView({ admission, printMode }: Props)
                 <p className="font-medium text-xs text-gray-700">11. Permanent Address (স্থায়ী ঠিকানা):</p>
                 {admission.permanent_address_same ? (
                     <>
-                        <div className="grid grid-cols-3 gap-x-3 gap-y-1.5 print:gap-x-4 print:gap-y-2">
+                        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 print:grid-cols-3 gap-x-3 gap-y-1.5 print:gap-x-4 print:gap-y-2">
                             <FormRow label="বিভাগ:" value={admission.present_division} />
                             <FormRow label="জেলা:" value={admission.present_district} />
                             <FormRow label="উপজেলা:" value={admission.present_upazila} />
@@ -259,7 +303,7 @@ export default function MemberAdmissionFormView({ admission, printMode }: Props)
                         </div>
                     </>
                 ) : (
-                    <div className="grid grid-cols-3 gap-x-3 gap-y-1.5 print:gap-x-4 print:gap-y-2">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 print:grid-cols-3 gap-x-3 gap-y-1.5 print:gap-x-4 print:gap-y-2">
                         <FormRow label="বিভাগ:" value={str(admission.permanent_division)} />
                         <FormRow label="জেলা:" value={str(admission.permanent_district)} />
                         <FormRow label="উপজেলা:" value={str(admission.permanent_upazila)} />
@@ -273,25 +317,25 @@ export default function MemberAdmissionFormView({ admission, printMode }: Props)
             {/* ========== SECTION: Identity (12–15) ========== */}
             <div className="form-print-section px-3 py-2 print:py-1.5 print:px-2 space-y-1.5 print:space-y-2.5 ">
                 <p className="font-medium text-xs text-gray-700">12. Identity Information:</p>
-                <div className="flex gap-6 flex-wrap">
-                    <FormRow label="National ID No. :" value={str(admission.nid_number)} />
-                    <FormRow label="Smart Card No. :" value={str(admission.smart_card_number)} />
+                <div className="flex flex-col sm:flex-row gap-2 sm:gap-6 flex-wrap print:flex-row print:gap-6">
+                    <FormRow label="National ID No. :" value={str(admission.nid_number)} className="w-full sm:flex-1" />
+                    <FormRow label="Smart Card No. :" value={str(admission.smart_card_number)} className="w-full sm:flex-1" />
                 </div>
                 <div className="mt-2 space-y-1">
                     <FormRow label="13. Other Identity Information: জন্ম সনদ নং (প্রযোজ্য ক্ষেত্রে):" value={str(admission.birth_certificate_number)} />
                 </div>
-                <div className="grid grid-cols-[auto_auto_1fr] gap-x-4 gap-y-1.5 print:gap-x-6 print:gap-y-2 mt-1.5 print:mt-2 items-baseline">
+                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-[auto_auto_1fr] print:grid-cols-[auto_auto_1fr] gap-x-4 gap-y-1.5 print:gap-x-6 print:gap-y-2 mt-1.5 print:mt-2 items-baseline">
                     <FormRow label="Date of Birth :" value={formatDate(admission.date_of_birth)} className="min-w-0" />
                     <FormRow label="Gender :" value={genderLabels[admission.gender] || admission.gender} className="min-w-0" />
                     <FormRow label="Family Members Mobile Number:" value={str(admission.family_member_mobile)} className="min-w-0" />
                 </div>
-                <div className="flex gap-6 flex-wrap">
-                    <FormRow label="14. Co-Applicant/Guarantor Name :" value={str(admission.guarantor_name)} />
-                    <FormRow label="Guarantor Mobile Number:" value={str(admission.guarantor_mobile)} />
+                <div className="flex flex-col sm:flex-row gap-2 sm:gap-6 flex-wrap print:flex-row print:gap-6">
+                    <FormRow label="14. Co-Applicant/Guarantor Name :" value={str(admission.guarantor_name)} className="w-full sm:flex-1" />
+                    <FormRow label="Guarantor Mobile Number:" value={str(admission.guarantor_mobile)} className="w-full sm:flex-1" />
                 </div>
-                <div className="flex gap-6 flex-wrap items-center mt-1">
-                    <FormRow label="15. TIN (ট্র্যাক্স সার্টিফিকেট নং)" value={str(admission.tin_number)} />
-                    <div className="flex items-center gap-2">
+                <div className="flex flex-col sm:flex-row gap-2 sm:gap-6 flex-wrap items-start sm:items-center mt-1 print:flex-row print:gap-6">
+                    <FormRow label="15. TIN (ট্র্যাক্স সার্টিফিকেট নং)" value={str(admission.tin_number)} className="w-full sm:flex-1" />
+                    <div className="flex items-center gap-2 flex-wrap">
                         <span className="text-sm">সদস্য কি এসএমএস সেবা নিতে চান?</span>
                         <span className="border-b border-dotted border-gray-700 min-w-[40px]">
                             {admission.want_sms_service ? 'হ্যাঁ' : 'না'}
@@ -303,7 +347,8 @@ export default function MemberAdmissionFormView({ admission, printMode }: Props)
             {/* ========== SECTION 16: Family table ========== */}
             <div className="form-print-section px-3 py-2 print:py-1.5 print:px-2 ">
                 <p className="font-medium text-xs text-gray-700 mb-2">১৬. পরিবারের তথ্য:</p>
-                <table className="w-full border border-gray-600 border-collapse text-xs print:text-sm">
+                <div className="overflow-x-auto -mx-1 px-1 print:overflow-visible print:mx-0 print:px-0">
+                <table className="w-full min-w-[720px] print:min-w-0 border border-gray-600 border-collapse text-xs print:text-sm">
                     <thead>
                         <tr className="bg-gray-100">
                             <th className="border border-gray-600 px-2 py-1.5 w-10 text-center">ক্রঃ নং</th>
@@ -344,6 +389,7 @@ export default function MemberAdmissionFormView({ admission, printMode }: Props)
                         })}
                     </tbody>
                 </table>
+                </div>
             </div>
 
             {/* Financial activity checkboxes + 17, 18 — print: কম গ্যাপ, এক সাইজ টেক্সট */}
@@ -420,7 +466,7 @@ export default function MemberAdmissionFormView({ admission, printMode }: Props)
                 </div>
                 <div className="print:mt-3 print:mb-3">
                     <p className="text-xs print:text-[14px] text-gray-600 print:mb-2 print:leading-[1.9]">(iii) গ্রাহকের মালিকানাধীন মোট জমির পরিমাণ ও মূল্য (শতাংশে):</p>
-                    <div className="grid grid-cols-3 gap-x-4 gap-y-1.5 print:gap-x-3 print:gap-y-2.5 mt-1 print:mt-2 print:mb-2 w-full print:leading-[1.9]">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 print:grid-cols-3 gap-x-4 gap-y-2 print:gap-x-3 print:gap-y-2.5 mt-1 print:mt-2 print:mb-2 w-full print:leading-[1.9]">
                         <div className="flex items-center gap-1.5 min-w-0">
                             <span className="text-xs print:text-[14px] text-gray-600 shrink-0">মোট</span>
                             <span className="border border-gray-600 rounded min-w-[3.5rem] w-14 h-6 print:h-7 print:min-h-0 print:py-1 print:px-2 inline-flex items-center justify-center text-center text-xs print:text-[14px] bg-white shrink-0 leading-none">{formatAmount(admission.total_land_amount ?? (Number(admission.cultivable_land_amount) || 0) + (Number(admission.non_cultivable_land_amount) || 0))}</span>
@@ -440,7 +486,8 @@ export default function MemberAdmissionFormView({ admission, printMode }: Props)
                 </div>
                 <div className="print:mt-3 print:mb-3">
                     <p className="text-xs print:text-[14px] text-gray-600 print:mb-2 print:leading-[1.9]">গ) গ্রাহকের অন্যান্য মালিকানাধীন অন্যান্য অস্থায়ী সম্পদের তথ্য:</p>
-                    <table className="w-full border border-gray-600 border-collapse text-xs print:text-[14px] print:leading-[1.9] mt-1 print:mt-2">
+                    <div className="overflow-x-auto -mx-1 px-1 print:overflow-visible print:mx-0 print:px-0">
+                    <table className="w-full min-w-[420px] print:min-w-0 border border-gray-600 border-collapse text-xs print:text-[14px] print:leading-[1.9] mt-1 print:mt-2">
                         <thead>
                             <tr className="bg-gray-100">
                                 <th className="border border-gray-600 px-2 py-1.5 print:py-3 print:px-2.5 w-10 text-center">ক্র.নং.</th>
@@ -473,18 +520,19 @@ export default function MemberAdmissionFormView({ admission, printMode }: Props)
                             </tr>
                         </tfoot>
                     </table>
+                    </div>
                 </div>
             </div>
 
             {/* ========== SECTION 20–23 (2nd page) ========== */}
             <div className="form-print-section px-3 py-2 print:pt-2 print:pb-3 print:px-3 space-y-1.5 print:space-y-2 print:leading-[1.9]">
-                <div className="flex gap-6 flex-wrap print:gap-3 print:mb-1">
-                    <FormRow label="২০. পরিবারের মোট মাসিক আয়:" value={formatAmount(admission.monthly_income)} />
-                    <FormRow label="মাসিক ব্যয়:" value={formatAmount(admission.monthly_expense)} />
-                    <FormRow label="সঞ্চয়:" value={formatAmount(admission.monthly_savings)} />
+                <div className="flex flex-col sm:flex-row gap-2 sm:gap-6 flex-wrap print:flex-row print:gap-3 print:mb-1">
+                    <FormRow label="২০. পরিবারের মোট মাসিক আয়:" value={formatAmount(admission.monthly_income)} className="w-full sm:flex-1" />
+                    <FormRow label="মাসিক ব্যয়:" value={formatAmount(admission.monthly_expense)} className="w-full sm:flex-1" />
+                    <FormRow label="সঞ্চয়:" value={formatAmount(admission.monthly_savings)} className="w-full sm:flex-1" />
                 </div>
-                <div className="flex flex-wrap items-baseline gap-4 print:gap-3 print:mb-1">
-                    <FormRow label="২১. গ্রাহক অন্তর্ভূক্তিকালীন কর্মকর্তার নাম:" value={str(admission.employee_name || admission.interviewer_name)} />
+                <div className="flex flex-col sm:flex-row flex-wrap items-baseline gap-2 sm:gap-4 print:flex-row print:gap-3 print:mb-1">
+                    <FormRow label="২১. গ্রাহক অন্তর্ভূক্তিকালীন কর্মকর্তার নাম:" value={str(admission.employee_name || admission.interviewer_name)} className="w-full sm:flex-1" />
                     <FormRow label="পিন নং:" value={str((admission as any).surveyor_pin)} />
                 </div>
                 <FormRow label="২২. অন্যান্য সংস্থা হতে ঋণ গ্রহণের তথ্য:" value={str(admission.other_loan_info)} />

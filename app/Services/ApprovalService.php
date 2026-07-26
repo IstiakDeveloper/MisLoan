@@ -150,6 +150,11 @@ class ApprovalService
             return false;
         }
 
+        // If requested loan amount > 70,000 TK, branch level cannot directly approve without higher approver selection
+        if ($approval->level === 'branch' && (float) ($approval->memberAdmission->requested_loan_amount ?? 0) > 70000) {
+            throw new \Exception('ঋণ চাহিদা ৭০,০০০ টাকার বেশি হওয়ায় সরাসরি অনুমোদন করা সম্ভব নয়। উচ্চতর অনুমোদনকারী নির্বাচন করে Forward করুন।');
+        }
+
         DB::transaction(function () use ($approval, $comments) {
             $admission = $approval->memberAdmission;
             $approverSignature = $approval->user->signature;
@@ -485,21 +490,30 @@ class ApprovalService
         DB::transaction(function () use ($loan) {
             $loan->approvals()->delete();
 
-            $selectedApproverIds = $loan->selected_approvers ?? [];
-            if (empty($selectedApproverIds)) {
-                throw new \Exception('No approvers selected. Please select at least one approver.');
+            if (!$loan->branch_id) {
+                throw new \Exception('Loan application must have a branch.');
             }
 
-            $sequence = 1;
-            foreach ($selectedApproverIds as $userId) {
+            $branchManagers = User::where('branch_id', $loan->branch_id)
+                ->where('is_active', 1)
+                ->whereHas('role', function ($query) {
+                    $query->where('name', 'branch_manager');
+                })
+                ->get();
+
+            if ($branchManagers->isEmpty()) {
+                throw new \Exception('No Branch Manager found for this branch. Please assign a Branch Manager.');
+            }
+
+            // All branch managers receive the same step; one manager's decision completes it.
+            foreach ($branchManagers as $branchManager) {
                 LoanApplicationApproval::create([
                     'loan_application_id' => $loan->id,
-                    'user_id' => $userId,
+                    'user_id' => $branchManager->id,
                     'level' => 'branch',
-                    'sequence' => $sequence,
+                    'sequence' => 1,
                     'status' => 'pending',
                 ]);
-                $sequence++;
             }
         });
     }
@@ -522,10 +536,23 @@ class ApprovalService
             ]);
 
             $loan = $approval->loanApplication;
+
+            if ($approval->level === 'branch') {
+                $loan->approvals()
+                    ->where('level', 'branch')
+                    ->where('id', '!=', $approval->id)
+                    ->where('status', 'pending')
+                    ->update([
+                        'status' => 'approved',
+                        'comments' => 'Approved by another branch manager',
+                        'approved_at' => now(),
+                    ]);
+            }
+
             $pendingCount = $loan->approvals()->where('status', 'pending')->count();
 
             if ($pendingCount === 0) {
-                $loan->update(['status' => LoanApplication::STATUS_PENDING_HEAD_OFFICE]);
+                $loan->update(['status' => LoanApplication::STATUS_READY_FOR_HEAD_OFFICE]);
             } elseif ($loan->status === LoanApplication::STATUS_SUBMITTED) {
                 $loan->update(['status' => 'under_review']);
             }

@@ -6,6 +6,8 @@ import { Badge } from '@/components/ui/badge';
 import {
     Search,
     Eye,
+    Pencil,
+    CalendarDays,
     Filter,
     ChevronLeft,
     ChevronRight,
@@ -124,10 +126,12 @@ export default function LoanApplications({ loans, filters, stats, zones, areas, 
     const [showHistoryModal, setShowHistoryModal] = useState(false);
     const [selectedLoan, setSelectedLoan] = useState<LoanApplication | null>(null);
 
-    // Date filters - default to current date
+    // Date filters - default to the current month (1st .. today)
     const today = new Date().toISOString().split('T')[0];
-    const [dateFrom, setDateFrom] = useState(filters.date_from || today);
+    const monthStart = `${today.slice(0, 7)}-01`;
+    const [dateFrom, setDateFrom] = useState(filters.date_from || monthStart);
     const [dateTo, setDateTo] = useState(filters.date_to || today);
+    const isTodayFilter = dateFrom === today && dateTo === today;
 
     // Organizational filters
     const [selectedZone, setSelectedZone] = useState(filters.zone_id?.toString() || '');
@@ -249,20 +253,38 @@ export default function LoanApplications({ loans, filters, stats, zones, areas, 
         );
     };
 
+    const handleTodayFilter = () => {
+        setDateFrom(today);
+        setDateTo(today);
+        router.get(
+            '/head-office/loan-applications',
+            {
+                search: searchQuery,
+                status: statusFilter,
+                zone_id: selectedZone,
+                area_id: selectedArea,
+                branch_id: selectedBranch,
+                date_from: today,
+                date_to: today,
+                had_issues: hadIssues,
+            },
+            { preserveState: true }
+        );
+    };
+
     const clearFilters = () => {
         setSearchQuery('');
         setStatusFilter('');
         setSelectedZone('');
         setSelectedArea('');
         setSelectedBranch('');
-        setDateFrom(today);
+        setDateFrom(monthStart);
         setDateTo(today);
         setHadIssues('');
-        router.get('/head-office/loan-applications', { date_from: today, date_to: today }, { preserveState: true });
+        router.get('/head-office/loan-applications', { date_from: monthStart, date_to: today }, { preserveState: true });
     };
 
-    const handlePrint = () => {
-        // Build query string from current filters
+    const getFilterParams = () => {
         const params = new URLSearchParams();
         if (searchQuery) params.append('search', searchQuery);
         if (statusFilter) params.append('status', statusFilter);
@@ -272,10 +294,18 @@ export default function LoanApplications({ loans, filters, stats, zones, areas, 
         if (dateFrom) params.append('date_from', dateFrom);
         if (dateTo) params.append('date_to', dateTo);
         if (hadIssues) params.append('had_issues', hadIssues);
+        return params;
+    };
 
-        // Open print page in new window
-        const printUrl = `/head-office/loan-applications/print?${params.toString()}`;
+    const handlePrint = () => {
+        const printUrl = `/head-office/loan-applications/print?${getFilterParams().toString()}`;
         window.open(printUrl, '_blank');
+    };
+
+    const buildPageUrl = (page: number) => {
+        const params = getFilterParams();
+        params.set('page', String(page));
+        return `/head-office/loan-applications?${params.toString()}`;
     };
 
     const handleDelete = (id: number, applicationNo: string) => {
@@ -378,6 +408,19 @@ export default function LoanApplications({ loans, filters, stats, zones, areas, 
                                 onChange={(e) => setDateTo(e.target.value)}
                                 className="px-2 py-1.5 text-sm border border-gray-300 rounded focus:ring-1 focus:ring-blue-500 focus:border-blue-500"
                             />
+                            <button
+                                type="button"
+                                onClick={handleTodayFilter}
+                                title="শুধু আজকের ডেটা"
+                                className={`px-3 py-1.5 text-sm rounded border transition-colors flex items-center gap-1 ${
+                                    isTodayFilter
+                                        ? 'bg-indigo-600 text-white border-indigo-600 hover:bg-indigo-700'
+                                        : 'bg-white text-gray-700 border-gray-300 hover:bg-gray-50'
+                                }`}
+                            >
+                                <CalendarDays className="w-3 h-3" />
+                                Today
+                            </button>
                             <select
                                 value={selectedZone}
                                 onChange={(e) => setSelectedZone(e.target.value)}
@@ -454,7 +497,7 @@ export default function LoanApplications({ loans, filters, stats, zones, areas, 
                                 <Printer className="w-3 h-3" />
                                 Print
                             </button>
-                            {(searchQuery || statusFilter || selectedZone || selectedArea || selectedBranch || hadIssues || dateFrom !== today || dateTo !== today) && (
+                            {(searchQuery || statusFilter || selectedZone || selectedArea || selectedBranch || hadIssues || dateFrom !== monthStart || dateTo !== today) && (
                                 <button
                                     type="button"
                                     onClick={clearFilters}
@@ -570,6 +613,13 @@ export default function LoanApplications({ loans, filters, stats, zones, areas, 
                                                     >
                                                         <Eye className="w-4 h-4" />
                                                     </Link>
+                                                    <Link
+                                                        href={`/member/loan-applications/${loan.id}/edit`}
+                                                        className="p-2 text-amber-600 hover:bg-amber-50 rounded-lg transition-colors"
+                                                        title="Edit"
+                                                    >
+                                                        <Pencil className="w-4 h-4" />
+                                                    </Link>
                                                     {(loan.status === 'draft' || loan.status === 'submitted') && (
                                                         <button
                                                             onClick={() =>
@@ -603,9 +653,7 @@ export default function LoanApplications({ loans, filters, stats, zones, areas, 
                             </div>
                             <div className="flex gap-2">
                                 <Link
-                                    href={`/head-office/loan-applications?page=${loans.current_page - 1}${
-                                        searchQuery ? `&search=${searchQuery}` : ''
-                                    }${statusFilter ? `&status=${statusFilter}` : ''}`}
+                                    href={buildPageUrl(loans.current_page - 1)}
                                     className={`px-3 py-1 rounded-lg border ${
                                         loans.current_page === 1
                                             ? 'border-gray-200 text-gray-400 cursor-not-allowed'
@@ -619,9 +667,7 @@ export default function LoanApplications({ loans, filters, stats, zones, areas, 
                                     Page {loans.current_page} of {loans.last_page}
                                 </span>
                                 <Link
-                                    href={`/head-office/loan-applications?page=${loans.current_page + 1}${
-                                        searchQuery ? `&search=${searchQuery}` : ''
-                                    }${statusFilter ? `&status=${statusFilter}` : ''}`}
+                                    href={buildPageUrl(loans.current_page + 1)}
                                     className={`px-3 py-1 rounded-lg border ${
                                         loans.current_page === loans.last_page
                                             ? 'border-gray-200 text-gray-400 cursor-not-allowed'

@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import AdminLayout from '@/layouts/admin-layout';
 import { formatDate, formatDateTime } from '@/utils/dateUtils';
+import { formatCurrency as formatCurrencyBase } from '@/utils/formatAmount';
 import { Head, Link, router } from '@inertiajs/react';
 import {
     FileSpreadsheet,
@@ -316,11 +317,7 @@ export default function Submissions({ applications, zones, areas, branches, unre
     };
 
     const formatCurrency = (amount: string | number) => {
-        const num = typeof amount === 'string' ? parseFloat(amount) : amount;
-        return new Intl.NumberFormat('en-BD', {
-            minimumFractionDigits: 2,
-            maximumFractionDigits: 2
-        }).format(num);
+        return formatCurrencyBase(amount);
     };
 
     // Calculate total members
@@ -455,7 +452,7 @@ export default function Submissions({ applications, zones, areas, branches, unre
 
                     {/* Filter Summary */}
                     <div className="bg-gradient-to-r from-emerald-50 to-teal-50 rounded-lg p-4 mb-4 border border-emerald-200">
-                        <div className="grid grid-cols-3 md:grid-cols-4 gap-4">
+                        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
                             <div>
                                 <p className="text-xs font-semibold text-emerald-700 mb-1">অঞ্চল</p>
                                 <p className="text-sm font-bold text-gray-900">{getFilterSummary().zone}</p>

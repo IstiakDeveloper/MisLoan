@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useRef } from 'react';
+import React, { useState, useRef } from 'react';
 import { Head, useForm, router } from '@inertiajs/react';
 import AdminLayout from '@/layouts/admin-layout';
 import { Save, Eye, ArrowLeft, X, Minimize2, Printer } from 'lucide-react';
@@ -121,6 +121,15 @@ export default function ApprovalForm({
         }
     };
 
+    const isOldMemberFromAdmission = !!(member?.is_legacy);
+    const loanDofaValue = member?.loan_dofa != null && member?.loan_dofa !== ''
+        ? String(member.loan_dofa)
+        : '';
+    const projectNameFromAdmission = member?.project_name || '';
+    const annualNetFromAdmission = member?.estimated_annual_project_income != null && member?.estimated_annual_project_income !== ''
+        ? fmtValue(member.estimated_annual_project_income)
+        : '';
+
     const { data, setData, processing } = useForm<LoanApplicationApprovalData>({
         category_name: categoryName,
         branch_address: branch?.address || '',
@@ -132,28 +141,28 @@ export default function ApprovalForm({
         authority_medium: '',
         committee_name: member?.samity?.samity_name_bn || member?.samity?.samity_name || '',
         committee_code: member?.samity?.samity_code || member?.samity?.id?.toString() || '',
-        member_type: 'new',
-        years_involved: '',
+        member_type: isOldMemberFromAdmission || isLegacy ? 'old' : 'new',
+        years_involved: isOldMemberFromAdmission ? loanDofaValue : '',
         member_name_detail: member?.applicant_name_bn || member?.applicant_name_en || '',
         member_code: member?.application_no || '',
         age: getAgeFromDOB(member?.date_of_birth, new Date().toISOString().split('T')[0]),
         father_husband_name: member?.father_name_bn || member?.spouse_name_bn || '',
         permanent_address_line1: member?.permanent_village_road || '',
-        permanent_address_line2: '',
+        permanent_address_line2: member?.permanent_post_code || '',
         permanent_address_line3: `${member?.permanent_upazila || ''}, ${member?.permanent_district || ''}`,
         current_address_line1: member?.present_village_road || '',
-        current_address_line2: '',
+        current_address_line2: member?.present_post_code || '',
         current_address_line3: `${member?.present_upazila || ''}, ${member?.present_district || ''}`,
         nid_smart_card: getNidOrSmartCard(member),
         occupation: '',
         educational_qualification: '',
         admission_date: member?.admission_date || '',
         family_members_count: (member?.family_members?.length ?? member?.familyMembers?.length ?? 0) || 0,
-        earning_members_count: 0,
-        previous_loan_times: '',
+        earning_members_count: '',
+        previous_loan_times: isOldMemberFromAdmission ? loanDofaValue : '',
         previous_loan_amount: '',
         last_repaid_loan_amount: '',
-        last_repaid_project_name: '',
+        last_repaid_project_name: isOldMemberFromAdmission ? projectNameFromAdmission : '',
         savings_amount: 0,
         general_savings_product_id: null,
         general_savings_amount: 0,
@@ -162,8 +171,8 @@ export default function ApprovalForm({
         against_savings_amount: 0,
         loan_round: loanRound,
         loan_proposal_date: '',
-        project_name: '',
-        proposed_project_name: '',
+        project_name: projectNameFromAdmission,
+        proposed_project_name: projectNameFromAdmission,
         project_manpower: '',
         project_manpower_total: '',
         project_manpower_family: '',
@@ -171,7 +180,7 @@ export default function ApprovalForm({
         project_manpower_trained: '',
         project_income_1_2_yr: '',
         project_expense_1_2_yr: '',
-        annual_net_profit: '',
+        annual_net_profit: annualNetFromAdmission,
         capital_total: '',
         capital_own: '',
         capital_applied_loan: requestedAmount ? String(requestedAmount) : '',
@@ -195,7 +204,7 @@ export default function ApprovalForm({
         license_authority_1: '', license_number_1: '', license_validity_1: '',
         license_authority_2: '', license_number_2: '', license_validity_2: '',
         income_tax_certification: 'no',
-        total_loans_taken: '',
+        total_loans_taken: isOldMemberFromAdmission ? loanDofaValue : '',
         last_three_loans: [
             { loan_number: '', loan_date: '', loan_amount: '', project_name: '', savings_status: '' },
             { loan_number: '', loan_date: '', loan_amount: '', project_name: '', savings_status: '' },
@@ -265,13 +274,36 @@ export default function ApprovalForm({
     const handleSubmit = (e: React.FormEvent) => {
         e.preventDefault();
         setErrors({});
+
+        const income = Number(data.project_income_1_2_yr) || 0;
+        const expense = Number(data.project_expense_1_2_yr) || 0;
+        const net = Number(data.annual_net_profit) || 0;
+        const hasIncomeExpense =
+            data.project_income_1_2_yr !== '' &&
+            data.project_income_1_2_yr != null &&
+            data.project_expense_1_2_yr !== '' &&
+            data.project_expense_1_2_yr != null;
+        const hasNet = data.annual_net_profit !== '' && data.annual_net_profit != null;
+        if (hasIncomeExpense && hasNet && income - expense !== net) {
+            alert(`আয় − ব্যয় = বার্ষিক নিট লাভ হতে হবে।\nএখন: ${income} − ${expense} = ${income - expense}, নিট লাভ: ${net}`);
+            return;
+        }
         
         const payload = {
             member_id: isLegacy ? null : member.id,
             loan_product_id: loanProduct.id,
             loan_category_id: loanCategory.id,
             requested_amount: requestedAmount,
-            form_data: data,
+            form_data: {
+                ...data,
+                member_type: isOldMemberFromAdmission || isLegacy ? 'old' : 'new',
+                years_involved: isOldMemberFromAdmission || isLegacy
+                    ? (data.years_involved || loanDofaValue)
+                    : '',
+                previous_loan_times: isOldMemberFromAdmission || isLegacy
+                    ? (data.previous_loan_times || loanDofaValue)
+                    : '',
+            },
             is_legacy: isLegacy
         };
 

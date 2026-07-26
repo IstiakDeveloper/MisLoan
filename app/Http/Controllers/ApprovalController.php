@@ -58,6 +58,7 @@ class ApprovalController extends Controller
                 'revision_count' => $approval->memberAdmission->revision_count,
                 'revision_comments' => $approval->memberAdmission->revision_comments,
                 'status' => $approval->memberAdmission->status,
+                'requested_loan_amount' => $approval->memberAdmission->requested_loan_amount ? (float) $approval->memberAdmission->requested_loan_amount : 0,
             ];
             if ($approval->level === 'branch') {
                 $data['escalation_approvers'] = $this->approvalService->getEscalationApprovers($approval->memberAdmission->branch_id)
@@ -156,6 +157,7 @@ class ApprovalController extends Controller
      */
     public function approveLoan(Request $request, LoanApplicationApproval $loanApproval)
     {
+        abort_unless((int) $loanApproval->user_id === (int) $request->user()->id, 403);
         $request->validate(['comments' => 'nullable|string|max:1000']);
         $success = $this->approvalService->approveLoan($loanApproval, $request->comments);
         if ($success) {
@@ -169,6 +171,7 @@ class ApprovalController extends Controller
      */
     public function rejectLoan(Request $request, LoanApplicationApproval $loanApproval)
     {
+        abort_unless((int) $loanApproval->user_id === (int) $request->user()->id, 403);
         $request->validate(['comments' => 'required|string|max:1000']);
         $success = $this->approvalService->rejectLoan($loanApproval, $request->comments);
         if ($success) {

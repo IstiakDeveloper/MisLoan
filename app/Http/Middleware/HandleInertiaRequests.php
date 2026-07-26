@@ -71,6 +71,7 @@ class HandleInertiaRequests extends Middleware
                 'name' => $this->sanitizeString($user->name ?? ''),
                 'email' => $this->sanitizeString($user->email ?? ''),
                 'username' => $this->sanitizeString($user->username ?? ''),
+                'pin' => $this->sanitizeString($user->pin ?? ''),
                 'has_all_access' => (bool)$user->has_all_access,
                 'is_read_only' => $user->isReadOnlyAdmin(),
                 'is_active' => (bool)$user->is_active,

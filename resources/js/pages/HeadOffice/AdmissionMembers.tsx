@@ -6,6 +6,8 @@ import { Badge } from '@/components/ui/badge';
 import {
     Search,
     Eye,
+    Pencil,
+    CalendarDays,
     Filter,
     ChevronLeft,
     ChevronRight,
@@ -90,10 +92,12 @@ export default function AdmissionMembers({ admissions, filters, stats, zones, ar
     const [showPrintModal, setShowPrintModal] = useState(false);
     const [markAsPrintedCheckbox, setMarkAsPrintedCheckbox] = useState(false);
 
-    // Date filters - default to current date
+    // Date filters - default to the current month (1st .. today)
     const today = new Date().toISOString().split('T')[0];
-    const [dateFrom, setDateFrom] = useState(filters.date_from || today);
+    const monthStart = `${today.slice(0, 7)}-01`;
+    const [dateFrom, setDateFrom] = useState(filters.date_from || monthStart);
     const [dateTo, setDateTo] = useState(filters.date_to || today);
+    const isTodayFilter = dateFrom === today && dateTo === today;
 
     // Organizational filters
     const [selectedZone, setSelectedZone] = useState(filters.zone_id?.toString() || '');
@@ -216,17 +220,37 @@ export default function AdmissionMembers({ admissions, filters, stats, zones, ar
         );
     };
 
+    const handleTodayFilter = () => {
+        setDateFrom(today);
+        setDateTo(today);
+        router.get(
+            '/head-office/admission-members',
+            {
+                search: searchQuery,
+                status: statusFilter,
+                zone_id: selectedZone,
+                area_id: selectedArea,
+                branch_id: selectedBranch,
+                date_from: today,
+                date_to: today,
+                had_issues: hadIssues,
+                printed: printedFilter,
+            },
+            { preserveState: true }
+        );
+    };
+
     const clearFilters = () => {
         setSearchQuery('');
         setStatusFilter('');
         setSelectedZone('');
         setSelectedArea('');
         setSelectedBranch('');
-        setDateFrom(today);
+        setDateFrom(monthStart);
         setDateTo(today);
         setHadIssues('');
         setPrintedFilter('');
-        router.get('/head-office/admission-members', { date_from: today, date_to: today }, { preserveState: true });
+        router.get('/head-office/admission-members', { date_from: monthStart, date_to: today }, { preserveState: true });
     };
 
     const getPrintParams = () => {
@@ -241,6 +265,12 @@ export default function AdmissionMembers({ admissions, filters, stats, zones, ar
         if (hadIssues) params.had_issues = hadIssues;
         if (printedFilter) params.printed = printedFilter;
         return params;
+    };
+
+    const buildPageUrl = (page: number) => {
+        const params = new URLSearchParams(getPrintParams());
+        params.set('page', String(page));
+        return `/head-office/admission-members?${params.toString()}`;
     };
 
     const handlePrint = () => {
@@ -373,6 +403,19 @@ export default function AdmissionMembers({ admissions, filters, stats, zones, ar
                                 onChange={(e) => setDateTo(e.target.value)}
                                 className="px-2 py-1.5 text-sm border border-gray-300 rounded focus:ring-1 focus:ring-blue-500 focus:border-blue-500"
                             />
+                            <button
+                                type="button"
+                                onClick={handleTodayFilter}
+                                title="শুধু আজকের ডেটা"
+                                className={`px-3 py-1.5 text-sm rounded border transition-colors flex items-center gap-1 ${
+                                    isTodayFilter
+                                        ? 'bg-indigo-600 text-white border-indigo-600 hover:bg-indigo-700'
+                                        : 'bg-white text-gray-700 border-gray-300 hover:bg-gray-50'
+                                }`}
+                            >
+                                <CalendarDays className="w-3 h-3" />
+                                Today
+                            </button>
                             <select
                                 value={selectedZone}
                                 onChange={(e) => setSelectedZone(e.target.value)}
@@ -458,7 +501,7 @@ export default function AdmissionMembers({ admissions, filters, stats, zones, ar
                                 <Printer className="w-3 h-3" />
                                 Print
                             </button>
-                            {(searchQuery || statusFilter || selectedZone || selectedArea || selectedBranch || hadIssues || printedFilter || dateFrom !== today || dateTo !== today) && (
+                            {(searchQuery || statusFilter || selectedZone || selectedArea || selectedBranch || hadIssues || printedFilter || dateFrom !== monthStart || dateTo !== today) && (
                                 <button
                                     type="button"
                                     onClick={clearFilters}
@@ -497,6 +540,9 @@ export default function AdmissionMembers({ admissions, filters, stats, zones, ar
                                         Category
                                     </th>
                                     <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                                        Created By
+                                    </th>
+                                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                                         Status
                                     </th>
                                     <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
@@ -513,7 +559,7 @@ export default function AdmissionMembers({ admissions, filters, stats, zones, ar
                             <tbody className="bg-white divide-y divide-gray-200">
                                 {admissions.data.length === 0 ? (
                                     <tr>
-                                        <td colSpan={10} className="px-4 py-8 text-center text-gray-500">
+                                        <td colSpan={11} className="px-4 py-8 text-center text-gray-500">
                                             No admissions found
                                         </td>
                                     </tr>
@@ -544,6 +590,13 @@ export default function AdmissionMembers({ admissions, filters, stats, zones, ar
                                             </td>
                                             <td className="px-4 py-3 text-sm text-gray-900">
                                                 {admission.member_category?.category_name || '-'}
+                                            </td>
+                                            <td className="px-4 py-3 text-sm text-gray-900">
+                                                {admission.createdBy?.name
+                                                    || (typeof admission.created_by === 'object' && admission.created_by
+                                                        ? (admission.created_by as { name?: string }).name
+                                                        : null)
+                                                    || '-'}
                                             </td>
                                             <td className="px-4 py-3">
                                                 {getStatusBadge(admission.status)}
@@ -578,7 +631,14 @@ export default function AdmissionMembers({ admissions, filters, stats, zones, ar
                                                     >
                                                         <Eye className="w-4 h-4" />
                                                     </a>
-                                                    {admission.status === 'approved' && admission.revision_count && admission.revision_count > 0 && (
+                                                    <Link
+                                                        href={`/member-admissions/${admission.id}/edit`}
+                                                        className="p-2 text-amber-600 hover:bg-amber-50 rounded-lg transition-colors"
+                                                        title="Edit"
+                                                    >
+                                                        <Pencil className="w-4 h-4" />
+                                                    </Link>
+                                                    {admission.status === 'approved' && (admission.revision_count ?? 0) > 0 && (
                                                         <button
                                                             onClick={() => openHistoryModal(admission)}
                                                             className="p-2 text-green-600 hover:bg-green-50 rounded-lg transition-colors"
@@ -587,7 +647,14 @@ export default function AdmissionMembers({ admissions, filters, stats, zones, ar
                                                             <FileText className="w-4 h-4" />
                                                         </button>
                                                     )}
-                                                    {(admission.status === 'draft' || admission.status === 'submitted') && (
+                                                    {(admission.loan_applications_count ?? 0) > 0 ? (
+                                                        <span
+                                                            className="p-2 text-gray-300 cursor-not-allowed"
+                                                            title="ঋণ আবেদন থাকায় মুছে ফেলা যাবে না"
+                                                        >
+                                                            <Trash2 className="w-4 h-4" />
+                                                        </span>
+                                                    ) : (
                                                         <button
                                                             onClick={() =>
                                                                 handleDelete(
@@ -620,9 +687,7 @@ export default function AdmissionMembers({ admissions, filters, stats, zones, ar
                             </div>
                             <div className="flex gap-2">
                                 <Link
-                                    href={`/head-office/admission-members?page=${admissions.current_page - 1}${
-                                        searchQuery ? `&search=${searchQuery}` : ''
-                                    }${statusFilter ? `&status=${statusFilter}` : ''}${printedFilter ? `&printed=${printedFilter}` : ''}`}
+                                    href={buildPageUrl(admissions.current_page - 1)}
                                     className={`px-3 py-1 rounded-lg border ${
                                         admissions.current_page === 1
                                             ? 'border-gray-200 text-gray-400 cursor-not-allowed'
@@ -636,9 +701,7 @@ export default function AdmissionMembers({ admissions, filters, stats, zones, ar
                                     Page {admissions.current_page} of {admissions.last_page}
                                 </span>
                                 <Link
-                                    href={`/head-office/admission-members?page=${admissions.current_page + 1}${
-                                        searchQuery ? `&search=${searchQuery}` : ''
-                                    }${statusFilter ? `&status=${statusFilter}` : ''}${printedFilter ? `&printed=${printedFilter}` : ''}`}
+                                    href={buildPageUrl(admissions.current_page + 1)}
                                     className={`px-3 py-1 rounded-lg border ${
                                         admissions.current_page === admissions.last_page
                                             ? 'border-gray-200 text-gray-400 cursor-not-allowed'

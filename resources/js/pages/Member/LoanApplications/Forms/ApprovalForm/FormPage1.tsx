@@ -2,12 +2,34 @@ import React from 'react';
 import { Upload } from 'lucide-react';
 import { FormPageProps } from './Types';
 import GeneralSavingsSection from '@/components/LoanApplications/GeneralSavingsSection';
+import { SmartDateInput } from '@/components/ui/SmartDateInput';
 import { toInputDate } from './index';
+
+const RECIPIENT_OPTIONS = [
+    'প্রধান নির্বাহী',
+    'পরিচালক (মাইক্রোফাইন্যান্স)',
+    'সহকারি পরিচালক (মাইক্রোফাইন্যান্স)',
+    'জোন ব্যবস্থাপক',
+    'অঞ্চলিক ব্যবস্থাপক',
+] as const;
 
 export default function FormPage1({ data, setData, member, isLegacy, handleImageUpload, removeImage, savingsProducts, loanRound }: FormPageProps) {
     const fromAdmission = !!(member && !isLegacy);
+    const isOldMember = data.member_type === 'old' || !!(member?.is_legacy) || !!isLegacy;
     const inputClass = fromAdmission ? 'w-full border rounded px-2 py-1.5 text-[12px] bg-gray-100 cursor-not-allowed' : 'w-full border rounded px-2 py-1.5 text-[12px]';
-    const warningClass = fromAdmission ? 'w-full border rounded px-2 py-1.5 text-[12px] bg-amber-50 border-amber-400' : 'w-full border rounded px-2 py-1.5 text-[12px]';
+    const editableClass = 'w-full border rounded px-2 py-1.5 text-[12px] bg-white';
+    const warningClass = 'w-full border rounded px-2 py-1.5 text-[12px] bg-amber-50 border-amber-400';
+
+    const income = Number(data.project_income_1_2_yr) || 0;
+    const expense = Number(data.project_expense_1_2_yr) || 0;
+    const netProfit = Number(data.annual_net_profit) || 0;
+    const hasIncomeExpense =
+        data.project_income_1_2_yr !== '' &&
+        data.project_income_1_2_yr != null &&
+        data.project_expense_1_2_yr !== '' &&
+        data.project_expense_1_2_yr != null;
+    const hasNet = data.annual_net_profit !== '' && data.annual_net_profit != null;
+    const incomeExpenseMismatch = hasIncomeExpense && hasNet && income - expense !== netProfit;
 
     return (
         <div id="form-page-1" data-sync="page-1" className="border-b pb-4">
@@ -18,29 +40,60 @@ export default function FormPage1({ data, setData, member, isLegacy, handleImage
                 <div className="space-y-2">
                     <div>
                         <label className="block text-[12px] font-medium mb-1">আবেদনের তারিখ</label>
-                        <input type="date" value={toInputDate(data.application_date)} onChange={(e) => setData('application_date', e.target.value)} className={warningClass} />
+                        <SmartDateInput
+                            value={toInputDate(data.application_date)}
+                            onChange={(val) => setData('application_date', val)}
+                            className={warningClass}
+                        />
                     </div>
                     <div>
                         <label className="block text-[12px] font-medium mb-1">বরাবর</label>
-                        <input type="text" value={data.recipient_to || ''} onChange={(e) => setData('recipient_to', e.target.value)} className={warningClass} placeholder="যেমন: নির্বাহী পরিচালক" />
+                        <select
+                            value={data.recipient_to || ''}
+                            onChange={(e) => setData('recipient_to', e.target.value)}
+                            className={warningClass}
+                        >
+                            <option value="">নির্বাচন করুন</option>
+                            {RECIPIENT_OPTIONS.map((opt) => (
+                                <option key={opt} value={opt}>{opt}</option>
+                            ))}
+                        </select>
                     </div>
                     <div>
-                        <label className="block text-[12px] font-medium mb-1">মাধ্যম</label>
-                        <input type="text" value={data.authority_medium || ''} onChange={(e) => setData('authority_medium', e.target.value)} className={warningClass} placeholder="যথাযথ কর্তৃপক্ষ" />
+                        <label className="block text-[12px] font-medium mb-1">ঠিকানা</label>
+                        <input
+                            type="text"
+                            value={data.authority_medium || ''}
+                            onChange={(e) => setData('authority_medium', e.target.value)}
+                            className={warningClass}
+                            placeholder="ঠিকানা লিখুন"
+                        />
                     </div>
                 </div>
                 <div className="space-y-2 border p-2 rounded bg-gray-50">
                     <div>
                         <label className="block text-[12px] font-medium mb-1">ঋণ অনুমোদনের তারিখ</label>
-                        <input type="date" value={toInputDate(data.loan_approval_date)} onChange={(e) => setData('loan_approval_date', e.target.value)} className="w-full border rounded px-2 py-1.5 text-[12px]" />
+                        <SmartDateInput
+                            value={toInputDate(data.loan_approval_date)}
+                            onChange={(val) => setData('loan_approval_date', val)}
+                            className={editableClass}
+                        />
                     </div>
                     <div>
                         <label className="block text-[12px] font-medium mb-1">ঋণ বিতরণের তারিখ</label>
-                        <input type="date" value={toInputDate(data.loan_disbursement_date)} onChange={(e) => setData('loan_disbursement_date', e.target.value)} className="w-full border rounded px-2 py-1.5 text-[12px]" />
+                        <SmartDateInput
+                            value={toInputDate(data.loan_disbursement_date)}
+                            onChange={(val) => setData('loan_disbursement_date', val)}
+                            className={editableClass}
+                        />
                     </div>
                     <div>
                         <label className="block text-[12px] font-medium mb-1">ঋণ পরিশোধের তারিখ</label>
-                        <input type="date" value={toInputDate(data.loan_repayment_date)} onChange={(e) => setData('loan_repayment_date', e.target.value)} className="w-full border rounded px-2 py-1.5 text-[12px]" />
+                        <SmartDateInput
+                            value={toInputDate(data.loan_repayment_date)}
+                            onChange={(val) => setData('loan_repayment_date', val)}
+                            className={editableClass}
+                        />
                     </div>
                 </div>
             </div>
@@ -57,15 +110,25 @@ export default function FormPage1({ data, setData, member, isLegacy, handleImage
                 </div>
                 <div>
                     <label className="block text-[12px] font-medium mb-1">নতুন/পুরাতন সদস্য</label>
-                    <select value={data.member_type ?? 'new'} onChange={(e) => setData('member_type', e.target.value as 'new' | 'old')} className={warningClass}>
+                    <select
+                        value={isOldMember ? 'old' : 'new'}
+                        disabled
+                        className={inputClass}
+                    >
                         <option value="new">নতুন সদস্য</option>
                         <option value="old">পুরাতন সদস্য</option>
                     </select>
                 </div>
-                {data.member_type === 'old' && (
+                {isOldMember && (
                     <div>
-                        <label className="block text-[12px] font-medium mb-1">কতো বছর যাবৎ সম্পৃক্ত</label>
-                        <input type="text" value={data.years_involved || ''} onChange={(e) => setData('years_involved', e.target.value)} className={warningClass} />
+                        <label className="block text-[12px] font-medium mb-1">দফা</label>
+                        <input
+                            type="number"
+                            min={1}
+                            value={data.years_involved || ''}
+                            readOnly
+                            className={inputClass}
+                        />
                     </div>
                 )}
             </div>
@@ -94,13 +157,13 @@ export default function FormPage1({ data, setData, member, isLegacy, handleImage
                 <div className="space-y-2">
                     <label className="block text-[12px] font-medium mb-1">৩. ক) স্থায়ী ঠিকানা</label>
                     <input type="text" value={data.permanent_address_line1 || ''} onChange={(e) => setData('permanent_address_line1', e.target.value)} readOnly={fromAdmission} className={inputClass} placeholder="গ্রাম/মহল্লা" />
-                    <input type="text" value={data.permanent_address_line2 || ''} onChange={(e) => setData('permanent_address_line2', e.target.value)} readOnly={fromAdmission} className={inputClass} placeholder="ডাকঘর" />
+                    <input type="text" value={data.permanent_address_line2 || ''} onChange={(e) => setData('permanent_address_line2', e.target.value)} readOnly={fromAdmission} className={inputClass} placeholder="পোস্ট কোড" />
                     <input type="text" value={data.permanent_address_line3 || ''} onChange={(e) => setData('permanent_address_line3', e.target.value)} readOnly={fromAdmission} className={inputClass} placeholder="উপজেলা, জেলা" />
                 </div>
                 <div className="space-y-2">
                     <label className="block text-[12px] font-medium mb-1">৩. খ) বর্তমান ঠিকানা</label>
                     <input type="text" value={data.current_address_line1 || ''} onChange={(e) => setData('current_address_line1', e.target.value)} readOnly={fromAdmission} className={inputClass} placeholder="গ্রাম/মহল্লা" />
-                    <input type="text" value={data.current_address_line2 || ''} onChange={(e) => setData('current_address_line2', e.target.value)} readOnly={fromAdmission} className={inputClass} placeholder="ডাকঘর" />
+                    <input type="text" value={data.current_address_line2 || ''} onChange={(e) => setData('current_address_line2', e.target.value)} readOnly={fromAdmission} className={inputClass} placeholder="পোস্ট কোড" />
                     <input type="text" value={data.current_address_line3 || ''} onChange={(e) => setData('current_address_line3', e.target.value)} readOnly={fromAdmission} className={inputClass} placeholder="উপজেলা, জেলা" />
                 </div>
             </div>
@@ -108,18 +171,23 @@ export default function FormPage1({ data, setData, member, isLegacy, handleImage
             <div className="grid grid-cols-2 gap-4 mb-4">
                 <div>
                     <label className="block text-[12px] font-medium mb-1">৫. পেশা</label>
-                    <input type="text" value={data.occupation || ''} onChange={(e) => setData('occupation', e.target.value)} readOnly={fromAdmission} className={inputClass} />
+                    <input type="text" value={data.occupation || ''} onChange={(e) => setData('occupation', e.target.value)} className={warningClass} />
                 </div>
                 <div>
                     <label className="block text-[12px] font-medium mb-1">৬. শিক্ষাগত যোগ্যতা</label>
-                    <input type="text" value={data.educational_qualification || ''} onChange={(e) => setData('educational_qualification', e.target.value)} readOnly={fromAdmission} className={inputClass} />
+                    <input type="text" value={data.educational_qualification || ''} onChange={(e) => setData('educational_qualification', e.target.value)} className={warningClass} />
                 </div>
             </div>
 
             <div className="grid grid-cols-3 gap-4 mb-4">
                 <div>
                     <label className="block text-[12px] font-medium mb-1">৭. সমিতিতে ভর্তির তারিখ</label>
-                    <input type="date" value={toInputDate(data.admission_date)} onChange={(e) => setData('admission_date', e.target.value)} readOnly={fromAdmission} className={inputClass} />
+                    <SmartDateInput
+                        value={toInputDate(data.admission_date)}
+                        onChange={(val) => setData('admission_date', val)}
+                        disabled={fromAdmission}
+                        className={fromAdmission ? inputClass : warningClass}
+                    />
                 </div>
                 <div>
                     <label className="block text-[12px] font-medium mb-1">৮. পরিবারের মোট সদস্য</label>
@@ -127,31 +195,40 @@ export default function FormPage1({ data, setData, member, isLegacy, handleImage
                 </div>
                 <div>
                     <label className="block text-[12px] font-medium mb-1">৯. উপার্জনক্ষম সদস্য</label>
-                    <input type="number" value={data.earning_members_count || ''} onChange={(e) => setData('earning_members_count', e.target.value)} readOnly={fromAdmission} className={inputClass} />
+                    <input type="number" value={data.earning_members_count || ''} onChange={(e) => setData('earning_members_count', e.target.value)} className={warningClass} />
                 </div>
             </div>
 
-            <div className="grid grid-cols-2 gap-4 mb-4">
-                <div>
-                    <label className="block text-[12px] font-medium mb-1">১০. ইতোপূর্বে গৃহীত ঋণ (বার)</label>
-                    <input type="number" value={data.previous_loan_times || ''} onChange={(e) => setData('previous_loan_times', e.target.value)} className={warningClass} />
-                </div>
-                <div>
-                    <label className="block text-[12px] font-medium mb-1">ইতোপূর্বে গৃহীত ঋণ (টাকা)</label>
-                    <input type="number" value={data.previous_loan_amount || ''} onChange={(e) => setData('previous_loan_amount', e.target.value)} className={warningClass} />
-                </div>
-            </div>
+            {isOldMember && (
+                <>
+                    <div className="grid grid-cols-2 gap-4 mb-4">
+                        <div>
+                            <label className="block text-[12px] font-medium mb-1">১০. ইতোপূর্বে গৃহীত ঋণ (বার)</label>
+                            <input
+                                type="number"
+                                value={data.previous_loan_times || ''}
+                                readOnly
+                                className={inputClass}
+                            />
+                        </div>
+                        <div>
+                            <label className="block text-[12px] font-medium mb-1">ইতোপূর্বে গৃহীত ঋণ (টাকা)</label>
+                            <input type="number" value={data.previous_loan_amount || ''} onChange={(e) => setData('previous_loan_amount', e.target.value)} className={warningClass} />
+                        </div>
+                    </div>
 
-            <div className="grid grid-cols-2 gap-4 mb-4">
-                <div>
-                    <label className="block text-[12px] font-medium mb-1">১১. সর্বশেষ পরিশোধিত ঋণ</label>
-                    <input type="number" value={data.last_repaid_loan_amount || ''} onChange={(e) => setData('last_repaid_loan_amount', e.target.value)} className={warningClass} />
-                </div>
-                <div>
-                    <label className="block text-[12px] font-medium mb-1">১২. সর্বশেষ পরিশোধিত প্রকল্প</label>
-                    <input type="text" value={data.last_repaid_project_name || ''} onChange={(e) => setData('last_repaid_project_name', e.target.value)} className={warningClass} />
-                </div>
-            </div>
+                    <div className="grid grid-cols-2 gap-4 mb-4">
+                        <div>
+                            <label className="block text-[12px] font-medium mb-1">১১. সর্বশেষ পরিশোধিত ঋণ</label>
+                            <input type="number" value={data.last_repaid_loan_amount || ''} onChange={(e) => setData('last_repaid_loan_amount', e.target.value)} className={warningClass} />
+                        </div>
+                        <div>
+                            <label className="block text-[12px] font-medium mb-1">১২. সর্বশেষ পরিশোধিত প্রকল্প</label>
+                            <input type="text" value={data.last_repaid_project_name || ''} onChange={(e) => setData('last_repaid_project_name', e.target.value)} className={warningClass} />
+                        </div>
+                    </div>
+                </>
+            )}
 
             <div data-sync="item-13" className={`mb-4${fromAdmission ? ' p-2 bg-gray-50 border rounded' : ''}`}>
                 <GeneralSavingsSection
@@ -166,13 +243,23 @@ export default function FormPage1({ data, setData, member, isLegacy, handleImage
 
             <div className="mb-4">
                 <label className="block text-[12px] font-medium mb-1">১৪. ঋণ প্রস্তাবনার তারিখ</label>
-                <input type="date" value={toInputDate(data.loan_proposal_date)} onChange={(e) => setData('loan_proposal_date', e.target.value)} className={warningClass} />
+                <SmartDateInput
+                    value={toInputDate(data.loan_proposal_date)}
+                    onChange={(val) => setData('loan_proposal_date', val)}
+                    className={warningClass}
+                />
             </div>
 
             <div className="grid grid-cols-2 gap-4 mb-4">
                 <div>
                     <label className="block text-[12px] font-medium mb-1">১৫. প্রকল্পের নাম</label>
-                    <input type="text" value={data.project_name || data.proposed_project_name || ''} onChange={(e) => { setData('project_name', e.target.value); setData('proposed_project_name', e.target.value); }} className={warningClass} />
+                    <input
+                        type="text"
+                        value={data.project_name || data.proposed_project_name || ''}
+                        onChange={(e) => { setData('project_name', e.target.value); setData('proposed_project_name', e.target.value); }}
+                        readOnly={fromAdmission && !!member?.project_name}
+                        className={fromAdmission && member?.project_name ? inputClass : warningClass}
+                    />
                 </div>
                 <div>
                     <label className="block text-[12px] font-medium mb-1">১৬. প্রকল্পে নিয়োজিত জনবল</label>
@@ -191,9 +278,25 @@ export default function FormPage1({ data, setData, member, isLegacy, handleImage
                 </div>
                 <div>
                     <label className="block text-[12px] font-medium mb-1">১৯. বার্ষিক নিট লাভ</label>
-                    <input type="number" value={data.annual_net_profit || ''} onChange={(e) => setData('annual_net_profit', e.target.value)} className={warningClass} />
+                    <input
+                        type="number"
+                        value={data.annual_net_profit || ''}
+                        onChange={(e) => setData('annual_net_profit', e.target.value)}
+                        readOnly={fromAdmission && (member?.estimated_annual_project_income != null && member?.estimated_annual_project_income !== '')}
+                        className={fromAdmission && (member?.estimated_annual_project_income != null && member?.estimated_annual_project_income !== '') ? inputClass : warningClass}
+                    />
                 </div>
             </div>
+            {incomeExpenseMismatch && (
+                <p className="mb-4 text-[11px] text-red-600 font-medium">
+                    আয় − ব্যয় = বার্ষিক নিট লাভ হতে হবে। এখন: {income} − {expense} = {income - expense}, নিট লাভ: {netProfit}
+                </p>
+            )}
+            {hasNet && !hasIncomeExpense && (
+                <p className="mb-4 text-[11px] text-amber-700">
+                    আয় ও ব্যয় এমনভাবে পূরণ করুন যাতে আয় − ব্যয় = বার্ষিক নিট লাভ ({netProfit}) হয়।
+                </p>
+            )}
 
             <div className="grid grid-cols-3 gap-4 mb-4">
                 <div>
@@ -250,7 +353,7 @@ export default function FormPage1({ data, setData, member, isLegacy, handleImage
                     {data.applicant_signature ? (
                         <div className="relative">
                             <img src={data.applicant_signature} alt="Signature" className="w-full h-24 object-contain border rounded" />
-                            <button onClick={() => removeImage('applicant_signature')} className="absolute top-1 right-1 p-1 bg-red-500 text-white rounded text-[12px]">X</button>
+                            <button type="button" onClick={() => removeImage('applicant_signature')} className="absolute top-1 right-1 p-1 bg-red-500 text-white rounded text-[12px]">X</button>
                         </div>
                     ) : (
                         <div className="border-2 border-dashed rounded p-2 text-center">
@@ -265,7 +368,7 @@ export default function FormPage1({ data, setData, member, isLegacy, handleImage
                     {data.approver_signature ? (
                         <div className="relative">
                             <img src={data.approver_signature} alt="Signature" className="w-full h-24 object-contain border rounded" />
-                            <button onClick={() => removeImage('approver_signature')} className="absolute top-1 right-1 p-1 bg-red-500 text-white rounded text-[12px]">X</button>
+                            <button type="button" onClick={() => removeImage('approver_signature')} className="absolute top-1 right-1 p-1 bg-red-500 text-white rounded text-[12px]">X</button>
                         </div>
                     ) : (
                         <div className="border-2 border-dashed rounded p-2 text-center">

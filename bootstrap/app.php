@@ -3,6 +3,7 @@
 use App\Http\Middleware\EnsureProfileComplete;
 use App\Http\Middleware\HandleAppearance;
 use App\Http\Middleware\HandleInertiaRequests;
+use App\Http\Middleware\NormalizeInertiaAmounts;
 use App\Http\Middleware\CheckRole;
 use App\Http\Middleware\CheckPermission;
 use App\Http\Middleware\CheckBranchUser;
@@ -28,6 +29,7 @@ return Application::configure(basePath: dirname(__DIR__))
         $middleware->web(append: [
             HandleAppearance::class,
             HandleInertiaRequests::class,
+            NormalizeInertiaAmounts::class,
             AddLinkHeadersForPreloadedAssets::class,
             CheckMaintenanceMode::class,
         ]);

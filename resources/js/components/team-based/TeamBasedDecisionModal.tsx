@@ -574,9 +574,13 @@ function TeamBasedDecisionModalInner({
                                         <button
                                             type="button"
                                             onClick={() => {
-                                                const amt = String(
-                                                    row.proposed_loan_amount,
-                                                );
+                                                const amt =
+                                                    formatAmount(
+                                                        row.proposed_loan_amount,
+                                                    ) ||
+                                                    String(
+                                                        row.proposed_loan_amount,
+                                                    );
                                                 setField(
                                                     'approved_amount',
                                                     amt,

@@ -4,7 +4,7 @@ import AdminLayout from '@/layouts/admin-layout';
 import { formatDate } from '@/utils/dateUtils';
 import {
     Plus, Calendar, FileText, CheckCircle, XCircle, Clock,
-    Search, Eye, Edit, Trash2, X, AlertTriangle, MessageSquare
+    Search, Eye, Edit, Trash2, X, AlertTriangle, MessageSquare, Send
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -96,6 +96,7 @@ interface Props {
     dateFrom?: string;
     dateTo?: string;
     statusFilter?: string;
+    preselectedMember?: Member | null;
     flash?: {
         success?: string;
         error?: string;
@@ -106,6 +107,7 @@ const statusLabels: Record<string, { label: string; color: string }> = {
     draft: { label: 'Draft (খসড়া)', color: 'bg-gray-50 text-gray-700 border border-gray-200' },
     submitted: { label: 'Submitted (জমা)', color: 'bg-blue-50 text-blue-700 border border-blue-200' },
     under_review: { label: 'Under Review (পর্যালোচনায়)', color: 'bg-yellow-50 text-yellow-700 border border-yellow-200' },
+    ready_for_head_office: { label: 'Branch Approved (শাখা অনুমোদিত)', color: 'bg-emerald-50 text-emerald-700 border border-emerald-200' },
     pending_head_office: { label: 'Pending Head Office (হেড অফিসে প্রেরিত)', color: 'bg-indigo-50 text-indigo-700 border border-indigo-200' },
     approved: { label: 'Approved (অনুমোদিত)', color: 'bg-green-50 text-green-700 border border-green-200' },
     rejected: { label: 'Rejected (প্রত্যাখ্যাত)', color: 'bg-red-50 text-red-700 border border-red-200' },
@@ -129,6 +131,7 @@ interface ActiveLoan {
     requested_amount: number;
     expected_end_date?: string;
     created_at: string;
+    loan_term_months?: number;
 }
 
 interface Member {
@@ -143,15 +146,19 @@ interface Member {
     active_loans?: ActiveLoan[];
 }
 
-export default function Index({ categories, applications, stats, selectedDate, dateFrom, dateTo, statusFilter = '', flash }: Props) {
+export default function Index({ categories, applications, stats, selectedDate, dateFrom, dateTo, statusFilter = '', preselectedMember = null, flash }: Props) {
     const pageAuth = usePage().props.auth as { user?: { role?: { name: string } } } | undefined;
-    const isFieldOfficer = pageAuth?.user?.role?.name === 'field_officer';
+    const roleName = pageAuth?.user?.role?.name?.toLowerCase() || '';
+    const isBranchUser = roleName === 'branch_user' || roleName === 'branch_manager';
+    const isFieldOfficer = roleName === 'field_officer';
+    // Only Field Officer and Branch User may create loan applications
+    const canCreateLoanApplication = isFieldOfficer || roleName === 'branch_user';
     const today = new Date().toISOString().split('T')[0];
     const [currentDateFrom, setCurrentDateFrom] = useState(dateFrom || selectedDate || today);
     const [currentDateTo, setCurrentDateTo] = useState(dateTo || selectedDate || today);
     const [currentStatusFilter, setCurrentStatusFilter] = useState(statusFilter);
     const [searchQuery, setSearchQuery] = useState('');
-    const [showNewModal, setShowNewModal] = useState(false);
+    const [showNewModal, setShowNewModal] = useState(!!preselectedMember && canCreateLoanApplication);
     const [selectedCategory, setSelectedCategory] = useState<number | null>(null);
     const [selectedProduct, setSelectedProduct] = useState<number | null>(null);
     const [showSuccessMessage, setShowSuccessMessage] = useState(!!flash?.success);
@@ -179,22 +186,15 @@ export default function Index({ categories, applications, stats, selectedDate, d
     // New states for modal
     const [memberSearchQuery, setMemberSearchQuery] = useState('');
     const [memberSearchResults, setMemberSearchResults] = useState<Member[]>([]);
-    const [selectedMember, setSelectedMember] = useState<Member | null>(null);
+    const [selectedMember, setSelectedMember] = useState<Member | null>(preselectedMember);
     const [requestedAmount, setRequestedAmount] = useState('');
     const [isSearching, setIsSearching] = useState(false);
-    const [useLegacyMemberTab, setUseLegacyMemberTab] = useState(false);
-    const [samities, setSamities] = useState<{ id: number; samity_code: string; samity_name: string; samity_name_bn: string }[]>([]);
-    const [legacyForm, setLegacyForm] = useState({
-        applicant_name_bn: '',
-        applicant_name_en: '',
-        nid_number: '',
-        mobile_number: '',
-        present_village_road: '',
-        present_upazila: '',
-        present_district: '',
-        samity_id: '',
-    });
-    const [legacySubmitting, setLegacySubmitting] = useState(false);
+
+    useEffect(() => {
+        if (!preselectedMember || !canCreateLoanApplication) return;
+        setShowNewModal(true);
+        setSelectedMember(preselectedMember);
+    }, [preselectedMember, canCreateLoanApplication]);
 
     const handleDateFilterChange = () => {
         const params: any = {
@@ -216,27 +216,7 @@ export default function Index({ categories, applications, stats, selectedDate, d
         setMemberSearchResults([]);
         setSelectedMember(null);
         setRequestedAmount('');
-        setUseLegacyMemberTab(false);
-        setLegacyForm({
-            applicant_name_bn: '',
-            applicant_name_en: '',
-            nid_number: '',
-            mobile_number: '',
-            present_village_road: '',
-            present_upazila: '',
-            present_district: '',
-            samity_id: '',
-        });
     };
-
-    useEffect(() => {
-        if (showNewModal && useLegacyMemberTab && samities.length === 0) {
-            fetch('/member/loan-applications/samities-for-branch')
-                .then((r) => r.json())
-                .then(setSamities)
-                .catch(() => setSamities([]));
-        }
-    }, [showNewModal, useLegacyMemberTab]);
 
     const handleCategoryChange = (categoryId: number) => {
         setSelectedCategory(categoryId);
@@ -290,30 +270,6 @@ export default function Index({ categories, applications, stats, selectedDate, d
         if (selectedCategory && selectedProduct && selectedMember && requestedAmount) {
             router.visit(`/member/loan-applications/form-selection?loan_category_id=${selectedCategory}&loan_product_id=${selectedProduct}&member_id=${selectedMember.id}&requested_amount=${requestedAmount}`);
         }
-    };
-
-    const handleLegacySubmit = () => {
-        const amt = parseFloat(requestedAmount);
-        if (!legacyForm.applicant_name_bn?.trim() || !legacyForm.nid_number?.trim() || !legacyForm.mobile_number?.trim() || !legacyForm.samity_id || !selectedCategory || !selectedProduct || !requestedAmount || isNaN(amt) || amt < 1) {
-            return;
-        }
-        setLegacySubmitting(true);
-        router.post('/member/loan-applications/start-legacy-application', {
-            applicant_name_bn: legacyForm.applicant_name_bn.trim(),
-            applicant_name_en: legacyForm.applicant_name_en?.trim() || legacyForm.applicant_name_bn.trim(),
-            nid_number: legacyForm.nid_number.trim(),
-            mobile_number: legacyForm.mobile_number.trim(),
-            present_village_road: legacyForm.present_village_road?.trim() || '',
-            present_upazila: legacyForm.present_upazila?.trim() || '',
-            present_district: legacyForm.present_district?.trim() || '',
-            samity_id: Number(legacyForm.samity_id),
-            loan_category_id: selectedCategory,
-            loan_product_id: selectedProduct,
-            requested_amount: amt,
-        }, {
-            onFinish: () => setLegacySubmitting(false),
-            onError: () => setLegacySubmitting(false),
-        });
     };
 
     const handleResolveIssue = (applicationId: number, issueId: number) => {
@@ -390,6 +346,7 @@ export default function Index({ categories, applications, stats, selectedDate, d
             approved: filteredApplications.filter(app => app.status === 'approved').length,
             rejected: filteredApplications.filter(app => app.status === 'rejected').length,
             pending_head_office: filteredApplications.filter(app => app.status === 'pending_head_office').length,
+            ready_for_head_office: filteredApplications.filter(app => app.status === 'ready_for_head_office').length,
             under_review: filteredApplications.filter(app => app.status === 'under_review').length,
             disbursed: filteredApplications.filter(app => app.status === 'disbursed').length,
         };
@@ -416,61 +373,70 @@ export default function Index({ categories, applications, stats, selectedDate, d
                     </div>
                 )}
 
-                {/* Header */}
-                <div className="flex items-center justify-between">
-                    <div>
-                        <h1 className="text-xl font-bold text-gray-900">Loan Applications (ঋণ আবেদন)</h1>
-                        <p className="text-xs text-gray-500 mt-0.5">Manage your loan applications</p>
-                    </div>
-                    <div className="flex items-center gap-2">
-                        <button
-                            onClick={handleNewApplication}
-                            className="flex items-center gap-1.5 px-3 py-1.5 text-sm bg-blue-600 text-white rounded-md hover:bg-blue-700"
-                        >
-                            <Plus className="w-4 h-4" />
-                            New Application (নতুন আবেদন)
-                        </button>
+                {/* ── 1. HERO BANNER HEADER ─────────────────────────────────────────── */}
+                <div className="relative overflow-hidden rounded-3xl bg-slate-900 text-white p-6 sm:p-8 shadow-xl border border-slate-800">
+                    <div className="absolute -right-12 -bottom-12 w-64 h-64 rounded-full bg-gradient-to-tr from-blue-600/30 to-emerald-500/20 blur-3xl pointer-events-none" />
+                    <div className="absolute left-1/3 -top-12 w-48 h-48 rounded-full bg-purple-500/10 blur-2xl pointer-events-none" />
+
+                    <div className="relative z-10 flex flex-col md:flex-row md:items-center justify-between gap-6">
+                        <div className="space-y-2 max-w-2xl">
+                            <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-blue-500/15 border border-blue-400/20 text-blue-300 text-xs font-semibold backdrop-blur-md">
+                                <FileText className="w-4 h-4 text-blue-400" />
+                                <span>Loan Application Command Center</span>
+                            </div>
+                            <h1 className="text-2xl sm:text-3xl font-extrabold tracking-tight text-white leading-tight">
+                                ঋণ আবেদন প্যানেল (Loan Applications)
+                            </h1>
+                            <p className="text-slate-300 text-xs sm:text-sm leading-relaxed">
+                                সদস্যদের জন্য নতুন ঋণ আবেদন শুরু করুন, ফর্মসমূহের অবস্থা যাচাই করুন এবং অনুমোদন ট্র্যাক করুন।
+                            </p>
+                        </div>
+
+                        {canCreateLoanApplication && (
+                            <button
+                                onClick={handleNewApplication}
+                                className="inline-flex items-center justify-center gap-2 px-5 py-3 rounded-2xl bg-gradient-to-r from-blue-600 to-emerald-600 hover:from-blue-700 hover:to-emerald-700 text-white text-xs sm:text-sm font-bold shadow-lg shadow-blue-600/30 transition-all active:scale-95 shrink-0"
+                            >
+                                <Plus className="w-4 h-4" />
+                                <span>নতুন ঋণ আবেদন</span>
+                            </button>
+                        )}
                     </div>
                 </div>
 
-                {/* Filters */}
-                <div className="bg-white rounded-md border p-4">
-                    <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+                {/* ── 2. SEARCH & FILTER TOOLBAR ─────────────────────────────────────── */}
+                <div className="bg-white rounded-2xl border border-slate-200/80 p-4 shadow-sm space-y-4">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-3">
                         <div>
-                            <label className="block text-xs font-medium text-gray-700 mb-1">From Date (শুরুর তারিখ)</label>
-                            <div className="flex items-center gap-2 px-3 py-1.5 bg-gray-50 border rounded-md">
-                                <Calendar className="w-4 h-4 text-gray-400" />
-                                <input
-                                    type="date"
-                                    value={currentDateFrom}
-                                    onChange={(e) => setCurrentDateFrom(e.target.value)}
-                                    className="text-sm border-0 bg-transparent focus:ring-0 p-0 flex-1"
-                                />
-                            </div>
+                            <label className="block text-[11px] font-bold text-slate-600 uppercase mb-1">শুরুর তারিখ</label>
+                            <input
+                                type="date"
+                                value={currentDateFrom}
+                                onChange={(e) => setCurrentDateFrom(e.target.value)}
+                                className="w-full px-3 py-2 text-xs border border-slate-300 rounded-xl bg-slate-50 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+                            />
                         </div>
                         <div>
-                            <label className="block text-xs font-medium text-gray-700 mb-1">To Date (শেষ তারিখ)</label>
-                            <div className="flex items-center gap-2 px-3 py-1.5 bg-gray-50 border rounded-md">
-                                <Calendar className="w-4 h-4 text-gray-400" />
-                                <input
-                                    type="date"
-                                    value={currentDateTo}
-                                    onChange={(e) => setCurrentDateTo(e.target.value)}
-                                    className="text-sm border-0 bg-transparent focus:ring-0 p-0 flex-1"
-                                />
-                            </div>
+                            <label className="block text-[11px] font-bold text-slate-600 uppercase mb-1">শেষ তারিখ</label>
+                            <input
+                                type="date"
+                                value={currentDateTo}
+                                onChange={(e) => setCurrentDateTo(e.target.value)}
+                                className="w-full px-3 py-2 text-xs border border-slate-300 rounded-xl bg-slate-50 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+                            />
                         </div>
                         <div>
-                            <label className="block text-xs font-medium text-gray-700 mb-1">Status (স্ট্যাটাস)</label>
+                            <label className="block text-[11px] font-bold text-slate-600 uppercase mb-1">স্ট্যাটাস</label>
                             <select
                                 value={currentStatusFilter}
                                 onChange={(e) => setCurrentStatusFilter(e.target.value)}
-                                className="w-full px-3 py-1.5 text-sm border rounded-md bg-gray-50 focus:ring-1 focus:ring-blue-500 focus:border-blue-500"
+                                className="w-full px-3 py-2 text-xs border border-slate-300 rounded-xl bg-slate-50 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
                             >
-                                <option value="">All Status (সব স্ট্যাটাস)</option>
+                                <option value="">সব স্ট্যাটাস (All)</option>
                                 <option value="draft">Draft (খসড়া)</option>
                                 <option value="submitted">Submitted (জমা)</option>
                                 <option value="under_review">Under Review (পর্যালোচনায়)</option>
+                                <option value="ready_for_head_office">Branch Approved (শাখা অনুমোদিত)</option>
                                 <option value="pending_head_office">Pending Head Office (হেড অফিসে প্রেরিত)</option>
                                 <option value="approved">Approved (অনুমোদিত)</option>
                                 <option value="rejected">Rejected (প্রত্যাখ্যাত)</option>
@@ -480,137 +446,147 @@ export default function Index({ categories, applications, stats, selectedDate, d
                         <div className="flex items-end">
                             <button
                                 onClick={handleDateFilterChange}
-                                className="w-full px-4 py-1.5 text-sm bg-blue-600 text-white rounded-md hover:bg-blue-700"
+                                className="w-full px-4 py-2.5 text-xs font-bold bg-slate-800 text-white rounded-xl hover:bg-slate-900 transition-all shadow-sm"
                             >
-                                Apply Filter (ফিল্টার প্রয়োগ)
+                                ফিল্টার প্রয়োগ
                             </button>
                         </div>
                     </div>
                 </div>
 
-                {/* Stats */}
-                <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-8 gap-3">
-                    <div className="bg-white rounded-md border p-3">
-                        <div className="flex items-center gap-2">
-                            <div className="w-8 h-8 rounded bg-blue-50 flex items-center justify-center">
-                                <FileText className="w-4 h-4 text-blue-600" />
-                            </div>
-                            <div>
-                                <p className="text-lg font-bold text-gray-900">{filteredStats.total}</p>
-                                <p className="text-xs text-gray-500">Total (মোট)</p>
-                            </div>
-                        </div>
+                {/* ── 3. STATS OVERVIEW CARDS ────────────────────────────────────────── */}
+                <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
+                    <div className="bg-white rounded-2xl border border-slate-200/80 p-4 shadow-sm">
+                        <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 block">মোট আবেদন</span>
+                        <p className="text-xl sm:text-2xl font-black text-slate-900 mt-1">{filteredStats.total}</p>
                     </div>
-                    <div className="bg-white rounded-md border p-3">
-                        <div className="flex items-center gap-2">
-                            <div className="w-8 h-8 rounded bg-gray-50 flex items-center justify-center">
-                                <FileText className="w-4 h-4 text-gray-600" />
-                            </div>
-                            <div>
-                                <p className="text-lg font-bold text-gray-900">{filteredStats.draft}</p>
-                                <p className="text-xs text-gray-500">Draft (খসড়া)</p>
-                            </div>
-                        </div>
+                    <div className="bg-white rounded-2xl border border-slate-200/80 p-4 shadow-sm">
+                        <span className="text-[10px] font-bold uppercase tracking-wider text-blue-600 block">জমা (Submitted)</span>
+                        <p className="text-xl sm:text-2xl font-black text-blue-600 mt-1">{filteredStats.submitted}</p>
                     </div>
-                    <div className="bg-white rounded-md border p-3">
-                        <div className="flex items-center gap-2">
-                            <div className="w-8 h-8 rounded bg-blue-50 flex items-center justify-center">
-                                <Clock className="w-4 h-4 text-blue-600" />
-                            </div>
-                            <div>
-                                <p className="text-lg font-bold text-gray-900">{filteredStats.submitted}</p>
-                                <p className="text-xs text-gray-500">Submitted (জমা)</p>
-                            </div>
-                        </div>
+                    <div className="bg-white rounded-2xl border border-slate-200/80 p-4 shadow-sm">
+                        <span className="text-[10px] font-bold uppercase tracking-wider text-amber-600 block">পর্যালোচনায়</span>
+                        <p className="text-xl sm:text-2xl font-black text-amber-600 mt-1">{filteredStats.under_review}</p>
                     </div>
-                    <div className="bg-white rounded-md border p-3">
-                        <div className="flex items-center gap-2">
-                            <div className="w-8 h-8 rounded bg-yellow-50 flex items-center justify-center">
-                                <Clock className="w-4 h-4 text-yellow-600" />
-                            </div>
-                            <div>
-                                <p className="text-lg font-bold text-gray-900">{filteredStats.under_review}</p>
-                                <p className="text-xs text-gray-500">Under Review</p>
-                            </div>
-                        </div>
+                    <div className="bg-white rounded-2xl border border-slate-200/80 p-4 shadow-sm">
+                        <span className="text-[10px] font-bold uppercase tracking-wider text-emerald-600 block">অনুমোদিত</span>
+                        <p className="text-xl sm:text-2xl font-black text-emerald-600 mt-1">{filteredStats.approved}</p>
                     </div>
-                    <div className="bg-white rounded-md border p-3">
-                        <div className="flex items-center gap-2">
-                            <div className="w-8 h-8 rounded bg-indigo-50 flex items-center justify-center">
-                                <Clock className="w-4 h-4 text-indigo-600" />
-                            </div>
-                            <div>
-                                <p className="text-lg font-bold text-gray-900">{filteredStats.pending_head_office}</p>
-                                <p className="text-xs text-gray-500">Pending HO</p>
-                            </div>
-                        </div>
-                    </div>
-                    <div className="bg-white rounded-md border p-3">
-                        <div className="flex items-center gap-2">
-                            <div className="w-8 h-8 rounded bg-green-50 flex items-center justify-center">
-                                <CheckCircle className="w-4 h-4 text-green-600" />
-                            </div>
-                            <div>
-                                <p className="text-lg font-bold text-gray-900">{filteredStats.approved}</p>
-                                <p className="text-xs text-gray-500">Approved (অনুমোদিত)</p>
-                            </div>
-                        </div>
-                    </div>
-                    <div className="bg-white rounded-md border p-3">
-                        <div className="flex items-center gap-2">
-                            <div className="w-8 h-8 rounded bg-red-50 flex items-center justify-center">
-                                <XCircle className="w-4 h-4 text-red-600" />
-                            </div>
-                            <div>
-                                <p className="text-lg font-bold text-gray-900">{filteredStats.rejected}</p>
-                                <p className="text-xs text-gray-500">Rejected (প্রত্যাখ্যাত)</p>
-                            </div>
-                        </div>
-                    </div>
-                    <div className="bg-white rounded-md border p-3">
-                        <div className="flex items-center gap-2">
-                            <div className="w-8 h-8 rounded bg-purple-50 flex items-center justify-center">
-                                <CheckCircle className="w-4 h-4 text-purple-600" />
-                            </div>
-                            <div>
-                                <p className="text-lg font-bold text-gray-900">{filteredStats.disbursed}</p>
-                                <p className="text-xs text-gray-500">Disbursed (বিতরণকৃত)</p>
-                            </div>
-                        </div>
+                    <div className="bg-white rounded-2xl border border-slate-200/80 p-4 shadow-sm">
+                        <span className="text-[10px] font-bold uppercase tracking-wider text-purple-600 block">বিতরণকৃত (Disbursed)</span>
+                        <p className="text-xl sm:text-2xl font-black text-purple-600 mt-1">{filteredStats.disbursed}</p>
                     </div>
                 </div>
 
-                {/* Applications Table */}
-                <div className="bg-white rounded-md border">
-                    <div className="px-4 py-3 border-b">
-                        <div className="relative max-w-md">
-                            <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-400" />
-                            <input
-                                type="text"
-                                placeholder="Search by name, member code, NID, phone, or application no..."
-                                value={searchQuery}
-                                onChange={(e) => setSearchQuery(e.target.value)}
-                                className="pl-8 pr-3 py-1.5 text-sm w-full border rounded focus:ring-1 focus:ring-blue-500 focus:border-blue-500"
-                            />
-                        </div>
+                {/* ── 4. APPLICATIONS TABLE & MOBILE CARDS CONTAINER ──────────────────── */}
+                <div className="bg-white rounded-3xl border border-slate-200/80 shadow-sm overflow-hidden space-y-4 p-4">
+                    <div className="relative max-w-md">
+                        <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 pointer-events-none" />
+                        <input
+                            type="text"
+                            placeholder="নাম, আবেদন নং, মোবাইল, এনআইডি খুঁজুন..."
+                            value={searchQuery}
+                            onChange={(e) => setSearchQuery(e.target.value)}
+                            className="w-full pl-9 pr-4 py-2 text-xs sm:text-sm border border-slate-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 bg-slate-50/50"
+                        />
                     </div>
 
-                    <div className="overflow-x-auto">
+                    {/* MOBILE CARDS VIEW (md:hidden) */}
+                    <div className="md:hidden flex flex-col gap-4">
+                        {filteredApplications.length === 0 ? (
+                            <div className="p-12 text-center text-slate-400 text-sm">
+                                কোনো ঋণ আবেদন পাওয়া যায়নি
+                            </div>
+                        ) : (
+                            filteredApplications.map((app) => {
+                                const member = app.member_display ?? app.member_admission;
+                                const pendingIssues = app.issues?.filter((issue) => issue.status === 'pending') || [];
+                                const hasPendingIssues = pendingIssues.length > 0;
+                                let statusInfo = statusLabels[app.status] || statusLabels.draft;
+
+                                return (
+                                    <div
+                                        key={app.id}
+                                        className="bg-white rounded-2xl border border-slate-200/90 shadow-sm hover:shadow-md transition-all p-4 space-y-3 relative overflow-hidden"
+                                    >
+                                        <div className="absolute top-0 left-0 right-0 h-1 bg-gradient-to-r from-blue-500 to-emerald-500" />
+
+                                        <div className="flex items-start justify-between gap-2 pt-1">
+                                            <div>
+                                                <span className="text-xs font-mono font-bold text-blue-700 bg-blue-50 px-2 py-0.5 rounded border border-blue-200">
+                                                    {app.application_no}
+                                                </span>
+                                                <h3 className="font-bold text-slate-900 text-sm mt-1">
+                                                    {member?.applicant_name_bn || member?.applicant_name_en || 'N/A'}
+                                                </h3>
+                                            </div>
+                                            <div className="text-right">
+                                                <span className="text-[10px] font-bold text-slate-400 block uppercase">আবেদনকৃত ঋণ</span>
+                                                <span className="text-base font-black text-emerald-600">
+                                                    ৳{formatAmount(app.requested_amount)}
+                                                </span>
+                                            </div>
+                                        </div>
+
+                                        <div className="grid grid-cols-2 gap-2 bg-slate-50/80 p-3 rounded-2xl border border-slate-100 text-xs">
+                                            <div>
+                                                <span className="text-[10px] font-bold uppercase text-slate-400 block">ঋণ পণ্য</span>
+                                                <p className="font-bold text-slate-800 truncate mt-0.5">{app.loan_product?.product_name}</p>
+                                            </div>
+                                            <div>
+                                                <span className="text-[10px] font-bold uppercase text-slate-400 block">তারিখ</span>
+                                                <p className="font-semibold text-slate-600 mt-0.5">{formatDate(app.created_at)}</p>
+                                            </div>
+                                            <div className="col-span-2 flex items-center justify-between pt-1 border-t border-slate-200/60">
+                                                <span className="text-[10px] font-bold uppercase text-slate-400">স্ট্যাটাস:</span>
+                                                <span className={`inline-block px-2 py-0.5 rounded-full text-[11px] font-bold ${statusInfo.color}`}>
+                                                    {statusInfo.label}
+                                                </span>
+                                            </div>
+                                        </div>
+
+                                        <div className="flex items-center gap-2 pt-1">
+                                            <button
+                                                onClick={() => router.get(`/member/loan-applications/${app.id}`)}
+                                                className="flex-1 inline-flex items-center justify-center gap-1 px-3 py-2 rounded-xl text-xs font-semibold text-blue-700 bg-blue-50 hover:bg-blue-100 border border-blue-200 transition"
+                                            >
+                                                <Eye className="w-3.5 h-3.5" /> বিবরণ দেখুন
+                                            </button>
+                                            {app.status === 'draft' && (
+                                                <>
+                                                    <button
+                                                        onClick={() => router.get(`/member/loan-applications/${app.id}/edit`)}
+                                                        className="p-2 text-amber-700 bg-amber-50 hover:bg-amber-100 border border-amber-200 rounded-xl transition"
+                                                        title="সম্পাদনা"
+                                                    >
+                                                        <Edit className="w-4 h-4" />
+                                                    </button>
+                                                </>
+                                            )}
+                                        </div>
+                                    </div>
+                                );
+                            })
+                        )}
+                    </div>
+
+                    {/* DESKTOP TABLE VIEW (hidden md:block) */}
+                    <div className="hidden md:block overflow-x-auto">
                         <table className="w-full text-xs">
-                            <thead className="bg-gray-50 border-b">
+                            <thead className="bg-slate-50 border-b border-slate-200">
                                 <tr>
-                                    <th className="px-3 py-2 text-left text-[10px] font-semibold text-gray-600 uppercase">Application No (আবেদন নং)</th>
-                                    <th className="px-3 py-2 text-left text-[10px] font-semibold text-gray-600 uppercase">Member Name (সদস্যের নাম)</th>
-                                    <th className="px-3 py-2 text-left text-[10px] font-semibold text-gray-600 uppercase">Date (তারিখ)</th>
-                                    <th className="px-3 py-2 text-left text-[10px] font-semibold text-gray-600 uppercase">Product (পণ্য)</th>
-                                    <th className="px-3 py-2 text-left text-[10px] font-semibold text-gray-600 uppercase">Category (ক্যাটাগরি)</th>
-                                    <th className="px-3 py-2 text-left text-[10px] font-semibold text-gray-600 uppercase">Amount (পরিমাণ)</th>
-                                    <th className="px-3 py-2 text-left text-[10px] font-semibold text-gray-600 uppercase">Status (স্ট্যাটাস)</th>
-                                    <th className="px-3 py-2 text-left text-[10px] font-semibold text-gray-600 uppercase">Issues (সমস্যা)</th>
-                                    <th className="px-3 py-2 text-right text-[10px] font-semibold text-gray-600 uppercase">Actions (অ্যাকশন)</th>
+                                    <th className="px-3 py-3 text-left text-[10px] font-bold text-slate-500 uppercase">Application No</th>
+                                    <th className="px-3 py-3 text-left text-[10px] font-bold text-slate-500 uppercase">Member Name</th>
+                                    <th className="px-3 py-3 text-left text-[10px] font-bold text-slate-500 uppercase">Date</th>
+                                    <th className="px-3 py-3 text-left text-[10px] font-bold text-slate-500 uppercase">Product</th>
+                                    <th className="px-3 py-3 text-left text-[10px] font-bold text-slate-500 uppercase">Category</th>
+                                    <th className="px-3 py-3 text-left text-[10px] font-bold text-slate-500 uppercase">Amount</th>
+                                    <th className="px-3 py-3 text-left text-[10px] font-bold text-slate-500 uppercase">Status</th>
+                                    <th className="px-3 py-3 text-left text-[10px] font-bold text-slate-500 uppercase">Issues</th>
+                                    <th className="px-3 py-3 text-right text-[10px] font-bold text-slate-500 uppercase">Actions</th>
                                 </tr>
                             </thead>
-                            <tbody className="divide-y">
+                            <tbody className="divide-y divide-slate-100">
                                 {filteredApplications.map((app) => {
                                     // Check if there are pending issues
                                     const pendingIssues = app.issues?.filter(issue => issue.status === 'pending') || [];
@@ -824,13 +800,27 @@ export default function Index({ categories, applications, stats, selectedDate, d
                                                             </button>
                                                         </>
                                                     )}
-                                                    {app.status === 'draft' && app.all_forms_complete && !isFieldOfficer && (
+                                                    {app.status === 'draft' && app.all_forms_complete && (
                                                         <button
                                                             onClick={() => router.get(`/member/loan-applications/${app.id}`)}
                                                             className="text-[10px] px-1.5 py-0.5 bg-green-100 text-green-700 rounded"
                                                             title="Submit"
                                                         >
                                                             সাবমিট
+                                                        </button>
+                                                    )}
+                                                    {app.status === 'ready_for_head_office' && isBranchUser && (
+                                                        <button
+                                                            onClick={() => {
+                                                                if (confirm(`ঋণ আবেদন ${app.application_no} Head Office এ পাঠাতে চান?`)) {
+                                                                    router.patch(`/member/loan-applications/${app.id}/send-to-head-office`);
+                                                                }
+                                                            }}
+                                                            className="inline-flex items-center gap-1 text-[10px] px-1.5 py-0.5 bg-indigo-100 text-indigo-700 rounded"
+                                                            title="Head Office এ পাঠান"
+                                                        >
+                                                            <Send className="w-3 h-3" />
+                                                            HO-তে পাঠান
                                                         </button>
                                                     )}
                                                 </div>
@@ -844,20 +834,22 @@ export default function Index({ categories, applications, stats, selectedDate, d
                             <div className="text-center py-8 text-gray-500">
                                 <FileText className="w-8 h-8 mx-auto mb-2 text-gray-400" />
                                 <p className="text-xs">No applications found for this date</p>
-                                <button
-                                    onClick={handleNewApplication}
-                                    className="mt-3 text-xs text-blue-600 hover:text-blue-700"
-                                >
-                                    Create your first application
-                                </button>
+                                {canCreateLoanApplication && (
+                                    <button
+                                        onClick={handleNewApplication}
+                                        className="mt-3 text-xs text-blue-600 hover:text-blue-700"
+                                    >
+                                        Create your first application
+                                    </button>
+                                )}
                             </div>
                         )}
                     </div>
                 </div>
             </div>
 
-            {/* New Application Modal */}
-            {showNewModal && (
+            {/* New Application Modal — Field Officer / Branch User only */}
+            {showNewModal && canCreateLoanApplication && (
                 <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
                     <div className="bg-white rounded-lg shadow-xl w-full max-w-lg max-h-[90vh] flex flex-col">
                         <div className="flex items-center justify-between px-6 py-4 border-b flex-shrink-0">
@@ -866,26 +858,7 @@ export default function Index({ categories, applications, stats, selectedDate, d
                                 <X className="w-5 h-5" />
                             </button>
                         </div>
-                        {/* Tabs: Member Search | Legacy Member */}
-                        <div className="flex border-b px-6">
-                            <button
-                                type="button"
-                                onClick={() => setUseLegacyMemberTab(false)}
-                                className={`px-4 py-2.5 text-sm font-medium border-b-2 -mb-px ${!useLegacyMemberTab ? 'border-blue-600 text-blue-600' : 'border-transparent text-gray-500 hover:text-gray-700'}`}
-                            >
-                                Search Member
-                            </button>
-                            <button
-                                type="button"
-                                onClick={() => setUseLegacyMemberTab(true)}
-                                className={`px-4 py-2.5 text-sm font-medium border-b-2 -mb-px ${useLegacyMemberTab ? 'border-amber-600 text-amber-600' : 'border-transparent text-gray-500 hover:text-gray-700'}`}
-                            >
-                                Legacy Member (No Admission)
-                            </button>
-                        </div>
                         <div className="p-6 space-y-4 overflow-y-auto flex-1">
-                            {!useLegacyMemberTab ? (
-                            <>
                             {/* Member Search */}
                             <div>
                                 <label className="block text-sm font-medium text-gray-700 mb-1">
@@ -1143,142 +1116,6 @@ export default function Index({ categories, applications, stats, selectedDate, d
                                     })()}
                                 </div>
                             )}
-                            </>
-                            ) : (
-                            /* Legacy member form */
-                            <>
-                                <p className="text-xs text-amber-700 bg-amber-50 p-2 rounded mb-2">
-                                    For members without Member Admission; enter minimal details to proceed with loan application.
-                                </p>
-                                <div>
-                                    <label className="block text-sm font-medium text-gray-700 mb-1">Name (Bangla) (বাংলা) <span className="text-red-500">*</span></label>
-                                    <input
-                                        type="text"
-                                        value={legacyForm.applicant_name_bn}
-                                        onChange={(e) => setLegacyForm((f) => ({ ...f, applicant_name_bn: e.target.value }))}
-                                        placeholder="সদস্যের নাম (বাংলা)"
-                                        className="w-full px-3 py-2 border rounded-md text-sm focus:ring-1 focus:ring-blue-500"
-                                    />
-                                </div>
-                                <div>
-                                    <label className="block text-sm font-medium text-gray-700 mb-1">Name (English) (ইংরেজি)</label>
-                                    <input
-                                        type="text"
-                                        value={legacyForm.applicant_name_en}
-                                        onChange={(e) => setLegacyForm((f) => ({ ...f, applicant_name_en: e.target.value }))}
-                                        placeholder="Name in English"
-                                        className="w-full px-3 py-2 border rounded-md text-sm focus:ring-1 focus:ring-blue-500"
-                                    />
-                                </div>
-                                <div>
-                                    <label className="block text-sm font-medium text-gray-700 mb-1">NID (জাতীয় পরিচয়পত্র) <span className="text-red-500">*</span></label>
-                                    <input
-                                        type="text"
-                                        value={legacyForm.nid_number}
-                                        onChange={(e) => setLegacyForm((f) => ({ ...f, nid_number: e.target.value }))}
-                                        placeholder="জাতীয় পরিচয়পত্র নম্বর"
-                                        className="w-full px-3 py-2 border rounded-md text-sm focus:ring-1 focus:ring-blue-500"
-                                    />
-                                </div>
-                                <div>
-                                    <label className="block text-sm font-medium text-gray-700 mb-1">Mobile Number (মোবাইল নম্বর) <span className="text-red-500">*</span></label>
-                                    <input
-                                        type="text"
-                                        value={legacyForm.mobile_number}
-                                        onChange={(e) => setLegacyForm((f) => ({ ...f, mobile_number: e.target.value }))}
-                                        placeholder="০১XXXXXXXXX"
-                                        className="w-full px-3 py-2 border rounded-md text-sm focus:ring-1 focus:ring-blue-500"
-                                    />
-                                </div>
-                                <div>
-                                    <label className="block text-sm font-medium text-gray-700 mb-1">Village/Road (গ্রাম/রোড)</label>
-                                    <input
-                                        type="text"
-                                        value={legacyForm.present_village_road}
-                                        onChange={(e) => setLegacyForm((f) => ({ ...f, present_village_road: e.target.value }))}
-                                        placeholder="গ্রাম বা রোড নম্বর"
-                                        className="w-full px-3 py-2 border rounded-md text-sm focus:ring-1 focus:ring-blue-500"
-                                    />
-                                </div>
-                                <div className="grid grid-cols-2 gap-2">
-                                    <div>
-                                        <label className="block text-sm font-medium text-gray-700 mb-1">Upazila (উপজেলা)</label>
-                                        <input
-                                            type="text"
-                                            value={legacyForm.present_upazila}
-                                            onChange={(e) => setLegacyForm((f) => ({ ...f, present_upazila: e.target.value }))}
-                                            className="w-full px-3 py-2 border rounded-md text-sm focus:ring-1 focus:ring-blue-500"
-                                        />
-                                    </div>
-                                    <div>
-                                        <label className="block text-sm font-medium text-gray-700 mb-1">District (জেলা)</label>
-                                        <input
-                                            type="text"
-                                            value={legacyForm.present_district}
-                                            onChange={(e) => setLegacyForm((f) => ({ ...f, present_district: e.target.value }))}
-                                            className="w-full px-3 py-2 border rounded-md text-sm focus:ring-1 focus:ring-blue-500"
-                                        />
-                                    </div>
-                                </div>
-                                <div>
-                                    <label className="block text-sm font-medium text-gray-700 mb-1">Samity (সমিতি) <span className="text-red-500">*</span></label>
-                                    <select
-                                        value={legacyForm.samity_id}
-                                        onChange={(e) => setLegacyForm((f) => ({ ...f, samity_id: e.target.value }))}
-                                        className="w-full px-3 py-2 border rounded-md text-sm focus:ring-1 focus:ring-blue-500"
-                                    >
-                                        <option value="">Select samity (সমিতি নির্বাচন করুন)</option>
-                                        {samities.map((s) => (
-                                            <option key={s.id} value={s.id}>{s.samity_name} ({s.samity_name_bn}) - {s.samity_code}</option>
-                                        ))}
-                                    </select>
-                                </div>
-                                {/* Category, Product, Amount - same as normal flow */}
-                                <div>
-                                    <label className="block text-sm font-medium text-gray-700 mb-1">Loan Category (ঋণ ক্যাটাগরি)</label>
-                                    <select
-                                        value={selectedCategory || ''}
-                                        onChange={(e) => handleCategoryChange(Number(e.target.value))}
-                                        className="w-full px-3 py-2 border rounded-md text-sm focus:ring-1 focus:ring-blue-500"
-                                    >
-                                        <option value="">Select category...</option>
-                                        {categories.map((cat) => (
-                                            <option key={cat.id} value={cat.id}>{cat.category_name} ({cat.category_name_bn})</option>
-                                        ))}
-                                    </select>
-                                </div>
-                                {selectedCategory && products.length > 0 && (
-                                    <div>
-                                        <label className="block text-sm font-medium text-gray-700 mb-1">Loan Product (ঋণ পণ্য)</label>
-                                        <select
-                                            value={selectedProduct || ''}
-                                            onChange={(e) => handleProductChange(Number(e.target.value))}
-                                            className="w-full px-3 py-2 border rounded-md text-sm focus:ring-1 focus:ring-blue-500"
-                                        >
-                                            <option value="">Select product...</option>
-                                            {products.map((prod) => (
-                                                <option key={prod.id} value={prod.id}>{prod.product_name} ({prod.product_name_bn})</option>
-                                            ))}
-                                        </select>
-                                    </div>
-                                )}
-                                {selectedProduct && (
-                                    <div>
-                                        <label className="block text-sm font-medium text-gray-700 mb-1">Requested Amount (অনুরোধকৃত পরিমাণ)</label>
-                                        <div className="relative">
-                                            <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500">৳</span>
-                                            <input
-                                                type="number"
-                                                value={requestedAmount}
-                                                onChange={(e) => setRequestedAmount(e.target.value)}
-                                                placeholder="পরিমাণ লিখুন"
-                                                className="w-full pl-8 pr-3 py-2 border rounded-md text-sm focus:ring-1 focus:ring-blue-500"
-                                            />
-                                        </div>
-                                    </div>
-                                )}
-                            </>
-                            )}
                         </div>
                         <div className="flex items-center justify-end gap-2 px-6 py-4 border-t bg-gray-50 rounded-b-lg flex-shrink-0">
                             <button
@@ -1287,24 +1124,14 @@ export default function Index({ categories, applications, stats, selectedDate, d
                             >
                                 Cancel (বাতিল)
                             </button>
-                            {useLegacyMemberTab ? (
-                                <button
-                                    onClick={handleLegacySubmit}
-                                    disabled={legacySubmitting || !legacyForm.applicant_name_bn?.trim() || !legacyForm.nid_number?.trim() || !legacyForm.mobile_number?.trim() || !legacyForm.samity_id || !selectedCategory || !selectedProduct || !requestedAmount || parseFloat(requestedAmount) < 1}
-                                    className="px-4 py-2 text-sm bg-amber-600 text-white rounded-md hover:bg-amber-700 disabled:opacity-50 disabled:cursor-not-allowed"
-                                >
-                                    {legacySubmitting ? 'Submitting...' : 'Continue to Forms'}
-                                </button>
-                            ) : (
-                                <button
-                                    onClick={handleSubmit}
-                                    disabled={!selectedMember || !selectedProduct || !requestedAmount || selectedMember?.has_active_loan}
-                                    className="px-4 py-2 text-sm bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
-                                    title={selectedMember?.has_active_loan ? 'এই সদস্যের জন্য সক্রিয় ঋণ আছে - মেয়াদ শেষ হওয়ার আগে নতুন ঋণ নেওয়া যাবে না' : ''}
-                                >
-                                    Continue to Form (ফর্মে যান)
-                                </button>
-                            )}
+                            <button
+                                onClick={handleSubmit}
+                                disabled={!selectedMember || !selectedProduct || !requestedAmount || selectedMember?.has_active_loan}
+                                className="px-4 py-2 text-sm bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                                title={selectedMember?.has_active_loan ? 'এই সদস্যের জন্য সক্রিয় ঋণ আছে - মেয়াদ শেষ হওয়ার আগে নতুন ঋণ নেওয়া যাবে না' : ''}
+                            >
+                                Continue to Form (ফর্মে যান)
+                            </button>
                         </div>
                     </div>
                 </div>

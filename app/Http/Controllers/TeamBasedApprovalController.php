@@ -540,10 +540,10 @@ class TeamBasedApprovalController extends Controller
                         'savings_general' => $item->savings_general !== null ? (int) round((float) $item->savings_general) : null,
                         'savings_other' => $item->savings_other !== null ? (int) round((float) $item->savings_other) : null,
                         'savings_total' => $item->savings_total !== null ? (int) round((float) $item->savings_total) : null,
-                        'repaid_loan_amount' => $item->repaid_loan_amount,
+                        'repaid_loan_amount' => TeamBasedApprovalItem::asWholeNumber($item->repaid_loan_amount),
                         'repaid_installment_no' => $item->repaid_installment_no,
                         'other_institution_loan_amount' => $item->other_institution_loan_amount,
-                        'proposed_loan_amount' => $item->proposed_loan_amount,
+                        'proposed_loan_amount' => TeamBasedApprovalItem::asWholeNumber($item->proposed_loan_amount),
                         'approved_amount' => $item->approved_amount !== null ? (int) round((float) $item->approved_amount) : null,
                         'loan_term_years' => $item->loan_term_years,
                         'loan_type' => $item->loan_type,
@@ -586,10 +586,10 @@ class TeamBasedApprovalController extends Controller
                             'savings_general' => $item->savings_general !== null ? (int) round((float) $item->savings_general) : null,
                             'savings_other' => $item->savings_other !== null ? (int) round((float) $item->savings_other) : null,
                             'savings_total' => $item->savings_total !== null ? (int) round((float) $item->savings_total) : null,
-                            'repaid_loan_amount' => $item->repaid_loan_amount,
+                            'repaid_loan_amount' => TeamBasedApprovalItem::asWholeNumber($item->repaid_loan_amount),
                             'repaid_installment_no' => $item->repaid_installment_no,
                             'other_institution_loan_amount' => $item->other_institution_loan_amount,
-                            'proposed_loan_amount' => $item->proposed_loan_amount,
+                            'proposed_loan_amount' => TeamBasedApprovalItem::asWholeNumber($item->proposed_loan_amount),
                             'approved_amount' => $item->approved_amount !== null ? (int) round((float) $item->approved_amount) : null,
                             'loan_term_years' => $item->loan_term_years,
                             'loan_type' => $item->loan_type,
@@ -1420,12 +1420,12 @@ class TeamBasedApprovalController extends Controller
                     'savings_general' => $item->savings_general !== null ? (string) (int) round((float) $item->savings_general) : '',
                     'savings_other' => $item->savings_other !== null ? (string) (int) round((float) $item->savings_other) : '',
                     'savings_total' => $item->savings_total !== null ? (string) (int) round((float) $item->savings_total) : '',
-                    'repaid_loan_amount' => $item->repaid_loan_amount !== null ? (string) $item->repaid_loan_amount : '',
+                    'repaid_loan_amount' => TeamBasedApprovalItem::asWholeNumber($item->repaid_loan_amount) ?? '',
                     'repaid_installment_no' => $item->repaid_installment_no !== null ? (string) $item->repaid_installment_no : '',
                     'other_institution_loan_amount' => $item->other_institution_loan_amount !== null
                         ? (string) $item->other_institution_loan_amount
                         : '',
-                    'proposed_loan_amount' => $item->proposed_loan_amount !== null ? (string) $item->proposed_loan_amount : '',
+                    'proposed_loan_amount' => TeamBasedApprovalItem::asWholeNumber($item->proposed_loan_amount) ?? '',
                     'loan_term_years' => $item->loan_term_years !== null ? (string) $item->loan_term_years : '',
                     'loan_type' => $item->loan_type ?? '',
                     'project_name' => $item->project_name ?? '',
@@ -1678,6 +1678,12 @@ class TeamBasedApprovalController extends Controller
             }
         }
 
+        foreach (['repaid_loan_amount', 'proposed_loan_amount'] as $key) {
+            if (array_key_exists($key, $item)) {
+                $item[$key] = TeamBasedApprovalItem::asWholeNumber($item[$key]);
+            }
+        }
+
         return $item;
     }
 
@@ -1736,10 +1742,10 @@ class TeamBasedApprovalController extends Controller
             'savings_general' => $item->savings_general !== null ? (int) round((float) $item->savings_general) : null,
             'savings_other' => $item->savings_other !== null ? (int) round((float) $item->savings_other) : null,
             'savings_total' => $item->savings_total !== null ? (int) round((float) $item->savings_total) : null,
-            'repaid_loan_amount' => $item->repaid_loan_amount,
+            'repaid_loan_amount' => TeamBasedApprovalItem::asWholeNumber($item->repaid_loan_amount),
             'repaid_installment_no' => $item->repaid_installment_no,
             'other_institution_loan_amount' => $item->other_institution_loan_amount,
-            'proposed_loan_amount' => $item->proposed_loan_amount,
+            'proposed_loan_amount' => TeamBasedApprovalItem::asWholeNumber($item->proposed_loan_amount),
             'loan_term_years' => $item->loan_term_years,
             'loan_type' => $item->loan_type,
             'project_name' => $item->project_name,
@@ -1819,10 +1825,10 @@ class TeamBasedApprovalController extends Controller
             'savings_general' => $item->savings_general !== null ? (int) round((float) $item->savings_general) : null,
             'savings_other' => $item->savings_other !== null ? (int) round((float) $item->savings_other) : null,
             'savings_total' => $item->savings_total !== null ? (int) round((float) $item->savings_total) : null,
-            'repaid_loan_amount' => $item->repaid_loan_amount,
+            'repaid_loan_amount' => TeamBasedApprovalItem::asWholeNumber($item->repaid_loan_amount),
             'repaid_installment_no' => $item->repaid_installment_no,
             'other_institution_loan_amount' => $item->other_institution_loan_amount,
-            'proposed_loan_amount' => $item->proposed_loan_amount,
+            'proposed_loan_amount' => TeamBasedApprovalItem::asWholeNumber($item->proposed_loan_amount),
             'approved_amount' => $item->approved_amount !== null ? (int) round((float) $item->approved_amount) : null,
             'loan_term_years' => $item->loan_term_years,
             'loan_type' => $item->loan_type,

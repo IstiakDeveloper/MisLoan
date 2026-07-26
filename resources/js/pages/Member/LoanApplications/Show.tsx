@@ -108,7 +108,6 @@ const FORM_NAMES: Record<number, string> = {
 
 interface Props {
     application: LoanApplication;
-    availableApprovers?: Array<{ id: number; name: string; email: string; level?: string; role?: { name: string } }>;
     routes: {
         index: string;
         edit: string;
@@ -121,6 +120,7 @@ const statusConfig = {
     draft: { label: 'খসড়া', color: 'bg-gray-100 text-gray-800', icon: AlertCircle },
     submitted: { label: 'জমা হয়েছে', color: 'bg-blue-100 text-blue-800', icon: Clock },
     under_review: { label: 'পর্যালোচনা', color: 'bg-yellow-100 text-yellow-800', icon: Clock },
+    ready_for_head_office: { label: 'শাখা অনুমোদিত', color: 'bg-emerald-100 text-emerald-800', icon: CheckCircle2 },
     pending_head_office: { label: 'হেড অফিসে প্রেরিত', color: 'bg-indigo-100 text-indigo-800', icon: Clock },
     approved: { label: 'অনুমোদিত', color: 'bg-green-100 text-green-800', icon: CheckCircle2 },
     rejected: { label: 'প্রত্যাখ্যাত', color: 'bg-red-100 text-red-800', icon: XCircle },
@@ -128,12 +128,9 @@ const statusConfig = {
     cancelled: { label: 'বাতিল', color: 'bg-gray-100 text-gray-800', icon: XCircle },
 };
 
-export default function Show({ application, availableApprovers = [], routes }: Props) {
+export default function Show({ application, routes }: Props) {
     const pageAuth = usePage().props.auth as { user?: { role?: { name: string } } } | undefined;
     const isFieldOfficer = pageAuth?.user?.role?.name === 'field_officer';
-    const [showSubmitModal, setShowSubmitModal] = useState(false);
-    const [selectedApprovers, setSelectedApprovers] = useState<number[]>([]);
-    const [submitting, setSubmitting] = useState(false);
     const [selectedFormId, setSelectedFormId] = useState<number | null>(null);
     const formPrintRef = useRef<HTMLDivElement>(null);
 
@@ -257,13 +254,31 @@ export default function Show({ application, availableApprovers = [], routes }: P
                                             সম্পাদনা
                                         </Button>
                                     </Link>
-                                    {application.all_forms_complete && !isFieldOfficer && (
-                                        <Button onClick={() => setShowSubmitModal(true)}>
+                                    {application.all_forms_complete && (
+                                        <Button
+                                            onClick={() => {
+                                                if (confirm('ঋণ আবেদনটি শাখা ব্যবস্থাপকের কাছে জমা দিতে চান?')) {
+                                                    router.patch(routes.submit);
+                                                }
+                                            }}
+                                        >
                                             <Send className="w-4 h-4 mr-2" />
                                             সাবমিট করুন
                                         </Button>
                                     )}
                                 </>
+                            )}
+                            {application.status === 'ready_for_head_office' && !isFieldOfficer && (
+                                <Button
+                                    onClick={() => {
+                                        if (confirm('শাখা অনুমোদিত ঋণ আবেদনটি Head Office এ পাঠাতে চান?')) {
+                                            router.patch(`/member/loan-applications/${application.id}/send-to-head-office`);
+                                        }
+                                    }}
+                                >
+                                    <Send className="w-4 h-4 mr-2" />
+                                    Head Office এ পাঠান
+                                </Button>
                             )}
                             <Button variant="outline" onClick={() => window.print()}>
                                 <Printer className="w-4 h-4 mr-2" />
@@ -405,61 +420,6 @@ export default function Show({ application, availableApprovers = [], routes }: P
                 </div>
             </div>
 
-            {/* Submit modal: approver selection */}
-            {showSubmitModal && (
-                <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-                    <div className="bg-white rounded-lg shadow-xl w-full max-w-md">
-                        <div className="px-6 py-4 border-b">
-                            <h3 className="text-lg font-bold">সাবমিট করুন</h3>
-                            <p className="text-sm text-gray-600">এই এরিয়া/জোনের যেকোনো অ্যাপ্রুভার সিলেক্ট করুন। সাবমিটের পর আর সম্পাদনা করা যাবে না।</p>
-                        </div>
-                        <div className="p-6 space-y-4 max-h-80 overflow-y-auto">
-                            {availableApprovers.length === 0 ? (
-                                <p className="text-sm text-amber-600">কোন অ্যাপ্রুভার পাওয়া যাচ্ছে না। দয়া করে অ্যাডমিনের সাথে যোগাযোগ করুন।</p>
-                            ) : (
-                                availableApprovers.map((user) => (
-                                    <label key={user.id} className="flex items-center gap-3 p-2 rounded border hover:bg-gray-50 cursor-pointer">
-                                        <input
-                                            type="checkbox"
-                                            checked={selectedApprovers.includes(user.id)}
-                                            onChange={(e) => {
-                                                if (e.target.checked) {
-                                                    setSelectedApprovers((prev) => [...prev, user.id]);
-                                                } else {
-                                                    setSelectedApprovers((prev) => prev.filter((id) => id !== user.id));
-                                                }
-                                            }}
-                                            className="w-4 h-4 rounded border-gray-300"
-                                        />
-                                        <div>
-                                            <p className="font-medium">{user.name}</p>
-                                            <p className="text-xs text-gray-500">{user.role?.name ?? user.level ?? ''} {user.email}</p>
-                                        </div>
-                                    </label>
-                                ))
-                            )}
-                        </div>
-                        <div className="px-6 py-4 border-t flex justify-end gap-2">
-                            <Button variant="outline" onClick={() => setShowSubmitModal(false)}>বাতিল</Button>
-                            <Button
-                                disabled={selectedApprovers.length === 0 || submitting}
-                                onClick={() => {
-                                    setSubmitting(true);
-                                    router.patch(routes.submit, {
-                                        selected_approvers: selectedApprovers,
-                                    }, {
-                                        preserveScroll: true,
-                                        onFinish: () => setSubmitting(false),
-                                        onSuccess: () => setShowSubmitModal(false),
-                                    });
-                                }}
-                            >
-                                {submitting ? 'সাবমিট হচ্ছে...' : 'সাবমিট করুন'}
-                            </Button>
-                        </div>
-                    </div>
-                </div>
-            )}
         </AdminLayout>
     );
 }

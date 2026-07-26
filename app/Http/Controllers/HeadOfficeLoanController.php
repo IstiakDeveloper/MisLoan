@@ -21,8 +21,8 @@ class HeadOfficeLoanController extends Controller
      */
     public function index(Request $request)
     {
-        // Default date filter - current date
-        $dateFrom = $request->date_from ?? now()->toDateString();
+        // Default date filter - current month (1st of month .. today)
+        $dateFrom = $request->date_from ?? now()->startOfMonth()->toDateString();
         $dateTo = $request->date_to ?? now()->toDateString();
 
         // Use date range instead of whereDate() to allow index usage and prevent memory issues
@@ -83,9 +83,12 @@ class HeadOfficeLoanController extends Controller
             $query->where('branch_id', $request->branch_id);
         }
 
-        // Status filter
-        if ($request->has('status') && $request->status) {
+        // Status filter. Drafts are hidden from the default "All" list, but a Head
+        // Office user can view every draft by explicitly selecting the draft filter.
+        if ($request->filled('status')) {
             $query->where('status', $request->status);
+        } else {
+            $query->where('status', '!=', 'draft');
         }
 
         // Search filter
@@ -156,7 +159,8 @@ class HeadOfficeLoanController extends Controller
         }
 
         $stats = [
-            'total' => (clone $statsQuery)->count(),
+            // "Total" mirrors the default (All) list, which excludes drafts.
+            'total' => (clone $statsQuery)->where('status', '!=', 'draft')->count(),
             'draft' => (clone $statsQuery)->where('status', 'draft')->count(),
             'submitted' => (clone $statsQuery)->where('status', 'submitted')->count(),
             'under_review' => (clone $statsQuery)->where('status', 'under_review')->count(),
@@ -192,7 +196,7 @@ class HeadOfficeLoanController extends Controller
     public function print(Request $request)
     {
         // Apply same filters as index
-        $dateFrom = $request->date_from ?? now()->toDateString();
+        $dateFrom = $request->date_from ?? now()->startOfMonth()->toDateString();
         $dateTo = $request->date_to ?? now()->toDateString();
 
         $startOfDay = Carbon::parse($dateFrom)->startOfDay();
@@ -247,8 +251,10 @@ class HeadOfficeLoanController extends Controller
             $query->where('branch_id', $request->branch_id);
         }
 
-        if ($request->status) {
+        if ($request->filled('status')) {
             $query->where('status', $request->status);
+        } else {
+            $query->where('status', '!=', 'draft');
         }
 
         if ($request->search) {

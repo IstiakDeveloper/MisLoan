@@ -162,8 +162,8 @@ Route::middleware(['auth', 'verified'])->group(function () {
         Route::post('/', [MemberAdmissionController::class, 'store'])->name('store')->middleware('branch.user');
         Route::get('{memberAdmission}', [MemberAdmissionController::class, 'show'])->name('show')->middleware('member.admission.view');
         Route::get('{memberAdmission}/print', [MemberAdmissionController::class, 'printSingle'])->name('print')->middleware('member.admission.view');
-        Route::get('{memberAdmission}/edit', [MemberAdmissionController::class, 'edit'])->name('edit')->middleware('branch.user');
-        Route::put('{memberAdmission}', [MemberAdmissionController::class, 'update'])->name('update')->middleware('branch.user');
+        Route::get('{memberAdmission}/edit', [MemberAdmissionController::class, 'edit'])->name('edit')->middleware('member.admission.view');
+        Route::put('{memberAdmission}', [MemberAdmissionController::class, 'update'])->name('update')->middleware('member.admission.view');
         Route::delete('{memberAdmission}', [MemberAdmissionController::class, 'destroy'])->name('destroy')->middleware('branch.user');
         Route::patch('{memberAdmission}/submit', [MemberAdmissionController::class, 'submit'])->name('submit')->middleware('branch.user');
         Route::patch('{memberAdmission}/resubmit', [MemberAdmissionController::class, 'resubmit'])->name('resubmit')->middleware('branch.user');
@@ -239,6 +239,7 @@ Route::middleware(['auth', 'verified'])->group(function () {
             Route::get('{id}/edit', [\App\Http\Controllers\Member\LoanApplicationController::class, 'edit'])->name('edit');
             Route::put('{id}', [\App\Http\Controllers\Member\LoanApplicationController::class, 'update'])->name('update');
             Route::patch('{id}/submit', [\App\Http\Controllers\Member\LoanApplicationController::class, 'submit'])->name('submit');
+            Route::patch('{id}/send-to-head-office', [\App\Http\Controllers\Member\LoanApplicationController::class, 'sendToHeadOffice'])->name('send-to-head-office');
             Route::get('{id}/print', [\App\Http\Controllers\Member\LoanApplicationController::class, 'print'])->name('print');
             Route::delete('{id}', [\App\Http\Controllers\Member\LoanApplicationController::class, 'destroy'])->name('destroy');
 

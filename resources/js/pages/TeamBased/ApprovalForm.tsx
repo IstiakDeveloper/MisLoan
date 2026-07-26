@@ -189,10 +189,20 @@ export default function TeamBasedApprovalForm({ branch, approverOptions, today, 
                     savings_general: g > 0 ? String(Math.round(g)) : '',
                     savings_other: o > 0 ? String(Math.round(o)) : '',
                     savings_total: total > 0 ? String(total) : '',
-                    repaid_loan_amount: normalizeNumericInput(item.repaid_loan_amount),
+                    repaid_loan_amount: (() => {
+                        const v = normalizeNumericInput(item.repaid_loan_amount);
+                        if (!v) return '';
+                        const n = parseFloat(v.replace(/[^\d.-]/g, ''));
+                        return Number.isFinite(n) ? String(Math.round(n)) : v;
+                    })(),
                     repaid_installment_no: normalizeNumericInput(item.repaid_installment_no),
                     other_institution_loan_amount: normalizeNumericInput(item.other_institution_loan_amount),
-                    proposed_loan_amount: normalizeNumericInput(item.proposed_loan_amount),
+                    proposed_loan_amount: (() => {
+                        const v = normalizeNumericInput(item.proposed_loan_amount);
+                        if (!v) return '';
+                        const n = parseFloat(v.replace(/[^\d.-]/g, ''));
+                        return Number.isFinite(n) ? String(Math.round(n)) : v;
+                    })(),
                     loan_term_years: normalizeNumericInput(item.loan_term_years),
                 };
             }),

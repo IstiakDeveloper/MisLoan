@@ -114,7 +114,13 @@ class SavingsApplicationController extends Controller
                 'status', 'deposit_amount', 'monthly_installment', 'maturity_amount', 'maturity_date',
                 'created_at', 'submitted_at',
             ])
-            ->where('branch_id', $user->branch_id);
+            ->when(!$user->has_all_access, function ($q) use ($user) {
+                $q->whereIn('branch_id', $user->getAccessibleBranches()->pluck('id'));
+            })
+            ->where(function ($q) use ($user) {
+                $q->where('status', '!=', 'draft')
+                  ->orWhere('submitted_by', $user->id);
+            });
 
         if ($dateFrom) {
             $query->where('created_at', '>=', $dateFrom . ' 00:00:00');

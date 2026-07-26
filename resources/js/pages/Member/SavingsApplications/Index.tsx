@@ -2,7 +2,26 @@ import { useState, useEffect, useMemo } from 'react';
 import { Head, router, Link } from '@inertiajs/react';
 import AdminLayout from '@/layouts/admin-layout';
 import { formatDate } from '@/utils/dateUtils';
-import { Plus, Calendar, FileText, CheckCircle, XCircle, Clock, Search, Eye, Edit, Trash2, X } from 'lucide-react';
+import {
+    Plus,
+    Calendar,
+    FileText,
+    CheckCircle,
+    XCircle,
+    Clock,
+    Search,
+    Eye,
+    Edit,
+    Trash2,
+    X,
+    PiggyBank,
+    Building2,
+    Phone,
+    UserCheck,
+    ChevronLeft,
+    ChevronRight,
+    Sparkles,
+} from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 
@@ -55,16 +74,16 @@ interface Props {
     };
 }
 
-const statusLabels: Record<string, { label: string; color: string }> = {
-    draft: { label: 'Draft (খসড়া)', color: 'bg-gray-50 text-gray-700 border border-gray-200' },
-    submitted: { label: 'Submitted (জমা)', color: 'bg-blue-50 text-blue-700 border border-blue-200' },
-    under_review: { label: 'Under Review (পর্যালোচনায়)', color: 'bg-yellow-50 text-yellow-700 border border-yellow-200' },
-    approved: { label: 'Approved (অনুমোদিত)', color: 'bg-green-50 text-green-700 border border-green-200' },
-    rejected: { label: 'Rejected (প্রত্যাখ্যাত)', color: 'bg-red-50 text-red-700 border border-red-200' },
-    active: { label: 'Active (সক্রিয়)', color: 'bg-purple-50 text-purple-700 border border-purple-200' },
-    matured: { label: 'Matured (পরিপক্ক)', color: 'bg-indigo-50 text-indigo-700 border border-indigo-200' },
-    closed: { label: 'Closed (বন্ধ)', color: 'bg-gray-50 text-gray-700 border border-gray-200' },
-    cancelled: { label: 'Cancelled (বাতিল)', color: 'bg-red-50 text-red-700 border border-red-200' },
+const statusLabels: Record<string, { label: string; bg: string; text: string; dot: string }> = {
+    draft: { label: 'খসড়া', bg: 'bg-slate-100 border-slate-300', text: 'text-slate-700', dot: 'bg-slate-500' },
+    submitted: { label: 'জমা', bg: 'bg-blue-50 border-blue-200', text: 'text-blue-700', dot: 'bg-blue-500' },
+    under_review: { label: 'পর্যালোচনায়', bg: 'bg-amber-50 border-amber-200', text: 'text-amber-700', dot: 'bg-amber-500' },
+    approved: { label: 'অনুমোদিত', bg: 'bg-emerald-50 border-emerald-200', text: 'text-emerald-700', dot: 'bg-emerald-600' },
+    rejected: { label: 'প্রত্যাখ্যাত', bg: 'bg-rose-50 border-rose-200', text: 'text-rose-700', dot: 'bg-rose-500' },
+    active: { label: 'সক্রিয়', bg: 'bg-purple-50 border-purple-200', text: 'text-purple-700', dot: 'bg-purple-500' },
+    matured: { label: 'পরিপক্ক', bg: 'bg-indigo-50 border-indigo-200', text: 'text-indigo-700', dot: 'bg-indigo-500' },
+    closed: { label: 'বন্ধ', bg: 'bg-slate-100 border-slate-200', text: 'text-slate-700', dot: 'bg-slate-400' },
+    cancelled: { label: 'বাতিল', bg: 'bg-rose-50 border-rose-200', text: 'text-rose-700', dot: 'bg-rose-500' },
 };
 
 const formatAmount = (amount: number) => {
@@ -84,7 +103,6 @@ export default function Index({ products, applications, flash }: Props) {
     const [showSuccessMessage, setShowSuccessMessage] = useState(!!flash?.success);
     const [showProductModal, setShowProductModal] = useState(false);
 
-    // Products available for new application (exclude G. Savings)
     const applicationProducts = useMemo(
         () => products.filter((p) => p.product_code !== G_SAVINGS_PRODUCT_CODE),
         [products]
@@ -121,514 +139,344 @@ export default function Index({ products, applications, flash }: Props) {
     };
 
     const handleDelete = (id: number) => {
-        if (confirm('Are you sure you want to delete this application?')) {
+        if (confirm('আবেদনটি মুছে ফেলতে চান?')) {
             router.delete(`/member/savings-applications/${id}`, {
                 preserveScroll: true,
             });
         }
     };
 
-    // Calculate stats from applications data
     const stats = useMemo(() => {
         return {
             total: applications.total,
-            draft: applications.data.filter(a => a.status === 'draft').length,
-            submitted: applications.data.filter(a => a.status === 'submitted').length,
-            approved: applications.data.filter(a => a.status === 'approved').length,
-            rejected: applications.data.filter(a => a.status === 'rejected').length,
-            active: applications.data.filter(a => a.status === 'active').length,
-            under_review: applications.data.filter(a => a.status === 'under_review').length,
+            draft: applications.data.filter((a) => a.status === 'draft').length,
+            submitted: applications.data.filter((a) => a.status === 'submitted').length,
+            approved: applications.data.filter((a) => a.status === 'approved').length,
+            rejected: applications.data.filter((a) => a.status === 'rejected').length,
+            active: applications.data.filter((a) => a.status === 'active').length,
+            under_review: applications.data.filter((a) => a.status === 'under_review').length,
         };
     }, [applications]);
 
+    const getStatusBadge = (status: string) => {
+        const info = statusLabels[status] || statusLabels.draft;
+        return (
+            <span className={`inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full border text-[11px] font-bold ${info.bg} ${info.text}`}>
+                <span className={`w-1.5 h-1.5 rounded-full ${info.dot}`} />
+                {info.label}
+            </span>
+        );
+    };
+
     return (
         <AdminLayout>
-            <Head title="Savings Applications (মেয়াদী সঞ্চয় আবেদন)" />
+            <Head title="মেয়াদী সঞ্চয় আবেদন" />
 
-            <div className="space-y-4">
-                {/* Success Message */}
+            <div className="max-w-7xl mx-auto space-y-6 py-4 px-3 sm:px-6 pb-16">
+                {/* Alert Notification */}
                 {showSuccessMessage && flash?.success && (
-                    <div className="bg-green-50 border border-green-200 rounded-lg p-4 flex items-start gap-3">
-                        <CheckCircle className="w-5 h-5 text-green-600 flex-shrink-0 mt-0.5" />
-                        <div className="flex-1">
-                            <p className="text-sm font-medium text-green-800">{flash.success}</p>
+                    <div className="p-4 rounded-2xl bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs sm:text-sm font-bold flex items-center justify-between shadow-sm animate-in fade-in">
+                        <div className="flex items-center gap-2">
+                            <CheckCircle className="w-5 h-5 text-emerald-600 shrink-0" />
+                            <span>{flash.success}</span>
                         </div>
-                        <button
-                            onClick={() => setShowSuccessMessage(false)}
-                            className="text-green-600 hover:text-green-800"
-                        >
+                        <button onClick={() => setShowSuccessMessage(false)} className="text-emerald-600 hover:text-emerald-800">
                             <X className="w-4 h-4" />
                         </button>
                     </div>
                 )}
 
-                {/* Error Message */}
-                {flash?.error && (
-                    <div className="bg-red-50 border border-red-200 rounded-lg p-4 flex items-start gap-3">
-                        <XCircle className="w-5 h-5 text-red-600 flex-shrink-0 mt-0.5" />
-                        <div className="flex-1">
-                            <p className="text-sm font-medium text-red-800">{flash.error}</p>
-                        </div>
-                    </div>
-                )}
+                {/* ── 1. HERO BANNER HEADER ─────────────────────────────────────────── */}
+                <div className="relative overflow-hidden rounded-3xl bg-slate-900 text-white p-6 sm:p-8 shadow-xl border border-slate-800">
+                    <div className="absolute -right-12 -bottom-12 w-64 h-64 rounded-full bg-gradient-to-tr from-purple-600/30 to-indigo-500/20 blur-3xl pointer-events-none" />
+                    <div className="absolute left-1/3 -top-12 w-48 h-48 rounded-full bg-emerald-500/10 blur-2xl pointer-events-none" />
 
-                {/* Header */}
-                <div className="flex items-center justify-between">
-                    <div>
-                        <h1 className="text-xl font-bold text-gray-900">Savings Applications (মেয়াদী সঞ্চয় আবেদন)</h1>
-                        <p className="text-xs text-gray-500 mt-0.5">Manage your savings applications</p>
-                    </div>
-                    <div className="flex items-center gap-2">
+                    <div className="relative z-10 flex flex-col md:flex-row md:items-center justify-between gap-6">
+                        <div className="space-y-2 max-w-2xl">
+                            <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-purple-500/15 border border-purple-400/20 text-purple-300 text-xs font-semibold backdrop-blur-md">
+                                <PiggyBank className="w-4 h-4 text-purple-400" />
+                                <span>Savings Application Management</span>
+                            </div>
+                            <h1 className="text-2xl sm:text-3xl font-extrabold tracking-tight text-white leading-tight">
+                                মেয়াদী সঞ্চয় আবেদন প্যানেল
+                            </h1>
+                            <p className="text-slate-300 text-xs sm:text-sm leading-relaxed">
+                                সদস্যদের মেয়াদী সঞ্চয় প্রকল্প আবেদনসমূহ পর্যালোচনা করুন ও দ্রুত প্রক্রিয়াজাত করুন।
+                            </p>
+                        </div>
+
                         {applicationProducts.length > 0 && (
-                            <Button
-                                className="flex items-center gap-1.5"
+                            <button
                                 onClick={() => setShowProductModal(true)}
+                                className="inline-flex items-center justify-center gap-2 px-5 py-3 rounded-2xl bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-700 hover:to-indigo-700 text-white text-xs sm:text-sm font-bold shadow-lg shadow-purple-600/30 transition-all active:scale-95 shrink-0"
                             >
                                 <Plus className="w-4 h-4" />
-                                New Application (নতুন আবেদন)
-                            </Button>
+                                <span>নতুন সঞ্চয় আবেদন</span>
+                            </button>
                         )}
                     </div>
                 </div>
 
-                {/* Filters */}
-                <div className="bg-white rounded-md border p-4">
-                    <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-                        <div>
-                            <label className="block text-xs font-medium text-gray-700 mb-1">From Date (শুরুর তারিখ)</label>
-                            <div className="flex items-center gap-2 px-3 py-1.5 bg-gray-50 border rounded-md">
-                                <Calendar className="w-4 h-4 text-gray-400" />
+                {/* ── 2. STATS OVERVIEW CARDS ────────────────────────────────────────── */}
+                <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
+                    <div className="bg-white rounded-2xl border border-slate-200/80 p-4 shadow-sm">
+                        <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 block">মোট আবেদন</span>
+                        <p className="text-xl sm:text-2xl font-black text-slate-900 mt-1">{stats.total}</p>
+                    </div>
+                    <div className="bg-white rounded-2xl border border-slate-200/80 p-4 shadow-sm">
+                        <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 block">খসড়া (Draft)</span>
+                        <p className="text-xl sm:text-2xl font-black text-slate-700 mt-1">{stats.draft}</p>
+                    </div>
+                    <div className="bg-white rounded-2xl border border-slate-200/80 p-4 shadow-sm">
+                        <span className="text-[10px] font-bold uppercase tracking-wider text-blue-600 block">জমা (Submitted)</span>
+                        <p className="text-xl sm:text-2xl font-black text-blue-600 mt-1">{stats.submitted}</p>
+                    </div>
+                    <div className="bg-white rounded-2xl border border-slate-200/80 p-4 shadow-sm">
+                        <span className="text-[10px] font-bold uppercase tracking-wider text-amber-600 block">পর্যালোচনায়</span>
+                        <p className="text-xl sm:text-2xl font-black text-amber-600 mt-1">{stats.under_review}</p>
+                    </div>
+                    <div className="bg-white rounded-2xl border border-slate-200/80 p-4 shadow-sm">
+                        <span className="text-[10px] font-bold uppercase tracking-wider text-emerald-600 block">অনুমোদিত</span>
+                        <p className="text-xl sm:text-2xl font-black text-emerald-600 mt-1">{stats.approved}</p>
+                    </div>
+                    <div className="bg-white rounded-2xl border border-slate-200/80 p-4 shadow-sm">
+                        <span className="text-[10px] font-bold uppercase tracking-wider text-purple-600 block">সক্রিয় (Active)</span>
+                        <p className="text-xl sm:text-2xl font-black text-purple-600 mt-1">{stats.active}</p>
+                    </div>
+                </div>
+
+                {/* ── 3. SEARCH & FILTER TOOLBAR ─────────────────────────────────────── */}
+                <div className="bg-white rounded-2xl border border-slate-200/80 p-4 shadow-sm space-y-4">
+                    <div className="flex flex-col lg:flex-row items-stretch lg:items-center justify-between gap-4">
+                        <div className="relative flex-grow max-w-lg">
+                            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 pointer-events-none" />
+                            <input
+                                type="text"
+                                value={searchQuery}
+                                onChange={(e) => setSearchQuery(e.target.value)}
+                                onKeyDown={(e) => e.key === 'Enter' && handleSearch()}
+                                placeholder="নাম, আবেদন নং, মোবাইল, এনআইডি খুঁজুন..."
+                                className="w-full pl-9 pr-4 py-2.5 text-xs sm:text-sm border border-slate-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-purple-500/20 focus:border-purple-500 bg-slate-50/50 transition-all"
+                            />
+                        </div>
+
+                        <div className="flex flex-wrap items-center gap-2">
+                            <div className="flex items-center gap-1.5 bg-slate-50 border border-slate-200 p-1 rounded-xl">
                                 <input
                                     type="date"
                                     value={currentDateFrom}
                                     onChange={(e) => setCurrentDateFrom(e.target.value)}
-                                    className="text-sm border-0 bg-transparent focus:ring-0 p-0 flex-1"
+                                    className="px-2 py-1 text-xs border border-slate-300 rounded-lg bg-white focus:outline-none"
                                 />
-                            </div>
-                        </div>
-                        <div>
-                            <label className="block text-xs font-medium text-gray-700 mb-1">To Date (শেষ তারিখ)</label>
-                            <div className="flex items-center gap-2 px-3 py-1.5 bg-gray-50 border rounded-md">
-                                <Calendar className="w-4 h-4 text-gray-400" />
+                                <span className="text-slate-400 text-xs font-bold">–</span>
                                 <input
                                     type="date"
                                     value={currentDateTo}
                                     onChange={(e) => setCurrentDateTo(e.target.value)}
-                                    className="text-sm border-0 bg-transparent focus:ring-0 p-0 flex-1"
+                                    className="px-2 py-1 text-xs border border-slate-300 rounded-lg bg-white focus:outline-none"
                                 />
                             </div>
-                        </div>
-                        <div className="flex items-end">
+
                             <button
                                 onClick={handleDateFilterChange}
-                                className="w-full px-4 py-1.5 text-sm bg-blue-600 text-white rounded-md hover:bg-blue-700"
+                                className="px-4 py-2.5 text-xs font-bold bg-slate-800 text-white rounded-xl hover:bg-slate-900 transition-all shadow-sm"
                             >
-                                Apply Filter (ফিল্টার প্রয়োগ)
+                                ফিল্টার প্রয়োগ
                             </button>
                         </div>
                     </div>
                 </div>
 
-                {/* Stats */}
-                <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-3">
-                    <div className="bg-white rounded-md border p-3">
-                        <div className="flex items-center gap-2">
-                            <div className="w-8 h-8 rounded bg-blue-50 flex items-center justify-center">
-                                <FileText className="w-4 h-4 text-blue-600" />
+                {/* ── 4. APPLICATIONS MAIN CONTENT ───────────────────────────────────── */}
+                <div className="bg-white rounded-3xl border border-slate-200/80 shadow-sm overflow-hidden">
+                    {/* MOBILE CARDS VIEW (md:hidden) */}
+                    <div className="md:hidden divide-y divide-slate-100">
+                        {applications.data.length === 0 ? (
+                            <div className="p-12 text-center text-slate-400 text-sm">
+                                কোনো মেয়াদী সঞ্চয় আবেদন পাওয়া যায়নি
                             </div>
-                            <div>
-                                <p className="text-lg font-bold text-gray-900">{stats.total}</p>
-                                <p className="text-xs text-gray-500">Total (মোট)</p>
-                            </div>
-                        </div>
-                    </div>
-                    <div className="bg-white rounded-md border p-3">
-                        <div className="flex items-center gap-2">
-                            <div className="w-8 h-8 rounded bg-gray-50 flex items-center justify-center">
-                                <FileText className="w-4 h-4 text-gray-600" />
-                            </div>
-                            <div>
-                                <p className="text-lg font-bold text-gray-900">{stats.draft}</p>
-                                <p className="text-xs text-gray-500">Draft (খসড়া)</p>
-                            </div>
-                        </div>
-                    </div>
-                    <div className="bg-white rounded-md border p-3">
-                        <div className="flex items-center gap-2">
-                            <div className="w-8 h-8 rounded bg-blue-50 flex items-center justify-center">
-                                <Clock className="w-4 h-4 text-blue-600" />
-                            </div>
-                            <div>
-                                <p className="text-lg font-bold text-gray-900">{stats.submitted}</p>
-                                <p className="text-xs text-gray-500">Submitted (জমা)</p>
-                            </div>
-                        </div>
-                    </div>
-                    <div className="bg-white rounded-md border p-3">
-                        <div className="flex items-center gap-2">
-                            <div className="w-8 h-8 rounded bg-yellow-50 flex items-center justify-center">
-                                <Clock className="w-4 h-4 text-yellow-600" />
-                            </div>
-                            <div>
-                                <p className="text-lg font-bold text-gray-900">{stats.under_review}</p>
-                                <p className="text-xs text-gray-500">Under Review</p>
-                            </div>
-                        </div>
-                    </div>
-                    <div className="bg-white rounded-md border p-3">
-                        <div className="flex items-center gap-2">
-                            <div className="w-8 h-8 rounded bg-green-50 flex items-center justify-center">
-                                <CheckCircle className="w-4 h-4 text-green-600" />
-                            </div>
-                            <div>
-                                <p className="text-lg font-bold text-gray-900">{stats.approved}</p>
-                                <p className="text-xs text-gray-500">Approved (অনুমোদিত)</p>
-                            </div>
-                        </div>
-                    </div>
-                    <div className="bg-white rounded-md border p-3">
-                        <div className="flex items-center gap-2">
-                            <div className="w-8 h-8 rounded bg-red-50 flex items-center justify-center">
-                                <XCircle className="w-4 h-4 text-red-600" />
-                            </div>
-                            <div>
-                                <p className="text-lg font-bold text-gray-900">{stats.rejected}</p>
-                                <p className="text-xs text-gray-500">Rejected (প্রত্যাখ্যাত)</p>
-                            </div>
-                        </div>
-                    </div>
-                    <div className="bg-white rounded-md border p-3">
-                        <div className="flex items-center gap-2">
-                            <div className="w-8 h-8 rounded bg-purple-50 flex items-center justify-center">
-                                <CheckCircle className="w-4 h-4 text-purple-600" />
-                            </div>
-                            <div>
-                                <p className="text-lg font-bold text-gray-900">{stats.active}</p>
-                                <p className="text-xs text-gray-500">Active (সক্রিয়)</p>
-                            </div>
-                        </div>
-                    </div>
-                </div>
+                        ) : (
+                            applications.data.map((app) => (
+                                <div key={app.id} className="p-4 space-y-3 hover:bg-slate-50/50 transition-colors">
+                                    <div className="flex items-start justify-between gap-2">
+                                        <div>
+                                            <span className="text-xs font-mono font-bold text-purple-700 bg-purple-50 px-2 py-0.5 rounded border border-purple-200">
+                                                {app.application_no}
+                                            </span>
+                                            <h3 className="font-bold text-slate-900 text-sm mt-1">
+                                                {app.memberAdmission?.applicant_name_bn || app.memberAdmission?.applicant_name_en || 'N/A'}
+                                            </h3>
+                                        </div>
+                                        <div className="shrink-0">{getStatusBadge(app.status)}</div>
+                                    </div>
 
-                {/* Applications Table */}
-                <div className="bg-white rounded-md border">
-                    <div className="px-4 py-3 border-b">
-                        <div className="relative max-w-md">
-                            <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-400" />
-                            <input
-                                type="text"
-                                placeholder="Search by name, member code, NID, phone, or application no..."
-                                value={searchQuery}
-                                onChange={(e) => setSearchQuery(e.target.value)}
-                                onKeyPress={(e) => e.key === 'Enter' && handleSearch()}
-                                className="pl-8 pr-3 py-1.5 text-sm w-full border rounded focus:ring-1 focus:ring-blue-500 focus:border-blue-500"
-                            />
-                        </div>
+                                    <div className="grid grid-cols-2 gap-2.5 bg-slate-50/80 p-3 rounded-2xl border border-slate-100 text-xs">
+                                        <div>
+                                            <span className="text-[10px] font-bold uppercase text-slate-400 block">সঞ্চয় প্রকল্প</span>
+                                            <p className="font-bold text-slate-800 truncate mt-0.5">
+                                                {app.savingsProduct?.product_name_bn || app.savingsProduct?.product_name || '—'}
+                                            </p>
+                                        </div>
+                                        <div>
+                                            <span className="text-[10px] font-bold uppercase text-slate-400 block">জমার পরিমাণ</span>
+                                            <p className="font-black text-purple-700 mt-0.5">৳{formatAmount(app.deposit_amount)}</p>
+                                        </div>
+                                        <div>
+                                            <span className="text-[10px] font-bold uppercase text-slate-400 block">মাসিক কিস্তি</span>
+                                            <p className="font-semibold text-slate-700 mt-0.5">
+                                                {app.monthly_installment ? `৳${formatAmount(app.monthly_installment)}` : '-'}
+                                            </p>
+                                        </div>
+                                        <div>
+                                            <span className="text-[10px] font-bold uppercase text-slate-400 block">পরিপক্ক পরিমাণ</span>
+                                            <p className="font-semibold text-emerald-700 mt-0.5">
+                                                {app.maturity_amount ? `৳${formatAmount(app.maturity_amount)}` : '-'}
+                                            </p>
+                                        </div>
+                                    </div>
+
+                                    <div className="flex items-center gap-2 pt-1 border-t border-slate-100">
+                                        <Link
+                                            href={`/member/savings-applications/${app.id}`}
+                                            className="flex-1 inline-flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl text-xs font-semibold text-purple-700 bg-purple-50 hover:bg-purple-100 border border-purple-200 transition"
+                                        >
+                                            <Eye className="w-3.5 h-3.5" /> বিবরণ দেখুন
+                                        </Link>
+                                        {app.status === 'draft' && (
+                                            <>
+                                                <Link
+                                                    href={`/member/savings-applications/${app.id}/edit`}
+                                                    className="p-2 text-amber-700 bg-amber-50 hover:bg-amber-100 border border-amber-200 rounded-xl transition"
+                                                    title="সম্পাদনা"
+                                                >
+                                                    <Edit className="w-4 h-4" />
+                                                </Link>
+                                                <button
+                                                    onClick={() => handleDelete(app.id)}
+                                                    className="p-2 text-rose-600 bg-rose-50 hover:bg-rose-100 border border-rose-200 rounded-xl transition"
+                                                    title="মুছুন"
+                                                >
+                                                    <Trash2 className="w-4 h-4" />
+                                                </button>
+                                            </>
+                                        )}
+                                    </div>
+                                </div>
+                            ))
+                        )}
                     </div>
 
-                    <div className="overflow-x-auto">
-                        <table className="w-full text-xs">
-                            <thead className="bg-gray-50 border-b">
-                                <tr>
-                                    <th className="px-3 py-2 text-left text-[10px] font-semibold text-gray-600 uppercase">Application No (আবেদন নং)</th>
-                                    <th className="px-3 py-2 text-left text-[10px] font-semibold text-gray-600 uppercase">Member Name (সদস্যের নাম)</th>
-                                    <th className="px-3 py-2 text-left text-[10px] font-semibold text-gray-600 uppercase">Date (তারিখ)</th>
-                                    <th className="px-3 py-2 text-left text-[10px] font-semibold text-gray-600 uppercase">Product (পণ্য)</th>
-                                    <th className="px-3 py-2 text-left text-[10px] font-semibold text-gray-600 uppercase">Deposit Amount (জমার পরিমাণ)</th>
-                                    <th className="px-3 py-2 text-left text-[10px] font-semibold text-gray-600 uppercase">Maturity Amount (পরিপক্ক পরিমাণ)</th>
-                                    <th className="px-3 py-2 text-left text-[10px] font-semibold text-gray-600 uppercase">Status (স্ট্যাটাস)</th>
-                                    <th className="px-3 py-2 text-right text-[10px] font-semibold text-gray-600 uppercase">Actions (অ্যাকশন)</th>
+                    {/* DESKTOP TABLE VIEW (hidden md:block) */}
+                    <div className="hidden md:block overflow-x-auto">
+                        <table className="w-full text-left border-collapse">
+                            <thead>
+                                <tr className="bg-slate-50/80 border-b border-slate-200 text-[11px] font-bold text-slate-500 uppercase tracking-wider">
+                                    <th className="py-3.5 px-4">আবেদন নং</th>
+                                    <th className="py-3.5 px-4">সদস্যের নাম</th>
+                                    <th className="py-3.5 px-4">প্রকল্প</th>
+                                    <th className="py-3.5 px-4 text-right">জমার পরিমাণ</th>
+                                    <th className="py-3.5 px-4 text-right">পরিপক্ক পরিমাণ</th>
+                                    <th className="py-3.5 px-4">স্ট্যাটাস</th>
+                                    <th className="py-3.5 px-4 text-right">অ্যাকশন</th>
                                 </tr>
                             </thead>
-                            <tbody className="divide-y">
+                            <tbody className="divide-y divide-slate-100 text-sm">
                                 {applications.data.length === 0 ? (
                                     <tr>
-                                        <td colSpan={8} className="px-6 py-8 text-center text-gray-500">
-                                            <FileText className="h-12 w-12 mx-auto mb-2 text-gray-400" />
-                                            <p className="text-xs">No applications found</p>
-                                            {applicationProducts.length > 0 && (
-                                                <Button
-                                                    className="mt-4"
-                                                    variant="outline"
-                                                    size="sm"
-                                                    onClick={() => setShowProductModal(true)}
-                                                >
-                                                    <Plus className="h-4 w-4 mr-2" />
-                                                    Create New Application
-                                                </Button>
-                                            )}
+                                        <td colSpan={7} className="py-12 text-center text-slate-400">
+                                            কোনো মেয়াদী সঞ্চয় আবেদন পাওয়া যায়নি
                                         </td>
                                     </tr>
                                 ) : (
-                                    applications.data.map((application) => {
-                                        const statusInfo = statusLabels[application.status] || statusLabels.draft;
-                                        return (
-                                            <tr key={application.id} className="hover:bg-gray-50">
-                                                <td className="px-3 py-2">
+                                    applications.data.map((app) => (
+                                        <tr key={app.id} className="hover:bg-slate-50/60 transition-colors">
+                                            <td className="py-4 px-4 font-mono font-bold text-purple-700 text-xs">
+                                                <Link href={`/member/savings-applications/${app.id}`} className="hover:underline">
+                                                    {app.application_no}
+                                                </Link>
+                                            </td>
+                                            <td className="py-4 px-4 font-bold text-slate-800">
+                                                {app.memberAdmission?.applicant_name_bn || app.memberAdmission?.applicant_name_en || '—'}
+                                            </td>
+                                            <td className="py-4 px-4 font-medium text-slate-700">
+                                                {app.savingsProduct?.product_name_bn || app.savingsProduct?.product_name || '—'}
+                                            </td>
+                                            <td className="py-4 px-4 text-right font-black text-slate-900">
+                                                ৳{formatAmount(app.deposit_amount)}
+                                            </td>
+                                            <td className="py-4 px-4 text-right font-semibold text-emerald-700">
+                                                {app.maturity_amount ? `৳${formatAmount(app.maturity_amount)}` : '-'}
+                                            </td>
+                                            <td className="py-4 px-4">{getStatusBadge(app.status)}</td>
+                                            <td className="py-4 px-4 text-right">
+                                                <div className="flex items-center justify-end gap-1">
                                                     <Link
-                                                        href={`/member/savings-applications/${application.id}`}
-                                                        className="font-medium text-blue-600 hover:text-blue-800 hover:underline"
+                                                        href={`/member/savings-applications/${app.id}`}
+                                                        className="p-2 text-slate-600 hover:text-purple-600 hover:bg-purple-50 rounded-lg transition-colors"
+                                                        title="বিবরণ দেখুন"
                                                     >
-                                                        {application.application_no}
+                                                        <Eye className="w-4 h-4" />
                                                     </Link>
-                                                </td>
-                                                <td className="px-3 py-2">
-                                                    {application.memberAdmission ? (
-                                                        <div>
-                                                            {application.memberAdmission.applicant_name_bn && (
-                                                                <div className="font-medium text-gray-900 text-sm">
-                                                                    {application.memberAdmission.applicant_name_bn}
-                                                                </div>
-                                                            )}
-                                                            {application.memberAdmission.applicant_name_en && (
-                                                                <div className="text-[10px] text-gray-600 italic">
-                                                                    {application.memberAdmission.applicant_name_en}
-                                                                </div>
-                                                            )}
-                                                            <div className="text-[10px] text-gray-500 mt-0.5 space-y-0.5">
-                                                                {application.memberAdmission.application_no && (
-                                                                    <div>Member: {application.memberAdmission.application_no}</div>
-                                                                )}
-                                                                {application.memberAdmission.nid_number && (
-                                                                    <div>NID: {application.memberAdmission.nid_number}</div>
-                                                                )}
-                                                                {application.memberAdmission.mobile_number && (
-                                                                    <div>Phone: {application.memberAdmission.mobile_number}</div>
-                                                                )}
-                                                            </div>
-                                                            {!application.memberAdmission.applicant_name_bn && !application.memberAdmission.applicant_name_en && (
-                                                                <span className="text-gray-400 text-[10px]">N/A</span>
-                                                            )}
-                                                        </div>
-                                                    ) : (
-                                                        <span className="text-gray-400 text-[10px]">N/A</span>
-                                                    )}
-                                                </td>
-                                                <td className="px-3 py-2 text-gray-600">
-                                                    {formatDate(application.created_at)}
-                                                </td>
-                                                <td className="px-3 py-2">
-                                                    {application.savingsProduct ? (
+                                                    {app.status === 'draft' && (
                                                         <>
-                                                            <div className="font-medium text-gray-900">{application.savingsProduct.product_name_bn || application.savingsProduct.product_name || '—'}</div>
-                                                            <div className="text-[10px] text-gray-500">{application.savingsProduct.product_code || ''}</div>
-                                                        </>
-                                                    ) : (
-                                                        <span className="text-gray-400 text-[10px]">N/A</span>
-                                                    )}
-                                                </td>
-                                                <td className="px-3 py-2">
-                                                    <div className="font-medium text-gray-900">৳{formatAmount(application.deposit_amount)}</div>
-                                                    {application.monthly_installment && (
-                                                        <div className="text-[10px] text-gray-500">Monthly: ৳{formatAmount(application.monthly_installment)}</div>
-                                                    )}
-                                                </td>
-                                                <td className="px-3 py-2">
-                                                    <div className="font-medium text-gray-900">
-                                                        {application.maturity_amount ? `৳${formatAmount(application.maturity_amount)}` : '-'}
-                                                    </div>
-                                                    {application.maturity_date && (
-                                                        <div className="text-[10px] text-gray-500">
-                                                            {formatDate(application.maturity_date)}
-                                                        </div>
-                                                    )}
-                                                </td>
-                                                <td className="px-3 py-2">
-                                                    <span className={`inline-block px-1.5 py-0.5 rounded text-[10px] font-medium ${statusInfo.color}`}>
-                                                        {statusInfo.label}
-                                                    </span>
-                                                </td>
-                                                <td className="px-3 py-2 text-right">
-                                                    <div className="flex items-center justify-end gap-1 flex-wrap">
-                                                        <Link
-                                                            href={`/member/savings-applications/${application.id}`}
-                                                            className="inline-flex items-center gap-1 px-2 py-1 text-xs font-medium text-blue-600 hover:bg-blue-50 rounded border border-blue-200"
-                                                        >
-                                                            <Eye className="w-3.5 h-3.5" />
-                                                            View
-                                                        </Link>
-                                                        {application.status === 'draft' && (
-                                                            <>
-                                                                <Link href={`/member/savings-applications/create/${application.savingsProduct?.id ?? application.savings_product_id ?? ''}?member_id=${application.memberAdmission?.id ?? application.member_admission_id ?? ''}`}>
-                                                                    <button
-                                                                        className="p-1 hover:bg-gray-100 rounded"
-                                                                        title="Edit"
-                                                                    >
-                                                                        <Edit className="w-3.5 h-3.5 text-gray-600" />
-                                                                    </button>
-                                                                </Link>
-                                                                <button
-                                                                    onClick={() => handleDelete(application.id)}
-                                                                    className="p-1 hover:bg-red-50 rounded"
-                                                                    title="Delete"
-                                                                >
-                                                                    <Trash2 className="w-3.5 h-3.5 text-red-600" />
-                                                                </button>
-                                                            </>
-                                                        )}
-                                                        {application.status === 'submitted' && (
-                                                            <>
-                                                                <button
-                                                                    onClick={() => router.patch(`/member/savings-applications/${application.id}/approve`, {}, { preserveScroll: true })}
-                                                                    className="p-1 hover:bg-green-50 rounded"
-                                                                    title="Approve"
-                                                                >
-                                                                    <CheckCircle className="w-3.5 h-3.5 text-green-600" />
-                                                                </button>
-                                                                <button
-                                                                    onClick={() => {
-                                                                        const reason = window.prompt('Rejection reason (optional):');
-                                                                        if (reason !== null) router.patch(`/member/savings-applications/${application.id}/reject`, { rejection_reason: reason || '' }, { preserveScroll: true });
-                                                                    }}
-                                                                    className="p-1 hover:bg-red-50 rounded"
-                                                                    title="Reject"
-                                                                >
-                                                                    <XCircle className="w-3.5 h-3.5 text-red-600" />
-                                                                </button>
-                                                            </>
-                                                        )}
-                                                        {application.status === 'submitted' && (
-                                                            <button
-                                                                onClick={() => handleDelete(application.id)}
-                                                                className="p-1 hover:bg-red-50 rounded"
-                                                                title="Delete"
+                                                            <Link
+                                                                href={`/member/savings-applications/${app.id}/edit`}
+                                                                className="p-2 text-amber-600 hover:bg-amber-50 rounded-lg transition-colors"
+                                                                title="সম্পাদনা"
                                                             >
-                                                                <Trash2 className="w-3.5 h-3.5 text-red-600" />
+                                                                <Edit className="w-4 h-4" />
+                                                            </Link>
+                                                            <button
+                                                                onClick={() => handleDelete(app.id)}
+                                                                className="p-2 text-rose-600 hover:bg-rose-50 rounded-lg transition-colors"
+                                                                title="মুছুন"
+                                                            >
+                                                                <Trash2 className="w-4 h-4" />
                                                             </button>
-                                                        )}
-                                                    </div>
-                                                </td>
-                                            </tr>
-                                        );
-                                    })
+                                                        </>
+                                                    )}
+                                                </div>
+                                            </td>
+                                        </tr>
+                                    ))
                                 )}
                             </tbody>
                         </table>
                     </div>
+                </div>
 
-                {/* Product selection modal for new application */}
+                {/* ── 5. PRODUCT SELECTION MODAL ──────────────────────────────────────── */}
                 {showProductModal && (
-                    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-                        <div className="bg-white rounded-lg shadow-xl w-full max-w-lg max-h-[85vh] flex flex-col">
-                            <div className="flex items-center justify-between px-6 py-4 border-b">
-                                <h2 className="text-lg font-bold text-gray-900">Select Savings Product</h2>
-                                <button
-                                    type="button"
-                                    onClick={() => setShowProductModal(false)}
-                                    className="text-gray-400 hover:text-gray-600"
-                                >
+                    <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center z-50 p-4 animate-in fade-in">
+                        <div className="bg-white rounded-3xl p-6 max-w-lg w-full shadow-2xl border border-slate-100 space-y-4 max-h-[90vh] overflow-y-auto">
+                            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+                                <h3 className="text-lg font-bold text-slate-900">সঞ্চয় প্রকল্প নির্বাচন করুন</h3>
+                                <button onClick={() => setShowProductModal(false)} className="p-1 rounded-full text-slate-400 hover:text-slate-600">
                                     <X className="w-5 h-5" />
                                 </button>
                             </div>
-                            <p className="px-6 py-2 text-sm text-gray-600 border-b">
-                                Select the product you want to apply for. G. Savings (21.01) is not in this list.
-                            </p>
-                            <div className="p-4 overflow-y-auto flex-1 space-y-2">
-                                {applicationProducts.map((product) => (
+                            <div className="grid grid-cols-1 gap-3">
+                                {applicationProducts.map((prod) => (
                                     <Link
-                                        key={product.id}
-                                        href={`/member/savings-applications/create/${product.id}`}
-                                        className="block p-4 border border-gray-200 rounded-lg hover:border-blue-400 hover:bg-blue-50/50 transition-colors"
+                                        key={prod.id}
+                                        href={`/member/savings-applications/create?product_id=${prod.id}`}
+                                        className="p-4 rounded-2xl border border-slate-200 hover:border-purple-500 hover:bg-purple-50/50 transition-all flex items-center justify-between group"
                                     >
-                                        <div className="font-medium text-gray-900">
-                                            {product.product_name}
+                                        <div>
+                                            <h4 className="font-bold text-slate-900 text-sm group-hover:text-purple-700">
+                                                {prod.product_name_bn || prod.product_name}
+                                            </h4>
+                                            <p className="text-xs text-slate-500 mt-0.5">
+                                                মেয়াদ: {prod.duration_months} মাস | মুনাফা: {prod.interest_rate}%
+                                            </p>
                                         </div>
-                                        <div className="text-sm text-gray-600 mt-0.5">
-                                            {product.product_name_bn}
-                                        </div>
-                                        <div className="text-xs text-gray-500 mt-1 flex items-center gap-3">
-                                            <span>Code: {product.product_code}</span>
-                                            <span>Min: ৳{formatAmount(product.min_amount)}</span>
-                                            {product.max_amount ? (
-                                                <span>Max: ৳{formatAmount(product.max_amount)}</span>
-                                            ) : null}
-                                            <span>{product.interest_rate}% interest</span>
-                                        </div>
+                                        <Plus className="w-5 h-5 text-slate-400 group-hover:text-purple-600" />
                                     </Link>
                                 ))}
-                            </div>
-                            <div className="px-6 py-4 border-t bg-gray-50 rounded-b-lg">
-                                <button
-                                    type="button"
-                                    onClick={() => setShowProductModal(false)}
-                                    className="px-4 py-2 text-sm text-gray-700 hover:bg-gray-200 rounded-md"
-                                >
-                                    Cancel
-                                </button>
                             </div>
                         </div>
                     </div>
                 )}
-
-                    {/* Pagination */}
-                    {applications.last_page > 1 && (
-                        <div className="bg-white px-4 py-3 border-t border-gray-200 sm:px-6">
-                            <div className="flex items-center justify-between">
-                                <div className="flex-1 flex justify-between sm:hidden">
-                                    {applications.current_page > 1 && (
-                                        <Link
-                                            href={applications.links[applications.current_page - 2]?.url || '#'}
-                                            className="relative inline-flex items-center px-4 py-2 border border-gray-300 text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50"
-                                        >
-                                            Previous
-                                        </Link>
-                                    )}
-                                    {applications.current_page < applications.last_page && (
-                                        <Link
-                                            href={applications.links[applications.current_page]?.url || '#'}
-                                            className="ml-3 relative inline-flex items-center px-4 py-2 border border-gray-300 text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50"
-                                        >
-                                            Next
-                                        </Link>
-                                    )}
-                                </div>
-                                <div className="hidden sm:flex-1 sm:flex sm:items-center sm:justify-between">
-                                    <div>
-                                        <p className="text-sm text-gray-700">
-                                            Showing <span className="font-medium">{((applications.current_page - 1) * applications.per_page) + 1}</span> to{' '}
-                                            <span className="font-medium">
-                                                {Math.min(applications.current_page * applications.per_page, applications.total)}
-                                            </span>{' '}
-                                            of <span className="font-medium">{applications.total}</span> results
-                                        </p>
-                                    </div>
-                                    <div>
-                                        <nav className="relative z-0 inline-flex rounded-md shadow-sm -space-x-px" aria-label="Pagination">
-                                            {applications.links.map((link, index) => {
-                                                if (index === 0 || index === applications.links.length - 1) {
-                                                    return (
-                                                        <Link
-                                                            key={index}
-                                                            href={link.url || '#'}
-                                                            className={`relative inline-flex items-center px-2 py-2 rounded-l-md border border-gray-300 bg-white text-sm font-medium text-gray-500 hover:bg-gray-50 ${
-                                                                index === applications.links.length - 1 ? 'rounded-l-none rounded-r-md' : ''
-                                                            } ${!link.url ? 'opacity-50 cursor-not-allowed' : ''}`}
-                                                        >
-                                                            {link.label.replace('&laquo;', '«').replace('&raquo;', '»')}
-                                                        </Link>
-                                                    );
-                                                }
-                                                return (
-                                                    <Link
-                                                        key={index}
-                                                        href={link.url || '#'}
-                                                        className={`relative inline-flex items-center px-4 py-2 border border-gray-300 text-sm font-medium ${
-                                                            link.active
-                                                                ? 'z-10 bg-blue-50 border-blue-500 text-blue-600'
-                                                                : 'bg-white text-gray-500 hover:bg-gray-50'
-                                                        } ${!link.url ? 'opacity-50 cursor-not-allowed' : ''}`}
-                                                    >
-                                                        {link.label}
-                                                    </Link>
-                                                );
-                                            })}
-                                        </nav>
-                                    </div>
-                                </div>
-                            </div>
-                        </div>
-                    )}
-                </div>
             </div>
         </AdminLayout>
     );

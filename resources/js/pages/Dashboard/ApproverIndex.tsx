@@ -106,15 +106,15 @@ export default function ApproverDashboard({ stats, recentPending, recentDecision
                 </div>
 
                 {/* ── STATISTICS CARDS ─────────────────────────────────────── */}
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+                <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
                     {/* Stat: Pending */}
-                    <div className="bg-white rounded-2xl border border-slate-200/80 p-5 shadow-sm hover:shadow-md transition-shadow">
-                        <div className="flex items-center gap-3">
-                            <div className="w-10 h-10 rounded-lg bg-amber-50 border border-amber-100 text-amber-600 flex items-center justify-center shrink-0">
-                                <Clock size={20} />
+                    <div className="bg-white rounded-2xl border border-slate-200/80 p-4 sm:p-5 shadow-sm hover:shadow-md transition-all">
+                        <div className="flex flex-col sm:flex-row sm:items-center gap-3">
+                            <div className="w-9 h-9 sm:w-10 sm:h-10 rounded-xl bg-amber-50 border border-amber-100 text-amber-600 flex items-center justify-center shrink-0">
+                                <Clock size={18} />
                             </div>
                             <div>
-                                <p className="text-2xl font-bold text-slate-800 tabular-nums leading-none">
+                                <p className="text-xl sm:text-2xl font-black text-slate-800 tabular-nums leading-none">
                                     {stats.pending_count}
                                 </p>
                                 <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400 mt-1">Pending Action</p>
@@ -123,13 +123,13 @@ export default function ApproverDashboard({ stats, recentPending, recentDecision
                     </div>
 
                     {/* Stat: Approved */}
-                    <div className="bg-white rounded-2xl border border-slate-200/80 p-5 shadow-sm hover:shadow-md transition-shadow">
-                        <div className="flex items-center gap-3">
-                            <div className="w-10 h-10 rounded-lg bg-emerald-50 border border-emerald-100 text-emerald-600 flex items-center justify-center shrink-0">
-                                <CheckCircle2 size={20} />
+                    <div className="bg-white rounded-2xl border border-slate-200/80 p-4 sm:p-5 shadow-sm hover:shadow-md transition-all">
+                        <div className="flex flex-col sm:flex-row sm:items-center gap-3">
+                            <div className="w-9 h-9 sm:w-10 sm:h-10 rounded-xl bg-emerald-50 border border-emerald-100 text-emerald-600 flex items-center justify-center shrink-0">
+                                <CheckCircle2 size={18} />
                             </div>
                             <div>
-                                <p className="text-2xl font-bold text-slate-800 tabular-nums leading-none">
+                                <p className="text-xl sm:text-2xl font-black text-slate-800 tabular-nums leading-none">
                                     {stats.approved_count}
                                 </p>
                                 <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400 mt-1">Approved Items</p>
@@ -138,13 +138,13 @@ export default function ApproverDashboard({ stats, recentPending, recentDecision
                     </div>
 
                     {/* Stat: Forwarded */}
-                    <div className="bg-white rounded-2xl border border-slate-200/80 p-5 shadow-sm hover:shadow-md transition-shadow">
-                        <div className="flex items-center gap-3">
-                            <div className="w-10 h-10 rounded-lg bg-sky-50 border border-sky-100 text-sky-600 flex items-center justify-center shrink-0">
-                                <ArrowUpRight size={20} />
+                    <div className="bg-white rounded-2xl border border-slate-200/80 p-4 sm:p-5 shadow-sm hover:shadow-md transition-all">
+                        <div className="flex flex-col sm:flex-row sm:items-center gap-3">
+                            <div className="w-9 h-9 sm:w-10 sm:h-10 rounded-xl bg-sky-50 border border-sky-100 text-sky-600 flex items-center justify-center shrink-0">
+                                <ArrowUpRight size={18} />
                             </div>
                             <div>
-                                <p className="text-2xl font-bold text-slate-800 tabular-nums leading-none">
+                                <p className="text-xl sm:text-2xl font-black text-slate-800 tabular-nums leading-none">
                                     {stats.forwarded_count}
                                 </p>
                                 <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400 mt-1">Forwarded Items</p>
@@ -153,13 +153,13 @@ export default function ApproverDashboard({ stats, recentPending, recentDecision
                     </div>
 
                     {/* Stat: Rejected */}
-                    <div className="bg-white rounded-2xl border border-slate-200/80 p-5 shadow-sm hover:shadow-md transition-shadow">
-                        <div className="flex items-center gap-3">
-                            <div className="w-10 h-10 rounded-lg bg-rose-50 border border-rose-100 text-rose-600 flex items-center justify-center shrink-0">
-                                <XCircle size={20} />
+                    <div className="bg-white rounded-2xl border border-slate-200/80 p-4 sm:p-5 shadow-sm hover:shadow-md transition-all">
+                        <div className="flex flex-col sm:flex-row sm:items-center gap-3">
+                            <div className="w-9 h-9 sm:w-10 sm:h-10 rounded-xl bg-rose-50 border border-rose-100 text-rose-600 flex items-center justify-center shrink-0">
+                                <XCircle size={18} />
                             </div>
                             <div>
-                                <p className="text-2xl font-bold text-slate-800 tabular-nums leading-none">
+                                <p className="text-xl sm:text-2xl font-black text-slate-800 tabular-nums leading-none">
                                     {stats.rejected_count}
                                 </p>
                                 <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400 mt-1">Rejected Items</p>

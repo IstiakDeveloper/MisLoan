@@ -161,6 +161,7 @@ class LoanApplication extends Model
     const STATUS_PENDING = 'pending';
     const STATUS_SUBMITTED = 'submitted';
     const STATUS_UNDER_REVIEW = 'under_review';
+    const STATUS_READY_FOR_HEAD_OFFICE = 'ready_for_head_office';
     const STATUS_PENDING_HEAD_OFFICE = 'pending_head_office';
     const STATUS_APPROVED = 'approved';
     const STATUS_REJECTED = 'rejected';

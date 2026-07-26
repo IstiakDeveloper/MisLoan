@@ -15,6 +15,16 @@ use Inertia\Inertia;
 
 class MemberAdmissionController extends Controller
 {
+    /**
+     * Head Office / SuperAdmin / full-access users may edit admissions in any status.
+     */
+    private function canManageAnyStatus(): bool
+    {
+        $user = auth()->user();
+
+        return $user && ($user->has_all_access || $user->isSuperAdmin() || $user->isHeadOffice());
+    }
+
     public function index(Request $request)
     {
         $query = MemberAdmission::with([
@@ -26,16 +36,29 @@ class MemberAdmissionController extends Controller
             'approvals.user',
         ]);
 
-        // Filter by branch (for branch users)
-        if (!auth()->user()->has_all_access && auth()->user()->branch_id) {
-            $query->where('branch_id', auth()->user()->branch_id);
+        // Filter by branch access (for branch users, regional managers, area/zone managers)
+        if (!auth()->user()->has_all_access) {
+            $accessibleBranchIds = auth()->user()->getAccessibleBranches()->pluck('id');
+            $query->whereIn('branch_id', $accessibleBranchIds);
         }
+
+        // Draft privacy constraint: Drafts are only visible to the user who created them
+        $query->where(function ($q) {
+            $q->where('status', '!=', 'draft')
+              ->orWhere('created_by', auth()->id());
+        });
 
         // Build stats query
         $statsQuery = MemberAdmission::query();
-        if (!auth()->user()->has_all_access && auth()->user()->branch_id) {
-            $statsQuery->where('branch_id', auth()->user()->branch_id);
+        if (!auth()->user()->has_all_access) {
+            $accessibleBranchIds = auth()->user()->getAccessibleBranches()->pluck('id');
+            $statsQuery->whereIn('branch_id', $accessibleBranchIds);
         }
+
+        $statsQuery->where(function ($q) {
+            $q->where('status', '!=', 'draft')
+              ->orWhere('created_by', auth()->id());
+        });
 
         // Calculate stats
         $stats = [
@@ -114,52 +137,52 @@ class MemberAdmissionController extends Controller
     public function store(Request $request)
     {
         $validated = $request->validate([
-            'branch_id' => 'required|exists:branches,id',
-            'samity_id' => 'required|exists:samities,id',
-            'member_category_id' => 'required|exists:member_categories,id',
-            'survey_date' => 'required|date',
-            'admission_date' => 'required|date',
+            'branch_id' => 'nullable|exists:branches,id',
+            'samity_id' => 'nullable|exists:samities,id',
+            'member_category_id' => 'nullable|exists:member_categories,id',
+            'survey_date' => 'nullable|date',
+            'admission_date' => 'nullable|date',
 
             // Personal Information - English
-            'applicant_name_en' => 'required|string|max:255',
-            'father_name_en' => 'required|string|max:255',
-            'mother_name_en' => 'required|string|max:255',
+            'applicant_name_en' => 'nullable|string|max:255',
+            'father_name_en' => 'nullable|string|max:255',
+            'mother_name_en' => 'nullable|string|max:255',
             'spouse_name_en' => 'nullable|string|max:255',
 
             // Personal Information - Bangla
-            'applicant_name_bn' => 'required|string|max:255',
-            'father_name_bn' => 'required|string|max:255',
-            'mother_name_bn' => 'required|string|max:255',
+            'applicant_name_bn' => 'nullable|string|max:255',
+            'father_name_bn' => 'nullable|string|max:255',
+            'mother_name_bn' => 'nullable|string|max:255',
             'spouse_name_bn' => 'nullable|string|max:255',
 
             // Contact & Status
-            'marital_status' => 'required|in:single,married,divorced,widowed',
-            'mobile_number' => 'required|string|max:20',
+            'marital_status' => 'nullable|in:single,married,divorced,widowed',
+            'mobile_number' => 'nullable|string|max:20',
             'alternative_mobile' => 'nullable|string|max:20',
 
             // Present Address
-            'present_division' => 'required|string',
-            'present_district' => 'required|string',
-            'present_upazila' => 'required|string',
+            'present_division' => 'nullable|string',
+            'present_district' => 'nullable|string',
+            'present_upazila' => 'nullable|string',
             'present_union' => 'nullable|string',
             'present_village_road' => 'nullable|string',
             'present_post_code' => 'nullable|string|max:10',
 
             // Permanent Address
             'permanent_address_same' => 'boolean',
-            'permanent_division' => 'nullable|required_if:permanent_address_same,false|string',
-            'permanent_district' => 'nullable|required_if:permanent_address_same,false|string',
-            'permanent_upazila' => 'nullable|required_if:permanent_address_same,false|string',
+            'permanent_division' => 'nullable|string',
+            'permanent_district' => 'nullable|string',
+            'permanent_upazila' => 'nullable|string',
             'permanent_union' => 'nullable|string',
             'permanent_village_road' => 'nullable|string',
             'permanent_post_code' => 'nullable|string|max:10',
 
             // Identity
-            'nid_number' => 'required|string|max:20',
+            'nid_number' => 'nullable|string|max:20',
             'smart_card_number' => 'nullable|string|max:20',
             'birth_certificate_number' => 'nullable|string|max:30',
             'date_of_birth' => 'nullable|date',
-            'gender' => 'required|in:male,female,other',
+            'gender' => 'nullable|in:male,female,other',
             'family_member_mobile' => 'nullable|string|max:20',
 
             // Guarantor
@@ -203,6 +226,9 @@ class MemberAdmissionController extends Controller
             'interviewer_name' => 'nullable|string|max:255',
             'employee_name' => 'nullable|string|max:255',
             'other_loan_info' => 'nullable|string',
+            'requested_loan_amount' => 'nullable|numeric',
+            'project_name' => 'nullable|string|max:255',
+            'estimated_annual_project_income' => 'nullable|numeric',
             'collector_comment' => 'nullable|string',
             'guardian_name' => 'nullable|string|max:255',
 
@@ -219,9 +245,9 @@ class MemberAdmissionController extends Controller
 
             // Family Members
             'family_members' => 'nullable|array',
-            'family_members.*.member_name' => 'required|string',
-            'family_members.*.relation_with_head' => 'required|string',
-            'family_members.*.gender' => 'required|in:male,female,other',
+            'family_members.*.member_name' => 'nullable|string',
+            'family_members.*.relation_with_head' => 'nullable|string',
+            'family_members.*.gender' => 'nullable|in:male,female,other',
             'family_members.*.age_years' => 'nullable|integer',
             'family_members.*.age_months' => 'nullable|integer',
             'family_members.*.education_level' => 'nullable|string',
@@ -230,14 +256,25 @@ class MemberAdmissionController extends Controller
 
             // Other Assets
             'other_assets' => 'nullable|array',
-            'other_assets.*.asset_description' => 'required|string',
+            'other_assets.*.asset_description' => 'nullable|string',
             'other_assets.*.quantity_amount' => 'nullable|string',
             'other_assets.*.estimated_value' => 'nullable|numeric',
 
             // Selected Approvers — no longer used; submit goes to branch manager only
             'selected_approvers' => 'nullable|array',
             'selected_approvers.*' => 'exists:users,id',
+
+            // Legacy / old member
+            'is_legacy' => 'nullable|boolean',
+            'loan_dofa' => 'nullable|integer|min:1|max:999',
         ]);
+
+        $isLegacy = $request->boolean('is_legacy');
+        if ($isLegacy && empty($validated['loan_dofa'])) {
+            return back()->withInput()->withErrors([
+                'loan_dofa' => 'পুরাতন সদস্যের জন্য ঋণের দফা দেওয়া বাধ্যতামূলক।',
+            ]);
+        }
 
         DB::beginTransaction();
         try {
@@ -303,6 +340,8 @@ class MemberAdmissionController extends Controller
                   $admissionData['applicant_signature']);
 
             $admissionData['created_by'] = auth()->id();
+            $admissionData['is_legacy'] = $isLegacy;
+            $admissionData['loan_dofa'] = $isLegacy ? ($validated['loan_dofa'] ?? null) : null;
 
             // মোট জমির পরিমাণ ও মূল্য (আবাদযোগ্য + অনাবাদি)
             $admissionData['total_land_amount'] = ($admissionData['cultivable_land_amount'] ?? 0) + ($admissionData['non_cultivable_land_amount'] ?? 0);
@@ -313,6 +352,16 @@ class MemberAdmissionController extends Controller
             if ($authUser->role?->name === Role::FIELD_OFFICER) {
                 $admissionData['interviewer_name'] = $admissionData['interviewer_name'] ?: $authUser->name;
                 $admissionData['employee_name'] = $admissionData['employee_name'] ?: $authUser->name;
+            }
+
+            // Legacy members: auto-approve on final submit (no draft); skip approval workflow
+            $saveAsDraft = $request->boolean('draft') || $request->query('draft') == '1';
+            if ($isLegacy && !$saveAsDraft) {
+                $admissionData['status'] = 'approved';
+                $admissionData['submitted_by'] = $authUser->id;
+                $admissionData['submitted_at'] = now();
+                $admissionData['reviewed_by'] = $authUser->id;
+                $admissionData['reviewed_at'] = now();
             }
 
             $admission = MemberAdmission::create($admissionData);
@@ -347,6 +396,11 @@ class MemberAdmissionController extends Controller
             }
 
             DB::commit();
+
+            if ($isLegacy && !$saveAsDraft) {
+                return redirect()->route('member-admissions.index')
+                    ->with('success', 'পুরাতন সদস্যের ভর্তি স্বয়ংক্রিয়ভাবে অনুমোদিত হয়েছে! আবেদন নং: ' . $admission->application_no);
+            }
 
             return redirect()->route('member-admissions.index')
                 ->with('success', 'Member admission created successfully! Application No: ' . $admission->application_no);
@@ -398,8 +452,8 @@ class MemberAdmissionController extends Controller
 
     public function edit(MemberAdmission $memberAdmission)
     {
-        // Check if can be edited
-        if (!$memberAdmission->canBeEdited()) {
+        // Head Office / SuperAdmin can edit any status; others only editable ones.
+        if (!$this->canManageAnyStatus() && !$memberAdmission->canBeEdited()) {
             return back()->with('error', 'This admission cannot be edited!');
         }
 
@@ -427,17 +481,106 @@ class MemberAdmissionController extends Controller
 
     public function update(Request $request, MemberAdmission $memberAdmission)
     {
-        // Check if can be edited
-        if (!$memberAdmission->canBeEdited()) {
+        // Head Office / SuperAdmin can edit any status; others only editable ones.
+        if (!$this->canManageAnyStatus() && !$memberAdmission->canBeEdited()) {
             return back()->with('error', 'This admission cannot be edited!');
         }
 
         $validated = $request->validate([
-            // Same validation rules as store method
-            'branch_id' => 'required|exists:branches,id',
-            'samity_id' => 'required|exists:samities,id',
-            'member_category_id' => 'required|exists:member_categories,id',
-            'nid_number' => 'required|string|max:20',
+            'branch_id' => 'nullable|exists:branches,id',
+            'samity_id' => 'nullable|exists:samities,id',
+            'member_category_id' => 'nullable|exists:member_categories,id',
+            'survey_date' => 'nullable|date',
+            'admission_date' => 'nullable|date',
+
+            // Personal Information - English
+            'applicant_name_en' => 'nullable|string|max:255',
+            'father_name_en' => 'nullable|string|max:255',
+            'mother_name_en' => 'nullable|string|max:255',
+            'spouse_name_en' => 'nullable|string|max:255',
+
+            // Personal Information - Bangla
+            'applicant_name_bn' => 'nullable|string|max:255',
+            'father_name_bn' => 'nullable|string|max:255',
+            'mother_name_bn' => 'nullable|string|max:255',
+            'spouse_name_bn' => 'nullable|string|max:255',
+
+            // Contact & Status
+            'marital_status' => 'nullable|in:single,married,divorced,widowed',
+            'mobile_number' => 'nullable|string|max:20',
+            'alternative_mobile' => 'nullable|string|max:20',
+
+            // Present Address
+            'present_division' => 'nullable|string',
+            'present_district' => 'nullable|string',
+            'present_upazila' => 'nullable|string',
+            'present_union' => 'nullable|string',
+            'present_village_road' => 'nullable|string',
+            'present_post_code' => 'nullable|string|max:10',
+
+            // Permanent Address
+            'permanent_address_same' => 'boolean',
+            'permanent_division' => 'nullable|string',
+            'permanent_district' => 'nullable|string',
+            'permanent_upazila' => 'nullable|string',
+            'permanent_union' => 'nullable|string',
+            'permanent_village_road' => 'nullable|string',
+            'permanent_post_code' => 'nullable|string|max:10',
+
+            // Identity
+            'nid_number' => 'nullable|string|max:20',
+            'smart_card_number' => 'nullable|string|max:20',
+            'birth_certificate_number' => 'nullable|string|max:30',
+            'date_of_birth' => 'nullable|date',
+            'gender' => 'nullable|in:male,female,other',
+            'family_member_mobile' => 'nullable|string|max:20',
+
+            // Guarantor
+            'guarantor_name' => 'nullable|string|max:255',
+            'guarantor_mobile' => 'nullable|string|max:20',
+            'tin_number' => 'nullable|string|max:20',
+            'want_sms_service' => 'boolean',
+
+            // Economic
+            'business_details' => 'nullable|string',
+            'job_details' => 'nullable|string',
+            'other_income_details' => 'nullable|string',
+            'total_asset_value' => 'nullable|numeric',
+            'house_type' => 'nullable|string',
+
+            // Property counts
+            'mud_house_count' => 'nullable|integer|min:0',
+            'tin_house_count' => 'nullable|integer|min:0',
+            'brick_house_count' => 'nullable|integer|min:0',
+            'semi_brick_house_count' => 'nullable|integer|min:0',
+
+            // Livestock
+            'cow_buffalo_count' => 'nullable|integer|min:0',
+            'goat_sheep_count' => 'nullable|integer|min:0',
+            'duck_chicken_count' => 'nullable|integer|min:0',
+            'other_livestock' => 'nullable|string',
+            'other_livestock_count' => 'nullable|integer|min:0',
+
+            // Land
+            'cultivable_land_amount' => 'nullable|numeric',
+            'cultivable_land_value' => 'nullable|numeric',
+            'non_cultivable_land_amount' => 'nullable|numeric',
+            'non_cultivable_land_value' => 'nullable|numeric',
+
+            // Financial
+            'monthly_income' => 'nullable|numeric',
+            'monthly_expense' => 'nullable|numeric',
+            'monthly_savings' => 'nullable|numeric',
+
+            // Additional
+            'interviewer_name' => 'nullable|string|max:255',
+            'employee_name' => 'nullable|string|max:255',
+            'other_loan_info' => 'nullable|string',
+            'requested_loan_amount' => 'nullable|numeric',
+            'project_name' => 'nullable|string|max:255',
+            'estimated_annual_project_income' => 'nullable|numeric',
+            'collector_comment' => 'nullable|string',
+            'guardian_name' => 'nullable|string|max:255',
 
             // Customer Documents (Optional) - Max 10MB (will be compressed)
             'customer_photo' => 'nullable|image|mimes:jpeg,png,jpg|max:10240',
@@ -450,21 +593,36 @@ class MemberAdmissionController extends Controller
             // Applicant Signature - Max 10MB (will be compressed)
             'applicant_signature' => 'nullable|image|mimes:jpeg,png,jpg,gif|max:10240',
 
-            // Additional fields
-            'interviewer_name' => 'nullable|string|max:255',
-            'employee_name' => 'nullable|string|max:255',
-
             // Family Members
             'family_members' => 'nullable|array',
+            'family_members.*.member_name' => 'nullable|string',
+            'family_members.*.relation_with_head' => 'nullable|string',
+            'family_members.*.gender' => 'nullable|in:male,female,other',
+            'family_members.*.age_years' => 'nullable|integer',
+            'family_members.*.age_months' => 'nullable|integer',
+            'family_members.*.education_level' => 'nullable|string',
+            'family_members.*.occupation' => 'nullable|string',
+            'family_members.*.monthly_income' => 'nullable|numeric',
 
             // Other Assets
             'other_assets' => 'nullable|array',
+            'other_assets.*.asset_description' => 'nullable|string',
+            'other_assets.*.quantity_amount' => 'nullable|string',
+            'other_assets.*.estimated_value' => 'nullable|numeric',
 
             // Selected Approvers — no longer used; submit goes to branch manager only
             'selected_approvers' => 'nullable|array',
             'selected_approvers.*' => 'exists:users,id',
-            // ... (all other fields same as store)
+
+            // Legacy / old member (type locked; dofa editable)
+            'loan_dofa' => 'nullable|integer|min:1|max:999',
         ]);
+
+        if ($memberAdmission->is_legacy && empty($validated['loan_dofa'])) {
+            return back()->withInput()->withErrors([
+                'loan_dofa' => 'পুরাতন সদস্যের জন্য ঋণের দফা দেওয়া বাধ্যতামূলক।',
+            ]);
+        }
 
         DB::beginTransaction();
         try {
@@ -472,6 +630,11 @@ class MemberAdmissionController extends Controller
             $compressionService = app(ImageCompressionService::class);
 
             $updateData = $validated;
+            if ($memberAdmission->is_legacy) {
+                $updateData['loan_dofa'] = $validated['loan_dofa'] ?? $memberAdmission->loan_dofa;
+            } else {
+                unset($updateData['loan_dofa']);
+            }
 
             // Handle customer photo upload - Compress
             if ($request->hasFile('customer_photo')) {
@@ -548,6 +711,18 @@ class MemberAdmissionController extends Controller
             $updateData['total_land_amount'] = $cultivableAmount + $nonCultivableAmount;
             $updateData['total_land_value'] = $cultivableValue + $nonCultivableValue;
 
+            // Legacy draft: final save (not draft) → auto-approve
+            $saveAsDraft = $request->boolean('draft') || $request->query('draft') == '1';
+            $legacyAutoApproved = false;
+            if ($memberAdmission->is_legacy && !$saveAsDraft && $memberAdmission->isDraft()) {
+                $updateData['status'] = 'approved';
+                $updateData['submitted_by'] = auth()->id();
+                $updateData['submitted_at'] = now();
+                $updateData['reviewed_by'] = auth()->id();
+                $updateData['reviewed_at'] = now();
+                $legacyAutoApproved = true;
+            }
+
             $memberAdmission->update($updateData);
 
             // Update family members
@@ -583,6 +758,11 @@ class MemberAdmissionController extends Controller
 
             DB::commit();
 
+            if ($legacyAutoApproved) {
+                return redirect()->route('member-admissions.index')
+                    ->with('success', 'পুরাতন সদস্যের ভর্তি স্বয়ংক্রিয়ভাবে অনুমোদিত হয়েছে!');
+            }
+
             return redirect()->route('member-admissions.index')
                 ->with('success', 'Member admission updated successfully!');
 
@@ -613,7 +793,91 @@ class MemberAdmissionController extends Controller
             return back()->with('error', 'Only draft admissions can be submitted!');
         }
 
+        // Validate required fields before submitting for approval
+        $rules = [
+            'branch_id' => 'required',
+            'samity_id' => 'required',
+            'member_category_id' => 'required',
+            'survey_date' => 'required',
+            'admission_date' => 'required',
+
+            // Personal Information
+            'applicant_name_en' => 'required',
+            'father_name_en' => 'required',
+            'mother_name_en' => 'required',
+            'applicant_name_bn' => 'required',
+            'father_name_bn' => 'required',
+            'mother_name_bn' => 'required',
+            'marital_status' => 'required',
+            'mobile_number' => 'required',
+
+            // Address
+            'present_division' => 'required',
+            'present_district' => 'required',
+            'present_upazila' => 'required',
+
+            // Identity & Photo
+            'nid_number' => 'required_without:smart_card_number',
+            'smart_card_number' => 'required_without:nid_number',
+            'gender' => 'required',
+            'customer_nid_photo_path' => 'required',
+        ];
+
+        $messages = [
+            'branch_id.required' => 'শাখা নির্বাচন করা বাধ্যতামূলক।',
+            'samity_id.required' => 'সমিতি নির্বাচন করা বাধ্যতামূলক।',
+            'member_category_id.required' => 'সদস্য শ্রেণি নির্বাচন করা বাধ্যতামূলক।',
+            'survey_date.required' => 'জরিপের তারিখ দেওয়া বাধ্যতামূলক।',
+            'admission_date.required' => 'ভর্তির তারিখ দেওয়া বাধ্যতামূলক।',
+            'applicant_name_en.required' => 'আবেদনকারীর নাম (ইংরেজি) বাধ্যতামূলক।',
+            'father_name_en.required' => 'পিতার নাম (ইংরেজি) বাধ্যতামূলক।',
+            'mother_name_en.required' => 'মাতার নাম (ইংরেজি) বাধ্যতামূলক।',
+            'applicant_name_bn.required' => 'আবেদনকারীর নাম (বাংলা) বাধ্যতামূলক।',
+            'father_name_bn.required' => 'পিতার নাম (বাংলা) বাধ্যতামূলক।',
+            'mother_name_bn.required' => 'মাতার নাম (বাংলা) বাধ্যতামূলক।',
+            'marital_status.required' => 'বৈবাহিক অবস্থা বাধ্যতামূলক।',
+            'mobile_number.required' => 'মোবাইল নম্বর বাধ্যতামূলক।',
+            'present_division.required' => 'বর্তমান বিভাগ বাধ্যতামূলক।',
+            'present_district.required' => 'বর্তমান জেলা বাধ্যতামূলক।',
+            'present_upazila.required' => 'বর্তমান উপজেলা বাধ্যতামূলক।',
+            'nid_number.required_without' => 'জাতীয় পরিচয়পত্র (NID) নম্বর অথবা স্মার্ট কার্ড নম্বর যেকোনো একটি প্রদান করা বাধ্যতামূলক।',
+            'smart_card_number.required_without' => 'জাতীয় পরিচয়পত্র (NID) নম্বর অথবা স্মার্ট কার্ড নম্বর যেকোনো একটি প্রদান করা বাধ্যতামূলক।',
+            'gender.required' => 'লিঙ্গ নির্বাচন বাধ্যতামূলক।',
+            'customer_nid_photo_path.required' => 'সদস্যের NID ছবি আপলোড করা বাধ্যতামূলক।',
+        ];
+
+        $validator = \Illuminate\Support\Facades\Validator::make($memberAdmission->toArray(), $rules, $messages);
+
+        if ($validator->fails()) {
+            return redirect()->route('member-admissions.edit', $memberAdmission->id)
+                ->withErrors($validator)
+                ->with('error', 'আবেদনটি জমা দেওয়ার আগে লাল চিহ্নিত আবশ্যকীয় তথ্যগুলো পূরণ করুন।');
+        }
+
+        if ($memberAdmission->is_legacy && empty($memberAdmission->loan_dofa)) {
+            return redirect()->route('member-admissions.edit', $memberAdmission->id)
+                ->withErrors(['loan_dofa' => 'পুরাতন সদস্যের জন্য ঋণের দফা দেওয়া বাধ্যতামূলক।'])
+                ->with('error', 'পুরাতন সদস্যের জন্য ঋণের দফা দেওয়া বাধ্যতামূলক।');
+        }
+
         $authUser = auth()->user();
+
+        // Legacy / old member: auto-approve, no approver workflow
+        if ($memberAdmission->is_legacy) {
+            DB::transaction(function () use ($memberAdmission, $authUser) {
+                $memberAdmission->update([
+                    'status' => 'approved',
+                    'submitted_by' => $authUser->id,
+                    'submitted_at' => now(),
+                    'reviewed_by' => $authUser->id,
+                    'reviewed_at' => now(),
+                ]);
+            });
+
+            return redirect()->route('member-admissions.index')
+                ->with('success', 'পুরাতন সদস্যের ভর্তি স্বয়ংক্রিয়ভাবে অনুমোদিত হয়েছে!');
+        }
+
         DB::transaction(function () use ($memberAdmission, $authUser) {
             $memberAdmission->update([
                 'status' => 'submitted',
@@ -683,14 +947,20 @@ class MemberAdmissionController extends Controller
     {
         $user = auth()->user();
         $user->loadMissing('role');
+        $roleName = strtolower($user->role->name ?? '');
+
+        // Only Branch User can send to Head Office (Branch Manager cannot)
+        if ($roleName !== 'branch_user') {
+            return back()->with('error', 'শুধুমাত্র শাখা ব্যবহারকারী (Branch User) হেড অফিসে পাঠাতে পারবেন।');
+        }
+
         if ($memberAdmission->status !== 'ready_for_head_office') {
             return back()->with('error', 'শুধু শাখা অনুমোদিত আবেদনই Head Office এ পাঠানো যাবে।');
         }
 
-        $authUser = auth()->user();
         $memberAdmission->update([
             'status' => 'pending_head_office',
-            'submitted_by' => $authUser->id,
+            'submitted_by' => $user->id,
             'submitted_at' => now(),
         ]);
 

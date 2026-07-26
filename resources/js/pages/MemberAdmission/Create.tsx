@@ -9,7 +9,7 @@ import {
     OtherAsset,
 } from '@/types/memberAdmission';
 import { Head, router, useForm, usePage } from '@inertiajs/react';
-import { ChevronDown, Plus, Save, Search, Send, Trash2 } from 'lucide-react';
+import { ChevronDown, Plus, Save, Search, Send, Trash2, X } from 'lucide-react';
 import React, { useEffect, useState } from 'react';
 
 interface SamityItem {
@@ -42,6 +42,17 @@ function getSamityDisplayCode(samity: SamityItem): string {
     return code;
 }
 
+function toNumVal(val: number | string | undefined | null): string | number {
+    if (val === 0 || val === '0' || val === '' || val === undefined || val === null) return '';
+    return val;
+}
+
+function toNumChange(val: string): number | string {
+    if (val === '') return '';
+    const num = Number(val);
+    return isNaN(num) ? '' : num;
+}
+
 export default function Create({
     branches,
     samities,
@@ -51,6 +62,9 @@ export default function Create({
     const page = usePage<{
         auth: {
             user?: {
+                name?: string;
+                pin?: string;
+                username?: string;
                 role?: { name: string };
                 has_all_access?: boolean;
                 branch?: { id: number };
@@ -58,10 +72,12 @@ export default function Create({
         };
     }>();
     const pageAuth = page.props.auth;
+    const currentUser = pageAuth.user;
     const isFieldOfficer = pageAuth.user?.role?.name === 'field_officer';
     const [availableSamities, setAvailableSamities] = useState(samities);
     const [samitySearchQuery, setSamitySearchQuery] = useState('');
     const [samityDropdownOpen, setSamityDropdownOpen] = useState(false);
+    const [memberTypeChosen, setMemberTypeChosen] = useState(false);
 
     // Address dropdown states
     const [presentDistricts, setPresentDistricts] = useState<string[]>([]);
@@ -161,9 +177,12 @@ export default function Create({
             monthly_savings: 0,
 
             // Additional
-            interviewer_name: '',
-            employee_name: '',
+            interviewer_name: currentUser?.name || '',
+            employee_name: currentUser?.pin || currentUser?.username || '',
             other_loan_info: '',
+            requested_loan_amount: '',
+            project_name: '',
+            estimated_annual_project_income: '',
             collector_comment: '',
             guardian_name: '',
 
@@ -177,7 +196,28 @@ export default function Create({
             family_members: [],
             other_assets: [],
             selected_approvers: [],
+            is_legacy: false,
+            loan_dofa: '',
         });
+
+    const isLegacyMember = !!data.is_legacy;
+
+    const chooseMemberType = (legacy: boolean) => {
+        setData((prev) => ({
+            ...prev,
+            is_legacy: legacy,
+            loan_dofa: legacy ? prev.loan_dofa || '' : '',
+        }));
+        setMemberTypeChosen(true);
+    };
+    useEffect(() => {
+        if (currentUser?.name && !data.interviewer_name) {
+            setData('interviewer_name', currentUser.name);
+        }
+        if ((currentUser?.pin || currentUser?.username) && !data.employee_name) {
+            setData('employee_name', currentUser.pin || currentUser.username || '');
+        }
+    }, [currentUser?.name, currentUser?.pin, currentUser?.username]);
 
     useEffect(() => {
         if (data.branch_id) {
@@ -320,7 +360,15 @@ export default function Create({
     }, [data]);
 
     const handleSubmit = (saveAsDraft: boolean) => {
+        if (isLegacyMember && !saveAsDraft) {
+            const dofa = Number(data.loan_dofa);
+            if (!dofa || dofa < 1) {
+                alert('পুরাতন সদস্যের জন্য ঋণের দফা দেওয়া বাধ্যতামূলক।');
+                return;
+            }
+        }
         // Submit goes to branch manager automatically; no approver selection needed
+        // Legacy members are auto-approved on the server when not saved as draft
         post(`/member-admissions${saveAsDraft ? '?draft=1' : ''}`, {
             preserveScroll: true,
             onSuccess: () => {
@@ -393,15 +441,97 @@ export default function Create({
         <AdminLayout>
             <Head title="New Member Admission Application" />
 
-            <div className="max-w-full space-y-4">
-                <header className="pb-2">
-                    <h1 className="text-xl font-bold tracking-tight text-gray-900 md:text-2xl">
-                        New Member Admission
-                    </h1>
-                    <p className="mt-1 text-xs text-gray-500 md:text-sm">
-                        Complete the form below. All sections on this page.
-                    </p>
-                </header>
+            {/* Member type selection modal */}
+            {!memberTypeChosen && (
+                <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/50 p-4">
+                    <div className="w-full max-w-md rounded-2xl bg-white shadow-xl">
+                        <div className="border-b px-6 py-4">
+                            <h2 className="text-lg font-bold text-gray-900">সদস্যের ধরন নির্বাচন করুন</h2>
+                            <p className="mt-1 text-sm text-gray-600">
+                                নতুন সদস্য নাকি পুরাতন (আগের) সদস্য — ডাটা উঠানোর জন্য নির্বাচন করুন।
+                            </p>
+                        </div>
+                        <div className="space-y-3 p-6">
+                            <button
+                                type="button"
+                                onClick={() => chooseMemberType(false)}
+                                className="w-full rounded-xl border border-blue-200 bg-blue-50 px-4 py-4 text-left transition hover:border-blue-400 hover:bg-blue-100"
+                            >
+                                <div className="text-sm font-bold text-blue-800">নতুন সদস্য</div>
+                                <div className="mt-1 text-xs text-blue-700">আগের মতোই অনুমোদন প্রক্রিয়ায় যাবে।</div>
+                            </button>
+                            <button
+                                type="button"
+                                onClick={() => chooseMemberType(true)}
+                                className="w-full rounded-xl border border-amber-200 bg-amber-50 px-4 py-4 text-left transition hover:border-amber-400 hover:bg-amber-100"
+                            >
+                                <div className="text-sm font-bold text-amber-800">পুরাতন সদস্য</div>
+                                <div className="mt-1 text-xs text-amber-700">
+                                    আগের সদস্যের ডাটা উঠানো — দফা লাগবে, অনুমোদক ছাড়াই স্বয়ংক্রিয় অনুমোদন।
+                                </div>
+                            </button>
+                        </div>
+                        <div className="border-t px-6 py-3 text-right">
+                            <button
+                                type="button"
+                                onClick={() => router.visit('/member-admissions')}
+                                className="rounded-lg px-4 py-2 text-sm text-gray-600 hover:bg-gray-100"
+                            >
+                                বাতিল
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            <div className={`max-w-full space-y-4 ${!memberTypeChosen ? 'pointer-events-none opacity-40' : ''}`}>
+                {/* ── HERO HEADER BANNER ─────────────────────────────────────────── */}
+                <div className="relative overflow-hidden rounded-3xl bg-slate-900 text-white p-6 sm:p-8 shadow-xl border border-slate-800">
+                    <div className="absolute -right-12 -bottom-12 w-64 h-64 rounded-full bg-gradient-to-tr from-blue-600/30 to-teal-500/20 blur-3xl pointer-events-none" />
+                    <div className="relative z-10 flex flex-col md:flex-row md:items-center justify-between gap-6">
+                        <div className="space-y-2 max-w-2xl">
+                            <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-blue-500/15 border border-blue-400/20 text-blue-300 text-xs font-semibold backdrop-blur-md">
+                                <Save className="w-4 h-4 text-blue-400" />
+                                <span>
+                                    {isLegacyMember
+                                        ? 'পুরাতন সদস্য — ডাটা উঠানো (অটো অনুমোদন)'
+                                        : 'Member Admission Registration Form'}
+                                </span>
+                            </div>
+                            <h1 className="text-2xl sm:text-3xl font-extrabold tracking-tight text-white leading-tight">
+                                {isLegacyMember ? 'পুরাতন সদস্য ভর্তি ফর্ম' : 'নতুন সদস্য ভর্তি ফর্ম'}
+                            </h1>
+                            <p className="text-slate-300 text-xs sm:text-sm leading-relaxed">
+                                {isLegacyMember
+                                    ? 'আগের সদস্যের তথ্য উঠান এবং ঋণের দফা উল্লেখ করুন। জমা দিলে স্বয়ংক্রিয়ভাবে অনুমোদিত হবে।'
+                                    : 'আবেদনকারীর সমস্ত তথ্য ও নথি সঠিক উপায়ে পূরণ করুন। যেকোনো সময় খসড়া হিসেবে সংরক্ষণ করা যাবে।'}
+                            </p>
+                        </div>
+
+                        <div className="hidden md:flex items-center gap-3 shrink-0">
+                            <button
+                                type="button"
+                                onClick={() => handleSubmit(true)}
+                                disabled={processing || !memberTypeChosen}
+                                className="inline-flex items-center justify-center gap-2 px-5 py-3 rounded-2xl bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 text-xs sm:text-sm font-bold transition-all active:scale-95 shadow-sm disabled:opacity-50"
+                            >
+                                <Save className="w-4 h-4 text-amber-400" />
+                                <span>খসড়া সংরক্ষণ</span>
+                            </button>
+                            {!isFieldOfficer && (
+                                <button
+                                    type="button"
+                                    onClick={() => handleSubmit(false)}
+                                    disabled={processing || !memberTypeChosen}
+                                    className="inline-flex items-center justify-center gap-2 px-6 py-3 rounded-2xl bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white text-xs sm:text-sm font-bold shadow-lg shadow-blue-600/30 transition-all active:scale-95 disabled:opacity-50"
+                                >
+                                    <Send className="w-4 h-4" />
+                                    <span>{isLegacyMember ? 'সংরক্ষণ ও অনুমোদন' : 'আবেদন জমা দিন'}</span>
+                                </button>
+                            )}
+                        </div>
+                    </div>
+                </div>
 
                 <div className="rounded-lg border border-gray-200 bg-white p-3 shadow-sm md:p-6">
                     <div className="space-y-4 md:space-y-6">
@@ -592,6 +722,38 @@ export default function Create({
                                             </p>
                                         )}
                                     </div>
+
+                                    {isLegacyMember && (
+                                        <div>
+                                            <label className="mb-0.5 block text-xs font-medium text-gray-600">
+                                                ঋণের দফা (কত নাম্বার দফায় ডাটা উঠানো){' '}
+                                                <span className="text-red-500">*</span>
+                                            </label>
+                                            <input
+                                                type="number"
+                                                min={1}
+                                                value={data.loan_dofa ?? ''}
+                                                onChange={(e) =>
+                                                    setData(
+                                                        'loan_dofa',
+                                                        e.target.value === ''
+                                                            ? ''
+                                                            : Number(e.target.value),
+                                                    )
+                                                }
+                                                placeholder="যেমন: ১, ২, ৩..."
+                                                className="w-full rounded-md border border-amber-300 bg-amber-50 px-2.5 py-1.5 text-sm focus:border-amber-500 focus:ring-2 focus:ring-amber-500"
+                                            />
+                                            <p className="mt-0.5 text-[11px] text-amber-700">
+                                                আগে কতবার ঋণ নিয়েছিল / এখন কত নাম্বার দফায় এই ডাটা উঠানো হচ্ছে।
+                                            </p>
+                                            {errors.loan_dofa && (
+                                                <p className="mt-0.5 text-xs text-red-600">
+                                                    {errors.loan_dofa}
+                                                </p>
+                                            )}
+                                        </div>
+                                    )}
 
                                     <div>
                                         <label className="mb-0.5 block text-xs font-medium text-gray-600">
@@ -1544,24 +1706,26 @@ export default function Create({
                                                     </div>
                                                     <div>
                                                         <label className="mb-0.5 block text-xs font-medium text-gray-600">
-                                                            Relationship
-                                                            (সম্পর্ক)
+                                                            Relationship (সম্পর্ক)
                                                         </label>
-                                                        <input
-                                                            type="text"
-                                                            value={
-                                                                member.relation_with_head
-                                                            }
+                                                        <select
+                                                            value={member.relation_with_head}
                                                             onChange={(e) =>
-                                                                updateFamilyMember(
-                                                                    index,
-                                                                    'relation_with_head',
-                                                                    e.target
-                                                                        .value,
-                                                                )
+                                                                updateFamilyMember(index, 'relation_with_head', e.target.value)
                                                             }
-                                                            className="w-full rounded-md border border-gray-300 px-2.5 py-1.5 text-sm focus:ring-2 focus:ring-blue-500"
-                                                        />
+                                                            className="w-full rounded-md border border-gray-300 px-2.5 py-1.5 text-sm focus:ring-2 focus:ring-blue-500 bg-white"
+                                                        >
+                                                            <option value="">সম্পর্ক নির্বাচন করুন</option>
+                                                            <option value="স্ত্রী">স্ত্রী (Wife)</option>
+                                                            <option value="স্বামী">স্বামী (Husband)</option>
+                                                            <option value="পুত্র">পুত্র (Son)</option>
+                                                            <option value="কন্যা">কন্যা (Daughter)</option>
+                                                            <option value="পিতা">পিতা (Father)</option>
+                                                            <option value="মাতা">মাতা (Mother)</option>
+                                                            <option value="ভাই">ভাই (Brother)</option>
+                                                            <option value="বোন">বোন (Sister)</option>
+                                                            <option value="অন্যান্য">অন্যান্য (Other)</option>
+                                                        </select>
                                                     </div>
                                                     <div>
                                                         <label className="mb-0.5 block text-xs font-medium text-gray-600">
@@ -1593,91 +1757,76 @@ export default function Create({
                                                         </select>
                                                     </div>
                                                     <div>
-                                                        <label className="mb-0.5 block text-xs font-medium text-gray-600">
-                                                            Age - Years (বয়স -
-                                                            বছর)
-                                                        </label>
-                                                        <input
-                                                            type="number"
-                                                            value={
-                                                                member.age_years
-                                                            }
-                                                            onChange={(e) =>
-                                                                updateFamilyMember(
-                                                                    index,
-                                                                    'age_years',
-                                                                    Number(
-                                                                        e.target
-                                                                            .value,
-                                                                    ),
-                                                                )
-                                                            }
-                                                            className="w-full rounded-md border border-gray-300 px-2.5 py-1.5 text-sm focus:ring-2 focus:ring-blue-500"
-                                                        />
-                                                    </div>
+                                                         <label className="mb-0.5 block text-xs font-medium text-gray-600">
+                                                             Age - Years (বয়স - বছর)
+                                                         </label>
+                                                         <input
+                                                             type="number"
+                                                             placeholder="0"
+                                                             value={toNumVal(member.age_years)}
+                                                             onChange={(e) =>
+                                                                 updateFamilyMember(index, 'age_years', toNumChange(e.target.value))
+                                                             }
+                                                             className="w-full rounded-md border border-gray-300 px-2.5 py-1.5 text-sm focus:ring-2 focus:ring-blue-500"
+                                                         />
+                                                     </div>
+                                                     <div>
+                                                         <label className="mb-0.5 block text-xs font-medium text-gray-600">
+                                                             Age - Months (বয়স - মাস)
+                                                         </label>
+                                                         <input
+                                                             type="number"
+                                                             placeholder="0"
+                                                             value={toNumVal(member.age_months)}
+                                                             onChange={(e) =>
+                                                                 updateFamilyMember(index, 'age_months', toNumChange(e.target.value))
+                                                             }
+                                                             className="w-full rounded-md border border-gray-300 px-2.5 py-1.5 text-sm focus:ring-2 focus:ring-blue-500"
+                                                         />
+                                                     </div>
                                                     <div>
                                                         <label className="mb-0.5 block text-xs font-medium text-gray-600">
-                                                            Age - Months (বয়স -
-                                                            মাস)
+                                                            Education Level (শিক্ষাগত যোগ্যতা)
                                                         </label>
-                                                        <input
-                                                            type="number"
-                                                            value={
-                                                                member.age_months
-                                                            }
+                                                        <select
+                                                            value={member.education_level}
                                                             onChange={(e) =>
-                                                                updateFamilyMember(
-                                                                    index,
-                                                                    'age_months',
-                                                                    Number(
-                                                                        e.target
-                                                                            .value,
-                                                                    ),
-                                                                )
+                                                                updateFamilyMember(index, 'education_level', e.target.value)
                                                             }
-                                                            className="w-full rounded-md border border-gray-300 px-2.5 py-1.5 text-sm focus:ring-2 focus:ring-blue-500"
-                                                        />
-                                                    </div>
-                                                    <div>
-                                                        <label className="mb-0.5 block text-xs font-medium text-gray-600">
-                                                            Education Level
-                                                            (শিক্ষাগত যোগ্যতা)
-                                                        </label>
-                                                        <input
-                                                            type="text"
-                                                            value={
-                                                                member.education_level
-                                                            }
-                                                            onChange={(e) =>
-                                                                updateFamilyMember(
-                                                                    index,
-                                                                    'education_level',
-                                                                    e.target
-                                                                        .value,
-                                                                )
-                                                            }
-                                                            className="w-full rounded-md border border-gray-300 px-2.5 py-1.5 text-sm focus:ring-2 focus:ring-blue-500"
-                                                        />
+                                                            className="w-full rounded-md border border-gray-300 px-2.5 py-1.5 text-sm focus:ring-2 focus:ring-blue-500 bg-white"
+                                                        >
+                                                            <option value="">শিক্ষাগত যোগ্যতা নির্বাচন করুন</option>
+                                                            <option value="নিরক্ষর">নিরক্ষর</option>
+                                                            <option value="স্বাক্ষরজ্ঞানসম্পন্ন">স্বাক্ষরজ্ঞানসম্পন্ন</option>
+                                                            <option value="প্রাথমিক (১ম - ৫ম)">প্রাথমিক (১ম - ৫ম)</option>
+                                                            <option value="মাধ্যমিক (৬ষ্ঠ - ১০ম / এসএসসি)">মাধ্যমিক (৬ষ্ঠ - ১০ম / এসএসসি)</option>
+                                                            <option value="উচ্চ মাধ্যমিক (এইচএসসি)">উচ্চ মাধ্যমিক (এইচএসসি)</option>
+                                                            <option value="স্নাতক (ডিগ্রী/অনার্স)">স্নাতক (ডিগ্রী/অনার্স)</option>
+                                                            <option value="স্নাতকোত্তর (মাষ্টার্স)">স্নাতকোত্তর (মাষ্টার্স)</option>
+                                                        </select>
                                                     </div>
                                                     <div>
                                                         <label className="mb-0.5 block text-xs font-medium text-gray-600">
                                                             Occupation (পেশা)
                                                         </label>
-                                                        <input
-                                                            type="text"
-                                                            value={
-                                                                member.occupation
-                                                            }
+                                                        <select
+                                                            value={member.occupation}
                                                             onChange={(e) =>
-                                                                updateFamilyMember(
-                                                                    index,
-                                                                    'occupation',
-                                                                    e.target
-                                                                        .value,
-                                                                )
+                                                                updateFamilyMember(index, 'occupation', e.target.value)
                                                             }
-                                                            className="w-full rounded-md border border-gray-300 px-2.5 py-1.5 text-sm focus:ring-2 focus:ring-blue-500"
-                                                        />
+                                                            className="w-full rounded-md border border-gray-300 px-2.5 py-1.5 text-sm focus:ring-2 focus:ring-blue-500 bg-white"
+                                                        >
+                                                            <option value="">পেশা নির্বাচন করুন</option>
+                                                            <option value="কৃষি">কৃষি</option>
+                                                            <option value="ব্যবসা">ব্যবসা</option>
+                                                            <option value="চাকরি">চাকরি</option>
+                                                            <option value="গৃহিনী">গৃহিনী</option>
+                                                            <option value="দিনমজুর">দিনমজুর</option>
+                                                            <option value="ড্রাইভার">ড্রাইভার</option>
+                                                            <option value="প্রবাসী">প্রবাসী</option>
+                                                            <option value="ছাত্র / ছাত্রী">ছাত্র / ছাত্রী</option>
+                                                            <option value="অন্যান্য">অন্যান্য</option>
+                                                        </select>
                                                     </div>
                                                     <div>
                                                         <label className="mb-0.5 block text-xs font-medium text-gray-600">
@@ -1815,12 +1964,10 @@ export default function Create({
                                     </label>
                                     <input
                                         type="number"
-                                        value={data.total_asset_value}
+                                        placeholder="0"
+                                        value={toNumVal(data.total_asset_value)}
                                         onChange={(e) =>
-                                            setData(
-                                                'total_asset_value',
-                                                Number(e.target.value),
-                                            )
+                                            setData('total_asset_value', toNumChange(e.target.value))
                                         }
                                         className="w-full rounded-md border border-gray-300 px-2.5 py-1.5 text-sm focus:border-blue-500 focus:ring-2 focus:ring-blue-500"
                                     />
@@ -1843,8 +1990,8 @@ export default function Create({
                                     />
                                 </div>
                             </div>
-                            <div>
-                                <h3 className="mb-2 text-sm font-semibold text-gray-900">
+                            <div className="space-y-4">
+                                <h3 className="text-sm font-semibold text-gray-900">
                                     ১৯. (i) মোট ঘরের সংখ্যা / House Property
                                 </h3>
                                 <div className="grid grid-cols-1 gap-2 sm:gap-3 md:grid-cols-2 lg:grid-cols-4">
@@ -1852,74 +1999,82 @@ export default function Create({
                                         <label className="mb-0.5 block text-xs font-medium text-gray-600">
                                             Mud House (মাটির ঘর)
                                         </label>
-                                        <input
-                                            type="number"
+                                        <select
                                             value={data.mud_house_count}
                                             onChange={(e) =>
-                                                setData(
-                                                    'mud_house_count',
-                                                    Number(e.target.value),
-                                                )
+                                                setData('mud_house_count', Number(e.target.value))
                                             }
-                                            className="w-full rounded-md border border-gray-300 px-2.5 py-1.5 text-sm focus:border-blue-500 focus:ring-2 focus:ring-blue-500"
-                                        />
+                                            className="w-full rounded-md border border-gray-300 px-2.5 py-1.5 text-sm focus:border-blue-500 focus:ring-2 focus:ring-blue-500 bg-white"
+                                        >
+                                            {[0, 1, 2, 3, 4, 5].map((num) => (
+                                                <option key={num} value={num}>
+                                                    {num}
+                                                </option>
+                                            ))}
+                                        </select>
                                     </div>
 
                                     <div>
                                         <label className="mb-0.5 block text-xs font-medium text-gray-600">
                                             Tin House (টিনের ঘর)
                                         </label>
-                                        <input
-                                            type="number"
+                                        <select
                                             value={data.tin_house_count}
                                             onChange={(e) =>
-                                                setData(
-                                                    'tin_house_count',
-                                                    Number(e.target.value),
-                                                )
+                                                setData('tin_house_count', Number(e.target.value))
                                             }
-                                            className="w-full rounded-md border border-gray-300 px-2.5 py-1.5 text-sm focus:border-blue-500 focus:ring-2 focus:ring-blue-500"
-                                        />
+                                            className="w-full rounded-md border border-gray-300 px-2.5 py-1.5 text-sm focus:border-blue-500 focus:ring-2 focus:ring-blue-500 bg-white"
+                                        >
+                                            {[0, 1, 2, 3, 4, 5].map((num) => (
+                                                <option key={num} value={num}>
+                                                    {num}
+                                                </option>
+                                            ))}
+                                        </select>
                                     </div>
 
                                     <div>
                                         <label className="mb-0.5 block text-xs font-medium text-gray-600">
                                             Brick House (ইটের ঘর)
                                         </label>
-                                        <input
-                                            type="number"
+                                        <select
                                             value={data.brick_house_count}
                                             onChange={(e) =>
-                                                setData(
-                                                    'brick_house_count',
-                                                    Number(e.target.value),
-                                                )
+                                                setData('brick_house_count', Number(e.target.value))
                                             }
-                                            className="w-full rounded-md border border-gray-300 px-2.5 py-1.5 text-sm focus:border-blue-500 focus:ring-2 focus:ring-blue-500"
-                                        />
+                                            className="w-full rounded-md border border-gray-300 px-2.5 py-1.5 text-sm focus:border-blue-500 focus:ring-2 focus:ring-blue-500 bg-white"
+                                        >
+                                            {[0, 1, 2, 3, 4, 5].map((num) => (
+                                                <option key={num} value={num}>
+                                                    {num}
+                                                </option>
+                                            ))}
+                                        </select>
                                     </div>
 
                                     <div>
                                         <label className="mb-0.5 block text-xs font-medium text-gray-600">
                                             Semi-Brick House (আধা-পাকা ঘর)
                                         </label>
-                                        <input
-                                            type="number"
+                                        <select
                                             value={data.semi_brick_house_count}
                                             onChange={(e) =>
-                                                setData(
-                                                    'semi_brick_house_count',
-                                                    Number(e.target.value),
-                                                )
+                                                setData('semi_brick_house_count', Number(e.target.value))
                                             }
-                                            className="w-full rounded-md border border-gray-300 px-2.5 py-1.5 text-sm focus:border-blue-500 focus:ring-2 focus:ring-blue-500"
-                                        />
+                                            className="w-full rounded-md border border-gray-300 px-2.5 py-1.5 text-sm focus:border-blue-500 focus:ring-2 focus:ring-blue-500 bg-white"
+                                        >
+                                            {[0, 1, 2, 3, 4, 5].map((num) => (
+                                                <option key={num} value={num}>
+                                                    {num}
+                                                </option>
+                                            ))}
+                                        </select>
                                     </div>
                                 </div>
                             </div>
 
-                            <div>
-                                <h3 className="mb-2 text-sm font-semibold text-gray-900">
+                            <div className="mt-4 space-y-4">
+                                <h3 className="text-sm font-semibold text-gray-900">
                                     ১৯. (ii) গবাদি পশু-পাখির তথ্য / Livestock
                                 </h3>
                                 <div className="grid grid-cols-1 gap-2 sm:gap-3 md:grid-cols-2 lg:grid-cols-4">
@@ -1927,87 +2082,96 @@ export default function Create({
                                         <label className="mb-0.5 block text-xs font-medium text-gray-600">
                                             Cow/Buffalo (গরু/মহিষ)
                                         </label>
-                                        <input
-                                            type="number"
+                                        <select
                                             value={data.cow_buffalo_count}
                                             onChange={(e) =>
-                                                setData(
-                                                    'cow_buffalo_count',
-                                                    Number(e.target.value),
-                                                )
+                                                setData('cow_buffalo_count', Number(e.target.value))
                                             }
-                                            className="w-full rounded-md border border-gray-300 px-2.5 py-1.5 text-sm focus:border-blue-500 focus:ring-2 focus:ring-blue-500"
-                                        />
+                                            className="w-full rounded-md border border-gray-300 px-2.5 py-1.5 text-sm focus:border-blue-500 focus:ring-2 focus:ring-blue-500 bg-white"
+                                        >
+                                            {[0, 1, 2, 3, 4, 5].map((num) => (
+                                                <option key={num} value={num}>
+                                                    {num}
+                                                </option>
+                                            ))}
+                                        </select>
                                     </div>
 
                                     <div>
                                         <label className="mb-0.5 block text-xs font-medium text-gray-600">
                                             Goat/Sheep (ছাগল/ভেড়া)
                                         </label>
-                                        <input
-                                            type="number"
+                                        <select
                                             value={data.goat_sheep_count}
                                             onChange={(e) =>
-                                                setData(
-                                                    'goat_sheep_count',
-                                                    Number(e.target.value),
-                                                )
+                                                setData('goat_sheep_count', Number(e.target.value))
                                             }
-                                            className="w-full rounded-md border border-gray-300 px-2.5 py-1.5 text-sm focus:border-blue-500 focus:ring-2 focus:ring-blue-500"
-                                        />
+                                            className="w-full rounded-md border border-gray-300 px-2.5 py-1.5 text-sm focus:border-blue-500 focus:ring-2 focus:ring-blue-500 bg-white"
+                                        >
+                                            {[0, 1, 2, 3, 4, 5].map((num) => (
+                                                <option key={num} value={num}>
+                                                    {num}
+                                                </option>
+                                            ))}
+                                        </select>
                                     </div>
 
                                     <div>
                                         <label className="mb-0.5 block text-xs font-medium text-gray-600">
                                             Duck/Chicken (হাঁস/মুরগি)
                                         </label>
-                                        <input
-                                            type="number"
+                                        <select
                                             value={data.duck_chicken_count}
                                             onChange={(e) =>
-                                                setData(
-                                                    'duck_chicken_count',
-                                                    Number(e.target.value),
-                                                )
+                                                setData('duck_chicken_count', Number(e.target.value))
                                             }
-                                            className="w-full rounded-md border border-gray-300 px-2.5 py-1.5 text-sm focus:border-blue-500 focus:ring-2 focus:ring-blue-500"
-                                        />
+                                            className="w-full rounded-md border border-gray-300 px-2.5 py-1.5 text-sm focus:border-blue-500 focus:ring-2 focus:ring-blue-500 bg-white"
+                                        >
+                                            {[0, 1, 2, 3, 4, 5].map((num) => (
+                                                <option key={num} value={num}>
+                                                    {num}
+                                                </option>
+                                            ))}
+                                        </select>
                                     </div>
 
                                     <div>
                                         <label className="mb-0.5 block text-xs font-medium text-gray-600">
                                             Other Count (অন্যান্য সংখ্যা)
                                         </label>
-                                        <input
-                                            type="number"
+                                        <select
                                             value={data.other_livestock_count}
                                             onChange={(e) =>
-                                                setData(
-                                                    'other_livestock_count',
-                                                    Number(e.target.value),
-                                                )
+                                                setData('other_livestock_count', Number(e.target.value))
                                             }
-                                            className="w-full rounded-md border border-gray-300 px-2.5 py-1.5 text-sm focus:border-blue-500 focus:ring-2 focus:ring-blue-500"
-                                        />
+                                            className="w-full rounded-md border border-gray-300 px-2.5 py-1.5 text-sm focus:border-blue-500 focus:ring-2 focus:ring-blue-500 bg-white"
+                                        >
+                                            {[0, 1, 2, 3, 4, 5].map((num) => (
+                                                <option key={num} value={num}>
+                                                    {num}
+                                                </option>
+                                            ))}
+                                        </select>
                                     </div>
 
-                                    <div className="md:col-span-2">
-                                        <label className="mb-0.5 block text-xs font-medium text-gray-600">
-                                            Other Livestock Description
-                                            (অন্যান্য গবাদিপশু বিবরণ)
-                                        </label>
-                                        <input
-                                            type="text"
-                                            value={data.other_livestock}
-                                            onChange={(e) =>
-                                                setData(
-                                                    'other_livestock',
-                                                    e.target.value,
-                                                )
-                                            }
-                                            className="w-full rounded-md border border-gray-300 px-2.5 py-1.5 text-sm focus:border-blue-500 focus:ring-2 focus:ring-blue-500"
-                                        />
-                                    </div>
+                                    {Number(data.other_livestock_count) > 0 && (
+                                        <div className="md:col-span-2">
+                                            <label className="mb-0.5 block text-xs font-medium text-gray-600">
+                                                Other Livestock Description (অন্যান্য গবাদিপশু বিবরণ)
+                                            </label>
+                                            <input
+                                                type="text"
+                                                value={data.other_livestock}
+                                                onChange={(e) =>
+                                                    setData(
+                                                        'other_livestock',
+                                                        e.target.value,
+                                                    )
+                                                }
+                                                className="w-full rounded-md border border-gray-300 px-2.5 py-1.5 text-sm focus:border-blue-500 focus:ring-2 focus:ring-blue-500"
+                                            />
+                                        </div>
+                                    )}
                                 </div>
                             </div>
 
@@ -2064,12 +2228,10 @@ export default function Create({
                                         <input
                                             type="number"
                                             step="0.01"
-                                            value={data.cultivable_land_amount}
+                                            placeholder="0"
+                                            value={toNumVal(data.cultivable_land_amount)}
                                             onChange={(e) =>
-                                                setData(
-                                                    'cultivable_land_amount',
-                                                    Number(e.target.value),
-                                                )
+                                                setData('cultivable_land_amount', toNumChange(e.target.value))
                                             }
                                             className="w-full rounded-md border border-gray-300 px-2.5 py-1.5 text-sm focus:border-blue-500 focus:ring-2 focus:ring-blue-500"
                                         />
@@ -2082,12 +2244,10 @@ export default function Create({
                                         </label>
                                         <input
                                             type="number"
-                                            value={data.cultivable_land_value}
+                                            placeholder="0"
+                                            value={toNumVal(data.cultivable_land_value)}
                                             onChange={(e) =>
-                                                setData(
-                                                    'cultivable_land_value',
-                                                    Number(e.target.value),
-                                                )
+                                                setData('cultivable_land_value', toNumChange(e.target.value))
                                             }
                                             className="w-full rounded-md border border-gray-300 px-2.5 py-1.5 text-sm focus:border-blue-500 focus:ring-2 focus:ring-blue-500"
                                         />
@@ -2101,14 +2261,10 @@ export default function Create({
                                         <input
                                             type="number"
                                             step="0.01"
-                                            value={
-                                                data.non_cultivable_land_amount
-                                            }
+                                            placeholder="0"
+                                            value={toNumVal(data.non_cultivable_land_amount)}
                                             onChange={(e) =>
-                                                setData(
-                                                    'non_cultivable_land_amount',
-                                                    Number(e.target.value),
-                                                )
+                                                setData('non_cultivable_land_amount', toNumChange(e.target.value))
                                             }
                                             className="w-full rounded-md border border-gray-300 px-2.5 py-1.5 text-sm focus:border-blue-500 focus:ring-2 focus:ring-blue-500"
                                         />
@@ -2121,14 +2277,10 @@ export default function Create({
                                         </label>
                                         <input
                                             type="number"
-                                            value={
-                                                data.non_cultivable_land_value
-                                            }
+                                            placeholder="0"
+                                            value={toNumVal(data.non_cultivable_land_value)}
                                             onChange={(e) =>
-                                                setData(
-                                                    'non_cultivable_land_value',
-                                                    Number(e.target.value),
-                                                )
+                                                setData('non_cultivable_land_value', toNumChange(e.target.value))
                                             }
                                             className="w-full rounded-md border border-gray-300 px-2.5 py-1.5 text-sm focus:border-blue-500 focus:ring-2 focus:ring-blue-500"
                                         />
@@ -2225,18 +2377,13 @@ export default function Create({
                                                             </label>
                                                             <input
                                                                 type="number"
-                                                                value={
-                                                                    asset.estimated_value
-                                                                }
+                                                                placeholder="0"
+                                                                value={toNumVal(asset.estimated_value)}
                                                                 onChange={(e) =>
                                                                     updateOtherAsset(
                                                                         index,
                                                                         'estimated_value',
-                                                                        Number(
-                                                                            e
-                                                                                .target
-                                                                                .value,
-                                                                        ),
+                                                                        toNumChange(e.target.value)
                                                                     )
                                                                 }
                                                                 className="w-full rounded-md border border-gray-300 px-2.5 py-1.5 text-sm focus:ring-2 focus:ring-blue-500"
@@ -2320,6 +2467,9 @@ export default function Create({
                                 employeeName={data.employee_name || ''}
                                 guardianName={data.guardian_name || ''}
                                 otherLoanInfo={data.other_loan_info || ''}
+                                requestedLoanAmount={data.requested_loan_amount}
+                                projectName={data.project_name}
+                                estimatedAnnualProjectIncome={data.estimated_annual_project_income}
                                 collectorComment={data.collector_comment || ''}
                                 customerPhoto={data.customer_photo || null}
                                 customerNidPhoto={
@@ -2344,25 +2494,43 @@ export default function Create({
                     <div className="mt-4 flex flex-col-reverse items-stretch justify-end gap-2 border-t border-gray-200 pt-4 sm:flex-row sm:items-center">
                         <button
                             type="button"
+                            onClick={() => router.visit('/member-admissions')}
+                            className="inline-flex min-h-[40px] w-full items-center justify-center gap-1.5 rounded-lg bg-gray-100 px-3 py-2 text-xs font-medium text-gray-700 transition-colors hover:bg-gray-200 sm:min-h-0 sm:w-auto md:px-5 md:py-2.5 md:text-sm"
+                        >
+                            <X className="h-3.5 w-3.5 shrink-0 md:h-4 md:w-4" />
+                            বাতিল (Cancel)
+                        </button>
+                        <button
+                            type="button"
                             onClick={() => handleSubmit(true)}
                             disabled={processing}
-                            className="inline-flex min-h-[40px] w-full items-center justify-center gap-1.5 rounded-lg bg-gray-100 px-3 py-2 text-xs font-medium text-gray-700 transition-colors hover:bg-gray-200 disabled:opacity-50 sm:min-h-0 sm:w-auto md:px-5 md:py-2.5 md:text-sm"
+                            className="inline-flex min-h-[40px] w-full items-center justify-center gap-1.5 rounded-lg bg-blue-600 px-3 py-2 text-xs font-medium text-white transition-colors hover:bg-blue-700 disabled:opacity-50 sm:min-h-0 sm:w-auto md:px-5 md:py-2.5 md:text-sm"
                         >
                             <Save className="h-3.5 w-3.5 shrink-0 md:h-4 md:w-4" />
-                            Save Draft
+                            খসড়া সংরক্ষণ (Save Draft)
                         </button>
-                        {!isFieldOfficer && (
-                            <button
-                                type="button"
-                                onClick={() => handleSubmit(false)}
-                                disabled={processing}
-                                className="inline-flex min-h-[40px] w-full items-center justify-center gap-1.5 rounded-lg bg-blue-600 px-3 py-2 text-xs font-medium text-white transition-colors hover:bg-blue-700 disabled:opacity-50 sm:min-h-0 sm:w-auto md:px-5 md:py-2.5 md:text-sm"
-                            >
-                                <Send className="h-3.5 w-3.5 shrink-0 md:h-4 md:w-4" />
-                                Submit Application
-                            </button>
-                        )}
                     </div>
+                </div>
+
+                {/* MOBILE FLOATING ACTION BAR */}
+                <div className="md:hidden fixed bottom-0 left-0 right-0 p-3 bg-white/95 backdrop-blur-md border-t border-slate-200 z-50 flex items-center justify-between gap-2 shadow-2xl">
+                    <button
+                        type="button"
+                        onClick={() => router.visit('/member-admissions')}
+                        className="flex-1 inline-flex items-center justify-center gap-1.5 py-2.5 px-3 rounded-xl bg-slate-100 text-slate-800 text-xs font-bold border border-slate-300 active:scale-95 transition"
+                    >
+                        <X className="w-4 h-4 text-slate-600" />
+                        <span>বাতিল</span>
+                    </button>
+                    <button
+                        type="button"
+                        onClick={() => handleSubmit(true)}
+                        disabled={processing}
+                        className="flex-1 inline-flex items-center justify-center gap-1.5 py-2.5 px-3 rounded-xl bg-blue-600 text-white text-xs font-bold shadow-md active:scale-95 transition disabled:opacity-50"
+                    >
+                        <Save className="w-4 h-4" />
+                        <span>খসড়া সংরক্ষণ</span>
+                    </button>
                 </div>
             </div>
         </AdminLayout>

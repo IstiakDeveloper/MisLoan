@@ -94,13 +94,12 @@ function renderPage1(d: any, branch?: any, categoryName?: string) {
                 </div>
             </div>
             <div className="mb-2 grid grid-cols-2 gap-x-4">
-                {/* বাম পাশ – আবেদনের তারিখ, বরাবর (recipient_to), মাধ্যম যথাযথ কর্তৃপক্ষ (ঠিকানা); গ্যাপ নেই */}
+                {/* বাম পাশ – আবেদনের তারিখ, বরাবর (recipient_to), ঠিকানা; গ্যাপ নেই */}
                 <div className="flex flex-col gap-1">
                     <div><span>আবেদনের তারিখ:</span><span className="ml-1 inline-flex items-center"><DateDigitBoxes dateStr={fmt(d.application_date)} /></span></div>
                     <div><span>বরাবর,</span></div>
                     <div><span className="border-b border-dotted border-gray-600 inline-block min-w-[120px] mx-1 align-bottom">{d.recipient_to || ''}</span></div>
-                    <div><span className="border-b border-dotted border-gray-600 inline-block min-w-[120px] mx-1 align-bottom">{d.authority_medium || ''}</span></div>
-                    <div><span>মাধ্যম যথাযথ কর্তৃপক্ষ।</span></div>
+                    <div><span>ঠিকানা:</span><span className="border-b border-dotted border-gray-600 inline-block min-w-[120px] mx-1 align-bottom">{d.authority_medium || ''}</span></div>
                 </div>
                 {/* ডান পাশ – ড্যাশড বর্ডার, বাম থেকে সাজানো, তারিখ বক্স অ্যালাইন একই */}
                 <div className="flex flex-col gap-1 border border-dashed border-gray-600 p-2 items-start justify-center">
@@ -121,7 +120,7 @@ function renderPage1(d: any, branch?: any, categoryName?: string) {
             <div className="mb-3 leading-relaxed">
                 <p>
                     জনাব,<br />
-                    আমি নিম্নস্বাক্ষরকারী অত্র সংস্থার আওতাধীন <span>{d.committee_name || ''}</span> সমিতির (সমিতি কোড <span>{(d.committee_code || '').length >= 4 ? (d.committee_code || '').slice(4) : (d.committee_code || '')}</span>) একজন {(d.member_type === 'old' ? 'পুরাতন' : 'নতুন')} সদস্য।{d.member_type === 'old' ? ` আমি গত ${d.years_involved || '......'} বছর যাবৎ ${cat} কার্যক্রমের সাথে সম্পৃক্ত।` : ''} বর্তমানে আমার ব্যবসা পরিচালনা ও পরিধি বৃদ্ধির লক্ষ্যে {cat} কর্মসূচির আওতায় ঋণ গ্রহণ করতে ইচ্ছুক। এমতাবস্থায় ঋণ গ্রহণার্থে আমার প্রয়োজনীয় তথ্যাবলি নিম্নে প্রদান করলাম:
+                    আমি নিম্নস্বাক্ষরকারী অত্র সংস্থার আওতাধীন <span>{d.committee_name || ''}</span> সমিতির (সমিতি কোড <span>{(d.committee_code || '').length >= 4 ? (d.committee_code || '').slice(4) : (d.committee_code || '')}</span>) একজন {(d.member_type === 'old' ? 'পুরাতন' : 'নতুন')} সদস্য।{d.member_type === 'old' ? ` দফা: ${d.years_involved || '......'}।` : ''} বর্তমানে আমার ব্যবসা পরিচালনা ও পরিধি বৃদ্ধির লক্ষ্যে {cat} কর্মসূচির আওতায় ঋণ গ্রহণ করতে ইচ্ছুক। এমতাবস্থায় ঋণ গ্রহণার্থে আমার প্রয়োজনীয় তথ্যাবলি নিম্নে প্রদান করলাম:
                 </p>
             </div>
             <div data-sync="item-1" className="mb-1">
@@ -135,8 +134,8 @@ function renderPage1(d: any, branch?: any, categoryName?: string) {
             <div data-sync="item-3" className="mb-1">
                 <span>৩. ঠিকানা:</span>
                 <div className="ml-4 mt-0.5">
-                    <div><span>ক) স্থায়ী: গ্রাম/মহল্লা:</span> <span className="border-b border-dotted border-gray-600 inline-block min-w-[100px] ml-1 align-bottom">{d.permanent_address_line1 || ''}</span> ডাকঘর: <span className="border-b border-dotted border-gray-600 inline-block min-w-[80px] ml-1 align-bottom">{d.permanent_address_line2 || ''}</span> উপজেলা: <span className="border-b border-dotted border-gray-600 inline-block min-w-[80px] ml-1 align-bottom">{d.permanent_address_line3?.split(',')[0]?.trim() || ''}</span> জেলা: <span className="border-b border-dotted border-gray-600 inline-block min-w-[80px] ml-1 align-bottom">{d.permanent_address_line3?.split(',')[1]?.trim() || ''}</span></div>
-                    <div><span>খ) বর্তমান: গ্রাম/মহল্লা:</span> <span className="border-b border-dotted border-gray-600 inline-block min-w-[100px] ml-1 align-bottom">{d.current_address_line1 || ''}</span> ডাকঘর: <span className="border-b border-dotted border-gray-600 inline-block min-w-[80px] ml-1 align-bottom">{d.current_address_line2 || ''}</span> উপজেলা: <span className="border-b border-dotted border-gray-600 inline-block min-w-[80px] ml-1 align-bottom">{d.current_address_line3?.split(',')[0]?.trim() || ''}</span> জেলা: <span className="border-b border-dotted border-gray-600 inline-block min-w-[80px] ml-1 align-bottom">{d.current_address_line3?.split(',')[1]?.trim() || ''}</span></div>
+                    <div><span>ক) স্থায়ী: গ্রাম/মহল্লা:</span> <span className="border-b border-dotted border-gray-600 inline-block min-w-[100px] ml-1 align-bottom">{d.permanent_address_line1 || ''}</span> পোস্ট কোড: <span className="border-b border-dotted border-gray-600 inline-block min-w-[80px] ml-1 align-bottom">{d.permanent_address_line2 || ''}</span> উপজেলা: <span className="border-b border-dotted border-gray-600 inline-block min-w-[80px] ml-1 align-bottom">{d.permanent_address_line3?.split(',')[0]?.trim() || ''}</span> জেলা: <span className="border-b border-dotted border-gray-600 inline-block min-w-[80px] ml-1 align-bottom">{d.permanent_address_line3?.split(',')[1]?.trim() || ''}</span></div>
+                    <div><span>খ) বর্তমান: গ্রাম/মহল্লা:</span> <span className="border-b border-dotted border-gray-600 inline-block min-w-[100px] ml-1 align-bottom">{d.current_address_line1 || ''}</span> পোস্ট কোড: <span className="border-b border-dotted border-gray-600 inline-block min-w-[80px] ml-1 align-bottom">{d.current_address_line2 || ''}</span> উপজেলা: <span className="border-b border-dotted border-gray-600 inline-block min-w-[80px] ml-1 align-bottom">{d.current_address_line3?.split(',')[0]?.trim() || ''}</span> জেলা: <span className="border-b border-dotted border-gray-600 inline-block min-w-[80px] ml-1 align-bottom">{d.current_address_line3?.split(',')[1]?.trim() || ''}</span></div>
                 </div>
             </div>
             <div className="mb-1">
@@ -156,14 +155,18 @@ function renderPage1(d: any, branch?: any, categoryName?: string) {
                 <span className="ml-2">৮. পরিবারের মোট সদস্য সংখ্যা:</span><span className="border-b border-dotted border-gray-600 inline-block min-w-[40px] mx-1 align-bottom">{d.family_members_count ?? ''}</span>
                 <span className="ml-2">৯. পরিবারের উপার্জনক্ষম সদস্য সংখ্যা:</span><span className="border-b border-dotted border-gray-600 inline-block min-w-[40px] ml-1 align-bottom">{d.earning_members_count ?? ''}</span>
             </div>
-            <div className="mb-1">
-                <span>১০. ইতোপূর্বে গৃহীত ঋণের তথ্য: মোট কতোবার</span><span className="border-b border-dotted border-gray-600 inline-block min-w-[60px] mx-1 align-bottom">{d.previous_loan_times || ''}</span>
-                <span>...কতো টাকা।</span><span className="border-b border-dotted border-gray-600 inline-block min-w-[80px] ml-1 align-bottom">{noDecimal(d.previous_loan_amount)}</span>
-            </div>
-            <div className="mb-1">
-                <span>১১. সর্বশেষ পরিশোধিত ঋণের পরিমাণ:</span><span className="border-b border-dotted border-gray-600 inline-block min-w-[80px] mx-1 align-bottom">{noDecimal(d.last_repaid_loan_amount)}</span>
-                <span className="ml-2">১২. সর্বশেষ পরিশোধিত প্রকল্পের নাম:</span><span className="border-b border-dotted border-gray-600 inline-block min-w-[120px] ml-1 align-bottom">{d.last_repaid_project_name || ''}</span>
-            </div>
+            {d.member_type === 'old' && (
+                <>
+                    <div className="mb-1">
+                        <span>১০. ইতোপূর্বে গৃহীত ঋণের তথ্য: মোট কতোবার</span><span className="border-b border-dotted border-gray-600 inline-block min-w-[60px] mx-1 align-bottom">{d.previous_loan_times || ''}</span>
+                        <span>...কতো টাকা।</span><span className="border-b border-dotted border-gray-600 inline-block min-w-[80px] ml-1 align-bottom">{noDecimal(d.previous_loan_amount)}</span>
+                    </div>
+                    <div className="mb-1">
+                        <span>১১. সর্বশেষ পরিশোধিত ঋণের পরিমাণ:</span><span className="border-b border-dotted border-gray-600 inline-block min-w-[80px] mx-1 align-bottom">{noDecimal(d.last_repaid_loan_amount)}</span>
+                        <span className="ml-2">১২. সর্বশেষ পরিশোধিত প্রকল্পের নাম:</span><span className="border-b border-dotted border-gray-600 inline-block min-w-[120px] ml-1 align-bottom">{d.last_repaid_project_name || ''}</span>
+                    </div>
+                </>
+            )}
             <div data-sync="item-13" className="mb-1">
                 <span>১৩. সাধারণ সঞ্চয় (দফা ও পরিমাণ):</span>
                 <span className="border-b border-dotted border-gray-600 inline-block min-w-[40px] mx-1 align-bottom">{dofaLabel(d.loan_round)}</span>

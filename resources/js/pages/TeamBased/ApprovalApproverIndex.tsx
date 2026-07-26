@@ -34,12 +34,23 @@ function toNumber(value: string): number {
     const n = parseFloat(normalizeNumericInput(value));
     return Number.isFinite(n) ? n : 0;
 }
-/** কোনো অ্যামাউন্টে ডেসিমাল থাকবে না – রাউন্ড নম্বর রিটার্ন */
+/** কোনো অ্যামাউন্টে ডেসিমাল থাকবে না – রাউন্ড নম্বর রিটার্ন (0.00 → "0") */
 function formatAmount(val: number | string | null | undefined): string {
     if (val == null || val === '') return '';
     const n = typeof val === 'number' ? val : parseFloat(String(val).replace(/[^\d.-]/g, ''));
     if (!Number.isFinite(n)) return String(val);
     return String(Math.round(n));
+}
+
+function roundAmountField(val: number | string | null | undefined): string | number | null {
+    if (val == null || val === '') return val ?? null;
+    const formatted = formatAmount(val);
+    if (formatted === '') return null;
+    if (typeof val === 'number') return Math.round(val);
+    // Keep non-numeric free text as-is; otherwise store rounded whole number string
+    const n = parseFloat(String(val).replace(/[^\d.-]/g, ''));
+    if (!Number.isFinite(n)) return String(val);
+    return formatted;
 }
 
 interface ItemRow {
@@ -340,7 +351,15 @@ export default function TeamBasedApprovalApproverIndex({ reviews, filters, branc
         setEditModal({
             open: true,
             reviewId,
-            row: { ...row },
+            row: {
+                ...row,
+                savings_general: row.savings_general != null ? Math.round(Number(row.savings_general)) : null,
+                savings_other: row.savings_other != null ? Math.round(Number(row.savings_other)) : null,
+                savings_total: row.savings_total != null ? Math.round(Number(row.savings_total)) : null,
+                repaid_loan_amount: roundAmountField(row.repaid_loan_amount) as string | number | null,
+                proposed_loan_amount: roundAmountField(row.proposed_loan_amount) as string | number | null,
+                approved_amount: row.approved_amount != null ? Math.round(Number(row.approved_amount)) : null,
+            },
         });
         closeDecisionModal();
     };
@@ -370,7 +389,15 @@ export default function TeamBasedApprovalApproverIndex({ reviews, filters, branc
                     parsedValue = value === '' ? null : Number(value);
                 } else {
                     const normalized = normalizeNumericInput(value);
-                    parsedValue = normalized === '' ? null : toNumber(normalized);
+                    parsedValue = normalized === '' ? null : Math.round(toNumber(normalized));
+                }
+            } else if (field === 'repaid_loan_amount' || field === 'proposed_loan_amount') {
+                const normalized = normalizeNumericInput(value);
+                if (normalized === '') {
+                    parsedValue = '';
+                } else {
+                    const n = parseFloat(normalized.replace(/[^\d.-]/g, ''));
+                    parsedValue = Number.isFinite(n) ? String(Math.round(n)) : value;
                 }
             } else {
                 parsedValue = value;
@@ -411,10 +438,14 @@ export default function TeamBasedApprovalApproverIndex({ reviews, filters, branc
             savings_general: row.savings_general != null ? Math.round(Number(row.savings_general)) : null,
             savings_other: row.savings_other != null ? Math.round(Number(row.savings_other)) : null,
             savings_total: row.savings_total != null ? Math.round(Number(row.savings_total)) : null,
-            repaid_loan_amount: row.repaid_loan_amount != null ? String(row.repaid_loan_amount) : '',
+            repaid_loan_amount: row.repaid_loan_amount != null && row.repaid_loan_amount !== ''
+                ? String(roundAmountField(row.repaid_loan_amount) ?? '')
+                : '',
             repaid_installment_no: row.repaid_installment_no != null ? String(row.repaid_installment_no) : '',
             other_institution_loan_amount: row.other_institution_loan_amount ?? '',
-            proposed_loan_amount: row.proposed_loan_amount != null ? String(row.proposed_loan_amount) : '',
+            proposed_loan_amount: row.proposed_loan_amount != null && row.proposed_loan_amount !== ''
+                ? String(roundAmountField(row.proposed_loan_amount) ?? '')
+                : '',
             loan_term_years: row.loan_term_years ?? null,
             loan_type: row.loan_type ?? '',
             project_name: row.project_name ?? '',
@@ -1879,9 +1910,9 @@ export default function TeamBasedApprovalApproverIndex({ reviews, filters, branc
                                         <label className="mb-1 block text-[11px] font-medium text-slate-600">সাধারণ</label>
                                         <input
                                             type="text"
-                                            value={editModal.row.savings_general ?? ''}
+                                            value={editModal.row.savings_general != null ? formatAmount(editModal.row.savings_general) : ''}
                                             onChange={(e) => handleEditModalChange('savings_general', e.target.value)}
-                                            inputMode="decimal"
+                                            inputMode="numeric"
                                             className="w-full rounded-xl border border-slate-200 bg-slate-50 px-2.5 py-2.5 text-right text-sm text-slate-900 outline-none focus:border-blue-400 focus:bg-white focus:ring-2 focus:ring-blue-100 sm:px-3"
                                         />
                                     </div>
@@ -1889,9 +1920,9 @@ export default function TeamBasedApprovalApproverIndex({ reviews, filters, branc
                                         <label className="mb-1 block text-[11px] font-medium text-slate-600">অন্যান্য</label>
                                         <input
                                             type="text"
-                                            value={editModal.row.savings_other ?? ''}
+                                            value={editModal.row.savings_other != null ? formatAmount(editModal.row.savings_other) : ''}
                                             onChange={(e) => handleEditModalChange('savings_other', e.target.value)}
-                                            inputMode="decimal"
+                                            inputMode="numeric"
                                             className="w-full rounded-xl border border-slate-200 bg-slate-50 px-2.5 py-2.5 text-right text-sm text-slate-900 outline-none focus:border-blue-400 focus:bg-white focus:ring-2 focus:ring-blue-100 sm:px-3"
                                         />
                                     </div>
@@ -1899,9 +1930,9 @@ export default function TeamBasedApprovalApproverIndex({ reviews, filters, branc
                                         <label className="mb-1 block text-[11px] font-medium text-slate-600">মোট</label>
                                         <input
                                             type="text"
-                                            value={editModal.row.savings_total ?? ''}
+                                            value={editModal.row.savings_total != null ? formatAmount(editModal.row.savings_total) : ''}
                                             onChange={(e) => handleEditModalChange('savings_total', e.target.value)}
-                                            inputMode="decimal"
+                                            inputMode="numeric"
                                             className="w-full rounded-xl border border-slate-200 bg-slate-50 px-2.5 py-2.5 text-right text-sm font-semibold text-slate-900 outline-none focus:border-blue-400 focus:bg-white focus:ring-2 focus:ring-blue-100 sm:px-3"
                                         />
                                     </div>
@@ -1916,9 +1947,9 @@ export default function TeamBasedApprovalApproverIndex({ reviews, filters, branc
                                         <label className="mb-1 block text-[11px] font-semibold text-slate-600">পরিশোধিত মূল ঋণ</label>
                                         <input
                                             type="text"
-                                            value={editModal.row.repaid_loan_amount != null ? String(editModal.row.repaid_loan_amount) : ''}
+                                            value={editModal.row.repaid_loan_amount != null ? formatAmount(editModal.row.repaid_loan_amount) || String(editModal.row.repaid_loan_amount) : ''}
                                             onChange={(e) => handleEditModalChange('repaid_loan_amount', e.target.value)}
-                                            inputMode="decimal"
+                                            inputMode="numeric"
                                             className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-right text-sm text-slate-900 outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-100"
                                         />
                                     </div>
@@ -1954,9 +1985,9 @@ export default function TeamBasedApprovalApproverIndex({ reviews, filters, branc
                                         <label className="mb-1 block text-[11px] font-semibold text-slate-600">প্রস্তাবিত ঋণ</label>
                                         <input
                                             type="text"
-                                            value={editModal.row.proposed_loan_amount != null ? String(editModal.row.proposed_loan_amount) : ''}
+                                            value={editModal.row.proposed_loan_amount != null ? formatAmount(editModal.row.proposed_loan_amount) || String(editModal.row.proposed_loan_amount) : ''}
                                             onChange={(e) => handleEditModalChange('proposed_loan_amount', e.target.value)}
-                                            inputMode="decimal"
+                                            inputMode="numeric"
                                             className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-right text-sm font-semibold text-slate-900 outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-100"
                                         />
                                     </div>
@@ -2085,60 +2116,140 @@ export default function TeamBasedApprovalApproverIndex({ reviews, filters, branc
 
             {/* Forward to Superior modal */}
             {forwardModal.open && (
-                <div className="fixed inset-0 z-40 flex items-end sm:items-center justify-center bg-black/50 p-2 sm:p-4">
+                <div
+                    className="fixed inset-0 z-[60] flex items-end justify-center bg-slate-900/50 p-0 backdrop-blur-sm sm:items-center sm:p-4 print:hidden"
+                    style={{
+                        paddingTop: 'max(0.75rem, env(safe-area-inset-top))',
+                        paddingBottom: 'env(safe-area-inset-bottom, 0px)',
+                    }}
+                    onClick={() =>
+                        setForwardModal((p) => ({
+                            ...p,
+                            open: false,
+                            sheetId: null,
+                            sheetLabel: '',
+                            reviewId: null,
+                            forwardToUserId: '',
+                            comments: '',
+                        }))
+                    }
+                >
                     <div
-                        className="bg-white rounded-t-2xl sm:rounded-xl shadow-xl w-full max-w-md max-h-[90vh] overflow-y-auto"
+                        className="flex w-full max-h-[min(88dvh,calc(100dvh-env(safe-area-inset-top)-env(safe-area-inset-bottom)-1.5rem))] flex-col overflow-hidden rounded-t-3xl border border-slate-200/80 bg-white shadow-2xl sm:max-h-[min(88dvh,88vh)] sm:max-w-md sm:rounded-2xl"
                         onClick={(e) => e.stopPropagation()}
                     >
-                        <div className="sticky top-0 bg-white border-b border-gray-200 px-4 py-3 rounded-t-2xl sm:rounded-t-xl">
-                            <h2 className="text-base font-semibold text-gray-900">উর্ধ্বতনের কাছে ফরওয়ার্ড করুন</h2>
-                            <p className="text-xs text-gray-500 mt-0.5">{forwardModal.sheetLabel}</p>
+                        <div className="flex shrink-0 justify-center pt-2 sm:hidden" aria-hidden>
+                            <div className="h-1 w-10 rounded-full bg-slate-300" />
                         </div>
-                        <div className="p-4 space-y-4">
-                            <p className="text-sm text-gray-600">
-                                এই শিটের সব পেন্ডিং আইটেম নির্বাচিত ব্যক্তির কাছে চলে যাবে। তারা অনুমোদন বা প্রত্যাখ্যান করতে পারবেন।
-                            </p>
-                            <div>
-                                <label className="block text-sm font-medium text-gray-700 mb-1">উর্ধ্বতন নির্বাচন করুন <span className="text-red-500">*</span></label>
-                                <select
-                                    value={forwardModal.forwardToUserId}
-                                    onChange={(e) => setForwardModal((p) => ({ ...p, forwardToUserId: e.target.value }))}
-                                    className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+
+                        <div className="relative shrink-0 overflow-hidden border-b border-slate-100 bg-gradient-to-r from-amber-700 via-orange-700 to-amber-800 px-4 py-3.5 text-white sm:px-5 sm:py-4">
+                            <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_right,rgba(255,255,255,0.12),transparent_50%)]" />
+                            <div className="relative flex items-start justify-between gap-3">
+                                <div className="min-w-0 flex-1">
+                                    <p className="text-[11px] font-semibold tracking-[0.18em] text-amber-100/90 uppercase">
+                                        ফরওয়ার্ড
+                                    </p>
+                                    <h3 className="mt-1 text-base font-bold sm:text-lg">
+                                        উর্ধ্বতনের কাছে পাঠান
+                                    </h3>
+                                    {forwardModal.sheetLabel ? (
+                                        <p className="mt-1.5 truncate text-[11px] text-amber-100/90">
+                                            {forwardModal.sheetLabel}
+                                        </p>
+                                    ) : null}
+                                </div>
+                                <button
+                                    type="button"
+                                    onClick={() =>
+                                        setForwardModal((p) => ({
+                                            ...p,
+                                            open: false,
+                                            sheetId: null,
+                                            sheetLabel: '',
+                                            reviewId: null,
+                                            forwardToUserId: '',
+                                            comments: '',
+                                        }))
+                                    }
+                                    className="shrink-0 rounded-full bg-white/10 p-2 text-white/90 transition-colors hover:bg-white/20"
+                                    aria-label="Close"
                                 >
-                                    <option value="">নির্বাচন করুন</option>
-                                    {forwardToOptions.map((u) => (
-                                        <option key={u.id} value={u.id}>
-                                            {u.name} ({u.role_name})
-                                        </option>
-                                    ))}
-                                </select>
-                            </div>
-                            <div>
-                                <label className="block text-sm font-medium text-gray-700 mb-1">মন্তব্য (ঐচ্ছিক)</label>
-                                <textarea
-                                    rows={2}
-                                    value={forwardModal.comments}
-                                    onChange={(e) => setForwardModal((p) => ({ ...p, comments: e.target.value }))}
-                                    placeholder="ফরওয়ার্ডের কারণ বা নির্দেশনা..."
-                                    className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm resize-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                                />
+                                    <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                                    </svg>
+                                </button>
                             </div>
                         </div>
-                        <div className="flex gap-2 p-4 border-t border-gray-200 bg-gray-50 rounded-b-2xl sm:rounded-b-xl">
+
+                        <div className="min-h-0 flex-1 space-y-4 overflow-y-auto overscroll-contain bg-slate-50/40 p-4 sm:p-5 [-webkit-overflow-scrolling:touch]">
+                            <div className="rounded-2xl border border-amber-200/80 bg-amber-50/70 px-3.5 py-3 text-sm text-amber-900">
+                                এই শিটের সব পেন্ডিং আইটেম নির্বাচিত ব্যক্তির কাছে চলে যাবে। তারা অনুমোদন বা প্রত্যাখ্যান করতে পারবেন।
+                            </div>
+
+                            <div className="space-y-3 rounded-2xl border border-slate-200 bg-white p-3.5 shadow-sm sm:p-4">
+                                <div>
+                                    <label className="mb-1.5 block text-[11px] font-semibold text-slate-600">
+                                        উর্ধ্বতন নির্বাচন করুন <span className="text-rose-500">*</span>
+                                    </label>
+                                    <select
+                                        value={forwardModal.forwardToUserId}
+                                        onChange={(e) => setForwardModal((p) => ({ ...p, forwardToUserId: e.target.value }))}
+                                        className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm text-slate-900 outline-none focus:border-amber-400 focus:ring-2 focus:ring-amber-100"
+                                    >
+                                        <option value="">নির্বাচন করুন</option>
+                                        {forwardToOptions.map((u) => (
+                                            <option key={u.id} value={u.id}>
+                                                {u.name} ({u.role_name})
+                                            </option>
+                                        ))}
+                                    </select>
+                                </div>
+                                <div>
+                                    <label className="mb-1.5 block text-[11px] font-semibold text-slate-600">
+                                        মন্তব্য <span className="font-normal text-slate-400">(ঐচ্ছিক)</span>
+                                    </label>
+                                    <textarea
+                                        rows={3}
+                                        value={forwardModal.comments}
+                                        onChange={(e) => setForwardModal((p) => ({ ...p, comments: e.target.value }))}
+                                        placeholder="ফরওয়ার্ডের কারণ বা নির্দেশনা..."
+                                        className="w-full resize-none rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm text-slate-900 outline-none focus:border-amber-400 focus:ring-2 focus:ring-amber-100"
+                                    />
+                                </div>
+                            </div>
+                        </div>
+
+                        <div className="flex shrink-0 flex-col-reverse gap-2.5 border-t border-slate-200 bg-white px-4 py-3 sm:flex-row sm:px-5 sm:py-4">
                             <button
                                 type="button"
-                                onClick={() => setForwardModal((p) => ({ ...p, open: false, sheetId: null, sheetLabel: '', reviewId: null, forwardToUserId: '', comments: '' }))}
-                                className="flex-1 inline-flex items-center justify-center px-4 py-2.5 rounded-lg border border-gray-300 bg-white text-sm font-medium text-gray-700 hover:bg-gray-50"
+                                onClick={() =>
+                                    setForwardModal((p) => ({
+                                        ...p,
+                                        open: false,
+                                        sheetId: null,
+                                        sheetLabel: '',
+                                        reviewId: null,
+                                        forwardToUserId: '',
+                                        comments: '',
+                                    }))
+                                }
+                                className="w-full rounded-xl border border-slate-200 px-4 py-3 text-sm font-semibold text-slate-600 transition-colors hover:bg-slate-50 sm:flex-1 sm:py-2.5"
                             >
                                 বাতিল
                             </button>
                             <button
                                 type="button"
                                 onClick={submitForward}
-                                disabled={!forwardModal.forwardToUserId || !forwardModal.reviewId || !(decisionState[forwardModal.reviewId!]?.approved_amount)}
-                                className="flex-1 inline-flex items-center justify-center gap-1.5 px-4 py-2.5 rounded-lg bg-amber-600 text-white text-sm font-medium hover:bg-amber-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                                disabled={
+                                    !forwardModal.forwardToUserId ||
+                                    !forwardModal.reviewId ||
+                                    !(decisionState[forwardModal.reviewId!]?.approved_amount)
+                                }
+                                className="inline-flex w-full items-center justify-center gap-1.5 rounded-xl bg-gradient-to-r from-amber-600 to-orange-600 px-4 py-3 text-sm font-bold text-white shadow-sm transition-all hover:from-amber-700 hover:to-orange-700 disabled:cursor-not-allowed disabled:opacity-50 sm:flex-1 sm:py-2.5"
                             >
-                                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 7l5 5m0 0l-5 5m5-5H6"/></svg>
+                                <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 7l5 5m0 0l-5 5m5-5H6" />
+                                </svg>
                                 ফরওয়ার্ড সাবমিট
                             </button>
                         </div>

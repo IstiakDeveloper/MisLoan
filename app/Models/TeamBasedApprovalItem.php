@@ -47,6 +47,26 @@ class TeamBasedApprovalItem extends Model
         'dob' => 'date',
     ];
 
+    /** Numeric amount strings as whole numbers (0.00 → "0"); non-numeric text left as-is. */
+    public static function asWholeNumber(mixed $value): ?string
+    {
+        if ($value === null) {
+            return null;
+        }
+
+        $raw = trim(str_replace(',', '', (string) $value));
+        if ($raw === '') {
+            return '';
+        }
+
+        $cleaned = preg_replace('/[^\d.-]/', '', $raw);
+        if ($cleaned === '' || $cleaned === '-' || $cleaned === '.' || ! is_numeric($cleaned)) {
+            return (string) $value;
+        }
+
+        return (string) (int) round((float) $cleaned);
+    }
+
     public function approval(): BelongsTo
     {
         return $this->belongsTo(TeamBasedApproval::class, 'team_based_approval_id');

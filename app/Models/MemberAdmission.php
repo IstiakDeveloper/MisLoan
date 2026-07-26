@@ -103,6 +103,9 @@ class MemberAdmission extends Model
         'surveyor_signature_path',
         'surveyor_pin',
         'other_loan_info',
+        'requested_loan_amount',
+        'project_name',
+        'estimated_annual_project_income',
         'collector_comment',
         'applicant_signature',
 
@@ -131,6 +134,10 @@ class MemberAdmission extends Model
         'returned_by',
         'printed_at',
         'created_by',
+
+        // Legacy / old member data entry
+        'is_legacy',
+        'loan_dofa',
     ];
 
     protected $casts = [
@@ -139,6 +146,8 @@ class MemberAdmission extends Model
         'date_of_birth' => 'date',
         'permanent_address_same' => 'boolean',
         'want_sms_service' => 'boolean',
+        'is_legacy' => 'boolean',
+        'loan_dofa' => 'integer',
         'total_asset_value' => 'decimal:2',
         'mud_house_count' => 'integer',
         'tin_house_count' => 'integer',
@@ -215,6 +224,11 @@ class MemberAdmission extends Model
         return $this->hasMany(MemberAdmissionIssue::class);
     }
 
+    public function loanApplications(): HasMany
+    {
+        return $this->hasMany(LoanApplication::class);
+    }
+
     public function currentPendingApproval()
     {
         return $this->approvals()
@@ -277,9 +291,14 @@ class MemberAdmission extends Model
         return $this->status === 'rejected';
     }
 
+    public function isLegacy(): bool
+    {
+        return (bool) $this->is_legacy;
+    }
+
     public function canBeEdited(): bool
     {
-        return in_array($this->status, ['draft', 'rejected']);
+        return in_array($this->status, ['draft', 'submitted', 'under_review', 'needs_revision', 'rejected']);
     }
 
     public function getFullNameAttribute(): string

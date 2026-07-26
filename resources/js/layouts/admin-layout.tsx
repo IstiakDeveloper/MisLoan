@@ -185,9 +185,9 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
         { name: 'Pending Approvals', href: '/approvals', icon: ClipboardCheck, badge: badgeCounts.pendingApprovals || 0 },
     ];
 
-    // Field officer: Dashboard & Member Admissions
+    // Field officer: admissions plus loan applications for their approved members
     const branchMenuItems = isFieldOfficer
-        ? branchMenuItemsFull.filter((m) => m.name === 'Dashboard' || m.name === 'Member Admissions')
+        ? branchMenuItemsFull.filter((m) => m.name === 'Dashboard' || m.name === 'Member Admissions' || m.name === 'Loan Applications')
         : roleName === 'branch_user'
         ? branchMenuItemsFull.slice(0, 5)
         : branchMenuItemsFull;
@@ -210,9 +210,9 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
 
     // Admission / Loan / Savings for approvers & managers (scoped by assigned zone/area on backend)
     const approverOperationsItems = [
-        { name: 'Admission Members', href: '/head-office/admission-members', icon: UserPlus, badge: badgeCounts.pendingAdmissions || 0 },
-        { name: 'Loan Applications', href: '/head-office/loan-applications', icon: Banknote, badge: badgeCounts.pendingLoanApplications || 0 },
-        { name: 'Savings Applications', href: '/head-office/savings-applications', icon: PiggyBank },
+        { name: 'Member Admissions', href: '/member-admissions', icon: UserPlus, badge: badgeCounts.pendingAdmissions || 0 },
+        { name: 'Loan Applications', href: '/member/loan-applications', icon: Banknote, badge: badgeCounts.pendingLoanApplications || 0 },
+        { name: 'Savings Applications', href: '/member/savings-applications', icon: PiggyBank },
     ];
 
     const headOfficeMainItems = [
