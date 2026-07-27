@@ -7,7 +7,7 @@ import {
     OtherAsset,
 } from '@/types/memberAdmission';
 import { Head, Link, router, useForm, usePage } from '@inertiajs/react';
-import { AlertCircle, ArrowLeft, Save, Send, X } from 'lucide-react';
+import { AlertCircle, ArrowLeft, Save, X } from 'lucide-react';
 import React, { useEffect, useState } from 'react';
 
 import AddressSection from './sections/AddressSection';
@@ -78,15 +78,7 @@ export default function Edit({
             };
         };
     }>();
-    const isFieldOfficer = page.props.auth?.user?.role?.name === 'field_officer';
-    const currentUserId = page.props.auth?.user?.id;
-    const canEditForm =
-        admission.status === 'draft' ||
-        admission.status === 'resubmitted' ||
-        (admission.status === 'pending' && currentUserId === admission.created_by);
-    const canSubmit =
-        admission.status === 'draft' ||
-        (admission.status === 'pending' && currentUserId === admission.created_by);
+    const [saving, setSaving] = useState(false);
 
     const [availableSamities, setAvailableSamities] = useState(samities);
     const [samitySearchQuery, setSamitySearchQuery] = useState('');
@@ -106,7 +98,7 @@ export default function Edit({
         return isNaN(num) ? '' : num;
     };
 
-    const { data, setData, post, processing, errors } =
+    const { data, setData, errors } =
         useForm<MemberAdmissionFormData>({
             branch_id: admission.branch_id || 0,
             samity_id: admission.samity_id || 0,
@@ -260,19 +252,19 @@ export default function Edit({
     // Address Cascades Init
     useEffect(() => {
         if (data.present_division) {
-            const districts = (bangladeshData.districts as Record<string, string[]>)[data.present_division] || [];
+            const districts = (bangladeshData.districtsByDivision as Record<string, string[]>)[data.present_division] || [];
             setPresentDistricts(districts);
         }
         if (data.present_district) {
-            const upazilas = (bangladeshData.upazilas as Record<string, string[]>)[data.present_district] || [];
+            const upazilas = (bangladeshData.upazilasByDistrict as Record<string, string[]>)[data.present_district] || [];
             setPresentUpazilas(upazilas);
         }
         if (data.permanent_division) {
-            const districts = (bangladeshData.districts as Record<string, string[]>)[data.permanent_division] || [];
+            const districts = (bangladeshData.districtsByDivision as Record<string, string[]>)[data.permanent_division] || [];
             setPermanentDistricts(districts);
         }
         if (data.permanent_district) {
-            const upazilas = (bangladeshData.upazilas as Record<string, string[]>)[data.permanent_district] || [];
+            const upazilas = (bangladeshData.upazilasByDistrict as Record<string, string[]>)[data.permanent_district] || [];
             setPermanentUpazilas(upazilas);
         }
     }, []);
@@ -282,7 +274,7 @@ export default function Edit({
         setData('present_district', '');
         setData('present_upazila', '');
         if (division) {
-            const districts = (bangladeshData.districts as Record<string, string[]>)[division] || [];
+            const districts = (bangladeshData.districtsByDivision as Record<string, string[]>)[division] || [];
             setPresentDistricts(districts);
         } else {
             setPresentDistricts([]);
@@ -294,7 +286,7 @@ export default function Edit({
         setData('present_district', district);
         setData('present_upazila', '');
         if (district) {
-            const upazilas = (bangladeshData.upazilas as Record<string, string[]>)[district] || [];
+            const upazilas = (bangladeshData.upazilasByDistrict as Record<string, string[]>)[district] || [];
             setPresentUpazilas(upazilas);
         } else {
             setPresentUpazilas([]);
@@ -306,7 +298,7 @@ export default function Edit({
         setData('permanent_district', '');
         setData('permanent_upazila', '');
         if (division) {
-            const districts = (bangladeshData.districts as Record<string, string[]>)[division] || [];
+            const districts = (bangladeshData.districtsByDivision as Record<string, string[]>)[division] || [];
             setPermanentDistricts(districts);
         } else {
             setPermanentDistricts([]);
@@ -318,7 +310,7 @@ export default function Edit({
         setData('permanent_district', district);
         setData('permanent_upazila', '');
         if (district) {
-            const upazilas = (bangladeshData.upazilas as Record<string, string[]>)[district] || [];
+            const upazilas = (bangladeshData.upazilasByDistrict as Record<string, string[]>)[district] || [];
             setPermanentUpazilas(upazilas);
         } else {
             setPermanentUpazilas([]);
@@ -338,34 +330,38 @@ export default function Edit({
     };
 
     const handleSubmit = (saveAsDraft: boolean = false) => {
-        if (data.is_legacy && !saveAsDraft) {
-            const dofa = Number(data.loan_dofa);
-            if (!dofa || dofa < 1) {
-                alert('পুরাতন সদস্যের জন্য ঋণের দফা দেওয়া বাধ্যতামূলক।');
-                return;
-            }
-        }
-
+        // Edit page only saves (draft/update). Submit is from the list; incomplete → redirects here with errors.
         const formData = new FormData();
         formData.append('_method', 'PUT');
+        formData.append('draft', '1');
 
         Object.keys(data).forEach((key) => {
             const val = (data as any)[key];
             if (val === null || val === undefined) return;
+            if (
+                (key === 'branch_id' ||
+                    key === 'samity_id' ||
+                    key === 'member_category_id' ||
+                    key === 'loan_dofa') &&
+                (val === 0 || val === '0' || val === '')
+            ) {
+                return;
+            }
             if (key === 'family_members' || key === 'other_assets' || key === 'selected_approvers') {
                 formData.append(key, JSON.stringify(val));
             } else if (val instanceof File) {
                 formData.append(key, val);
             } else if (typeof val === 'boolean') {
                 formData.append(key, val ? '1' : '0');
-            } else {
+            } else if (val !== '') {
                 formData.append(key, String(val));
             }
         });
 
-        const url = `/member-admissions/${admission.id}${saveAsDraft ? '?draft=1' : ''}`;
-        router.post(url, formData, {
+        router.post(`/member-admissions/${admission.id}?draft=1`, formData, {
             preserveScroll: true,
+            onStart: () => setSaving(true),
+            onFinish: () => setSaving(false),
             onSuccess: () => {
                 router.visit('/member-admissions');
             },
@@ -471,24 +467,13 @@ export default function Edit({
                         <div className="hidden md:flex items-center gap-3 shrink-0">
                             <button
                                 type="button"
-                                onClick={() => handleSubmit(true)}
-                                disabled={processing}
+                                onClick={() => handleSubmit()}
+                                disabled={saving}
                                 className="inline-flex items-center justify-center gap-2 px-5 py-3 rounded-2xl bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 text-xs sm:text-sm font-bold transition-all active:scale-95 shadow-sm disabled:opacity-50"
                             >
                                 <Save className="w-4 h-4 text-amber-400" />
                                 <span>খসড়া সংরক্ষণ</span>
                             </button>
-                            {canSubmit && !isFieldOfficer && (
-                                <button
-                                    type="button"
-                                    onClick={() => handleSubmit(false)}
-                                    disabled={processing}
-                                    className="inline-flex items-center justify-center gap-2 px-6 py-3 rounded-2xl bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white text-xs sm:text-sm font-bold shadow-lg shadow-blue-600/30 transition-all active:scale-95 disabled:opacity-50"
-                                >
-                                    <Send className="w-4 h-4" />
-                                    <span>আবেদন জমা দিন</span>
-                                </button>
-                            )}
                         </div>
                     </div>
                 </div>
@@ -502,10 +487,10 @@ export default function Edit({
                             </div>
                             <div className="flex-1 min-w-0">
                                 <h3 className="text-base sm:text-lg font-bold text-red-900 leading-tight">
-                                    আবেদনটি জমা দেওয়ার জন্য নিচের {errorList.length}টি তথ্য পূরণ/সংশোধন করা প্রয়োজন:
+                                    আবেদনটি জমা দেওয়ার আগে নিচের {errorList.length}টি তথ্য পূরণ/সংশোধন করুন:
                                 </h3>
                                 <p className="text-xs text-red-700 mt-1 mb-3 font-medium">
-                                    নিচে যেসব ইনপুট ফিল্ড লাল বর্ডারে চিহ্নিত করা হয়েছে, সেগুলো সঠিক তথ্য দিয়ে পূরণ করে পুনরায় খসড়া সংরক্ষণ করুন।
+                                    লাল চিহ্নিত ফিল্ডগুলো পূরণ করে খসড়া সংরক্ষণ করুন, তারপর তালিকা থেকে আবার জমা দিন।
                                 </p>
                                 <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-2">
                                     {errorList.map(([key, msg]) => (
@@ -612,24 +597,13 @@ export default function Edit({
                         </button>
                         <button
                             type="button"
-                            onClick={() => handleSubmit(true)}
-                            disabled={processing}
+                            onClick={() => handleSubmit()}
+                            disabled={saving}
                             className="w-full sm:w-auto inline-flex items-center justify-center gap-2 px-5 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-900 text-amber-400 text-xs sm:text-sm font-bold shadow-md transition-all active:scale-95 disabled:opacity-50"
                         >
                             <Save className="w-4 h-4" />
                             <span>খসড়া সংরক্ষণ (Save Draft)</span>
                         </button>
-                        {canSubmit && !isFieldOfficer && (
-                            <button
-                                type="button"
-                                onClick={() => handleSubmit(false)}
-                                disabled={processing}
-                                className="w-full sm:w-auto inline-flex items-center justify-center gap-2 px-6 py-2.5 rounded-xl bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white text-xs sm:text-sm font-bold shadow-lg shadow-blue-600/30 transition-all active:scale-95 disabled:opacity-50"
-                            >
-                                <Send className="w-4 h-4" />
-                                <span>আবেদন জমা দিন</span>
-                            </button>
-                        )}
                     </div>
                 </div>
 
@@ -637,24 +611,13 @@ export default function Edit({
                 <div className="md:hidden fixed bottom-0 left-0 right-0 p-3 bg-white/95 backdrop-blur-md border-t border-slate-200 z-50 flex items-center justify-between gap-2 shadow-2xl">
                     <button
                         type="button"
-                        onClick={() => handleSubmit(true)}
-                        disabled={processing}
+                        onClick={() => handleSubmit()}
+                        disabled={saving}
                         className="flex-1 inline-flex items-center justify-center gap-1.5 py-2.5 px-3 rounded-xl bg-slate-800 text-amber-400 text-xs font-bold shadow-sm active:scale-95 transition disabled:opacity-50"
                     >
                         <Save className="w-4 h-4" />
-                        <span>খসড়া</span>
+                        <span>খসড়া সংরক্ষণ</span>
                     </button>
-                    {canSubmit && !isFieldOfficer && (
-                        <button
-                            type="button"
-                            onClick={() => handleSubmit(false)}
-                            disabled={processing}
-                            className="flex-[1.5] inline-flex items-center justify-center gap-1.5 py-2.5 px-3 rounded-xl bg-gradient-to-r from-blue-600 to-indigo-600 text-white text-xs font-bold shadow-md active:scale-95 transition disabled:opacity-50"
-                        >
-                            <Send className="w-4 h-4" />
-                            <span>জমা দিন</span>
-                        </button>
-                    )}
                 </div>
             </div>
         </AdminLayout>

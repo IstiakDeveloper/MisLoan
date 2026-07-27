@@ -98,7 +98,7 @@ export default function Create({
             ? pageAuth.user.branch.id
             : 0;
 
-    const { data, setData, post, processing, errors } =
+    const { data, setData, post, processing, errors, transform } =
         useForm<MemberAdmissionFormData>({
             branch_id: initialBranchId,
             samity_id: 0,
@@ -281,7 +281,7 @@ export default function Create({
         setData('present_district', '');
         setData('present_upazila', '');
         if (division) {
-            const districts = (bangladeshData.districts as Record<string, string[]>)[division] || [];
+            const districts = (bangladeshData.districtsByDivision as Record<string, string[]>)[division] || [];
             setPresentDistricts(districts);
         } else {
             setPresentDistricts([]);
@@ -293,7 +293,7 @@ export default function Create({
         setData('present_district', district);
         setData('present_upazila', '');
         if (district) {
-            const upazilas = (bangladeshData.upazilas as Record<string, string[]>)[district] || [];
+            const upazilas = (bangladeshData.upazilasByDistrict as Record<string, string[]>)[district] || [];
             setPresentUpazilas(upazilas);
         } else {
             setPresentUpazilas([]);
@@ -305,7 +305,7 @@ export default function Create({
         setData('permanent_district', '');
         setData('permanent_upazila', '');
         if (division) {
-            const districts = (bangladeshData.districts as Record<string, string[]>)[division] || [];
+            const districts = (bangladeshData.districtsByDivision as Record<string, string[]>)[division] || [];
             setPermanentDistricts(districts);
         } else {
             setPermanentDistricts([]);
@@ -317,7 +317,7 @@ export default function Create({
         setData('permanent_district', district);
         setData('permanent_upazila', '');
         if (district) {
-            const upazilas = (bangladeshData.upazilas as Record<string, string[]>)[district] || [];
+            const upazilas = (bangladeshData.upazilasByDistrict as Record<string, string[]>)[district] || [];
             setPermanentUpazilas(upazilas);
         } else {
             setPermanentUpazilas([]);
@@ -344,10 +344,30 @@ export default function Create({
                 return;
             }
         }
-        post(`/member-admissions${saveAsDraft ? '?draft=1' : ''}`, {
+
+        // Soft draft: save whatever is filled. Final submit (required) is from the list.
+        const asDraft = saveAsDraft || !isLegacyMember;
+        transform((form) => {
+            const next: Record<string, any> = { ...form, draft: asDraft ? 1 : 0 };
+            for (const key of ['branch_id', 'samity_id', 'member_category_id', 'loan_dofa'] as const) {
+                if (next[key] === 0 || next[key] === '0' || next[key] === '') {
+                    next[key] = null;
+                }
+            }
+            for (const key of Object.keys(next)) {
+                if (next[key] === '') next[key] = null;
+            }
+            return next as typeof form;
+        });
+
+        post(`/member-admissions?draft=${asDraft ? '1' : '0'}`, {
             preserveScroll: true,
+            forceFormData: true,
             onSuccess: () => {
                 router.visit('/member-admissions');
+            },
+            onError: () => {
+                window.scrollTo({ top: 0, behavior: 'smooth' });
             },
         });
     };
@@ -521,7 +541,7 @@ export default function Create({
                                 <Save className="w-4 h-4 text-amber-400" />
                                 <span>খসড়া সংরক্ষণ</span>
                             </button>
-                            {!isFieldOfficer && (
+                            {!isFieldOfficer && isLegacyMember && (
                                 <button
                                     type="button"
                                     onClick={() => handleSubmit(false)}
@@ -529,12 +549,27 @@ export default function Create({
                                     className="inline-flex items-center justify-center gap-2 px-6 py-3 rounded-2xl bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white text-xs sm:text-sm font-bold shadow-lg shadow-blue-600/30 transition-all active:scale-95 disabled:opacity-50"
                                 >
                                     <Send className="w-4 h-4" />
-                                    <span>{isLegacyMember ? 'সংরক্ষণ ও অনুমোদন' : 'আবেদন জমা দিন'}</span>
+                                    <span>সংরক্ষণ ও অনুমোদন</span>
                                 </button>
                             )}
                         </div>
                     </div>
                 </div>
+
+                {Object.keys(errors).length > 0 && (
+                    <div className="rounded-2xl border-2 border-red-500 bg-red-50 p-4 sm:p-5 shadow-xl">
+                        <h3 className="text-base font-bold text-red-900">
+                            খসড়া সংরক্ষণ করা যায়নি — নিচের সমস্যাগুলো ঠিক করুন:
+                        </h3>
+                        <ul className="mt-2 grid grid-cols-1 sm:grid-cols-2 gap-2">
+                            {Object.entries(errors).map(([key, msg]) => (
+                                <li key={key} className="text-xs font-semibold text-red-800 bg-white/90 p-2.5 rounded-xl border border-red-200">
+                                    {String(msg)}
+                                </li>
+                            ))}
+                        </ul>
+                    </div>
+                )}
 
                 {/* MODULAR FORM SECTIONS */}
                 <div className="space-y-5">
@@ -635,7 +670,7 @@ export default function Create({
                             <Save className="w-4 h-4" />
                             <span>খসড়া সংরক্ষণ (Save Draft)</span>
                         </button>
-                        {!isFieldOfficer && (
+                        {!isFieldOfficer && isLegacyMember && (
                             <button
                                 type="button"
                                 onClick={() => handleSubmit(false)}
@@ -643,7 +678,7 @@ export default function Create({
                                 className="w-full sm:w-auto inline-flex items-center justify-center gap-2 px-6 py-2.5 rounded-xl bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white text-xs sm:text-sm font-bold shadow-lg shadow-blue-600/30 transition-all active:scale-95 disabled:opacity-50"
                             >
                                 <Send className="w-4 h-4" />
-                                <span>{isLegacyMember ? 'সংরক্ষণ ও অনুমোদন' : 'আবেদন জমা দিন'}</span>
+                                <span>সংরক্ষণ ও অনুমোদন</span>
                             </button>
                         )}
                     </div>
@@ -660,7 +695,7 @@ export default function Create({
                         <Save className="w-4 h-4" />
                         <span>খসড়া</span>
                     </button>
-                    {!isFieldOfficer && (
+                    {!isFieldOfficer && isLegacyMember && (
                         <button
                             type="button"
                             onClick={() => handleSubmit(false)}
@@ -668,7 +703,7 @@ export default function Create({
                             className="flex-[1.5] inline-flex items-center justify-center gap-1.5 py-2.5 px-3 rounded-xl bg-gradient-to-r from-blue-600 to-indigo-600 text-white text-xs font-bold shadow-md active:scale-95 transition disabled:opacity-50"
                         >
                             <Send className="w-4 h-4" />
-                            <span>{isLegacyMember ? 'অনুমোদন' : 'জমা দিন'}</span>
+                            <span>অনুমোদন</span>
                         </button>
                     )}
                 </div>

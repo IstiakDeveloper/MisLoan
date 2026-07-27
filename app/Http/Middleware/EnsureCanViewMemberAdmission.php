@@ -42,6 +42,16 @@ class EnsureCanViewMemberAdmission
             return $next($request);
         }
 
+        // Field officers may only view admissions they created
+        $user->loadMissing('role');
+        if ($user->role?->name === \App\Models\Role::FIELD_OFFICER) {
+            if ((int) $admission->created_by !== (int) $user->id) {
+                abort(403, 'ফিল্ড অফিসার শুধু নিজের তৈরি ভর্তি আবেদন দেখতে পারবেন।');
+            }
+
+            return $next($request);
+        }
+
         // Check if user can access the admission's branch (via branch_id, area_id, zone_id, user_branches, user_areas, user_zones)
         if ($user->canAccessBranch((int) $admission->branch_id)) {
             return $next($request);

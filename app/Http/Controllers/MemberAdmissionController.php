@@ -25,8 +25,61 @@ class MemberAdmissionController extends Controller
         return $user && ($user->has_all_access || $user->isSuperAdmin() || $user->isHeadOffice());
     }
 
+    /**
+     * Draft saves send 0 / "" for empty selects — convert to null so nullable|exists passes.
+     */
+    private function normalizeAdmissionRequest(Request $request): void
+    {
+        // FormData sometimes sends JSON-encoded arrays as strings
+        foreach (['family_members', 'other_assets', 'selected_approvers'] as $jsonKey) {
+            $raw = $request->input($jsonKey);
+            if (is_string($raw) && $raw !== '') {
+                $decoded = json_decode($raw, true);
+                if (json_last_error() === JSON_ERROR_NONE) {
+                    $request->merge([$jsonKey => $decoded]);
+                }
+            }
+        }
+
+        $nullableKeys = [
+            'branch_id',
+            'samity_id',
+            'member_category_id',
+            'survey_date',
+            'admission_date',
+            'date_of_birth',
+            'loan_dofa',
+            'requested_loan_amount',
+            'estimated_annual_project_income',
+        ];
+
+        $merged = [];
+        foreach ($nullableKeys as $key) {
+            if (!$request->exists($key)) {
+                continue;
+            }
+            $value = $request->input($key);
+            if ($value === '' || $value === null || $value === '0' || $value === 0) {
+                $merged[$key] = null;
+            }
+        }
+
+        if ($merged !== []) {
+            $request->merge($merged);
+        }
+    }
+
+    private function isDraftSave(Request $request): bool
+    {
+        return $request->boolean('draft') || $request->query('draft') == '1';
+    }
+
     public function index(Request $request)
     {
+        $user = auth()->user();
+        $user->loadMissing('role');
+        $isFieldOfficer = $user->role?->name === Role::FIELD_OFFICER;
+
         $query = MemberAdmission::with([
             'branch.area.zone',
             'samity',
@@ -37,27 +90,36 @@ class MemberAdmissionController extends Controller
         ]);
 
         // Filter by branch access (for branch users, regional managers, area/zone managers)
-        if (!auth()->user()->has_all_access) {
-            $accessibleBranchIds = auth()->user()->getAccessibleBranches()->pluck('id');
+        if (!$user->has_all_access) {
+            $accessibleBranchIds = $user->getAccessibleBranches()->pluck('id');
             $query->whereIn('branch_id', $accessibleBranchIds);
         }
 
+        // Field officers only see admissions they created
+        if ($isFieldOfficer) {
+            $query->where('created_by', $user->id);
+        }
+
         // Draft privacy constraint: Drafts are only visible to the user who created them
-        $query->where(function ($q) {
+        $query->where(function ($q) use ($user) {
             $q->where('status', '!=', 'draft')
-              ->orWhere('created_by', auth()->id());
+              ->orWhere('created_by', $user->id);
         });
 
         // Build stats query
         $statsQuery = MemberAdmission::query();
-        if (!auth()->user()->has_all_access) {
-            $accessibleBranchIds = auth()->user()->getAccessibleBranches()->pluck('id');
+        if (!$user->has_all_access) {
+            $accessibleBranchIds = $user->getAccessibleBranches()->pluck('id');
             $statsQuery->whereIn('branch_id', $accessibleBranchIds);
         }
 
-        $statsQuery->where(function ($q) {
+        if ($isFieldOfficer) {
+            $statsQuery->where('created_by', $user->id);
+        }
+
+        $statsQuery->where(function ($q) use ($user) {
             $q->where('status', '!=', 'draft')
-              ->orWhere('created_by', auth()->id());
+              ->orWhere('created_by', $user->id);
         });
 
         // Calculate stats
@@ -136,6 +198,9 @@ class MemberAdmissionController extends Controller
 
     public function store(Request $request)
     {
+        $this->normalizeAdmissionRequest($request);
+        $saveAsDraft = $this->isDraftSave($request);
+
         $validated = $request->validate([
             'branch_id' => 'nullable|exists:branches,id',
             'samity_id' => 'nullable|exists:samities,id',
@@ -169,7 +234,7 @@ class MemberAdmissionController extends Controller
             'present_post_code' => 'nullable|string|max:10',
 
             // Permanent Address
-            'permanent_address_same' => 'boolean',
+            'permanent_address_same' => 'nullable|boolean',
             'permanent_division' => 'nullable|string',
             'permanent_district' => 'nullable|string',
             'permanent_upazila' => 'nullable|string',
@@ -189,7 +254,7 @@ class MemberAdmissionController extends Controller
             'guarantor_name' => 'nullable|string|max:255',
             'guarantor_mobile' => 'nullable|string|max:20',
             'tin_number' => 'nullable|string|max:20',
-            'want_sms_service' => 'boolean',
+            'want_sms_service' => 'nullable|boolean',
 
             // Economic
             'business_details' => 'nullable|string',
@@ -270,7 +335,8 @@ class MemberAdmissionController extends Controller
         ]);
 
         $isLegacy = $request->boolean('is_legacy');
-        if ($isLegacy && empty($validated['loan_dofa'])) {
+        // loan_dofa only required on final submit (not draft)
+        if ($isLegacy && !$saveAsDraft && empty($validated['loan_dofa'])) {
             return back()->withInput()->withErrors([
                 'loan_dofa' => 'পুরাতন সদস্যের জন্য ঋণের দফা দেওয়া বাধ্যতামূলক।',
             ]);
@@ -342,6 +408,11 @@ class MemberAdmissionController extends Controller
             $admissionData['created_by'] = auth()->id();
             $admissionData['is_legacy'] = $isLegacy;
             $admissionData['loan_dofa'] = $isLegacy ? ($validated['loan_dofa'] ?? null) : null;
+            $admissionData['permanent_address_same'] = (bool) ($admissionData['permanent_address_same'] ?? false);
+            $admissionData['want_sms_service'] = array_key_exists('want_sms_service', $admissionData)
+                ? (bool) $admissionData['want_sms_service']
+                : true;
+            unset($admissionData['selected_approvers'], $admissionData['family_members'], $admissionData['other_assets'], $admissionData['draft']);
 
             // মোট জমির পরিমাণ ও মূল্য (আবাদযোগ্য + অনাবাদি)
             $admissionData['total_land_amount'] = ($admissionData['cultivable_land_amount'] ?? 0) + ($admissionData['non_cultivable_land_amount'] ?? 0);
@@ -354,8 +425,10 @@ class MemberAdmissionController extends Controller
                 $admissionData['employee_name'] = $admissionData['employee_name'] ?: $authUser->name;
             }
 
-            // Legacy members: auto-approve on final submit (no draft); skip approval workflow
-            $saveAsDraft = $request->boolean('draft') || $request->query('draft') == '1';
+            // Draft = always draft status; legacy final submit auto-approves
+            if ($saveAsDraft || !$isLegacy) {
+                $admissionData['status'] = 'draft';
+            }
             if ($isLegacy && !$saveAsDraft) {
                 $admissionData['status'] = 'approved';
                 $admissionData['submitted_by'] = $authUser->id;
@@ -486,6 +559,9 @@ class MemberAdmissionController extends Controller
             return back()->with('error', 'This admission cannot be edited!');
         }
 
+        $this->normalizeAdmissionRequest($request);
+        $saveAsDraft = $this->isDraftSave($request);
+
         $validated = $request->validate([
             'branch_id' => 'nullable|exists:branches,id',
             'samity_id' => 'nullable|exists:samities,id',
@@ -519,7 +595,7 @@ class MemberAdmissionController extends Controller
             'present_post_code' => 'nullable|string|max:10',
 
             // Permanent Address
-            'permanent_address_same' => 'boolean',
+            'permanent_address_same' => 'nullable|boolean',
             'permanent_division' => 'nullable|string',
             'permanent_district' => 'nullable|string',
             'permanent_upazila' => 'nullable|string',
@@ -539,7 +615,7 @@ class MemberAdmissionController extends Controller
             'guarantor_name' => 'nullable|string|max:255',
             'guarantor_mobile' => 'nullable|string|max:20',
             'tin_number' => 'nullable|string|max:20',
-            'want_sms_service' => 'boolean',
+            'want_sms_service' => 'nullable|boolean',
 
             // Economic
             'business_details' => 'nullable|string',
@@ -618,7 +694,8 @@ class MemberAdmissionController extends Controller
             'loan_dofa' => 'nullable|integer|min:1|max:999',
         ]);
 
-        if ($memberAdmission->is_legacy && empty($validated['loan_dofa'])) {
+        // loan_dofa only required on final submit (not draft)
+        if ($memberAdmission->is_legacy && !$saveAsDraft && empty($validated['loan_dofa'])) {
             return back()->withInput()->withErrors([
                 'loan_dofa' => 'পুরাতন সদস্যের জন্য ঋণের দফা দেওয়া বাধ্যতামূলক।',
             ]);
@@ -634,6 +711,13 @@ class MemberAdmissionController extends Controller
                 $updateData['loan_dofa'] = $validated['loan_dofa'] ?? $memberAdmission->loan_dofa;
             } else {
                 unset($updateData['loan_dofa']);
+            }
+            unset($updateData['selected_approvers'], $updateData['family_members'], $updateData['other_assets'], $updateData['draft']);
+            if (array_key_exists('permanent_address_same', $updateData)) {
+                $updateData['permanent_address_same'] = (bool) $updateData['permanent_address_same'];
+            }
+            if (array_key_exists('want_sms_service', $updateData)) {
+                $updateData['want_sms_service'] = (bool) $updateData['want_sms_service'];
             }
 
             // Handle customer photo upload - Compress
@@ -712,7 +796,6 @@ class MemberAdmissionController extends Controller
             $updateData['total_land_value'] = $cultivableValue + $nonCultivableValue;
 
             // Legacy draft: final save (not draft) → auto-approve
-            $saveAsDraft = $request->boolean('draft') || $request->query('draft') == '1';
             $legacyAutoApproved = false;
             if ($memberAdmission->is_legacy && !$saveAsDraft && $memberAdmission->isDraft()) {
                 $updateData['status'] = 'approved';
@@ -721,6 +804,8 @@ class MemberAdmissionController extends Controller
                 $updateData['reviewed_by'] = auth()->id();
                 $updateData['reviewed_at'] = now();
                 $legacyAutoApproved = true;
+            } elseif ($saveAsDraft && $memberAdmission->isDraft()) {
+                $updateData['status'] = 'draft';
             }
 
             $memberAdmission->update($updateData);
@@ -846,7 +931,14 @@ class MemberAdmissionController extends Controller
             'customer_nid_photo_path.required' => 'সদস্যের NID ছবি আপলোড করা বাধ্যতামূলক।',
         ];
 
-        $validator = \Illuminate\Support\Facades\Validator::make($memberAdmission->toArray(), $rules, $messages);
+        $data = $memberAdmission->toArray();
+        foreach (['branch_id', 'samity_id', 'member_category_id'] as $fk) {
+            if (empty($data[$fk]) || (int) $data[$fk] === 0) {
+                $data[$fk] = null;
+            }
+        }
+
+        $validator = \Illuminate\Support\Facades\Validator::make($data, $rules, $messages);
 
         if ($validator->fails()) {
             return redirect()->route('member-admissions.edit', $memberAdmission->id)
