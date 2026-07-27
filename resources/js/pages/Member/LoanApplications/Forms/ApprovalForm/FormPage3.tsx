@@ -1,5 +1,6 @@
 import React, { useEffect } from 'react';
 import { FormPageProps } from './Types';
+import { Calculator, Calendar, ShieldCheck, UserCheck, DollarSign } from 'lucide-react';
 
 /** Convert duration months → years label (e.g. 12 → "১", 18 → "১.৫", 24 → "২") */
 export function formatLoanYearsLabel(months: number | string | null | undefined): string {
@@ -144,189 +145,232 @@ export default function FormPage3({ data, setData, member, loanProduct, requeste
         loanProduct?.installment_type,
     ]);
 
-    return (
-        <div id="form-page-3" data-sync="page-3" className="border-b pb-4">
-            <h3 className="font-bold mb-4 bg-gray-200 px-3 py-1 inline-block rounded">পৃষ্ঠা ৩: আয়-ব্যয় হিসাব ও অন্যান্য</h3>
+    const inputClass = 'w-full border border-gray-300 rounded-lg px-3 py-2 text-xs md:text-sm bg-white focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition-all';
+    const warningClass = 'w-full border border-amber-300 rounded-lg px-3 py-2 text-xs md:text-sm bg-amber-50/40 focus:bg-white focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition-all';
+    const readOnlyClass = 'w-full border border-gray-200 rounded-lg px-3 py-2 text-xs md:text-sm bg-gray-100/90 text-gray-700 font-medium cursor-not-allowed';
 
-            <div className="mb-4">
-                <h4 className="font-semibold border-b border-gray-400 pb-1 mb-3">
-                    ০৪. উদ্যোগের {yearsLabel} বছর এর সম্ভাব্য আয়-ব্যয় হিসাব:
-                </h4>
-                <div className="grid grid-cols-2 gap-4 border p-2 rounded bg-gray-50">
-                    <div className="space-y-2">
-                        <div className="font-bold border-b border-gray-300 pb-1 mb-2">ব্যয়</div>
-                        <div className="flex justify-between items-center gap-2">
-                            <span className="text-[12px] w-1/2">কর্মচারীর বেতন</span>
-                            <input type="number" placeholder="টাকা" value={data.est_emp_salary || ''} onChange={(e) => setData('est_emp_salary', e.target.value)} className="w-1/2 border rounded px-2 py-1 text-[12px]" />
-                        </div>
-                        <div className="flex justify-between items-center gap-2">
-                            <span className="text-[12px] w-1/2">যাতায়াত/পরিবহন</span>
-                            <input type="number" placeholder="টাকা" value={data.est_transport || ''} onChange={(e) => setData('est_transport', e.target.value)} className="w-1/2 border rounded px-2 py-1 text-[12px]" />
-                        </div>
-                        <div className="flex justify-between items-center gap-2">
-                            <span className="text-[12px] w-1/2">বিদ্যুৎ/গ্যাস/পানি/টেলিফোন</span>
-                            <input type="number" placeholder="টাকা" value={data.est_bills || ''} onChange={(e) => setData('est_bills', e.target.value)} className="w-1/2 border rounded px-2 py-1 text-[12px]" />
-                        </div>
-                        <div className="flex justify-between items-center gap-2">
-                            <span className="text-[12px] w-1/2">দোকান ভাড়া</span>
-                            <input type="number" placeholder="টাকা" value={data.est_rent || ''} onChange={(e) => setData('est_rent', e.target.value)} className="w-1/2 border rounded px-2 py-1 text-[12px]" />
-                        </div>
-                        <div className="flex justify-between items-center gap-2">
-                            <span className="text-[12px] w-1/2">ঋণের সার্ভিস চার্জ</span>
-                            <input type="number" placeholder="টাকা" value={data.est_loan_charge || ''} onChange={(e) => setData('est_loan_charge', e.target.value)} className="w-1/2 border rounded px-2 py-1 text-[12px]" />
-                        </div>
-                        <div className="flex justify-between items-center gap-2">
-                            <input type="text" placeholder="অন্যান্য খাত ১" value={data.est_other_exp_1_desc || ''} onChange={(e) => setData('est_other_exp_1_desc', e.target.value)} className="w-1/2 border rounded px-2 py-1 text-[12px]" />
-                            <input type="number" placeholder="টাকা" value={data.est_other_exp_1_amount || ''} onChange={(e) => setData('est_other_exp_1_amount', e.target.value)} className="w-1/2 border rounded px-2 py-1 text-[12px]" />
-                        </div>
-                        <div className="flex justify-between items-center gap-2">
-                            <input type="text" placeholder="অন্যান্য খাত ২" value={data.est_other_exp_2_desc || ''} onChange={(e) => setData('est_other_exp_2_desc', e.target.value)} className="w-1/2 border rounded px-2 py-1 text-[12px]" />
-                            <input type="number" placeholder="টাকা" value={data.est_other_exp_2_amount || ''} onChange={(e) => setData('est_other_exp_2_amount', e.target.value)} className="w-1/2 border rounded px-2 py-1 text-[12px]" />
-                        </div>
-                        <div className="flex justify-between items-center gap-2">
-                            <input type="text" placeholder="অন্যান্য খাত ৩" value={data.est_other_exp_3_desc || ''} onChange={(e) => setData('est_other_exp_3_desc', e.target.value)} className="w-1/2 border rounded px-2 py-1 text-[12px]" />
-                            <input type="number" placeholder="টাকা" value={data.est_other_exp_3_amount || ''} onChange={(e) => setData('est_other_exp_3_amount', e.target.value)} className="w-1/2 border rounded px-2 py-1 text-[12px]" />
+    return (
+        <div id="form-page-3" data-sync="page-3" className="space-y-5">
+            {/* Header Title */}
+            <div className="flex items-center justify-between bg-gradient-to-r from-blue-600 to-indigo-700 text-white px-4 py-3 rounded-xl shadow-sm">
+                <div className="flex items-center gap-2">
+                    <Calculator className="w-5 h-5" />
+                    <h3 className="font-bold text-sm md:text-base">পৃষ্ঠা ৩: আয়-ব্যয় হিসাব ও জামিনদার তথ্য</h3>
+                </div>
+                <span className="text-[11px] bg-white/20 px-2.5 py-1 rounded-full font-medium">স্টেপ ৩ / ৪</span>
+            </div>
+
+            {/* Income & Expenditure Statement Card */}
+            <div className="bg-white p-4 md:p-5 rounded-xl border border-gray-200 shadow-sm space-y-4">
+                <div className="flex items-center gap-2 text-gray-800 font-bold text-sm border-b pb-2">
+                    <DollarSign className="w-4 h-4 text-emerald-600" />
+                    <span>০৪. উদ্যোগের {yearsLabel} বছর এর সম্ভাব্য আয়-ব্যয় হিসাব</span>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    {/* Expenditures */}
+                    <div className="bg-rose-50/30 p-3.5 rounded-xl border border-rose-100 space-y-3">
+                        <div className="text-xs font-bold text-rose-900 border-b border-rose-200 pb-1">ব্যয়ের খাতসমূহ (টাকা)</div>
+                        <div className="space-y-2">
+                            <div className="flex justify-between items-center gap-2">
+                                <span className="text-xs font-medium text-gray-700 w-1/2">কর্মচারীর বেতন</span>
+                                <input type="number" placeholder="টাকা" value={data.est_emp_salary || ''} onChange={(e) => setData('est_emp_salary', e.target.value)} className={inputClass} />
+                            </div>
+                            <div className="flex justify-between items-center gap-2">
+                                <span className="text-xs font-medium text-gray-700 w-1/2">যাতায়াত/পরিবহন</span>
+                                <input type="number" placeholder="টাকা" value={data.est_transport || ''} onChange={(e) => setData('est_transport', e.target.value)} className={inputClass} />
+                            </div>
+                            <div className="flex justify-between items-center gap-2">
+                                <span className="text-xs font-medium text-gray-700 w-1/2">বিদ্যুৎ/গ্যাস/পানি/বিল</span>
+                                <input type="number" placeholder="টাকা" value={data.est_bills || ''} onChange={(e) => setData('est_bills', e.target.value)} className={inputClass} />
+                            </div>
+                            <div className="flex justify-between items-center gap-2">
+                                <span className="text-xs font-medium text-gray-700 w-1/2">দোকান ভাড়া</span>
+                                <input type="number" placeholder="টাকা" value={data.est_rent || ''} onChange={(e) => setData('est_rent', e.target.value)} className={inputClass} />
+                            </div>
+                            <div className="flex justify-between items-center gap-2">
+                                <span className="text-xs font-medium text-gray-700 w-1/2">সার্ভিস চার্জ</span>
+                                <input type="number" placeholder="টাকা" value={data.est_loan_charge || ''} onChange={(e) => setData('est_loan_charge', e.target.value)} className={inputClass} />
+                            </div>
+                            <div className="flex justify-between items-center gap-2">
+                                <input type="text" placeholder="অন্যান্য খাত ১" value={data.est_other_exp_1_desc || ''} onChange={(e) => setData('est_other_exp_1_desc', e.target.value)} className={inputClass} />
+                                <input type="number" placeholder="টাকা" value={data.est_other_exp_1_amount || ''} onChange={(e) => setData('est_other_exp_1_amount', e.target.value)} className={inputClass} />
+                            </div>
+                            <div className="flex justify-between items-center gap-2">
+                                <input type="text" placeholder="অন্যান্য খাত ২" value={data.est_other_exp_2_desc || ''} onChange={(e) => setData('est_other_exp_2_desc', e.target.value)} className={inputClass} />
+                                <input type="number" placeholder="টাকা" value={data.est_other_exp_2_amount || ''} onChange={(e) => setData('est_other_exp_2_amount', e.target.value)} className={inputClass} />
+                            </div>
+                            <div className="flex justify-between items-center gap-2">
+                                <input type="text" placeholder="অন্যান্য খাত ৩" value={data.est_other_exp_3_desc || ''} onChange={(e) => setData('est_other_exp_3_desc', e.target.value)} className={inputClass} />
+                                <input type="number" placeholder="টাকা" value={data.est_other_exp_3_amount || ''} onChange={(e) => setData('est_other_exp_3_amount', e.target.value)} className={inputClass} />
+                            </div>
                         </div>
                     </div>
-                    <div className="space-y-2">
-                        <div className="font-bold border-b border-gray-300 pb-1 mb-2">আয়</div>
-                        <div className="flex justify-between items-center gap-2">
-                            <input
-                                type="text"
-                                placeholder="প্রধান আয়ের খাত"
-                                value={data.est_main_income_desc || ''}
-                                onChange={(e) => setData('est_main_income_desc', e.target.value)}
-                                className="w-1/2 border rounded px-2 py-1 text-[12px] bg-amber-50 border-amber-400"
-                            />
-                            <input
-                                type="number"
-                                placeholder="টাকা"
-                                value={data.est_main_income_amount || ''}
-                                onChange={(e) => setData('est_main_income_amount', e.target.value)}
-                                className="w-1/2 border rounded px-2 py-1 text-[12px] bg-amber-50 border-amber-400"
-                            />
-                        </div>
-                        <div className="flex justify-between items-center gap-2">
-                            <input type="text" placeholder="অন্যান্য আয়" value={data.est_other_income_desc || ''} onChange={(e) => setData('est_other_income_desc', e.target.value)} className="w-1/2 border rounded px-2 py-1 text-[12px]" />
-                            <input type="number" placeholder="টাকা" value={data.est_other_income_amount || ''} onChange={(e) => setData('est_other_income_amount', e.target.value)} className="w-1/2 border rounded px-2 py-1 text-[12px]" />
+
+                    {/* Incomes */}
+                    <div className="bg-emerald-50/30 p-3.5 rounded-xl border border-emerald-100 space-y-3">
+                        <div className="text-xs font-bold text-emerald-900 border-b border-emerald-200 pb-1">আয়ের খাতসমূহ (টাকা)</div>
+                        <div className="space-y-2">
+                            <div className="flex justify-between items-center gap-2">
+                                <input
+                                    type="text"
+                                    placeholder="প্রধান আয়ের খাত"
+                                    value={data.est_main_income_desc || ''}
+                                    onChange={(e) => setData('est_main_income_desc', e.target.value)}
+                                    className={warningClass}
+                                />
+                                <input
+                                    type="number"
+                                    placeholder="টাকা"
+                                    value={data.est_main_income_amount || ''}
+                                    onChange={(e) => setData('est_main_income_amount', e.target.value)}
+                                    className={warningClass}
+                                />
+                            </div>
+                            <div className="flex justify-between items-center gap-2">
+                                <input type="text" placeholder="অন্যান্য আয়ের খাত" value={data.est_other_income_desc || ''} onChange={(e) => setData('est_other_income_desc', e.target.value)} className={inputClass} />
+                                <input type="number" placeholder="টাকা" value={data.est_other_income_amount || ''} onChange={(e) => setData('est_other_income_amount', e.target.value)} className={inputClass} />
+                            </div>
                         </div>
                     </div>
                 </div>
             </div>
 
-            <div className="mb-4">
-                <h4 className="font-semibold border-b border-gray-400 pb-1 mb-3">গ. অন্যান্য তথ্যাবলী:</h4>
-                <div className="grid grid-cols-2 gap-4 mb-4">
+            {/* Other Details & Installment Schedule */}
+            <div className="bg-white p-4 md:p-5 rounded-xl border border-gray-200 shadow-sm space-y-4">
+                <div className="flex items-center gap-2 text-gray-800 font-bold text-sm border-b pb-2">
+                    <Calendar className="w-4 h-4 text-blue-600" />
+                    <span>গ. অন্যান্য তথ্যাবলী ও ঋণ পরিশোধের তফসিল</span>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
                     <div>
-                        <label className="block text-[12px] font-medium mb-1">০১. (ক) ঋণের মেয়াদ (মাস)</label>
-                        <input type="number" value={data.loan_duration_months || ''} onChange={(e) => setData('loan_duration_months', e.target.value)} className="w-full border rounded px-2 py-1.5 text-[12px] bg-gray-100" readOnly />
+                        <label className="block text-xs font-semibold text-gray-700 mb-1">০১. (ক) ঋণের মেয়াদ (মাস)</label>
+                        <input type="number" value={data.loan_duration_months || ''} onChange={(e) => setData('loan_duration_months', e.target.value)} className={readOnlyClass} readOnly />
                     </div>
                     <div>
-                        <label className="block text-[12px] font-medium mb-1">(খ) সার্ভিস চার্জের হার (%)</label>
+                        <label className="block text-xs font-semibold text-gray-700 mb-1">(খ) সার্ভিস চার্জের হার (%)</label>
                         <input
                             type="number"
                             value={data.applied_service_charge_rate || ''}
                             onChange={(e) => setData('applied_service_charge_rate', e.target.value)}
-                            className="w-full border rounded px-2 py-1.5 text-[12px] bg-gray-100"
+                            className={readOnlyClass}
                             readOnly
                         />
                     </div>
                 </div>
 
-                <div className="border p-2 rounded bg-gray-50 mb-4">
-                    <label className="block text-[12px] font-medium mb-2">(গ) ঋণ পরিশোধের তফসিল:</label>
-                    <div className="grid grid-cols-3 gap-2">
+                <div className="bg-indigo-50/40 p-3.5 rounded-xl border border-indigo-100 space-y-2">
+                    <label className="block text-xs font-bold text-indigo-900">(গ) ঋণ পরিশোধের তফসিল</label>
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
                         <div>
-                            <label className="block text-[11px] mb-1">কিস্তির ধরণ</label>
-                            <input type="text" value={data.installment_type || 'মাসিক কিস্তি'} onChange={(e) => setData('installment_type', e.target.value)} className="w-full border rounded px-2 py-1.5 text-[12px] bg-gray-100" readOnly />
+                            <label className="block text-[11px] font-medium text-gray-600 mb-1">কিস্তির ধরণ</label>
+                            <input type="text" value={data.installment_type || 'মাসিক কিস্তি'} onChange={(e) => setData('installment_type', e.target.value)} className={readOnlyClass} readOnly />
                         </div>
                         <div>
-                            <label className="block text-[11px] mb-1">আসল (টাকা)</label>
-                            <input type="number" value={data.installment_principal || ''} onChange={(e) => setData('installment_principal', e.target.value)} className="w-full border rounded px-2 py-1.5 text-[12px] bg-gray-100" readOnly />
+                            <label className="block text-[11px] font-medium text-gray-600 mb-1">আসল (টাকা)</label>
+                            <input type="number" value={data.installment_principal || ''} onChange={(e) => setData('installment_principal', e.target.value)} className={readOnlyClass} readOnly />
                         </div>
                         <div>
-                            <label className="block text-[11px] mb-1">সার্ভিস চার্জ (টাকা)</label>
-                            <input type="number" value={data.installment_service_charge || ''} onChange={(e) => setData('installment_service_charge', e.target.value)} className="w-full border rounded px-2 py-1.5 text-[12px] bg-gray-100" readOnly />
+                            <label className="block text-[11px] font-medium text-gray-600 mb-1">সার্ভিস চার্জ (টাকা)</label>
+                            <input type="number" value={data.installment_service_charge || ''} onChange={(e) => setData('installment_service_charge', e.target.value)} className={readOnlyClass} readOnly />
                         </div>
                     </div>
                 </div>
+            </div>
 
-                <div className="mb-4">
-                    <label className="block text-[12px] font-medium mb-2">০২. জামিনদারের তথ্য</label>
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                        <div className="border p-2 rounded bg-gray-50 space-y-2">
-                            <h5 className="font-bold text-[11px] mb-2">(ক) ১ম জামিনদার</h5>
-                            <input type="text" placeholder="জামিনদারের নাম" value={data.guarantor_1_name || ''} onChange={e => setData('guarantor_1_name', e.target.value)} className="w-full border rounded px-2 py-1.5 text-[12px]" />
-                            <input type="text" placeholder="ঠিকানা" value={data.guarantor_1_address || ''} onChange={e => setData('guarantor_1_address', e.target.value)} className="w-full border rounded px-2 py-1.5 text-[12px]" />
-                            <input type="text" placeholder="মোবাইল নম্বর" value={data.guarantor_1_mobile || ''} onChange={e => setData('guarantor_1_mobile', e.target.value)} className="w-full border rounded px-2 py-1.5 text-[12px]" />
-                            <div className="flex gap-2">
-                                <input type="text" placeholder="সম্পর্ক" value={data.guarantor_1_relation || ''} onChange={e => setData('guarantor_1_relation', e.target.value)} className="w-1/2 border rounded px-2 py-1.5 text-[12px]" />
-                                <input type="text" placeholder="পেশা" value={data.guarantor_1_profession || ''} onChange={e => setData('guarantor_1_profession', e.target.value)} className="w-1/2 border rounded px-2 py-1.5 text-[12px]" />
-                            </div>
-                            <div className="flex gap-2">
-                                <input type="text" placeholder="মাসিক আয়" value={data.guarantor_1_monthly_income || ''} onChange={e => setData('guarantor_1_monthly_income', e.target.value)} className="w-1/2 border rounded px-2 py-1.5 text-[12px]" />
-                                <input type="text" placeholder="সম্পদের পরিমাণ" value={data.guarantor_1_assets_amount || ''} onChange={e => setData('guarantor_1_assets_amount', e.target.value)} className="w-1/2 border rounded px-2 py-1.5 text-[12px]" />
-                            </div>
-                            <input type="text" placeholder="সম্ভাব্য মূল্য" value={data.guarantor_1_potential_value || ''} onChange={e => setData('guarantor_1_potential_value', e.target.value)} className="w-full border rounded px-2 py-1.5 text-[12px]" />
-                            <div className="flex gap-2">
-                                <input type="text" placeholder="সাক্ষাৎকারীর নাম" value={data.guarantor_1_interviewer_name || ''} onChange={e => setData('guarantor_1_interviewer_name', e.target.value)} className="w-1/2 border rounded px-2 py-1.5 text-[12px]" />
-                                <input type="text" placeholder="পদবী" value={data.guarantor_1_interviewer_designation || ''} onChange={e => setData('guarantor_1_interviewer_designation', e.target.value)} className="w-1/2 border rounded px-2 py-1.5 text-[12px]" />
-                            </div>
+            {/* Guarantors Section */}
+            <div className="bg-white p-4 md:p-5 rounded-xl border border-gray-200 shadow-sm space-y-4">
+                <div className="flex items-center gap-2 text-gray-800 font-bold text-sm border-b pb-2">
+                    <ShieldCheck className="w-4 h-4 text-emerald-600" />
+                    <span>০২. জামিনদারদের তথ্য</span>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    {/* 1st Guarantor */}
+                    <div className="bg-gray-50/70 p-3.5 rounded-xl border border-gray-200 space-y-2.5">
+                        <div className="text-xs font-bold text-indigo-700 border-b pb-1">👤 (ক) ১ম জামিনদার</div>
+                        <input type="text" placeholder="জামিনদারের নাম" value={data.guarantor_1_name || ''} onChange={e => setData('guarantor_1_name', e.target.value)} className={inputClass} />
+                        <input type="text" placeholder="ঠিকানা" value={data.guarantor_1_address || ''} onChange={e => setData('guarantor_1_address', e.target.value)} className={inputClass} />
+                        <input type="text" placeholder="মোবাইল নম্বর" value={data.guarantor_1_mobile || ''} onChange={e => setData('guarantor_1_mobile', e.target.value)} className={inputClass} />
+                        <div className="grid grid-cols-2 gap-2">
+                            <input type="text" placeholder="সম্পর্ক" value={data.guarantor_1_relation || ''} onChange={e => setData('guarantor_1_relation', e.target.value)} className={inputClass} />
+                            <input type="text" placeholder="পেশা" value={data.guarantor_1_profession || ''} onChange={e => setData('guarantor_1_profession', e.target.value)} className={inputClass} />
                         </div>
-                        <div className="border p-2 rounded bg-gray-50 space-y-2">
-                            <h5 className="font-bold text-[11px] mb-2">(খ) ২য় জামিনদার</h5>
-                            <input type="text" placeholder="জামিনদারের নাম" value={data.guarantor_2_name || ''} onChange={e => setData('guarantor_2_name', e.target.value)} className="w-full border rounded px-2 py-1.5 text-[12px]" />
-                            <input type="text" placeholder="ঠিকানা" value={data.guarantor_2_address || ''} onChange={e => setData('guarantor_2_address', e.target.value)} className="w-full border rounded px-2 py-1.5 text-[12px]" />
-                            <input type="text" placeholder="মোবাইল নম্বর" value={data.guarantor_2_mobile || ''} onChange={e => setData('guarantor_2_mobile', e.target.value)} className="w-full border rounded px-2 py-1.5 text-[12px]" />
-                            <div className="flex gap-2">
-                                <input type="text" placeholder="সম্পর্ক" value={data.guarantor_2_relation || ''} onChange={e => setData('guarantor_2_relation', e.target.value)} className="w-1/2 border rounded px-2 py-1.5 text-[12px]" />
-                                <input type="text" placeholder="পেশা" value={data.guarantor_2_profession || ''} onChange={e => setData('guarantor_2_profession', e.target.value)} className="w-1/2 border rounded px-2 py-1.5 text-[12px]" />
-                            </div>
-                            <div className="flex gap-2">
-                                <input type="text" placeholder="মাসিক আয়" value={data.guarantor_2_monthly_income || ''} onChange={e => setData('guarantor_2_monthly_income', e.target.value)} className="w-1/2 border rounded px-2 py-1.5 text-[12px]" />
-                                <input type="text" placeholder="সম্পদের পরিমাণ" value={data.guarantor_2_assets_amount || ''} onChange={e => setData('guarantor_2_assets_amount', e.target.value)} className="w-1/2 border rounded px-2 py-1.5 text-[12px]" />
-                            </div>
-                            <input type="text" placeholder="সম্ভাব্য মূল্য" value={data.guarantor_2_potential_value || ''} onChange={e => setData('guarantor_2_potential_value', e.target.value)} className="w-full border rounded px-2 py-1.5 text-[12px]" />
-                            <div className="flex gap-2">
-                                <input type="text" placeholder="সাক্ষাৎকারীর নাম" value={data.guarantor_2_interviewer_name || ''} onChange={e => setData('guarantor_2_interviewer_name', e.target.value)} className="w-1/2 border rounded px-2 py-1.5 text-[12px]" />
-                                <input type="text" placeholder="পদবী" value={data.guarantor_2_interviewer_designation || ''} onChange={e => setData('guarantor_2_interviewer_designation', e.target.value)} className="w-1/2 border rounded px-2 py-1.5 text-[12px]" />
-                            </div>
+                        <div className="grid grid-cols-2 gap-2">
+                            <input type="text" placeholder="মাসিক আয়" value={data.guarantor_1_monthly_income || ''} onChange={e => setData('guarantor_1_monthly_income', e.target.value)} className={inputClass} />
+                            <input type="text" placeholder="সম্পদের পরিমাণ" value={data.guarantor_1_assets_amount || ''} onChange={e => setData('guarantor_1_assets_amount', e.target.value)} className={inputClass} />
+                        </div>
+                        <input type="text" placeholder="সম্ভাব্য মূল্য" value={data.guarantor_1_potential_value || ''} onChange={e => setData('guarantor_1_potential_value', e.target.value)} className={inputClass} />
+                        <div className="grid grid-cols-2 gap-2">
+                            <input type="text" placeholder="সাক্ষাৎকারীর নাম" value={data.guarantor_1_interviewer_name || ''} onChange={e => setData('guarantor_1_interviewer_name', e.target.value)} className={inputClass} />
+                            <input type="text" placeholder="পদবী" value={data.guarantor_1_interviewer_designation || ''} onChange={e => setData('guarantor_1_interviewer_designation', e.target.value)} className={inputClass} />
+                        </div>
+                    </div>
+
+                    {/* 2nd Guarantor */}
+                    <div className="bg-gray-50/70 p-3.5 rounded-xl border border-gray-200 space-y-2.5">
+                        <div className="text-xs font-bold text-indigo-700 border-b pb-1">👤 (খ) ২য় জামিনদার</div>
+                        <input type="text" placeholder="জামিনদারের নাম" value={data.guarantor_2_name || ''} onChange={e => setData('guarantor_2_name', e.target.value)} className={inputClass} />
+                        <input type="text" placeholder="ঠিকানা" value={data.guarantor_2_address || ''} onChange={e => setData('guarantor_2_address', e.target.value)} className={inputClass} />
+                        <input type="text" placeholder="মোবাইল নম্বর" value={data.guarantor_2_mobile || ''} onChange={e => setData('guarantor_2_mobile', e.target.value)} className={inputClass} />
+                        <div className="grid grid-cols-2 gap-2">
+                            <input type="text" placeholder="সম্পর্ক" value={data.guarantor_2_relation || ''} onChange={e => setData('guarantor_2_relation', e.target.value)} className={inputClass} />
+                            <input type="text" placeholder="পেশা" value={data.guarantor_2_profession || ''} onChange={e => setData('guarantor_2_profession', e.target.value)} className={inputClass} />
+                        </div>
+                        <div className="grid grid-cols-2 gap-2">
+                            <input type="text" placeholder="মাসিক আয়" value={data.guarantor_2_monthly_income || ''} onChange={e => setData('guarantor_2_monthly_income', e.target.value)} className={inputClass} />
+                            <input type="text" placeholder="সম্পদের পরিমাণ" value={data.guarantor_2_assets_amount || ''} onChange={e => setData('guarantor_2_assets_amount', e.target.value)} className={inputClass} />
+                        </div>
+                        <input type="text" placeholder="সম্ভাব্য মূল্য" value={data.guarantor_2_potential_value || ''} onChange={e => setData('guarantor_2_potential_value', e.target.value)} className={inputClass} />
+                        <div className="grid grid-cols-2 gap-2">
+                            <input type="text" placeholder="সাক্ষাৎকারীর নাম" value={data.guarantor_2_interviewer_name || ''} onChange={e => setData('guarantor_2_interviewer_name', e.target.value)} className={inputClass} />
+                            <input type="text" placeholder="পদবী" value={data.guarantor_2_interviewer_designation || ''} onChange={e => setData('guarantor_2_interviewer_designation', e.target.value)} className={inputClass} />
                         </div>
                     </div>
                 </div>
+            </div>
 
-                <div>
-                    <label className="block text-[12px] font-medium mb-2">০৩. তথ্য প্রদানকারী</label>
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                        <div className="border p-2 rounded bg-gray-50 space-y-2">
-                            <h5 className="font-bold text-[11px] mb-2">(ক) ১ম জন</h5>
-                            <input type="text" placeholder="নাম" value={data.informant_1_name || ''} onChange={e => setData('informant_1_name', e.target.value)} className="w-full border rounded px-2 py-1.5 text-[12px]" />
-                            <input type="text" placeholder="ঠিকানা" value={data.informant_1_address || ''} onChange={e => setData('informant_1_address', e.target.value)} className="w-full border rounded px-2 py-1.5 text-[12px]" />
-                            <div className="flex gap-2">
-                                <input type="text" placeholder="মোবাইল" value={data.informant_1_mobile || ''} onChange={e => setData('informant_1_mobile', e.target.value)} className="w-1/3 border rounded px-2 py-1.5 text-[12px]" />
-                                <input type="text" placeholder="সম্পর্ক" value={data.informant_1_relation || ''} onChange={e => setData('informant_1_relation', e.target.value)} className="w-1/3 border rounded px-2 py-1.5 text-[12px]" />
-                                <input type="text" placeholder="পেশা" value={data.informant_1_profession || ''} onChange={e => setData('informant_1_profession', e.target.value)} className="w-1/3 border rounded px-2 py-1.5 text-[12px]" />
-                            </div>
-                            <input type="text" placeholder="ঋণ সংক্রান্ত তথ্য" value={data.informant_1_loan_info || ''} onChange={e => setData('informant_1_loan_info', e.target.value)} className="w-full border rounded px-2 py-1.5 text-[12px]" />
-                            <input type="text" placeholder="সম্পদ সংক্রান্ত তথ্য" value={data.informant_1_asset_info || ''} onChange={e => setData('informant_1_asset_info', e.target.value)} className="w-full border rounded px-2 py-1.5 text-[12px]" />
-                            <input type="text" placeholder="সার্বিক মন্তব্য" value={data.informant_1_overall_comment || ''} onChange={e => setData('informant_1_overall_comment', e.target.value)} className="w-full border rounded px-2 py-1.5 text-[12px]" />
+            {/* Informants Section */}
+            <div className="bg-white p-4 md:p-5 rounded-xl border border-gray-200 shadow-sm space-y-4">
+                <div className="flex items-center gap-2 text-gray-800 font-bold text-sm border-b pb-2">
+                    <UserCheck className="w-4 h-4 text-purple-600" />
+                    <span>০৩. তথ্য প্রদানকারী ব্যক্তিবর্গ</span>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    {/* 1st Informant */}
+                    <div className="bg-gray-50/70 p-3.5 rounded-xl border border-gray-200 space-y-2.5">
+                        <div className="text-xs font-bold text-purple-700 border-b pb-1">ℹ️ (ক) ১ম তথ্য প্রদানকারী</div>
+                        <input type="text" placeholder="নাম" value={data.informant_1_name || ''} onChange={e => setData('informant_1_name', e.target.value)} className={inputClass} />
+                        <input type="text" placeholder="ঠিকানা" value={data.informant_1_address || ''} onChange={e => setData('informant_1_address', e.target.value)} className={inputClass} />
+                        <div className="grid grid-cols-3 gap-2">
+                            <input type="text" placeholder="মোবাইল" value={data.informant_1_mobile || ''} onChange={e => setData('informant_1_mobile', e.target.value)} className={inputClass} />
+                            <input type="text" placeholder="সম্পর্ক" value={data.informant_1_relation || ''} onChange={e => setData('informant_1_relation', e.target.value)} className={inputClass} />
+                            <input type="text" placeholder="পেশা" value={data.informant_1_profession || ''} onChange={e => setData('informant_1_profession', e.target.value)} className={inputClass} />
                         </div>
-                        <div className="border p-2 rounded bg-gray-50 space-y-2">
-                            <h5 className="font-bold text-[11px] mb-2">(খ) ২য় জন</h5>
-                            <input type="text" placeholder="নাম" value={data.informant_2_name || ''} onChange={e => setData('informant_2_name', e.target.value)} className="w-full border rounded px-2 py-1.5 text-[12px]" />
-                            <input type="text" placeholder="ঠিকানা" value={data.informant_2_address || ''} onChange={e => setData('informant_2_address', e.target.value)} className="w-full border rounded px-2 py-1.5 text-[12px]" />
-                            <div className="flex gap-2">
-                                <input type="text" placeholder="মোবাইল" value={data.informant_2_mobile || ''} onChange={e => setData('informant_2_mobile', e.target.value)} className="w-1/3 border rounded px-2 py-1.5 text-[12px]" />
-                                <input type="text" placeholder="সম্পর্ক" value={data.informant_2_relation || ''} onChange={e => setData('informant_2_relation', e.target.value)} className="w-1/3 border rounded px-2 py-1.5 text-[12px]" />
-                                <input type="text" placeholder="পেশা" value={data.informant_2_profession || ''} onChange={e => setData('informant_2_profession', e.target.value)} className="w-1/3 border rounded px-2 py-1.5 text-[12px]" />
-                            </div>
-                            <input type="text" placeholder="ঋণ সংক্রান্ত তথ্য" value={data.informant_2_loan_info || ''} onChange={e => setData('informant_2_loan_info', e.target.value)} className="w-full border rounded px-2 py-1.5 text-[12px]" />
-                            <input type="text" placeholder="সম্পদ সংক্রান্ত তথ্য" value={data.informant_2_asset_info || ''} onChange={e => setData('informant_2_asset_info', e.target.value)} className="w-full border rounded px-2 py-1.5 text-[12px]" />
-                            <input type="text" placeholder="সার্বিক মন্তব্য" value={data.informant_2_overall_comment || ''} onChange={e => setData('informant_2_overall_comment', e.target.value)} className="w-full border rounded px-2 py-1.5 text-[12px]" />
+                        <input type="text" placeholder="ঋণ সংক্রান্ত তথ্য" value={data.informant_1_loan_info || ''} onChange={e => setData('informant_1_loan_info', e.target.value)} className={inputClass} />
+                        <input type="text" placeholder="সম্পদ সংক্রান্ত তথ্য" value={data.informant_1_asset_info || ''} onChange={e => setData('informant_1_asset_info', e.target.value)} className={inputClass} />
+                        <input type="text" placeholder="সার্বিক মন্তব্য" value={data.informant_1_overall_comment || ''} onChange={e => setData('informant_1_overall_comment', e.target.value)} className={inputClass} />
+                    </div>
+
+                    {/* 2nd Informant */}
+                    <div className="bg-gray-50/70 p-3.5 rounded-xl border border-gray-200 space-y-2.5">
+                        <div className="text-xs font-bold text-purple-700 border-b pb-1">ℹ️ (খ) ২য় তথ্য প্রদানকারী</div>
+                        <input type="text" placeholder="নাম" value={data.informant_2_name || ''} onChange={e => setData('informant_2_name', e.target.value)} className={inputClass} />
+                        <input type="text" placeholder="ঠিকানা" value={data.informant_2_address || ''} onChange={e => setData('informant_2_address', e.target.value)} className={inputClass} />
+                        <div className="grid grid-cols-3 gap-2">
+                            <input type="text" placeholder="মোবাইল" value={data.informant_2_mobile || ''} onChange={e => setData('informant_2_mobile', e.target.value)} className={inputClass} />
+                            <input type="text" placeholder="সম্পর্ক" value={data.informant_2_relation || ''} onChange={e => setData('informant_2_relation', e.target.value)} className={inputClass} />
+                            <input type="text" placeholder="পেশা" value={data.informant_2_profession || ''} onChange={e => setData('informant_2_profession', e.target.value)} className={inputClass} />
                         </div>
+                        <input type="text" placeholder="ঋণ সংক্রান্ত তথ্য" value={data.informant_2_loan_info || ''} onChange={e => setData('informant_2_loan_info', e.target.value)} className={inputClass} />
+                        <input type="text" placeholder="সম্পদ সংক্রান্ত তথ্য" value={data.informant_2_asset_info || ''} onChange={e => setData('informant_2_asset_info', e.target.value)} className={inputClass} />
+                        <input type="text" placeholder="সার্বিক মন্তব্য" value={data.informant_2_overall_comment || ''} onChange={e => setData('informant_2_overall_comment', e.target.value)} className={inputClass} />
                     </div>
                 </div>
             </div>
         </div>
     );
 }
+

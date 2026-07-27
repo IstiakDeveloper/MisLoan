@@ -1,4 +1,4 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { Head, useForm, router } from '@inertiajs/react';
 import AdminLayout from '@/layouts/admin-layout';
 import { Save, Eye, ArrowLeft, X, Minimize2, Printer } from 'lucide-react';
@@ -99,8 +99,14 @@ export default function ApprovalForm({
     loanRound = 1,
     isLegacy = false,
 }: ApprovalFormProps) {
+    const categoryName = loanCategory?.category_name_bn || loanCategory?.category_name || 'ঋণ';
+    const [activeStep, setActiveStep] = useState<number>(1);
+    const [showPreview, setShowPreview] = useState(false);
+    const [viewAllPages, setViewAllPages] = useState(false);
+    const [errors, setErrors] = useState<Record<string, string>>({});
+    const isMobile = useIsMobile();
+
     if (onlyPreview && savedData) {
-        const categoryName = loanCategory?.category_name_bn || loanCategory?.category_name || 'ঋণ';
         return (
             <div className="print-container">
                 <PrintPreview formData={savedData} branch={branch} categoryName={categoryName} />
@@ -108,11 +114,6 @@ export default function ApprovalForm({
         );
     }
 
-    const [showPreview, setShowPreview] = useState(false);
-    const [errors, setErrors] = useState<Record<string, string>>({});
-    const categoryName = loanCategory?.category_name_bn || loanCategory?.category_name || 'ঋণ';
-    const isMobile = useIsMobile();
-    
     const leftPaneRef = useRef<HTMLDivElement>(null);
     const rightPaneRef = useRef<HTMLDivElement>(null);
 
@@ -126,7 +127,6 @@ export default function ApprovalForm({
                 if (!rightPaneRef.current) return;
                 const previewAnchor = rightPaneRef.current.querySelector(`[data-sync="${syncId}"]`) as HTMLElement;
                 if (previewAnchor) {
-                    // Changed block: 'center' to 'start' so the top of the page/section is always visible
                     previewAnchor.scrollIntoView({ behavior: 'smooth', block: 'start' });
                 }
             }, 100);
@@ -160,12 +160,12 @@ export default function ApprovalForm({
         member_mobile: member?.mobile_number || '',
         age: getAgeFromDOB(member?.date_of_birth, new Date().toISOString().split('T')[0]),
         father_husband_name: member?.father_name_bn || member?.spouse_name_bn || '',
-        permanent_address_line1: member?.permanent_village_road || '',
-        permanent_address_line2: member?.permanent_post_code || '',
-        permanent_address_line3: `${member?.permanent_upazila || ''}, ${member?.permanent_district || ''}`,
-        current_address_line1: member?.present_village_road || '',
-        current_address_line2: member?.present_post_code || '',
-        current_address_line3: `${member?.present_upazila || ''}, ${member?.present_district || ''}`,
+        permanent_address_line1: member?.permanent_village_road || member?.present_village_road || '',
+        permanent_address_line2: member?.permanent_post_code || member?.present_post_code || '',
+        permanent_address_line3: [member?.permanent_upazila || member?.present_upazila, member?.permanent_district || member?.present_district].filter(Boolean).join(', '),
+        current_address_line1: member?.present_village_road || member?.permanent_village_road || '',
+        current_address_line2: member?.present_post_code || member?.permanent_post_code || '',
+        current_address_line3: [member?.present_upazila || member?.permanent_upazila, member?.present_district || member?.permanent_district].filter(Boolean).join(', '),
         nid_smart_card: getNidOrSmartCard(member),
         occupation: '',
         educational_qualification: '',
@@ -276,7 +276,7 @@ export default function ApprovalForm({
         number_of_installments: loanProduct?.number_of_installments
             ? String(loanProduct.number_of_installments)
             : (loanProduct?.duration_months ? String(loanProduct.duration_months) : ''),
-        guarantor_1_name: '', guarantor_1_address: '', guarantor_1_mobile: '', guarantor_1_relation: '', guarantor_1_profession: '', guarantor_1_monthly_income: '', guarantor_1_assets_amount: '', guarantor_1_potential_value: '', guarantor_1_interviewer_name: '', guarantor_1_interviewer_designation: '',
+        guarantor_1_name: member?.guarantor_name || '', guarantor_1_address: '', guarantor_1_mobile: member?.guarantor_mobile || '', guarantor_1_relation: '', guarantor_1_profession: '', guarantor_1_monthly_income: '', guarantor_1_assets_amount: '', guarantor_1_potential_value: '', guarantor_1_interviewer_name: '', guarantor_1_interviewer_designation: '',
         guarantor_2_name: '', guarantor_2_address: '', guarantor_2_mobile: '', guarantor_2_relation: '', guarantor_2_profession: '', guarantor_2_monthly_income: '', guarantor_2_assets_amount: '', guarantor_2_potential_value: '', guarantor_2_interviewer_name: '', guarantor_2_interviewer_designation: '',
         
         informant_1_name: '', informant_1_address: '', informant_1_mobile: '', informant_1_relation: '', informant_1_profession: '', informant_1_loan_info: '', informant_1_asset_info: '', informant_1_overall_comment: '',
@@ -318,8 +318,8 @@ export default function ApprovalForm({
 
     const removeImage = (field: string) => setData(field, '');
 
-    const handleSubmit = (e: React.FormEvent) => {
-        e.preventDefault();
+    const handleSubmit = (e?: React.FormEvent) => {
+        if (e) e.preventDefault();
         setErrors({});
 
         const income = Number(data.project_income_1_2_yr) || 0;
@@ -370,32 +370,37 @@ export default function ApprovalForm({
 
     const commonProps = { data, setData, member, isLegacy, handleImageUpload, removeImage, loanProduct, loanCategory, requestedAmount, savingsProducts, loanRound };
 
+
     return (
         <AdminLayout>
             <Head title="আগ্রসর আবেদন ও অনুমোদনপত্র" />
             
-            <div className="container mx-auto px-4 py-6 print:p-0 print:m-0 print:w-full print:max-w-none">
+            <div className="container mx-auto px-2 sm:px-4 py-4 md:py-6 print:p-0 print:m-0 print:w-full print:max-w-none pb-20 sm:pb-6">
+                {/* Top Header */}
                 <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-4 md:mb-6 print:hidden gap-3">
                     <div className="w-full md:w-auto">
-                        <h2 className="text-xl md:text-2xl font-bold text-gray-800">আগ্রসর আবেদন ও অনুমোদনপত্র পূরণ করুন</h2>
-                        <div className="text-xs md:text-sm text-gray-600 mt-1">
+                        <h2 className="text-lg md:text-2xl font-bold text-gray-800 flex items-center gap-2">
+                            <span>আগ্রসর আবেদন ও অনুমোদনপত্র</span>
+                        </h2>
+                        <div className="text-xs md:text-sm text-gray-600 mt-1 flex flex-wrap items-center gap-x-2 gap-y-1">
                             {isLegacy ? (
-                                <span className="font-semibold text-amber-600">উত্তরাধিকার/ম্যানুয়াল আবেদন</span>
+                                <span className="font-semibold text-amber-600 bg-amber-50 px-2 py-0.5 rounded border border-amber-200">উত্তরাধিকার/ম্যানুয়াল আবেদন</span>
                             ) : (
-                                <>সদস্য: <span className="font-semibold">{member?.applicant_name_bn || member?.applicant_name_en}</span> ({member?.application_no})</>
+                                <span>সদস্য: <strong className="text-gray-900">{member?.applicant_name_bn || member?.applicant_name_en}</strong> ({member?.application_no})</span>
                             )}
-                            <span className="mx-2 hidden sm:inline">|</span>
-                            <br className="sm:hidden" />
-                            ক্যাটাগরি: <span className="font-semibold">{categoryName}</span>
-                            <span className="mx-2">|</span>
-                            পরিমাণ: <span className="font-semibold">৳{requestedAmount}</span>
+                            <span className="hidden sm:inline text-gray-300">|</span>
+                            <span>ক্যাটাগরি: <strong className="text-gray-900">{categoryName}</strong></span>
+                            <span className="hidden sm:inline text-gray-300">|</span>
+                            <span>পরিমাণ: <strong className="text-emerald-700">৳{requestedAmount}</strong></span>
                         </div>
                     </div>
+
+                    {/* Action Bar */}
                     <div className="flex items-center gap-2 w-full md:w-auto justify-between md:justify-end">
                         <button
                             type="button"
                             onClick={() => router.visit(formSelectionUrl(isLegacy, member, loanProduct, loanCategory, requestedAmount))}
-                            className="flex items-center gap-1.5 md:gap-2 px-3 md:px-4 py-2 bg-gray-600 text-white rounded text-xs md:text-sm hover:bg-gray-700 transition-colors whitespace-nowrap"
+                            className="flex items-center gap-1.5 px-3 py-2 bg-gray-600 text-white rounded-lg text-xs md:text-sm hover:bg-gray-700 transition-all font-medium whitespace-nowrap"
                         >
                             <ArrowLeft className="w-4 h-4" /> <span className="hidden sm:inline">ফর্ম তালিকা</span>
                         </button>
@@ -404,44 +409,45 @@ export default function ApprovalForm({
                             <button
                                 type="button"
                                 onClick={() => window.print()}
-                                className="flex items-center gap-1.5 md:gap-2 px-3 md:px-4 py-2 bg-emerald-600 text-white rounded text-xs md:text-sm hover:bg-emerald-700 transition-colors whitespace-nowrap"
+                                className="flex items-center gap-1.5 px-3.5 py-2 bg-emerald-600 text-white rounded-lg text-xs md:text-sm hover:bg-emerald-700 transition-all font-medium whitespace-nowrap"
                             >
                                 <Printer className="w-4 h-4" /> <span className="hidden sm:inline">প্রিন্ট</span>
                             </button>
                             <button
                                 type="button"
                                 onClick={() => setShowPreview(!showPreview)}
-                                className={`hidden md:flex items-center gap-2 px-4 py-2 rounded text-sm transition-colors whitespace-nowrap ${showPreview ? 'bg-indigo-600 text-white hover:bg-indigo-700' : 'bg-gray-200 text-gray-700 hover:bg-gray-300'}`}
+                                className={`flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs md:text-sm transition-all font-bold whitespace-nowrap ${showPreview ? 'bg-indigo-600 text-white shadow-md' : 'bg-indigo-50 text-indigo-700 border border-indigo-200 hover:bg-indigo-100'}`}
                             >
-                                <Eye className="w-4 h-4" /> {showPreview ? 'ফর্ম দেখান' : 'প্রিভিউ দেখান'}
+                                <Eye className="w-4 h-4" /> {showPreview ? 'ফর্মে ফিরে যান' : 'লাইভ প্রিভিউ'}
                             </button>
                             <button
-                                onClick={handleSubmit}
+                                onClick={() => handleSubmit()}
                                 disabled={processing}
-                                className="flex items-center gap-1.5 md:gap-2 px-4 py-2 bg-blue-600 text-white rounded text-xs md:text-sm hover:bg-blue-700 transition-colors disabled:opacity-50 whitespace-nowrap"
+                                className="flex items-center gap-1.5 px-4 py-2 bg-gradient-to-r from-blue-600 to-indigo-600 text-white rounded-lg text-xs md:text-sm hover:from-blue-700 hover:to-indigo-700 shadow-sm transition-all disabled:opacity-50 font-bold whitespace-nowrap"
                             >
-                                <Save className="w-4 h-4" /> <span>{processing ? 'সেভ হচ্ছে...' : 'সেভ'}</span>
+                                <Save className="w-4 h-4" /> <span>{processing ? 'সেভ হচ্ছে...' : 'সেভ ড্রাফট'}</span>
                             </button>
                         </div>
                     </div>
                 </div>
 
-                <div className="bg-white rounded-lg shadow-lg print:shadow-none p-1 print:p-0">
-                    <div className="flex flex-col lg:flex-row gap-0 lg:gap-2 min-h-[calc(100vh-160px)] print:block">
-                        {/* LEFT SIDE: FORM */}
+                {/* Main Content Layout */}
+                <div className="bg-white rounded-xl shadow-md border border-gray-200 print:shadow-none print:border-none p-1 print:p-0">
+                    <div className="flex flex-col lg:flex-row gap-0 lg:gap-3 min-h-[calc(100vh-160px)] print:block">
+                        {/* LEFT SIDE: FORM (All pages continuous) */}
                         <div 
-                            className={`w-full ${showPreview ? 'hidden lg:block lg:w-1/2' : 'lg:w-1/2'} print:hidden lg:h-[calc(100vh-160px)] overflow-y-auto pr-2 custom-scrollbar`}
+                            className={`w-full ${showPreview ? 'hidden lg:block lg:w-1/2' : 'lg:w-1/2'} print:hidden lg:h-[calc(100vh-160px)] overflow-y-auto pr-1 custom-scrollbar`}
                             onFocusCapture={handleFocusInLeftPane}
                             onClickCapture={handleFocusInLeftPane}
                             ref={leftPaneRef}
                         >
-                            <div className="bg-gray-50 p-4 lg:p-6 rounded-lg min-h-full">
+                            <div className="bg-gray-50/60 p-3 lg:p-5 rounded-lg min-h-full">
                                 {Object.keys(errors).length > 0 && (
-                                    <div className="mb-4 p-4 bg-red-50 text-red-600 rounded border border-red-200">
+                                    <div className="mb-4 p-4 bg-red-50 text-red-700 rounded-xl border border-red-200 text-xs md:text-sm">
                                         <strong>কিছু ত্রুটি পাওয়া গেছে:</strong>
-                                        <ul className="list-disc pl-5 mt-2">
+                                        <ul className="list-disc pl-5 mt-2 space-y-0.5">
                                             {Object.entries(errors).map(([key, msg]) => (
-                                                <li key={key} className="text-sm">{msg}</li>
+                                                <li key={key}>{msg}</li>
                                             ))}
                                         </ul>
                                     </div>
@@ -459,55 +465,84 @@ export default function ApprovalForm({
                         {/* RIGHT SIDE: PREVIEW */}
                         <div 
                             ref={rightPaneRef}
-                            className={`print:block print:h-auto print:overflow-visible print:w-full print:m-0 print:p-0 lg:h-[calc(100vh-160px)] lg:overflow-y-auto lg:pl-2 scroll-smooth ${!showPreview ? 'hidden lg:block lg:w-1/2' : 'w-full lg:w-1/2'}`}
+                            className={`print:block print:h-auto print:overflow-visible print:w-full print:m-0 print:p-0 lg:h-[calc(100vh-160px)] lg:overflow-y-auto lg:pl-2 scroll-smooth ${
+                                !showPreview 
+                                    ? 'hidden lg:block lg:w-1/2' 
+                                    : 'fixed inset-0 z-50 bg-gray-900/80 backdrop-blur-sm p-2 sm:p-4 overflow-y-auto lg:relative lg:inset-auto lg:z-auto lg:bg-transparent lg:p-0 lg:w-1/2'
+                            }`}
                         >
-                            <div className="bg-white rounded-lg shadow-lg p-2 lg:p-8 print:shadow-none print:p-0 print:m-0 print:w-full print:h-auto print:overflow-visible print:rounded-none print:bg-white min-h-max lg:mb-10 w-full overflow-hidden">
-                                {isMobile && showPreview && (
-                                    <div className="flex justify-between items-center bg-indigo-50 border-b border-indigo-100 p-3 mb-2 rounded-t-lg print:hidden">
-                                        <div className="flex items-center gap-2 text-indigo-800 font-bold text-sm">
-                                            <Eye className="w-5 h-5" />
-                                            ফর্ম প্রিভিউ
-                                        </div>
-                                        <button 
-                                            type="button" 
-                                            onClick={() => setShowPreview(false)}
-                                            className="flex items-center gap-1.5 px-3 py-1.5 bg-indigo-600 text-white rounded shadow-sm text-xs font-bold hover:bg-indigo-700 active:scale-95 transition-all"
-                                        >
-                                            <Minimize2 className="w-4 h-4" />
-                                            ফর্মে ফিরে যান
-                                        </button>
+                            <div className="bg-white rounded-xl shadow-2xl lg:shadow-sm p-3 lg:p-6 print:shadow-none print:p-0 print:m-0 print:w-full print:h-auto print:overflow-visible print:rounded-none print:bg-white min-h-max mb-10 w-full relative">
+                                {/* Mobile Header Bar */}
+                                <div className="flex justify-between items-center bg-indigo-600 text-white p-3 -mx-3 -mt-3 mb-3 rounded-t-xl lg:hidden print:hidden sticky top-0 z-20 shadow-md">
+                                    <div className="flex items-center gap-2 font-bold text-sm">
+                                        <Eye className="w-5 h-5" />
+                                        <span>লাইভ আবেদনপত্র প্রিভিউ</span>
                                     </div>
-                                )}
+                                    <button 
+                                        type="button" 
+                                        onClick={() => setShowPreview(false)}
+                                        className="flex items-center gap-1.5 px-3 py-1.5 bg-white/20 hover:bg-white/30 text-white rounded-lg text-xs font-bold transition-all active:scale-95"
+                                    >
+                                        <X className="w-4 h-4" />
+                                        ফর্মে ফিরে যান
+                                    </button>
+                                </div>
                                 
-                                <style>{`
-                                    @media screen {
-                                        .preview-scaler {
-                                            zoom: ${isMobile ? 'calc(100vw / 820)' : '0.85'};
-                                        }
-                                    }
-                                    @media print {
-                                        .preview-scaler {
-                                            zoom: 1 !important;
-                                        }
-                                    }
-                                `}</style>
-                                <div className="preview-scaler">
+                                {/* Full Width Responsive Preview Document Container */}
+                                <div className="w-full overflow-x-auto print:overflow-visible">
                                     <PrintPreview formData={data} branch={branch} categoryName={categoryName} />
+                                </div>
+
+                                {/* Mobile Bottom Floating Close Button */}
+                                <div className="lg:hidden print:hidden mt-6 pt-3 border-t border-gray-200 flex justify-center sticky bottom-2 z-30">
+                                    <button 
+                                        type="button" 
+                                        onClick={() => setShowPreview(false)}
+                                        className="flex items-center gap-2 px-6 py-2.5 bg-indigo-600 text-white rounded-full shadow-2xl text-xs font-bold active:scale-95 transition-all border-2 border-white"
+                                    >
+                                        <X className="w-4 h-4" />
+                                        ফর্মে ফিরে যান (ইনপুট করুন)
+                                    </button>
                                 </div>
                             </div>
                         </div>
                     </div>
                 </div>
 
-                {/* Mobile FAB for Preview Toggle */}
-                <button
-                    type="button"
-                    onClick={() => setShowPreview(!showPreview)}
-                    className="md:hidden print:hidden fixed bottom-[88px] right-4 z-50 w-14 h-14 bg-indigo-600 text-white rounded-full shadow-[0_4px_12px_rgba(79,70,229,0.5)] hover:bg-indigo-700 transition-transform active:scale-95 flex items-center justify-center"
-                >
-                    {showPreview ? <X className="w-6 h-6" /> : <Eye className="w-6 h-6" />}
-                </button>
+                {/* Mobile Sticky Bottom Action Bar */}
+                <div className="md:hidden print:hidden fixed bottom-0 left-0 right-0 z-40 bg-white/95 backdrop-blur-md border-t border-gray-200 p-2.5 shadow-[0_-4px_16px_rgba(0,0,0,0.08)] flex items-center justify-between gap-2">
+                    <button
+                        type="button"
+                        onClick={() => window.print()}
+                        className="px-3.5 py-2 bg-emerald-600 text-white rounded-lg text-xs font-bold active:scale-95 transition-all flex items-center gap-1 shadow-sm"
+                    >
+                        <Printer className="w-4 h-4" /> প্রিন্ট
+                    </button>
+
+                    <div className="flex items-center gap-2">
+                        <button
+                            type="button"
+                            onClick={() => setShowPreview(!showPreview)}
+                            className={`px-3 py-2 border rounded-lg text-xs font-bold active:scale-95 transition-all flex items-center gap-1 ${showPreview ? 'bg-indigo-600 text-white shadow-sm border-indigo-600' : 'bg-indigo-50 border-indigo-200 text-indigo-700'}`}
+                        >
+                            <Eye className="w-4 h-4" /> {showPreview ? 'ফর্মে ফিরুন' : 'লাইভ প্রিভিউ'}
+                        </button>
+
+                        <button
+                            type="button"
+                            onClick={() => handleSubmit()}
+                            disabled={processing}
+                            className="px-4 py-2 bg-gradient-to-r from-blue-600 to-indigo-600 text-white rounded-lg text-xs font-bold active:scale-95 transition-all shadow-md flex items-center gap-1.5"
+                        >
+                            <Save className="w-4 h-4" />
+                            <span>{processing ? '...' : 'সেভ ড্রাফট'}</span>
+                        </button>
+                    </div>
+                </div>
             </div>
         </AdminLayout>
     );
 }
+
+
+

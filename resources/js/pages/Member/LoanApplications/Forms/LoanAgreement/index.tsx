@@ -1,0 +1,484 @@
+import { useState, useEffect } from 'react';
+import { Head, useForm, router } from '@inertiajs/react';
+import AdminLayout from '@/layouts/admin-layout';
+import { Printer, Save, Eye, Calculator, ArrowLeft } from 'lucide-react';
+
+import { LoanAgreementData, LoanAgreementProps } from './Types';
+import { LoanAgreementPrintView } from './LoanAgreementPrintView';
+import { LoanAgreementForm } from './LoanAgreementForm';
+
+function formSelectionUrl(isLegacy: boolean, member: any, loanProduct: any, loanCategory: any, requestedAmount: number) {
+    const params = new URLSearchParams({
+        loan_product_id: String(loanProduct.id),
+        loan_category_id: String(loanCategory.id),
+        requested_amount: String(requestedAmount),
+    });
+    if (isLegacy) params.set('legacy', '1');
+    else params.set('member_id', String(member?.id ?? ''));
+    return `/member/loan-applications/form-selection?${params.toString()}`;
+}
+
+function getAcresAndDecimals(totalDecimals: any): { acres: string; decimal: string } {
+    if (totalDecimals == null || totalDecimals === '' || isNaN(Number(totalDecimals))) {
+        return { acres: '', decimal: '' };
+    }
+    const val = Number(totalDecimals);
+    if (val <= 0) return { acres: '', decimal: '' };
+    const acres = Math.floor(val / 100);
+    const decimal = Math.round(val % 100);
+    return {
+        acres: acres > 0 ? String(acres) : '০',
+        decimal: String(decimal),
+    };
+}
+
+export default function LoanAgreement({
+    member,
+    loanProduct,
+    loanCategory,
+    requestedAmount,
+    branch,
+    existingApplication,
+    savedData,
+    onlyPreview,
+    isLegacy = false,
+}: LoanAgreementProps) {
+    if (onlyPreview && savedData) {
+        return (
+            <div className="print-container">
+                <LoanAgreementPrintView data={savedData} />
+            </div>
+        );
+    }
+
+    const [showPreview, setShowPreview] = useState(true);
+
+    const landInfo = getAcresAndDecimals(member?.total_land_amount || member?.cultivable_land_amount);
+
+    const { data, setData, processing } = useForm<LoanAgreementData>({
+        // Branch Info
+        branch_name: branch?.name || '',
+        branch_address: branch?.address || '',
+
+        // Member Info (Auto-filled from MemberAdmission)
+        member_name_bn: member?.applicant_name_bn || member?.applicant_name_en || '',
+        member_code: member?.application_no || '',
+        father_husband_name: member?.father_name_bn || member?.spouse_name_bn || member?.father_name_en || '',
+        mother_name: member?.mother_name_bn || member?.mother_name_en || '',
+        nid_number: member?.nid_number || member?.smart_card_number || '',
+        mobile_number: member?.mobile_number || '',
+
+        // Samity Info
+        samity_name: member?.samity?.samity_name_bn || member?.samity?.samity_name || '',
+        samity_code: member?.samity?.samity_code || member?.samity?.id?.toString() || '',
+
+        // Address (Auto-filled from MemberAdmission with fallback)
+        village: member?.present_village_road || member?.permanent_village_road || '',
+        union: member?.present_union || member?.permanent_union || '',
+        upazila: member?.present_upazila || member?.permanent_upazila || '',
+        district: member?.present_district || member?.permanent_district || '',
+
+        // Loan Details
+        loan_amount: requestedAmount || 0,
+        loan_category_name: loanCategory?.category_name_bn || loanCategory?.category_name || '',
+        loan_product_name: loanProduct?.product_name_bn || loanProduct?.product_name || '',
+        loan_purpose: member?.project_name || member?.business_name || member?.main_profession || member?.profession || '',
+        loan_duration_months: loanProduct?.duration_months || 12,
+
+        // Calculated
+        service_charge: 0,
+        total_amount: 0,
+        number_of_installments: 0,
+        installment_amount: 0,
+        last_installment_amount: 0,
+        disbursement_date: new Date().toISOString().split('T')[0],
+        last_installment_date: '',
+
+        // Signatures & Witnesses
+        applicant_signature_name: member?.applicant_name_bn || '',
+        applicant_signature_image: member?.applicant_signature_path || null,
+        guardian_name: member?.guardian_name || member?.father_name_bn || member?.spouse_name_bn || '',
+        guardian_signature_image: member?.guardian_signature_path || null,
+        president_name: '',
+        president_signature_image: null,
+        secretary_name: '',
+        secretary_signature_image: null,
+
+        // Property & Land (Auto-filled from MemberAdmission)
+        house_acres: '',
+        house_decimal: '',
+        land_acres: landInfo.acres,
+        land_decimal: landInfo.decimal,
+        house_value: member?.total_asset_value != null && Number(member.total_asset_value) > 0 ? String(member.total_asset_value) : '',
+        land_value: member?.total_land_value != null && Number(member.total_land_value) > 0 ? String(member.total_land_value) : (member?.cultivable_land_value != null ? String(member.cultivable_land_value) : ''),
+
+        // Employment Statistics
+        self_emp_full_female: '',
+        self_emp_full_male: '',
+        self_emp_part_female: '',
+        self_emp_part_male: '',
+        wage_emp_full_female: '',
+        wage_emp_full_male: '',
+        wage_emp_part_female: '',
+        wage_emp_part_male: '',
+
+        // Officers
+        credit_officer_name: '',
+        credit_officer_pin: '',
+        credit_officer_signature: null,
+        field_officer_name: '',
+        field_officer_pin: '',
+        field_officer_signature: null,
+        accountant_name: '',
+        accountant_pin: '',
+        accountant_signature: null,
+        branch_manager_name: '',
+        branch_manager_pin: '',
+        branch_manager_signature: null,
+    });
+
+    // Load saved draft data if exists
+    useEffect(() => {
+        if (savedData) {
+            setData(prev => ({
+                ...prev,
+                ...savedData,
+            }));
+            setShowPreview(true);
+        }
+    }, [savedData]);
+
+    // Auto-calculate loan details
+    useEffect(() => {
+        if (data.loan_amount && loanProduct) {
+            calculateLoanDetails();
+        }
+    }, [data.loan_amount, data.disbursement_date]);
+
+    const calculateLoanDetails = () => {
+        const loanAmount = parseFloat(data.loan_amount.toString()) || 0;
+        const serviceChargeRate = loanProduct?.service_charge_per_thousand || loanProduct?.interest_rate || 0;
+        const serviceCharge = (loanAmount / 1000) * serviceChargeRate;
+        const totalAmount = loanAmount + serviceCharge;
+
+        const installmentType = (loanProduct?.installment_type || '').toLowerCase();
+        const durationMonths = loanProduct?.duration_months || 12;
+        let numberOfInstallments = 0;
+
+        if (installmentType === 'weekly') {
+            numberOfInstallments = Math.ceil((durationMonths * 30) / 7);
+        } else {
+            numberOfInstallments = durationMonths;
+        }
+
+        const installmentAmountPerThousand = loanProduct?.installment_amount_per_thousand || 0;
+        let installmentAmount = 0;
+        if (installmentAmountPerThousand > 0) {
+            installmentAmount = (loanAmount / 1000) * installmentAmountPerThousand;
+        } else if (numberOfInstallments > 0) {
+            installmentAmount = totalAmount / numberOfInstallments;
+        }
+
+        const lastInstallmentPerThousand = loanProduct?.last_installment_per_thousand || installmentAmountPerThousand;
+        let lastInstallmentAmount = 0;
+        if (lastInstallmentPerThousand > 0) {
+            lastInstallmentAmount = (loanAmount / 1000) * lastInstallmentPerThousand;
+        } else {
+            lastInstallmentAmount = installmentAmount;
+        }
+
+        const disbursementDate = data.disbursement_date ? new Date(data.disbursement_date) : new Date();
+        const lastInstallmentDate = new Date(disbursementDate);
+
+        if (installmentType === 'weekly') {
+            lastInstallmentDate.setDate(lastInstallmentDate.getDate() + (numberOfInstallments * 7));
+        } else {
+            lastInstallmentDate.setMonth(lastInstallmentDate.getMonth() + numberOfInstallments);
+        }
+
+        setData(prev => ({
+            ...prev,
+            service_charge: Math.round(serviceCharge),
+            total_amount: Math.round(totalAmount),
+            number_of_installments: numberOfInstallments,
+            installment_amount: Math.round(installmentAmount),
+            last_installment_amount: Math.round(lastInstallmentAmount),
+            last_installment_date: isNaN(lastInstallmentDate.getTime()) ? '' : lastInstallmentDate.toISOString().split('T')[0],
+        }));
+    };
+
+    const handleCalculateAndPreview = () => {
+        calculateLoanDetails();
+        setShowPreview(true);
+    };
+
+    const handleImageUpload = (field: string, file: File | null) => {
+        if (!file) return;
+
+        if (!file.type.match(/image\/(png|jpg|jpeg)/)) {
+            alert('শুধুমাত্র PNG, JPG বা JPEG ফাইল আপলোড করুন');
+            return;
+        }
+
+        const reader = new FileReader();
+        reader.onloadend = () => {
+            setData(field as any, reader.result as string);
+        };
+        reader.readAsDataURL(file);
+    };
+
+    const removeImage = (field: string) => {
+        setData(field as any, null);
+    };
+
+    const handleSaveDraft = () => {
+        const payload: any = {
+            loan_product_id: loanProduct.id,
+            loan_category_id: loanCategory.id,
+            requested_amount: requestedAmount,
+            agreement_data: data as any,
+        };
+        if (isLegacy) payload.legacy = 1; else payload.member_id = member?.id;
+        router.post('/member/loan-applications/forms/loan-agreement/save-draft', payload, {
+            onSuccess: () => {
+                alert('ঋণ চুক্তিপত্র সফলভাবে সংরক্ষিত হয়েছে।');
+                router.visit(formSelectionUrl(isLegacy, member, loanProduct, loanCategory, requestedAmount));
+            },
+            onError: (errors) => {
+                console.error('Save draft error:', errors);
+                alert('ড্রাফট সংরক্ষণে ত্রুটি হয়েছে');
+            },
+        });
+    };
+
+    const handlePrint = () => {
+        const printContainer = document.querySelector('.print-container') as HTMLElement | null;
+
+        if (!printContainer) {
+            window.print();
+            return;
+        }
+
+        const printWindow = window.open('', '_blank', 'width=900,height=1200');
+        if (!printWindow) {
+            window.print();
+            return;
+        }
+
+        const headHtml = document.head.innerHTML;
+
+        printWindow.document.open();
+        printWindow.document.write(`
+            <html>
+                <head>
+                    ${headHtml}
+                    <style>
+                        @page {
+                            size: A4;
+                            margin: 1cm;
+                        }
+                        @media print {
+                            html, body {
+                                margin: 0;
+                                padding: 0;
+                                background: white;
+                                -webkit-print-color-adjust: exact;
+                                print-color-adjust: exact;
+                            }
+                            .page-break {
+                                page-break-before: auto !important;
+                                break-before: auto !important;
+                            }
+                        }
+                    </style>
+                </head>
+                <body>
+                    <div class="print-container">
+                        ${printContainer.innerHTML}
+                    </div>
+                </body>
+            </html>
+        `);
+        printWindow.document.close();
+        printWindow.focus();
+
+        setTimeout(() => {
+            printWindow.print();
+        }, 300);
+    };
+
+    return (
+        <AdminLayout>
+            <Head title="ঋণ চুক্তিপত্র - Loan Agreement">
+                <style>{`
+                    @media print {
+                        @page {
+                            size: A4;
+                            margin: 1cm;
+                        }
+
+                        html, body, #app {
+                            margin: 0 !important;
+                            padding: 0 !important;
+                            -webkit-print-color-adjust: exact;
+                            print-color-adjust: exact;
+                            background: white !important;
+                        }
+
+                        @page {
+                            size: A4 portrait;
+                            margin: 8mm 10mm;
+                        }
+
+                        body * {
+                            visibility: hidden !important;
+                            box-shadow: none !important;
+                        }
+
+                        .print-container,
+                        .print-container * {
+                            visibility: visible !important;
+                        }
+
+                        nav, header, aside, .sidebar, [role="navigation"], .print\:hidden {
+                            display: none !important;
+                        }
+
+                        .print-container {
+                            position: absolute !important;
+                            left: 0 !important;
+                            top: 0 !important;
+                            width: 100% !important;
+                            max-width: 100% !important;
+                            margin: 0 !important;
+                            padding: 0 !important;
+                            background: white !important;
+                        }
+
+                        .page-break {
+                            page-break-before: always !important;
+                            break-before: page !important;
+                        }
+
+                        table, .signature-section {
+                            page-break-inside: avoid;
+                            break-inside: avoid;
+                        }
+
+                        p, span, td, th, div {
+                            color: black !important;
+                        }
+                    }
+                `}</style>
+            </Head>
+
+            <div className="max-w-[1600px] mx-auto p-4 md:p-6 space-y-6">
+                {/* Top Action Header */}
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-white p-4 rounded-xl border border-gray-200 shadow-sm print:hidden">
+                    <div className="flex items-center gap-3">
+                        <button
+                            onClick={() => router.visit(formSelectionUrl(isLegacy, member, loanProduct, loanCategory, requestedAmount))}
+                            className="flex items-center gap-2 px-3 py-2 bg-gray-100 text-gray-700 text-xs md:text-sm font-semibold rounded-lg hover:bg-gray-200 transition-all"
+                        >
+                            <ArrowLeft className="w-4 h-4" />
+                            <span>আগে ফিরে যান</span>
+                        </button>
+                        <div>
+                            <h1 className="text-base md:text-lg font-bold text-gray-900 flex items-center gap-2">
+                                <span>ঋণ চুক্তিপত্র (Loan Agreement Form)</span>
+                            </h1>
+                            <p className="text-xs text-gray-500">MemberAdmission থেকে প্রাপ্ত তথ্যের ভিত্তিতে ফর্ম পূরণ ও প্রিন্ট প্রিভিউ দেখুন</p>
+                            {existingApplication && (
+                                <p className="text-xs text-emerald-600 font-semibold mt-0.5">
+                                    ✓ ড্রাফট সংরক্ষিত আছে — Application No: {existingApplication.application_no || 'Pending'}
+                                </p>
+                            )}
+                        </div>
+                    </div>
+                    <div className="flex flex-wrap items-center gap-2">
+                        <button
+                            type="button"
+                            onClick={handleCalculateAndPreview}
+                            className="flex items-center gap-2 px-4 py-2 bg-emerald-600 text-white text-xs md:text-sm font-bold rounded-lg hover:bg-emerald-700 transition-all shadow-sm"
+                        >
+                            <Calculator className="w-4 h-4" />
+                            <span>হিসাব ও প্রিভিউ দেখুন</span>
+                        </button>
+                        <button
+                            type="button"
+                            onClick={handleSaveDraft}
+                            disabled={processing}
+                            className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white text-xs md:text-sm font-bold rounded-lg hover:bg-blue-700 disabled:opacity-50 transition-all shadow-sm"
+                        >
+                            <Save className="w-4 h-4" />
+                            <span>{processing ? 'সংরক্ষণ হচ্ছে...' : 'চুক্তিপত্র সংরক্ষণ করুন'}</span>
+                        </button>
+                        {showPreview && (
+                            <button
+                                type="button"
+                                onClick={handlePrint}
+                                className="flex items-center gap-2 px-4 py-2 bg-purple-600 text-white text-xs md:text-sm font-bold rounded-lg hover:bg-purple-700 transition-all shadow-sm"
+                            >
+                                <Printer className="w-4 h-4" />
+                                <span>প্রিন্ট করুন</span>
+                            </button>
+                        )}
+                    </div>
+                </div>
+
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 print:grid-cols-1">
+                    {/* Left: Input Form */}
+                    <div className="print:hidden">
+                        <LoanAgreementForm
+                            data={data}
+                            setData={setData}
+                            handleImageUpload={handleImageUpload}
+                            removeImage={removeImage}
+                            loanProduct={loanProduct}
+                            loanCategory={loanCategory}
+                        />
+                    </div>
+
+                    {/* Right: Printable Document Preview */}
+                    <div>
+                        {showPreview ? (
+                            <div className="lg:sticky lg:top-4 lg:h-fit print-container">
+                                <div className="bg-white rounded-xl shadow-lg border border-gray-200 overflow-hidden">
+                                    <div className="bg-gradient-to-r from-gray-800 to-gray-900 text-white px-4 py-2.5 flex justify-between items-center print:hidden">
+                                        <span className="text-xs font-bold flex items-center gap-1.5">
+                                            <Eye className="w-4 h-4 text-emerald-400" />
+                                            ঋণ চুক্তিপত্র প্রিন্ট প্রিভিউ
+                                        </span>
+                                        <button
+                                            type="button"
+                                            onClick={handlePrint}
+                                            className="text-xs bg-emerald-600 hover:bg-emerald-700 text-white px-3 py-1 rounded font-semibold flex items-center gap-1"
+                                        >
+                                            <Printer className="w-3.5 h-3.5" />
+                                            প্রিন্ট
+                                        </button>
+                                    </div>
+                                    <LoanAgreementPrintView data={data} />
+                                </div>
+                            </div>
+                        ) : (
+                            <div className="flex items-center justify-center h-[500px] bg-gray-50 rounded-xl border-2 border-dashed border-gray-300 print:hidden">
+                                <div className="text-center p-6">
+                                    <div className="w-16 h-16 bg-blue-50 text-blue-600 rounded-full flex items-center justify-center mx-auto mb-3">
+                                        <Eye className="w-8 h-8" />
+                                    </div>
+                                    <h3 className="text-base font-bold text-gray-800 mb-1">প্রিন্ট প্রিভিউ দেখতে "হিসাব ও প্রিভিউ দেখুন" বাটনে ক্লিক করুন</h3>
+                                    <p className="text-xs text-gray-500 max-w-sm mx-auto">
+                                        বামপাশের ফর্মে তথ্য দিন বা আপডেট করুন, এরপর প্রিভিউতে চুক্তিপত্রের সঠিক ফরম্যাট ও পেজ লেআউট দেখুন।
+                                    </p>
+                                </div>
+                            </div>
+                        )}
+                    </div>
+                </div>
+            </div>
+        </AdminLayout>
+    );
+}
+
+export { LoanAgreementPrintView };

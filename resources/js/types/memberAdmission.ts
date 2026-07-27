@@ -112,9 +112,9 @@ export interface MemberAdmission {
     interviewer_name?: string;
     employee_name?: string;
     other_loan_info?: string;
-    requested_loan_amount?: number;
+    requested_loan_amount?: number | string;
     project_name?: string;
-    estimated_annual_project_income?: number;
+    estimated_annual_project_income?: number | string;
     collector_comment?: string;
     guardian_name?: string;
     applicant_signature?: string | File | null;

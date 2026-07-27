@@ -2,7 +2,8 @@ import { useEffect, useState } from 'react';
 import { Head, useForm, router } from '@inertiajs/react';
 import AdminLayout from '@/layouts/admin-layout';
 import { formatDateBangla } from '@/utils/dateUtils';
-import { Save, Printer, Eye, Upload, X, ArrowLeft } from 'lucide-react';
+import { Save, Printer, Eye, ArrowLeft, ShieldCheck, UserCheck, CreditCard, FileText } from 'lucide-react';
+import { numberToWordsBangla } from './ApprovalForm/PrintPreview';
 
 interface GuarantorCommitmentData {
     branch_name: string;
@@ -62,6 +63,21 @@ function formSelectionUrl(isLegacy: boolean, member: any, loanProduct: any, loan
     return `/member/loan-applications/form-selection?${params.toString()}`;
 }
 
+/** Service charge from base loan amount & product (same logic as ApprovalForm) */
+function calcServiceCharge(baseAmount: number, loanProduct: any): number {
+    const amount = Number(baseAmount) || 0;
+    if (amount <= 0) return 0;
+    const scPerThousand = Number(loanProduct?.service_charge_per_thousand) || 0;
+    const rate = Number(loanProduct?.interest_rate ?? loanProduct?.service_charge ?? 0);
+    return scPerThousand > 0 ? (amount / 1000) * scPerThousand : amount * (rate / 100);
+}
+
+function calcLoanAmountWithServiceCharge(baseAmount: number, loanProduct: any): number {
+    const amount = Number(baseAmount) || 0;
+    if (amount <= 0) return 0;
+    return Math.round(amount + calcServiceCharge(amount, loanProduct));
+}
+
 export default function GuarantorCommitment({
     member,
     loanProduct,
@@ -74,41 +90,49 @@ export default function GuarantorCommitment({
     isLegacy = false,
 }: Props) {
     if (onlyPreview && savedData) {
-        return <GuarantorCommitmentPrintView data={savedData} />;
+        return (
+            <div className="print-container">
+                <GuarantorCommitmentPrintView data={savedData} />
+            </div>
+        );
     }
-    const [showPreview, setShowPreview] = useState(false);
+
+    const [showPreview, setShowPreview] = useState(true);
+
+    const baseLoanAmount = Number(requestedAmount) || 0;
+    const autoServiceCharge = Math.round(calcServiceCharge(baseLoanAmount, loanProduct));
 
     const { data, setData, processing } = useForm<GuarantorCommitmentData>({
         branch_name: branch?.name || '',
         branch_address: branch?.address || '',
         
-        // Guarantor Info
-        guarantor_name: '',
+        // Guarantor Info (auto-filled from MemberAdmission)
+        guarantor_name: member?.guarantor_name || '',
         guarantor_father_or_spouse: '',
         guarantor_nid: '',
-        guarantor_mobile: '',
-        guarantor_village: '',
-        guarantor_post_office: '',
-        guarantor_upazila: '',
-        guarantor_district: '',
+        guarantor_mobile: member?.guarantor_mobile || '',
+        guarantor_village: member?.present_village_road || member?.permanent_village_road || '',
+        guarantor_post_office: member?.present_post_code || member?.permanent_post_code || '',
+        guarantor_upazila: member?.present_upazila || member?.permanent_upazila || '',
+        guarantor_district: member?.present_district || member?.permanent_district || '',
         guarantor_signature_image: null,
         
         // Member Info (auto-filled from member admission)
-        member_name: member?.applicant_name_bn || '',
-        member_father_or_spouse: member?.father_name_bn || member?.spouse_name_bn || '',
-        member_nid: member?.nid_number || '',
+        member_name: member?.applicant_name_bn || member?.applicant_name_en || '',
+        member_father_or_spouse: member?.father_name_bn || member?.spouse_name_bn || member?.father_name_en || '',
+        member_nid: member?.nid_number || member?.smart_card_number || '',
         member_mobile: member?.mobile_number || '',
-        member_village: member?.present_village_road || '',
-        member_post_office: '',
-        member_upazila: member?.present_upazila || '',
-        member_district: member?.present_district || '',
+        member_village: member?.present_village_road || member?.permanent_village_road || '',
+        member_post_office: member?.present_post_code || member?.permanent_post_code || '',
+        member_upazila: member?.present_upazila || member?.permanent_upazila || '',
+        member_district: member?.present_district || member?.permanent_district || '',
         member_code: member?.application_no || '',
         samity_name: member?.samity?.samity_name_bn || member?.samity?.samity_name || '',
         samity_code: member?.samity?.samity_code || member?.samity?.id?.toString() || '',
         
-        // Loan Details
+        // Loan Details — loan_amount = base + service charge (auto from product)
         loan_date: new Date().toISOString().split('T')[0],
-        loan_amount: requestedAmount || 0,
+        loan_amount: calcLoanAmountWithServiceCharge(baseLoanAmount, loanProduct),
         loan_amount_words: '',
         
         // Witness Signatures
@@ -116,6 +140,22 @@ export default function GuarantorCommitment({
         witness2_signature_image: null,
         witness3_signature_image: null,
     });
+
+    // Auto-update loan amount with service charge when product/requested amount changes
+    useEffect(() => {
+        if (savedData) return;
+        if (baseLoanAmount > 0 && loanProduct) {
+            setData('loan_amount', calcLoanAmountWithServiceCharge(baseLoanAmount, loanProduct));
+        }
+    }, [baseLoanAmount, loanProduct, savedData]);
+
+    // Auto-calculate loan amount in words (same as DeathRiskFund / ApprovalForm)
+    useEffect(() => {
+        if (data.loan_amount > 0) {
+            const words = numberToWordsBangla(data.loan_amount);
+            setData('loan_amount_words', words ? words + ' টাকা' : '');
+        }
+    }, [data.loan_amount]);
 
     // Load saved data if exists
     useEffect(() => {
@@ -127,25 +167,6 @@ export default function GuarantorCommitment({
             setShowPreview(true);
         }
     }, [savedData]);
-
-    const handleImageUpload = (field: string, file: File | null) => {
-        if (!file) return;
-
-        if (!file.type.match(/image\/(png|jpg|jpeg)/)) {
-            alert('শুধুমাত্র PNG, JPG বা JPEG ফাইল আপলোড করুন');
-            return;
-        }
-
-        const reader = new FileReader();
-        reader.onloadend = () => {
-            setData(field as any, reader.result as string);
-        };
-        reader.readAsDataURL(file);
-    };
-
-    const removeImage = (field: string) => {
-        setData(field as any, null);
-    };
 
     const handleSaveDraft = () => {
         const payload: any = { loan_product_id: loanProduct.id, loan_category_id: loanCategory.id, requested_amount: requestedAmount, agreement_data: data };
@@ -167,598 +188,511 @@ export default function GuarantorCommitment({
     };
 
     const handlePrint = () => {
-        const printContainer = document.querySelector('.print-container') as HTMLElement | null;
-
-        if (!printContainer) {
-            window.print();
-            return;
-        }
-
-        const printWindow = window.open('', '_blank', 'width=900,height=1200');
-        if (!printWindow) {
-            window.print();
-            return;
-        }
-
-        const headHtml = document.head.innerHTML;
-
-        printWindow.document.open();
-        printWindow.document.write(`
-            <html>
-                <head>
-                    ${headHtml}
-                    <style>
-                        @page {
-                            size: A4;
-                            margin: 1cm;
-                        }
-                        @media print {
-                            html, body {
-                                margin: 0;
-                                padding: 0;
-                                background: white;
-                                -webkit-print-color-adjust: exact;
-                                print-color-adjust: exact;
-                            }
-                            .page-break {
-                                page-break-before: auto !important;
-                                break-before: auto !important;
-                            }
-                        }
-                    </style>
-                </head>
-                <body>
-                    <div class="print-container">
-                        ${printContainer.innerHTML}
-                    </div>
-                </body>
-            </html>
-        `);
-        printWindow.document.close();
-        printWindow.focus();
-        setTimeout(() => {
-            printWindow.print();
-        }, 300);
+        window.print();
     };
+
+    const inputClass = 'w-full px-3 py-2 text-xs md:text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition-all bg-white';
+    const disabledClass = 'w-full px-3 py-2 text-xs md:text-sm border border-gray-200 rounded-lg bg-gray-100/70 text-gray-700 font-medium cursor-not-allowed';
 
     return (
         <AdminLayout>
-            <Head title="ঋণের জামিনদার/দায়িত্ব গ্রহণকারীর অঙ্গীকার নামা" />
+            <Head title="ঋণের জামিনদার/দায়িত্ব গ্রহণকারীর অঙ্গীকার নামা">
+                <style>{`
+                    @media print {
+                        @page {
+                            size: A4 portrait;
+                            margin: 8mm 10mm;
+                        }
 
-            <div className="max-w-[1600px] mx-auto p-4">
-                {/* Header */}
-                <div className="flex items-center justify-between mb-4 print:hidden">
+                        body * {
+                            visibility: hidden !important;
+                            box-shadow: none !important;
+                        }
+
+                        .print-container,
+                        .print-container * {
+                            visibility: visible !important;
+                        }
+
+                        nav, header, aside, .sidebar, [role="navigation"], .print\\:hidden {
+                            display: none !important;
+                        }
+
+                        .print-container {
+                            position: absolute !important;
+                            left: 0 !important;
+                            top: 0 !important;
+                            width: 100% !important;
+                            max-width: 100% !important;
+                            margin: 0 !important;
+                            padding: 0 !important;
+                            background: white !important;
+                        }
+
+                        p, span, td, th, div {
+                            color: black !important;
+                        }
+                    }
+                `}</style>
+            </Head>
+
+            <div className="max-w-[1600px] mx-auto p-4 md:p-6 space-y-6">
+                {/* Top Action Header */}
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-white p-4 rounded-xl border border-gray-200 shadow-sm print:hidden">
                     <div className="flex items-center gap-3">
                         <button
                             onClick={() => router.visit(formSelectionUrl(isLegacy, member, loanProduct, loanCategory, requestedAmount))}
-                            className="flex items-center gap-2 px-3 py-2 bg-gray-200 text-gray-700 text-sm rounded-md hover:bg-gray-300"
+                            className="flex items-center gap-2 px-3 py-2 bg-gray-100 text-gray-700 text-xs md:text-sm font-semibold rounded-lg hover:bg-gray-200 transition-all"
                         >
                             <ArrowLeft className="w-4 h-4" />
-                            Back
+                            <span>আগে ফিরে যান</span>
                         </button>
                         <div>
-                            <h1 className="text-lg font-bold">ঋণের জামিনদার/দায়িত্ব গ্রহণকারীর অঙ্গীকার নামা</h1>
-                            <p className="text-xs text-gray-600">
-                                ফর্ম পূরণ করে ড্রাফট হিসেবে সংরক্ষণ করুন এবং প্রিন্ট নিন।
+                            <h1 className="text-base md:text-lg font-bold text-gray-900 flex items-center gap-2">
+                                <ShieldCheck className="w-5 h-5 text-indigo-600" />
+                                <span>ঋণের জামিনদার/দায়িত্ব গ্রহণকারীর অঙ্গীকার নামা</span>
+                            </h1>
+                            <p className="text-xs text-gray-500">
+                                MemberAdmission থেকে প্রাপ্ত তথ্যের ভিত্তিতে জামিননামা ফরম পূরণ ও প্রিন্ট প্রিভিউ দেখুন
                             </p>
                             {existingApplication && (
-                                <p className="text-xs text-blue-600 mt-1">
-                                    ✓ Draft সংরক্ষিত আছে - Application No: {existingApplication.application_no || 'Pending'}
+                                <p className="text-xs text-emerald-600 font-semibold mt-0.5">
+                                    ✓ ড্রাফট সংরক্ষিত আছে — Application No: {existingApplication.application_no || 'Pending'}
                                 </p>
                             )}
                         </div>
                     </div>
-                    <div className="flex gap-2">
+                    <div className="flex flex-wrap items-center gap-2">
                         <button
-                            onClick={() => setShowPreview(true)}
-                            className="flex items-center gap-2 px-4 py-2 bg-green-600 text-white text-sm rounded-md hover:bg-green-700"
+                            type="button"
+                            onClick={() => setShowPreview(!showPreview)}
+                            className="flex items-center gap-2 px-4 py-2 bg-emerald-600 text-white text-xs md:text-sm font-bold rounded-lg hover:bg-emerald-700 transition-all shadow-sm"
                         >
                             <Eye className="w-4 h-4" />
-                            Preview
+                            <span>{showPreview ? 'প্রিভিউ বন্ধ করুন' : 'প্রিভিউ দেখুন'}</span>
                         </button>
                         <button
+                            type="button"
                             onClick={handleSaveDraft}
                             disabled={processing}
-                            className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white text-sm rounded-md hover:bg-blue-700 disabled:opacity-50"
+                            className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white text-xs md:text-sm font-bold rounded-lg hover:bg-blue-700 disabled:opacity-50 transition-all shadow-sm"
                         >
                             <Save className="w-4 h-4" />
-                            {processing ? 'সংরক্ষণ হচ্ছে...' : 'ড্রাফট সংরক্ষণ করুন'}
+                            <span>{processing ? 'সংরক্ষণ হচ্ছে...' : 'ড্রাফট সংরক্ষণ করুন'}</span>
                         </button>
                         {showPreview && (
                             <button
+                                type="button"
                                 onClick={handlePrint}
-                                className="flex items-center gap-2 px-4 py-2 bg-purple-600 text-white text-sm rounded-md hover:bg-purple-700"
+                                className="flex items-center gap-2 px-4 py-2 bg-purple-600 text-white text-xs md:text-sm font-bold rounded-lg hover:bg-purple-700 transition-all shadow-sm"
                             >
                                 <Printer className="w-4 h-4" />
-                                Print
+                                <span>প্রিন্ট করুন</span>
                             </button>
                         )}
                     </div>
                 </div>
 
-                <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 print:grid-cols-1">
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 print:grid-cols-1">
                     {/* INPUT FORM */}
-                    <div className="space-y-4 print:hidden">
-                        {/* Guarantor Info */}
-                        <div className="bg-white rounded-lg shadow-sm p-4 border">
-                            <h3 className="text-sm font-bold mb-3">জামিনদার/দায়িত্ব গ্রহণকারীর তথ্য</h3>
-                            <div className="grid grid-cols-2 gap-3">
+                    <div className="space-y-5 print:hidden">
+                        {/* 1. Guarantor Info */}
+                        <div className="bg-white rounded-xl shadow-sm p-4 md:p-5 border border-gray-200 space-y-4">
+                            <h3 className="text-sm font-bold flex items-center gap-2 text-gray-800 border-b pb-2">
+                                <span className="w-6 h-6 bg-indigo-100 text-indigo-600 rounded-full flex items-center justify-center text-xs font-bold">১</span>
+                                <UserCheck className="w-4 h-4 text-indigo-600" />
+                                <span>জামিনদার/দায়িত্ব গ্রহণকারীর তথ্য</span>
+                            </h3>
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                                 <div>
-                                    <label className="block text-xs font-medium mb-1">নাম (মো./মোছা./শ্রী.)</label>
+                                    <label className="block text-xs font-semibold text-gray-700 mb-1">জামিনদারের নাম (মো./মোছা./শ্রী.) *</label>
                                     <input
                                         type="text"
                                         value={data.guarantor_name}
                                         onChange={(e) => setData('guarantor_name', e.target.value)}
-                                        className="w-full px-2 py-1.5 text-sm border rounded-md"
+                                        placeholder="জামিনদারের নাম লিখুন"
+                                        className={inputClass}
                                     />
                                 </div>
                                 <div>
-                                    <label className="block text-xs font-medium mb-1">স্বামী/পিতা</label>
+                                    <label className="block text-xs font-semibold text-gray-700 mb-1">স্বামী/পিতা</label>
                                     <input
                                         type="text"
                                         value={data.guarantor_father_or_spouse}
                                         onChange={(e) => setData('guarantor_father_or_spouse', e.target.value)}
-                                        className="w-full px-2 py-1.5 text-sm border rounded-md"
+                                        placeholder="স্বামী/পিতার নাম"
+                                        className={inputClass}
                                     />
                                 </div>
                                 <div>
-                                    <label className="block text-xs font-medium mb-1">জাতীয় পরিচয়পত্র নং</label>
+                                    <label className="block text-xs font-semibold text-gray-700 mb-1">জাতীয় পরিচয়পত্র (NID) নং</label>
                                     <input
                                         type="text"
                                         value={data.guarantor_nid}
                                         onChange={(e) => setData('guarantor_nid', e.target.value)}
-                                        className="w-full px-2 py-1.5 text-sm border rounded-md"
+                                        placeholder="NID নম্বর"
+                                        className={inputClass}
                                     />
                                 </div>
                                 <div>
-                                    <label className="block text-xs font-medium mb-1">মোবাইল</label>
+                                    <label className="block text-xs font-semibold text-gray-700 mb-1">মোবাইল নং</label>
                                     <input
                                         type="text"
                                         value={data.guarantor_mobile}
                                         onChange={(e) => setData('guarantor_mobile', e.target.value)}
-                                        className="w-full px-2 py-1.5 text-sm border rounded-md"
+                                        placeholder="মোবাইল নম্বর"
+                                        className={inputClass}
                                     />
                                 </div>
                                 <div>
-                                    <label className="block text-xs font-medium mb-1">গ্রাম</label>
+                                    <label className="block text-xs font-semibold text-gray-700 mb-1">গ্রাম/রাস্তা</label>
                                     <input
                                         type="text"
                                         value={data.guarantor_village}
                                         onChange={(e) => setData('guarantor_village', e.target.value)}
-                                        className="w-full px-2 py-1.5 text-sm border rounded-md"
+                                        placeholder="গ্রাম"
+                                        className={inputClass}
                                     />
                                 </div>
                                 <div>
-                                    <label className="block text-xs font-medium mb-1">ডাকঘর</label>
+                                    <label className="block text-xs font-semibold text-gray-700 mb-1">ডাকঘর</label>
                                     <input
                                         type="text"
                                         value={data.guarantor_post_office}
                                         onChange={(e) => setData('guarantor_post_office', e.target.value)}
-                                        className="w-full px-2 py-1.5 text-sm border rounded-md"
+                                        placeholder="ডাকঘর"
+                                        className={inputClass}
                                     />
                                 </div>
                                 <div>
-                                    <label className="block text-xs font-medium mb-1">উপজেলা</label>
+                                    <label className="block text-xs font-semibold text-gray-700 mb-1">উপজেলা</label>
                                     <input
                                         type="text"
                                         value={data.guarantor_upazila}
                                         onChange={(e) => setData('guarantor_upazila', e.target.value)}
-                                        className="w-full px-2 py-1.5 text-sm border rounded-md"
+                                        placeholder="উপজেলা"
+                                        className={inputClass}
                                     />
                                 </div>
                                 <div>
-                                    <label className="block text-xs font-medium mb-1">জেলা</label>
+                                    <label className="block text-xs font-semibold text-gray-700 mb-1">জেলা</label>
                                     <input
                                         type="text"
                                         value={data.guarantor_district}
                                         onChange={(e) => setData('guarantor_district', e.target.value)}
-                                        className="w-full px-2 py-1.5 text-sm border rounded-md"
+                                        placeholder="জেলা"
+                                        className={inputClass}
                                     />
                                 </div>
                             </div>
                         </div>
 
-                        {/* Member/Loan Applicant Info */}
-                        <div className="bg-white rounded-lg shadow-sm p-4 border">
-                            <h3 className="text-sm font-bold mb-3">ঋণ গ্রহীতার তথ্য (Auto-filled)</h3>
-                            <div className="grid grid-cols-2 gap-3">
+                        {/* 2. Member/Loan Applicant Info */}
+                        <div className="bg-white rounded-xl shadow-sm p-4 md:p-5 border border-gray-200 space-y-4">
+                            <h3 className="text-sm font-bold flex items-center gap-2 text-gray-800 border-b pb-2">
+                                <span className="w-6 h-6 bg-blue-100 text-blue-600 rounded-full flex items-center justify-center text-xs font-bold">২</span>
+                                <FileText className="w-4 h-4 text-blue-600" />
+                                <span>ঋণ গ্রহীতার তথ্য (MemberAdmission থেকে স্বয়ংক্রিয়)</span>
+                            </h3>
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                                 <div>
-                                    <label className="block text-xs font-medium mb-1">নাম (মো./মোছা./শ্রী.)</label>
-                                    <input
-                                        type="text"
-                                        value={data.member_name}
-                                        onChange={(e) => setData('member_name', e.target.value)}
-                                        className="w-full px-2 py-1.5 text-sm border rounded-md bg-gray-50"
-                                        disabled
-                                    />
+                                    <label className="block text-xs font-semibold text-gray-700 mb-1">ঋণ গ্রহীতার নাম</label>
+                                    <input type="text" value={data.member_name} disabled className={disabledClass} />
                                 </div>
                                 <div>
-                                    <label className="block text-xs font-medium mb-1">স্বামী/পিতা</label>
-                                    <input
-                                        type="text"
-                                        value={data.member_father_or_spouse}
-                                        onChange={(e) => setData('member_father_or_spouse', e.target.value)}
-                                        className="w-full px-2 py-1.5 text-sm border rounded-md bg-gray-50"
-                                        disabled
-                                    />
+                                    <label className="block text-xs font-semibold text-gray-700 mb-1">স্বামী/পিতা</label>
+                                    <input type="text" value={data.member_father_or_spouse} disabled className={disabledClass} />
                                 </div>
                                 <div>
-                                    <label className="block text-xs font-medium mb-1">জাতীয় পরিচয়পত্র নং</label>
-                                    <input
-                                        type="text"
-                                        value={data.member_nid}
-                                        onChange={(e) => setData('member_nid', e.target.value)}
-                                        className="w-full px-2 py-1.5 text-sm border rounded-md bg-gray-50"
-                                        disabled
-                                    />
+                                    <label className="block text-xs font-semibold text-gray-700 mb-1">NID নং</label>
+                                    <input type="text" value={data.member_nid} disabled className={disabledClass} />
                                 </div>
                                 <div>
-                                    <label className="block text-xs font-medium mb-1">মোবাইল</label>
-                                    <input
-                                        type="text"
-                                        value={data.member_mobile}
-                                        onChange={(e) => setData('member_mobile', e.target.value)}
-                                        className="w-full px-2 py-1.5 text-sm border rounded-md bg-gray-50"
-                                        disabled
-                                    />
+                                    <label className="block text-xs font-semibold text-gray-700 mb-1">মোবাইল নং</label>
+                                    <input type="text" value={data.member_mobile} disabled className={disabledClass} />
                                 </div>
                                 <div>
-                                    <label className="block text-xs font-medium mb-1">গ্রাম</label>
-                                    <input
-                                        type="text"
-                                        value={data.member_village}
-                                        onChange={(e) => setData('member_village', e.target.value)}
-                                        className="w-full px-2 py-1.5 text-sm border rounded-md bg-gray-50"
-                                        disabled
-                                    />
+                                    <label className="block text-xs font-semibold text-gray-700 mb-1">গ্রাম</label>
+                                    <input type="text" value={data.member_village} disabled className={disabledClass} />
                                 </div>
                                 <div>
-                                    <label className="block text-xs font-medium mb-1">ডাকঘর</label>
+                                    <label className="block text-xs font-semibold text-gray-700 mb-1">ডাকঘর/ইউনিয়ন</label>
                                     <input
                                         type="text"
                                         value={data.member_post_office}
                                         onChange={(e) => setData('member_post_office', e.target.value)}
-                                        className="w-full px-2 py-1.5 text-sm border rounded-md"
+                                        className={inputClass}
                                     />
                                 </div>
                                 <div>
-                                    <label className="block text-xs font-medium mb-1">উপজেলা</label>
-                                    <input
-                                        type="text"
-                                        value={data.member_upazila}
-                                        onChange={(e) => setData('member_upazila', e.target.value)}
-                                        className="w-full px-2 py-1.5 text-sm border rounded-md bg-gray-50"
-                                        disabled
-                                    />
+                                    <label className="block text-xs font-semibold text-gray-700 mb-1">উপজেলা</label>
+                                    <input type="text" value={data.member_upazila} disabled className={disabledClass} />
                                 </div>
                                 <div>
-                                    <label className="block text-xs font-medium mb-1">জেলা</label>
-                                    <input
-                                        type="text"
-                                        value={data.member_district}
-                                        onChange={(e) => setData('member_district', e.target.value)}
-                                        className="w-full px-2 py-1.5 text-sm border rounded-md bg-gray-50"
-                                        disabled
-                                    />
+                                    <label className="block text-xs font-semibold text-gray-700 mb-1">জেলা</label>
+                                    <input type="text" value={data.member_district} disabled className={disabledClass} />
                                 </div>
                                 <div>
-                                    <label className="block text-xs font-medium mb-1">সদস্য নং</label>
+                                    <label className="block text-xs font-semibold text-gray-700 mb-1">সদস্য নং</label>
                                     <input
                                         type="text"
                                         value={data.member_code}
                                         onChange={(e) => setData('member_code', e.target.value)}
-                                        className="w-full px-2 py-1.5 text-sm border rounded-md"
+                                        className={inputClass}
                                     />
                                 </div>
                                 <div>
-                                    <label className="block text-xs font-medium mb-1">সমিতির নাম</label>
-                                    <input
-                                        type="text"
-                                        value={data.samity_name}
-                                        onChange={(e) => setData('samity_name', e.target.value)}
-                                        className="w-full px-2 py-1.5 text-sm border rounded-md bg-gray-50"
-                                        disabled
-                                    />
+                                    <label className="block text-xs font-semibold text-gray-700 mb-1">সমিতির নাম</label>
+                                    <input type="text" value={data.samity_name} disabled className={disabledClass} />
                                 </div>
                                 <div>
-                                    <label className="block text-xs font-medium mb-1">সমিতি নং</label>
-                                    <input
-                                        type="text"
-                                        value={data.samity_code}
-                                        onChange={(e) => setData('samity_code', e.target.value)}
-                                        className="w-full px-2 py-1.5 text-sm border rounded-md bg-gray-50"
-                                        disabled
-                                    />
+                                    <label className="block text-xs font-semibold text-gray-700 mb-1">সমিতি নং</label>
+                                    <input type="text" value={data.samity_code} disabled className={disabledClass} />
                                 </div>
                             </div>
                         </div>
 
-                        {/* Loan Details */}
-                        <div className="bg-white rounded-lg shadow-sm p-4 border">
-                            <h3 className="text-sm font-bold mb-3">ঋণের বিবরণ</h3>
-                            <div className="grid grid-cols-2 gap-3">
+                        {/* 3. Loan Details */}
+                        <div className="bg-white rounded-xl shadow-sm p-4 md:p-5 border border-gray-200 space-y-4">
+                            <h3 className="text-sm font-bold flex items-center gap-2 text-gray-800 border-b pb-2">
+                                <span className="w-6 h-6 bg-emerald-100 text-emerald-600 rounded-full flex items-center justify-center text-xs font-bold">৩</span>
+                                <CreditCard className="w-4 h-4 text-emerald-600" />
+                                <span>ঋণের বিবরণ</span>
+                            </h3>
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                                 <div>
-                                    <label className="block text-xs font-medium mb-1">অদ্য/গত তারিখ</label>
+                                    <label className="block text-xs font-semibold text-gray-700 mb-1">অদ্য/গত তারিখ</label>
                                     <input
                                         type="date"
                                         value={data.loan_date}
                                         onChange={(e) => setData('loan_date', e.target.value)}
-                                        className="w-full px-2 py-1.5 text-sm border rounded-md"
+                                        className={inputClass}
                                     />
                                 </div>
                                 <div>
-                                    <label className="block text-xs font-medium mb-1">ঋণের পরিমাণ (৳)</label>
+                                    <label className="block text-xs font-semibold text-gray-700 mb-1">আবেদনকৃত ঋণের পরিমাণ (৳)</label>
                                     <input
-                                        type="number"
-                                        value={data.loan_amount}
-                                        onChange={(e) => setData('loan_amount', Number(e.target.value || 0))}
-                                        className="w-full px-2 py-1.5 text-sm border rounded-md"
+                                        type="text"
+                                        value={baseLoanAmount > 0 ? baseLoanAmount.toLocaleString('bn-BD') : ''}
+                                        readOnly
+                                        className={disabledClass}
                                     />
                                 </div>
-                                <div className="col-span-2">
-                                    <label className="block text-xs font-medium mb-1">ঋণের পরিমাণ (কথায়)</label>
+                                <div>
+                                    <label className="block text-xs font-semibold text-gray-700 mb-1">সার্ভিস চার্জ (৳)</label>
+                                    <input
+                                        type="text"
+                                        value={autoServiceCharge > 0 ? autoServiceCharge.toLocaleString('bn-BD') : ''}
+                                        readOnly
+                                        className={disabledClass}
+                                    />
+                                    <p className="text-[10px] text-gray-500 mt-0.5">
+                                        প্রোডাক্টের ইন্টারেস্ট/সার্ভিস চার্জ হার অনুযায়ী স্বয়ংক্রিয়
+                                    </p>
+                                </div>
+                                <div className="sm:col-span-2">
+                                    <label className="block text-xs font-semibold text-gray-700 mb-1">ঋণের পরিমাণ (সার্ভিস চার্জ সহ) (৳)</label>
+                                    <input
+                                        type="text"
+                                        value={data.loan_amount > 0 ? Number(data.loan_amount).toLocaleString('bn-BD') : ''}
+                                        readOnly
+                                        className="w-full px-3 py-2 text-xs md:text-sm font-bold text-emerald-700 border border-emerald-300 rounded-lg bg-emerald-50/50 cursor-not-allowed"
+                                    />
+                                </div>
+                                <div className="sm:col-span-2">
+                                    <label className="block text-xs font-semibold text-gray-700 mb-1">ঋণের পরিমাণ (কথায়)</label>
                                     <input
                                         type="text"
                                         value={data.loan_amount_words}
-                                        onChange={(e) => setData('loan_amount_words', e.target.value)}
-                                        placeholder="যেমন: পাঁচ হাজার টাকা মাত্র"
-                                        className="w-full px-2 py-1.5 text-sm border rounded-md"
+                                        readOnly
+                                        placeholder="কথায় অটো আসবে"
+                                        className={disabledClass}
                                     />
                                 </div>
                             </div>
                         </div>
 
-                        {/* Signatures */}
-                        <div className="bg-white rounded-lg shadow-sm p-4 border">
-                            <h3 className="text-sm font-bold mb-3">স্বাক্ষর</h3>
-                            
-                            {/* Guarantor Signature */}
-                            <div className="mb-4">
-                                <label className="block text-xs font-medium mb-2">জামিনদারের স্বাক্ষর</label>
-                                {data.guarantor_signature_image ? (
-                                    <div className="relative inline-block">
-                                        <img src={data.guarantor_signature_image} alt="Signature" className="h-20 w-32 object-contain border rounded" />
-                                        <button
-                                            onClick={() => removeImage('guarantor_signature_image')}
-                                            className="absolute -top-2 -right-2 bg-red-500 text-white rounded-full p-1"
-                                        >
-                                            <X className="w-3 h-3" />
-                                        </button>
-                                    </div>
-                                ) : (
-                                    <label className="flex items-center gap-2 px-3 py-2 bg-gray-100 border border-dashed rounded cursor-pointer hover:bg-gray-200 w-fit">
-                                        <Upload className="w-4 h-4" />
-                                        <span className="text-xs">Upload PNG/JPG</span>
-                                        <input
-                                            type="file"
-                                            accept="image/png,image/jpg,image/jpeg"
-                                            onChange={(e) => handleImageUpload('guarantor_signature_image', e.target.files?.[0] || null)}
-                                            className="hidden"
-                                        />
-                                    </label>
-                                )}
-                            </div>
-
-                            {/* Witness Signatures */}
-                            <div className="space-y-3">
-                                <p className="text-xs font-semibold mb-2">স্বাক্ষীগণের স্বাক্ষর (৩ জন)</p>
-                                
-                                {[1, 2, 3].map((num) => {
-                                    const field = `witness${num}_signature_image` as keyof GuarantorCommitmentData;
-                                    return (
-                                        <div key={num}>
-                                            <label className="block text-xs font-medium mb-1">{num}. স্বাক্ষীর স্বাক্ষর</label>
-                                            {data[field] ? (
-                                                <div className="relative inline-block">
-                                                    <img src={data[field] as string} alt={`Witness ${num}`} className="h-16 w-24 object-contain border rounded" />
-                                                    <button
-                                                        onClick={() => removeImage(field)}
-                                                        className="absolute -top-2 -right-2 bg-red-500 text-white rounded-full p-1"
-                                                    >
-                                                        <X className="w-3 h-3" />
-                                                    </button>
-                                                </div>
-                                            ) : (
-                                                <label className="flex items-center gap-2 px-3 py-1.5 bg-gray-100 border border-dashed rounded cursor-pointer hover:bg-gray-200 w-fit">
-                                                    <Upload className="w-3 h-3" />
-                                                    <span className="text-xs">Upload</span>
-                                                    <input
-                                                        type="file"
-                                                        accept="image/png,image/jpg,image/jpeg"
-                                                        onChange={(e) => handleImageUpload(field, e.target.files?.[0] || null)}
-                                                        className="hidden"
-                                                    />
-                                                </label>
-                                            )}
-                                        </div>
-                                    );
-                                })}
-                            </div>
+                        {/* Signatures Note */}
+                        <div className="bg-white rounded-xl shadow-sm p-4 border border-gray-200">
+                            <h3 className="text-sm font-bold mb-1.5 text-gray-800">স্বাক্ষর সংক্রান্ত নির্দেশিকা</h3>
+                            <p className="text-xs text-gray-600 leading-relaxed">
+                                জামিনদার ও সাক্ষীগণের স্বাক্ষরের নির্ধারিত স্থান প্রিন্ট প্রিভিউতে সুন্দরভাবে সাজানো আছে। ফরম প্রিন্ট করে ফিজিক্যাল পেপারে স্বাক্ষর গ্রহণ করুন।
+                            </p>
                         </div>
                     </div>
 
-                    {/* PREVIEW / PRINT LAYOUT */}
-                    {showPreview ? (
-                        <div className="lg:sticky lg:top-4 lg:h-fit print:block print-container">
-                            <div className="bg-white rounded-lg shadow-lg p-8 print:shadow-none print:p-6 print:rounded-none print:bg-white">
-                                {/* Header */}
-                                <div className="mb-4 pb-2 border-b">
-                                    <div className="flex items-center justify-center mb-2">
-                                        <div className="flex items-center gap-3">
-                                            <img 
-                                                src="/logo.png" 
-                                                alt="Logo" 
-                                                className="h-16 w-16 object-contain print:h-14 print:w-14"
-                                                onError={(e) => {
-                                                    (e.target as HTMLImageElement).style.display = 'none';
-                                                }}
-                                            />
-                                            <div className="text-center">
-                                                <p className="text-2xl font-bold mb-0 print:text-3xl">মৌসুমী</p>
-                                                <p className="text-sm print:text-base mb-1">শাখা: <span className="border-b border-dotted px-16">{data.branch_name}</span></p>
-                                                <p className="text-base font-semibold print:text-lg">ঋণের জামিনদার/দায়িত্ব গ্রহণকারীর অঙ্গীকার নামা</p>
-                                            </div>
-                                        </div>
+                    {/* LIVE PREVIEW */}
+                    <div>
+                        {showPreview ? (
+                            <div className="lg:sticky lg:top-4 lg:h-fit print-container">
+                                <div className="bg-white rounded-xl shadow-lg border border-gray-200 overflow-hidden">
+                                    <div className="bg-gradient-to-r from-gray-800 to-gray-900 text-white px-4 py-2.5 flex justify-between items-center print:hidden">
+                                        <span className="text-xs font-bold flex items-center gap-1.5">
+                                            <Eye className="w-4 h-4 text-emerald-400" />
+                                            অঙ্গীকার নামা প্রিন্ট প্রিভিউ
+                                        </span>
+                                        <button
+                                            type="button"
+                                            onClick={handlePrint}
+                                            className="text-xs bg-emerald-600 hover:bg-emerald-700 text-white px-3 py-1 rounded font-semibold flex items-center gap-1"
+                                        >
+                                            <Printer className="w-3.5 h-3.5" />
+                                            প্রিন্ট
+                                        </button>
                                     </div>
-                                </div>
-
-                                {/* Main Content */}
-                                <div className="text-sm print:text-base leading-relaxed space-y-2">
-                                    {/* Guarantor Info */}
-                                    <p>
-                                        আমি মো./মোছা./শ্রী <span className="border-b border-dotted px-24">{data.guarantor_name || ''}</span>, স্বামী/পিতা: <span className="border-b border-dotted px-24">{data.guarantor_father_or_spouse || ''}</span>
-                                    </p>
-                                    <p>
-                                        জাতীয় পরিচয়পত্র নং: <span className="border-b border-dotted px-20">{data.guarantor_nid || ''}</span> গ্রাম: <span className="border-b border-dotted px-16">{data.guarantor_village || ''}</span> ডাকঘর: <span className="border-b border-dotted px-16">{data.guarantor_post_office || ''}</span>
-                                    </p>
-                                    <p>
-                                        উপজেলা: <span className="border-b border-dotted px-16">{data.guarantor_upazila || ''}</span> জেলা: <span className="border-b border-dotted px-16">{data.guarantor_district || ''}</span> মোবাইল: <span className="border-b border-dotted px-16">{data.guarantor_mobile || ''}</span>
-                                    </p>
-
-                                    {/* Declaration */}
-                                    <p className="mt-3">
-                                        এই মর্মে অঙ্গীকার করছি যে, মৌসুমী সংস্থার <span className="border-b border-dotted px-16">{data.branch_name || ''}</span> শাখার সদস্য মো./মোছা./শ্রী <span className="border-b border-dotted px-24">{data.member_name || ''}</span>
-                                    </p>
-                                    <p>
-                                        স্বামী/পিতা: <span className="border-b border-dotted px-24">{data.member_father_or_spouse || ''}</span> জাতীয় পরিচয়পত্র নং: <span className="border-b border-dotted px-20">{data.member_nid || ''}</span>
-                                    </p>
-                                    <p>
-                                        গ্রাম: <span className="border-b border-dotted px-16">{data.member_village || ''}</span> ডাকঘর: <span className="border-b border-dotted px-16">{data.member_post_office || ''}</span>
-                                    </p>
-                                    <p>
-                                        উপজেলা: <span className="border-b border-dotted px-16">{data.member_upazila || ''}</span> জেলা: <span className="border-b border-dotted px-16">{data.member_district || ''}</span> মোবাইল: <span className="border-b border-dotted px-16">{data.member_mobile || ''}</span>
-                                    </p>
-                                    <p>
-                                        অদ্য/গত <span className="border-b border-dotted px-16">{data.loan_date ? formatDateBangla(data.loan_date) : ''}</span> তারিখে সংস্থার <span className="border-b border-dotted px-16">{data.branch_name || ''}</span> শাখা থেকে সার্ভিস চার্জ সহ <span className="border-b border-dotted px-16">{data.loan_amount ? `৳${data.loan_amount.toLocaleString()}` : ''}</span> টাকা, (কথায় <span className="border-b border-dotted px-32">{data.loan_amount_words || ''}</span>) টাকা ঋণ গ্রহণ করেছেন।
-                                    </p>
-                                    <p>
-                                        উক্ত শাখায় তার সদস্য নং: <span className="border-b border-dotted px-16">{data.member_code || ''}</span> এবং সমিতির নাম: <span className="border-b border-dotted px-16">{data.samity_name || ''}</span> সমিতি নং: <span className="border-b border-dotted px-16">{data.samity_code || ''}</span>
-                                    </p>
-                                    <p className="mt-2">
-                                        । ঋণ গ্রহণকারী ব্যক্তি আমার পরিচিত এবং আমি তাকে চিনি ও জানি। আমি আরও অঙ্গীকার করছি যে উক্ত ঋণের টাকা তিনি পরিশোধ করতে ব্যর্থ হলে বা অপারগতা প্রকাশ করলে ঋণের সমুদয় টাকা আমি নিম্নোক্ত শর্তে পরিশোধ করবো।
-                                    </p>
-
-                                    {/* Conditions */}
-                                    <p className="mt-4 font-semibold">শর্তাবলী:</p>
-                                    <ol className="list-decimal list-inside space-y-2 ml-2">
-                                        <li>
-                                            ঋণ গ্রহীতা নিয়মিত ঋণের কিস্তি প্রদানের মাধ্যমে ঋণ পরিশোধ করিবেন। যদি ঋণ গ্রহীতা ঋণ ও সেবামূল্য সময় মতো ও নিয়ম অনুযায়ী পরিশোধ করতে ব্যর্থ হন সেক্ষেত্রে আমি ঋণ গ্রহীতার পক্ষে জামিনদার হিসেবে ঋণের টাকা পরিশোধ করতে বাধ্য থাকবো। যদি আমি পরিশোধ না করি সেক্ষেত্রে ঋণ দাতা আমার বিরুদ্ধে আইনানুগ ব্যবস্থা গ্রহণের অধিকার সংরক্ষণ করেন।
-                                        </li>
-                                        <li>
-                                            ঋণের টাকা সম্পূর্ণ পরিশোধ না হওয়া পর্যন্ত এই অঙ্গীকারনামার মেয়াদ বজায় থাকবে।
-                                        </li>
-                                        <li>
-                                            জামিনদার হিসেবে ঋণের সমুদয় টাকা আমি পরিশোধে ব্যর্থ হইলে বা টাকা প্রদানে অনিহা প্রকাশ করিলে আমার বিরুদ্ধে দেশে প্রচলিত আইন অনুযায়ী আইনানুগ ব্যবস্থা গ্রহণ করিতে পারবেন।
-                                        </li>
-                                    </ol>
-
-                                    {/* Final Declaration */}
-                                    <p className="mt-4">
-                                        উক্ত ব্যাপারে আমাকে কেহ বা কাহারা প্রলোভন, কোন প্রকার ভয়ভীতি দেখায় নাই বা চাপ সৃষ্টি করে নাই। এতদার্থে স্বেচ্ছায়, সজ্ঞানে অন্যের বিনা প্ররোচনায় অত্র অঙ্গীকারনামা পড়ে, শুনে, বুঝে স্বাক্ষীগণের সম্মুখে সহি স্বাক্ষর সম্পাদন করলাম।
-                                    </p>
-
-                                    {/* Signatures Section */}
-                                    <div className="mt-8 flex justify-between items-start">
-                                        {/* Witness Signatures */}
-                                        <div className="flex-1">
-                                            <p className="font-bold mb-2 text-sm print:text-base">স্বাক্ষীর স্বাক্ষর:</p>
-                                            <div className="space-y-3">
-                                                {[1, 2, 3].map((num) => {
-                                                    const field = `witness${num}_signature_image` as keyof GuarantorCommitmentData;
-                                                    return (
-                                                        <div key={num} className="mb-2">
-                                                            <p className="text-xs print:text-sm mb-1">{num}.</p>
-                                                            {data[field] && (
-                                                                <img src={data[field] as string} alt={`Witness ${num}`} className="h-12 w-20 object-contain border rounded" />
-                                                            )}
-                                                            <p className="border-b border-dotted w-32 mt-1"></p>
-                                                        </div>
-                                                    );
-                                                })}
-                                            </div>
-                                        </div>
-
-                                        {/* Guarantor Signature */}
-                                        <div className="flex-1 text-right">
-                                            <p className="font-bold mb-2 text-sm print:text-base">ঋণের জামিনদার/দায়িত্ব গ্রহণকারীর স্বাক্ষর</p>
-                                            {data.guarantor_signature_image && (
-                                                <img src={data.guarantor_signature_image} alt="Guarantor Signature" className="h-16 w-28 object-contain border rounded mx-auto mb-2" />
-                                            )}
-                                            <p className="border-b border-dotted w-40 inline-block"></p>
-                                        </div>
-                                    </div>
+                                    <GuarantorCommitmentPrintView data={data} />
                                 </div>
                             </div>
-                        </div>
-                    ) : (
-                        <div className="flex items-center justify-center h-[600px] bg-gray-50 rounded-lg border-2 border-dashed border-gray-300">
-                            <div className="text-center">
-                                <Eye className="w-16 h-16 text-gray-400 mx-auto mb-4" />
-                                <p className="text-gray-600 font-semibold mb-2">Preview দেখতে উপরের বাটন ক্লিক করুন</p>
+                        ) : (
+                            <div className="flex items-center justify-center h-[500px] bg-gray-50 rounded-xl border-2 border-dashed border-gray-300 print:hidden">
+                                <div className="text-center p-6">
+                                    <div className="w-16 h-16 bg-indigo-50 text-indigo-600 rounded-full flex items-center justify-center mx-auto mb-3">
+                                        <Eye className="w-8 h-8" />
+                                    </div>
+                                    <p className="text-gray-700 font-bold text-sm mb-1">লাইভ প্রিন্ট প্রিভিউ দেখতে চান?</p>
+                                    <p className="text-gray-500 text-xs mb-4">উপরের 'প্রিভিউ দেখুন' বাটনে ক্লিক করে লাইভ প্রিভিউ দেখুন</p>
+                                    <button
+                                        type="button"
+                                        onClick={() => setShowPreview(true)}
+                                        className="px-4 py-2 bg-indigo-600 text-white text-xs font-bold rounded-lg hover:bg-indigo-700 transition-all"
+                                    >
+                                        প্রিভিউ চালু করুন
+                                    </button>
+                                </div>
                             </div>
-                        </div>
-                    )}
+                        )}
+                    </div>
                 </div>
             </div>
         </AdminLayout>
     );
 }
 
-/** Show/Print view – font/size tuned for 1 page (scaled up ~40% from compact). */
+/** Show/Print view - 1 Page A4 Print Optimized */
 export function GuarantorCommitmentPrintView({ data }: { data: any }) {
     const d = data || {};
-    const s = { fontSize: '15px', lineHeight: 1.4 } as const;
-    const sTitle = { fontSize: '17px', fontWeight: 'bold' as const };
+    const fmt = formatDateBangla;
+
     return (
-        <div className="print-container bg-white rounded-lg border border-gray-300 p-6" style={{ ...s, maxWidth: '100%' }}>
-            <div className="mb-3 pb-2 border-b border-gray-400">
+        <div
+            className="print-container bg-white rounded-lg border border-gray-300 p-6 sm:p-8 text-gray-900 print:border-none print:p-0 print:m-0 w-full overflow-x-auto"
+            style={{ fontFamily: 'Kalpurush, Arial, sans-serif', fontSize: '13px', lineHeight: '1.5', color: '#000' }}
+        >
+            {/* Header Section */}
+            <div className="mb-4 pb-2 border-b border-gray-400">
                 <div className="flex items-center justify-center gap-3">
-                    <img src="/logo.png" alt="Logo" style={{ height: '50px', width: '50px', objectFit: 'contain' }} onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }} />
+                    <img
+                        src="/logo.png"
+                        alt="Logo"
+                        style={{ height: '44px', width: '44px', objectFit: 'contain' }}
+                        onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}
+                    />
                     <div className="text-center">
-                        <p className="font-bold mb-0" style={{ fontSize: '22px' }}>মৌসুমী</p>
-                        <p className="mb-1" style={{ fontSize: '14px' }}>শাখা: <span className="border-b border-dotted border-gray-600 inline-block min-w-[168px]">{d.branch_name}</span></p>
-                        <p className="font-semibold" style={{ fontSize: '15px' }}>ঋণের জামিনদার/দায়িত্ব গ্রহণকারীর অঙ্গীকার নামা</p>
+                        <h1 className="font-bold text-2xl tracking-wide text-black mb-0">মৌসুমী</h1>
+                        <p className="text-xs font-semibold text-gray-800">
+                            শাখা: <span className="border-b border-dotted border-gray-800 inline-block min-w-[180px] font-bold px-1">{str(d.branch_name)}</span>
+                        </p>
+                        <div className="mt-1">
+                            <span className="border border-black px-4 py-0.5 rounded-full font-bold text-xs inline-block">
+                                ঋণের জামিনদার/দায়িত্ব গ্রহণকারীর অঙ্গীকার নামা
+                            </span>
+                        </div>
                     </div>
                 </div>
             </div>
-            <div className="space-y-1.5" style={s}>
-                <p>আমি মো./মোছা./শ্রী <span className="border-b border-dotted border-gray-600 inline-block min-w-[196px]">{d.guarantor_name || ''}</span>, স্বামী/পিতা: <span className="border-b border-dotted border-gray-600 inline-block min-w-[196px]">{d.guarantor_father_or_spouse || ''}</span></p>
-                <p>জাতীয় পরিচয়পত্র নং: <span className="border-b border-dotted border-gray-600 inline-block min-w-[168px]">{d.guarantor_nid || ''}</span> গ্রাম: <span className="border-b border-dotted border-gray-600 inline-block min-w-[140px]">{d.guarantor_village || ''}</span> ডাকঘর: <span className="border-b border-dotted border-gray-600 inline-block min-w-[112px]">{d.guarantor_post_office || ''}</span></p>
-                <p>উপজেলা: <span className="border-b border-dotted border-gray-600 inline-block min-w-[112px]">{d.guarantor_upazila || ''}</span> জেলা: <span className="border-b border-dotted border-gray-600 inline-block min-w-[112px]">{d.guarantor_district || ''}</span> মোবাইল: <span className="border-b border-dotted border-gray-600 inline-block min-w-[112px]">{d.guarantor_mobile || ''}</span></p>
-                <p className="mt-1.5">এই মর্মে অঙ্গীকার করছি যে, মৌসুমী সংস্থার <span className="border-b border-dotted border-gray-600 inline-block min-w-[140px]">{d.branch_name || ''}</span> শাখার সদস্য মো./মোছা./শ্রী <span className="border-b border-dotted border-gray-600 inline-block min-w-[196px]">{d.member_name || ''}</span></p>
-                <p>স্বামী/পিতা: <span className="border-b border-dotted border-gray-600 inline-block min-w-[168px]">{d.member_father_or_spouse || ''}</span> জাতীয় পরিচয়পত্র নং: <span className="border-b border-dotted border-gray-600 inline-block min-w-[140px]">{d.member_nid || ''}</span></p>
-                <p>গ্রাম: <span className="border-b border-dotted border-gray-600 inline-block min-w-[112px]">{d.member_village || ''}</span> ডাকঘর: <span className="border-b border-dotted border-gray-600 inline-block min-w-[112px]">{d.member_post_office || ''}</span></p>
-                <p>উপজেলা: <span className="border-b border-dotted border-gray-600 inline-block min-w-[112px]">{d.member_upazila || ''}</span> জেলা: <span className="border-b border-dotted border-gray-600 inline-block min-w-[112px]">{d.member_district || ''}</span> মোবাইল: <span className="border-b border-dotted border-gray-600 inline-block min-w-[112px]">{d.member_mobile || ''}</span></p>
-                <p>অদ্য/গত <span className="border-b border-dotted border-gray-600 inline-block min-w-[98px]">{d.loan_date ? formatDateBangla(d.loan_date) : ''}</span> তারিখে সংস্থার <span className="border-b border-dotted border-gray-600 inline-block min-w-[112px]">{d.branch_name || ''}</span> শাখা থেকে সার্ভিস চার্জ সহ <span className="border-b border-dotted border-gray-600 inline-block min-w-[112px]">{d.loan_amount ? `৳${Number(d.loan_amount).toLocaleString('bn-BD')}` : ''}</span> টাকা, (কথায় <span className="border-b border-dotted border-gray-600 inline-block min-w-[252px]">{d.loan_amount_words || ''}</span>) টাকা ঋণ গ্রহণ করেছেন।</p>
-                <p>উক্ত শাখায় তার সদস্য নং: <span className="border-b border-dotted border-gray-600 inline-block min-w-[84px]">{d.member_code || ''}</span> এবং সমিতির নাম: <span className="border-b border-dotted border-gray-600 inline-block min-w-[140px]">{d.samity_name || ''}</span> সমিতি নং: <span className="border-b border-dotted border-gray-600 inline-block min-w-[84px]">{d.samity_code || ''}</span></p>
-                <p className="mt-1.5">। ঋণ গ্রহণকারী ব্যক্তি আমার পরিচিত এবং আমি তাকে চিনি ও জানি। আমি আরও অঙ্গীকার করছি যে উক্ত ঋণের টাকা তিনি পরিশোধ করতে ব্যর্থ হলে বা অপারগতা প্রকাশ করলে ঋণের সমুদয় টাকা আমি নিম্নোক্ত শর্তে পরিশোধ করবো।</p>
-                <p className="mt-3 font-semibold" style={sTitle}>শর্তাবলী:</p>
-                <ol className="list-decimal list-inside space-y-1 ml-2" style={{ paddingLeft: '6px' }}>
-                    <li>ঋণ গ্রহীতা নিয়মিত ঋণের কিস্তি প্রদানের মাধ্যমে ঋণ পরিশোধ করিবেন। যদি ঋণ গ্রহীতা ঋণ ও সেবামূল্য সময় মতো ও নিয়ম অনুযায়ী পরিশোধ করতে ব্যর্থ হন সেক্ষেত্রে আমি ঋণ গ্রহীতার পক্ষে জামিনদার হিসেবে ঋণের টাকা পরিশোধ করতে বাধ্য থাকবো। যদি আমি পরিশোধ না করি সেক্ষেত্রে ঋণ দাতা আমার বিরুদ্ধে আইনানুগ ব্যবস্থা গ্রহণের অধিকার সংরক্ষণ করেন।</li>
-                    <li>ঋণের টাকা সম্পূর্ণ পরিশোধ না হওয়া পর্যন্ত এই অঙ্গীকারনামার মেয়াদ বজায় থাকবে।</li>
-                    <li>জামিনদার হিসেবে ঋণের সমুদয় টাকা আমি পরিশোধে ব্যর্থ হইলে বা টাকা প্রদানে অনিহা প্রকাশ করিলে আমার বিরুদ্ধে দেশে প্রচলিত আইন অনুযায়ী আইনানুগ ব্যবস্থা গ্রহণ করিতে পারবেন।</li>
-                </ol>
-                <p className="mt-3">উক্ত ব্যাপারে আমাকে কেহ বা কাহারা প্রলোভন, কোন প্রকার ভয়ভীতি দেখায় নাই বা চাপ সৃষ্টি করে নাই। এতদার্থে স্বেচ্ছায়, সজ্ঞানে অন্যের বিনা প্ররোচনায় অত্র অঙ্গীকারনামা পড়ে, শুনে, বুঝে স্বাক্ষীগণের সম্মুখে সহি স্বাক্ষর সম্পাদন করলাম।</p>
-                <div className="mt-5 flex justify-between items-start gap-6" style={{ marginTop: '18px' }}>
-                    <div className="flex-1">
-                        <p className="font-bold mb-2" style={sTitle}>স্বাক্ষীর স্বাক্ষর:</p>
-                        <div className="space-y-1.5">
+
+            {/* Main Statement Text */}
+            <div className="space-y-2 text-xs sm:text-[13px] leading-relaxed">
+                <p>
+                    আমি মো./মোছা./শ্রী <span className="border-b border-dotted border-gray-800 inline-block min-w-[200px] font-bold px-1">{str(d.guarantor_name)}</span>, স্বামী/পিতা: <span className="border-b border-dotted border-gray-800 inline-block min-w-[200px] font-semibold px-1">{str(d.guarantor_father_or_spouse)}</span>
+                </p>
+                <p>
+                    জাতীয় পরিচয়পত্র নং: <span className="border-b border-dotted border-gray-800 inline-block min-w-[160px] font-semibold px-1">{str(d.guarantor_nid)}</span> গ্রাম: <span className="border-b border-dotted border-gray-800 inline-block min-w-[140px] font-semibold px-1">{str(d.guarantor_village)}</span> ডাকঘর: <span className="border-b border-dotted border-gray-800 inline-block min-w-[120px] font-semibold px-1">{str(d.guarantor_post_office)}</span>
+                </p>
+                <p>
+                    উপজেলা: <span className="border-b border-dotted border-gray-800 inline-block min-w-[120px] font-semibold px-1">{str(d.guarantor_upazila)}</span> জেলা: <span className="border-b border-dotted border-gray-800 inline-block min-w-[120px] font-semibold px-1">{str(d.guarantor_district)}</span> মোবাইল: <span className="border-b border-dotted border-gray-800 inline-block min-w-[120px] font-semibold px-1">{str(d.guarantor_mobile)}</span>
+                </p>
+                
+                <p className="pt-1.5">
+                    এই মর্মে অঙ্গীকার করছি যে, মৌসুমী সংস্থার <span className="border-b border-dotted border-gray-800 inline-block min-w-[140px] font-semibold px-1">{str(d.branch_name)}</span> শাখার সদস্য মো./মোছা./শ্রী <span className="border-b border-dotted border-gray-800 inline-block min-w-[200px] font-bold px-1">{str(d.member_name)}</span>
+                </p>
+                <p>
+                    স্বামী/পিতা: <span className="border-b border-dotted border-gray-800 inline-block min-w-[180px] font-semibold px-1">{str(d.member_father_or_spouse)}</span> জাতীয় পরিচয়পত্র নং: <span className="border-b border-dotted border-gray-800 inline-block min-w-[150px] font-semibold px-1">{str(d.member_nid)}</span>
+                </p>
+                <p>
+                    গ্রাম: <span className="border-b border-dotted border-gray-800 inline-block min-w-[120px] font-semibold px-1">{str(d.member_village)}</span> ডাকঘর: <span className="border-b border-dotted border-gray-800 inline-block min-w-[120px] font-semibold px-1">{str(d.member_post_office)}</span>
+                </p>
+                <p>
+                    উপজেলা: <span className="border-b border-dotted border-gray-800 inline-block min-w-[120px] font-semibold px-1">{str(d.member_upazila)}</span> জেলা: <span className="border-b border-dotted border-gray-800 inline-block min-w-[120px] font-semibold px-1">{str(d.member_district)}</span> মোবাইল: <span className="border-b border-dotted border-gray-800 inline-block min-w-[120px] font-semibold px-1">{str(d.member_mobile)}</span>
+                </p>
+                <p>
+                    অদ্য/গত <span className="border-b border-dotted border-gray-800 inline-block min-w-[110px] font-bold px-1">{d.loan_date ? fmt(d.loan_date) : ''}</span> তারিখে সংস্থার <span className="border-b border-dotted border-gray-800 inline-block min-w-[120px] font-semibold px-1">{str(d.branch_name)}</span> শাখা থেকে সার্ভিস চার্জ সহ <span className="border-b border-dotted border-gray-800 inline-block min-w-[120px] font-bold text-green-800 px-1">{d.loan_amount ? `৳${Number(d.loan_amount).toLocaleString('bn-BD')}` : ''}</span> টাকা, (কথায় <span className="border-b border-dotted border-gray-800 inline-block min-w-[240px] font-semibold px-1">{str(d.loan_amount_words)}</span>) ঋণ গ্রহণ করেছেন।
+                </p>
+                <p>
+                    উক্ত শাখায় তার সদস্য নং: <span className="border-b border-dotted border-gray-800 inline-block min-w-[90px] font-bold px-1">{str(d.member_code)}</span> এবং সমিতির নাম: <span className="border-b border-dotted border-gray-800 inline-block min-w-[150px] font-semibold px-1">{str(d.samity_name)}</span> সমিতি নং: <span className="border-b border-dotted border-gray-800 inline-block min-w-[90px] font-semibold px-1">{str(d.samity_code)}</span>
+                </p>
+                
+                <p className="pt-2 text-justify">
+                    ঋণ গ্রহণকারী ব্যক্তি আমার পরিচিত এবং আমি তাকে চিনি ও জানি। আমি আরও অঙ্গীকার করছি যে উক্ত ঋণের টাকা তিনি পরিশোধ করতে ব্যর্থ হলে বা অপারগতা প্রকাশ করলে ঋণের সমুদয় টাকা আমি নিম্নোক্ত শর্তে পরিশোধ করবো।
+                </p>
+
+                {/* Terms & Conditions */}
+                <div className="pt-2">
+                    <p className="font-bold text-xs sm:text-sm text-black mb-1">শর্তাবলী:</p>
+                    <ol className="list-decimal list-inside space-y-1.5 pl-2 text-xs sm:text-[12.5px] leading-relaxed">
+                        <li>
+                            ঋণ গ্রহীতা নিয়মিত ঋণের কিস্তি প্রদানের মাধ্যমে ঋণ পরিশোধ করিবেন। যদি ঋণ গ্রহীতা ঋণ ও সেবামূল্য সময় মতো ও নিয়ম অনুযায়ী পরিশোধ করতে ব্যর্থ হন সেক্ষেত্রে আমি ঋণ গ্রহীতার পক্ষে জামিনদার হিসেবে ঋণের টাকা পরিশোধ করতে বাধ্য থাকবো। যদি আমি পরিশোধ না করি সেক্ষেত্রে ঋণ দাতা আমার বিরুদ্ধে আইনানুগ ব্যবস্থা গ্রহণের অধিকার সংরক্ষণ করেন।
+                        </li>
+                        <li>
+                            ঋণের টাকা সম্পূর্ণ পরিশোধ না হওয়া পর্যন্ত এই অঙ্গীকারনামার মেয়াদ বজায় থাকবে।
+                        </li>
+                        <li>
+                            জামিনদার হিসেবে ঋণের সমুদয় টাকা আমি পরিশোধে ব্যর্থ হইলে বা টাকা প্রদানে অনিহা প্রকাশ করিলে আমার বিরুদ্ধে দেশে প্রচলিত আইন অনুযায়ী আইনানুগ ব্যবস্থা গ্রহণ করিতে পারবেন।
+                        </li>
+                    </ol>
+                </div>
+
+                {/* Final Declaration */}
+                <p className="pt-2 text-justify text-xs sm:text-[12.5px]">
+                    উক্ত ব্যাপারে আমাকে কেহ বা কাহারা প্রলোভন, কোন প্রকার ভয়ভীতি দেখায় নাই বা চাপ সৃষ্টি করে নাই। এতদার্থে স্বেচ্ছায়, সজ্ঞানে অন্যের বিনা প্ররোচনায় অত্র অঙ্গীকারনামা পড়ে, শুনে, বুঝে স্বাক্ষীগণের সম্মুখে সহি স্বাক্ষর সম্পাদন করলাম।
+                </p>
+
+                {/* Signatures Section */}
+                <div className="pt-8 flex justify-between items-start gap-6">
+                    {/* Witness Signatures */}
+                    <div className="flex-1 space-y-3">
+                        <p className="font-bold text-xs sm:text-sm text-black">স্বাক্ষীর স্বাক্ষর:</p>
+                        <div className="space-y-2">
                             {[1, 2, 3].map((num) => (
-                                <div key={num}>
-                                    <span style={{ fontSize: '14px' }}>{num}.</span>
-                                    {d[`witness${num}_signature_image`] && <img src={d[`witness${num}_signature_image`]} alt={`Witness ${num}`} style={{ height: '39px', width: '67px', objectFit: 'contain', display: 'block' }} />}
-                                    <span className="border-b border-dotted border-gray-600 inline-block w-32" style={{ fontSize: '14px' }}></span>
+                                <div key={num} className="flex items-center gap-2">
+                                    <span className="text-xs sm:text-sm font-semibold">{num}.</span>
+                                    <span className="border-b border-dotted border-gray-800 inline-block min-w-[160px]">
+                                        {d[`witness${num}_signature_image`] && (
+                                            <img src={d[`witness${num}_signature_image`]} alt={`Witness ${num}`} style={{ height: '22px', width: '60px', objectFit: 'contain' }} className="inline-block" />
+                                        )}
+                                    </span>
                                 </div>
                             ))}
                         </div>
                     </div>
-                    <div className="flex-1 text-right">
-                        <p className="font-bold mb-2" style={sTitle}>ঋণের জামিনদার/দায়িত্ব গ্রহণকারীর স্বাক্ষর</p>
-                        {d.guarantor_signature_image && <img src={d.guarantor_signature_image} alt="Guarantor" style={{ height: '45px', width: '78px', objectFit: 'contain', marginLeft: 'auto', marginBottom: '6px' }} />}
-                        <span className="border-b border-dotted border-gray-600 inline-block w-44"></span>
+
+                    {/* Guarantor Signature */}
+                    <div className="flex-1 text-right space-y-2">
+                        <p className="font-bold text-xs sm:text-sm text-black">ঋণের জামিনদার/দায়িত্ব গ্রহণকারীর স্বাক্ষর</p>
+                        <div className="pt-4">
+                            <span className="border-b border-dotted border-gray-800 inline-block min-w-[200px]">
+                                {d.guarantor_signature_image && (
+                                    <img src={d.guarantor_signature_image} alt="Guarantor" style={{ height: '28px', width: '75px', objectFit: 'contain', marginLeft: 'auto' }} className="block" />
+                                )}
+                            </span>
+                        </div>
                     </div>
                 </div>
             </div>
         </div>
     );
+}
+
+function str(v: any): string {
+    return v != null && v !== '' ? String(v) : '';
 }

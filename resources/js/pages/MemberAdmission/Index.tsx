@@ -64,8 +64,8 @@ export default function Index({ admissions, filters, stats }: Props) {
     const currentUserId = pageAuth?.user?.id;
 
     const canApplyLoan = (admission: MemberAdmission) => {
-        if (admission.status !== 'approved') return false;
-        if (roleName === 'branch_user') return true;
+        if (admission.status === 'rejected') return false;
+        if (roleName === 'branch_user') return admission.status === 'approved';
         if (!isFieldOfficer) return false;
         return Number(admission.created_by ?? admission.createdBy?.id) === Number(currentUserId);
     };

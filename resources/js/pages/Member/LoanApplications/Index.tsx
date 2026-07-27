@@ -4,7 +4,8 @@ import AdminLayout from '@/layouts/admin-layout';
 import { formatDate } from '@/utils/dateUtils';
 import {
     Plus, Calendar, FileText, CheckCircle, XCircle, Clock,
-    Search, Eye, Edit, Trash2, X, AlertTriangle, MessageSquare, Send
+    Search, Eye, Edit, Trash2, X, AlertTriangle, MessageSquare, Send,
+    Filter, RefreshCw, UserCheck, Layers, CreditCard, ChevronRight, AlertCircle, ArrowUpRight, Sparkles
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -103,15 +104,15 @@ interface Props {
     };
 }
 
-const statusLabels: Record<string, { label: string; color: string }> = {
-    draft: { label: 'Draft (খসড়া)', color: 'bg-gray-50 text-gray-700 border border-gray-200' },
-    submitted: { label: 'Submitted (জমা)', color: 'bg-blue-50 text-blue-700 border border-blue-200' },
-    under_review: { label: 'Under Review (পর্যালোচনায়)', color: 'bg-yellow-50 text-yellow-700 border border-yellow-200' },
-    ready_for_head_office: { label: 'Branch Approved (শাখা অনুমোদিত)', color: 'bg-emerald-50 text-emerald-700 border border-emerald-200' },
-    pending_head_office: { label: 'Pending Head Office (হেড অফিসে প্রেরিত)', color: 'bg-indigo-50 text-indigo-700 border border-indigo-200' },
-    approved: { label: 'Approved (অনুমোদিত)', color: 'bg-green-50 text-green-700 border border-green-200' },
-    rejected: { label: 'Rejected (প্রত্যাখ্যাত)', color: 'bg-red-50 text-red-700 border border-red-200' },
-    disbursed: { label: 'Disbursed (বিতরণকৃত)', color: 'bg-purple-50 text-purple-700 border border-purple-200' },
+const statusLabels: Record<string, { label: string; bg: string; text: string; border: string }> = {
+    draft: { label: 'Draft (খসড়া)', bg: 'bg-slate-100', text: 'text-slate-700', border: 'border-slate-300' },
+    submitted: { label: 'Submitted (জমা)', bg: 'bg-blue-50', text: 'text-blue-700', border: 'border-blue-200' },
+    under_review: { label: 'Under Review (পর্যালোচনা)', bg: 'bg-amber-50', text: 'text-amber-700', border: 'border-amber-200' },
+    ready_for_head_office: { label: 'Branch Approved', bg: 'bg-emerald-50', text: 'text-emerald-700', border: 'border-emerald-200' },
+    pending_head_office: { label: 'Pending Head Office', bg: 'bg-indigo-50', text: 'text-indigo-700', border: 'border-indigo-200' },
+    approved: { label: 'Approved (অনুমোদিত)', bg: 'bg-emerald-100', text: 'text-emerald-800', border: 'border-emerald-300' },
+    rejected: { label: 'Rejected (প্রত্যাখ্যাত)', bg: 'bg-rose-50', text: 'text-rose-700', border: 'border-rose-200' },
+    disbursed: { label: 'Disbursed (বিতরণকৃত)', bg: 'bg-purple-50', text: 'text-purple-700', border: 'border-purple-200' },
 };
 
 const formatAmount = (amount: number) => {
@@ -142,6 +143,7 @@ interface Member {
     mobile_number: string;
     application_no: string;
     status: string;
+    requested_loan_amount?: number | string;
     has_active_loan?: boolean;
     active_loans?: ActiveLoan[];
 }
@@ -149,13 +151,15 @@ interface Member {
 export default function Index({ categories, applications, stats, selectedDate, dateFrom, dateTo, statusFilter = '', preselectedMember = null, flash }: Props) {
     const pageAuth = usePage().props.auth as { user?: { role?: { name: string } } } | undefined;
     const roleName = pageAuth?.user?.role?.name?.toLowerCase() || '';
-    const isBranchUser = roleName === 'branch_user' || roleName === 'branch_manager';
+    const isBranchUser = roleName === 'branch_user';
     const isFieldOfficer = roleName === 'field_officer';
-    // Only Field Officer and Branch User may create loan applications
     const canCreateLoanApplication = isFieldOfficer || roleName === 'branch_user';
-    const today = new Date().toISOString().split('T')[0];
-    const [currentDateFrom, setCurrentDateFrom] = useState(dateFrom || selectedDate || today);
-    const [currentDateTo, setCurrentDateTo] = useState(dateTo || selectedDate || today);
+
+    const now = new Date();
+    const today = now.toISOString().split('T')[0];
+    const firstDayOfMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-01`;
+    const [currentDateFrom, setCurrentDateFrom] = useState(dateFrom || firstDayOfMonth);
+    const [currentDateTo, setCurrentDateTo] = useState(dateTo || today);
     const [currentStatusFilter, setCurrentStatusFilter] = useState(statusFilter);
     const [searchQuery, setSearchQuery] = useState('');
     const [showNewModal, setShowNewModal] = useState(!!preselectedMember && canCreateLoanApplication);
@@ -183,17 +187,20 @@ export default function Index({ categories, applications, stats, selectedDate, d
     }, [flash?.success]);
     const [products, setProducts] = useState<LoanProduct[]>([]);
 
-    // New states for modal
+    // Modal search states
     const [memberSearchQuery, setMemberSearchQuery] = useState('');
     const [memberSearchResults, setMemberSearchResults] = useState<Member[]>([]);
     const [selectedMember, setSelectedMember] = useState<Member | null>(preselectedMember);
-    const [requestedAmount, setRequestedAmount] = useState('');
+    const [requestedAmount, setRequestedAmount] = useState(preselectedMember?.requested_loan_amount ? String(preselectedMember.requested_loan_amount) : '');
     const [isSearching, setIsSearching] = useState(false);
 
     useEffect(() => {
         if (!preselectedMember || !canCreateLoanApplication) return;
         setShowNewModal(true);
         setSelectedMember(preselectedMember);
+        if (preselectedMember.requested_loan_amount) {
+            setRequestedAmount(String(preselectedMember.requested_loan_amount));
+        }
     }, [preselectedMember, canCreateLoanApplication]);
 
     const handleDateFilterChange = () => {
@@ -205,6 +212,17 @@ export default function Index({ categories, applications, stats, selectedDate, d
             params.status = currentStatusFilter;
         }
         router.get('/member/loan-applications', params, { preserveState: true });
+    };
+
+    const resetFilters = () => {
+        setCurrentDateFrom(firstDayOfMonth);
+        setCurrentDateTo(today);
+        setCurrentStatusFilter('');
+        setSearchQuery('');
+        router.get('/member/loan-applications', {
+            date_from: firstDayOfMonth,
+            date_to: today,
+        }, { preserveState: true });
     };
 
     const handleNewApplication = () => {
@@ -240,7 +258,6 @@ export default function Index({ categories, applications, stats, selectedDate, d
         try {
             const response = await fetch(`/member/loan-applications/search-members?query=${encodeURIComponent(query)}`);
             const data = await response.json();
-            console.log('Search results:', data);
             setMemberSearchResults(data);
         } catch (error) {
             console.error('Member search failed:', error);
@@ -251,17 +268,15 @@ export default function Index({ categories, applications, stats, selectedDate, d
     };
 
     const handleMemberSelect = (member: Member) => {
-        console.log('Member selected:', member);
-        if (member.status === 'rejected') {
-            console.log('Cannot select rejected member');
-            return;
-        }
-        // Check if member has ANY active loan (not expired yet)
+        if (member.status === 'rejected') return;
         if (member.has_active_loan && member.active_loans && member.active_loans.length > 0) {
             alert('এই সদস্যের জন্য সক্রিয় ঋণ আছে। মেয়াদ শেষ হওয়ার আগে নতুন ঋণ আবেদন করা যাবে না।');
             return;
         }
         setSelectedMember(member);
+        if (member.requested_loan_amount) {
+            setRequestedAmount(String(member.requested_loan_amount));
+        }
         setMemberSearchQuery('');
         setMemberSearchResults([]);
     };
@@ -337,7 +352,6 @@ export default function Index({ categories, applications, stats, selectedDate, d
         });
     }, [applications, searchQuery]);
 
-    // Calculate stats from filtered applications
     const filteredStats = useMemo(() => {
         return {
             total: filteredApplications.length,
@@ -356,86 +370,208 @@ export default function Index({ categories, applications, stats, selectedDate, d
         <AdminLayout>
             <Head title="Loan Applications (ঋণ আবেদন)" />
 
-            <div className="space-y-4">
-                {/* Success Message */}
+            <div className="space-y-5">
+                {/* Flash Success Message */}
                 {showSuccessMessage && flash?.success && (
-                    <div className="bg-green-50 border border-green-200 rounded-lg p-4 flex items-start gap-3">
-                        <CheckCircle className="w-5 h-5 text-green-600 flex-shrink-0 mt-0.5" />
+                    <div className="bg-emerald-50 border-2 border-emerald-200 rounded-2xl p-4 flex items-start gap-3 shadow-md">
+                        <CheckCircle className="w-5 h-5 text-emerald-600 flex-shrink-0 mt-0.5" />
                         <div className="flex-1">
-                            <p className="text-sm font-medium text-green-800">{flash.success}</p>
+                            <p className="text-sm font-bold text-emerald-900">{flash.success}</p>
                         </div>
                         <button
                             onClick={() => setShowSuccessMessage(false)}
-                            className="text-green-600 hover:text-green-800"
+                            className="text-emerald-600 hover:text-emerald-800"
                         >
                             <X className="w-4 h-4" />
                         </button>
                     </div>
                 )}
 
-                {/* ── 1. HERO BANNER HEADER ─────────────────────────────────────────── */}
+                {/* HERO BANNER HEADER */}
                 <div className="relative overflow-hidden rounded-3xl bg-slate-900 text-white p-6 sm:p-8 shadow-xl border border-slate-800">
-                    <div className="absolute -right-12 -bottom-12 w-64 h-64 rounded-full bg-gradient-to-tr from-blue-600/30 to-emerald-500/20 blur-3xl pointer-events-none" />
-                    <div className="absolute left-1/3 -top-12 w-48 h-48 rounded-full bg-purple-500/10 blur-2xl pointer-events-none" />
+                    <div className="absolute -right-12 -bottom-12 w-64 h-64 rounded-full bg-gradient-to-tr from-blue-600/30 to-indigo-500/20 blur-3xl pointer-events-none" />
+                    <div className="absolute left-1/3 -top-12 w-48 h-48 rounded-full bg-emerald-500/10 blur-2xl pointer-events-none" />
 
                     <div className="relative z-10 flex flex-col md:flex-row md:items-center justify-between gap-6">
                         <div className="space-y-2 max-w-2xl">
                             <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-blue-500/15 border border-blue-400/20 text-blue-300 text-xs font-semibold backdrop-blur-md">
-                                <FileText className="w-4 h-4 text-blue-400" />
-                                <span>Loan Application Command Center</span>
+                                <CreditCard className="w-4 h-4 text-blue-400" />
+                                <span>Loan Application Management System</span>
                             </div>
                             <h1 className="text-2xl sm:text-3xl font-extrabold tracking-tight text-white leading-tight">
-                                ঋণ আবেদন প্যানেল (Loan Applications)
+                                ঋণ আবেদনসমূহ (Loan Applications)
                             </h1>
                             <p className="text-slate-300 text-xs sm:text-sm leading-relaxed">
-                                সদস্যদের জন্য নতুন ঋণ আবেদন শুরু করুন, ফর্মসমূহের অবস্থা যাচাই করুন এবং অনুমোদন ট্র্যাক করুন।
+                                নতুন ঋণ আবেদন তৈরি করুন, আবেদন ফর্মগুলোর অগ্রগতি ট্র্যাক করুন এবং অনুমোদন অবস্থা পর্যবেক্ষণ করুন।
                             </p>
                         </div>
 
                         {canCreateLoanApplication && (
                             <button
                                 onClick={handleNewApplication}
-                                className="inline-flex items-center justify-center gap-2 px-5 py-3 rounded-2xl bg-gradient-to-r from-blue-600 to-emerald-600 hover:from-blue-700 hover:to-emerald-700 text-white text-xs sm:text-sm font-bold shadow-lg shadow-blue-600/30 transition-all active:scale-95 shrink-0"
+                                className="inline-flex items-center justify-center gap-2 px-6 py-3.5 rounded-2xl bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white text-xs sm:text-sm font-extrabold shadow-lg shadow-blue-600/30 transition-all active:scale-95 shrink-0"
                             >
-                                <Plus className="w-4 h-4" />
+                                <Plus className="w-5 h-5" />
                                 <span>নতুন ঋণ আবেদন</span>
                             </button>
                         )}
                     </div>
                 </div>
 
-                {/* ── 2. SEARCH & FILTER TOOLBAR ─────────────────────────────────────── */}
-                <div className="bg-white rounded-2xl border border-slate-200/80 p-4 shadow-sm space-y-4">
-                    <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-3">
+                {/* METRIC STATS GRID */}
+                <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
+                    <button
+                        type="button"
+                        onClick={() => {
+                            setCurrentStatusFilter('');
+                            handleDateFilterChange();
+                        }}
+                        className={`p-4 rounded-2xl border text-left transition-all shadow-sm ${
+                            !currentStatusFilter
+                                ? 'bg-slate-900 border-slate-900 text-white ring-2 ring-slate-900/20'
+                                : 'bg-white border-slate-200 hover:border-slate-300 text-slate-800'
+                        }`}
+                    >
+                        <div className="flex items-center justify-between">
+                            <span className={`text-[10px] font-bold uppercase tracking-wider ${!currentStatusFilter ? 'text-slate-300' : 'text-slate-500'}`}>
+                                মোট আবেদন
+                            </span>
+                            <Layers className={`w-4 h-4 ${!currentStatusFilter ? 'text-blue-400' : 'text-slate-400'}`} />
+                        </div>
+                        <p className={`text-2xl font-extrabold mt-2 ${!currentStatusFilter ? 'text-white' : 'text-slate-900'}`}>
+                            {filteredStats.total}
+                        </p>
+                    </button>
+
+                    <button
+                        type="button"
+                        onClick={() => {
+                            setCurrentStatusFilter('draft');
+                            handleDateFilterChange();
+                        }}
+                        className={`p-4 rounded-2xl border text-left transition-all shadow-sm ${
+                            currentStatusFilter === 'draft'
+                                ? 'bg-slate-800 border-slate-800 text-white ring-2 ring-slate-800/20'
+                                : 'bg-white border-slate-200 hover:border-slate-300 text-slate-800'
+                        }`}
+                    >
+                        <div className="flex items-center justify-between">
+                            <span className="text-[10px] font-bold uppercase tracking-wider text-slate-600">খসড়া (Draft)</span>
+                            <Clock className="w-4 h-4 text-slate-500" />
+                        </div>
+                        <p className="text-2xl font-extrabold text-slate-700 mt-2">{filteredStats.draft}</p>
+                    </button>
+
+                    <button
+                        type="button"
+                        onClick={() => {
+                            setCurrentStatusFilter('submitted');
+                            handleDateFilterChange();
+                        }}
+                        className={`p-4 rounded-2xl border text-left transition-all shadow-sm ${
+                            currentStatusFilter === 'submitted'
+                                ? 'bg-blue-600 border-blue-600 text-white ring-2 ring-blue-600/20'
+                                : 'bg-white border-blue-100 hover:border-blue-300 text-blue-900'
+                        }`}
+                    >
+                        <div className="flex items-center justify-between">
+                            <span className={`text-[10px] font-bold uppercase tracking-wider ${currentStatusFilter === 'submitted' ? 'text-blue-100' : 'text-blue-600'}`}>
+                                জমা (Submitted)
+                            </span>
+                            <Send className={`w-4 h-4 ${currentStatusFilter === 'submitted' ? 'text-blue-200' : 'text-blue-500'}`} />
+                        </div>
+                        <p className={`text-2xl font-extrabold mt-2 ${currentStatusFilter === 'submitted' ? 'text-white' : 'text-blue-600'}`}>
+                            {filteredStats.submitted}
+                        </p>
+                    </button>
+
+                    <button
+                        type="button"
+                        onClick={() => {
+                            setCurrentStatusFilter('approved');
+                            handleDateFilterChange();
+                        }}
+                        className={`p-4 rounded-2xl border text-left transition-all shadow-sm ${
+                            currentStatusFilter === 'approved'
+                                ? 'bg-emerald-600 border-emerald-600 text-white ring-2 ring-emerald-600/20'
+                                : 'bg-white border-emerald-100 hover:border-emerald-300 text-emerald-900'
+                        }`}
+                    >
+                        <div className="flex items-center justify-between">
+                            <span className={`text-[10px] font-bold uppercase tracking-wider ${currentStatusFilter === 'approved' ? 'text-emerald-100' : 'text-emerald-600'}`}>
+                                অনুমোদিত (Approved)
+                            </span>
+                            <CheckCircle className={`w-4 h-4 ${currentStatusFilter === 'approved' ? 'text-emerald-200' : 'text-emerald-500'}`} />
+                        </div>
+                        <p className={`text-2xl font-extrabold mt-2 ${currentStatusFilter === 'approved' ? 'text-white' : 'text-emerald-600'}`}>
+                            {filteredStats.approved}
+                        </p>
+                    </button>
+
+                    <button
+                        type="button"
+                        onClick={() => {
+                            setCurrentStatusFilter('rejected');
+                            handleDateFilterChange();
+                        }}
+                        className={`p-4 rounded-2xl border text-left transition-all shadow-sm ${
+                            currentStatusFilter === 'rejected'
+                                ? 'bg-rose-600 border-rose-600 text-white ring-2 ring-rose-600/20'
+                                : 'bg-white border-rose-100 hover:border-rose-300 text-rose-900'
+                        }`}
+                    >
+                        <div className="flex items-center justify-between">
+                            <span className={`text-[10px] font-bold uppercase tracking-wider ${currentStatusFilter === 'rejected' ? 'text-rose-100' : 'text-rose-600'}`}>
+                                প্রত্যাখ্যাত (Rejected)
+                            </span>
+                            <XCircle className={`w-4 h-4 ${currentStatusFilter === 'rejected' ? 'text-rose-200' : 'text-rose-500'}`} />
+                        </div>
+                        <p className={`text-2xl font-extrabold mt-2 ${currentStatusFilter === 'rejected' ? 'text-white' : 'text-rose-600'}`}>
+                            {filteredStats.rejected}
+                        </p>
+                    </button>
+                </div>
+
+                {/* SEARCH & FILTER TOOLBAR */}
+                <div className="bg-white rounded-3xl border border-slate-200/90 p-4 sm:p-5 shadow-sm space-y-4">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
                         <div>
-                            <label className="block text-[11px] font-bold text-slate-600 uppercase mb-1">শুরুর তারিখ</label>
+                            <label className="block text-[11px] font-bold text-slate-700 uppercase mb-1">
+                                শুরুর তারিখ (Date From)
+                            </label>
                             <input
                                 type="date"
                                 value={currentDateFrom}
                                 onChange={(e) => setCurrentDateFrom(e.target.value)}
-                                className="w-full px-3 py-2 text-xs border border-slate-300 rounded-xl bg-slate-50 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+                                className="w-full px-3 py-2 text-xs md:text-sm font-medium border border-slate-300 rounded-xl bg-slate-50/50 focus:bg-white focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 transition-all"
                             />
                         </div>
+
                         <div>
-                            <label className="block text-[11px] font-bold text-slate-600 uppercase mb-1">শেষ তারিখ</label>
+                            <label className="block text-[11px] font-bold text-slate-700 uppercase mb-1">
+                                শেষ তারিখ (Date To)
+                            </label>
                             <input
                                 type="date"
                                 value={currentDateTo}
                                 onChange={(e) => setCurrentDateTo(e.target.value)}
-                                className="w-full px-3 py-2 text-xs border border-slate-300 rounded-xl bg-slate-50 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+                                className="w-full px-3 py-2 text-xs md:text-sm font-medium border border-slate-300 rounded-xl bg-slate-50/50 focus:bg-white focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 transition-all"
                             />
                         </div>
+
                         <div>
-                            <label className="block text-[11px] font-bold text-slate-600 uppercase mb-1">স্ট্যাটাস</label>
+                            <label className="block text-[11px] font-bold text-slate-700 uppercase mb-1">
+                                স্ট্যাটাস ফিল্টার
+                            </label>
                             <select
                                 value={currentStatusFilter}
                                 onChange={(e) => setCurrentStatusFilter(e.target.value)}
-                                className="w-full px-3 py-2 text-xs border border-slate-300 rounded-xl bg-slate-50 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+                                className="w-full px-3 py-2 text-xs md:text-sm font-medium border border-slate-300 rounded-xl bg-slate-50/50 focus:bg-white focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 transition-all"
                             >
-                                <option value="">সব স্ট্যাটাস (All)</option>
-                                <option value="draft">Draft (খসড়া)</option>
+                                <option value="">সব স্ট্যাটাস (All Statuses)</option>
+                                <option value="draft">Draft (খসড়া)</option>
                                 <option value="submitted">Submitted (জমা)</option>
-                                <option value="under_review">Under Review (পর্যালোচনায়)</option>
+                                <option value="under_review">Under Review (পর্যালোচনা)</option>
                                 <option value="ready_for_head_office">Branch Approved (শাখা অনুমোদিত)</option>
                                 <option value="pending_head_office">Pending Head Office (হেড অফিসে প্রেরিত)</option>
                                 <option value="approved">Approved (অনুমোদিত)</option>
@@ -443,59 +579,59 @@ export default function Index({ categories, applications, stats, selectedDate, d
                                 <option value="disbursed">Disbursed (বিতরণকৃত)</option>
                             </select>
                         </div>
-                        <div className="flex items-end">
+
+                        <div className="flex items-end gap-2">
                             <button
                                 onClick={handleDateFilterChange}
-                                className="w-full px-4 py-2.5 text-xs font-bold bg-slate-800 text-white rounded-xl hover:bg-slate-900 transition-all shadow-sm"
+                                className="flex-1 inline-flex items-center justify-center gap-1.5 px-4 py-2.5 text-xs md:text-sm font-bold bg-slate-900 hover:bg-slate-800 text-white rounded-xl shadow-md transition-all active:scale-95"
                             >
-                                ফিল্টার প্রয়োগ
+                                <Filter className="w-4 h-4" />
+                                <span>ফিল্টার করুন</span>
+                            </button>
+                            <button
+                                onClick={resetFilters}
+                                className="px-3 py-2.5 text-xs md:text-sm font-bold bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl transition-all active:scale-95"
+                                title="ফিল্টার রিসেট"
+                            >
+                                <RefreshCw className="w-4 h-4" />
                             </button>
                         </div>
                     </div>
                 </div>
 
-                {/* ── 3. STATS OVERVIEW CARDS ────────────────────────────────────────── */}
-                <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
-                    <div className="bg-white rounded-2xl border border-slate-200/80 p-4 shadow-sm">
-                        <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 block">মোট আবেদন</span>
-                        <p className="text-xl sm:text-2xl font-black text-slate-900 mt-1">{filteredStats.total}</p>
-                    </div>
-                    <div className="bg-white rounded-2xl border border-slate-200/80 p-4 shadow-sm">
-                        <span className="text-[10px] font-bold uppercase tracking-wider text-blue-600 block">জমা (Submitted)</span>
-                        <p className="text-xl sm:text-2xl font-black text-blue-600 mt-1">{filteredStats.submitted}</p>
-                    </div>
-                    <div className="bg-white rounded-2xl border border-slate-200/80 p-4 shadow-sm">
-                        <span className="text-[10px] font-bold uppercase tracking-wider text-amber-600 block">পর্যালোচনায়</span>
-                        <p className="text-xl sm:text-2xl font-black text-amber-600 mt-1">{filteredStats.under_review}</p>
-                    </div>
-                    <div className="bg-white rounded-2xl border border-slate-200/80 p-4 shadow-sm">
-                        <span className="text-[10px] font-bold uppercase tracking-wider text-emerald-600 block">অনুমোদিত</span>
-                        <p className="text-xl sm:text-2xl font-black text-emerald-600 mt-1">{filteredStats.approved}</p>
-                    </div>
-                    <div className="bg-white rounded-2xl border border-slate-200/80 p-4 shadow-sm">
-                        <span className="text-[10px] font-bold uppercase tracking-wider text-purple-600 block">বিতরণকৃত (Disbursed)</span>
-                        <p className="text-xl sm:text-2xl font-black text-purple-600 mt-1">{filteredStats.disbursed}</p>
-                    </div>
-                </div>
+                {/* APPLICATIONS CONTAINER */}
+                <div className="bg-white rounded-3xl border border-slate-200/90 shadow-sm overflow-hidden p-4 sm:p-5 space-y-4">
+                    {/* Search Input Bar */}
+                    <div className="flex flex-col sm:flex-row items-center justify-between gap-3 pb-3 border-b border-slate-100">
+                        <div className="relative w-full sm:w-80">
+                            <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 pointer-events-none" />
+                            <input
+                                type="text"
+                                placeholder="নাম, আবেদন নং, মোবাইল বা এনআইডি..."
+                                value={searchQuery}
+                                onChange={(e) => setSearchQuery(e.target.value)}
+                                className="w-full pl-10 pr-4 py-2 text-xs md:text-sm font-medium border border-slate-300 rounded-xl bg-slate-50/50 focus:bg-white focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 transition-all"
+                            />
+                            {searchQuery && (
+                                <button
+                                    onClick={() => setSearchQuery('')}
+                                    className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
+                                >
+                                    <X className="w-4 h-4" />
+                                </button>
+                            )}
+                        </div>
 
-                {/* ── 4. APPLICATIONS TABLE & MOBILE CARDS CONTAINER ──────────────────── */}
-                <div className="bg-white rounded-3xl border border-slate-200/80 shadow-sm overflow-hidden space-y-4 p-4">
-                    <div className="relative max-w-md">
-                        <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 pointer-events-none" />
-                        <input
-                            type="text"
-                            placeholder="নাম, আবেদন নং, মোবাইল, এনআইডি খুঁজুন..."
-                            value={searchQuery}
-                            onChange={(e) => setSearchQuery(e.target.value)}
-                            className="w-full pl-9 pr-4 py-2 text-xs sm:text-sm border border-slate-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 bg-slate-50/50"
-                        />
+                        <span className="text-xs text-slate-500 font-semibold self-end sm:self-center">
+                            মোট পাওয়া গেছে: <strong className="text-slate-900 font-bold">{filteredApplications.length}</strong> টি আবেদন
+                        </span>
                     </div>
 
                     {/* MOBILE CARDS VIEW (md:hidden) */}
-                    <div className="md:hidden flex flex-col gap-4">
+                    <div className="md:hidden flex flex-col gap-3.5">
                         {filteredApplications.length === 0 ? (
-                            <div className="p-12 text-center text-slate-400 text-sm">
-                                কোনো ঋণ আবেদন পাওয়া যায়নি
+                            <div className="p-8 text-center text-slate-400 text-xs font-medium">
+                                কোনো ঋণ আবেদন পাওয়া যায়নি।
                             </div>
                         ) : (
                             filteredApplications.map((app) => {
@@ -507,61 +643,87 @@ export default function Index({ categories, applications, stats, selectedDate, d
                                 return (
                                     <div
                                         key={app.id}
-                                        className="bg-white rounded-2xl border border-slate-200/90 shadow-sm hover:shadow-md transition-all p-4 space-y-3 relative overflow-hidden"
+                                        className="bg-white rounded-2xl border border-slate-200 shadow-sm p-4 space-y-3 relative overflow-hidden"
                                     >
-                                        <div className="absolute top-0 left-0 right-0 h-1 bg-gradient-to-r from-blue-500 to-emerald-500" />
-
-                                        <div className="flex items-start justify-between gap-2 pt-1">
-                                            <div>
-                                                <span className="text-xs font-mono font-bold text-blue-700 bg-blue-50 px-2 py-0.5 rounded border border-blue-200">
-                                                    {app.application_no}
-                                                </span>
-                                                <h3 className="font-bold text-slate-900 text-sm mt-1">
-                                                    {member?.applicant_name_bn || member?.applicant_name_en || 'N/A'}
-                                                </h3>
+                                        <div className="flex items-start justify-between gap-2 border-b border-slate-100 pb-2.5">
+                                            <div className="flex items-center gap-2.5">
+                                                <div className="w-9 h-9 rounded-xl bg-gradient-to-tr from-blue-600 to-indigo-600 text-white font-extrabold flex items-center justify-center text-xs shadow-sm">
+                                                    {(member?.applicant_name_bn || member?.applicant_name_en || 'M')[0]}
+                                                </div>
+                                                <div>
+                                                    <h3 className="font-extrabold text-slate-900 text-xs sm:text-sm">
+                                                        {member?.applicant_name_bn || member?.applicant_name_en || 'N/A'}
+                                                    </h3>
+                                                    <span className="text-[10px] font-mono font-bold text-indigo-600 bg-indigo-50 px-1.5 py-0.5 rounded">
+                                                        {app.application_no}
+                                                    </span>
+                                                </div>
                                             </div>
                                             <div className="text-right">
-                                                <span className="text-[10px] font-bold text-slate-400 block uppercase">আবেদনকৃত ঋণ</span>
-                                                <span className="text-base font-black text-emerald-600">
+                                                <span className="text-[10px] font-bold text-slate-400 block uppercase">ঋণ পরিমাণ</span>
+                                                <span className="text-sm font-black text-emerald-600">
                                                     ৳{formatAmount(app.requested_amount)}
                                                 </span>
                                             </div>
                                         </div>
 
-                                        <div className="grid grid-cols-2 gap-2 bg-slate-50/80 p-3 rounded-2xl border border-slate-100 text-xs">
+                                        <div className="grid grid-cols-2 gap-2 text-xs bg-slate-50/70 p-2.5 rounded-xl border border-slate-100">
                                             <div>
                                                 <span className="text-[10px] font-bold uppercase text-slate-400 block">ঋণ পণ্য</span>
-                                                <p className="font-bold text-slate-800 truncate mt-0.5">{app.loan_product?.product_name}</p>
+                                                <p className="font-bold text-slate-800 truncate">{app.loan_product?.product_name}</p>
                                             </div>
                                             <div>
                                                 <span className="text-[10px] font-bold uppercase text-slate-400 block">তারিখ</span>
-                                                <p className="font-semibold text-slate-600 mt-0.5">{formatDate(app.created_at)}</p>
+                                                <p className="font-semibold text-slate-600">{formatDate(app.created_at)}</p>
                                             </div>
-                                            <div className="col-span-2 flex items-center justify-between pt-1 border-t border-slate-200/60">
+                                            <div className="col-span-2 flex items-center justify-between pt-1 border-t border-slate-200/50">
                                                 <span className="text-[10px] font-bold uppercase text-slate-400">স্ট্যাটাস:</span>
-                                                <span className={`inline-block px-2 py-0.5 rounded-full text-[11px] font-bold ${statusInfo.color}`}>
+                                                <span className={`inline-block px-2 py-0.5 rounded-md text-[10px] font-extrabold border ${statusInfo.bg} ${statusInfo.text} ${statusInfo.border}`}>
                                                     {statusInfo.label}
                                                 </span>
                                             </div>
                                         </div>
 
-                                        <div className="flex items-center gap-2 pt-1">
+                                        {/* Form Completion Progress Pills */}
+                                        {app.visible_form_ids && app.visible_form_ids.length > 0 && (
+                                            <div className="pt-1">
+                                                <span className="text-[10px] font-bold uppercase text-slate-400 block mb-1">ফর্মসমূহ:</span>
+                                                <div className="flex flex-wrap gap-1">
+                                                    {app.visible_form_ids.map((formId) => {
+                                                        const isSaved = app.form_saved?.[formId];
+                                                        return (
+                                                            <span
+                                                                key={formId}
+                                                                className={`px-2 py-0.5 rounded-lg text-[10px] font-bold ${
+                                                                    isSaved
+                                                                        ? 'bg-emerald-100 text-emerald-800 border border-emerald-300'
+                                                                        : 'bg-slate-100 text-slate-500 border border-slate-200'
+                                                                }`}
+                                                            >
+                                                                {FORM_NAMES[formId] || `ফর্ম ${formId}`} {isSaved ? '✓' : ''}
+                                                            </span>
+                                                        );
+                                                    })}
+                                                </div>
+                                            </div>
+                                        )}
+
+                                        <div className="flex items-center gap-2 pt-2">
                                             <button
                                                 onClick={() => router.get(`/member/loan-applications/${app.id}`)}
-                                                className="flex-1 inline-flex items-center justify-center gap-1 px-3 py-2 rounded-xl text-xs font-semibold text-blue-700 bg-blue-50 hover:bg-blue-100 border border-blue-200 transition"
+                                                className="flex-1 inline-flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold text-indigo-700 bg-indigo-50 hover:bg-indigo-100 border border-indigo-200 transition active:scale-95"
                                             >
-                                                <Eye className="w-3.5 h-3.5" /> বিবরণ দেখুন
+                                                <Eye className="w-3.5 h-3.5" />
+                                                <span>বিবরণ দেখুন</span>
                                             </button>
                                             {app.status === 'draft' && (
-                                                <>
-                                                    <button
-                                                        onClick={() => router.get(`/member/loan-applications/${app.id}/edit`)}
-                                                        className="p-2 text-amber-700 bg-amber-50 hover:bg-amber-100 border border-amber-200 rounded-xl transition"
-                                                        title="সম্পাদনা"
-                                                    >
-                                                        <Edit className="w-4 h-4" />
-                                                    </button>
-                                                </>
+                                                <button
+                                                    onClick={() => router.get(`/member/loan-applications/${app.id}/edit`)}
+                                                    className="p-2 text-amber-700 bg-amber-50 hover:bg-amber-100 border border-amber-200 rounded-xl transition active:scale-95"
+                                                    title="সম্পাদনা"
+                                                >
+                                                    <Edit className="w-4 h-4" />
+                                                </button>
                                             )}
                                         </div>
                                     </div>
@@ -571,243 +733,147 @@ export default function Index({ categories, applications, stats, selectedDate, d
                     </div>
 
                     {/* DESKTOP TABLE VIEW (hidden md:block) */}
-                    <div className="hidden md:block overflow-x-auto">
+                    <div className="hidden md:block overflow-x-auto rounded-2xl border border-slate-200">
                         <table className="w-full text-xs">
-                            <thead className="bg-slate-50 border-b border-slate-200">
+                            <thead className="bg-slate-900 text-white">
                                 <tr>
-                                    <th className="px-3 py-3 text-left text-[10px] font-bold text-slate-500 uppercase">Application No</th>
-                                    <th className="px-3 py-3 text-left text-[10px] font-bold text-slate-500 uppercase">Member Name</th>
-                                    <th className="px-3 py-3 text-left text-[10px] font-bold text-slate-500 uppercase">Date</th>
-                                    <th className="px-3 py-3 text-left text-[10px] font-bold text-slate-500 uppercase">Product</th>
-                                    <th className="px-3 py-3 text-left text-[10px] font-bold text-slate-500 uppercase">Category</th>
-                                    <th className="px-3 py-3 text-left text-[10px] font-bold text-slate-500 uppercase">Amount</th>
-                                    <th className="px-3 py-3 text-left text-[10px] font-bold text-slate-500 uppercase">Status</th>
-                                    <th className="px-3 py-3 text-left text-[10px] font-bold text-slate-500 uppercase">Issues</th>
-                                    <th className="px-3 py-3 text-right text-[10px] font-bold text-slate-500 uppercase">Actions</th>
+                                    <th className="px-4 py-3.5 text-left text-[11px] font-extrabold uppercase tracking-wider">আবেদন নম্বর</th>
+                                    <th className="px-4 py-3.5 text-left text-[11px] font-extrabold uppercase tracking-wider">আবেদনকারী সদস্য</th>
+                                    <th className="px-4 py-3.5 text-left text-[11px] font-extrabold uppercase tracking-wider">তারিখ</th>
+                                    <th className="px-4 py-3.5 text-left text-[11px] font-extrabold uppercase tracking-wider">ঋণ পণ্য ও ক্যাটাগরি</th>
+                                    <th className="px-4 py-3.5 text-left text-[11px] font-extrabold uppercase tracking-wider">পরিমাণ</th>
+                                    <th className="px-4 py-3.5 text-left text-[11px] font-extrabold uppercase tracking-wider">স্ট্যাটাস</th>
+                                    <th className="px-4 py-3.5 text-left text-[11px] font-extrabold uppercase tracking-wider">ফর্ম অগ্রগতি</th>
+                                    <th className="px-4 py-3.5 text-right text-[11px] font-extrabold uppercase tracking-wider">অ্যাকশন</th>
                                 </tr>
                             </thead>
-                            <tbody className="divide-y divide-slate-100">
+                            <tbody className="divide-y divide-slate-100 bg-white font-medium">
                                 {filteredApplications.map((app) => {
-                                    // Check if there are pending issues
-                                    const pendingIssues = app.issues?.filter(issue => issue.status === 'pending') || [];
+                                    const member = app.member_display ?? app.member_admission;
+                                    const pendingIssues = app.issues?.filter((issue) => issue.status === 'pending') || [];
                                     const hasPendingIssues = pendingIssues.length > 0;
-                                    
-                                    // Determine display status
-                                    let displayStatus = app.status;
                                     let statusInfo = statusLabels[app.status] || statusLabels.draft;
-                                    
-                                    // If there are pending issues, show issue status prominently
+
                                     if (hasPendingIssues && (app.status === 'pending_head_office' || app.status === 'under_review' || app.status === 'submitted')) {
                                         statusInfo = {
                                             label: `সমস্যা আছে (${pendingIssues.length})`,
-                                            color: 'bg-amber-100 text-amber-800 border border-amber-300'
+                                            bg: 'bg-amber-100',
+                                            text: 'text-amber-900',
+                                            border: 'border-amber-300'
                                         };
                                     }
-                                    
+
                                     return (
-                                        <tr key={app.id} className="hover:bg-gray-50">
-                                            <td className="px-3 py-2">
-                                                <div className="font-medium text-gray-900">{app.application_no}</div>
-                                                {app.status === 'draft' && app.visible_form_ids && (
-                                                    <div className="text-[10px] mt-0.5">
-                                                        {app.all_forms_complete ? (
-                                                            <span className="text-green-600">সব ফর্ম সেভ আছে</span>
-                                                        ) : (
-                                                            <span className="text-amber-600">
-                                                                বাকি: {(app.visible_form_ids || []).filter((id) => !app.form_saved?.[id]).map((id) => FORM_NAMES[id] || id).join(', ')}
-                                                            </span>
-                                                        )}
-                                                    </div>
-                                                )}
+                                        <tr key={app.id} className="hover:bg-slate-50/80 transition-colors">
+                                            <td className="px-4 py-3.5">
+                                                <span className="font-mono font-bold text-indigo-700 bg-indigo-50 border border-indigo-200 px-2 py-0.5 rounded-lg text-xs">
+                                                    {app.application_no}
+                                                </span>
                                             </td>
-                                            <td className="px-3 py-2">
-                                                {(() => {
-                                                    const member = app.member_display ?? app.member_admission;
-                                                    return member ? (
+
+                                            <td className="px-4 py-3.5">
+                                                {member ? (
+                                                    <div className="flex items-center gap-3">
+                                                        <div className="w-8 h-8 rounded-xl bg-gradient-to-tr from-blue-600 to-indigo-600 text-white font-extrabold flex items-center justify-center text-xs shadow-sm">
+                                                            {(member.applicant_name_bn || member.applicant_name_en || 'M')[0]}
+                                                        </div>
                                                         <div>
-                                                            {member.applicant_name_bn && (
-                                                                <div className="font-medium text-gray-900 text-sm">
-                                                                    {member.applicant_name_bn}
-                                                                </div>
-                                                            )}
-                                                            {member.applicant_name_en && (
-                                                                <div className="text-[10px] text-gray-600 italic">
-                                                                    {member.applicant_name_en}
-                                                                </div>
-                                                            )}
-                                                            <div className="text-[10px] text-gray-500 mt-0.5 space-y-0.5">
-                                                                {member.application_no && (
-                                                                    <div>Member: {member.application_no}</div>
-                                                                )}
-                                                                {member.nid_number && (
-                                                                    <div>NID: {member.nid_number}</div>
-                                                                )}
-                                                                {member.mobile_number && (
-                                                                    <div>Phone: {member.mobile_number}</div>
-                                                                )}
+                                                            <div className="font-extrabold text-slate-900 text-xs sm:text-sm">
+                                                                {member.applicant_name_bn || member.applicant_name_en}
                                                             </div>
-                                                            {app.member_display && (
-                                                                <span className="text-[10px] text-amber-600">আগের সদস্য</span>
-                                                            )}
-                                                            {!member.applicant_name_bn && !member.applicant_name_en && (
-                                                                <span className="text-gray-400 text-[10px]">N/A</span>
-                                                            )}
-                                                        </div>
-                                                    ) : (
-                                                        <span className="text-gray-400 text-[10px]">N/A</span>
-                                                    );
-                                                })()}
-                                            </td>
-                                            <td className="px-3 py-2 text-gray-600">
-                                                {formatDate(app.created_at)}
-                                            </td>
-                                            <td className="px-3 py-2">
-                                                <div className="font-medium text-gray-900">{app.loan_product.product_name}</div>
-                                                <div className="text-[10px] text-gray-500">{app.loan_product.product_code}</div>
-                                            </td>
-                                            <td className="px-3 py-2 text-gray-700">
-                                                {app.loan_category.category_name}
-                                            </td>
-                                            <td className="px-3 py-2">
-                                                <div className="font-medium text-gray-900">৳{formatAmount(app.requested_amount)}</div>
-                                                {app.approved_amount && (
-                                                    <div className="text-[10px] text-green-600">Approved: ৳{formatAmount(app.approved_amount)}</div>
-                                                )}
-                                            </td>
-                                            <td className="px-3 py-2">
-                                                <div className="space-y-1">
-                                                    <span className={`inline-block px-1.5 py-0.5 rounded text-[10px] font-medium ${statusInfo.color}`}>
-                                                        {statusInfo.label}
-                                                    </span>
-                                                    {/* Show original status if there are issues */}
-                                                    {hasPendingIssues && app.status !== 'draft' && (
-                                                        <div className="text-[9px] text-gray-600 mt-0.5">
-                                                            মূল অবস্থা: {statusLabels[app.status]?.label.split(' (')[0] || app.status}
-                                                        </div>
-                                                    )}
-                                                </div>
-                                            </td>
-                                            <td className="px-3 py-2">
-                                                {app.issues && app.issues.length > 0 ? (
-                                                    <div className="space-y-1.5">
-                                                        {app.issues.map((issue) => (
-                                                            <div
-                                                                key={issue.id}
-                                                                className={`p-2 rounded text-[10px] border ${
-                                                                    issue.status === 'pending'
-                                                                        ? 'bg-amber-50 border-amber-200'
-                                                                        : issue.status === 'resolved'
-                                                                        ? 'bg-green-50 border-green-200'
-                                                                        : 'bg-red-50 border-red-200'
-                                                                }`}
-                                                            >
-                                                                <div className="flex items-start justify-between gap-2">
-                                                                    <div className="flex-1">
-                                                                        <p className={`font-medium mb-1 ${
-                                                                            issue.status === 'pending'
-                                                                                ? 'text-amber-900'
-                                                                                : issue.status === 'resolved'
-                                                                                ? 'text-green-900'
-                                                                                : 'text-red-900'
-                                                                        }`}>
-                                                                            {issue.issue_description}
-                                                                        </p>
-                                                                        {issue.reporter && (
-                                                                            <p className="text-[9px] text-gray-600 mb-1">
-                                                                                — {issue.reporter.name}
-                                                                            </p>
-                                                                        )}
-                                                                        {issue.response_message && (
-                                                                            <div className="mt-1 pt-1 border-t border-gray-200">
-                                                                                <p className="text-[9px] text-gray-700 font-medium mb-0.5">আপনার উত্তর:</p>
-                                                                                <p className="text-[9px] text-gray-600">{issue.response_message}</p>
-                                                                            </div>
-                                                                        )}
-                                                                    </div>
-                                                                    {issue.status === 'pending' && (
-                                                                        <div className="flex gap-1 flex-shrink-0">
-                                                                            <button
-                                                                                onClick={() => handleResolveIssue(app.id, issue.id)}
-                                                                                className="p-1 bg-green-100 hover:bg-green-200 rounded text-green-700"
-                                                                                title="সমাধান করুন"
-                                                                            >
-                                                                                <CheckCircle className="w-3 h-3" />
-                                                                            </button>
-                                                                            <button
-                                                                                onClick={() => handleRejectIssue(app.id, issue.id)}
-                                                                                className="p-1 bg-red-100 hover:bg-red-200 rounded text-red-700"
-                                                                                title="প্রত্যাখ্যান করুন"
-                                                                            >
-                                                                                <XCircle className="w-3 h-3" />
-                                                                            </button>
-                                                                        </div>
-                                                                    )}
-                                                                </div>
-                                                                {issue.status !== 'pending' && (
-                                                                    <Badge className={`mt-1 text-[8px] ${
-                                                                        issue.status === 'resolved'
-                                                                            ? 'bg-green-200 text-green-800'
-                                                                            : 'bg-red-200 text-red-800'
-                                                                    }`}>
-                                                                        {issue.status === 'resolved' ? 'সমাধান করা হয়েছে' : 'প্রত্যাখ্যান করা হয়েছে'}
-                                                                    </Badge>
-                                                                )}
+                                                            <div className="text-[11px] text-slate-500 font-medium">
+                                                                {member.mobile_number || member.nid_number}
                                                             </div>
-                                                        ))}
+                                                        </div>
                                                     </div>
                                                 ) : (
-                                                    <span className="text-[10px] text-gray-400">কোন সমস্যা নেই</span>
+                                                    <span className="text-slate-400 font-medium text-xs">N/A</span>
                                                 )}
                                             </td>
-                                            <td className="px-3 py-2 text-right">
-                                                <div className="flex items-center justify-end gap-1">
+
+                                            <td className="px-4 py-3.5 text-slate-600 font-medium">
+                                                {formatDate(app.created_at)}
+                                            </td>
+
+                                            <td className="px-4 py-3.5">
+                                                <div className="font-bold text-slate-900">{app.loan_product?.product_name}</div>
+                                                <div className="text-[10px] text-slate-500 font-medium">{app.loan_category?.category_name}</div>
+                                            </td>
+
+                                            <td className="px-4 py-3.5">
+                                                <div className="font-black text-emerald-600 text-sm">
+                                                    ৳{formatAmount(app.requested_amount)}
+                                                </div>
+                                                {app.approved_amount && (
+                                                    <div className="text-[10px] text-emerald-700 font-bold">
+                                                        অনুমোদিত: ৳{formatAmount(app.approved_amount)}
+                                                    </div>
+                                                )}
+                                            </td>
+
+                                            <td className="px-4 py-3.5">
+                                                <span className={`inline-block px-2.5 py-1 rounded-xl text-[11px] font-extrabold border ${statusInfo.bg} ${statusInfo.text} ${statusInfo.border}`}>
+                                                    {statusInfo.label}
+                                                </span>
+                                            </td>
+
+                                            <td className="px-4 py-3.5">
+                                                {app.visible_form_ids && app.visible_form_ids.length > 0 ? (
+                                                    <div className="flex flex-wrap gap-1">
+                                                        {app.visible_form_ids.map((formId) => {
+                                                            const isSaved = app.form_saved?.[formId];
+                                                            return (
+                                                                <span
+                                                                    key={formId}
+                                                                    title={FORM_NAMES[formId] || `ফর্ম ${formId}`}
+                                                                    className={`px-1.5 py-0.5 rounded text-[10px] font-bold ${
+                                                                        isSaved
+                                                                            ? 'bg-emerald-100 text-emerald-800 border border-emerald-300'
+                                                                            : 'bg-slate-100 text-slate-400 border border-slate-200'
+                                                                    }`}
+                                                                >
+                                                                    F{formId} {isSaved ? '✓' : ''}
+                                                                </span>
+                                                            );
+                                                        })}
+                                                    </div>
+                                                ) : (
+                                                    <span className="text-slate-400 text-[11px]">—</span>
+                                                )}
+                                            </td>
+
+                                            <td className="px-4 py-3.5 text-right">
+                                                <div className="flex items-center justify-end gap-1.5">
                                                     <button
                                                         onClick={() => router.get(`/member/loan-applications/${app.id}`)}
-                                                        className="p-1 hover:bg-gray-100 rounded"
-                                                        title="View"
+                                                        className="p-1.5 text-indigo-700 hover:bg-indigo-50 rounded-xl transition"
+                                                        title="বিবরণ দেখুন"
                                                     >
-                                                        <Eye className="w-3.5 h-3.5 text-gray-600" />
+                                                        <Eye className="w-4 h-4" />
                                                     </button>
                                                     {app.status === 'draft' && (
                                                         <>
                                                             <button
                                                                 onClick={() => router.get(`/member/loan-applications/${app.id}/edit`)}
-                                                                className="p-1 hover:bg-gray-100 rounded"
-                                                                title="Edit"
+                                                                className="p-1.5 text-amber-700 hover:bg-amber-50 rounded-xl transition"
+                                                                title="সম্পাদনা"
                                                             >
-                                                                <Edit className="w-3.5 h-3.5 text-gray-600" />
+                                                                <Edit className="w-4 h-4" />
                                                             </button>
                                                             <button
                                                                 onClick={() => {
-                                                                    if (confirm(`আপনি কি নিশ্চিত যে আপনি এই ঋণ আবেদনটি মুছে ফেলতে চান?\n\nআবেদন নং: ${app.application_no}\n\nএই কাজটি পূর্বাবস্থায় ফেরানো যাবে না।`)) {
+                                                                    if (confirm(`আপনি কি নিশ্চিত যে আপনি এই ঋণ আবেদনটি মুছে ফেলতে চান?\n\nআবেদন নং: ${app.application_no}`)) {
                                                                         router.delete(`/member/loan-applications/${app.id}`, {
                                                                             preserveScroll: true,
-                                                                            onSuccess: () => {
-                                                                                // Success message will come from backend
-                                                                            },
-                                                                            onError: (errors) => {
-                                                                                if (errors.error) {
-                                                                                    alert(errors.error);
-                                                                                }
-                                                                            },
                                                                         });
                                                                     }
                                                                 }}
-                                                                className="p-1 hover:bg-red-50 rounded"
-                                                                title="Delete"
+                                                                className="p-1.5 text-red-600 hover:bg-red-50 rounded-xl transition"
+                                                                title="মুছে ফেলুন"
                                                             >
-                                                                <Trash2 className="w-3.5 h-3.5 text-red-600" />
+                                                                <Trash2 className="w-4 h-4" />
                                                             </button>
                                                         </>
-                                                    )}
-                                                    {app.status === 'draft' && app.all_forms_complete && (
-                                                        <button
-                                                            onClick={() => router.get(`/member/loan-applications/${app.id}`)}
-                                                            className="text-[10px] px-1.5 py-0.5 bg-green-100 text-green-700 rounded"
-                                                            title="Submit"
-                                                        >
-                                                            সাবমিট
-                                                        </button>
                                                     )}
                                                     {app.status === 'ready_for_head_office' && isBranchUser && (
                                                         <button
@@ -816,11 +882,11 @@ export default function Index({ categories, applications, stats, selectedDate, d
                                                                     router.patch(`/member/loan-applications/${app.id}/send-to-head-office`);
                                                                 }
                                                             }}
-                                                            className="inline-flex items-center gap-1 text-[10px] px-1.5 py-0.5 bg-indigo-100 text-indigo-700 rounded"
+                                                            className="inline-flex items-center gap-1 text-xs px-2.5 py-1 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-xl shadow-sm transition active:scale-95"
                                                             title="Head Office এ পাঠান"
                                                         >
                                                             <Send className="w-3 h-3" />
-                                                            HO-তে পাঠান
+                                                            <span>HO পাঠান</span>
                                                         </button>
                                                     )}
                                                 </div>
@@ -831,121 +897,113 @@ export default function Index({ categories, applications, stats, selectedDate, d
                             </tbody>
                         </table>
                         {filteredApplications.length === 0 && (
-                            <div className="text-center py-8 text-gray-500">
-                                <FileText className="w-8 h-8 mx-auto mb-2 text-gray-400" />
-                                <p className="text-xs">No applications found for this date</p>
-                                {canCreateLoanApplication && (
-                                    <button
-                                        onClick={handleNewApplication}
-                                        className="mt-3 text-xs text-blue-600 hover:text-blue-700"
-                                    >
-                                        Create your first application
-                                    </button>
-                                )}
+                            <div className="text-center py-12 text-slate-400">
+                                <FileText className="w-10 h-10 mx-auto mb-2 text-slate-300" />
+                                <p className="text-sm font-semibold">কোনো ঋণ আবেদন পাওয়া যায়নি।</p>
                             </div>
                         )}
                     </div>
                 </div>
             </div>
 
-            {/* New Application Modal — Field Officer / Branch User only */}
+            {/* NEW LOAN APPLICATION MODAL */}
             {showNewModal && canCreateLoanApplication && (
-                <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-                    <div className="bg-white rounded-lg shadow-xl w-full max-w-lg max-h-[90vh] flex flex-col">
-                        <div className="flex items-center justify-between px-6 py-4 border-b flex-shrink-0">
-                            <h2 className="text-lg font-bold text-gray-900">New Loan Application (নতুন ঋণ আবেদন)</h2>
-                            <button onClick={() => setShowNewModal(false)} className="text-gray-400 hover:text-gray-600">
+                <div className="fixed inset-0 bg-slate-950/60 backdrop-blur-sm flex items-center justify-center z-50 p-4 animate-in fade-in duration-200">
+                    <div className="bg-white rounded-3xl shadow-2xl w-full max-w-xl max-h-[90vh] flex flex-col overflow-hidden border border-slate-100">
+                        <div className="flex items-center justify-between px-6 py-5 bg-gradient-to-r from-slate-900 to-slate-800 text-white flex-shrink-0">
+                            <div className="flex items-center gap-3">
+                                <div className="w-10 h-10 rounded-2xl bg-white/10 border border-white/20 flex items-center justify-center text-blue-400">
+                                    <Plus className="w-5 h-5" />
+                                </div>
+                                <div>
+                                    <h2 className="text-lg font-extrabold text-white">নতুন ঋণ আবেদন করুন</h2>
+                                    <p className="text-xs text-slate-300">সদস্য খুঁজুন ও ক্যাটাগরি পণ্য নির্বাচন করুন</p>
+                                </div>
+                            </div>
+                            <button onClick={() => setShowNewModal(false)} className="text-slate-400 hover:text-white p-1 rounded-xl">
                                 <X className="w-5 h-5" />
                             </button>
                         </div>
-                        <div className="p-6 space-y-4 overflow-y-auto flex-1">
-                            {/* Member Search */}
-                            <div>
-                                <label className="block text-sm font-medium text-gray-700 mb-1">
-                                    Search Member (সদস্য খুঁজুন)
-                                </label>
-                                <p className="text-xs text-gray-600 mb-2 bg-blue-50 p-2 rounded">
-                                    💡 যদি সদস্যের কোনো সক্রিয় ঋণ থাকে (মেয়াদ শেষ হয়নি), তাহলে নতুন ঋণ আবেদন করা যাবে না।
-                                </p>
 
+                        <div className="p-6 space-y-5 overflow-y-auto flex-1">
+                            {/* Member Search Section */}
+                            <div>
+                                <label className="block text-xs font-extrabold text-slate-800 uppercase mb-1">
+                                    ১. সদস্য নির্বাচন করুন <span className="text-red-500">*</span>
+                                </label>
                                 {!selectedMember ? (
                                     <div className="relative">
-                                        <input
-                                            type="text"
-                                            value={memberSearchQuery}
-                                            onChange={(e) => handleMemberSearch(e.target.value)}
-                                            onFocus={() => {
-                                                if (memberSearchQuery.length >= 3) {
-                                                    handleMemberSearch(memberSearchQuery);
-                                                }
-                                            }}
-                                            placeholder="Search by name, NID, mobile, or member code..."
-                                            className="w-full px-3 py-2 border rounded-md text-sm focus:ring-1 focus:ring-blue-500 focus:border-blue-500"
-                                            autoComplete="off"
-                                        />
-                                        {isSearching && (
-                                            <div className="absolute right-3 top-1/2 -translate-y-1/2">
-                                                <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-blue-600"></div>
-                                            </div>
-                                        )}
+                                        <div className="relative">
+                                            <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 pointer-events-none" />
+                                            <input
+                                                type="text"
+                                                value={memberSearchQuery}
+                                                onChange={(e) => handleMemberSearch(e.target.value)}
+                                                onFocus={() => {
+                                                    if (memberSearchQuery.length >= 3) {
+                                                        handleMemberSearch(memberSearchQuery);
+                                                    }
+                                                }}
+                                                placeholder="সদস্যের নাম, এনআইডি, মোবাইল বা আবেদন নং দিয়ে খুঁজুন..."
+                                                className="w-full pl-10 pr-10 py-2.5 border border-slate-300 rounded-2xl text-xs md:text-sm font-medium focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500"
+                                                autoComplete="off"
+                                            />
+                                            {isSearching && (
+                                                <div className="absolute right-3.5 top-1/2 -translate-y-1/2">
+                                                    <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-indigo-600" />
+                                                </div>
+                                            )}
+                                        </div>
+
                                         {memberSearchResults.length > 0 && (
-                                            <div className="absolute z-[100] w-full mt-1 bg-white border rounded-md shadow-lg max-h-60 overflow-auto">
+                                            <div className="absolute z-[100] w-full mt-1 bg-white border border-slate-200 rounded-2xl shadow-2xl max-h-60 overflow-auto divide-y divide-slate-100">
                                                 {memberSearchResults.map((member) => {
                                                     const isRejected = member.status === 'rejected';
+                                                    const isApproved = member.status === 'approved';
                                                     const hasActiveLoan = member.has_active_loan && member.active_loans && member.active_loans.length > 0;
                                                     const isDisabled = isRejected || hasActiveLoan;
-                                                    
+
+                                                    const statusLabels: Record<string, string> = {
+                                                        draft: 'খসড়া',
+                                                        submitted: 'জমা',
+                                                        under_review: 'পর্যালোচনায়',
+                                                        ready_for_head_office: 'শাখা অনুমোদিত',
+                                                        pending_head_office: 'হেড অফিসে',
+                                                        needs_revision: 'সংশোধন',
+                                                        approved: 'অনুমোদিত',
+                                                        rejected: 'প্রত্যাখ্যাত',
+                                                    };
+
                                                     return (
                                                         <button
                                                             key={member.id}
                                                             type="button"
                                                             onClick={() => !isDisabled && handleMemberSelect(member)}
                                                             disabled={isDisabled}
-                                                            className={`w-full px-3 py-2 text-left border-b last:border-b-0 ${
+                                                            className={`w-full p-3 text-left transition ${
                                                                 isDisabled
-                                                                    ? 'bg-red-50 cursor-not-allowed opacity-60'
-                                                                    : 'hover:bg-gray-50 cursor-pointer'
+                                                                    ? 'bg-rose-50/50 cursor-not-allowed opacity-70'
+                                                                    : 'hover:bg-indigo-50/60 cursor-pointer'
                                                             }`}
                                                         >
                                                             <div className="flex items-start justify-between gap-2">
-                                                                <div className="flex-1">
-                                                                    {member.applicant_name_bn && (
-                                                                        <div className="text-sm font-medium text-gray-900">{member.applicant_name_bn}</div>
-                                                                    )}
-                                                                    {member.applicant_name_en && (
-                                                                        <div className={`text-xs ${member.applicant_name_bn ? 'text-gray-600 italic' : 'font-medium text-gray-900'}`}>
-                                                                            {member.applicant_name_en}
-                                                                        </div>
-                                                                    )}
-                                                                    <div className="text-xs text-gray-500">
-                                                                        {member.application_no} | NID: {member.nid_number} | Mobile: {member.mobile_number}
+                                                                <div>
+                                                                    <div className="text-sm font-extrabold text-slate-900">
+                                                                        {member.applicant_name_bn || member.applicant_name_en}
                                                                     </div>
-                                                                    {hasActiveLoan && member.active_loans && (
-                                                                        <div className="mt-1 text-xs text-amber-700 bg-amber-50 p-1.5 rounded">
-                                                                            <div className="font-semibold mb-1">⚠️ ইতিমধ্যে সক্রিয় ঋণ আছে (মেয়াদ শেষ হওয়ার আগে নতুন ঋণ নেওয়া যাবে না):</div>
-                                                                            {member.active_loans.map((loan, idx) => (
-                                                                                <div key={idx} className="text-[10px] ml-2">
-                                                                                    • {loan.product_name_bn || loan.product_name} - আবেদন: {loan.application_no}
-                                                                                    {loan.expected_end_date && (
-                                                                                        <span className="text-gray-600"> - মেয়াদ শেষ: {formatDate(loan.expected_end_date)}</span>
-                                                                                    )}
-                                                                                    {loan.loan_term_months && (
-                                                                                        <span className="text-gray-600"> ({loan.loan_term_months} মাস)</span>
-                                                                                    )}
-                                                                                </div>
-                                                                            ))}
-                                                                        </div>
-                                                                    )}
+                                                                    <div className="text-xs text-slate-500 font-medium mt-0.5">
+                                                                        {member.application_no} | Mobile: {member.mobile_number}
+                                                                    </div>
                                                                 </div>
-                                                                <div className="flex flex-col gap-1 flex-shrink-0">
-                                                                    {isRejected && (
-                                                                        <span className="px-2 py-0.5 text-[10px] font-medium bg-red-100 text-red-700 rounded">
-                                                                            প্রত্যাখ্যাত
+                                                                <div className="flex flex-col items-end gap-1">
+                                                                    {!isApproved && !isRejected && (
+                                                                        <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-amber-100 text-amber-800">
+                                                                            {statusLabels[member.status] || member.status}
                                                                         </span>
                                                                     )}
                                                                     {hasActiveLoan && (
-                                                                        <span className="px-2 py-0.5 text-[10px] font-medium bg-amber-100 text-amber-700 rounded">
-                                                                            সক্রিয় ঋণ
+                                                                        <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-rose-100 text-rose-800">
+                                                                            সক্রিয় ঋণ আছে
                                                                         </span>
                                                                     )}
                                                                 </div>
@@ -955,98 +1013,52 @@ export default function Index({ categories, applications, stats, selectedDate, d
                                                 })}
                                             </div>
                                         )}
-                                        {!isSearching && memberSearchQuery.length >= 3 && memberSearchResults.length === 0 && (
-                                            <div className="absolute z-[100] w-full mt-1 bg-white border rounded-md shadow-lg p-3">
-                                                <p className="text-xs text-gray-500 text-center">No members found. Try a different search term.</p>
-                                            </div>
-                                        )}
                                     </div>
                                 ) : (
-                                    <div className="relative">
-                                        <div className={`p-3 border-2 rounded-md ${
-                                            selectedMember.has_active_loan
-                                                ? 'bg-red-50 border-red-300'
-                                                : 'bg-green-50 border-green-200'
-                                        }`}>
-                                            <div className="flex items-start justify-between gap-2">
-                                                <div className="flex-1">
-                                                    <div className="flex items-center gap-2 mb-1">
-                                                        <span className={`inline-flex items-center justify-center w-6 h-6 rounded-full text-white text-xs font-bold ${
-                                                            selectedMember.has_active_loan
-                                                                ? 'bg-red-600'
-                                                                : 'bg-green-600'
-                                                        }`}>
-                                                            {selectedMember.has_active_loan ? '⚠' : '✓'}
-                                                        </span>
-                                                        <span className={`text-xs font-semibold ${
-                                                            selectedMember.has_active_loan
-                                                                ? 'text-red-700'
-                                                                : 'text-green-700'
-                                                        }`}>
-                                                            {selectedMember.has_active_loan
-                                                                ? 'এই সদস্যের জন্য সক্রিয় ঋণ আছে (মেয়াদ শেষ হওয়ার আগে নতুন ঋণ নেওয়া যাবে না)'
-                                                                : 'Selected Member (নির্বাচিত সদস্য)'}
-                                                        </span>
-                                                    </div>
-                                                    <div className="ml-8 space-y-1">
-                                                        <div className="text-sm font-bold text-gray-900">{selectedMember.applicant_name_en}</div>
-                                                        <div className="text-xs text-gray-600">
-                                                            <span className="font-medium">Application:</span> {selectedMember.application_no}
-                                                        </div>
-                                                        <div className="text-xs text-gray-600">
-                                                            <span className="font-medium">NID:</span> {selectedMember.nid_number} |
-                                                            <span className="font-medium"> Mobile:</span> {selectedMember.mobile_number}
-                                                        </div>
-                                                        {selectedMember.has_active_loan && selectedMember.active_loans && (
-                                                            <div className="mt-2 text-xs text-red-700 bg-red-100 p-2 rounded">
-                                                                <div className="font-semibold mb-1">সক্রিয় ঋণ:</div>
-                                                                {selectedMember.active_loans.map((loan, idx) => (
-                                                                    <div key={idx} className="text-[10px] ml-2">
-                                                                        • {loan.product_name_bn || loan.product_name} - {loan.application_no}
-                                                                        {loan.expected_end_date && (
-                                                                            <span> (মেয়াদ শেষ: {formatDate(loan.expected_end_date)})</span>
-                                                                        )}
-                                                                        {loan.loan_term_months && !loan.expected_end_date && (
-                                                                            <span> ({loan.loan_term_months} মাস)</span>
-                                                                        )}
-                                                                    </div>
-                                                                ))}
-                                                            </div>
-                                                        )}
-                                                    </div>
-                                                </div>
-                                                <button
-                                                    type="button"
-                                                    onClick={() => {
-                                                        setSelectedMember(null);
-                                                        setMemberSearchQuery('');
-                                                        setMemberSearchResults([]);
-                                                    }}
-                                                    className="flex-shrink-0 p-1 hover:bg-red-100 rounded-full text-gray-500 hover:text-red-600 transition-colors"
-                                                    title="Remove selection"
-                                                >
-                                                    <X className="w-5 h-5" />
-                                                </button>
+                                    <div className="p-4 bg-emerald-50/80 border-2 border-emerald-300 rounded-2xl flex items-center justify-between gap-3">
+                                        <div className="flex items-center gap-3">
+                                            <div className="w-10 h-10 rounded-2xl bg-emerald-600 text-white flex items-center justify-center font-bold text-sm">
+                                                {(selectedMember.applicant_name_bn || selectedMember.applicant_name_en)[0]}
+                                            </div>
+                                            <div>
+                                                <h4 className="text-sm font-extrabold text-slate-900">
+                                                    {selectedMember.applicant_name_bn || selectedMember.applicant_name_en}
+                                                </h4>
+                                                <p className="text-xs text-slate-600 font-medium">
+                                                    {selectedMember.application_no} | Mobile: {selectedMember.mobile_number}
+                                                </p>
+                                                {selectedMember.status !== 'approved' && (
+                                                    <p className="text-[11px] text-amber-700 font-semibold mt-1">
+                                                        ভর্তি অনুমোদিত নয় — ফর্ম পূরণ করা যাবে, জমা দেওয়া যাবে না
+                                                    </p>
+                                                )}
                                             </div>
                                         </div>
+                                        <button
+                                            type="button"
+                                            onClick={() => setSelectedMember(null)}
+                                            className="p-1.5 text-slate-400 hover:text-rose-600 rounded-xl transition"
+                                        >
+                                            <X className="w-5 h-5" />
+                                        </button>
                                     </div>
                                 )}
                             </div>
 
                             {/* Category Selection */}
                             <div>
-                                <label className="block text-sm font-medium text-gray-700 mb-1">
-                                    Loan Category (ঋণ ক্যাটাগরি)
+                                <label className="block text-xs font-extrabold text-slate-800 uppercase mb-1">
+                                    ২. ঋণ ক্যাটাগরি <span className="text-red-500">*</span>
                                 </label>
                                 <select
                                     value={selectedCategory || ''}
                                     onChange={(e) => handleCategoryChange(Number(e.target.value))}
-                                    className="w-full px-3 py-2 border rounded-md text-sm focus:ring-1 focus:ring-blue-500 focus:border-blue-500"
+                                    className="w-full px-3.5 py-2.5 border border-slate-300 rounded-2xl text-xs md:text-sm font-medium focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500"
                                 >
-                                    <option value="">Select category...</option>
+                                    <option value="">ক্যাটাগরি নির্বাচন করুন...</option>
                                     {categories.map((cat) => (
                                         <option key={cat.id} value={cat.id}>
-                                            {cat.category_name} ({cat.category_name_bn}) - {cat.category_code}
+                                            {cat.category_name_bn || cat.category_name} ({cat.category_code})
                                         </option>
                                     ))}
                                 </select>
@@ -1055,18 +1067,18 @@ export default function Index({ categories, applications, stats, selectedDate, d
                             {/* Product Selection */}
                             {selectedCategory && products.length > 0 && (
                                 <div>
-                                    <label className="block text-sm font-medium text-gray-700 mb-1">
-                                        Loan Product (ঋণ পণ্য)
+                                    <label className="block text-xs font-extrabold text-slate-800 uppercase mb-1">
+                                        ৩. ঋণ পণ্য <span className="text-red-500">*</span>
                                     </label>
                                     <select
                                         value={selectedProduct || ''}
                                         onChange={(e) => handleProductChange(Number(e.target.value))}
-                                        className="w-full px-3 py-2 border rounded-md text-sm focus:ring-1 focus:ring-blue-500 focus:border-blue-500"
+                                        className="w-full px-3.5 py-2.5 border border-slate-300 rounded-2xl text-xs md:text-sm font-medium focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500"
                                     >
-                                        <option value="">Select product...</option>
+                                        <option value="">পণ্য নির্বাচন করুন...</option>
                                         {products.map((prod) => (
                                             <option key={prod.id} value={prod.id}>
-                                                {prod.product_name} ({prod.product_name_bn}) - {prod.product_code}
+                                                {prod.product_name_bn || prod.product_name} ({prod.product_code})
                                             </option>
                                         ))}
                                     </select>
@@ -1076,161 +1088,90 @@ export default function Index({ categories, applications, stats, selectedDate, d
                             {/* Requested Amount */}
                             {selectedProduct && (
                                 <div>
-                                    <label className="block text-sm font-medium text-gray-700 mb-1">
-                                        Requested Amount (অনুরোধকৃত পরিমাণ)
+                                    <label className="block text-xs font-extrabold text-slate-800 uppercase mb-1">
+                                        ৪. অনুরোধকৃত ঋণের পরিমাণ (টাকা) <span className="text-red-500">*</span>
                                     </label>
                                     <div className="relative">
-                                        <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500">৳</span>
+                                        <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-500 font-bold">৳</span>
                                         <input
                                             type="number"
                                             value={requestedAmount}
                                             onChange={(e) => setRequestedAmount(e.target.value)}
-                                            placeholder="Enter amount..."
-                                            className="w-full pl-8 pr-3 py-2 border rounded-md text-sm focus:ring-1 focus:ring-blue-500 focus:border-blue-500"
+                                            placeholder="ঋণের পরিমাণ টাইপ করুন..."
+                                            className="w-full pl-9 pr-4 py-2.5 border border-slate-300 rounded-2xl text-xs md:text-sm font-bold focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500"
                                         />
                                     </div>
                                 </div>
                             )}
 
-                            {/* Product Details */}
-                            {selectedProduct && products.find(p => p.id === selectedProduct) && (
-                                <div className="bg-gray-50 rounded-md p-4 space-y-2 text-xs">
+                            {/* Product Details Info Card */}
+                            {selectedProduct && products.find((p) => p.id === selectedProduct) && (
+                                <div className="rounded-2xl border border-indigo-100 bg-indigo-50/60 p-4 space-y-2.5">
                                     {(() => {
-                                        const product = products.find(p => p.id === selectedProduct);
-                                        return product && (
+                                        const product = products.find((p) => p.id === selectedProduct);
+                                        if (!product) return null;
+                                        const reqAmt = Number(requestedAmount) || 0;
+                                        const isAmountOutOfRange =
+                                            reqAmt > 0 && (reqAmt < product.min_amount || reqAmt > product.max_amount);
+
+                                        return (
                                             <>
-                                                <div className="flex justify-between">
-                                                    <span className="text-gray-600">Amount Range (পরিমাণ):</span>
-                                                    <span className="font-medium">৳{formatAmount(product.min_amount)} - ৳{formatAmount(product.max_amount)}</span>
+                                                <div className="flex items-center justify-between border-b border-indigo-100/80 pb-2">
+                                                    <span className="text-xs font-extrabold text-indigo-950 flex items-center gap-1.5">
+                                                        <Sparkles className="w-4 h-4 text-indigo-600" />
+                                                        {product.product_name_bn || product.product_name} ({product.product_code})
+                                                    </span>
+                                                    <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-indigo-100 text-indigo-800">
+                                                        {product.duration_months} মাস মেয়াদী
+                                                    </span>
                                                 </div>
-                                                <div className="flex justify-between">
-                                                    <span className="text-gray-600">Interest Rate (সুদের হার):</span>
-                                                    <span className="font-medium">{product.interest_rate}%</span>
+
+                                                <div className="grid grid-cols-2 gap-2 text-xs">
+                                                    <div className="bg-white/80 p-2.5 rounded-xl border border-indigo-100/80">
+                                                        <span className="text-[10px] font-bold text-slate-500 block uppercase">সর্বনিম্ন ও সর্বোচ্চ ঋণ</span>
+                                                        <span className="font-extrabold text-slate-900 mt-0.5 block">
+                                                            ৳{formatAmount(product.min_amount)} - ৳{formatAmount(product.max_amount)}
+                                                        </span>
+                                                    </div>
+
+                                                    <div className="bg-white/80 p-2.5 rounded-xl border border-indigo-100/80">
+                                                        <span className="text-[10px] font-bold text-slate-500 block uppercase">সুদের হার & মেয়াদী</span>
+                                                        <span className="font-extrabold text-indigo-700 mt-0.5 block">
+                                                            {product.interest_rate}% ({product.duration_months} মাস)
+                                                        </span>
+                                                    </div>
                                                 </div>
-                                                <div className="flex justify-between">
-                                                    <span className="text-gray-600">Duration (মেয়াদ):</span>
-                                                    <span className="font-medium">{product.duration_months} months</span>
-                                                </div>
+
+                                                {isAmountOutOfRange && (
+                                                    <div className="flex items-center gap-2 p-2.5 rounded-xl bg-rose-50 border border-rose-200 text-rose-800 text-xs font-bold">
+                                                        <AlertCircle className="w-4 h-4 shrink-0 text-rose-600" />
+                                                        <span>
+                                                            অনুরোধকৃত পরিমাণ ৳{formatAmount(product.min_amount)} থেকে ৳{formatAmount(product.max_amount)}-এর মধ্যে হতে হবে।
+                                                        </span>
+                                                    </div>
+                                                )}
                                             </>
                                         );
                                     })()}
                                 </div>
                             )}
                         </div>
-                        <div className="flex items-center justify-end gap-2 px-6 py-4 border-t bg-gray-50 rounded-b-lg flex-shrink-0">
+
+                        <div className="flex items-center justify-end gap-3 px-6 py-4 bg-slate-50 border-t border-slate-100 flex-shrink-0">
                             <button
                                 onClick={() => setShowNewModal(false)}
-                                className="px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 rounded-md"
+                                className="px-5 py-2.5 text-xs font-bold text-slate-600 hover:bg-slate-200/60 rounded-xl transition"
                             >
-                                Cancel (বাতিল)
+                                বাতিল
                             </button>
                             <button
                                 onClick={handleSubmit}
-                                disabled={!selectedMember || !selectedProduct || !requestedAmount || selectedMember?.has_active_loan}
-                                className="px-4 py-2 text-sm bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
-                                title={selectedMember?.has_active_loan ? 'এই সদস্যের জন্য সক্রিয় ঋণ আছে - মেয়াদ শেষ হওয়ার আগে নতুন ঋণ নেওয়া যাবে না' : ''}
+                                disabled={!selectedMember || !selectedProduct || !requestedAmount}
+                                className="px-6 py-2.5 text-xs font-bold bg-gradient-to-r from-blue-600 to-indigo-600 text-white rounded-xl shadow-lg shadow-blue-600/30 hover:from-blue-700 hover:to-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed transition active:scale-95"
                             >
-                                Continue to Form (ফর্মে যান)
+                                ফর্মে এগিয়ে যান
                             </button>
                         </div>
-                    </div>
-                </div>
-            )}
-
-            {/* Resolve Issue Modal */}
-            {showResolveModal && selectedIssue && (
-                <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-                    <div className="bg-white rounded-lg shadow-xl w-full max-w-lg">
-                        <div className="px-6 py-4 border-b">
-                            <h3 className="text-lg font-bold text-green-700">সমস্যা সমাধান করুন</h3>
-                            <p className="text-sm text-gray-600 mt-1">সমস্যার সমাধান সম্পর্কে বিস্তারিত লিখুন।</p>
-                        </div>
-                        <form onSubmit={submitResolve} className="p-6">
-                            <div className="mb-4">
-                                <label className="block text-sm font-medium text-gray-700 mb-2">
-                                    সমাধানের বিবরণ <span className="text-red-500">*</span>
-                                </label>
-                                <textarea
-                                    value={resolveForm.data.response_message}
-                                    onChange={(e) => resolveForm.setData('response_message', e.target.value)}
-                                    rows={5}
-                                    className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-green-500 focus:border-green-500"
-                                    placeholder="সমস্যা কীভাবে সমাধান করা হয়েছে তা বিস্তারিত লিখুন..."
-                                    required
-                                    minLength={10}
-                                />
-                                <p className="text-xs text-gray-500 mt-1">ন্যূনতম ১০ অক্ষর প্রয়োজন</p>
-                            </div>
-                            <div className="flex justify-end gap-2">
-                                <Button
-                                    type="button"
-                                    variant="outline"
-                                    onClick={() => {
-                                        setShowResolveModal(false);
-                                        setSelectedIssue(null);
-                                        resolveForm.reset();
-                                    }}
-                                >
-                                    বাতিল
-                                </Button>
-                                <Button
-                                    type="submit"
-                                    disabled={resolveForm.processing || !resolveForm.data.response_message || resolveForm.data.response_message.length < 10}
-                                    className="bg-green-600 hover:bg-green-700"
-                                >
-                                    {resolveForm.processing ? 'সাবমিট হচ্ছে...' : 'সমাধান করুন'}
-                                </Button>
-                            </div>
-                        </form>
-                    </div>
-                </div>
-            )}
-
-            {/* Reject Issue Modal */}
-            {showRejectModal && selectedIssue && (
-                <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-                    <div className="bg-white rounded-lg shadow-xl w-full max-w-lg">
-                        <div className="px-6 py-4 border-b">
-                            <h3 className="text-lg font-bold text-red-700">সমস্যা প্রত্যাখ্যান করুন</h3>
-                            <p className="text-sm text-gray-600 mt-1">কেন আপনি এই সমস্যাটি প্রত্যাখ্যান করছেন তা বিস্তারিত লিখুন।</p>
-                        </div>
-                        <form onSubmit={submitReject} className="p-6">
-                            <div className="mb-4">
-                                <label className="block text-sm font-medium text-gray-700 mb-2">
-                                    প্রত্যাখ্যানের কারণ <span className="text-red-500">*</span>
-                                </label>
-                                <textarea
-                                    value={rejectForm.data.response_message}
-                                    onChange={(e) => rejectForm.setData('response_message', e.target.value)}
-                                    rows={5}
-                                    className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-red-500 focus:border-red-500"
-                                    placeholder="কেন আপনি এই সমস্যাটি প্রত্যাখ্যান করছেন তা বিস্তারিত লিখুন..."
-                                    required
-                                    minLength={10}
-                                />
-                                <p className="text-xs text-gray-500 mt-1">ন্যূনতম ১০ অক্ষর প্রয়োজন</p>
-                            </div>
-                            <div className="flex justify-end gap-2">
-                                <Button
-                                    type="button"
-                                    variant="outline"
-                                    onClick={() => {
-                                        setShowRejectModal(false);
-                                        setSelectedIssue(null);
-                                        rejectForm.reset();
-                                    }}
-                                >
-                                    বাতিল
-                                </Button>
-                                <Button
-                                    type="submit"
-                                    variant="destructive"
-                                    disabled={rejectForm.processing || !rejectForm.data.response_message || rejectForm.data.response_message.length < 10}
-                                >
-                                    {rejectForm.processing ? 'সাবমিট হচ্ছে...' : 'প্রত্যাখ্যান করুন'}
-                                </Button>
-                            </div>
-                        </form>
                     </div>
                 </div>
             )}

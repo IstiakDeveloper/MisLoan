@@ -45,7 +45,11 @@ class LoanApplicationController extends Controller
         }
     }
 
-    private function ensureMemberEligibleForUser(MemberAdmission $member, $user): void
+    /**
+     * Draft/fill loan forms: field officers may prepare applications for their own
+     * members before admission is approved; branch users need an approved member.
+     */
+    private function ensureMemberAccessibleForLoanDraft(MemberAdmission $member, $user): void
     {
         $this->ensureCanCreateLoanApplication($user);
 
@@ -53,12 +57,27 @@ class LoanApplicationController extends Controller
             abort(403, 'এই সদস্য আপনার এলাকার/শাখার নয়।');
         }
 
+        if ($member->status === 'rejected') {
+            abort(403, 'প্রত্যাখ্যাত সদস্যের জন্য ঋণ আবেদন করা যাবে না।');
+        }
+
+        if ($this->isFieldOfficer($user)) {
+            if ((int) $member->created_by !== (int) $user->id) {
+                abort(403, 'ফিল্ড অফিসার শুধু নিজের তৈরি সদস্যের জন্য ঋণ আবেদন করতে পারবেন।');
+            }
+
+            return;
+        }
+
         if ($member->status !== 'approved') {
             abort(403, 'শুধুমাত্র অনুমোদিত সদস্যের জন্য ঋণ আবেদন করা যাবে।');
         }
+    }
 
-        if ($this->isFieldOfficer($user) && (int) $member->created_by !== (int) $user->id) {
-            abort(403, 'ফিল্ড অফিসার শুধু নিজের তৈরি অনুমোদিত সদস্যের জন্য ঋণ আবেদন করতে পারবেন।');
+    private function ensureMemberApprovedForLoanSubmit(MemberAdmission $member): void
+    {
+        if ($member->status !== 'approved') {
+            abort(403, 'সদস্য ভর্তি অনুমোদিত না হওয়া পর্যন্ত ঋণ আবেদন জমা দেওয়া যাবে না।');
         }
     }
 
@@ -126,7 +145,7 @@ class LoanApplicationController extends Controller
     public function index(Request $request)
     {
         $user = $request->user();
-        $dateFrom = $request->input('date_from', now()->toDateString());
+        $dateFrom = $request->input('date_from', now()->startOfMonth()->toDateString());
         $dateTo = $request->input('date_to', now()->toDateString());
         $statusFilter = $request->input('status', ''); // Empty means all statuses
         $isFieldOfficer = $this->isFieldOfficer($user);
@@ -265,7 +284,7 @@ class LoanApplicationController extends Controller
 
         $user = $request->user();
         $member = MemberAdmission::with('samity:id,samity_name,samity_name_bn')
-            ->select('id', 'application_no', 'applicant_name_en', 'applicant_name_bn', 'nid_number', 'mobile_number', 'father_name_en', 'mother_name_en', 'samity_id', 'status', 'branch_id', 'created_by')
+            ->select('id', 'application_no', 'applicant_name_en', 'applicant_name_bn', 'nid_number', 'mobile_number', 'father_name_en', 'mother_name_en', 'samity_id', 'status', 'branch_id', 'created_by', 'requested_loan_amount')
             ->find($request->integer('member_id'));
 
         if (!$member) {
@@ -273,7 +292,7 @@ class LoanApplicationController extends Controller
         }
 
         try {
-            $this->ensureMemberEligibleForUser($member, $user);
+            $this->ensureMemberAccessibleForLoanDraft($member, $user);
         } catch (\Symfony\Component\HttpKernel\Exception\HttpException $e) {
             return null;
         }
@@ -371,7 +390,7 @@ class LoanApplicationController extends Controller
             'formType' => $loanProduct ? ($loanProduct->installment_type === 'weekly' ? 1 : 2) : 1,
             'requestedAmount' => $requestedAmount,
             'memberAdmission' => $memberId ? tap(MemberAdmission::findOrFail($memberId), function ($member) use ($user) {
-                $this->ensureMemberEligibleForUser($member, $user);
+                $this->ensureMemberAccessibleForLoanDraft($member, $user);
             }) : null,
             'samity' => null,
         ]);
@@ -389,9 +408,11 @@ class LoanApplicationController extends Controller
         $branchId = $user->branch_id;
 
         $members = MemberAdmission::where('branch_id', $branchId)
-            ->where('status', 'approved')
             ->when($this->isFieldOfficer($user), function ($query) use ($user) {
-                $query->where('created_by', $user->id);
+                $query->where('created_by', $user->id)
+                    ->where('status', '!=', 'rejected');
+            }, function ($query) {
+                $query->where('status', 'approved');
             })
             ->where(function ($query) use ($search) {
                 $query->where('applicant_name_en', 'like', "%{$search}%")
@@ -400,7 +421,7 @@ class LoanApplicationController extends Controller
                     ->orWhere('mobile_number', 'like', "%{$search}%")
                     ->orWhere('application_no', 'like', "%{$search}%");
             })
-            ->select('id', 'application_no', 'applicant_name_en', 'applicant_name_bn', 'nid_number', 'mobile_number', 'father_name_en', 'mother_name_en', 'samity_id', 'status')
+            ->select('id', 'application_no', 'applicant_name_en', 'applicant_name_bn', 'nid_number', 'mobile_number', 'father_name_en', 'mother_name_en', 'samity_id', 'status', 'requested_loan_amount')
             ->with('samity:id,samity_name,samity_name_bn')
             ->orderBy('created_at', 'desc')
             ->limit(20)
@@ -616,7 +637,7 @@ class LoanApplicationController extends Controller
         // Check eligibility if member admission provided
         if ($validated['member_admission_id']) {
             $memberAdmission = MemberAdmission::findOrFail($validated['member_admission_id']);
-            $this->ensureMemberEligibleForUser($memberAdmission, $user);
+            $this->ensureMemberAccessibleForLoanDraft($memberAdmission, $user);
             $eligibilityCheck = $loanProduct->checkEligibility($memberAdmission);
 
             if (!$eligibilityCheck['eligible']) {
@@ -801,6 +822,11 @@ class LoanApplicationController extends Controller
         $application->form_saved = $formSaved;
         $application->all_forms_complete = $allFormsComplete;
 
+        $memberAdmission = $application->memberAdmission;
+        $application->member_admission_status = $memberAdmission?->status;
+        $application->can_submit = $allFormsComplete
+            && ($memberAdmission === null || $memberAdmission->status === 'approved');
+
         return Inertia::render('Member/LoanApplications/Show', [
             'application' => $application,
             'routes' => [
@@ -823,6 +849,18 @@ class LoanApplicationController extends Controller
 
         if (!$application->canBeEdited()) {
             return back()->withErrors(['error' => 'This application cannot be submitted']);
+        }
+
+        if ($application->member_admission_id) {
+            $member = MemberAdmission::find($application->member_admission_id);
+            if (!$member) {
+                return back()->withErrors(['error' => 'সদস্য ভর্তি তথ্য পাওয়া যায়নি।']);
+            }
+            try {
+                $this->ensureMemberApprovedForLoanSubmit($member);
+            } catch (\Symfony\Component\HttpKernel\Exception\HttpException $e) {
+                return back()->withErrors(['error' => 'সদস্য ভর্তি অনুমোদিত না হওয়া পর্যন্ত ঋণ আবেদন জমা দেওয়া যাবে না।']);
+            }
         }
 
         $oneLakh = 100000.0;
@@ -884,10 +922,9 @@ class LoanApplicationController extends Controller
         $user = $request->user();
         $user->loadMissing('role');
         $roleName = strtolower($user->role->name ?? '');
-        $isBranchUser = in_array($roleName, ['branch_user', 'branch_manager'], true) || ($user->branch_id && !$user->area_id && !$user->zone_id && !$user->has_all_access);
 
-        if (!$isBranchUser) {
-            abort(403, 'শুধুমাত্র শাখা ব্যবহারকারী বা শাখা ব্যবস্থাপক ঋণ আবেদন হেড অফিসে পাঠাতে পারবেন।');
+        if ($roleName !== 'branch_user') {
+            abort(403, 'শুধুমাত্র শাখা ব্যবহারকারী (Branch User) ঋণ আবেদন হেড অফিসে পাঠাতে পারবেন।');
         }
 
         $application = LoanApplication::findOrFail($id);
@@ -1039,7 +1076,7 @@ class LoanApplicationController extends Controller
                 return redirect()->route('member.loan-applications.index')->with('error', 'সদস্য নির্বাচন করুন।');
             }
             $member = MemberAdmission::with('samity')->findOrFail($memberId);
-            $this->ensureMemberEligibleForUser($member, $request->user());
+            $this->ensureMemberAccessibleForLoanDraft($member, $request->user());
             if ($this->memberHasActiveLoan((int) $member->id)) {
                 return redirect()->route('member.loan-applications.index')
                     ->with('error', 'এই সদস্যের জন্য সক্রিয় ঋণ আছে। মেয়াদ শেষ হওয়ার আগে নতুন ঋণ আবেদন করা যাবে না।');
@@ -1144,9 +1181,9 @@ class LoanApplicationController extends Controller
             return [$member, $existingApplication, $legacyKey];
         }
         $memberId = $request->input('member_id');
-        $member = MemberAdmission::with('samity')->find($memberId);
+        $member = MemberAdmission::with(['samity', 'familyMembers', 'otherAssets', 'branch'])->find($memberId);
         if ($member) {
-            $this->ensureMemberEligibleForUser($member, $request->user());
+            $this->ensureMemberAccessibleForLoanDraft($member, $request->user());
         }
         $existingApplication = $memberId ? LoanApplication::where('member_admission_id', $memberId)
             ->where('loan_product_id', $loanProductId)
@@ -1193,7 +1230,7 @@ class LoanApplicationController extends Controller
         if (!$member) {
             return null;
         }
-        $this->ensureMemberEligibleForUser($member, $user);
+        $this->ensureMemberAccessibleForLoanDraft($member, $user);
         $draft = LoanApplication::firstOrNew([
             'member_admission_id' => $memberId,
             'loan_product_id' => $loanProductId,
@@ -1314,12 +1351,12 @@ class LoanApplicationController extends Controller
         $agreementData = $validated['agreement_data'];
         $loanApplication->loan_agreement_data = $agreementData;
         $loanApplication->form_type = 'loan_agreement';
-        $loanApplication->purpose_of_loan = $agreementData['loan_purpose'] ?? 'খান চুক্তিপত্র অনুযায়ী';
+        $loanApplication->purpose_of_loan = $agreementData['loan_purpose'] ?? 'ঋণ চুক্তিপত্র অনুযায়ী';
         $loanApplication->number_of_installments = (int) ($agreementData['number_of_installments'] ?? 1);
         $loanApplication->save();
 
         return redirect()->route('member.loan-applications.index')
-            ->with('success', 'খান চুক্তিপত্র সংরক্ষিত হয়েছে। Loan Application ড্রাফট হিসেবে সংরক্ষিত আছে।');
+            ->with('success', 'ঋণ চুক্তিপত্র সংরক্ষিত হয়েছে। Loan Application ড্রাফট হিসেবে সংরক্ষিত আছে।');
     }
 
     /**

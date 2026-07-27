@@ -3,6 +3,7 @@ import { Head, useForm, router } from '@inertiajs/react';
 import AdminLayout from '@/layouts/admin-layout';
 import { Save, Printer, Eye, Upload, X, ArrowLeft } from 'lucide-react';
 import { formatDateBangla } from '@/utils/dateUtils';
+import { numberToWordsBangla } from './ApprovalForm/PrintPreview';
 
 interface DeathRiskFundData {
     // Branch & Date
@@ -16,10 +17,10 @@ interface DeathRiskFundData {
     // Section 1: Loan Recipient Information (from MemberAdmission)
     loan_recipient_name: string;
     loan_recipient_code1: string; // Member code
-    loan_recipient_code2: string; // Loan code (external)
+    loan_recipient_code2: string; // Same as member code (from admission)
     samity_name: string;
     village: string;
-    post_office: string;
+    post_office: string; // From member present_post_code
     upazila: string;
     district: string;
     age: number;
@@ -31,10 +32,10 @@ interface DeathRiskFundData {
     loan_amount_words: string; // External
     loan_term: string; // External
     
-    // Section 2: Guardian/Family Primary Earner Information (External)
-    guardian_name: string;
+    // Section 2: Guardian/Family Primary Earner Information
+    guardian_name: string; // From MemberAdmission
     guardian_age: number;
-    relationship_with_recipient: string;
+    relationship_with_recipient: string; // Select
     guardian_village: string;
     guardian_post_office: string;
     guardian_upazila: string;
@@ -43,7 +44,7 @@ interface DeathRiskFundData {
     guardian_mobile: string;
     guardian_profession: string;
     
-    // Signatures
+    // Signatures — print/preview blank lines only (no digital upload)
     loan_recipient_signature: string | null;
     guardian_signature: string | null;
     officer_signature: string | null;
@@ -115,7 +116,7 @@ function renderDeathRiskFundPreviewPart(partNumber: 1 | 2, formData: any) {
                     <div className="flex gap-0.5 items-baseline" style={{ marginBottom: '1px' }}><span className="w-24 flex-shrink-0">ঋণ গ্রহীতার নাম:</span><span className="border-b border-dotted border-gray-600 flex-1 min-h-[10px]">{d.loan_recipient_name || ''}</span></div>
                     <div className="flex gap-0.5 items-baseline" style={{ marginBottom: '1px' }}><span className="w-24 flex-shrink-0">কোড নম্বর:</span><span className="border-b border-dotted border-gray-600 flex-1 min-h-[10px]">{d.loan_recipient_code1 || ''}</span><span className="w-24 flex-shrink-0 ml-1">কোড নম্বর:</span><span className="border-b border-dotted border-gray-600 flex-1 min-h-[10px]">{d.loan_recipient_code2 || ''}</span></div>
                     <div className="flex gap-0.5 items-baseline" style={{ marginBottom: '1px' }}><span className="w-24 flex-shrink-0">সমিতির নাম:</span><span className="border-b border-dotted border-gray-600 flex-1 min-h-[10px]">{d.samity_name || ''}</span></div>
-                    <div className="flex gap-0.5 items-baseline" style={{ marginBottom: '1px' }}><span className="w-24 flex-shrink-0">গ্রাম:</span><span className="border-b border-dotted border-gray-600 flex-1 min-h-[10px]">{d.village || ''}</span><span className="w-16 flex-shrink-0 ml-1">ডাকঘর:</span><span className="border-b border-dotted border-gray-600 flex-1 min-h-[10px]">{d.post_office || ''}</span></div>
+                    <div className="flex gap-0.5 items-baseline" style={{ marginBottom: '1px' }}><span className="w-24 flex-shrink-0">গ্রাম:</span><span className="border-b border-dotted border-gray-600 flex-1 min-h-[10px]">{d.village || ''}</span><span className="w-16 flex-shrink-0 ml-1">পোস্ট কোড:</span><span className="border-b border-dotted border-gray-600 flex-1 min-h-[10px]">{d.post_office || ''}</span></div>
                     <div className="flex gap-0.5 items-baseline" style={{ marginBottom: '1px' }}><span className="w-16 flex-shrink-0">উপজেলা:</span><span className="border-b border-dotted border-gray-600 flex-1 min-h-[10px]">{d.upazila || ''}</span><span className="w-16 flex-shrink-0 ml-1">জেলা:</span><span className="border-b border-dotted border-gray-600 flex-1 min-h-[10px]">{d.district || ''}</span></div>
                     <div className="flex gap-0.5 items-baseline" style={{ marginBottom: '1px' }}><span className="w-24 flex-shrink-0">বয়স:</span><span className="border-b border-dotted border-gray-600 flex-1 min-h-[10px]">{d.age ?? ''}</span><span className="w-28 flex-shrink-0 ml-1">জাতীয় পরিচয়পত্র নম্বর:</span><span className="border-b border-dotted border-gray-600 flex-1 min-h-[10px]">{d.nid_number || ''}</span></div>
                     <div className="flex gap-0.5 items-baseline" style={{ marginBottom: '1px' }}><span className="w-24 flex-shrink-0">মোবাইল নম্বর:</span><span className="border-b border-dotted border-gray-600 flex-1 min-h-[10px]">{d.mobile_number || ''}</span></div>
@@ -130,7 +131,7 @@ function renderDeathRiskFundPreviewPart(partNumber: 1 | 2, formData: any) {
                 <div className="space-y-0" style={{ fontSize: '9px' }}>
                     <div className="flex gap-0.5 items-baseline" style={{ marginBottom: '1px' }}><span className="w-36 flex-shrink-0">অভিভাবক/পরিবারের প্রধান উপার্জনকারী ব্যক্তির নাম:</span><span className="border-b border-dotted border-gray-600 flex-1 min-h-[10px]">{d.guardian_name || ''}</span></div>
                     <div className="flex gap-0.5 items-baseline" style={{ marginBottom: '1px' }}><span className="w-16 flex-shrink-0">বয়স:</span><span className="border-b border-dotted border-gray-600 flex-1 min-h-[10px]">{d.guardian_age ?? ''}</span><span className="w-28 flex-shrink-0 ml-1">ঋণ গ্রহীতার সাথে সম্পর্ক:</span><span className="border-b border-dotted border-gray-600 flex-1 min-h-[10px]">{d.relationship_with_recipient || ''}</span></div>
-                    <div className="flex gap-0.5 items-baseline" style={{ marginBottom: '1px' }}><span className="w-16 flex-shrink-0">গ্রাম:</span><span className="border-b border-dotted border-gray-600 flex-1 min-h-[10px]">{d.guardian_village || ''}</span><span className="w-16 flex-shrink-0 ml-1">ডাকঘর:</span><span className="border-b border-dotted border-gray-600 flex-1 min-h-[10px]">{d.guardian_post_office || ''}</span></div>
+                    <div className="flex gap-0.5 items-baseline" style={{ marginBottom: '1px' }}><span className="w-16 flex-shrink-0">গ্রাম:</span><span className="border-b border-dotted border-gray-600 flex-1 min-h-[10px]">{d.guardian_village || ''}</span><span className="w-16 flex-shrink-0 ml-1">পোস্ট কোড:</span><span className="border-b border-dotted border-gray-600 flex-1 min-h-[10px]">{d.guardian_post_office || ''}</span></div>
                     <div className="flex gap-0.5 items-baseline" style={{ marginBottom: '1px' }}><span className="w-16 flex-shrink-0">উপজেলা:</span><span className="border-b border-dotted border-gray-600 flex-1 min-h-[10px]">{d.guardian_upazila || ''}</span><span className="w-16 flex-shrink-0 ml-1">জেলা:</span><span className="border-b border-dotted border-gray-600 flex-1 min-h-[10px]">{d.guardian_district || ''}</span></div>
                     <div className="flex gap-0.5 items-baseline" style={{ marginBottom: '1px' }}><span className="w-28 flex-shrink-0">জাতীয় পরিচয়পত্র নম্বর:</span><span className="border-b border-dotted border-gray-600 flex-1 min-h-[10px]">{d.guardian_nid || ''}</span></div>
                     <div className="flex gap-0.5 items-baseline" style={{ marginBottom: '1px' }}><span className="w-24 flex-shrink-0">মোবাইল নম্বর:</span><span className="border-b border-dotted border-gray-600 flex-1 min-h-[10px]">{d.guardian_mobile || ''}</span></div>
@@ -187,28 +188,6 @@ const calculateAge = (dateOfBirth: string | null): number => {
     return age;
 };
 
-const numberToWords = (num: number): string => {
-    // Simple implementation - can be enhanced
-    const ones = ['', 'এক', 'দুই', 'তিন', 'চার', 'পাঁচ', 'ছয়', 'সাত', 'আট', 'নয়', 'দশ'];
-    const tens = ['', '', 'বিশ', 'ত্রিশ', 'চল্লিশ', 'পঞ্চাশ', 'ষাট', 'সত্তর', 'আশি', 'নব্বই'];
-    
-    if (num === 0) return 'শূন্য';
-    if (num < 11) return ones[num];
-    if (num < 20) return ones[num % 10] + 'শ';
-    if (num < 100) return tens[Math.floor(num / 10)] + (num % 10 ? ' ' + ones[num % 10] : '');
-    if (num < 1000) {
-        const hundred = Math.floor(num / 100);
-        const remainder = num % 100;
-        return ones[hundred] + 'শ' + (remainder ? ' ' + numberToWords(remainder) : '');
-    }
-    if (num < 100000) {
-        const thousand = Math.floor(num / 1000);
-        const remainder = num % 1000;
-        return numberToWords(thousand) + ' হাজার' + (remainder ? ' ' + numberToWords(remainder) : '');
-    }
-    return num.toString() + ' টাকা';
-};
-
 function formSelectionUrl(isLegacy: boolean, member: any, loanProduct: any, loanCategory: any, requestedAmount: number) {
     const params = new URLSearchParams({ loan_product_id: String(loanProduct.id), loan_category_id: String(loanCategory.id), requested_amount: String(requestedAmount) });
     if (isLegacy) params.set('legacy', '1'); else params.set('member_id', String(member?.id ?? ''));
@@ -262,12 +241,12 @@ export default function DeathRiskFund({
         // Loan Recipient Info (auto-filled from MemberAdmission)
         loan_recipient_name: member?.applicant_name_bn || '',
         loan_recipient_code1: member?.application_no || '',
-        loan_recipient_code2: '', // Loan code - external
+        loan_recipient_code2: member?.application_no || '', // From member code
         samity_name: member?.samity?.samity_name_bn || member?.samity?.samity_name || '',
-        village: member?.present_village_road || '',
-        post_office: '', // External
-        upazila: member?.present_upazila || '',
-        district: member?.present_district || '',
+        village: member?.present_village_road || member?.permanent_village_road || '',
+        post_office: member?.present_post_code || member?.permanent_post_code || '',
+        upazila: member?.present_upazila || member?.permanent_upazila || '',
+        district: member?.present_district || member?.permanent_district || '',
         age: memberAge,
         nid_number: member?.nid_number || '',
         mobile_number: member?.mobile_number || '',
@@ -277,19 +256,19 @@ export default function DeathRiskFund({
         loan_amount_words: '', // Will be auto-calculated
         loan_term: loanProduct?.duration_months ? `${loanProduct.duration_months} মাস` : '', // External
         
-        // Guardian Info (External)
+        // Guardian Info
         guardian_name: member?.guardian_name || '',
         guardian_age: 0,
         relationship_with_recipient: '',
-        guardian_village: '',
-        guardian_post_office: '',
-        guardian_upazila: '',
-        guardian_district: '',
+        guardian_village: member?.permanent_village_road || member?.present_village_road || '',
+        guardian_post_office: member?.permanent_post_code || member?.present_post_code || '',
+        guardian_upazila: member?.permanent_upazila || member?.present_upazila || '',
+        guardian_district: member?.permanent_district || member?.present_district || '',
         guardian_nid: '',
         guardian_mobile: member?.guarantor_mobile || '',
         guardian_profession: '',
         
-        // Signatures
+        // Signatures — blank lines only on print/preview (no digital upload)
         loan_recipient_signature: null,
         guardian_signature: null,
         officer_signature: null,
@@ -297,10 +276,11 @@ export default function DeathRiskFund({
         branch_manager_signature: null,
     });
 
-    // Auto-calculate loan amount in words
+    // Auto-calculate loan amount in words (same as ApprovalForm page 4)
     useEffect(() => {
         if (data.loan_amount_received > 0) {
-            setData('loan_amount_words', numberToWords(data.loan_amount_received) + ' টাকা');
+            const words = numberToWordsBangla(data.loan_amount_received);
+            setData('loan_amount_words', words ? words + ' টাকা' : '');
         }
     }, [data.loan_amount_received]);
 
@@ -351,7 +331,7 @@ export default function DeathRiskFund({
             newErrors.loan_recipient_code2 = 'ঋণ কোড নম্বর আবশ্যক';
         }
         if (!data.post_office?.trim()) {
-            newErrors.post_office = 'ডাকঘর আবশ্যক';
+            newErrors.post_office = 'পোস্ট কোড আবশ্যক';
         }
         if (!data.component_name?.trim()) {
             newErrors.component_name = 'কম্পোনেন্টের নাম আবশ্যক';
@@ -378,7 +358,7 @@ export default function DeathRiskFund({
             newErrors.guardian_village = 'অভিভাবকের গ্রাম আবশ্যক';
         }
         if (!data.guardian_post_office?.trim()) {
-            newErrors.guardian_post_office = 'অভিভাবকের ডাকঘর আবশ্যক';
+            newErrors.guardian_post_office = 'অভিভাবকের পোস্ট কোড আবশ্যক';
         }
         if (!data.guardian_upazila?.trim()) {
             newErrors.guardian_upazila = 'অভিভাবকের উপজেলা আবশ্যক';
@@ -555,7 +535,7 @@ export default function DeathRiskFund({
                         <div className="flex gap-1 items-baseline">
                             <span className="w-28 flex-shrink-0">গ্রাম:</span>
                             <span className="border-b border-dotted border-gray-600 flex-1 min-h-[12px]">{data.village || ''}</span>
-                            <span className="w-20 flex-shrink-0 ml-1.5">ডাকঘর:</span>
+                            <span className="w-20 flex-shrink-0 ml-1.5">পোস্ট কোড:</span>
                             <span className="border-b border-dotted border-gray-600 flex-1 min-h-[12px]">{data.post_office || ''}</span>
                         </div>
                         <div className="flex gap-1 items-baseline">
@@ -612,7 +592,7 @@ export default function DeathRiskFund({
                         <div className="flex gap-1 items-baseline">
                             <span className="w-20 flex-shrink-0">গ্রাম:</span>
                             <span className="border-b border-dotted border-gray-600 flex-1 min-h-[12px]">{data.guardian_village || ''}</span>
-                            <span className="w-20 flex-shrink-0 ml-1.5">ডাকঘর:</span>
+                            <span className="w-20 flex-shrink-0 ml-1.5">পোস্ট কোড:</span>
                             <span className="border-b border-dotted border-gray-600 flex-1 min-h-[12px]">{data.guardian_post_office || ''}</span>
                         </div>
                         <div className="flex gap-1 items-baseline">
@@ -778,7 +758,6 @@ export default function DeathRiskFund({
                                 value={data.loan_recipient_name}
                                 onChange={(e) => setData('loan_recipient_name', e.target.value)}
                                 className="w-full px-2 py-1 border rounded"
-                                disabled={!isLegacy}
                             />
                         </div>
                         <div>
@@ -788,8 +767,7 @@ export default function DeathRiskFund({
                                 value={data.loan_recipient_code1}
                                 onChange={(e) => setData('loan_recipient_code1', e.target.value)}
                                 className="w-full px-2 py-1 border rounded"
-                                disabled={!isLegacy}
-                                placeholder={isLegacy ? 'আগের সদস্য / সদস্য কোড' : undefined}
+                                placeholder="সদস্য কোড"
                             />
                         </div>
                         <div>
@@ -809,8 +787,8 @@ export default function DeathRiskFund({
                                         });
                                     }
                                 }}
-                                placeholder="ঋণ আবেদন নম্বর"
                                 className={`w-full px-2 py-1 border rounded ${errors.loan_recipient_code2 ? 'border-red-500 bg-red-50' : ''}`}
+                                placeholder="সদস্য কোড নম্বর"
                             />
                             {errors.loan_recipient_code2 && (
                                 <p className="text-xs text-red-600 mt-0.5">{errors.loan_recipient_code2}</p>
@@ -823,7 +801,6 @@ export default function DeathRiskFund({
                                 value={data.samity_name}
                                 onChange={(e) => setData('samity_name', e.target.value)}
                                 className="w-full px-2 py-1 border rounded"
-                                disabled={!isLegacy}
                             />
                         </div>
                         <div>
@@ -833,12 +810,11 @@ export default function DeathRiskFund({
                                 value={data.village}
                                 onChange={(e) => setData('village', e.target.value)}
                                 className="w-full px-2 py-1 border rounded"
-                                disabled={!isLegacy}
                             />
                         </div>
                         <div>
                             <label className="block text-xs mb-1">
-                                ডাকঘর: <span className="text-red-600">*</span>
+                                পোস্ট কোড: <span className="text-red-600">*</span>
                             </label>
                             <input
                                 type="text"
@@ -853,8 +829,8 @@ export default function DeathRiskFund({
                                         });
                                     }
                                 }}
-                                placeholder="ডাকঘরের নাম"
                                 className={`w-full px-2 py-1 border rounded ${errors.post_office ? 'border-red-500 bg-red-50' : ''}`}
+                                placeholder="পোস্ট কোড"
                             />
                             {errors.post_office && (
                                 <p className="text-xs text-red-600 mt-0.5">{errors.post_office}</p>
@@ -867,7 +843,6 @@ export default function DeathRiskFund({
                                 value={data.upazila}
                                 onChange={(e) => setData('upazila', e.target.value)}
                                 className="w-full px-2 py-1 border rounded"
-                                disabled={!isLegacy}
                             />
                         </div>
                         <div>
@@ -877,7 +852,6 @@ export default function DeathRiskFund({
                                 value={data.district}
                                 onChange={(e) => setData('district', e.target.value)}
                                 className="w-full px-2 py-1 border rounded"
-                                disabled={!isLegacy}
                             />
                         </div>
                         <div>
@@ -887,7 +861,6 @@ export default function DeathRiskFund({
                                 value={data.age}
                                 onChange={(e) => setData('age', parseInt(e.target.value))}
                                 className="w-full px-2 py-1 border rounded"
-                                disabled={!isLegacy}
                             />
                         </div>
                         <div>
@@ -897,7 +870,6 @@ export default function DeathRiskFund({
                                 value={data.nid_number}
                                 onChange={(e) => setData('nid_number', e.target.value)}
                                 className="w-full px-2 py-1 border rounded"
-                                disabled={!isLegacy}
                             />
                         </div>
                         <div>
@@ -907,7 +879,6 @@ export default function DeathRiskFund({
                                 value={data.mobile_number}
                                 onChange={(e) => setData('mobile_number', e.target.value)}
                                 className="w-full px-2 py-1 border rounded"
-                                disabled={!isLegacy}
                             />
                         </div>
                         <div>
@@ -964,7 +935,11 @@ export default function DeathRiskFund({
                                 type="number"
                                 value={data.loan_amount_received}
                                 onChange={(e) => {
-                                    setData('loan_amount_received', parseFloat(e.target.value));
+                                    const v = e.target.value;
+                                    const num = parseFloat(v);
+                                    setData('loan_amount_received', isNaN(num) ? 0 : num);
+                                    const words = numberToWordsBangla(v);
+                                    setData('loan_amount_words', words ? words + ' টাকা' : '');
                                     if (errors.loan_amount_received) {
                                         setErrors(prev => {
                                             const newErrors = { ...prev };
@@ -984,9 +959,9 @@ export default function DeathRiskFund({
                             <input
                                 type="text"
                                 value={data.loan_amount_words}
-                                onChange={(e) => setData('loan_amount_words', e.target.value)}
-                                className="w-full px-2 py-1 border rounded"
                                 readOnly
+                                placeholder="কথায় অটো আসবে"
+                                className="w-full px-2 py-1 border rounded bg-gray-100 text-gray-700 cursor-not-allowed"
                             />
                         </div>
                         <div>
@@ -1037,8 +1012,8 @@ export default function DeathRiskFund({
                                         });
                                     }
                                 }}
-                                placeholder="অভিভাবকের নাম"
                                 className={`w-full px-2 py-1 border rounded ${errors.guardian_name ? 'border-red-500 bg-red-50' : ''}`}
+                                placeholder="অভিভাবকের নাম"
                             />
                             {errors.guardian_name && (
                                 <p className="text-xs text-red-600 mt-0.5">{errors.guardian_name}</p>
@@ -1071,8 +1046,7 @@ export default function DeathRiskFund({
                             <label className="block text-xs mb-1">
                                 ঋণ গ্রহীতার সাথে সম্পর্ক: <span className="text-red-600">*</span>
                             </label>
-                            <input
-                                type="text"
+                            <select
                                 value={data.relationship_with_recipient}
                                 onChange={(e) => {
                                     setData('relationship_with_recipient', e.target.value);
@@ -1084,9 +1058,19 @@ export default function DeathRiskFund({
                                         });
                                     }
                                 }}
-                                placeholder="যেমন: পিতা, স্বামী"
                                 className={`w-full px-2 py-1 border rounded ${errors.relationship_with_recipient ? 'border-red-500 bg-red-50' : ''}`}
-                            />
+                            >
+                                <option value="">সম্পর্ক নির্বাচন করুন</option>
+                                <option value="পিতা">পিতা</option>
+                                <option value="মাতা">মাতা</option>
+                                <option value="স্বামী">স্বামী</option>
+                                <option value="স্ত্রী">স্ত্রী</option>
+                                <option value="পুত্র">পুত্র</option>
+                                <option value="কন্যা">কন্যা</option>
+                                <option value="ভাই">ভাই</option>
+                                <option value="বোন">বোন</option>
+                                <option value="অন্যান্য">অন্যান্য</option>
+                            </select>
                             {errors.relationship_with_recipient && (
                                 <p className="text-xs text-red-600 mt-0.5">{errors.relationship_with_recipient}</p>
                             )}
@@ -1116,7 +1100,7 @@ export default function DeathRiskFund({
                         </div>
                         <div>
                             <label className="block text-xs mb-1">
-                                ডাকঘর: <span className="text-red-600">*</span>
+                                পোস্ট কোড: <span className="text-red-600">*</span>
                             </label>
                             <input
                                 type="text"
@@ -1264,97 +1248,6 @@ export default function DeathRiskFund({
                         </p>
                     </div>
                 )}
-
-                {/* Signatures */}
-                <div className="grid grid-cols-2 gap-4 mt-4">
-                    <div>
-                        <label className="block text-xs mb-1">ঋণ গ্রহীতার স্বাক্ষর:</label>
-                        {data.loan_recipient_signature ? (
-                            <div className="relative">
-                                <img src={data.loan_recipient_signature} alt="Signature" className="h-16 w-32 object-contain border rounded" />
-                                <button onClick={() => removeImage('loan_recipient_signature')} className="absolute -top-2 -right-2 bg-red-500 text-white rounded-full p-1">
-                                    <X className="w-3 h-3" />
-                                </button>
-                            </div>
-                        ) : (
-                            <label className="flex items-center gap-2 px-3 py-2 bg-gray-100 border border-dashed rounded cursor-pointer hover:bg-gray-200 w-fit">
-                                <Upload className="w-4 h-4" />
-                                <span className="text-xs">Upload</span>
-                                <input type="file" accept="image/png,image/jpg,image/jpeg" onChange={(e) => handleImageUpload('loan_recipient_signature', e.target.files?.[0] || null)} className="hidden" />
-                            </label>
-                        )}
-                    </div>
-                    {isPart1 && (
-                        <div>
-                            <label className="block text-xs mb-1">অভিভাবক/পরিবারের প্রধান উপার্জনকারীর স্বাক্ষর:</label>
-                            {data.guardian_signature ? (
-                                <div className="relative">
-                                    <img src={data.guardian_signature} alt="Signature" className="h-16 w-32 object-contain border rounded" />
-                                    <button onClick={() => removeImage('guardian_signature')} className="absolute -top-2 -right-2 bg-red-500 text-white rounded-full p-1">
-                                        <X className="w-3 h-3" />
-                                    </button>
-                                </div>
-                            ) : (
-                                <label className="flex items-center gap-2 px-3 py-2 bg-gray-100 border border-dashed rounded cursor-pointer hover:bg-gray-200 w-fit">
-                                    <Upload className="w-4 h-4" />
-                                    <span className="text-xs">Upload</span>
-                                    <input type="file" accept="image/png,image/jpg,image/jpeg" onChange={(e) => handleImageUpload('guardian_signature', e.target.files?.[0] || null)} className="hidden" />
-                                </label>
-                            )}
-                        </div>
-                    )}
-                    <div>
-                        <label className="block text-xs mb-1">অফিসারের স্বাক্ষর ও সিল:</label>
-                        {data.officer_signature ? (
-                            <div className="relative">
-                                <img src={data.officer_signature} alt="Signature" className="h-16 w-32 object-contain border rounded" />
-                                <button onClick={() => removeImage('officer_signature')} className="absolute -top-2 -right-2 bg-red-500 text-white rounded-full p-1">
-                                    <X className="w-3 h-3" />
-                                </button>
-                            </div>
-                        ) : (
-                            <label className="flex items-center gap-2 px-3 py-2 bg-gray-100 border border-dashed rounded cursor-pointer hover:bg-gray-200 w-fit">
-                                <Upload className="w-4 h-4" />
-                                <span className="text-xs">Upload</span>
-                                <input type="file" accept="image/png,image/jpg,image/jpeg" onChange={(e) => handleImageUpload('officer_signature', e.target.files?.[0] || null)} className="hidden" />
-                            </label>
-                        )}
-                    </div>
-                    <div>
-                        <label className="block text-xs mb-1">হিসাবরক্ষকের স্বাক্ষর ও সিল:</label>
-                        {data.accountant_signature ? (
-                            <div className="relative">
-                                <img src={data.accountant_signature} alt="Signature" className="h-16 w-32 object-contain border rounded" />
-                                <button onClick={() => removeImage('accountant_signature')} className="absolute -top-2 -right-2 bg-red-500 text-white rounded-full p-1">
-                                    <X className="w-3 h-3" />
-                                </button>
-                            </div>
-                        ) : (
-                            <label className="flex items-center gap-2 px-3 py-2 bg-gray-100 border border-dashed rounded cursor-pointer hover:bg-gray-200 w-fit">
-                                <Upload className="w-4 h-4" />
-                                <span className="text-xs">Upload</span>
-                                <input type="file" accept="image/png,image/jpg,image/jpeg" onChange={(e) => handleImageUpload('accountant_signature', e.target.files?.[0] || null)} className="hidden" />
-                            </label>
-                        )}
-                    </div>
-                    <div className="col-span-2">
-                        <label className="block text-xs mb-1">অনুমোদনকারী শাখাব্যবস্থাপকের স্বাক্ষর ও সিল:</label>
-                        {data.branch_manager_signature ? (
-                            <div className="relative">
-                                <img src={data.branch_manager_signature} alt="Signature" className="h-16 w-32 object-contain border rounded" />
-                                <button onClick={() => removeImage('branch_manager_signature')} className="absolute -top-2 -right-2 bg-red-500 text-white rounded-full p-1">
-                                    <X className="w-3 h-3" />
-                                </button>
-                            </div>
-                        ) : (
-                            <label className="flex items-center gap-2 px-3 py-2 bg-gray-100 border border-dashed rounded cursor-pointer hover:bg-gray-200 w-fit">
-                                <Upload className="w-4 h-4" />
-                                <span className="text-xs">Upload</span>
-                                <input type="file" accept="image/png,image/jpg,image/jpeg" onChange={(e) => handleImageUpload('branch_manager_signature', e.target.files?.[0] || null)} className="hidden" />
-                            </label>
-                        )}
-                    </div>
-                </div>
             </div>
         );
     };

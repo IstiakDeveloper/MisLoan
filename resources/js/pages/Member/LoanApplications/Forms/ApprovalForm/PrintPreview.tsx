@@ -511,7 +511,7 @@ function renderPage2(d: any, categoryName?: string) {
                             <tbody>
                                 {(['ব্যাংক', 'এনজিও', 'গ্রামীণ বাংলাদেশ', 'আন্তর্জাতিক/বেসরকারি', 'অন্যান্য', '', ''] as string[]).map((label, idx) => (
                                     <tr key={idx}>
-                                        <td className="border border-gray-600 px-1 py-0.5">{label}</td>
+                                        <td className="border border-gray-600 px-1 py-0.5">{d.other_loan_status?.[idx]?.source_name || label}</td>
                                         <td className="border border-gray-600 px-1 py-0.5"><span className="inline-block w-full min-h-[14px]">{d.other_loan_status?.[idx]?.current_status || ''}</span></td>
                                         <td className="border border-gray-600 px-1 py-0.5 text-center"><span className="inline-block w-full min-h-[14px]">{d.other_loan_status?.[idx]?.round || ''}</span></td>
                                         <td className="border border-gray-600 px-1 py-0.5"><span className="inline-block w-full min-h-[14px]">{d.other_loan_status?.[idx]?.borrower_name || ''}</span></td>

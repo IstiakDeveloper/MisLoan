@@ -206,6 +206,7 @@ Route::middleware(['auth', 'verified'])->group(function () {
         Route::patch('{approval}/return-to-branch', [ApprovalController::class, 'returnToBranch'])->name('return-to-branch');
         Route::patch('loan/{loanApproval}/approve', [ApprovalController::class, 'approveLoan'])->name('loan.approve');
         Route::patch('loan/{loanApproval}/reject', [ApprovalController::class, 'rejectLoan'])->name('loan.reject');
+        Route::patch('loan/{loanApproval}/forward', [ApprovalController::class, 'forwardLoan'])->name('loan.forward');
     });
 
     // Member Loan & Savings Application Routes - For members/branch users

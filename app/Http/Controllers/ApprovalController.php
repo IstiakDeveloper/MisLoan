@@ -29,17 +29,27 @@ class ApprovalController extends Controller
         $loanApprovalsData = $pendingLoanApprovals->map(function ($approval) {
             $loan = $approval->loanApplication;
             $member = $loan->memberAdmission;
-            return [
+            $data = [
                 'id' => $approval->id,
                 'loan_application_id' => $loan->id,
                 'application_no' => $loan->application_no,
                 'applicant_name' => $member ? ($member->applicant_name_en ?? $member->applicant_name_bn ?? '') : '',
                 'applicant_name_bn' => $member ? ($member->applicant_name_bn ?? '') : '',
                 'branch_name' => $loan->branch ? $loan->branch->name : '',
+                'branch_id' => $loan->branch_id,
                 'requested_amount' => $loan->requested_amount,
                 'submitted_at' => $loan->submitted_at,
                 'level' => $approval->level,
+                'sequence' => $approval->sequence,
             ];
+            if ($approval->level === 'branch') {
+                $data['escalation_approvers'] = $this->approvalService->getEscalationApprovers($loan->branch_id)
+                    ->map(fn ($u) => ['id' => $u->id, 'name' => $u->name, 'email' => $u->email ?? '', 'level' => $u->level ?? '', 'role_name' => $u->role->name ?? '']);
+            } else {
+                $data['escalation_approvers'] = [];
+            }
+
+            return $data;
         });
 
         $approvalsData = $pendingApprovals->map(function ($approval) {
@@ -159,7 +169,13 @@ class ApprovalController extends Controller
     {
         abort_unless((int) $loanApproval->user_id === (int) $request->user()->id, 403);
         $request->validate(['comments' => 'nullable|string|max:1000']);
-        $success = $this->approvalService->approveLoan($loanApproval, $request->comments);
+
+        try {
+            $success = $this->approvalService->approveLoan($loanApproval, $request->comments);
+        } catch (\Exception $e) {
+            return back()->with('error', $e->getMessage());
+        }
+
         if ($success) {
             return redirect()->route('approvals.index')->with('success', 'ঋণ আবেদন অনুমোদিত হয়েছে।');
         }
@@ -178,5 +194,30 @@ class ApprovalController extends Controller
             return redirect()->route('approvals.index')->with('success', 'ঋণ আবেদন প্রত্যাখ্যান হয়েছে।');
         }
         return back()->with('error', 'প্রত্যাখ্যান করা যাচ্ছে না।');
+    }
+
+    /**
+     * Branch manager forwards loan application to selected approver (Area/Zone/ADMF/DMF/ED)
+     */
+    public function forwardLoan(Request $request, LoanApplicationApproval $loanApproval)
+    {
+        abort_unless((int) $loanApproval->user_id === (int) $request->user()->id, 403);
+        $request->validate([
+            'forward_to_user_id' => 'required|exists:users,id',
+            'comments' => 'nullable|string|max:1000',
+        ]);
+
+        $success = $this->approvalService->forwardLoanToApprover(
+            $loanApproval,
+            (int) $request->forward_to_user_id,
+            $request->comments
+        );
+
+        if ($success) {
+            return redirect()->route('approvals.index')
+                ->with('success', 'ঋণ আবেদন নির্বাচিত অনুমোদনকারীর কাছে ফরওয়ার্ড হয়েছে।');
+        }
+
+        return back()->with('error', 'ফরওয়ার্ড করা যাচ্ছে না।');
     }
 }

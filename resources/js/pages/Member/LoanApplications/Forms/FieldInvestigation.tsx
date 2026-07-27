@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { Head, useForm, router } from '@inertiajs/react';
 import AdminLayout from '@/layouts/admin-layout';
 import { formatDateBangla } from '@/utils/dateUtils';
-import { Save, Printer, Eye, Upload, X, ArrowLeft } from 'lucide-react';
+import { Save, Printer, Eye, ArrowLeft, ClipboardList } from 'lucide-react';
 import GeneralSavingsSection, { getRequiredSavingsPercent } from '@/components/LoanApplications/GeneralSavingsSection';
 
 interface FieldInvestigationData {
@@ -347,8 +347,15 @@ export default function FieldInvestigation({
         );
     }
     
-    const [showPreview, setShowPreview] = useState(false);
+    const [showPreview, setShowPreview] = useState(true);
     const [errors, setErrors] = useState<Record<string, string>>({});
+
+    const inputClass = 'w-full border border-gray-300 rounded-lg px-2.5 py-1.5 text-xs bg-white focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition-all';
+    const labelClass = 'block text-[11px] font-semibold text-gray-700 mb-0.5';
+    const sectionClass = 'bg-white rounded-xl shadow-sm p-4 border border-gray-200 space-y-3';
+    const rowBadge = (n: string) => (
+        <span className="w-5 h-5 bg-indigo-100 text-indigo-700 rounded-full flex items-center justify-center text-[10px] font-bold flex-shrink-0">{n}</span>
+    );
 
     const { data, setData, processing } = useForm<FieldInvestigationData>({
         branch_name: branch?.name || '',
@@ -364,23 +371,23 @@ export default function FieldInvestigation({
         information_provider_name: '',
         information_provider_mobile: '',
         relationship_with_member: '',
-        main_profession: '',
-        family_members_count: 0,
+        main_profession: member?.business_details || member?.job_details || member?.other_income_details || '',
+        family_members_count: (member?.family_members?.length ?? member?.familyMembers?.length ?? 0) || 0,
         earning_members_count: 0,
         previous_loan_amount: 0,
         current_loan_demand: requestedAmount || 0,
-        own_land_amount: '',
+        own_land_amount: member?.total_land_amount != null && Number(member.total_land_amount) > 0 ? String(member.total_land_amount) : (member?.cultivable_land_amount != null && Number(member.cultivable_land_amount) > 0 ? String(member.cultivable_land_amount) : ''),
         mortgaged_land_amount: '',
-        land_value: 0,
-        house_type: '',
-        room_count: 0,
+        land_value: member?.total_land_value != null && Number(member.total_land_value) > 0 ? Number(member.total_land_value) : (member?.cultivable_land_value != null ? Number(member.cultivable_land_value) : 0),
+        house_type: member?.house_type || '',
+        room_count: (member?.brick_house_count || 0) + (member?.semi_brick_house_count || 0) + (member?.tin_house_count || 0) + (member?.mud_house_count || 0),
         has_tubewell: false,
         has_latrine: false,
-        cow_count: 0,
+        cow_count: member?.cow_buffalo_count || 0,
         buffalo_count: 0,
-        goat_count: 0,
+        goat_count: member?.goat_sheep_count || 0,
         sheep_count: 0,
-        duck_chicken_count: 0,
+        duck_chicken_count: member?.duck_chicken_count || 0,
         primary_school_count: 0,
         secondary_school_count: 0,
         college_count: 0,
@@ -388,15 +395,15 @@ export default function FieldInvestigation({
         university_count: 0,
         savings_amount: 0,
         house_identification: '',
-        other_organization_loans: '',
+        other_organization_loans: member?.other_loan_info || '',
         previous_repayment_type: '',
         general_savings_default_count: 0,
         emergency_savings_default_count: 0,
         term_savings_default_count: 0,
         term_savings_due_installments: 0,
         term_savings_due_amount: 0,
-        comments: '',
-        member_signature: null,
+        comments: member?.collector_comment || '',
+        member_signature: member?.applicant_signature_path || null,
         branch_manager_signature: null,
         general_savings_product_id: null,
         general_savings_amount: 0,
@@ -416,23 +423,6 @@ export default function FieldInvestigation({
             setShowPreview(true);
         }
     }, [savedData]);
-
-    const handleImageUpload = (field: string, file: File | null) => {
-        if (!file) return;
-        if (!file.type.match(/image\/(png|jpg|jpeg)/)) {
-            alert('শুধুমাত্র PNG, JPG বা JPEG ফাইল আপলোড করুন');
-            return;
-        }
-        const reader = new FileReader();
-        reader.onloadend = () => {
-            setData(field as any, reader.result as string);
-        };
-        reader.readAsDataURL(file);
-    };
-
-    const removeImage = (field: string) => {
-        setData(field as any, null);
-    };
 
     const handleSaveDraft = () => {
         const effectiveDofa = data.loan_round != null && data.loan_round >= 1 ? data.loan_round : loanRound;
@@ -486,604 +476,449 @@ export default function FieldInvestigation({
             <div className="py-6">
                 <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
                     {/* Header */}
-                    <div className="mb-6 flex items-center justify-between print:hidden">
+                    <div className="mb-6 flex flex-col sm:flex-row sm:items-center justify-between gap-4 print:hidden">
                         <div className="flex items-center gap-4">
                             <button
                                 onClick={() => router.visit(formSelectionUrl(isLegacy, member, loanProduct, loanCategory, requestedAmount))}
-                                className="flex items-center gap-2 px-3 py-2 bg-gray-200 text-gray-700 text-sm rounded-md hover:bg-gray-300"
+                                className="flex items-center gap-2 px-3 py-2 bg-gray-100 text-gray-700 text-sm rounded-lg hover:bg-gray-200"
                             >
                                 <ArrowLeft className="w-4 h-4" />
                                 Back
                             </button>
                             <div>
-                                <h2 className="text-lg font-bold">সমিতিতে ঋণ আবেদন অনুযায়ী শাখা ব্যবস্থাপক কর্তৃক সদস্যের বাড়ি সরেজমিনে তদন্ত প্রতিবেদন</h2>
+                                <h2 className="text-base md:text-lg font-bold flex items-center gap-2">
+                                    <ClipboardList className="w-5 h-5 text-indigo-600" />
+                                    সমিতিতে ঋণ আবেদন অনুযায়ী শাখা ব্যবস্থাপক কর্তৃক সদস্যের বাড়ি সরেজমিনে তদন্ত প্রতিবেদন
+                                </h2>
                                 <p className="text-xs text-gray-600">
-                                    ফর্ম পূরণ করে ড্রাফট হিসেবে সংরক্ষণ করুন এবং প্রিন্ট নিন।
+                                    প্রিন্ট প্রিভিউ অনুযায়ী ফর্ম পূরণ করুন এবং ড্রাফট সংরক্ষণ করুন।
                                 </p>
                                 {existingApplication && (
-                                    <p className="text-xs text-blue-600 mt-1">
-                                        ✓ Draft সংরক্ষিত আছে - Application No: {existingApplication.application_no || 'Pending'}
+                                    <p className="text-xs text-emerald-600 font-semibold mt-1">
+                                        ✓ Draft সংরক্ষিত — Application No: {existingApplication.application_no || 'Pending'}
                                     </p>
                                 )}
                             </div>
                         </div>
-                        <div className="flex gap-2">
+                        <div className="flex flex-wrap gap-2">
                             <button
-                                onClick={handlePrint}
-                                className="flex items-center gap-2 px-4 py-2 bg-purple-600 text-white text-sm rounded-md hover:bg-purple-700"
+                                type="button"
+                                onClick={() => setShowPreview(!showPreview)}
+                                className="flex items-center gap-2 px-4 py-2 bg-emerald-600 text-white text-sm rounded-lg hover:bg-emerald-700"
                             >
-                                <Printer className="w-4 h-4" />
-                                Print
+                                <Eye className="w-4 h-4" />
+                                {showPreview ? 'প্রিভিউ বন্ধ' : 'প্রিভিউ দেখুন'}
                             </button>
+                            {showPreview && (
+                                <button
+                                    onClick={handlePrint}
+                                    className="flex items-center gap-2 px-4 py-2 bg-purple-600 text-white text-sm rounded-lg hover:bg-purple-700"
+                                >
+                                    <Printer className="w-4 h-4" />
+                                    Print
+                                </button>
+                            )}
                             <button
                                 onClick={handleSaveDraft}
                                 disabled={processing}
-                                className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white text-sm rounded-md hover:bg-blue-700 disabled:opacity-50"
+                                className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white text-sm rounded-lg hover:bg-blue-700 disabled:opacity-50"
                             >
                                 <Save className="w-4 h-4" />
-                                {processing ? 'সংরক্ষণ হচ্ছে...' : 'ড্রাফট সংরক্ষণ করুন'}
+                                {processing ? 'সংরক্ষণ হচ্ছে...' : 'ড্রাফট সংরক্ষণ'}
                             </button>
                         </div>
                     </div>
 
-                    <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 print:grid-cols-1">
-                        {/* LEFT SIDE: INPUT FORM */}
+                    <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 print:grid-cols-1">
+                        {/* LEFT: INPUT FORM — প্রিন্ট প্রিভিউ অনুযায়ী ক্রম */}
                         <div className="space-y-4 print:hidden">
-                        <div className="bg-white rounded-lg shadow p-6 space-y-6">
-                            {/* Basic Info */}
-                            <div className="grid grid-cols-2 gap-4">
-                                <div>
-                                    <label className="block text-sm font-medium mb-1">শাখার নাম</label>
-                                    <input
-                                        type="text"
-                                        value={data.branch_name}
-                                        onChange={(e) => setData('branch_name', e.target.value)}
-                                        className="w-full border rounded px-3 py-2"
-                                    />
-                                </div>
-                                <div>
-                                    <label className="block text-sm font-medium mb-1">শাখার ঠিকানা</label>
-                                    <input
-                                        type="text"
-                                        value={data.branch_address}
-                                        onChange={(e) => setData('branch_address', e.target.value)}
-                                        className="w-full border rounded px-3 py-2"
-                                    />
-                                </div>
-                                <div>
-                                    <label className="block text-sm font-medium mb-1">সরেজমিনে পরিদর্শনের তারিখ</label>
-                                    <input
-                                        type="date"
-                                        value={data.field_visit_date}
-                                        onChange={(e) => setData('field_visit_date', e.target.value)}
-                                        className="w-full border rounded px-3 py-2"
-                                    />
-                                </div>
-                                <div>
-                                    <label className="block text-sm font-medium mb-1">ঋণ প্রদানের তারিখ</label>
-                                    <input
-                                        type="date"
-                                        value={data.loan_disbursement_date}
-                                        onChange={(e) => setData('loan_disbursement_date', e.target.value)}
-                                        className="w-full border rounded px-3 py-2"
-                                    />
-                                </div>
-                            </div>
-
-                            {/* Member Info */}
-                            <div className="border-t pt-4">
-                                <h3 className="font-semibold mb-4">সদস্যের তথ্য</h3>
-                                <div className="grid grid-cols-2 gap-4">
+                            {/* শাখার তথ্য (প্রিভিউ হেডারে দেখায়) */}
+                            <div className={sectionClass}>
+                                <h3 className="text-sm font-bold text-gray-800 border-b pb-2">শাখার তথ্য (প্রিভিউ হেডার)</h3>
+                                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                                     <div>
-                                        <label className="block text-sm font-medium mb-1">সদস্য নাম</label>
-                                        <input
-                                            type="text"
-                                            value={data.member_name}
-                                            onChange={(e) => setData('member_name', e.target.value)}
-                                            className="w-full border rounded px-3 py-2"
-                                        />
+                                        <label className={labelClass}>শাখার নাম</label>
+                                        <input type="text" value={data.branch_name} onChange={(e) => setData('branch_name', e.target.value)} className={inputClass} />
                                     </div>
                                     <div>
-                                        <label className="block text-sm font-medium mb-1">সদস্য নং</label>
-                                        <input
-                                            type="text"
-                                            value={data.member_no}
-                                            onChange={(e) => setData('member_no', e.target.value)}
-                                            className="w-full border rounded px-3 py-2"
-                                        />
-                                    </div>
-                                    <div>
-                                        <label className="block text-sm font-medium mb-1">সমিতির নাম</label>
-                                        <input
-                                            type="text"
-                                            value={data.samity_name}
-                                            onChange={(e) => setData('samity_name', e.target.value)}
-                                            className="w-full border rounded px-3 py-2"
-                                        />
-                                    </div>
-                                    <div>
-                                        <label className="block text-sm font-medium mb-1">সমিতি কোড নং</label>
-                                        <input
-                                            type="text"
-                                            value={data.samity_code}
-                                            onChange={(e) => setData('samity_code', e.target.value)}
-                                            className="w-full border rounded px-3 py-2"
-                                        />
-                                    </div>
-                                    <div>
-                                        <label className="block text-sm font-medium mb-1">জাতীয় পরিচয়পত্র নং</label>
-                                        <input
-                                            type="text"
-                                            value={data.nid_number}
-                                            onChange={(e) => setData('nid_number', e.target.value)}
-                                            className="w-full border rounded px-3 py-2"
-                                        />
-                                    </div>
-                                    <div>
-                                        <label className="block text-sm font-medium mb-1">সদস্যের মোবাইল নং</label>
-                                        <input
-                                            type="text"
-                                            value={data.member_mobile}
-                                            onChange={(e) => setData('member_mobile', e.target.value)}
-                                            className="w-full border rounded px-3 py-2"
-                                        />
+                                        <label className={labelClass}>শাখার ঠিকানা (প্রিভিউতে দেখায়)</label>
+                                        <input type="text" value={data.branch_address} onChange={(e) => setData('branch_address', e.target.value)} className={inputClass} />
                                     </div>
                                 </div>
                             </div>
 
-                            {/* Information Provider */}
-                            <div className="border-t pt-4">
-                                <h3 className="font-semibold mb-4">তথ্য প্রদানকারীর তথ্য</h3>
-                                <div className="grid grid-cols-2 gap-4">
+                            {/* সদস্য ও তথ্য প্রদানকারীর তথ্য */}
+                            <div className={sectionClass}>
+                                <h3 className="text-sm font-bold text-gray-800 border-b pb-2">সদস্য ও তথ্য প্রদানকারীর তথ্য</h3>
+                                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                                     <div>
-                                        <label className="block text-sm font-medium mb-1">তথ্য প্রদানকারীর নাম</label>
-                                        <input
-                                            type="text"
-                                            value={data.information_provider_name}
-                                            onChange={(e) => setData('information_provider_name', e.target.value)}
-                                            className="w-full border rounded px-3 py-2"
-                                        />
+                                        <label className={labelClass}>সদস্য নাম</label>
+                                        <input type="text" value={data.member_name} onChange={(e) => setData('member_name', e.target.value)} className={inputClass} />
                                     </div>
                                     <div>
-                                        <label className="block text-sm font-medium mb-1">মোবাইল নং</label>
-                                        <input
-                                            type="text"
-                                            value={data.information_provider_mobile}
-                                            onChange={(e) => setData('information_provider_mobile', e.target.value)}
-                                            className="w-full border rounded px-3 py-2"
-                                        />
+                                        <label className={labelClass}>সদস্য নং</label>
+                                        <input type="text" value={data.member_no} onChange={(e) => setData('member_no', e.target.value)} className={inputClass} />
                                     </div>
-                                    <div className="col-span-2">
-                                        <label className="block text-sm font-medium mb-1">সদস্যের সাথে সম্পর্ক</label>
-                                        <input
-                                            type="text"
-                                            value={data.relationship_with_member}
-                                            onChange={(e) => setData('relationship_with_member', e.target.value)}
-                                            className="w-full border rounded px-3 py-2"
-                                        />
+                                    <div>
+                                        <label className={labelClass}>সমিতির নাম</label>
+                                        <input type="text" value={data.samity_name} onChange={(e) => setData('samity_name', e.target.value)} className={inputClass} />
+                                    </div>
+                                    <div>
+                                        <label className={labelClass}>সমিতি কোড নং</label>
+                                        <input type="text" value={data.samity_code} onChange={(e) => setData('samity_code', e.target.value)} className={inputClass} />
+                                    </div>
+                                    <div>
+                                        <label className={labelClass}>জাতীয় পরিচয়পত্র নং</label>
+                                        <input type="text" value={data.nid_number} onChange={(e) => setData('nid_number', e.target.value)} className={inputClass} />
+                                    </div>
+                                    <div>
+                                        <label className={labelClass}>সদস্যের মোবাইল নং</label>
+                                        <input type="text" value={data.member_mobile} onChange={(e) => setData('member_mobile', e.target.value)} className={inputClass} />
+                                    </div>
+                                    <div>
+                                        <label className={labelClass}>তথ্য প্রদানকারীর নাম</label>
+                                        <input type="text" value={data.information_provider_name} onChange={(e) => setData('information_provider_name', e.target.value)} className={inputClass} />
+                                    </div>
+                                    <div>
+                                        <label className={labelClass}>তথ্য প্রদানকারীর মোবাইল নং</label>
+                                        <input type="text" value={data.information_provider_mobile} onChange={(e) => setData('information_provider_mobile', e.target.value)} className={inputClass} />
+                                    </div>
+                                    <div className="sm:col-span-2">
+                                        <label className={labelClass}>সদস্যের সাথে সম্পর্ক</label>
+                                        <input type="text" value={data.relationship_with_member} onChange={(e) => setData('relationship_with_member', e.target.value)} className={inputClass} />
                                     </div>
                                 </div>
                             </div>
 
-                            {/* Table Data */}
-                            <div className="border-t pt-4">
-                                <h3 className="font-semibold mb-4">তদন্ত তথ্য</h3>
-                                <div className="space-y-4">
-                                    <div className="grid grid-cols-2 gap-4">
-                                        <div>
-                                            <label className="block text-sm font-medium mb-1">মূল পেশা</label>
-                                            <input
-                                                type="text"
-                                                value={data.main_profession}
-                                                onChange={(e) => setData('main_profession', e.target.value)}
-                                                className="w-full border rounded px-3 py-2"
-                                            />
+                            {/* তদন্ত তথ্য — টেবিল (ক্রঃ নং ১–১৩) */}
+                            <div className={sectionClass}>
+                                <h3 className="text-sm font-bold text-gray-800 border-b pb-2">তদন্ত তথ্য (প্রিন্ট টেবিল অনুযায়ী)</h3>
+                                <div className="space-y-3">
+                                    {/* ১ */}
+                                    <div className="p-3 bg-gray-50 rounded-lg border border-gray-200 space-y-2">
+                                        <div className="flex items-start gap-2">
+                                            {rowBadge('১')}
+                                            <p className="text-[11px] font-semibold text-gray-700 flex-1">মূল পেশা, পরিবারের লোক সংখ্যা ও উপার্জনকারী সংখ্যা</p>
                                         </div>
-                                        <div>
-                                            <label className="block text-sm font-medium mb-1">পরিবারের লোক সংখ্যা</label>
-                                            <input
-                                                type="number"
-                                                value={data.family_members_count}
-                                                onChange={(e) => setData('family_members_count', parseInt(e.target.value) || 0)}
-                                                className="w-full border rounded px-3 py-2"
-                                            />
-                                        </div>
-                                        <div>
-                                            <label className="block text-sm font-medium mb-1">উপার্জনকারী সংখ্যা</label>
-                                            <input
-                                                type="number"
-                                                value={data.earning_members_count}
-                                                onChange={(e) => setData('earning_members_count', parseInt(e.target.value) || 0)}
-                                                className="w-full border rounded px-3 py-2"
-                                            />
-                                        </div>
-                                        <div>
-                                            <label className="block text-sm font-medium mb-1">বিগত দফায় পরিশোধিত ঋণের পরিমাণ</label>
-                                            <input
-                                                type="number"
-                                                value={data.previous_loan_amount}
-                                                onChange={(e) => setData('previous_loan_amount', parseFloat(e.target.value) || 0)}
-                                                className="w-full border rounded px-3 py-2"
-                                            />
-                                        </div>
-                                        <div>
-                                            <label className="block text-sm font-medium mb-1">বর্তমান ঋণের চাহিদা</label>
-                                            <input
-                                                type="number"
-                                                value={data.current_loan_demand}
-                                                onChange={(e) => setData('current_loan_demand', parseFloat(e.target.value) || 0)}
-                                                className="w-full border rounded px-3 py-2"
-                                            />
-                                        </div>
-                                    </div>
-
-                                    {/* Land Info */}
-                                    <div className="grid grid-cols-3 gap-4">
-                                        <div>
-                                            <label className="block text-sm font-medium mb-1">নিজস্ব জমির পরিমাণ</label>
-                                            <input
-                                                type="text"
-                                                value={data.own_land_amount}
-                                                onChange={(e) => setData('own_land_amount', e.target.value)}
-                                                className="w-full border rounded px-3 py-2"
-                                            />
-                                        </div>
-                                        <div>
-                                            <label className="block text-sm font-medium mb-1">বন্ধকী জমির পরিমাণ</label>
-                                            <input
-                                                type="text"
-                                                value={data.mortgaged_land_amount}
-                                                onChange={(e) => setData('mortgaged_land_amount', e.target.value)}
-                                                className="w-full border rounded px-3 py-2"
-                                            />
-                                        </div>
-                                        <div>
-                                            <label className="block text-sm font-medium mb-1">জমির মূল্য</label>
-                                            <input
-                                                type="number"
-                                                value={data.land_value}
-                                                onChange={(e) => setData('land_value', parseFloat(e.target.value) || 0)}
-                                                className="w-full border rounded px-3 py-2"
-                                            />
-                                        </div>
-                                    </div>
-
-                                    {/* House Info */}
-                                    <div className="grid grid-cols-2 gap-4">
-                                        <div>
-                                            <label className="block text-sm font-medium mb-1">বাড়ীর ধরণ</label>
-                                            <input
-                                                type="text"
-                                                value={data.house_type}
-                                                onChange={(e) => setData('house_type', e.target.value)}
-                                                className="w-full border rounded px-3 py-2"
-                                            />
-                                        </div>
-                                        <div>
-                                            <label className="block text-sm font-medium mb-1">ঘরের সংখ্যা</label>
-                                            <input
-                                                type="number"
-                                                value={data.room_count}
-                                                onChange={(e) => setData('room_count', parseInt(e.target.value) || 0)}
-                                                className="w-full border rounded px-3 py-2"
-                                            />
-                                        </div>
-                                        <div>
-                                            <label className="flex items-center gap-2">
-                                                <input
-                                                    type="checkbox"
-                                                    checked={data.has_tubewell}
-                                                    onChange={(e) => setData('has_tubewell', e.target.checked)}
-                                                    className="w-4 h-4"
-                                                />
-                                                <span>নিজস্ব টিউবওয়েল আছে</span>
-                                            </label>
-                                        </div>
-                                        <div>
-                                            <label className="flex items-center gap-2">
-                                                <input
-                                                    type="checkbox"
-                                                    checked={data.has_latrine}
-                                                    onChange={(e) => setData('has_latrine', e.target.checked)}
-                                                    className="w-4 h-4"
-                                                />
-                                                <span>স্বাস্থ্যসম্মত পায়খানা আছে</span>
-                                            </label>
-                                        </div>
-                                    </div>
-
-                                    {/* Livestock */}
-                                    <div className="grid grid-cols-5 gap-4">
-                                        <div>
-                                            <label className="block text-sm font-medium mb-1">গরু</label>
-                                            <input
-                                                type="number"
-                                                value={data.cow_count}
-                                                onChange={(e) => setData('cow_count', parseInt(e.target.value) || 0)}
-                                                className="w-full border rounded px-3 py-2"
-                                            />
-                                        </div>
-                                        <div>
-                                            <label className="block text-sm font-medium mb-1">মহিষ</label>
-                                            <input
-                                                type="number"
-                                                value={data.buffalo_count}
-                                                onChange={(e) => setData('buffalo_count', parseInt(e.target.value) || 0)}
-                                                className="w-full border rounded px-3 py-2"
-                                            />
-                                        </div>
-                                        <div>
-                                            <label className="block text-sm font-medium mb-1">ছাগল</label>
-                                            <input
-                                                type="number"
-                                                value={data.goat_count}
-                                                onChange={(e) => setData('goat_count', parseInt(e.target.value) || 0)}
-                                                className="w-full border rounded px-3 py-2"
-                                            />
-                                        </div>
-                                        <div>
-                                            <label className="block text-sm font-medium mb-1">ভেড়া</label>
-                                            <input
-                                                type="number"
-                                                value={data.sheep_count}
-                                                onChange={(e) => setData('sheep_count', parseInt(e.target.value) || 0)}
-                                                className="w-full border rounded px-3 py-2"
-                                            />
-                                        </div>
-                                        <div>
-                                            <label className="block text-sm font-medium mb-1">হাঁস-মুরগী</label>
-                                            <input
-                                                type="number"
-                                                value={data.duck_chicken_count}
-                                                onChange={(e) => setData('duck_chicken_count', parseInt(e.target.value) || 0)}
-                                                className="w-full border rounded px-3 py-2"
-                                            />
-                                        </div>
-                                    </div>
-
-                                    {/* Education */}
-                                    <div className="grid grid-cols-5 gap-4">
-                                        <div>
-                                            <label className="block text-sm font-medium mb-1">প্রাথমিক স্কুল</label>
-                                            <input
-                                                type="number"
-                                                value={data.primary_school_count}
-                                                onChange={(e) => setData('primary_school_count', parseInt(e.target.value) || 0)}
-                                                className="w-full border rounded px-3 py-2"
-                                            />
-                                        </div>
-                                        <div>
-                                            <label className="block text-sm font-medium mb-1">মাধ্যমিক স্কুল</label>
-                                            <input
-                                                type="number"
-                                                value={data.secondary_school_count}
-                                                onChange={(e) => setData('secondary_school_count', parseInt(e.target.value) || 0)}
-                                                className="w-full border rounded px-3 py-2"
-                                            />
-                                        </div>
-                                        <div>
-                                            <label className="block text-sm font-medium mb-1">কলেজ</label>
-                                            <input
-                                                type="number"
-                                                value={data.college_count}
-                                                onChange={(e) => setData('college_count', parseInt(e.target.value) || 0)}
-                                                className="w-full border rounded px-3 py-2"
-                                            />
-                                        </div>
-                                        <div>
-                                            <label className="block text-sm font-medium mb-1">মাদ্রাসা</label>
-                                            <input
-                                                type="number"
-                                                value={data.madrasah_count}
-                                                onChange={(e) => setData('madrasah_count', parseInt(e.target.value) || 0)}
-                                                className="w-full border rounded px-3 py-2"
-                                            />
-                                        </div>
-                                        <div>
-                                            <label className="block text-sm font-medium mb-1">বিশ্ববিদ্যালয়</label>
-                                            <input
-                                                type="number"
-                                                value={data.university_count}
-                                                onChange={(e) => setData('university_count', parseInt(e.target.value) || 0)}
-                                                className="w-full border rounded px-3 py-2"
-                                            />
-                                        </div>
-                                    </div>
-
-                                    {/* Savings Information: সাধারণ সঞ্চয় (G.Savings 21.01 + দফা অনুযায়ী %) */}
-                                    <div className="col-span-2">
-                                        <GeneralSavingsSection
-                                            savingsProducts={savingsProducts}
-                                            loanProduct={loanProduct}
-                                            requestedAmount={requestedAmount}
-                                            loanRound={loanRound}
-                                            showDofaSelector
-                                            data={{
-                                                general_savings_product_id: data.general_savings_product_id,
-                                                general_savings_amount: data.general_savings_amount,
-                                                is_against_savings: data.is_against_savings,
-                                                against_savings_product_id: data.against_savings_product_id,
-                                                against_savings_amount: data.against_savings_amount,
-                                                loan_round: data.loan_round,
-                                            }}
-                                            setData={(key, value) => {
-                                                setData(key as any, value);
-                                                if (key === 'general_savings_amount' && (typeof value === 'number' || value === '')) {
-                                                    setData('savings_amount', typeof value === 'number' ? value : 0);
-                                                }
-                                            }}
-                                            errors={errors}
-                                        />
-                                    </div>
-
-                                    {/* Other Fields */}
-                                    <div className="grid grid-cols-2 gap-4">
-                                        <div>
-                                            <label className="block text-sm font-medium mb-1">বিগত দফার পরিশোধের ধরণ</label>
-                                            <select
-                                                value={data.previous_repayment_type}
-                                                onChange={(e) => setData('previous_repayment_type', e.target.value)}
-                                                className="w-full border rounded px-3 py-2"
-                                            >
-                                                <option value="">নির্বাচন করুন</option>
-                                                <option value="installment">কিস্তিতে পরিশোধ করেছেন</option>
-                                                <option value="savings_adjustment">সঞ্চয়ের সাথে সমন্বয় করেছেন</option>
-                                            </select>
-                                        </div>
-                                    </div>
-
-                                    <div>
-                                        <label className="block text-sm font-medium mb-1">সদস্যের বাড়ী চেনার নির্দেশনা</label>
-                                        <textarea
-                                            value={data.house_identification}
-                                            onChange={(e) => setData('house_identification', e.target.value)}
-                                            className="w-full border rounded px-3 py-2"
-                                            rows={3}
-                                        />
-                                    </div>
-
-                                    <div>
-                                        <label className="block text-sm font-medium mb-1">অন্যান্য সংস্থা হতে ঋণ গ্রহণের তথ্য</label>
-                                        <textarea
-                                            value={data.other_organization_loans}
-                                            onChange={(e) => setData('other_organization_loans', e.target.value)}
-                                            className="w-full border rounded px-3 py-2"
-                                            rows={3}
-                                        />
-                                    </div>
-
-                                    {/* Savings Default */}
-                                    <div className="grid grid-cols-3 gap-4">
-                                        <div>
-                                            <label className="block text-sm font-medium mb-1">সাধারণ সঞ্চয় খেলাপী</label>
-                                            <input
-                                                type="number"
-                                                value={data.general_savings_default_count}
-                                                onChange={(e) => setData('general_savings_default_count', parseInt(e.target.value) || 0)}
-                                                className="w-full border rounded px-3 py-2"
-                                            />
-                                        </div>
-                                        <div>
-                                            <label className="block text-sm font-medium mb-1">আপদকালীন সঞ্চয় খেলাপী</label>
-                                            <input
-                                                type="number"
-                                                value={data.emergency_savings_default_count}
-                                                onChange={(e) => setData('emergency_savings_default_count', parseInt(e.target.value) || 0)}
-                                                className="w-full border rounded px-3 py-2"
-                                            />
-                                        </div>
-                                        <div>
-                                            <label className="block text-sm font-medium mb-1">মেয়াদী সঞ্চয় খেলাপী</label>
-                                            <input
-                                                type="number"
-                                                value={data.term_savings_default_count}
-                                                onChange={(e) => setData('term_savings_default_count', parseInt(e.target.value) || 0)}
-                                                className="w-full border rounded px-3 py-2"
-                                            />
-                                        </div>
-                                        <div>
-                                            <label className="block text-sm font-medium mb-1">মেয়াদী সঞ্চয় বাঁকী কিস্তি</label>
-                                            <input
-                                                type="number"
-                                                value={data.term_savings_due_installments}
-                                                onChange={(e) => setData('term_savings_due_installments', parseInt(e.target.value) || 0)}
-                                                className="w-full border rounded px-3 py-2"
-                                            />
-                                        </div>
-                                        <div>
-                                            <label className="block text-sm font-medium mb-1">মেয়াদী সঞ্চয় বাঁকী টাকা</label>
-                                            <input
-                                                type="number"
-                                                value={data.term_savings_due_amount}
-                                                onChange={(e) => setData('term_savings_due_amount', parseFloat(e.target.value) || 0)}
-                                                className="w-full border rounded px-3 py-2"
-                                            />
-                                        </div>
-                                    </div>
-
-                                    <div>
-                                        <label className="block text-sm font-medium mb-1">মন্তব্য</label>
-                                        <textarea
-                                            value={data.comments}
-                                            onChange={(e) => setData('comments', e.target.value)}
-                                            className="w-full border rounded px-3 py-2"
-                                            rows={4}
-                                        />
-                                    </div>
-                                </div>
-                            </div>
-
-                            {/* Signatures */}
-                            <div className="border-t pt-4">
-                                <h3 className="font-semibold mb-4">স্বাক্ষর</h3>
-                                <div className="grid grid-cols-2 gap-6">
-                                    <div>
-                                        <label className="block text-sm font-medium mb-2">সদস্য/তথ্য প্রদানকারীর স্বাক্ষর</label>
-                                        {data.member_signature ? (
-                                            <div className="relative">
-                                                <img src={data.member_signature} alt="Signature" className="w-full h-32 object-contain border rounded" />
-                                                <button
-                                                    onClick={() => removeImage('member_signature')}
-                                                    className="absolute top-2 right-2 p-1 bg-red-500 text-white rounded"
-                                                >
-                                                    <X className="w-4 h-4" />
-                                                </button>
+                                        <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 pl-7">
+                                            <div>
+                                                <label className={labelClass}>পেশা</label>
+                                                <input type="text" value={data.main_profession} onChange={(e) => setData('main_profession', e.target.value)} className={inputClass} />
                                             </div>
-                                        ) : (
-                                            <div className="border-2 border-dashed rounded p-4 text-center">
-                                                <Upload className="w-8 h-8 mx-auto mb-2 text-gray-400" />
-                                                <input
-                                                    type="file"
-                                                    accept="image/*"
-                                                    onChange={(e) => handleImageUpload('member_signature', e.target.files?.[0] || null)}
-                                                    className="hidden"
-                                                    id="member_signature"
-                                                />
-                                                <label htmlFor="member_signature" className="cursor-pointer text-sm text-blue-600">
-                                                    স্বাক্ষর আপলোড করুন
+                                            <div>
+                                                <label className={labelClass}>লোক সংখ্যা</label>
+                                                <input type="number" min={0} value={data.family_members_count || ''} onChange={(e) => setData('family_members_count', parseInt(e.target.value) || 0)} className={inputClass} />
+                                            </div>
+                                            <div>
+                                                <label className={labelClass}>উপার্জনকারী</label>
+                                                <input type="number" min={0} value={data.earning_members_count || ''} onChange={(e) => setData('earning_members_count', parseInt(e.target.value) || 0)} className={inputClass} />
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    {/* ২ */}
+                                    <div className="p-3 bg-gray-50 rounded-lg border border-gray-200 space-y-2">
+                                        <div className="flex items-start gap-2">
+                                            {rowBadge('২')}
+                                            <p className="text-[11px] font-semibold text-gray-700 flex-1">বিগত দফায় পরিশোধিত ঋণের পরিমাণ ও বর্তমান ঋণের চাহিদা</p>
+                                        </div>
+                                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 pl-7">
+                                            <div>
+                                                <label className={labelClass}>পরিশোধিত (৳)</label>
+                                                <input type="number" min={0} value={data.previous_loan_amount || ''} onChange={(e) => setData('previous_loan_amount', parseFloat(e.target.value) || 0)} className={inputClass} />
+                                            </div>
+                                            <div>
+                                                <label className={labelClass}>বর্তমান চাহিদা (৳)</label>
+                                                <input type="number" min={0} value={data.current_loan_demand || ''} onChange={(e) => setData('current_loan_demand', parseFloat(e.target.value) || 0)} className={inputClass} />
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    {/* ৩ */}
+                                    <div className="p-3 bg-gray-50 rounded-lg border border-gray-200 space-y-2">
+                                        <div className="flex items-start gap-2">
+                                            {rowBadge('৩')}
+                                            <p className="text-[11px] font-semibold text-gray-700 flex-1">নিজস্ব জমির পরিমাণ ও বন্ধকী জমির পরিমান এবং মূল্য</p>
+                                        </div>
+                                        <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 pl-7">
+                                            <div>
+                                                <label className={labelClass}>নিজস্ব</label>
+                                                <input type="text" value={data.own_land_amount} onChange={(e) => setData('own_land_amount', e.target.value)} className={inputClass} />
+                                            </div>
+                                            <div>
+                                                <label className={labelClass}>বন্ধকী</label>
+                                                <input type="text" value={data.mortgaged_land_amount} onChange={(e) => setData('mortgaged_land_amount', e.target.value)} className={inputClass} />
+                                            </div>
+                                            <div>
+                                                <label className={labelClass}>মূল্য (৳)</label>
+                                                <input type="number" min={0} value={data.land_value || ''} onChange={(e) => setData('land_value', parseFloat(e.target.value) || 0)} className={inputClass} />
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    {/* ৪ */}
+                                    <div className="p-3 bg-gray-50 rounded-lg border border-gray-200 space-y-2">
+                                        <div className="flex items-start gap-2">
+                                            {rowBadge('৪')}
+                                            <p className="text-[11px] font-semibold text-gray-700 flex-1">বাড়ীর ধরণ ও ঘরের সংখ্যা (টিক চিহ্ন দিন)</p>
+                                        </div>
+                                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 pl-7">
+                                            <div>
+                                                <label className={labelClass}>ধরণ</label>
+                                                <input type="text" value={data.house_type} onChange={(e) => setData('house_type', e.target.value)} className={inputClass} placeholder="ছাপড়া/টিন/মাটি/পাকা" />
+                                            </div>
+                                            <div>
+                                                <label className={labelClass}>ছাপড়া/টিন/মাটি/পাকা-ঘরের সংখ্যা</label>
+                                                <input type="number" min={0} value={data.room_count || ''} onChange={(e) => setData('room_count', parseInt(e.target.value) || 0)} className={inputClass} />
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    {/* ৫ */}
+                                    <div className="p-3 bg-gray-50 rounded-lg border border-gray-200 space-y-2">
+                                        <div className="flex items-start gap-2">
+                                            {rowBadge('৫')}
+                                            <p className="text-[11px] font-semibold text-gray-700 flex-1">নিজস্ব টিউবওয়েল ও স্বাস্থ্যসম্মত পায়খানা আছে কি-না (টিক চিহ্ন দিন)</p>
+                                        </div>
+                                        <div className="pl-7 space-y-2">
+                                            <div className="flex flex-wrap items-center gap-4">
+                                                <span className="text-[11px] font-semibold text-gray-600">টিউবওয়েল:</span>
+                                                <label className="flex items-center gap-1.5 text-xs cursor-pointer">
+                                                    <input type="radio" name="has_tubewell" checked={data.has_tubewell === true} onChange={() => setData('has_tubewell', true)} className="text-indigo-600" />
+                                                    হ্যাঁ
+                                                </label>
+                                                <label className="flex items-center gap-1.5 text-xs cursor-pointer">
+                                                    <input type="radio" name="has_tubewell" checked={data.has_tubewell === false} onChange={() => setData('has_tubewell', false)} className="text-indigo-600" />
+                                                    না
                                                 </label>
                                             </div>
-                                        )}
-                                    </div>
-                                    <div>
-                                        <label className="block text-sm font-medium mb-2">শাখা ব্যবস্থাপকের স্বাক্ষর ও সিল</label>
-                                        {data.branch_manager_signature ? (
-                                            <div className="relative">
-                                                <img src={data.branch_manager_signature} alt="Signature" className="w-full h-32 object-contain border rounded" />
-                                                <button
-                                                    onClick={() => removeImage('branch_manager_signature')}
-                                                    className="absolute top-2 right-2 p-1 bg-red-500 text-white rounded"
-                                                >
-                                                    <X className="w-4 h-4" />
-                                                </button>
-                                            </div>
-                                        ) : (
-                                            <div className="border-2 border-dashed rounded p-4 text-center">
-                                                <Upload className="w-8 h-8 mx-auto mb-2 text-gray-400" />
-                                                <input
-                                                    type="file"
-                                                    accept="image/*"
-                                                    onChange={(e) => handleImageUpload('branch_manager_signature', e.target.files?.[0] || null)}
-                                                    className="hidden"
-                                                    id="branch_manager_signature"
-                                                />
-                                                <label htmlFor="branch_manager_signature" className="cursor-pointer text-sm text-blue-600">
-                                                    স্বাক্ষর আপলোড করুন
+                                            <div className="flex flex-wrap items-center gap-4">
+                                                <span className="text-[11px] font-semibold text-gray-600">স্বাস্থ্যসম্মত পায়খানা:</span>
+                                                <label className="flex items-center gap-1.5 text-xs cursor-pointer">
+                                                    <input type="radio" name="has_latrine" checked={data.has_latrine === true} onChange={() => setData('has_latrine', true)} className="text-indigo-600" />
+                                                    হ্যাঁ
+                                                </label>
+                                                <label className="flex items-center gap-1.5 text-xs cursor-pointer">
+                                                    <input type="radio" name="has_latrine" checked={data.has_latrine === false} onChange={() => setData('has_latrine', false)} className="text-indigo-600" />
+                                                    না
                                                 </label>
                                             </div>
-                                        )}
+                                        </div>
+                                    </div>
+
+                                    {/* ৬ */}
+                                    <div className="p-3 bg-gray-50 rounded-lg border border-gray-200 space-y-2">
+                                        <div className="flex items-start gap-2">
+                                            {rowBadge('৬')}
+                                            <p className="text-[11px] font-semibold text-gray-700 flex-1">গবাদি পশুর সংখ্যা (গরু, মহিষ, ছাগল, ভেড়া ইত্যাদি)</p>
+                                        </div>
+                                        <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 pl-7">
+                                            {([
+                                                ['cow_count', 'গরু'],
+                                                ['buffalo_count', 'মহিষ'],
+                                                ['goat_count', 'ছাগল'],
+                                                ['sheep_count', 'ভেড়া'],
+                                                ['duck_chicken_count', 'হাঁস-মুরগী'],
+                                            ] as const).map(([key, lbl]) => (
+                                                <div key={key}>
+                                                    <label className={labelClass}>{lbl}</label>
+                                                    <input type="number" min={0} value={data[key] || ''} onChange={(e) => setData(key, parseInt(e.target.value) || 0)} className={inputClass} />
+                                                </div>
+                                            ))}
+                                        </div>
+                                    </div>
+
+                                    {/* ৭ */}
+                                    <div className="p-3 bg-gray-50 rounded-lg border border-gray-200 space-y-2">
+                                        <div className="flex items-start gap-2">
+                                            {rowBadge('৭')}
+                                            <p className="text-[11px] font-semibold text-gray-700 flex-1">স্কুলে/কলেজে পড়ে এমন ছেলে-মেয়ের সংখ্যা</p>
+                                        </div>
+                                        <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 pl-7">
+                                            {([
+                                                ['primary_school_count', 'প্রাথমিক স্কুল'],
+                                                ['secondary_school_count', 'মাধ্যমিক স্কুল'],
+                                                ['college_count', 'কলেজ'],
+                                                ['madrasah_count', 'মাদ্রাসা'],
+                                                ['university_count', 'বিশ্ববিদ্যালয়'],
+                                            ] as const).map(([key, lbl]) => (
+                                                <div key={key}>
+                                                    <label className={labelClass}>{lbl}</label>
+                                                    <input type="number" min={0} value={data[key] || ''} onChange={(e) => setData(key, parseInt(e.target.value) || 0)} className={inputClass} />
+                                                </div>
+                                            ))}
+                                        </div>
+                                    </div>
+
+                                    {/* ৮ */}
+                                    <div className="p-3 bg-amber-50/60 rounded-lg border border-amber-200 space-y-2">
+                                        <div className="flex items-start gap-2">
+                                            {rowBadge('৮')}
+                                            <p className="text-[11px] font-semibold text-gray-700 flex-1">সাধারণ সঞ্চয় (দফা ও পরিমাণ)</p>
+                                        </div>
+                                        <div className="pl-7">
+                                            <GeneralSavingsSection
+                                                savingsProducts={savingsProducts}
+                                                loanProduct={loanProduct}
+                                                requestedAmount={requestedAmount}
+                                                loanRound={loanRound}
+                                                showDofaSelector
+                                                compact
+                                                data={{
+                                                    general_savings_product_id: data.general_savings_product_id,
+                                                    general_savings_amount: data.general_savings_amount,
+                                                    is_against_savings: data.is_against_savings,
+                                                    against_savings_product_id: data.against_savings_product_id,
+                                                    against_savings_amount: data.against_savings_amount,
+                                                    loan_round: data.loan_round,
+                                                }}
+                                                setData={(key, value) => {
+                                                    setData(key as any, value);
+                                                    if (key === 'general_savings_amount' && (typeof value === 'number' || value === '')) {
+                                                        setData('savings_amount', typeof value === 'number' ? value : 0);
+                                                    }
+                                                }}
+                                                errors={errors}
+                                            />
+                                        </div>
+                                    </div>
+
+                                    {/* ৯ */}
+                                    <div className="p-3 bg-gray-50 rounded-lg border border-gray-200 space-y-2">
+                                        <div className="flex items-start gap-2">
+                                            {rowBadge('৯')}
+                                            <p className="text-[11px] font-semibold text-gray-700 flex-1">সদস্যের বাড়ী চেনার নির্দেশনা</p>
+                                        </div>
+                                        <div className="pl-7">
+                                            <textarea value={data.house_identification} onChange={(e) => setData('house_identification', e.target.value)} className={inputClass} rows={3} />
+                                        </div>
+                                    </div>
+
+                                    {/* ১০ */}
+                                    <div className="p-3 bg-gray-50 rounded-lg border border-gray-200 space-y-2">
+                                        <div className="flex items-start gap-2">
+                                            {rowBadge('১০')}
+                                            <p className="text-[11px] font-semibold text-gray-700 flex-1">অন্যান্য সংস্থা হতে ঋণ গ্রহণের তথ্য</p>
+                                        </div>
+                                        <div className="pl-7">
+                                            <textarea value={data.other_organization_loans} onChange={(e) => setData('other_organization_loans', e.target.value)} className={inputClass} rows={3} />
+                                        </div>
+                                    </div>
+
+                                    {/* ১১ */}
+                                    <div className="p-3 bg-gray-50 rounded-lg border border-gray-200 space-y-2">
+                                        <div className="flex items-start gap-2">
+                                            {rowBadge('১১')}
+                                            <p className="text-[11px] font-semibold text-gray-700 flex-1">বিগত দফার পরিশোধের ধরণ (টিক চিহ্ন দিন)</p>
+                                        </div>
+                                        <div className="pl-7 space-y-1.5">
+                                            <label className="flex items-center gap-2 text-xs cursor-pointer">
+                                                <input type="radio" name="previous_repayment_type" checked={data.previous_repayment_type === 'installment'} onChange={() => setData('previous_repayment_type', 'installment')} className="text-indigo-600" />
+                                                কিস্তিতে পরিশোধ করেছেন
+                                            </label>
+                                            <label className="flex items-center gap-2 text-xs cursor-pointer">
+                                                <input type="radio" name="previous_repayment_type" checked={data.previous_repayment_type === 'savings_adjustment'} onChange={() => setData('previous_repayment_type', 'savings_adjustment')} className="text-indigo-600" />
+                                                সঞ্চয়ের সাথে সমন্বয় করেছেন
+                                            </label>
+                                        </div>
+                                    </div>
+
+                                    {/* ১২ */}
+                                    <div className="p-3 bg-gray-50 rounded-lg border border-gray-200 space-y-2">
+                                        <div className="flex items-start gap-2">
+                                            {rowBadge('১২')}
+                                            <p className="text-[11px] font-semibold text-gray-700 flex-1">গত ৬ মাসে/১ বছরে কতবার সঞ্চয় খেলাপী করেছেন</p>
+                                        </div>
+                                        <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 pl-7">
+                                            <div>
+                                                <label className={labelClass}>সাধারণ</label>
+                                                <input type="number" min={0} value={data.general_savings_default_count || ''} onChange={(e) => setData('general_savings_default_count', parseInt(e.target.value) || 0)} className={inputClass} />
+                                            </div>
+                                            <div>
+                                                <label className={labelClass}>আপদকালীন</label>
+                                                <input type="number" min={0} value={data.emergency_savings_default_count || ''} onChange={(e) => setData('emergency_savings_default_count', parseInt(e.target.value) || 0)} className={inputClass} />
+                                            </div>
+                                            <div>
+                                                <label className={labelClass}>মেয়াদী</label>
+                                                <input type="number" min={0} value={data.term_savings_default_count || ''} onChange={(e) => setData('term_savings_default_count', parseInt(e.target.value) || 0)} className={inputClass} />
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    {/* ১৩ */}
+                                    <div className="p-3 bg-gray-50 rounded-lg border border-gray-200 space-y-2">
+                                        <div className="flex items-start gap-2">
+                                            {rowBadge('১৩')}
+                                            <p className="text-[11px] font-semibold text-gray-700 flex-1">বর্তমানে সদস্যের মেয়াদী সঞ্চয়ের কয়টি কিস্তি বাঁকী আছে</p>
+                                        </div>
+                                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 pl-7">
+                                            <div>
+                                                <label className={labelClass}>কিস্তি সংখ্যা</label>
+                                                <input type="number" min={0} value={data.term_savings_due_installments || ''} onChange={(e) => setData('term_savings_due_installments', parseInt(e.target.value) || 0)} className={inputClass} />
+                                            </div>
+                                            <div>
+                                                <label className={labelClass}>টাকার পরিমাণ (৳)</label>
+                                                <input type="number" min={0} value={data.term_savings_due_amount || ''} onChange={(e) => setData('term_savings_due_amount', parseFloat(e.target.value) || 0)} className={inputClass} />
+                                            </div>
+                                        </div>
                                     </div>
                                 </div>
                             </div>
-                        </div>
-                        </div>
 
-                        {/* RIGHT SIDE: PREVIEW */}
-                        <div className="lg:sticky lg:top-4 lg:h-fit print:block print-container">
-                            <div className="bg-white rounded-lg shadow-lg p-8 print:shadow-none print:p-6 print:rounded-none print:bg-white">
-                                {renderFieldInvestigationPreviewContent(data)}
+                            {/* তারিখ ও মন্তব্য (প্রিভিউ শেষে) */}
+                            <div className={sectionClass}>
+                                <h3 className="text-sm font-bold text-gray-800 border-b pb-2">তারিখ ও মন্তব্য</h3>
+                                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                                    <div>
+                                        <label className={labelClass}>সরেজমিনে পরিদর্শনের তারিখ</label>
+                                        <input type="date" value={data.field_visit_date} onChange={(e) => setData('field_visit_date', e.target.value)} className={inputClass} />
+                                    </div>
+                                    <div>
+                                        <label className={labelClass}>ঋণ প্রদানের তারিখ</label>
+                                        <input type="date" value={data.loan_disbursement_date} onChange={(e) => setData('loan_disbursement_date', e.target.value)} className={inputClass} />
+                                    </div>
+                                    <div className="sm:col-span-2">
+                                        <label className={labelClass}>মন্তব্য</label>
+                                        <textarea value={data.comments} onChange={(e) => setData('comments', e.target.value)} className={inputClass} rows={4} />
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div className={sectionClass}>
+                                <h3 className="text-sm font-bold text-gray-800 mb-1">স্বাক্ষর সংক্রান্ত নির্দেশনা</h3>
+                                <p className="text-xs text-gray-600 leading-relaxed">
+                                    সদস্য/তথ্য প্রদানকারী ও শাখা ব্যবস্থাপকের স্বাক্ষরের স্থান প্রিন্ট প্রিভিউতে দেওয়া আছে। ফর্ম প্রিন্ট করে ফিজিক্যাল পেপারে স্বাক্ষর গ্রহণ করুন।
+                                </p>
                             </div>
                         </div>
+
+                        {/* RIGHT: LIVE PREVIEW */}
+                        {showPreview ? (
+                            <div className="lg:sticky lg:top-4 lg:h-fit print-container">
+                                <div className="bg-white rounded-xl shadow-lg border border-gray-200 overflow-hidden">
+                                    <div className="bg-gradient-to-r from-gray-800 to-gray-900 text-white px-4 py-2.5 flex justify-between items-center print:hidden">
+                                        <span className="text-xs font-bold flex items-center gap-1.5">
+                                            <Eye className="w-4 h-4 text-emerald-400" />
+                                            সরেজমিন তদন্ত প্রতিবেদন — প্রিন্ট প্রিভিউ
+                                        </span>
+                                        <button type="button" onClick={handlePrint} className="text-xs bg-emerald-600 hover:bg-emerald-700 text-white px-3 py-1 rounded font-semibold flex items-center gap-1">
+                                            <Printer className="w-3.5 h-3.5" />
+                                            প্রিন্ট
+                                        </button>
+                                    </div>
+                                    <div className="p-4 md:p-6 print:p-2">
+                                        {renderFieldInvestigationPreviewContent(data)}
+                                    </div>
+                                </div>
+                            </div>
+                        ) : (
+                            <div className="flex items-center justify-center h-[400px] bg-gray-50 rounded-xl border-2 border-dashed border-gray-300 print:hidden">
+                                <div className="text-center p-6">
+                                    <Eye className="w-10 h-10 text-gray-400 mx-auto mb-2" />
+                                    <p className="text-sm text-gray-500">প্রিভিউ দেখতে উপরের &quot;প্রিভিউ দেখুন&quot; বাটনে ক্লিক করুন</p>
+                                </div>
+                            </div>
+                        )}
                     </div>
                 </div>
             </div>

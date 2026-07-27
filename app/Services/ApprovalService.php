@@ -527,6 +527,10 @@ class ApprovalService
             return false;
         }
 
+        if ($approval->level === 'branch' && (float) ($approval->loanApplication->requested_amount ?? 0) > 70000) {
+            throw new \Exception('ঋণের পরিমাণ ৭০,০০০ টাকার বেশি হওয়ায় সরাসরি অনুমোদন করা সম্ভব নয়। উচ্চতর অনুমোদনকারী নির্বাচন করে Forward করুন।');
+        }
+
         DB::transaction(function () use ($approval, $comments) {
             $approval->update([
                 'status' => 'approved',
@@ -583,19 +587,85 @@ class ApprovalService
     }
 
     /**
-     * Get pending loan approvals for a user (area/zone approvers)
+     * Branch manager forwards loan application to selected approver (Area/Zone/ADMF/DMF/ED).
+     */
+    public function forwardLoanToApprover(LoanApplicationApproval $approval, int $userId, ?string $comments = null): bool
+    {
+        if ($approval->status !== 'pending' || !$approval->isCurrentPending()) {
+            return false;
+        }
+        if ($approval->level !== 'branch') {
+            return false;
+        }
+
+        $targetUser = User::with('role')->find($userId);
+        if (!$targetUser || !$targetUser->is_active) {
+            return false;
+        }
+        $roleName = $targetUser->role->name ?? '';
+        $level = 'escalation';
+        if ($roleName === 'area_manager') {
+            $level = 'area';
+        } elseif ($roleName === 'zone_manager') {
+            $level = 'zone';
+        } elseif (in_array($roleName, ['admf', 'dmf', 'ed'], true)) {
+            $level = 'escalation';
+        }
+
+        DB::transaction(function () use ($approval, $userId, $comments, $level) {
+            $loan = $approval->loanApplication;
+            $approval->update([
+                'status' => 'approved',
+                'comments' => $comments ?? 'Forwarded to higher-level approver',
+                'approved_at' => now(),
+                'approver_signature' => $approval->user->signature ?? null,
+            ]);
+            $loan->approvals()
+                ->where('level', 'branch')
+                ->where('id', '!=', $approval->id)
+                ->where('status', 'pending')
+                ->update([
+                    'status' => 'approved',
+                    'comments' => 'Forwarded by another branch manager',
+                    'approved_at' => now(),
+                ]);
+            $nextSequence = $loan->approvals()->max('sequence') + 1;
+            LoanApplicationApproval::create([
+                'loan_application_id' => $loan->id,
+                'user_id' => $userId,
+                'level' => $level,
+                'sequence' => $nextSequence,
+                'status' => 'pending',
+            ]);
+            $loan->update(['status' => LoanApplication::STATUS_UNDER_REVIEW]);
+        });
+
+        return true;
+    }
+
+    /**
+     * Get pending loan approvals for a user (branch/area/zone/escalation approvers)
      */
     public function getPendingLoanApprovalsForUser(User $user)
     {
-        return LoanApplicationApproval::where('user_id', $user->id)
+        $approvals = LoanApplicationApproval::where('user_id', $user->id)
             ->where('status', 'pending')
             ->whereHas('loanApplication', function ($query) {
-                $query->whereIn('status', [LoanApplication::STATUS_SUBMITTED, 'under_review']);
+                $query->whereIn('status', [LoanApplication::STATUS_SUBMITTED, LoanApplication::STATUS_UNDER_REVIEW]);
             })
             ->with(['loanApplication.memberAdmission', 'loanApplication.branch', 'loanApplication.loanProduct', 'loanApplication.loanCategory'])
-            ->get()
-            ->filter(function ($approval) {
-                return $approval->isCurrentPending();
-            });
+            ->get();
+
+        return $approvals->filter(function ($approval) {
+            if ($approval->isCurrentPending()) {
+                return true;
+            }
+            $loan = $approval->loanApplication;
+            if ($loan && $loan->status === LoanApplication::STATUS_UNDER_REVIEW && $approval->level !== 'branch') {
+                return true;
+            }
+
+            return false;
+        })->values();
     }
 }

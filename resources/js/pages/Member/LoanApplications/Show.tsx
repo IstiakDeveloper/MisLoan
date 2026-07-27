@@ -70,6 +70,8 @@ interface LoanApplication {
     visible_form_ids?: number[];
     form_saved?: Record<number, boolean>;
     all_forms_complete?: boolean;
+    can_submit?: boolean;
+    member_admission_status?: string;
     availableApprovers?: Array<{ id: number; name: string; email: string; level?: string; role?: { name: string } }>;
     loan_product: {
         product_name: string;
@@ -131,6 +133,7 @@ const statusConfig = {
 export default function Show({ application, routes }: Props) {
     const pageAuth = usePage().props.auth as { user?: { role?: { name: string } } } | undefined;
     const isFieldOfficer = pageAuth?.user?.role?.name === 'field_officer';
+    const isBranchUser = pageAuth?.user?.role?.name === 'branch_user';
     const [selectedFormId, setSelectedFormId] = useState<number | null>(null);
     const formPrintRef = useRef<HTMLDivElement>(null);
 
@@ -255,20 +258,27 @@ export default function Show({ application, routes }: Props) {
                                         </Button>
                                     </Link>
                                     {application.all_forms_complete && (
-                                        <Button
-                                            onClick={() => {
-                                                if (confirm('ঋণ আবেদনটি শাখা ব্যবস্থাপকের কাছে জমা দিতে চান?')) {
-                                                    router.patch(routes.submit);
-                                                }
-                                            }}
-                                        >
-                                            <Send className="w-4 h-4 mr-2" />
-                                            সাবমিট করুন
-                                        </Button>
+                                        application.can_submit ? (
+                                            <Button
+                                                onClick={() => {
+                                                    if (confirm('ঋণ আবেদনটি শাখা ব্যবস্থাপকের কাছে জমা দিতে চান?')) {
+                                                        router.patch(routes.submit);
+                                                    }
+                                                }}
+                                            >
+                                                <Send className="w-4 h-4 mr-2" />
+                                                সাবমিট করুন
+                                            </Button>
+                                        ) : (
+                                            <Button disabled variant="outline" title="সদস্য ভর্তি অনুমোদিত হলে জমা দেওয়া যাবে">
+                                                <Send className="w-4 h-4 mr-2" />
+                                                সাবমিট (ভর্তি অনুমোদন অপেক্ষমান)
+                                            </Button>
+                                        )
                                     )}
                                 </>
                             )}
-                            {application.status === 'ready_for_head_office' && !isFieldOfficer && (
+                            {application.status === 'ready_for_head_office' && isBranchUser && (
                                 <Button
                                     onClick={() => {
                                         if (confirm('শাখা অনুমোদিত ঋণ আবেদনটি Head Office এ পাঠাতে চান?')) {
@@ -303,6 +313,11 @@ export default function Show({ application, routes }: Props) {
                                         <p className="text-sm text-gray-600">
                                             আবেদনের তারিখ: {formatDate(application.created_at)}
                                         </p>
+                                        {application.member_admission_status && application.member_admission_status !== 'approved' && application.status === 'draft' && (
+                                            <p className="text-sm text-amber-700 mt-1">
+                                                সদস্য ভর্তি এখনো অনুমোদিত হয়নি — ফর্ম পূরণ করতে পারবেন, তবে জমা দেওয়া যাবে না।
+                                            </p>
+                                        )}
                                         {application.submitted_at && (
                                             <p className="text-sm text-gray-600">
                                                 জমা দেওয়ার তারিখ: {formatDate(application.submitted_at)}

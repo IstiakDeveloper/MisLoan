@@ -58,9 +58,12 @@ interface LoanApproval {
     applicant_name: string;
     applicant_name_bn: string;
     branch_name: string;
+    branch_id?: number;
     requested_amount: number;
     submitted_at: string;
     level: string;
+    sequence?: number;
+    escalation_approvers?: EscalationApprover[];
 }
 
 interface Props {
@@ -79,8 +82,9 @@ export default function Index({ approvals = [], loanApprovals = [] }: Props) {
     const [showModal, setShowModal] = useState(false);
 
     const [selectedLoanApproval, setSelectedLoanApproval] = useState<LoanApproval | null>(null);
-    const [loanAction, setLoanAction] = useState<'approve' | 'reject' | null>(null);
+    const [loanAction, setLoanAction] = useState<'approve' | 'reject' | 'forward' | null>(null);
     const [loanComments, setLoanComments] = useState('');
+    const [loanForwardToUserId, setLoanForwardToUserId] = useState<string>('');
     const [showLoanModal, setShowLoanModal] = useState(false);
 
     // Search Filtering
@@ -174,19 +178,60 @@ export default function Index({ approvals = [], loanApprovals = [] }: Props) {
         });
     };
 
-    const handleLoanAction = (loanApproval: LoanApproval, actionType: 'approve' | 'reject') => {
+    const handleLoanAction = (loanApproval: LoanApproval, actionType: 'approve' | 'reject' | 'forward') => {
+        const isBranch = loanApproval.level === 'branch';
+        const amount = Number(loanApproval.requested_amount || 0);
+
+        if (actionType === 'approve' && isBranch && amount > 70000) {
+            setSelectedLoanApproval(loanApproval);
+            setLoanAction('forward');
+            setLoanComments('');
+            setLoanForwardToUserId('');
+            setShowLoanModal(true);
+            return;
+        }
+
         setSelectedLoanApproval(loanApproval);
         setLoanAction(actionType);
         setLoanComments('');
+        setLoanForwardToUserId('');
         setShowLoanModal(true);
     };
 
     const submitLoanAction = () => {
         if (!selectedLoanApproval || !loanAction) return;
+
+        if (loanAction === 'forward' && !loanForwardToUserId) {
+            alert('অনুগ্রহ করে ফরওয়ার্ড করার জন্য একজন অনুমোদনকারী নির্বাচন করুন।');
+            return;
+        }
+
         if (loanAction === 'reject' && !loanComments.trim()) {
             alert('প্রত্যাখ্যানের জন্য মন্তব্য দিন।');
             return;
         }
+
+        if (loanAction === 'forward') {
+            router.patch(
+                `/approvals/loan/${selectedLoanApproval.id}/forward`,
+                {
+                    forward_to_user_id: loanForwardToUserId,
+                    comments: loanComments,
+                },
+                {
+                    preserveScroll: true,
+                    onSuccess: () => {
+                        setShowLoanModal(false);
+                        setSelectedLoanApproval(null);
+                        setLoanAction(null);
+                        setLoanComments('');
+                        setLoanForwardToUserId('');
+                    },
+                }
+            );
+            return;
+        }
+
         router.patch(
             `/approvals/loan/${selectedLoanApproval.id}/${loanAction}`,
             { comments: loanComments },
@@ -197,6 +242,7 @@ export default function Index({ approvals = [], loanApprovals = [] }: Props) {
                     setSelectedLoanApproval(null);
                     setLoanAction(null);
                     setLoanComments('');
+                    setLoanForwardToUserId('');
                 },
             }
         );
@@ -843,7 +889,11 @@ export default function Index({ approvals = [], loanApprovals = [] }: Props) {
                     <div className="bg-white rounded-3xl p-6 max-w-md w-full max-h-[90vh] overflow-y-auto shadow-2xl border border-slate-100 space-y-4">
                         <div className="flex items-center justify-between border-b border-slate-100 pb-3">
                             <h3 className="text-lg font-bold text-slate-900">
-                                {loanAction === 'approve' ? 'ঋণ আবেদন অনুমোদন' : 'ঋণ আবেদন প্রত্যাখ্যান'}
+                                {loanAction === 'approve'
+                                    ? 'ঋণ আবেদন অনুমোদন'
+                                    : loanAction === 'forward'
+                                      ? 'উচ্চতর অনুমোদনকারীর কাছে ফরওয়ার্ড'
+                                      : 'ঋণ আবেদন প্রত্যাখ্যান'}
                             </h3>
                             <button
                                 onClick={() => setShowLoanModal(false)}
@@ -864,6 +914,29 @@ export default function Index({ approvals = [], loanApprovals = [] }: Props) {
                                 পরিমাণ: <strong className="text-slate-900">৳{Number(selectedLoanApproval.requested_amount).toLocaleString()}</strong>
                             </p>
                         </div>
+
+                        {loanAction === 'forward' && (selectedLoanApproval.escalation_approvers?.length ?? 0) > 0 && (
+                            <div className="space-y-1.5">
+                                <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider">
+                                    অনুমোদনকারী নির্বাচন করুন <span className="text-red-500">*</span>
+                                </label>
+                                <select
+                                    value={loanForwardToUserId}
+                                    onChange={(e) => setLoanForwardToUserId(e.target.value)}
+                                    className="w-full border border-slate-300 rounded-xl p-3 text-xs focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 text-slate-800"
+                                >
+                                    <option value="">নির্বাচন করুন...</option>
+                                    {selectedLoanApproval.escalation_approvers?.map((approver) => (
+                                        <option key={approver.id} value={approver.id}>
+                                            {approver.name} ({approver.role_name})
+                                        </option>
+                                    ))}
+                                </select>
+                                <p className="text-[11px] text-amber-700 bg-amber-50 border border-amber-200 rounded-lg p-2">
+                                    ৭০,০০০ টাকার বেশি ঋণের জন্য উচ্চতর অনুমোদনকারীর কাছে ফরওয়ার্ড করতে হবে।
+                                </p>
+                            </div>
+                        )}
 
                         <div className="space-y-1.5">
                             <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider">
@@ -891,10 +964,18 @@ export default function Index({ approvals = [], loanApprovals = [] }: Props) {
                                 type="button"
                                 onClick={submitLoanAction}
                                 className={`px-5 py-2.5 rounded-xl text-xs font-bold text-white shadow-sm transition ${
-                                    loanAction === 'approve' ? 'bg-emerald-600 hover:bg-emerald-700' : 'bg-rose-600 hover:bg-rose-700'
+                                    loanAction === 'approve'
+                                        ? 'bg-emerald-600 hover:bg-emerald-700'
+                                        : loanAction === 'forward'
+                                          ? 'bg-blue-600 hover:bg-blue-700'
+                                          : 'bg-rose-600 hover:bg-rose-700'
                                 }`}
                             >
-                                {loanAction === 'approve' ? 'অনুমোদন করুন' : 'প্রত্যাখ্যান করুন'}
+                                {loanAction === 'approve'
+                                    ? 'অনুমোদন করুন'
+                                    : loanAction === 'forward'
+                                      ? 'ফরওয়ার্ড করুন'
+                                      : 'প্রত্যাখ্যান করুন'}
                             </button>
                         </div>
                     </div>
