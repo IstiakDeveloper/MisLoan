@@ -11,6 +11,12 @@ use Illuminate\Http\Request;
 use Inertia\Inertia;
 use Illuminate\Support\Facades\DB;
 use Carbon\Carbon;
+use PhpOffice\PhpSpreadsheet\Spreadsheet;
+use PhpOffice\PhpSpreadsheet\Writer\Xlsx;
+use PhpOffice\PhpSpreadsheet\Style\Alignment;
+use PhpOffice\PhpSpreadsheet\Style\Border;
+use PhpOffice\PhpSpreadsheet\Style\Fill;
+use PhpOffice\PhpSpreadsheet\Cell\Coordinate;
 
 class HeadOfficeAdmissionController extends Controller
 {
@@ -22,11 +28,12 @@ class HeadOfficeAdmissionController extends Controller
     public function index(Request $request)
     {
         $query = MemberAdmission::with([
-            'branch.area.zone',
+            'branch' => fn ($q) => $q->withTrashed()->with(['area.zone']),
             'samity',
             'memberCategory',
             'submittedBy',
             'createdBy',
+            'approvals.user',
         ])->withCount('loanApplications');
 
         $this->applyAccessibleBranchScope($query);
@@ -159,6 +166,12 @@ class HeadOfficeAdmissionController extends Controller
 
         $admissions = $query->orderBy('created_at', 'desc')->paginate(20);
 
+        $admissions = $admissions->through(function (MemberAdmission $admission) {
+            $arr = $admission->toArray();
+            $arr['tracking_state'] = $admission->getTrackingState();
+            return $arr;
+        });
+
         $orgFilters = $this->organizationFilterOptions();
 
         return Inertia::render('HeadOffice/AdmissionMembers', [
@@ -257,6 +270,178 @@ class HeadOfficeAdmissionController extends Controller
             'zones' => $orgFilters['zones'],
             'areas' => $orgFilters['areas'],
             'branches' => $orgFilters['branches'],
+        ]);
+    }
+
+    /**
+     * Export admissions to XLSX (same filters as index / print).
+     */
+    public function exportExcel(Request $request)
+    {
+        $query = MemberAdmission::with([
+            'branch' => fn ($q) => $q->withTrashed()->with(['area.zone']),
+            'samity',
+            'memberCategory',
+            'createdBy',
+            'approvals.user',
+        ]);
+
+        $this->applyAccessibleBranchScope($query);
+
+        $dateFrom = $request->date_from ?? now()->startOfMonth()->toDateString();
+        $dateTo = $request->date_to ?? now()->toDateString();
+
+        if ($dateFrom && $dateTo) {
+            $query->whereBetween('created_at', [
+                Carbon::parse($dateFrom)->startOfDay(),
+                Carbon::parse($dateTo)->endOfDay(),
+            ]);
+        }
+
+        if ($request->zone_id) {
+            $query->whereHas('branch.area', fn ($q) => $q->where('zone_id', $request->zone_id));
+        }
+        if ($request->area_id) {
+            $query->whereHas('branch', fn ($q) => $q->where('area_id', $request->area_id));
+        }
+        if ($request->branch_id) {
+            $query->where('branch_id', $request->branch_id);
+        }
+
+        if ($request->filled('status')) {
+            $query->where('status', $request->status);
+        } else {
+            $query->where('status', '!=', 'draft');
+        }
+
+        if ($request->search) {
+            $search = $request->search;
+            $query->where(function ($q) use ($search) {
+                $q->where('application_no', 'like', "%{$search}%")
+                    ->orWhere('applicant_name_en', 'like', "%{$search}%")
+                    ->orWhere('applicant_name_bn', 'like', "%{$search}%")
+                    ->orWhere('mobile_number', 'like', "%{$search}%")
+                    ->orWhere('nid_number', 'like', "%{$search}%");
+            });
+        }
+
+        if ($request->had_issues === 'yes') {
+            $query->where('revision_count', '>', 0);
+        } elseif ($request->had_issues === 'no') {
+            $query->where(function ($q) {
+                $q->whereNull('revision_count')->orWhere('revision_count', 0);
+            });
+        }
+
+        if ($request->printed === 'yes') {
+            $query->whereNotNull('printed_at');
+        } elseif ($request->printed === 'no') {
+            $query->whereNull('printed_at');
+        }
+
+        $admissions = $query->orderBy('created_at', 'desc')->get();
+
+        $statusLabels = [
+            'draft' => 'খসড়া',
+            'submitted' => 'জমা',
+            'under_review' => 'পর্যালোচনায়',
+            'ready_for_head_office' => 'শাখা অনুমোদিত',
+            'pending_head_office' => 'হেড অফিসে',
+            'approved' => 'অনুমোদিত',
+            'rejected' => 'প্রত্যাখ্যাত',
+            'needs_revision' => 'সংশোধন',
+        ];
+
+        $spreadsheet = new Spreadsheet();
+        $sheet = $spreadsheet->getActiveSheet();
+        $sheet->setTitle('Admission Members');
+
+        $headers = [
+            'আবেদন নং',
+            'আবেদনকারী (বাংলা)',
+            'আবেদনকারী (ইংরেজি)',
+            'মোবাইল',
+            'জোন',
+            'এলাকা',
+            'শাখা',
+            'সমিতি',
+            'ক্যাটাগরি',
+            'তৈরি করেছেন',
+            'স্ট্যাটাস',
+            'পেন্ডিং অবস্থান',
+            'প্রিন্ট',
+            'জমার তারিখ',
+            'তৈরির তারিখ',
+        ];
+        $sheet->fromArray($headers, null, 'A1');
+
+        $lastColumn = Coordinate::stringFromColumnIndex(count($headers));
+        $sheet->getStyle("A1:{$lastColumn}1")->applyFromArray([
+            'font' => ['bold' => true, 'size' => 11, 'color' => ['rgb' => 'FFFFFF']],
+            'fill' => [
+                'fillType' => Fill::FILL_SOLID,
+                'startColor' => ['rgb' => '1E293B'],
+            ],
+            'alignment' => [
+                'horizontal' => Alignment::HORIZONTAL_CENTER,
+                'vertical' => Alignment::VERTICAL_CENTER,
+                'wrapText' => true,
+            ],
+            'borders' => [
+                'allBorders' => [
+                    'borderStyle' => Border::BORDER_THIN,
+                    'color' => ['rgb' => '334155'],
+                ],
+            ],
+        ]);
+        $sheet->getRowDimension(1)->setRowHeight(28);
+
+        $row = 2;
+        foreach ($admissions as $admission) {
+            $tracking = $admission->getTrackingState();
+            $sheet->fromArray([
+                $admission->application_no,
+                $admission->applicant_name_bn,
+                $admission->applicant_name_en,
+                $admission->mobile_number,
+                $admission->branch?->area?->zone?->name ?? '',
+                $admission->branch?->area?->name ?? '',
+                $admission->branch?->name ?? '',
+                $admission->samity?->samity_name ?? '',
+                $admission->memberCategory?->category_name ?? '',
+                $admission->createdBy?->name ?? '',
+                $statusLabels[$admission->status] ?? $admission->status,
+                $tracking['label'] ?? '',
+                $admission->printed_at ? 'প্রিন্ট সম্পন্ন' : 'অপ্রিন্টেড',
+                $admission->submitted_at?->format('Y-m-d') ?? '',
+                $admission->created_at?->format('Y-m-d H:i') ?? '',
+            ], null, "A{$row}");
+
+            $sheet->getStyle("A{$row}:{$lastColumn}{$row}")->applyFromArray([
+                'borders' => [
+                    'allBorders' => [
+                        'borderStyle' => Border::BORDER_THIN,
+                        'color' => ['rgb' => 'CBD5E1'],
+                    ],
+                ],
+                'alignment' => [
+                    'vertical' => Alignment::VERTICAL_CENTER,
+                ],
+            ]);
+            $row++;
+        }
+
+        foreach (range(1, count($headers)) as $col) {
+            $sheet->getColumnDimension(Coordinate::stringFromColumnIndex($col))->setAutoSize(true);
+        }
+
+        $filename = 'admission-members-'.$dateFrom.'_to_'.$dateTo.'.xlsx';
+        $writer = new Xlsx($spreadsheet);
+
+        return response()->streamDownload(function () use ($writer) {
+            $writer->save('php://output');
+        }, $filename, [
+            'Content-Type' => 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
         ]);
     }
 

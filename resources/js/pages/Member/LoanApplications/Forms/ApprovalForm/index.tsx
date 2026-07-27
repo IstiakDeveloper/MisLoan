@@ -21,6 +21,18 @@ export const toInputDate = (value: string | null | undefined): string => {
     return `${y}-${m}-${day}`;
 };
 
+/** Local datetime for `<input type="datetime-local">` (YYYY-MM-DDTHH:mm) */
+export const toLocalDateTimeInput = (value?: string | Date | null): string => {
+    const d = value ? new Date(value) : new Date();
+    if (Number.isNaN(d.getTime())) return '';
+    const y = d.getFullYear();
+    const m = String(d.getMonth() + 1).padStart(2, '0');
+    const day = String(d.getDate()).padStart(2, '0');
+    const h = String(d.getHours()).padStart(2, '0');
+    const min = String(d.getMinutes()).padStart(2, '0');
+    return `${y}-${m}-${day}T${h}:${min}`;
+};
+
 function getNidOrSmartCard(member: { nid_number?: string | null; smart_card_number?: string | null } | null | undefined): string {
     if (!member) return '';
     const nid = member.nid_number != null ? String(member.nid_number).trim() : '';
@@ -145,6 +157,7 @@ export default function ApprovalForm({
         years_involved: isOldMemberFromAdmission ? loanDofaValue : '',
         member_name_detail: member?.applicant_name_bn || member?.applicant_name_en || '',
         member_code: member?.application_no || '',
+        member_mobile: member?.mobile_number || '',
         age: getAgeFromDOB(member?.date_of_birth, new Date().toISOString().split('T')[0]),
         father_husband_name: member?.father_name_bn || member?.spouse_name_bn || '',
         permanent_address_line1: member?.permanent_village_road || '',
@@ -186,7 +199,7 @@ export default function ApprovalForm({
         capital_applied_loan: requestedAmount ? String(requestedAmount) : '',
         approval_amount_digits: requestedAmount ? String(requestedAmount) : '',
         family_assets: getFamilyAssetsFromMember(member),
-        applicant_signature: member?.applicant_signature || '',
+        applicant_signature: '',
         approver_signature: '',
         
         // Page 2
@@ -211,24 +224,58 @@ export default function ApprovalForm({
             { loan_number: '', loan_date: '', loan_amount: '', project_name: '', savings_status: '' },
         ],
         other_loan_status: Array(7).fill({ current_status: '', round: '', borrower_name: '', mobile: '', remarks: '' }),
-        invest_plan_applied_amount: '', invest_use_capital: '',
-        invest_plan_own_amount: '', invest_use_running: '',
-        invest_plan_other_amount: '', invest_use_other: '',
-        invest_plan_total: '', invest_use_total: '',
+        invest_plan_applied_amount: requestedAmount ? String(requestedAmount) : '',
+        invest_use_capital: '',
+        invest_plan_own_amount: '',
+        invest_use_running: '',
+        invest_plan_other_amount: '',
+        invest_use_other: '',
+        invest_plan_total: requestedAmount ? String(requestedAmount) : '',
+        invest_use_total: '',
         
         // Page 3
         est_emp_salary: '', est_transport: '', est_bills: '', est_rent: '', est_loan_charge: '',
         est_other_exp_1_desc: '', est_other_exp_1_amount: '',
         est_other_exp_2_desc: '', est_other_exp_2_amount: '',
         est_other_exp_3_desc: '', est_other_exp_3_amount: '',
-        est_main_income_desc: '', est_main_income_amount: '',
+        est_main_income_desc: projectNameFromAdmission,
+        est_main_income_amount: (() => {
+            const months = Number(loanProduct?.duration_months || loanProduct?.loan_duration_months || 0);
+            const years = months > 0 ? months / 12 : 1;
+            const annual = Number(annualNetFromAdmission) || 0;
+            return annual > 0 ? String(Math.round(annual * years)) : '';
+        })(),
         est_other_income_desc: '', est_other_income_amount: '',
-        loan_duration_months: loanProduct?.loan_duration_months ? String(loanProduct.loan_duration_months) : '',
-        applied_service_charge_rate: loanProduct?.service_charge_rate ? String(loanProduct.service_charge_rate) : '',
-        installment_type: 'মাসিক কিস্তি',
-        installment_principal: '',
-        installment_service_charge: '',
-        
+        loan_duration_months: loanProduct?.duration_months
+            ? String(loanProduct.duration_months)
+            : (loanProduct?.loan_duration_months ? String(loanProduct.loan_duration_months) : ''),
+        applied_service_charge_rate: loanProduct?.interest_rate != null && loanProduct?.interest_rate !== ''
+            ? String(loanProduct.interest_rate)
+            : (loanProduct?.service_charge != null && loanProduct?.service_charge !== ''
+                ? String(loanProduct.service_charge)
+                : ''),
+        installment_type: (() => {
+            const t = String(loanProduct?.installment_type || '').toLowerCase();
+            if (t === 'weekly' || t.includes('week')) return 'সাপ্তাহিক কিস্তি';
+            return 'মাসিক কিস্তি';
+        })(),
+        installment_principal: (() => {
+            const amount = Number(requestedAmount) || 0;
+            const n = Number(loanProduct?.number_of_installments) || Number(loanProduct?.duration_months) || 0;
+            return amount > 0 && n > 0 ? String(Math.round(amount / n)) : '';
+        })(),
+        installment_service_charge: (() => {
+            const amount = Number(requestedAmount) || 0;
+            const n = Number(loanProduct?.number_of_installments) || Number(loanProduct?.duration_months) || 0;
+            if (amount <= 0 || n <= 0) return '';
+            const scPerThousand = Number(loanProduct?.service_charge_per_thousand) || 0;
+            const rate = Number(loanProduct?.interest_rate || 0);
+            const totalSc = scPerThousand > 0 ? (amount / 1000) * scPerThousand : amount * (rate / 100);
+            return String(Math.round(totalSc / n));
+        })(),
+        number_of_installments: loanProduct?.number_of_installments
+            ? String(loanProduct.number_of_installments)
+            : (loanProduct?.duration_months ? String(loanProduct.duration_months) : ''),
         guarantor_1_name: '', guarantor_1_address: '', guarantor_1_mobile: '', guarantor_1_relation: '', guarantor_1_profession: '', guarantor_1_monthly_income: '', guarantor_1_assets_amount: '', guarantor_1_potential_value: '', guarantor_1_interviewer_name: '', guarantor_1_interviewer_designation: '',
         guarantor_2_name: '', guarantor_2_address: '', guarantor_2_mobile: '', guarantor_2_relation: '', guarantor_2_profession: '', guarantor_2_monthly_income: '', guarantor_2_assets_amount: '', guarantor_2_potential_value: '', guarantor_2_interviewer_name: '', guarantor_2_interviewer_designation: '',
         
@@ -242,7 +289,7 @@ export default function ApprovalForm({
         risk_disaster_experience: 'নাই',
         risk_credit_sale: 'নাই',
         future_micro_enterprise_plan: '',
-        loan_program_name: '',
+        loan_program_name: projectNameFromAdmission,
         self_emp_full_female: '', self_emp_full_male: '', self_emp_part_female: '', self_emp_part_male: '',
         wage_emp_full_female: '', wage_emp_full_male: '', wage_emp_part_female: '', wage_emp_part_male: '',
         
@@ -286,6 +333,15 @@ export default function ApprovalForm({
         const hasNet = data.annual_net_profit !== '' && data.annual_net_profit != null;
         if (hasIncomeExpense && hasNet && income - expense !== net) {
             alert(`আয় − ব্যয় = বার্ষিক নিট লাভ হতে হবে।\nএখন: ${income} − ${expense} = ${income - expense}, নিট লাভ: ${net}`);
+            return;
+        }
+
+        const planTotal = Number(data.invest_plan_total) || 0;
+        const useTotal = Number(data.invest_use_total) || 0;
+        const hasPlanTotal = data.invest_plan_total !== '' && data.invest_plan_total != null;
+        const hasUseTotal = data.invest_use_total !== '' && data.invest_use_total != null;
+        if (hasPlanTotal && hasUseTotal && planTotal !== useTotal) {
+            alert(`বিনিয়োগের খাতের মোট (${planTotal}) এবং ঋণের ব্যবহারের মোট (${useTotal}) মিলছে না। দুই মোট সমান হতে হবে।`);
             return;
         }
         

@@ -1,9 +1,47 @@
-import React from 'react';
-import { Upload } from 'lucide-react';
+import React, { useEffect } from 'react';
 import { FormPageProps } from './Types';
 import { numberToWordsBangla } from './PrintPreview';
+import { toLocalDateTimeInput } from './index';
 
-export default function FormPage4({ data, setData, handleImageUpload, removeImage }: FormPageProps) {
+export default function FormPage4({ data, setData }: FormPageProps) {
+    const projectName = data.project_name || data.proposed_project_name || '';
+    const hasEmployeeSectionInput = [
+        data.employee_workplace_name,
+        data.employee_monthly_salary,
+        data.employee_received_in_hand,
+        data.employee_other_income,
+        data.employee_who_was_with,
+        data.employee_bank_name,
+        data.employee_salary_per_statement,
+    ].some((value) => String(value ?? '').trim() !== '');
+
+    const fullTimeTotal =
+        (Number(data.self_emp_full_female) || 0) +
+        (Number(data.self_emp_full_male) || 0) +
+        (Number(data.wage_emp_full_female) || 0) +
+        (Number(data.wage_emp_full_male) || 0);
+
+    const partTimeTotal =
+        (Number(data.self_emp_part_female) || 0) +
+        (Number(data.self_emp_part_male) || 0) +
+        (Number(data.wage_emp_part_female) || 0) +
+        (Number(data.wage_emp_part_male) || 0);
+
+    // চাকরিজীবী অংশে ইনপুট থাকলে তারিখ-সময় বসবে; সব খালি করলে তারিখ-সময়ও ক্লিয়ার হবে
+    useEffect(() => {
+        if (hasEmployeeSectionInput && !data.employee_approver_presence_time) {
+            setData('employee_approver_presence_time', toLocalDateTimeInput());
+        } else if (!hasEmployeeSectionInput && data.employee_approver_presence_time) {
+            setData('employee_approver_presence_time', '');
+        }
+    }, [hasEmployeeSectionInput, data.employee_approver_presence_time, setData]);
+
+    useEffect(() => {
+        if (projectName && !data.loan_program_name) {
+            setData('loan_program_name', projectName);
+        }
+    }, [projectName, data.loan_program_name, setData]);
+
     return (
         <div id="form-page-4" data-sync="page-4" className="border-b pb-4">
             <h3 className="font-bold mb-4 bg-gray-200 px-3 py-1 inline-block rounded">পৃষ্ঠা ৪: অন্যান্য ও অফিস স্তর</h3>
@@ -18,7 +56,13 @@ export default function FormPage4({ data, setData, handleImageUpload, removeImag
                     </div>
                     <input type="number" placeholder="অন্যান্য খাতের আয়" value={data.employee_other_income || ''} onChange={e => setData('employee_other_income', e.target.value)} className="w-full border rounded px-2 py-1.5 text-[12px]" />
                     <div className="flex gap-2">
-                        <input type="text" placeholder="অনুমোদনকারীর উপস্থিতির সময়" value={data.employee_approver_presence_time || ''} onChange={e => setData('employee_approver_presence_time', e.target.value)} className="w-1/2 border rounded px-2 py-1.5 text-[12px]" />
+                        <input
+                            type="datetime-local"
+                            title="অনুমোদনকারীর উপস্থিতির তারিখ ও সময়"
+                            value={data.employee_approver_presence_time ? toLocalDateTimeInput(data.employee_approver_presence_time) : ''}
+                            onChange={e => setData('employee_approver_presence_time', e.target.value)}
+                            className="w-1/2 border rounded px-2 py-1.5 text-[12px]"
+                        />
                         <input type="text" placeholder="সাথে কে ছিলো" value={data.employee_who_was_with || ''} onChange={e => setData('employee_who_was_with', e.target.value)} className="w-1/2 border rounded px-2 py-1.5 text-[12px]" />
                     </div>
                     <div className="flex gap-2 col-span-1 md:col-span-2">
@@ -75,37 +119,85 @@ export default function FormPage4({ data, setData, handleImageUpload, removeImag
                 <textarea placeholder="পরিকল্পনা লিখুন..." value={data.future_micro_enterprise_plan || ''} onChange={e => setData('future_micro_enterprise_plan', e.target.value)} className="w-full border rounded px-2 py-1.5 text-[12px]" rows={3} />
             </div>
 
-            <div className="mb-4 overflow-x-auto">
+            <div className="mb-4">
                 <h4 className="font-semibold border-b border-gray-400 pb-1 mb-3">৯. কর্মসংস্থান সংক্রান্ত তথ্য:</h4>
-                <div className="min-w-[600px] border p-2 rounded bg-gray-50">
-                    <input type="text" placeholder="ঋণ কার্যক্রমের নাম" value={data.loan_program_name || ''} onChange={e => setData('loan_program_name', e.target.value)} className="w-full border rounded px-2 py-1.5 text-[12px] mb-2" />
-                    <div className="grid grid-cols-4 gap-2 text-center text-[11px] font-bold">
-                        <div className="col-span-2 border-b border-gray-400">স্ব-কর্মসংস্থান/পারিবারিক</div>
-                        <div className="col-span-2 border-b border-gray-400">মজুরি ভিত্তিক</div>
-                    </div>
-                    <div className="grid grid-cols-4 gap-2 text-center text-[11px] font-bold mb-2">
-                        <div>পূর্ণকালীন</div>
-                        <div>খণ্ডকালীন</div>
-                        <div>পূর্ণকালীন</div>
-                        <div>খণ্ডকালীন</div>
-                    </div>
-                    <div className="grid grid-cols-8 gap-1 mb-2 text-center text-[10px]">
-                        <div>মহিলা</div><div>পুরুষ</div>
-                        <div>মহিলা</div><div>পুরুষ</div>
-                        <div>মহিলা</div><div>পুরুষ</div>
-                        <div>মহিলা</div><div>পুরুষ</div>
-                    </div>
-                    <div className="grid grid-cols-8 gap-1">
-                        <input type="number" value={data.self_emp_full_female || ''} onChange={e => setData('self_emp_full_female', e.target.value)} className="w-full border rounded px-1 py-1 text-[11px]" />
-                        <input type="number" value={data.self_emp_full_male || ''} onChange={e => setData('self_emp_full_male', e.target.value)} className="w-full border rounded px-1 py-1 text-[11px]" />
-                        <input type="number" value={data.self_emp_part_female || ''} onChange={e => setData('self_emp_part_female', e.target.value)} className="w-full border rounded px-1 py-1 text-[11px]" />
-                        <input type="number" value={data.self_emp_part_male || ''} onChange={e => setData('self_emp_part_male', e.target.value)} className="w-full border rounded px-1 py-1 text-[11px]" />
-                        
-                        <input type="number" value={data.wage_emp_full_female || ''} onChange={e => setData('wage_emp_full_female', e.target.value)} className="w-full border rounded px-1 py-1 text-[11px]" />
-                        <input type="number" value={data.wage_emp_full_male || ''} onChange={e => setData('wage_emp_full_male', e.target.value)} className="w-full border rounded px-1 py-1 text-[11px]" />
-                        <input type="number" value={data.wage_emp_part_female || ''} onChange={e => setData('wage_emp_part_female', e.target.value)} className="w-full border rounded px-1 py-1 text-[11px]" />
-                        <input type="number" value={data.wage_emp_part_male || ''} onChange={e => setData('wage_emp_part_male', e.target.value)} className="w-full border rounded px-1 py-1 text-[11px]" />
-                    </div>
+                <div className="w-full border rounded bg-gray-50">
+                    <table className="w-full table-fixed border-collapse text-center text-[10px] md:text-[11px]">
+                        <thead>
+                            <tr>
+                                <th rowSpan={3} className="border border-gray-400 p-1.5 md:p-2 font-semibold w-[18%]">ঋণ কার্যক্রমের নাম</th>
+                                <th colSpan={2} className="border border-gray-400 p-1.5 md:p-2 font-semibold">স্ব-কর্মসংস্থান/পারিবারিক কর্মসংস্থান</th>
+                                <th colSpan={2} className="border border-gray-400 p-1.5 md:p-2 font-semibold">মজুরি ভিত্তিক কর্মসংস্থান</th>
+                                <th rowSpan={3} className="border border-gray-400 p-1 md:p-2 font-semibold">মোট<br />পূর্ণ সময়<br />৯ = ১+২+৫+৬</th>
+                                <th rowSpan={3} className="border border-gray-400 p-1 md:p-2 font-semibold">মোট<br />আংশিক সময়<br />১০ = ৩+৪+৭+৮</th>
+                            </tr>
+                            <tr>
+                                <th className="border border-gray-400 p-1 md:p-2 font-semibold">পূর্ণকালীন</th>
+                                <th className="border border-gray-400 p-1 md:p-2 font-semibold">খণ্ডকালীন</th>
+                                <th className="border border-gray-400 p-1 md:p-2 font-semibold">পূর্ণকালীন</th>
+                                <th className="border border-gray-400 p-1 md:p-2 font-semibold">খণ্ডকালীন</th>
+                            </tr>
+                            <tr>
+                                <th className="border border-gray-400 p-0 font-medium">
+                                    <div className="grid grid-cols-2">
+                                        <div className="border-r border-gray-400 py-1.5 md:py-2">মহিলা</div>
+                                        <div className="py-1.5 md:py-2">পুরুষ</div>
+                                    </div>
+                                </th>
+                                <th className="border border-gray-400 p-0 font-medium">
+                                    <div className="grid grid-cols-2">
+                                        <div className="border-r border-gray-400 py-1.5 md:py-2">মহিলা</div>
+                                        <div className="py-1.5 md:py-2">পুরুষ</div>
+                                    </div>
+                                </th>
+                                <th className="border border-gray-400 p-0 font-medium">
+                                    <div className="grid grid-cols-2">
+                                        <div className="border-r border-gray-400 py-1.5 md:py-2">মহিলা</div>
+                                        <div className="py-1.5 md:py-2">পুরুষ</div>
+                                    </div>
+                                </th>
+                                <th className="border border-gray-400 p-0 font-medium">
+                                    <div className="grid grid-cols-2">
+                                        <div className="border-r border-gray-400 py-1.5 md:py-2">মহিলা</div>
+                                        <div className="py-1.5 md:py-2">পুরুষ</div>
+                                    </div>
+                                </th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr>
+                                <td className="border border-gray-400 p-1">
+                                    <input type="text" placeholder="ঋণ কার্যক্রমের নাম" value={data.loan_program_name || ''} onChange={e => setData('loan_program_name', e.target.value)} className="w-full border rounded px-1.5 py-1 text-[10px] md:text-[11px]" />
+                                </td>
+                                <td className="border border-gray-400 p-0">
+                                    <div className="grid grid-cols-2">
+                                        <input type="number" value={data.self_emp_full_female || ''} onChange={e => setData('self_emp_full_female', e.target.value)} className="w-full border-0 border-r border-gray-400 rounded-none px-1 py-1.5 md:py-2 text-[10px] md:text-[11px] text-center" />
+                                        <input type="number" value={data.self_emp_full_male || ''} onChange={e => setData('self_emp_full_male', e.target.value)} className="w-full border-0 rounded-none px-1 py-1.5 md:py-2 text-[10px] md:text-[11px] text-center" />
+                                    </div>
+                                </td>
+                                <td className="border border-gray-400 p-0">
+                                    <div className="grid grid-cols-2">
+                                        <input type="number" value={data.self_emp_part_female || ''} onChange={e => setData('self_emp_part_female', e.target.value)} className="w-full border-0 border-r border-gray-400 rounded-none px-1 py-1.5 md:py-2 text-[10px] md:text-[11px] text-center" />
+                                        <input type="number" value={data.self_emp_part_male || ''} onChange={e => setData('self_emp_part_male', e.target.value)} className="w-full border-0 rounded-none px-1 py-1.5 md:py-2 text-[10px] md:text-[11px] text-center" />
+                                    </div>
+                                </td>
+                                <td className="border border-gray-400 p-0">
+                                    <div className="grid grid-cols-2">
+                                        <input type="number" value={data.wage_emp_full_female || ''} onChange={e => setData('wage_emp_full_female', e.target.value)} className="w-full border-0 border-r border-gray-400 rounded-none px-1 py-1.5 md:py-2 text-[10px] md:text-[11px] text-center" />
+                                        <input type="number" value={data.wage_emp_full_male || ''} onChange={e => setData('wage_emp_full_male', e.target.value)} className="w-full border-0 rounded-none px-1 py-1.5 md:py-2 text-[10px] md:text-[11px] text-center" />
+                                    </div>
+                                </td>
+                                <td className="border border-gray-400 p-0">
+                                    <div className="grid grid-cols-2">
+                                        <input type="number" value={data.wage_emp_part_female || ''} onChange={e => setData('wage_emp_part_female', e.target.value)} className="w-full border-0 border-r border-gray-400 rounded-none px-1 py-1.5 md:py-2 text-[10px] md:text-[11px] text-center" />
+                                        <input type="number" value={data.wage_emp_part_male || ''} onChange={e => setData('wage_emp_part_male', e.target.value)} className="w-full border-0 rounded-none px-1 py-1.5 md:py-2 text-[10px] md:text-[11px] text-center" />
+                                    </div>
+                                </td>
+                                <td className="border border-gray-400 p-1 md:p-2 bg-gray-100 font-semibold">{fullTimeTotal || ''}</td>
+                                <td className="border border-gray-400 p-1 md:p-2 bg-gray-100 font-semibold">{partTimeTotal || ''}</td>
+                            </tr>
+                        </tbody>
+                    </table>
                 </div>
             </div>
 
@@ -116,73 +208,21 @@ export default function FormPage4({ data, setData, handleImageUpload, removeImag
                     <div className="border p-2 rounded bg-gray-50">
                         <label className="block text-[12px] font-medium mb-1">অফিসারের পরিদর্শনোত্তর মন্তব্য</label>
                         <textarea value={data.officer_post_inspection_comments || ''} onChange={(e) => setData('officer_post_inspection_comments', e.target.value)} className="w-full border rounded px-2 py-1.5 text-[12px]" rows={2} />
-                        <label className="block text-[12px] font-medium mt-2 mb-1">অফিসারের স্বাক্ষর</label>
-                        {data.officer_post_inspection_signature ? (
-                            <div className="relative w-32">
-                                <img src={data.officer_post_inspection_signature} alt="Signature" className="w-full h-16 object-contain border rounded" />
-                                <button onClick={() => removeImage('officer_post_inspection_signature')} className="absolute top-1 right-1 p-1 bg-red-500 text-white rounded text-[10px]">X</button>
-                            </div>
-                        ) : (
-                            <div className="border-2 border-dashed rounded p-2 text-center w-32 cursor-pointer relative">
-                                <Upload className="w-4 h-4 mx-auto mb-1 text-gray-400" />
-                                <input type="file" accept="image/*" onChange={(e) => handleImageUpload('officer_post_inspection_signature', e.target.files?.[0] || null)} className="absolute inset-0 w-full h-full opacity-0 cursor-pointer" />
-                                <span className="text-[11px] text-blue-600">Upload</span>
-                            </div>
-                        )}
                     </div>
 
                     <div className="border p-2 rounded bg-gray-50">
                         <label className="block text-[12px] font-medium mb-1">শাখা ব্যবস্থাপকের পরিদর্শনোত্তর মন্তব্য</label>
                         <textarea value={data.branch_manager_post_inspection_comments || ''} onChange={(e) => setData('branch_manager_post_inspection_comments', e.target.value)} className="w-full border rounded px-2 py-1.5 text-[12px]" rows={2} />
-                        <label className="block text-[12px] font-medium mt-2 mb-1">শাখা ব্যবস্থাপকের স্বাক্ষর</label>
-                        {data.branch_manager_post_inspection_signature ? (
-                            <div className="relative w-32">
-                                <img src={data.branch_manager_post_inspection_signature} alt="Signature" className="w-full h-16 object-contain border rounded" />
-                                <button onClick={() => removeImage('branch_manager_post_inspection_signature')} className="absolute top-1 right-1 p-1 bg-red-500 text-white rounded text-[10px]">X</button>
-                            </div>
-                        ) : (
-                            <div className="border-2 border-dashed rounded p-2 text-center w-32 cursor-pointer relative">
-                                <Upload className="w-4 h-4 mx-auto mb-1 text-gray-400" />
-                                <input type="file" accept="image/*" onChange={(e) => handleImageUpload('branch_manager_post_inspection_signature', e.target.files?.[0] || null)} className="absolute inset-0 w-full h-full opacity-0 cursor-pointer" />
-                                <span className="text-[11px] text-blue-600">Upload</span>
-                            </div>
-                        )}
                     </div>
 
                     <div className="border p-2 rounded bg-gray-50">
                         <label className="block text-[12px] font-medium mb-1">আঞ্চলিক ব্যবস্থাপকের মন্তব্য</label>
                         <textarea value={data.regional_manager_comments || ''} onChange={(e) => setData('regional_manager_comments', e.target.value)} className="w-full border rounded px-2 py-1.5 text-[12px]" rows={2} />
-                        <label className="block text-[12px] font-medium mt-2 mb-1">আঞ্চলিক ব্যবস্থাপকের স্বাক্ষর</label>
-                        {data.regional_manager_signature ? (
-                            <div className="relative w-32">
-                                <img src={data.regional_manager_signature} alt="Signature" className="w-full h-16 object-contain border rounded" />
-                                <button onClick={() => removeImage('regional_manager_signature')} className="absolute top-1 right-1 p-1 bg-red-500 text-white rounded text-[10px]">X</button>
-                            </div>
-                        ) : (
-                            <div className="border-2 border-dashed rounded p-2 text-center w-32 cursor-pointer relative">
-                                <Upload className="w-4 h-4 mx-auto mb-1 text-gray-400" />
-                                <input type="file" accept="image/*" onChange={(e) => handleImageUpload('regional_manager_signature', e.target.files?.[0] || null)} className="absolute inset-0 w-full h-full opacity-0 cursor-pointer" />
-                                <span className="text-[11px] text-blue-600">Upload</span>
-                            </div>
-                        )}
                     </div>
 
                     <div className="border p-2 rounded bg-gray-50">
                         <label className="block text-[12px] font-medium mb-1">জোনাল ম্যানেজারের মন্তব্য</label>
                         <textarea value={data.zonal_manager_comments || ''} onChange={(e) => setData('zonal_manager_comments', e.target.value)} className="w-full border rounded px-2 py-1.5 text-[12px]" rows={2} />
-                        <label className="block text-[12px] font-medium mt-2 mb-1">জোনাল ম্যানেজারের স্বাক্ষর</label>
-                        {data.zonal_manager_signature ? (
-                            <div className="relative w-32">
-                                <img src={data.zonal_manager_signature} alt="Signature" className="w-full h-16 object-contain border rounded" />
-                                <button onClick={() => removeImage('zonal_manager_signature')} className="absolute top-1 right-1 p-1 bg-red-500 text-white rounded text-[10px]">X</button>
-                            </div>
-                        ) : (
-                            <div className="border-2 border-dashed rounded p-2 text-center w-32 cursor-pointer relative">
-                                <Upload className="w-4 h-4 mx-auto mb-1 text-gray-400" />
-                                <input type="file" accept="image/*" onChange={(e) => handleImageUpload('zonal_manager_signature', e.target.files?.[0] || null)} className="absolute inset-0 w-full h-full opacity-0 cursor-pointer" />
-                                <span className="text-[11px] text-blue-600">Upload</span>
-                            </div>
-                        )}
                     </div>
 
                     <div className="border p-2 rounded bg-gray-50">
@@ -205,19 +245,6 @@ export default function FormPage4({ data, setData, handleImageUpload, removeImag
                             </div>
                         </div>
 
-                        <label className="block text-[12px] font-medium mt-2 mb-1">চূড়ান্ত অনুমোদনকারীর স্বাক্ষর</label>
-                        {data.final_approver_signature ? (
-                            <div className="relative w-32">
-                                <img src={data.final_approver_signature} alt="Signature" className="w-full h-16 object-contain border rounded" />
-                                <button onClick={() => removeImage('final_approver_signature')} className="absolute top-1 right-1 p-1 bg-red-500 text-white rounded text-[10px]">X</button>
-                            </div>
-                        ) : (
-                            <div className="border-2 border-dashed rounded p-2 text-center w-32 cursor-pointer relative">
-                                <Upload className="w-4 h-4 mx-auto mb-1 text-gray-400" />
-                                <input type="file" accept="image/*" onChange={(e) => handleImageUpload('final_approver_signature', e.target.files?.[0] || null)} className="absolute inset-0 w-full h-full opacity-0 cursor-pointer" />
-                                <span className="text-[11px] text-blue-600">Upload</span>
-                            </div>
-                        )}
                     </div>
                 </div>
             </div>

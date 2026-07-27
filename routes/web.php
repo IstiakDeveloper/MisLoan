@@ -267,6 +267,7 @@ Route::middleware(['auth', 'verified'])->group(function () {
     Route::prefix('head-office')->name('head-office.')->middleware('head.office')->group(function () {
         Route::get('admission-members', [HeadOfficeAdmissionController::class, 'index'])->name('admission-members');
         Route::get('admission-members/print', [HeadOfficeAdmissionController::class, 'print'])->name('admission-members.print');
+        Route::get('admission-members/export', [HeadOfficeAdmissionController::class, 'exportExcel'])->name('admission-members.export');
         Route::post('admission-members/mark-printed', [HeadOfficeAdmissionController::class, 'markAsPrinted'])->name('admission-members.mark-printed');
         Route::get('process-admissions', [HeadOfficeAdmissionController::class, 'process'])->name('process-admissions');
         Route::get('admissions/{admission}', [HeadOfficeAdmissionController::class, 'show'])->name('admissions.show');

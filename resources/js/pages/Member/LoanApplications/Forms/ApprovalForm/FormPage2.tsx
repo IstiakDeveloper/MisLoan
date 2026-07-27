@@ -1,7 +1,69 @@
-import React from 'react';
+import React, { useEffect } from 'react';
 import { FormPageProps } from './Types';
 
-export default function FormPage2({ data, setData }: FormPageProps) {
+const toNum = (v: unknown): number => {
+    const n = Number(v);
+    return Number.isFinite(n) ? n : 0;
+};
+
+const sumOrEmpty = (...vals: unknown[]): string => {
+    const hasAny = vals.some((v) => v !== '' && v !== null && v !== undefined);
+    if (!hasAny) return '';
+    return String(vals.reduce((acc: number, v) => acc + toNum(v), 0));
+};
+
+export default function FormPage2({ data, setData, requestedAmount }: FormPageProps) {
+    // সংস্থার অনুমোদনকৃত ঋণ = পেজ ১ এর আবেদনকৃত ঋণ / requested amount
+    const appliedLoan =
+        data.capital_applied_loan ||
+        data.approval_amount_digits ||
+        (requestedAmount != null && requestedAmount !== '' ? String(requestedAmount) : '');
+
+    // নিজস্ব তহবিল = পেজ ১ এর (ক) নিজস্ব মূলধন
+    const ownCapital = data.capital_own || '';
+
+    useEffect(() => {
+        if (appliedLoan !== '' && String(data.invest_plan_applied_amount || '') !== String(appliedLoan)) {
+            setData('invest_plan_applied_amount', appliedLoan);
+        }
+    }, [appliedLoan]);
+
+    useEffect(() => {
+        if (ownCapital !== '' && String(data.invest_plan_own_amount || '') !== String(ownCapital)) {
+            setData('invest_plan_own_amount', ownCapital);
+        }
+    }, [ownCapital]);
+
+    // বাম কলাম মোট
+    useEffect(() => {
+        const total = sumOrEmpty(
+            data.invest_plan_applied_amount,
+            data.invest_plan_own_amount,
+            data.invest_plan_other_amount,
+        );
+        if (String(data.invest_plan_total || '') !== total) {
+            setData('invest_plan_total', total);
+        }
+    }, [data.invest_plan_applied_amount, data.invest_plan_own_amount, data.invest_plan_other_amount]);
+
+    // ডান কলাম মোট
+    useEffect(() => {
+        const total = sumOrEmpty(
+            data.invest_use_capital,
+            data.invest_use_running,
+            data.invest_use_other,
+        );
+        if (String(data.invest_use_total || '') !== total) {
+            setData('invest_use_total', total);
+        }
+    }, [data.invest_use_capital, data.invest_use_running, data.invest_use_other]);
+
+    const planTotal = toNum(data.invest_plan_total);
+    const useTotal = toNum(data.invest_use_total);
+    const hasPlanTotal = data.invest_plan_total !== '' && data.invest_plan_total != null;
+    const hasUseTotal = data.invest_use_total !== '' && data.invest_use_total != null;
+    const totalsMismatch = hasPlanTotal && hasUseTotal && planTotal !== useTotal;
+
     return (
         <div id="form-page-2" data-sync="page-2" className="border-b pb-4">
             <h3 className="font-bold mb-4 bg-gray-200 px-3 py-1 inline-block rounded">পৃষ্ঠা ২: ঋণের প্রোফাইল</h3>
@@ -188,43 +250,76 @@ export default function FormPage2({ data, setData }: FormPageProps) {
                     <div className="border p-2 rounded bg-gray-50">
                         <label className="block text-[12px] font-medium mb-2">০৩. বিনিয়োগের পরিকল্পনা</label>
                         <div className="grid grid-cols-2 gap-4">
+                            {/* বাম: বিনিয়োগের খাত */}
                             <div className="space-y-2">
+                                <div className="text-[11px] font-semibold text-gray-700 border-b pb-1">বিনিয়োগের খাত</div>
                                 <div>
                                     <label className="block text-[11px] text-gray-600 mb-0.5">সংস্থার অনুমোদনকৃত ঋণে ব্যয়ের পরিমাণ</label>
-                                    <input type="number" value={data.invest_plan_applied_amount || ''} onChange={(e) => setData('invest_plan_applied_amount', e.target.value)} className="w-full border rounded px-2 py-1.5 text-[12px]" />
+                                    <input
+                                        type="number"
+                                        value={data.invest_plan_applied_amount || ''}
+                                        onChange={(e) => setData('invest_plan_applied_amount', e.target.value)}
+                                        className="w-full border rounded px-2 py-1.5 text-[12px] bg-amber-50 border-amber-400"
+                                    />
+                                    <p className="text-[10px] text-gray-500 mt-0.5">পেজ ১ এর আবেদনকৃত ঋণ থেকে অটো</p>
                                 </div>
                                 <div>
-                                    <label className="block text-[11px] text-gray-600 mb-0.5">নিজস্ব বিনিয়োগ</label>
-                                    <input type="number" value={data.invest_plan_own_amount || ''} onChange={(e) => setData('invest_plan_own_amount', e.target.value)} className="w-full border rounded px-2 py-1.5 text-[12px]" />
+                                    <label className="block text-[11px] text-gray-600 mb-0.5">নিজস্ব তহবিল</label>
+                                    <input
+                                        type="number"
+                                        value={data.invest_plan_own_amount || ''}
+                                        onChange={(e) => setData('invest_plan_own_amount', e.target.value)}
+                                        className="w-full border rounded px-2 py-1.5 text-[12px] bg-amber-50 border-amber-400"
+                                    />
+                                    <p className="text-[10px] text-gray-500 mt-0.5">পেজ ১ এর (ক) নিজস্ব মূলধন থেকে অটো</p>
                                 </div>
                                 <div>
-                                    <label className="block text-[11px] text-gray-600 mb-0.5">অন্যান্য উৎস থাকলে</label>
+                                    <label className="block text-[11px] text-gray-600 mb-0.5">অন্যান্য উৎস যদি থাকে (নাম উল্লেখ করতে হবে)</label>
                                     <input type="number" value={data.invest_plan_other_amount || ''} onChange={(e) => setData('invest_plan_other_amount', e.target.value)} className="w-full border rounded px-2 py-1.5 text-[12px]" />
                                 </div>
                                 <div>
-                                    <label className="block text-[11px] text-gray-600 mb-0.5">মোট</label>
-                                    <input type="number" value={data.invest_plan_total || ''} onChange={(e) => setData('invest_plan_total', e.target.value)} className="w-full border rounded px-2 py-1.5 text-[12px]" />
+                                    <label className="block text-[11px] text-gray-600 mb-0.5 font-semibold">মোট</label>
+                                    <input
+                                        type="number"
+                                        value={data.invest_plan_total || ''}
+                                        readOnly
+                                        className={`w-full border rounded px-2 py-1.5 text-[12px] bg-gray-100 cursor-not-allowed font-semibold ${totalsMismatch ? 'border-red-500' : ''}`}
+                                    />
                                 </div>
                             </div>
+
+                            {/* ডান: ঋণের ব্যবহার */}
                             <div className="space-y-2">
+                                <div className="text-[11px] font-semibold text-gray-700 border-b pb-1">ঋণের ব্যবহার</div>
                                 <div>
                                     <label className="block text-[11px] text-gray-600 mb-0.5">মূলধনী ব্যয়</label>
+                                    <p className="text-[10px] text-gray-400 mb-0.5">(ক) যন্ত্রপাতি ক্রয় / (খ) গৃহ নির্মাণ</p>
                                     <input type="number" value={data.invest_use_capital || ''} onChange={(e) => setData('invest_use_capital', e.target.value)} className="w-full border rounded px-2 py-1.5 text-[12px]" />
                                 </div>
                                 <div>
-                                    <label className="block text-[11px] text-gray-600 mb-0.5">চলতি ব্যয়</label>
+                                    <label className="block text-[11px] text-gray-600 mb-0.5">উদ্যোগ পরিচালনার ব্যয়</label>
                                     <input type="number" value={data.invest_use_running || ''} onChange={(e) => setData('invest_use_running', e.target.value)} className="w-full border rounded px-2 py-1.5 text-[12px]" />
                                 </div>
                                 <div>
-                                    <label className="block text-[11px] text-gray-600 mb-0.5">কিস্তি/সঞ্চয় পরিশোধের জমা</label>
+                                    <label className="block text-[11px] text-gray-600 mb-0.5">কাঁচামাল ক্রয়</label>
                                     <input type="number" value={data.invest_use_other || ''} onChange={(e) => setData('invest_use_other', e.target.value)} className="w-full border rounded px-2 py-1.5 text-[12px]" />
                                 </div>
                                 <div>
-                                    <label className="block text-[11px] text-gray-600 mb-0.5">মোট</label>
-                                    <input type="number" value={data.invest_use_total || ''} onChange={(e) => setData('invest_use_total', e.target.value)} className="w-full border rounded px-2 py-1.5 text-[12px]" />
+                                    <label className="block text-[11px] text-gray-600 mb-0.5 font-semibold">মোট</label>
+                                    <input
+                                        type="number"
+                                        value={data.invest_use_total || ''}
+                                        readOnly
+                                        className={`w-full border rounded px-2 py-1.5 text-[12px] bg-gray-100 cursor-not-allowed font-semibold ${totalsMismatch ? 'border-red-500' : ''}`}
+                                    />
                                 </div>
                             </div>
                         </div>
+                        {totalsMismatch && (
+                            <p className="mt-3 text-[12px] text-red-600 font-medium">
+                                বিনিয়োগের খাতের মোট ({planTotal}) এবং ঋণের ব্যবহারের মোট ({useTotal}) মিলছে না। দুই মোট সমান হতে হবে।
+                            </p>
+                        )}
                     </div>
                 </div>
             </div>

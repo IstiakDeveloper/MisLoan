@@ -99,7 +99,8 @@ function renderPage1(d: any, branch?: any, categoryName?: string) {
                     <div><span>আবেদনের তারিখ:</span><span className="ml-1 inline-flex items-center"><DateDigitBoxes dateStr={fmt(d.application_date)} /></span></div>
                     <div><span>বরাবর,</span></div>
                     <div><span className="border-b border-dotted border-gray-600 inline-block min-w-[120px] mx-1 align-bottom">{d.recipient_to || ''}</span></div>
-                    <div><span>ঠিকানা:</span><span className="border-b border-dotted border-gray-600 inline-block min-w-[120px] mx-1 align-bottom">{d.authority_medium || ''}</span></div>
+                    <div><span className="border-b border-dotted border-gray-600 inline-block min-w-[120px] mx-1 align-bottom">{d.authority_medium || ''}</span></div>
+                    <div><span>মাধ্যম যথাযথ কর্তৃপক্ষ।</span></div>
                 </div>
                 {/* ডান পাশ – ড্যাশড বর্ডার, বাম থেকে সাজানো, তারিখ বক্স অ্যালাইন একই */}
                 <div className="flex flex-col gap-1 border border-dashed border-gray-600 p-2 items-start justify-center">
@@ -239,13 +240,7 @@ function renderPage1(d: any, branch?: any, categoryName?: string) {
                 </p>
                 <div className="flex justify-end mt-4 flex-col items-end">
                     <div className="border-b border-dotted border-gray-500 w-32 sm:w-40 min-h-[22px] mb-1" />
-                    <div className="min-h-[28px]">
-                        {d.applicant_signature ? (
-                            <img src={d.applicant_signature} alt="আবেদনকারীর স্বাক্ষর" className="h-6 object-contain" />
-                        ) : (
-                            <span className="text-[11px] text-gray-500">আবেদনকারীর স্বাক্ষর</span>
-                        )}
-                    </div>
+                    <div className="min-h-[28px]"><span className="text-[11px] text-gray-500">আবেদনকারীর স্বাক্ষর</span></div>
                 </div>
             </div>
             <div className="grid grid-cols-2 gap-2 mb-2">
@@ -265,13 +260,7 @@ function renderPage1(d: any, branch?: any, categoryName?: string) {
             </div>
             <div className="flex justify-end mt-5 flex-col items-end">
                 <div className="border-b border-dotted border-gray-500 w-40 sm:w-48 min-h-[28px] mb-1" />
-                <div className="min-h-[36px] flex items-center justify-end">
-                    {d.approver_signature ? (
-                        <img src={d.approver_signature} alt="অনুমোদনকারীর স্বাক্ষর" className="h-7 object-contain" />
-                    ) : (
-                        <span className="text-[11px] text-gray-500">অনুমোদনকারীর স্বাক্ষর ও সিল</span>
-                    )}
-                </div>
+                <div className="min-h-[36px] flex items-center justify-end"><span className="text-[11px] text-gray-500">অনুমোদনকারীর স্বাক্ষর ও সিল</span></div>
             </div>
             <div className="text-right mt-2 text-[12px]">১ / ৪</div>
         </div>
@@ -609,6 +598,17 @@ function renderPage2(d: any, categoryName?: string) {
 
 function renderPage3(d: any) {
     const fmt = formatDateBangla;
+
+    const months = Number(d.loan_duration_months) || 0;
+    const years = months > 0 ? months / 12 : 0;
+    const yearsEng = years > 0
+        ? (Number.isInteger(years) ? String(years) : String(Math.round(years * 10) / 10))
+        : '১/১.৫/২';
+    const banglaMap: Record<string, string> = {
+        '0': '০', '1': '১', '2': '২', '3': '৩', '4': '৪',
+        '5': '৫', '6': '৬', '7': '৭', '8': '৮', '9': '৯',
+    };
+    const yearsLabel = yearsEng.replace(/[0-9]/g, (digit: string) => banglaMap[digit] ?? digit);
     
     // Calculations for Income/Expense
     const exp_emp = Number(d.est_emp_salary) || 0;
@@ -633,12 +633,13 @@ function renderPage3(d: any) {
     const inst_sc = Number(d.installment_service_charge) || 0;
     const inst_total = inst_prin + inst_sc;
     const loan_dur = Number(d.loan_duration_months) || 0;
-    const total_payable = inst_total * loan_dur;
+    const installment_count = Number(d.number_of_installments) || loan_dur;
+    const total_payable = inst_total * installment_count;
 
     return (
-        <div id="preview-page-3" data-sync="page-3" className="bg-white p-4 print:p-0 print:border-none text-[12px] print:text-[11px] print:leading-tight" style={{ pageBreakAfter: 'always' }}>
+        <div id="preview-page-3" data-sync="page-3" className="bg-white border border-gray-300 p-4 print:p-0 print:border-none text-[12px] print:text-[11px] print:leading-tight" style={{ pageBreakAfter: 'always' }}>
             <div className="mb-6">
-                <h3 className="font-bold mb-3 text-[13px]">০৪. উদ্যোগের ১/১.৫/২ বছর এর সম্ভাব্য আয়-ব্যয় হিসাব:</h3>
+                <h3 className="font-bold mb-3 text-[13px]">০৪. উদ্যোগের {yearsLabel} বছর এর সম্ভাব্য আয়-ব্যয় হিসাব:</h3>
                 <table className="w-full border-collapse border border-gray-600 mb-3 text-center align-middle">
                     <thead>
                         <tr>
@@ -674,7 +675,7 @@ function renderPage3(d: any) {
                             <td className="border border-gray-600 p-2 text-left align-top">
                                 উদ্যোগের মূল আয়<br/>
                                 (মূল আয়ের খাত উল্লেখ করতে হবে)<br/>
-                                <div className="mt-2 text-center underline font-semibold">{d.est_main_income_source || ''}</div>
+                                <div className="mt-2 text-center underline font-semibold">{d.est_main_income_desc || d.est_main_income_source || ''}</div>
                                 <div className="mt-6 border-t border-gray-600 pt-1">
                                     অন্যান্য আয় (খাত উল্লেখ করতে হবে)<br/>
                                     <div className="mt-1 text-center underline font-semibold">{d.est_other_income_source || ''}</div>
@@ -795,6 +796,7 @@ function renderPage3(d: any) {
                     </div>
                 </div>
             </div>
+            <div className="text-right mt-2 text-[12px]">৩ / ৪</div>
         </div>
     );
 }
@@ -803,16 +805,16 @@ function renderPage3(d: any) {
 function renderPage4(d: any) {
     const fmt = formatDateBangla;
     return (
-        <div id="preview-page-4" data-sync="page-4" className="bg-white p-4 print:p-0 text-[14px] print:leading-tight">
+        <div id="preview-page-4" data-sync="page-4" className="bg-white border border-gray-300 p-4 print:p-0 print:border-none text-[14px] print:leading-tight">
             <div className="mb-6">
-                <div className="font-bold mb-3">০৪. চাকরিজীবীর ক্ষেত্রে (প্রযোজ্য ক্ষেত্রে): <span className="font-normal border-b border-dotted border-gray-600 inline-block min-w-[250px]">{d.employee_workplace_name || ''}</span> মাসিক বেতন: <span className="font-normal border-b border-dotted border-gray-600 inline-block min-w-[250px]">{d.employee_monthly_salary ? fmt(d.employee_monthly_salary) : ''}</span> হাতে প্রাপ্তি: <span className="font-normal border-b border-dotted border-gray-600 inline-block min-w-[250px]">{d.employee_received_in_hand ? fmt(d.employee_received_in_hand) : ''}</span></div>
-                <div className="mb-3">অন্যান্য খাতের আয়: <span className="border-b border-dotted border-gray-600 inline-block min-w-[250px]">{d.employee_other_income ? fmt(d.employee_other_income) : ''}</span> কর্মস্থলে ঋণ অনুমোদনকারীর উপস্থিতির তারিখ ও সময়: <span className="border-b border-dotted border-gray-600 inline-block min-w-[250px]">{d.employee_approver_presence_time || ''}</span> সাথে কে ছিলো: <span className="border-b border-dotted border-gray-600 inline-block min-w-[250px]">{d.employee_who_was_with || ''}</span></div>
-                <div className="mb-3">যে ব্যাংকে বেতন হয়: <span className="border-b border-dotted border-gray-600 inline-block min-w-[250px]">{d.employee_bank_name || ''}</span> ব্যাংক স্টেটমেন্ট যাচাই অনুযায়ী হাতে বেতন পাওয়ার পরিমাণ: <span className="border-b border-dotted border-gray-600 inline-block min-w-[250px]">{d.employee_salary_per_statement ? fmt(d.employee_salary_per_statement) : ''}</span></div>
+                <div className="font-bold mb-3">০৪. চাকরিজীবীর ক্ষেত্রে (প্রযোজ্য ক্ষেত্রে): <span className="font-normal border-b border-dotted border-gray-600 inline-block min-w-[250px]">{d.employee_workplace_name || ''}</span> মাসিক বেতন: <span className="font-normal border-b border-dotted border-gray-600 inline-block min-w-[250px]">{noDecimal(d.employee_monthly_salary)}</span> হাতে প্রাপ্তি: <span className="font-normal border-b border-dotted border-gray-600 inline-block min-w-[250px]">{noDecimal(d.employee_received_in_hand)}</span></div>
+                <div className="mb-3">অন্যান্য খাতের আয়: <span className="border-b border-dotted border-gray-600 inline-block min-w-[250px]">{noDecimal(d.employee_other_income)}</span> কর্মস্থলে ঋণ অনুমোদনকারীর উপস্থিতির তারিখ ও সময়: <span className="border-b border-dotted border-gray-600 inline-block min-w-[250px]">{(d.employee_approver_presence_time || '').replace('T', ' ')}</span> সাথে কে ছিলো: <span className="border-b border-dotted border-gray-600 inline-block min-w-[250px]">{d.employee_who_was_with || ''}</span></div>
+                <div className="mb-3">যে ব্যাংকে বেতন হয়: <span className="border-b border-dotted border-gray-600 inline-block min-w-[250px]">{d.employee_bank_name || ''}</span> ব্যাংক স্টেটমেন্ট যাচাই অনুযায়ী হাতে বেতন পাওয়ার পরিমাণ: <span className="border-b border-dotted border-gray-600 inline-block min-w-[250px]">{noDecimal(d.employee_salary_per_statement)}</span></div>
             </div>
 
             <div className="mb-6">
-                <div className="font-bold mb-3">০৫. প্রবাসী সদস্যের রেমিটেন্স এর তথ্য (প্রযোজ্য ক্ষেত্রে): <span className="font-normal">মাসিক আয়:</span> <span className="font-normal border-b border-dotted border-gray-600 inline-block min-w-[250px]">{d.expatriate_monthly_income ? fmt(d.expatriate_monthly_income) : ''}</span> যে চ্যানেলে আসে: <span className="font-normal border-b border-dotted border-gray-600 inline-block min-w-[250px]">{d.expatriate_channel || ''}</span></div>
-                <div className="mb-3">যা দেখে নিশ্চিত হলেন: <span className="border-b border-dotted border-gray-600 inline-block min-w-[250px]">{d.expatriate_confirmation_method || ''}</span> প্রবাসী সদস্য যে দেশে থাকে: <span className="border-b border-dotted border-gray-600 inline-block min-w-[250px]">{d.expatriate_country || ''}</span> কতো বছর ধরে থাকে: <span className="border-b border-dotted border-gray-600 inline-block min-w-[120px]">{d.expatriate_years_living ? fmt(d.expatriate_years_living) : ''}</span> ওয়ার্কপারমিট যাচাই: <span className="border-b border-dotted border-gray-600 inline-block min-w-[120px]">{d.expatriate_work_permit_checked || ''}</span></div>
+                <div className="font-bold mb-3">০৫. প্রবাসী সদস্যের রেমিটেন্স এর তথ্য (প্রযোজ্য ক্ষেত্রে): <span className="font-normal">মাসিক আয়:</span> <span className="font-normal border-b border-dotted border-gray-600 inline-block min-w-[250px]">{noDecimal(d.expatriate_monthly_income)}</span> যে চ্যানেলে আসে: <span className="font-normal border-b border-dotted border-gray-600 inline-block min-w-[250px]">{d.expatriate_channel || ''}</span></div>
+                <div className="mb-3">যা দেখে নিশ্চিত হলেন: <span className="border-b border-dotted border-gray-600 inline-block min-w-[250px]">{d.expatriate_confirmation_method || ''}</span> প্রবাসী সদস্য যে দেশে থাকে: <span className="border-b border-dotted border-gray-600 inline-block min-w-[250px]">{d.expatriate_country || ''}</span> কতো বছর ধরে থাকে: <span className="border-b border-dotted border-gray-600 inline-block min-w-[120px]">{noDecimal(d.expatriate_years_living)}</span> ওয়ার্কপারমিট যাচাই: <span className="border-b border-dotted border-gray-600 inline-block min-w-[120px]">{d.expatriate_work_permit_checked || ''}</span></div>
             </div>
 
             <div className="mb-6">
@@ -833,47 +835,37 @@ function renderPage4(d: any) {
 
             <div className="mb-6 mt-6">
                 <div className="font-bold mb-3">৯. কর্মসংস্থান সংক্রান্ত তথ্য:</div>
-                <table className="w-full border-collapse border border-black text-center text-[13px]">
+                <table className="w-full table-fixed border-collapse border border-black text-center text-[11px]">
                     <thead>
                         <tr>
-                            <th rowSpan={3} className="border border-black font-normal p-2">ঋণ কার্যক্রমের নাম</th>
-                            <th colSpan={2} className="border border-black font-normal p-2">স্ব-কর্মসংস্থান/পারিবারিক কর্মসংস্থান</th>
-                            <th colSpan={2} className="border border-black font-normal p-2">মজুরি ভিত্তিক কর্মসংস্থান</th>
-                            <th colSpan={2} className="border border-black font-normal p-2">মোট</th>
+                            <th rowSpan={3} className="border border-black font-normal p-1 w-[18%]">ঋণ কার্যক্রমের নাম</th>
+                            <th colSpan={2} className="border border-black font-normal p-1">স্ব-কর্মসংস্থান/পারিবারিক কর্মসংস্থান</th>
+                            <th colSpan={2} className="border border-black font-normal p-1">মজুরি ভিত্তিক কর্মসংস্থান</th>
+                            <th rowSpan={3} className="border border-black font-normal p-1">মোট<br/>পূর্ণ সময়<br/>৯ = ১+২+৫+৬</th>
+                            <th rowSpan={3} className="border border-black font-normal p-1">মোট<br/>আংশিক সময়<br/>১০ = ৩+৪+৭+৮</th>
                         </tr>
                         <tr>
-                            <th className="border border-black font-normal p-2">পূর্ণকালীন</th>
-                            <th className="border border-black font-normal p-2">খণ্ডকালীন</th>
-                            <th className="border border-black font-normal p-2">পূর্ণকালীন</th>
-                            <th className="border border-black font-normal p-2">খণ্ডকালীন</th>
-                            <th rowSpan={2} className="border border-black font-normal p-2 whitespace-nowrap">পূর্ণ সময়<br/>৯ = ১+২+৫+৬</th>
-                            <th rowSpan={2} className="border border-black font-normal p-2 whitespace-nowrap">আংশিক সময়<br/>১০ = ৩+৪+৭+৮</th>
+                            <th className="border border-black font-normal p-1">পূর্ণকালীন</th>
+                            <th className="border border-black font-normal p-1">খণ্ডকালীন</th>
+                            <th className="border border-black font-normal p-1">পূর্ণকালীন</th>
+                            <th className="border border-black font-normal p-1">খণ্ডকালীন</th>
                         </tr>
                         <tr>
-                            <th className="border border-black p-0 font-normal"><div className="flex"><div className="w-1/2 border-r border-black py-2.5">মহিলা</div><div className="w-1/2 py-2.5">পুরুষ</div></div></th>
-                            <th className="border border-black p-0 font-normal"><div className="flex"><div className="w-1/2 border-r border-black py-2.5">মহিলা</div><div className="w-1/2 py-2.5">পুরুষ</div></div></th>
-                            <th className="border border-black p-0 font-normal"><div className="flex"><div className="w-1/2 border-r border-black py-2.5">মহিলা</div><div className="w-1/2 py-2.5">পুরুষ</div></div></th>
-                            <th className="border border-black p-0 font-normal"><div className="flex"><div className="w-1/2 border-r border-black py-2.5">মহিলা</div><div className="w-1/2 py-2.5">পুরুষ</div></div></th>
-                        </tr>
-                        <tr>
-                            <td className="border border-black bg-gray-100 p-0 text-[13px]"></td>
-                            <td className="border border-black bg-gray-100 p-0 text-[13px]"><div className="flex"><div className="w-1/2 border-r border-black py-2.5">১</div><div className="w-1/2 py-2.5">২</div></div></td>
-                            <td className="border border-black bg-gray-100 p-0 text-[13px]"><div className="flex"><div className="w-1/2 border-r border-black py-2.5">৩</div><div className="w-1/2 py-2.5">৪</div></div></td>
-                            <td className="border border-black bg-gray-100 p-0 text-[13px]"><div className="flex"><div className="w-1/2 border-r border-black py-2.5">৫</div><div className="w-1/2 py-2.5">৬</div></div></td>
-                            <td className="border border-black bg-gray-100 p-0 text-[13px]"><div className="flex"><div className="w-1/2 border-r border-black py-2.5">৭</div><div className="w-1/2 py-2.5">৮</div></div></td>
-                            <td className="border border-black bg-gray-100 p-0 text-[13px]"></td>
-                            <td className="border border-black bg-gray-100 p-0 text-[13px]"></td>
+                            <th className="border border-black p-0 font-normal"><div className="flex"><div className="w-1/2 border-r border-black py-1">মহিলা</div><div className="w-1/2 py-1">পুরুষ</div></div></th>
+                            <th className="border border-black p-0 font-normal"><div className="flex"><div className="w-1/2 border-r border-black py-1">মহিলা</div><div className="w-1/2 py-1">পুরুষ</div></div></th>
+                            <th className="border border-black p-0 font-normal"><div className="flex"><div className="w-1/2 border-r border-black py-1">মহিলা</div><div className="w-1/2 py-1">পুরুষ</div></div></th>
+                            <th className="border border-black p-0 font-normal"><div className="flex"><div className="w-1/2 border-r border-black py-1">মহিলা</div><div className="w-1/2 py-1">পুরুষ</div></div></th>
                         </tr>
                     </thead>
                     <tbody>
                         <tr>
-                            <td className="border border-black p-2">{d.loan_program_name || ''}</td>
-                            <td className="border border-black p-0"><div className="flex h-full min-h-[20px]"><div className="w-1/2 border-r border-black py-2">{fmt(d.self_emp_full_female)}</div><div className="w-1/2 py-2">{fmt(d.self_emp_full_male)}</div></div></td>
-                            <td className="border border-black p-0"><div className="flex h-full min-h-[20px]"><div className="w-1/2 border-r border-black py-2">{fmt(d.self_emp_part_female)}</div><div className="w-1/2 py-2">{fmt(d.self_emp_part_male)}</div></div></td>
-                            <td className="border border-black p-0"><div className="flex h-full min-h-[20px]"><div className="w-1/2 border-r border-black py-2">{fmt(d.wage_emp_full_female)}</div><div className="w-1/2 py-2">{fmt(d.wage_emp_full_male)}</div></div></td>
-                            <td className="border border-black p-0"><div className="flex h-full min-h-[20px]"><div className="w-1/2 border-r border-black py-2">{fmt(d.wage_emp_part_female)}</div><div className="w-1/2 py-2">{fmt(d.wage_emp_part_male)}</div></div></td>
-                            <td className="border border-black p-2">{ fmt((Number(d.self_emp_full_female||0) + Number(d.self_emp_full_male||0) + Number(d.wage_emp_full_female||0) + Number(d.wage_emp_full_male||0))) }</td>
-                            <td className="border border-black p-2">{ fmt((Number(d.self_emp_part_female||0) + Number(d.self_emp_part_male||0) + Number(d.wage_emp_part_female||0) + Number(d.wage_emp_part_male||0))) }</td>
+                            <td className="border border-black p-1">{d.loan_program_name || ''}</td>
+                            <td className="border border-black p-0"><div className="flex h-full min-h-[20px]"><div className="w-1/2 border-r border-black py-2">{noDecimal(d.self_emp_full_female)}</div><div className="w-1/2 py-2">{noDecimal(d.self_emp_full_male)}</div></div></td>
+                            <td className="border border-black p-0"><div className="flex h-full min-h-[20px]"><div className="w-1/2 border-r border-black py-2">{noDecimal(d.self_emp_part_female)}</div><div className="w-1/2 py-2">{noDecimal(d.self_emp_part_male)}</div></div></td>
+                            <td className="border border-black p-0"><div className="flex h-full min-h-[20px]"><div className="w-1/2 border-r border-black py-2">{noDecimal(d.wage_emp_full_female)}</div><div className="w-1/2 py-2">{noDecimal(d.wage_emp_full_male)}</div></div></td>
+                            <td className="border border-black p-0"><div className="flex h-full min-h-[20px]"><div className="w-1/2 border-r border-black py-2">{noDecimal(d.wage_emp_part_female)}</div><div className="w-1/2 py-2">{noDecimal(d.wage_emp_part_male)}</div></div></td>
+                            <td className="border border-black p-1">{noDecimal((Number(d.self_emp_full_female||0) + Number(d.self_emp_full_male||0) + Number(d.wage_emp_full_female||0) + Number(d.wage_emp_full_male||0)))}</td>
+                            <td className="border border-black p-1">{noDecimal((Number(d.self_emp_part_female||0) + Number(d.self_emp_part_male||0) + Number(d.wage_emp_part_female||0) + Number(d.wage_emp_part_male||0)))}</td>
                         </tr>
                     </tbody>
                 </table>
@@ -881,12 +873,11 @@ function renderPage4(d: any) {
 
             <div className="flex justify-between items-end mt-16 mb-6 px-4">
                 <div className="text-center relative">
-                    {d.member?.signature_image_url && <img src={d.member.signature_image_url} alt="Signature" className="absolute -top-10 left-1/2 -translate-x-1/2 w-20 h-10 object-contain" />}
                     <div className="border-t border-dotted border-gray-600 min-w-[250px] pt-1 text-[14px]">সদস্যের স্বাক্ষর:</div>
                     <div className="mt-1 flex items-center justify-center gap-1">
                         <span className="text-[14px]">সদস্যের মোবাইল নং</span>
                         <div className="flex border border-gray-600">
-                            {String(d.member?.mobile_number || '').padEnd(11, ' ').slice(0, 11).split('').map((char, i) => (
+                            {String(d.member_mobile || d.member?.mobile_number || '').padEnd(11, ' ').slice(0, 11).split('').map((char, i) => (
                                 <div key={i} className={`w-4 h-5 flex items-center justify-center text-[13px] ${i > 0 ? 'border-l border-gray-600' : ''}`}>{char.trim()}</div>
                             ))}
                         </div>
@@ -897,31 +888,27 @@ function renderPage4(d: any) {
                 </div>
             </div>
 
-            <div className="border border-black mb-6 w-full md:w-3/4 mx-auto md:mx-0 print:w-[85%] print:mx-auto">
+            <div className="border border-black mb-6 w-full">
                 <div className="text-center font-bold border-b border-black py-2">ঘ. সংস্থার অফিস পর্যায়ে পূরণীয়:</div>
                 
                 <div className="border-b border-black p-2 min-h-[50px] relative">
                     <div className="font-bold text-[14px]">(ক) অফিসারের পরিদর্শনোত্তর মন্তব্য, স্বাক্ষর ও সিল:</div>
                     <div className="mt-1 text-[14px]">{d.officer_post_inspection_comments || ''}</div>
-                    {d.officer_post_inspection_signature && <img src={d.officer_post_inspection_signature} alt="Signature" className="absolute bottom-1 right-1 w-20 h-10 object-contain" />}
                 </div>
                 
                 <div className="border-b border-black p-2 min-h-[50px] relative">
                     <div className="font-bold text-[14px]">(খ) শাখা ব্যবস্থাপকের পরিদর্শনোত্তর মন্তব্য, স্বাক্ষর ও সিল:</div>
                     <div className="mt-1 text-[14px]">{d.branch_manager_post_inspection_comments || ''}</div>
-                    {d.branch_manager_post_inspection_signature && <img src={d.branch_manager_post_inspection_signature} alt="Signature" className="absolute bottom-1 right-1 w-20 h-10 object-contain" />}
                 </div>
 
                 <div className="border-b border-black p-2 min-h-[50px] relative">
                     <div className="font-bold text-[14px]">(গ) আঞ্চলিক ব্যবস্থাপকের পরিদর্শনোত্তর মন্তব্য, স্বাক্ষর ও সিল:</div>
                     <div className="mt-1 text-[14px]">{d.regional_manager_comments || ''}</div>
-                    {d.regional_manager_signature && <img src={d.regional_manager_signature} alt="Signature" className="absolute bottom-1 right-1 w-20 h-10 object-contain" />}
                 </div>
 
                 <div className="border-b border-black p-2 min-h-[50px] relative">
                     <div className="font-bold text-[14px]">(ঘ) জোনাল ম্যানেজারের পরিদর্শনোত্তর মন্তব্য, স্বাক্ষর ও সিল:</div>
                     <div className="mt-1 text-[14px]">{d.zonal_manager_comments || ''}</div>
-                    {d.zonal_manager_signature && <img src={d.zonal_manager_signature} alt="Signature" className="absolute bottom-1 right-1 w-20 h-10 object-contain" />}
                 </div>
 
                 <div className="p-2 min-h-[70px]">
@@ -936,10 +923,10 @@ function renderPage4(d: any) {
                     <span className="font-bold ml-4">কথায়:</span> <span className="border-b border-dotted border-gray-600 inline-block min-w-[250px] font-bold">{d.final_approved_loan_amount_words || ''}</span>
                 </div>
                 <div className="text-center relative">
-                    {d.final_approver_signature && <img src={d.final_approver_signature} alt="Signature" className="absolute -top-10 left-1/2 -translate-x-1/2 w-20 h-10 object-contain" />}
                     <div className="border-t border-dotted border-gray-600 min-w-[250px] pt-1 text-[14px]">চূড়ান্ত অনুমোদনকারীর স্বাক্ষর ও সিল:</div>
                 </div>
             </div>
+            <div className="text-right mt-2 text-[12px]">৪ / ৪</div>
         </div>
     );
 }

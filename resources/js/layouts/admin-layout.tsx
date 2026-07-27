@@ -317,23 +317,47 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
         return groups;
     }, [isBranchRole, isEdRole, isTeamApproverRole, branchMenuItems, approverMenuItems, approverOperationsItems, headOfficeMainItems]);
 
-    // Compute items for mobile bottom nav (top 4 items)
+    // Compute items for mobile bottom nav (ensuring Pending Approvals is prioritized)
     const mobileBottomNavItems = useMemo(() => {
-        let items = [];
-        if (isBranchRole) {
-            items = [...branchMenuItems];
-        } else if (isEdRole) {
-            items = [
-                ...approverMenuItems,
-                ...headOfficeMainItems.filter(m => m.href !== '/dashboard'),
-            ];
-        } else if (isTeamApproverRole) {
-            items = [...approverMenuItems, ...approverOperationsItems];
-        } else {
-            items = [...headOfficeMainItems];
+        const pendingApprovalItem = {
+            name: 'Pending Approvals',
+            href: '/approvals',
+            icon: ClipboardCheck,
+            badge: badgeCounts.pendingApprovals || 0,
+        };
+
+        if (isFieldOfficer) {
+            return branchMenuItems;
         }
-        return items.slice(0, 4);
-    }, [isBranchRole, isEdRole, isTeamApproverRole, branchMenuItems, approverMenuItems, approverOperationsItems, headOfficeMainItems]);
+
+        if (isBranchRole) {
+            return [
+                branchMenuItems.find(m => m.href === '/dashboard') || branchMenuItems[0],
+                branchMenuItems.find(m => m.href === '/member-admissions') || branchMenuItems[1],
+                branchMenuItems.find(m => m.href === '/member/loan-applications') || branchMenuItems[2],
+                pendingApprovalItem,
+            ].filter(Boolean);
+        }
+
+        if (isTeamApproverRole || isEdRole) {
+            const teamItem = approverMenuItems.find(m => m.href === '/team-based-approvals/for-approver');
+            return [
+                approverMenuItems.find(m => m.href === '/dashboard') || approverMenuItems[0],
+                pendingApprovalItem,
+                ...(teamItem ? [teamItem] : []),
+                approverOperationsItems[0],
+            ].slice(0, 4).filter(Boolean);
+        }
+
+        // Head office / super admin / default
+        const hoTeamItem = headOfficeMainItems.find(m => m.href === '/head-office/team-based-approvals');
+        return [
+            headOfficeMainItems.find(m => m.href === '/dashboard') || headOfficeMainItems[0],
+            pendingApprovalItem,
+            ...(hoTeamItem ? [hoTeamItem] : []),
+            headOfficeMainItems.find(m => m.href === '/head-office/admission-members') || headOfficeMainItems[1],
+        ].slice(0, 4).filter(Boolean);
+    }, [isFieldOfficer, isBranchRole, isTeamApproverRole, isEdRole, branchMenuItems, approverMenuItems, approverOperationsItems, headOfficeMainItems, badgeCounts.pendingApprovals]);
 
     const showReportSection = isEdRole || canViewTeamBasedReport;
 
@@ -670,6 +694,26 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
                                 </button>
                             )}
 
+                            {/* Pending Approvals Quick Header Shortcut */}
+                            <Link
+                                href="/approvals"
+                                className={`relative flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl transition-all duration-200 ${
+                                    path === '/approvals'
+                                        ? 'bg-blue-600 text-white shadow-md shadow-blue-600/20'
+                                        : 'bg-slate-100/90 text-slate-700 hover:bg-blue-50 hover:text-blue-600'
+                                }`}
+                                title="Pending Approvals"
+                                aria-label="Pending Approvals"
+                            >
+                                <ClipboardCheck className="w-4.5 h-4.5 stroke-[1.75]" />
+                                <span className="hidden sm:inline text-xs font-bold">Approvals</span>
+                                {badgeCounts.pendingApprovals != null && badgeCounts.pendingApprovals > 0 && (
+                                    <span className="flex h-4 min-w-[16px] items-center justify-center rounded-full bg-rose-500 px-1 text-[9px] font-extrabold text-white shadow-xs animate-pulse">
+                                        {badgeCounts.pendingApprovals}
+                                    </span>
+                                )}
+                            </Link>
+
                             {/* Notifications Toggle */}
                             <button
                                 type="button"
@@ -833,6 +877,27 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
                             </div>
                         </div>
                     </div>
+                </div>
+            )}
+
+            {/* Mobile Floating Pending Approvals Quick Overlay Pill (Only shown when pending approvals > 0) */}
+            {isMobile && path !== '/approvals' && (badgeCounts.pendingApprovals || 0) > 0 && (
+                <div className="fixed bottom-20 right-4 z-40 md:hidden animate-in fade-in slide-in-from-bottom-3 duration-300">
+                    <Link
+                        href="/approvals"
+                        className="group flex items-center gap-2 px-3.5 py-2.5 rounded-full bg-gradient-to-r from-blue-600 to-indigo-600 text-white shadow-xl shadow-blue-600/35 border border-white/20 active:scale-95 transition-all duration-200"
+                        aria-label="Pending Approvals"
+                    >
+                        <div className="relative flex items-center justify-center">
+                            <ClipboardCheck className="w-5 h-5 stroke-[2] text-white" />
+                            <span className="absolute -top-2 -right-2 flex h-4.5 min-w-[18px] items-center justify-center rounded-full bg-rose-500 px-1 text-[9px] font-black text-white ring-2 ring-white shadow-md animate-pulse">
+                                {badgeCounts.pendingApprovals}
+                            </span>
+                        </div>
+                        <span className="text-xs font-bold tracking-wide pr-0.5">
+                            Pending Approvals
+                        </span>
+                    </Link>
                 </div>
             )}
 

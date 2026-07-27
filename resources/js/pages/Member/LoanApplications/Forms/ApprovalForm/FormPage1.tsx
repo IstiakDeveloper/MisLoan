@@ -1,5 +1,4 @@
 import React from 'react';
-import { Upload } from 'lucide-react';
 import { FormPageProps } from './Types';
 import GeneralSavingsSection from '@/components/LoanApplications/GeneralSavingsSection';
 import { SmartDateInput } from '@/components/ui/SmartDateInput';
@@ -347,38 +346,6 @@ export default function FormPage1({ data, setData, member, isLegacy, handleImage
                 </div>
             </div>
 
-            <div className="grid grid-cols-2 gap-4 mb-4">
-                <div>
-                    <label className="block text-[12px] font-medium mb-2">আবেদনকারীর স্বাক্ষর</label>
-                    {data.applicant_signature ? (
-                        <div className="relative">
-                            <img src={data.applicant_signature} alt="Signature" className="w-full h-24 object-contain border rounded" />
-                            <button type="button" onClick={() => removeImage('applicant_signature')} className="absolute top-1 right-1 p-1 bg-red-500 text-white rounded text-[12px]">X</button>
-                        </div>
-                    ) : (
-                        <div className="border-2 border-dashed rounded p-2 text-center">
-                            <Upload className="w-6 h-6 mx-auto mb-1 text-gray-400" />
-                            <input type="file" accept="image/*" onChange={(e) => handleImageUpload('applicant_signature', e.target.files?.[0] || null)} className="hidden" id="applicant_signature" />
-                            <label htmlFor="applicant_signature" className="cursor-pointer text-[12px] text-blue-600">Upload</label>
-                        </div>
-                    )}
-                </div>
-                <div>
-                    <label className="block text-[12px] font-medium mb-2">অনুমোদনকারীর স্বাক্ষর</label>
-                    {data.approver_signature ? (
-                        <div className="relative">
-                            <img src={data.approver_signature} alt="Signature" className="w-full h-24 object-contain border rounded" />
-                            <button type="button" onClick={() => removeImage('approver_signature')} className="absolute top-1 right-1 p-1 bg-red-500 text-white rounded text-[12px]">X</button>
-                        </div>
-                    ) : (
-                        <div className="border-2 border-dashed rounded p-2 text-center">
-                            <Upload className="w-6 h-6 mx-auto mb-1 text-gray-400" />
-                            <input type="file" accept="image/*" onChange={(e) => handleImageUpload('approver_signature', e.target.files?.[0] || null)} className="hidden" id="approver_signature" />
-                            <label htmlFor="approver_signature" className="cursor-pointer text-[12px] text-blue-600">Upload</label>
-                        </div>
-                    )}
-                </div>
-            </div>
         </div>
     );
 }
