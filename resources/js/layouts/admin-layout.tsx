@@ -43,6 +43,8 @@ interface User {
     has_all_access: boolean;
     is_read_only?: boolean;
     branch_id?: number | null;
+    profile_photo?: string | null;
+    avatar?: string | null;
 }
 
 interface Flash {
@@ -86,6 +88,7 @@ function isNavItemActive(currentPath: string, href: string): boolean {
 export default function AdminLayout({ children }: AdminLayoutProps) {
     const page = usePage<PageProps>();
     const { auth, flash, siteMaintenance = false, badgeCounts = {} } = page.props;
+    const userAvatarSrc = auth.user?.avatar || (auth.user?.profile_photo ? `/storage/${auth.user.profile_photo}` : null);
     const path = (() => {
         try {
             return new URL(page.url).pathname;
@@ -651,20 +654,38 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
                 {/* Sidebar User Footer */}
                 <div className="border-t border-slate-100 p-3 bg-gradient-to-b from-transparent to-blue-50/10">
                     {sidebarOpen ? (
-                        <div className="flex items-center gap-2.5 min-w-0 bg-white border border-slate-100 rounded-xl p-2.5 shadow-xs">
-                            <div className="w-8.5 h-8.5 rounded-full bg-gradient-to-tr from-blue-500 to-indigo-600 text-white flex items-center justify-center text-xs font-bold flex-shrink-0 shadow-sm shadow-blue-500/10">
-                                {auth.user?.name?.charAt(0)?.toUpperCase() || 'U'}
-                            </div>
-                            <div className="min-w-0 flex-1">
-                                <p className="text-[11px] font-bold text-slate-800 truncate">{auth.user?.name || 'User'}</p>
-                                <p className="text-[9px] text-blue-600 font-semibold capitalize truncate mt-0.5">{auth.user?.role?.name?.replace('_', ' ') || 'Admin'}</p>
-                            </div>
+                        <div className="flex items-center justify-between gap-2 bg-white border border-slate-100 rounded-xl p-2 shadow-xs">
+                            <Link href="/profile" className="flex items-center gap-2.5 min-w-0 flex-1 hover:opacity-85 transition-opacity" title="View Profile Settings">
+                                <div className="w-8.5 h-8.5 rounded-full bg-gradient-to-tr from-blue-500 to-indigo-600 text-white flex items-center justify-center text-xs font-bold flex-shrink-0 shadow-sm shadow-blue-500/10 overflow-hidden">
+                                    {userAvatarSrc ? (
+                                        <img src={userAvatarSrc} alt={auth.user?.name} className="w-full h-full object-cover" />
+                                    ) : (
+                                        auth.user?.name?.charAt(0)?.toUpperCase() || 'U'
+                                    )}
+                                </div>
+                                <div className="min-w-0 flex-1">
+                                    <p className="text-[11px] font-bold text-slate-800 truncate">{auth.user?.name || 'User'}</p>
+                                    <p className="text-[9px] text-blue-600 font-semibold capitalize truncate mt-0.5">{auth.user?.role?.name?.replace('_', ' ') || 'Admin'}</p>
+                                </div>
+                            </Link>
+                            <button
+                                type="button"
+                                onClick={handleLogout}
+                                className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-colors shrink-0"
+                                title="Sign Out / Logout"
+                            >
+                                <LogOut className="w-4 h-4" />
+                            </button>
                         </div>
                     ) : (
                         <div className="flex justify-center">
-                            <div className="w-9 h-9 rounded-full bg-gradient-to-tr from-blue-500 to-indigo-600 text-white flex items-center justify-center text-xs font-bold shadow-md shadow-blue-500/10 hover:scale-105 transition-transform duration-205">
-                                {auth.user?.name?.charAt(0)?.toUpperCase() || 'U'}
-                            </div>
+                            <Link href="/profile" title="View Profile Settings" className="w-9 h-9 rounded-full bg-gradient-to-tr from-blue-500 to-indigo-600 text-white flex items-center justify-center text-xs font-bold shadow-md shadow-blue-500/10 hover:scale-105 transition-transform duration-205 overflow-hidden">
+                                {userAvatarSrc ? (
+                                    <img src={userAvatarSrc} alt={auth.user?.name} className="w-full h-full object-cover" />
+                                ) : (
+                                    auth.user?.name?.charAt(0)?.toUpperCase() || 'U'
+                                )}
+                            </Link>
                         </div>
                     )}
                 </div>
@@ -732,63 +753,31 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
                                 </span>
                             </button>
 
-                            {/* Profile Dropdown */}
-                            <div className="relative">
+                            {/* Profile & Always Visible Logout */}
+                            <div className="flex items-center gap-2">
+                                <Link
+                                    href="/profile"
+                                    title="View Profile Settings"
+                                    className="relative p-0.5 rounded-full bg-gradient-to-tr from-blue-500 to-indigo-600 shadow-xs shadow-blue-500/10 hover:scale-105 transition-transform"
+                                >
+                                    <div className="w-7.5 h-7.5 rounded-full bg-white flex items-center justify-center text-slate-700 text-xs font-bold overflow-hidden">
+                                        {userAvatarSrc ? (
+                                            <img src={userAvatarSrc} alt={auth.user?.name} className="w-full h-full object-cover" />
+                                        ) : (
+                                            auth.user?.name?.charAt(0)?.toUpperCase() || 'U'
+                                        )}
+                                    </div>
+                                </Link>
+
                                 <button
                                     type="button"
-                                    onClick={() => setProfileDropdownOpen(!profileDropdownOpen)}
-                                    className="flex items-center gap-1.5 p-1 rounded-xl hover:bg-slate-50 transition-all duration-200"
+                                    onClick={handleLogout}
+                                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-rose-200 bg-rose-50 text-rose-600 hover:bg-rose-100 hover:text-rose-700 text-xs font-semibold transition-all shadow-xs"
+                                    title="Sign Out / Logout"
                                 >
-                                    <div className="relative p-0.5 rounded-full bg-gradient-to-tr from-blue-500 to-indigo-655 shadow-xs shadow-blue-500/10">
-                                        <div className="w-7.5 h-7.5 rounded-full bg-white flex items-center justify-center text-slate-700 text-xs font-bold">
-                                            {auth.user?.name?.charAt(0)?.toUpperCase() || 'U'}
-                                        </div>
-                                    </div>
-                                    <ChevronDown className={`w-3.5 h-3.5 text-slate-400 transition-transform duration-200 ${profileDropdownOpen ? 'rotate-180' : ''} hidden sm:block`} />
+                                    <LogOut className="w-3.5 h-3.5" />
+                                    <span className="hidden sm:inline">Logout</span>
                                 </button>
-
-                                {profileDropdownOpen && (
-                                    <>
-                                        <div className="fixed inset-0 z-45" aria-hidden onClick={() => setProfileDropdownOpen(false)} />
-                                        <div className="absolute right-0 mt-2.5 w-60 bg-white rounded-xl shadow-xl border border-slate-100 overflow-hidden z-50 text-[13px] animate-in fade-in slide-in-from-top-2 duration-150">
-                                            <div className="bg-gradient-to-r from-blue-600 to-indigo-600 text-white p-4 select-none relative overflow-hidden">
-                                                <div className="absolute -right-4 -top-4 w-16 h-16 bg-white/10 rounded-full blur-md" />
-                                                <div className="flex items-center gap-3 relative z-10">
-                                                    <div className="w-9 h-9 rounded-full bg-white/20 flex items-center justify-center text-white text-xs font-bold shadow-inner">
-                                                        {auth.user?.name?.charAt(0)?.toUpperCase() || 'U'}
-                                                    </div>
-                                                    <div className="min-w-0">
-                                                        <p className="text-[13px] font-bold truncate leading-snug">{auth.user?.name || 'User'}</p>
-                                                        <p className="text-[10px] text-blue-100 truncate mt-0.5">{auth.user?.email || 'admin@misloan.com'}</p>
-                                                    </div>
-                                                </div>
-                                                <div className="mt-3 relative z-10 flex items-center justify-between">
-                                                    <span className="inline-block bg-white/15 text-white text-[9px] font-bold px-2 py-0.5 rounded-md uppercase tracking-wider">
-                                                        {auth.user?.role?.name?.replace('_', ' ') || 'Admin'}
-                                                    </span>
-                                                </div>
-                                            </div>
-                                            <div className="p-1">
-                                                <Link
-                                                    href="/profile"
-                                                    className="flex items-center gap-2.5 px-3 py-2.5 rounded-lg text-slate-650 hover:bg-slate-50 hover:text-slate-900 transition-colors font-medium"
-                                                    onClick={() => setProfileDropdownOpen(false)}
-                                                >
-                                                    <User className="w-4.5 h-4.5 stroke-[1.75] text-slate-400" />
-                                                    Profile Settings
-                                                </Link>
-                                                <button
-                                                    type="button"
-                                                    onClick={handleLogout}
-                                                    className="w-full flex items-center gap-2.5 px-3 py-2.5 rounded-lg text-rose-600 hover:bg-rose-50 hover:text-rose-700 transition-colors text-left font-medium"
-                                                >
-                                                    <LogOut className="w-4.5 h-4.5 stroke-[1.75] text-rose-450" />
-                                                    Sign Out
-                                                </button>
-                                            </div>
-                                        </div>
-                                    </>
-                                )}
                             </div>
                         </div>
                     </div>

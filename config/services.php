@@ -40,4 +40,9 @@ return [
         'token' => env('BLOCK_LIST_API_TOKEN'),
     ],
 
+    'hrm' => [
+        'url' => env('HRM_API_URL'),
+        'token' => env('HRM_API_TOKEN'),
+    ],
+
 ];

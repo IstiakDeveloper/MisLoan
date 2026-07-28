@@ -4,6 +4,8 @@ namespace App\Providers;
 
 use App\Actions\Fortify\CreateNewUser;
 use App\Actions\Fortify\ResetUserPassword;
+use App\Http\Controllers\Auth\AuthController;
+use App\Models\Branch;
 use App\Models\User;
 use Illuminate\Cache\RateLimiting\Limit;
 use Illuminate\Http\Request;
@@ -13,87 +15,117 @@ use Illuminate\Support\ServiceProvider;
 use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
 use Inertia\Inertia;
+use Laravel\Fortify\Actions\AttemptToAuthenticate;
+use Laravel\Fortify\Actions\CanonicalizeUsername;
+use Laravel\Fortify\Actions\EnsureLoginIsNotThrottled;
+use Laravel\Fortify\Actions\PrepareAuthenticatedSession;
+use Laravel\Fortify\Contracts\RedirectsIfTwoFactorAuthenticatable;
 use Laravel\Fortify\Features;
 use Laravel\Fortify\Fortify;
 
 class FortifyServiceProvider extends ServiceProvider
 {
-    /**
-     * Register any application services.
-     */
     public function register(): void
     {
-        //
+        $this->app->bind(
+            \Laravel\Fortify\Http\Requests\LoginRequest::class,
+            \App\Http\Requests\LoginRequest::class,
+        );
     }
 
-    /**
-     * Bootstrap any application services.
-     */
     public function boot(): void
     {
         $this->configureAuthentication();
+        $this->configureLoginPipeline();
         $this->configureActions();
         $this->configureViews();
         $this->configureRateLimiting();
     }
 
-    /**
-     * Configure custom authentication logic.
-     */
     private function configureAuthentication(): void
     {
         Fortify::authenticateUsing(function (Request $request) {
-            $login = $request->input('login');
+            if ($request->input('mode') === 'branch') {
+                return app(AuthController::class)->authenticateBranch($request, app(\App\Services\BranchAccountService::class));
+            }
+
+            $login = trim((string) $request->input('login'));
             $password = $request->input('password');
 
-            // Find user by email or username
-            $user = User::where(function ($query) use ($login) {
-                $query->where('email', $login)
-                      ->orWhere('username', $login);
-            })->first();
+            $user = User::query()
+                ->where(function ($query) use ($login) {
+                    $query->where('email', $login)
+                        ->orWhere('username', $login);
+                })
+                ->where(function ($q) {
+                    $q->where('account_type', 'staff')->orWhereNull('account_type');
+                })
+                ->first();
 
-            // User not found
-            if (!$user) {
+            if (! $user) {
                 throw ValidationException::withMessages([
                     'login' => ['These credentials do not match our records.'],
                 ]);
             }
 
-            // Check if user is active
-            if (!$user->is_active) {
+            if ($user->isBranchAccount()) {
+                throw ValidationException::withMessages([
+                    'login' => ['Please use Branch Login for this account.'],
+                ]);
+            }
+
+            if (! $user->is_active) {
                 throw ValidationException::withMessages([
                     'login' => ['Your account has been deactivated. Please contact your administrator.'],
                 ]);
             }
 
-            // Verify password
-            if (!Hash::check($password, $user->password)) {
+            if (! Hash::check($password, $user->password)) {
                 throw ValidationException::withMessages([
                     'login' => ['These credentials do not match our records.'],
                 ]);
             }
 
+            $request->session()->forget(['branch_login', 'branch_context_id']);
+
             return $user;
         });
     }
 
-    /**
-     * Configure Fortify actions.
-     */
+    private function configureLoginPipeline(): void
+    {
+        Fortify::authenticateThrough(function (Request $request) {
+            return array_filter([
+                config('fortify.limiters.login') ? null : EnsureLoginIsNotThrottled::class,
+                config('fortify.lowercase_usernames') && $request->input('mode') !== 'branch'
+                    ? CanonicalizeUsername::class
+                    : null,
+                Features::enabled(Features::twoFactorAuthentication())
+                    ? RedirectsIfTwoFactorAuthenticatable::class
+                    : null,
+                AttemptToAuthenticate::class,
+                PrepareAuthenticatedSession::class,
+            ]);
+        });
+    }
+
     private function configureActions(): void
     {
         Fortify::resetUserPasswordsUsing(ResetUserPassword::class);
         Fortify::createUsersUsing(CreateNewUser::class);
     }
 
-    /**
-     * Configure Fortify views.
-     */
     private function configureViews(): void
     {
         Fortify::loginView(fn (Request $request) => Inertia::render('auth/login', [
             'canResetPassword' => Features::enabled(Features::resetPasswords()),
             'status' => $request->session()->get('status'),
+            'error' => $request->session()->get('error'),
+            'branches' => Branch::query()
+                ->where('is_active', true)
+                ->whereNotNull('login_pin')
+                ->orderBy('code')
+                ->get(['id', 'name', 'code']),
         ]));
 
         Fortify::resetPasswordView(fn (Request $request) => Inertia::render('auth/reset-password', [
@@ -110,9 +142,6 @@ class FortifyServiceProvider extends ServiceProvider
         Fortify::confirmPasswordView(fn () => Inertia::render('auth/confirm-password'));
     }
 
-    /**
-     * Configure rate limiting.
-     */
     private function configureRateLimiting(): void
     {
         RateLimiter::for('two-factor', function (Request $request) {
@@ -120,7 +149,11 @@ class FortifyServiceProvider extends ServiceProvider
         });
 
         RateLimiter::for('login', function (Request $request) {
-            $throttleKey = Str::transliterate(Str::lower($request->input('login')).'|'.$request->ip());
+            if ($request->input('mode') === 'branch') {
+                $throttleKey = 'branch|'.$request->input('branch_id').'|'.$request->ip();
+            } else {
+                $throttleKey = Str::transliterate(Str::lower((string) $request->input('login')).'|'.$request->ip());
+            }
 
             return Limit::perMinute(5)->by($throttleKey);
         });

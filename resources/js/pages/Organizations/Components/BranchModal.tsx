@@ -49,6 +49,7 @@ export default function BranchModal({ isOpen, onClose, branch, zones, areas }: P
         phone: branch?.phone || '',
         email: branch?.email || '',
         manager_name: branch?.manager_name || '',
+        login_pin: '',
         is_active: branch?.is_active ?? true,
     });
 
@@ -63,6 +64,7 @@ export default function BranchModal({ isOpen, onClose, branch, zones, areas }: P
                 phone: branch.phone || '',
                 email: branch.email || '',
                 manager_name: branch.manager_name || '',
+                login_pin: '',
                 is_active: branch.is_active,
             });
         } else {
@@ -275,6 +277,22 @@ export default function BranchModal({ isOpen, onClose, branch, zones, areas }: P
                             placeholder="Branch manager's name"
                         />
                         {errors.manager_name && <p className="text-red-500 text-sm mt-1">{errors.manager_name}</p>}
+                    </div>
+
+                    <div>
+                        <label htmlFor="login_pin" className="block text-sm font-medium text-gray-700 mb-1">
+                            Branch Login PIN
+                        </label>
+                        <input
+                            id="login_pin"
+                            type="password"
+                            inputMode="numeric"
+                            value={data.login_pin}
+                            onChange={(e) => setData('login_pin', e.target.value.replace(/\D/g, ''))}
+                            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
+                            placeholder={branch ? 'Leave blank to keep current PIN' : '4–12 digit PIN (default 12345678 if empty)'}
+                        />
+                        {errors.login_pin && <p className="text-red-500 text-sm mt-1">{errors.login_pin}</p>}
                     </div>
 
                     <div className="flex items-center">

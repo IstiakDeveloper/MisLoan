@@ -1,15 +1,30 @@
 import '../css/app.css';
 
-import { createInertiaApp } from '@inertiajs/react';
+import { createInertiaApp, router } from '@inertiajs/react';
 import { resolvePageComponent } from 'laravel-vite-plugin/inertia-helpers';
 import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
 import { initializeTheme } from './hooks/use-appearance';
 import { AuthProvider } from './contexts/AuthContext';
 import { stripWholeNumberDecimals } from './utils/formatAmount';
+import { syncCsrfMetaToken } from './lib/csrf';
 
 const rawAppName = import.meta.env.VITE_APP_NAME || 'Mis Loan';
 const appName = rawAppName === 'MisLoan' ? 'Mis Loan' : rawAppName;
+
+router.on('navigate', (event) => {
+    const token = event.detail.page.props?.csrf_token;
+    if (typeof token === 'string' && token !== '') {
+        syncCsrfMetaToken(token);
+    }
+});
+
+router.on('invalid', (event) => {
+    if (event.detail.response?.status === 419) {
+        event.preventDefault();
+        window.location.reload();
+    }
+});
 
 createInertiaApp({
     title: (title) => (title ? `${title} - ${appName}` : appName),

@@ -2,19 +2,19 @@
 
 namespace App\Http\Middleware;
 
+use App\Models\LoanApplication;
+use App\Models\LoanApplicationApproval;
+use App\Models\LoanApplicationIssue;
+use App\Models\MemberAdmission;
+use App\Models\MemberAdmissionApproval;
+use App\Models\MemberAdmissionIssue;
+use Carbon\Carbon;
 use Illuminate\Foundation\Inspiring;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Inertia\Middleware;
-use App\Models\LoanApplication;
-use App\Models\LoanApplicationIssue;
-use App\Models\MemberAdmission;
-use App\Models\MemberAdmissionIssue;
-use App\Models\LoanApplicationApproval;
-use App\Models\MemberAdmissionApproval;
-use Carbon\Carbon;
 
 class HandleInertiaRequests extends Middleware
 {
@@ -35,6 +35,7 @@ class HandleInertiaRequests extends Middleware
         if (is_string($value)) {
             return mb_convert_encoding($value, 'UTF-8', 'UTF-8');
         }
+
         return $value;
     }
 
@@ -65,6 +66,8 @@ class HandleInertiaRequests extends Middleware
         if ($request->user()) {
             $user = $request->user();
 
+            $avatarUrl = $user->profile_photo ? '/storage/' . ltrim($user->profile_photo, '/') : null;
+
             // Build user data manually without loading relationships
             $userData = [
                 'id' => $user->id,
@@ -72,9 +75,12 @@ class HandleInertiaRequests extends Middleware
                 'email' => $this->sanitizeString($user->email ?? ''),
                 'username' => $this->sanitizeString($user->username ?? ''),
                 'pin' => $this->sanitizeString($user->pin ?? ''),
-                'has_all_access' => (bool)$user->has_all_access,
+                'profile_photo' => $user->profile_photo,
+                'avatar' => $avatarUrl,
+                'signature' => $user->signature,
+                'has_all_access' => (bool) $user->has_all_access,
                 'is_read_only' => $user->isReadOnlyAdmin(),
-                'is_active' => (bool)$user->is_active,
+                'is_active' => (bool) $user->is_active,
                 'role' => null,
                 'zone' => null,
                 'area' => null,
@@ -96,7 +102,7 @@ class HandleInertiaRequests extends Middleware
                         ];
                     }
                 } catch (\Exception $e) {
-                    Log::error('Error loading role in HandleInertiaRequests: ' . $e->getMessage());
+                    Log::error('Error loading role in HandleInertiaRequests: '.$e->getMessage());
                 }
             }
 
@@ -115,7 +121,7 @@ class HandleInertiaRequests extends Middleware
                         ];
                     }
                 } catch (\Exception $e) {
-                    Log::error('Error loading zone in HandleInertiaRequests: ' . $e->getMessage());
+                    Log::error('Error loading zone in HandleInertiaRequests: '.$e->getMessage());
                 }
             }
 
@@ -134,7 +140,7 @@ class HandleInertiaRequests extends Middleware
                         ];
                     }
                 } catch (\Exception $e) {
-                    Log::error('Error loading area in HandleInertiaRequests: ' . $e->getMessage());
+                    Log::error('Error loading area in HandleInertiaRequests: '.$e->getMessage());
                 }
             }
 
@@ -153,7 +159,7 @@ class HandleInertiaRequests extends Middleware
                         ];
                     }
                 } catch (\Exception $e) {
-                    Log::error('Error loading branch in HandleInertiaRequests: ' . $e->getMessage());
+                    Log::error('Error loading branch in HandleInertiaRequests: '.$e->getMessage());
                 }
             }
         }
@@ -262,6 +268,7 @@ class HandleInertiaRequests extends Middleware
         }
 
         return array_merge(parent::share($request), [
+            'csrf_token' => csrf_token(),
             'name' => 'MIS Loan',
             'quote' => ['message' => $message, 'author' => $author],
             'auth' => [

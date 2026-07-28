@@ -54,6 +54,7 @@ Route::middleware(['auth', 'verified'])->group(function () {
     // Organization Management Routes - Only for SuperAdmin/Head Office
     Route::prefix('organizations')->name('organizations.')->middleware('head.office')->group(function () {
         Route::get('/', [OrganizationController::class, 'index'])->name('index');
+        Route::post('sync-from-hrm', [OrganizationController::class, 'syncFromHrm'])->name('sync-from-hrm');
 
         // Zone Routes
         Route::post('zones', [OrganizationController::class, 'storeZone'])->name('zones.store');
@@ -91,6 +92,7 @@ Route::middleware(['auth', 'verified'])->group(function () {
     // User Management Routes - Only for SuperAdmin/Head Office
     Route::middleware('head.office')->group(function () {
         Route::get('users', [UserController::class, 'index'])->name('users.index');
+        Route::post('users/sync-from-hrm', [UserController::class, 'syncFromHrm'])->name('users.sync-from-hrm');
         Route::post('users', [UserController::class, 'store'])->name('users.store');
         Route::put('users/{user}', [UserController::class, 'update'])->name('users.update');
         Route::post('users/{user}/signature', [UserController::class, 'updateSignature'])->name('users.update-signature');

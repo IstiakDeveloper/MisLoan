@@ -4,9 +4,10 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
-use Illuminate\Database\Eloquent\SoftDeletes;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\SoftDeletes;
+use Illuminate\Support\Facades\Hash;
 
 class Branch extends Model
 {
@@ -21,6 +22,8 @@ class Branch extends Model
         'phone',
         'address',
         'is_active',
+        'login_pin',
+        'branch_user_id',
     ];
 
     protected $casts = [
@@ -29,6 +32,7 @@ class Branch extends Model
 
     protected $hidden = [
         'pin',
+        'login_pin',
     ];
 
     public function area(): BelongsTo
@@ -44,6 +48,25 @@ class Branch extends Model
     public function users(): HasMany
     {
         return $this->hasMany(User::class);
+    }
+
+    public function branchUser(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'branch_user_id');
+    }
+
+    public function hasLoginPin(): bool
+    {
+        return filled($this->login_pin);
+    }
+
+    public function verifyLoginPin(string $pin): bool
+    {
+        if (! $this->login_pin) {
+            return false;
+        }
+
+        return Hash::check($pin, $this->login_pin);
     }
 
     public function loanApplications(): HasMany

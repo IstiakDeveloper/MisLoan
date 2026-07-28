@@ -2,9 +2,10 @@
 
 namespace App\Http\Controllers;
 
-use App\Models\Zone;
 use App\Models\Area;
 use App\Models\Branch;
+use App\Models\Zone;
+use App\Services\HrmOrganizationSyncService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
 use Inertia\Inertia;
@@ -21,7 +22,36 @@ class OrganizationController extends Controller
             'zones' => $zones,
             'areas' => $areas,
             'branches' => $branches,
+            'hrmSyncEnabled' => app(HrmOrganizationSyncService::class)->isConfigured(),
         ]);
+    }
+
+    public function syncFromHrm(HrmOrganizationSyncService $hrmOrganizationSyncService)
+    {
+        if (! $hrmOrganizationSyncService->isConfigured()) {
+            return redirect()->route('organizations.index')
+                ->with('error', 'HRM sync is not configured. Set HRM_API_URL and HRM_API_TOKEN in .env.');
+        }
+
+        try {
+            $stats = $hrmOrganizationSyncService->sync();
+        } catch (\Throwable $e) {
+            return redirect()->route('organizations.index')
+                ->with('error', 'HRM sync failed: '.$e->getMessage());
+        }
+
+        $message = sprintf(
+            'Organization synced from HRM. Zones: %d created, %d updated. Areas: %d created, %d updated. Branches: %d created, %d updated.',
+            $stats['zones']['created'],
+            $stats['zones']['updated'],
+            $stats['areas']['created'],
+            $stats['areas']['updated'],
+            $stats['branches']['created'],
+            $stats['branches']['updated'],
+        );
+
+        return redirect()->route('organizations.index')
+            ->with('success', $message);
     }
 
     // Zone Methods
@@ -44,7 +74,7 @@ class OrganizationController extends Controller
     {
         $validated = $request->validate([
             'name' => 'required|string|max:255',
-            'code' => 'required|string|max:50|unique:zones,code,' . $zone->id,
+            'code' => 'required|string|max:50|unique:zones,code,'.$zone->id,
             'description' => 'nullable|string',
             'is_active' => 'boolean',
         ]);
@@ -70,7 +100,7 @@ class OrganizationController extends Controller
 
     public function toggleZoneStatus(Zone $zone)
     {
-        $zone->update(['is_active' => !$zone->is_active]);
+        $zone->update(['is_active' => ! $zone->is_active]);
 
         return redirect()->route('organizations.index')
             ->with('success', 'Zone status updated successfully.');
@@ -98,7 +128,7 @@ class OrganizationController extends Controller
         $validated = $request->validate([
             'zone_id' => 'required|exists:zones,id',
             'name' => 'required|string|max:255',
-            'code' => 'required|string|max:50|unique:areas,code,' . $area->id,
+            'code' => 'required|string|max:50|unique:areas,code,'.$area->id,
             'description' => 'nullable|string',
             'is_active' => 'boolean',
         ]);
@@ -124,7 +154,7 @@ class OrganizationController extends Controller
 
     public function toggleAreaStatus(Area $area)
     {
-        $area->update(['is_active' => !$area->is_active]);
+        $area->update(['is_active' => ! $area->is_active]);
 
         return redirect()->route('organizations.index')
             ->with('success', 'Area status updated successfully.');
@@ -141,10 +171,22 @@ class OrganizationController extends Controller
             'phone' => 'nullable|string|max:20',
             'email' => 'nullable|email|max:255',
             'manager_name' => 'nullable|string|max:255',
+            'login_pin' => 'nullable|string|min:4|max:12|regex:/^[0-9]+$/',
             'is_active' => 'boolean',
         ]);
 
-        Branch::create($validated);
+        if ($request->filled('login_pin')) {
+            $validated['login_pin'] = \Illuminate\Support\Facades\Hash::make($request->input('login_pin'));
+        } else {
+            unset($validated['login_pin']);
+        }
+
+        $branch = Branch::create($validated);
+        if (! $branch->login_pin) {
+            $branch->login_pin = \Illuminate\Support\Facades\Hash::make('12345678');
+            $branch->saveQuietly();
+        }
+        app(\App\Services\BranchAccountService::class)->ensureForBranch($branch->fresh(['area']));
 
         return redirect()->route('organizations.index')
             ->with('success', 'Branch created successfully.');
@@ -155,15 +197,23 @@ class OrganizationController extends Controller
         $validated = $request->validate([
             'area_id' => 'required|exists:areas,id',
             'name' => 'required|string|max:255',
-            'code' => 'required|string|max:50|unique:branches,code,' . $branch->id,
+            'code' => 'required|string|max:50|unique:branches,code,'.$branch->id,
             'address' => 'nullable|string',
             'phone' => 'nullable|string|max:20',
             'email' => 'nullable|email|max:255',
             'manager_name' => 'nullable|string|max:255',
+            'login_pin' => 'nullable|string|min:4|max:12|regex:/^[0-9]+$/',
             'is_active' => 'boolean',
         ]);
 
+        if ($request->filled('login_pin')) {
+            $validated['login_pin'] = \Illuminate\Support\Facades\Hash::make($request->input('login_pin'));
+        } else {
+            unset($validated['login_pin']);
+        }
+
         $branch->update($validated);
+        app(\App\Services\BranchAccountService::class)->ensureForBranch($branch->fresh(['area']));
 
         return redirect()->route('organizations.index')
             ->with('success', 'Branch updated successfully.');
@@ -179,7 +229,7 @@ class OrganizationController extends Controller
 
     public function toggleBranchStatus(Branch $branch)
     {
-        $branch->update(['is_active' => !$branch->is_active]);
+        $branch->update(['is_active' => ! $branch->is_active]);
 
         return redirect()->route('organizations.index')
             ->with('success', 'Branch status updated successfully.');
@@ -224,6 +274,7 @@ class OrganizationController extends Controller
     public function organizationStructure()
     {
         $zones = Zone::with(['areas.branches'])->get();
+
         return response()->json($zones);
     }
 }

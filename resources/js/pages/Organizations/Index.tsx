@@ -15,6 +15,7 @@ import {
     Edit,
     Plus,
     Printer,
+    RefreshCw,
     ToggleLeft,
     ToggleRight,
     Trash2,
@@ -59,12 +60,14 @@ interface Props {
     zones: Zone[];
     areas: Area[];
     branches: Branch[];
+    hrmSyncEnabled: boolean;
 }
 
 type TabType = 'zones' | 'areas' | 'branches';
 
-export default function Index({ zones, areas, branches }: Props) {
+export default function Index({ zones, areas, branches, hrmSyncEnabled }: Props) {
     const canMutate = useCanMutate();
+    const [syncingFromHrm, setSyncingFromHrm] = useState(false);
     const [activeTab, setActiveTab] = useState<TabType>('zones');
     const [searchQuery, setSearchQuery] = useState('');
     const [openDropdown, setOpenDropdown] = useState<number | null>(null);
@@ -134,6 +137,26 @@ export default function Index({ zones, areas, branches }: Props) {
         setOpenDropdown(null);
     };
 
+    const handleSyncFromHrm = () => {
+        if (
+            !confirm(
+                'HRM থেকে organization structure sync করবেন? Zone, Area (Regional Office) ও Branch HRM code অনুযায়ী update/create হবে।',
+            )
+        ) {
+            return;
+        }
+
+        setSyncingFromHrm(true);
+        router.post(
+            '/organizations/sync-from-hrm',
+            {},
+            {
+                preserveScroll: true,
+                onFinish: () => setSyncingFromHrm(false),
+            },
+        );
+    };
+
     const filteredZones = zones.filter(
         (zone) =>
             zone.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
@@ -180,6 +203,21 @@ export default function Index({ zones, areas, branches }: Props) {
                                 <Printer className="h-4 w-4" />
                                 Print Branch List
                             </button>
+                            {canMutate && hrmSyncEnabled && (
+                                <button
+                                    type="button"
+                                    onClick={handleSyncFromHrm}
+                                    disabled={syncingFromHrm}
+                                    className="flex min-h-10 flex-1 items-center justify-center gap-2 rounded-lg border border-white/30 bg-white/10 px-4 py-2 text-sm font-semibold text-white backdrop-blur hover:bg-white/20 focus:ring-4 focus:ring-white/30 focus:outline-none disabled:cursor-not-allowed disabled:opacity-60 sm:flex-none"
+                                >
+                                    <RefreshCw
+                                        className={`h-4 w-4 ${syncingFromHrm ? 'animate-spin' : ''}`}
+                                    />
+                                    {syncingFromHrm
+                                        ? 'Syncing...'
+                                        : 'Sync from HRM'}
+                                </button>
+                            )}
                             {canMutate && (
                             <button
                                 onClick={handleAddNew}

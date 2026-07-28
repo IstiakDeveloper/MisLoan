@@ -1,4 +1,4 @@
-const CACHE_NAME = 'mis-loan-v2';
+const CACHE_NAME = 'mis-loan-v3';
 
 const offlinePage = () =>
   new Response(
@@ -46,6 +46,16 @@ function isNavigation(req) {
   return req.mode === 'navigate' || (req.method === 'GET' && req.destination === 'document');
 }
 
+/** Never cache auth pages — stale CSRF tokens cause 419 Page Expired. */
+function shouldSkipNavigationCache(url) {
+  try {
+    const path = new URL(url).pathname;
+    return path === '/login' || path.startsWith('/auth/');
+  } catch (_) {
+    return false;
+  }
+}
+
 function cachePut(cache, req, res) {
   if (res && res.status === 200 && res.type === 'basic' && req.url.startsWith(self.location.origin)) {
     try {
@@ -59,6 +69,11 @@ self.addEventListener('fetch', (event) => {
   if (request.method !== 'GET') return;
 
   if (isNavigation(request)) {
+    if (shouldSkipNavigationCache(request.url)) {
+      event.respondWith(fetch(request));
+      return;
+    }
+
     event.respondWith(
       fetch(request)
         .then((response) => {

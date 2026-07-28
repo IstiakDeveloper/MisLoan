@@ -2,11 +2,11 @@
 
 namespace App\Providers;
 
-use Illuminate\Support\ServiceProvider;
-use Illuminate\Http\Resources\Json\JsonResource;
-use Illuminate\Http\JsonResponse;
-use Inertia\Inertia;
 use App\Models\LoanApplication;
+use Illuminate\Http\Resources\Json\JsonResource;
+use Illuminate\Support\ServiceProvider;
+use Illuminate\Validation\Rules\Password;
+use Inertia\Inertia;
 
 class AppServiceProvider extends ServiceProvider
 {
@@ -23,6 +23,8 @@ class AppServiceProvider extends ServiceProvider
      */
     public function boot(): void
     {
+        Password::defaults(fn () => Password::min(4));
+
         // Set JSON encoding options to handle UTF-8 properly
         // JSON_PARTIAL_OUTPUT_ON_ERROR allows partial JSON output on encoding errors
         // JSON_INVALID_UTF8_SUBSTITUTE replaces invalid UTF-8 with substitution character
@@ -32,7 +34,7 @@ class AppServiceProvider extends ServiceProvider
 
         // Set default JSON options for responses
         config([
-            'app.json_encode_options' => JSON_INVALID_UTF8_SUBSTITUTE | JSON_UNESCAPED_UNICODE
+            'app.json_encode_options' => JSON_INVALID_UTF8_SUBSTITUTE | JSON_UNESCAPED_UNICODE,
         ]);
 
         // Share unread submissions count with all Inertia views
@@ -41,6 +43,7 @@ class AppServiceProvider extends ServiceProvider
                 if (auth()->check() && auth()->user()->has_all_access) {
                     return LoanApplication::whereNull('reviewed_at')->count();
                 }
+
                 return 0;
             },
         ]);

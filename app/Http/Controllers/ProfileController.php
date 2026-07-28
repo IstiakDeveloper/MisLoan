@@ -62,8 +62,10 @@ class ProfileController extends Controller
 
     public function edit(Request $request)
     {
+        $user = $request->user()->load(['role', 'branch', 'area', 'zone']);
+
         return Inertia::render('Profile/Edit', [
-            'user' => $request->user(),
+            'user' => $user,
         ]);
     }
 
@@ -76,12 +78,20 @@ class ProfileController extends Controller
             'email' => 'required|email|unique:users,email,' . $user->id,
             'phone' => 'nullable|string|max:20',
             'pin' => 'nullable|string|max:50',
-            'signature' => 'nullable|image|mimes:jpeg,png,jpg,gif|max:2048',
+            'profile_photo' => 'nullable|image|mimes:jpeg,png,jpg,webp,gif|max:2048',
+            'signature' => 'nullable|image|mimes:jpeg,png,jpg,webp,gif|max:2048',
         ]);
+
+        // Handle profile photo upload
+        if ($request->hasFile('profile_photo')) {
+            if ($user->profile_photo) {
+                Storage::disk('public')->delete($user->profile_photo);
+            }
+            $validated['profile_photo'] = $request->file('profile_photo')->store('avatars/users', 'public');
+        }
 
         // Handle signature upload
         if ($request->hasFile('signature')) {
-            // Delete old signature if exists
             if ($user->signature) {
                 Storage::disk('public')->delete($user->signature);
             }

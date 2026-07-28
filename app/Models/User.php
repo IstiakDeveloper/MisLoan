@@ -3,12 +3,12 @@
 namespace App\Models;
 
 use Illuminate\Database\Eloquent\Factories\HasFactory;
-use Illuminate\Database\Eloquent\SoftDeletes;
-use Illuminate\Foundation\Auth\User as Authenticatable;
-use Illuminate\Notifications\Notifiable;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\SoftDeletes;
+use Illuminate\Foundation\Auth\User as Authenticatable;
+use Illuminate\Notifications\Notifiable;
 use Laravel\Fortify\TwoFactorAuthenticatable;
 
 class User extends Authenticatable
@@ -22,6 +22,7 @@ class User extends Authenticatable
         'username',
         'password',
         'role_id',
+        'account_type',
         'branch_id',
         'area_id',
         'zone_id',
@@ -227,6 +228,16 @@ class User extends Authenticatable
     public function isHeadOffice(): bool
     {
         return $this->role?->name === Role::HEAD_OFFICE;
+    }
+
+    public function isBranchAccount(): bool
+    {
+        return $this->account_type === 'branch';
+    }
+
+    public function isStaffAccount(): bool
+    {
+        return $this->account_type === 'staff' || $this->account_type === null;
     }
 
     /**

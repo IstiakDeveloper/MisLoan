@@ -2,9 +2,9 @@
 
 namespace Database\Seeders;
 
-use App\Models\User;
-use App\Models\Role;
 use App\Models\Branch;
+use App\Models\Role;
+use App\Models\User;
 use Illuminate\Database\Seeder;
 use Illuminate\Support\Facades\Hash;
 
@@ -28,26 +28,30 @@ class UserSeeder extends Seeder
     public function run(): void
     {
         $branchUserRole = Role::where('name', 'branch_user')->first();
-        if (!$branchUserRole) {
+        if (! $branchUserRole) {
             $this->command->warn('branch_user role not found. Run RoleSeeder first.');
+
             return;
         }
 
         $branches = Branch::orderBy('code')->get();
 
         foreach ($branches as $branch) {
-            $email = $branch->code . '@misloan.com';
-            $name = preg_replace('/\s*Branch\s*$/i', '', $branch->name) . ' User';
+            $email = $branch->code.'@misloan.com';
+            $name = preg_replace('/\s*Branch\s*$/i', '', $branch->name).' User';
 
             User::updateOrCreate(
                 ['email' => $email],
                 [
-                    'name'       => $name,
-                    'username'   => $branch->code,
-                    'role_id'    => $branchUserRole->id,
-                    'branch_id'  => $branch->id,
-                    'password'   => Hash::make('12345678'),
-                    'is_active'  => true,
+                    'name' => $name,
+                    'username' => 'branch_'.strtolower(preg_replace('/[^a-z0-9]+/i', '', $branch->code) ?: 'branch'),
+                    'role_id' => $branchUserRole->id,
+                    'branch_id' => $branch->id,
+                    'area_id' => $branch->area_id,
+                    'zone_id' => $branch->area?->zone_id,
+                    'account_type' => 'branch',
+                    'password' => Hash::make('12345678'),
+                    'is_active' => true,
                 ]
             );
         }
@@ -109,6 +113,6 @@ class UserSeeder extends Seeder
             User::where('username', $code)->update(['email' => $email]);
         }
 
-        $this->command->info('Branch users seeded: ' . $branches->count() . ' (Branch User role). Branch Manager পরে আলাদা করে যোগ করুন।');
+        $this->command->info('Branch users seeded: '.$branches->count().' (Branch User role). Branch Manager পরে আলাদা করে যোগ করুন।');
     }
 }
