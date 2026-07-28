@@ -339,6 +339,8 @@ export default function FieldInvestigation({
     onlyPreview,
     isLegacy = false,
 }: Props) {
+    const resumeParams = typeof window !== 'undefined' ? new URLSearchParams(window.location.search) : null;
+    const isResumeApproval = !!resumeParams?.get('resume_approval_id');
     if (onlyPreview && savedData) {
         return (
             <div className="print-container">
@@ -434,13 +436,22 @@ export default function FieldInvestigation({
             return;
         }
         setErrors({});
+        const resumeApprovalId = resumeParams?.get('resume_approval_id');
         const payload: any = { loan_product_id: loanProduct.id, loan_category_id: loanCategory.id, requested_amount: requestedAmount, form_data: { ...data } as any };
         if (isLegacy) payload.legacy = 1; else payload.member_id = member?.id;
+        if (resumeApprovalId) {
+            payload.resume_approval_id = resumeApprovalId;
+            payload.resume_approved_amount = resumeParams?.get('resume_approved_amount') || '';
+            payload.resume_comments = resumeParams?.get('resume_comments') || '';
+        }
         router.post(
             '/member/loan-applications/forms/field-investigation/save-draft',
             payload,
             {
                 onSuccess: () => {
+                    if (resumeApprovalId) {
+                        return;
+                    }
                     alert('সরেজমিনে তদন্ত প্রতিবেদন ড্রাফট হিসেবে সংরক্ষিত হয়েছে।');
                     router.visit(formSelectionUrl(isLegacy, member, loanProduct, loanCategory, requestedAmount));
                 },
@@ -491,7 +502,9 @@ export default function FieldInvestigation({
                                     সমিতিতে ঋণ আবেদন অনুযায়ী শাখা ব্যবস্থাপক কর্তৃক সদস্যের বাড়ি সরেজমিনে তদন্ত প্রতিবেদন
                                 </h2>
                                 <p className="text-xs text-gray-600">
-                                    প্রিন্ট প্রিভিউ অনুযায়ী ফর্ম পূরণ করুন এবং ড্রাফট সংরক্ষণ করুন।
+                                    {isResumeApproval
+                                        ? 'প্রিন্ট প্রিভিউ অনুযায়ী ফর্ম পূরণ করুন। Approve চাপলেই ফর্ম সংরক্ষণ ও ঋণ অনুমোদন একসাথে হবে।'
+                                        : 'প্রিন্ট প্রিভিউ অনুযায়ী ফর্ম পূরণ করুন এবং ড্রাফট সংরক্ষণ করুন।'}
                                 </p>
                                 {existingApplication && (
                                     <p className="text-xs text-emerald-600 font-semibold mt-1">
@@ -524,7 +537,7 @@ export default function FieldInvestigation({
                                 className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white text-sm rounded-lg hover:bg-blue-700 disabled:opacity-50"
                             >
                                 <Save className="w-4 h-4" />
-                                {processing ? 'সংরক্ষণ হচ্ছে...' : 'ড্রাফট সংরক্ষণ'}
+                                {processing ? (isResumeApproval ? 'অনুমোদন হচ্ছে...' : 'সংরক্ষণ হচ্ছে...') : (isResumeApproval ? 'Approve' : 'ড্রাফট সংরক্ষণ')}
                             </button>
                         </div>
                     </div>

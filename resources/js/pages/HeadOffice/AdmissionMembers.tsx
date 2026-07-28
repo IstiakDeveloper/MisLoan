@@ -365,6 +365,19 @@ export default function AdmissionMembers({ admissions, filters, stats, zones, ar
                     <div className="relative z-10 flex flex-wrap items-center gap-2 shrink-0">
                         <button
                             type="button"
+                            onClick={handleTodayFilter}
+                            className={`inline-flex items-center gap-1.5 px-3.5 py-2 rounded-lg text-sm font-semibold transition border ${
+                                isTodayFilter
+                                    ? 'bg-blue-600 text-white border-blue-400 shadow-sm'
+                                    : 'bg-blue-500/20 hover:bg-blue-500/40 text-white border-white/20'
+                            }`}
+                            title="আজকের আবেদনসমূহ"
+                        >
+                            <CalendarDays className="w-4 h-4" />
+                            Today (আজ)
+                        </button>
+                        <button
+                            type="button"
                             onClick={handleExportExcel}
                             className="inline-flex items-center gap-2 px-3.5 py-2 rounded-lg bg-white text-emerald-700 hover:bg-emerald-50 text-sm font-semibold shadow-sm transition"
                             title="Excel ডাউনলোড"
@@ -617,6 +630,7 @@ export default function AdmissionMembers({ admissions, filters, stats, zones, ar
                             <thead>
                                 <tr className="bg-gradient-to-r from-blue-700 to-blue-600 text-[11px] font-semibold text-white uppercase tracking-wide">
                                     <th className="py-3.5 px-3 border-b border-blue-500">আবেদন নং</th>
+                                    <th className="py-3.5 px-3 border-b border-blue-500">সদস্য টাইপ / দফা</th>
                                     <th className="py-3.5 px-3 border-b border-blue-500">আবেদনকারী</th>
                                     <th className="py-3.5 px-3 border-b border-blue-500">মোবাইল</th>
                                     <th className="py-3.5 px-3 border-b border-blue-500">শাখা</th>
@@ -648,6 +662,17 @@ export default function AdmissionMembers({ admissions, filters, stats, zones, ar
                                             >
                                                 <td className="py-3 px-3 font-mono font-semibold text-blue-700 text-xs whitespace-nowrap">
                                                     {admission.application_no}
+                                                </td>
+                                                <td className="py-3 px-3 whitespace-nowrap">
+                                                    {admission.is_legacy ? (
+                                                        <span className="inline-flex items-center px-2 py-0.5 bg-amber-100 text-amber-800 text-[11px] font-medium rounded-full">
+                                                            পুরাতন{admission.loan_dofa ? ` · দফা ${admission.loan_dofa}` : ''}
+                                                        </span>
+                                                    ) : (
+                                                        <span className="inline-flex items-center px-2 py-0.5 bg-emerald-100 text-emerald-800 text-[11px] font-medium rounded-full">
+                                                            নতুন সদস্য
+                                                        </span>
+                                                    )}
                                                 </td>
                                                 <td className="py-3 px-3">
                                                     <div className="font-semibold text-slate-900">

@@ -55,9 +55,18 @@ interface Props {
     savedData?: GuarantorCommitmentData;
     /** Show page: only render print view with this data (no layout/inputs) */
     onlyPreview?: boolean;
+    embedded?: boolean;
+    afterSaveUrl?: string;
+    saveButtonLabel?: string;
 }
 
 function formSelectionUrl(isLegacy: boolean, member: any, loanProduct: any, loanCategory: any, requestedAmount: number) {
+    if (typeof window !== 'undefined') {
+        const currentParams = new URLSearchParams(window.location.search);
+        if (currentParams.get('return') === 'disburse' && currentParams.get('application_id')) {
+            return `/member/loan-applications/${currentParams.get('application_id')}?action=disburse`;
+        }
+    }
     const params = new URLSearchParams({ loan_product_id: String(loanProduct.id), loan_category_id: String(loanCategory.id), requested_amount: String(requestedAmount) });
     if (isLegacy) params.set('legacy', '1'); else params.set('member_id', String(member?.id ?? ''));
     return `/member/loan-applications/form-selection?${params.toString()}`;
@@ -87,6 +96,9 @@ export default function GuarantorCommitment({
     existingApplication,
     savedData,
     onlyPreview,
+    embedded = false,
+    afterSaveUrl,
+    saveButtonLabel,
     isLegacy = false,
 }: Props) {
     if (onlyPreview && savedData) {
@@ -176,6 +188,10 @@ export default function GuarantorCommitment({
             payload,
             {
                 onSuccess: () => {
+                    if (afterSaveUrl) {
+                        router.visit(afterSaveUrl);
+                        return;
+                    }
                     alert('জামিনদার/দায়িত্ব গ্রহণকারীর অঙ্গীকার নামা ড্রাফট হিসেবে সংরক্ষিত হয়েছে।');
                     router.visit(formSelectionUrl(isLegacy, member, loanProduct, loanCategory, requestedAmount));
                 },
@@ -194,8 +210,8 @@ export default function GuarantorCommitment({
     const inputClass = 'w-full px-3 py-2 text-xs md:text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition-all bg-white';
     const disabledClass = 'w-full px-3 py-2 text-xs md:text-sm border border-gray-200 rounded-lg bg-gray-100/70 text-gray-700 font-medium cursor-not-allowed';
 
-    return (
-        <AdminLayout>
+    const pageContent = (
+        <>
             <Head title="ঋণের জামিনদার/দায়িত্ব গ্রহণকারীর অঙ্গীকার নামা">
                 <style>{`
                     @media print {
@@ -239,7 +255,7 @@ export default function GuarantorCommitment({
             <div className="max-w-[1600px] mx-auto p-4 md:p-6 space-y-6">
                 {/* Top Action Header */}
                 <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-white p-4 rounded-xl border border-gray-200 shadow-sm print:hidden">
-                    <div className="flex items-center gap-3">
+                    {!embedded && <div className="flex items-center gap-3">
                         <button
                             onClick={() => router.visit(formSelectionUrl(isLegacy, member, loanProduct, loanCategory, requestedAmount))}
                             className="flex items-center gap-2 px-3 py-2 bg-gray-100 text-gray-700 text-xs md:text-sm font-semibold rounded-lg hover:bg-gray-200 transition-all"
@@ -261,7 +277,7 @@ export default function GuarantorCommitment({
                                 </p>
                             )}
                         </div>
-                    </div>
+                    </div>}
                     <div className="flex flex-wrap items-center gap-2">
                         <button
                             type="button"
@@ -278,7 +294,7 @@ export default function GuarantorCommitment({
                             className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white text-xs md:text-sm font-bold rounded-lg hover:bg-blue-700 disabled:opacity-50 transition-all shadow-sm"
                         >
                             <Save className="w-4 h-4" />
-                            <span>{processing ? 'সংরক্ষণ হচ্ছে...' : 'ড্রাফট সংরক্ষণ করুন'}</span>
+                            <span>{processing ? 'সংরক্ষণ হচ্ছে...' : (saveButtonLabel || 'ড্রাফট সংরক্ষণ করুন')}</span>
                         </button>
                         {showPreview && (
                             <button
@@ -564,8 +580,10 @@ export default function GuarantorCommitment({
                     </div>
                 </div>
             </div>
-        </AdminLayout>
+        </>
     );
+
+    return embedded ? pageContent : <AdminLayout>{pageContent}</AdminLayout>;
 }
 
 /** Show/Print view - 1 Page A4 Print Optimized */

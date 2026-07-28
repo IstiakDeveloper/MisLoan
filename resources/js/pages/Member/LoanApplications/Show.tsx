@@ -1,7 +1,7 @@
 import AdminLayout from '@/layouts/admin-layout';
-import { formatDate } from '@/utils/dateUtils';
-import { Head, Link, router, usePage } from '@inertiajs/react';
-import { useState, useRef } from 'react';
+import { formatDate, formatDateTime } from '@/utils/dateUtils';
+import { Head, Link, router, useForm, usePage } from '@inertiajs/react';
+import { useEffect, useState, useRef } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -14,7 +14,8 @@ import {
     Printer,
     Edit,
     ArrowLeft,
-    Send
+    Send,
+    MessageSquare,
 } from 'lucide-react';
 import GuarantorCommitment from './Forms/GuarantorCommitment';
 import DeathRiskFund from './Forms/DeathRiskFund';
@@ -68,9 +69,12 @@ interface LoanApplication {
         present_address_en?: string;
     };
     visible_form_ids?: number[];
+    editable_form_ids?: number[];
     form_saved?: Record<number, boolean>;
     all_forms_complete?: boolean;
+    disburse_forms_complete?: boolean;
     can_submit?: boolean;
+    can_disburse?: boolean;
     member_admission_status?: string;
     availableApprovers?: Array<{ id: number; name: string; email: string; level?: string; role?: { name: string } }>;
     loan_product: {
@@ -98,6 +102,18 @@ interface LoanApplication {
     loan_agreement_data?: any;
     asset_info?: any;
     business_plan?: any;
+    issues?: LoanApplicationIssue[];
+}
+
+interface LoanApplicationIssue {
+    id: number;
+    issue_description: string;
+    status: string;
+    response_message?: string | null;
+    created_at: string;
+    responded_at?: string | null;
+    reporter?: { id: number; name: string };
+    responder?: { id: number; name: string };
 }
 
 const FORM_NAMES: Record<number, string> = {
@@ -115,8 +131,17 @@ interface Props {
         edit: string;
         print: string;
         submit: string;
+        disburse?: string;
     };
 }
+
+const FORM_ROUTES: Record<number, string> = {
+    1: 'loan-agreement',
+    2: 'guarantor-commitment',
+    3: 'death-risk-fund',
+    4: 'field-investigation',
+    5: 'loan-application-approval',
+};
 
 const statusConfig = {
     draft: { label: 'খসড়া', color: 'bg-gray-100 text-gray-800', icon: AlertCircle },
@@ -125,6 +150,7 @@ const statusConfig = {
     ready_for_head_office: { label: 'শাখা অনুমোদিত', color: 'bg-emerald-100 text-emerald-800', icon: CheckCircle2 },
     pending_head_office: { label: 'হেড অফিসে প্রেরিত', color: 'bg-indigo-100 text-indigo-800', icon: Clock },
     approved: { label: 'অনুমোদিত', color: 'bg-green-100 text-green-800', icon: CheckCircle2 },
+    pending_disbursement: { label: 'বিতরণের অপেক্ষায়', color: 'bg-amber-100 text-amber-800', icon: Clock },
     rejected: { label: 'প্রত্যাখ্যাত', color: 'bg-red-100 text-red-800', icon: XCircle },
     disbursed: { label: 'বিতরণ হয়েছে', color: 'bg-emerald-100 text-emerald-800', icon: CheckCircle2 },
     cancelled: { label: 'বাতিল', color: 'bg-gray-100 text-gray-800', icon: XCircle },
@@ -134,8 +160,42 @@ export default function Show({ application, routes }: Props) {
     const pageAuth = usePage().props.auth as { user?: { role?: { name: string } } } | undefined;
     const isFieldOfficer = pageAuth?.user?.role?.name === 'field_officer';
     const isBranchUser = pageAuth?.user?.role?.name === 'branch_user';
-    const [selectedFormId, setSelectedFormId] = useState<number | null>(null);
+    const isBranchManager = pageAuth?.user?.role?.name === 'branch_manager';
+    const canRespondToIssues = isBranchUser || isBranchManager;
+    const [selectedIssueId, setSelectedIssueId] = useState<number | null>(null);
+    const [issueAction, setIssueAction] = useState<'resolve' | 'reject' | null>(null);
+    const resolveForm = useForm({ response_message: '' });
+    const rejectForm = useForm({ response_message: '' });
+    const searchParams = new URLSearchParams(typeof window !== 'undefined' ? window.location.search : '');
+    const initialStep = Number(searchParams.get('step') || '');
+    const [selectedFormId, setSelectedFormId] = useState<number | null>(Number.isFinite(initialStep) && initialStep > 0 ? initialStep : null);
     const formPrintRef = useRef<HTMLDivElement>(null);
+    const disburseMode = searchParams.get('action') === 'disburse' && application.status === 'pending_disbursement' && isBranchUser;
+
+    const buildFormUrl = (formId: number) => {
+        const route = FORM_ROUTES[formId];
+        if (!route) return '#';
+        const params = new URLSearchParams({
+            amount: String(application.requested_amount),
+        });
+        const memberId = application.member_admission?.id;
+        if (memberId) params.set('member_id', String(memberId));
+        const productId = (application as LoanApplication & { loan_product_id?: number }).loan_product_id;
+        const categoryId = (application as LoanApplication & { loan_category_id?: number }).loan_category_id;
+        if (productId) params.set('product_id', String(productId));
+        if (categoryId) params.set('category_id', String(categoryId));
+        if (disburseMode) {
+            params.set('return', 'disburse');
+            params.set('application_id', String(application.id));
+        }
+        return `/member/loan-applications/forms/${route}?${params.toString()}`;
+    };
+
+    const buildDisburseStepUrl = (formId: number) => `/member/loan-applications/${application.id}?action=disburse&step=${formId}`;
+
+    const editableFormIds = (application.editable_form_ids ?? []).filter(
+        (id) => !(application.form_saved?.[id])
+    );
 
     // Helper function to recursively check if data has meaningful content
     const hasMeaningfulData = (data: any): boolean => {
@@ -207,6 +267,50 @@ export default function Show({ application, routes }: Props) {
 
     const StatusIcon = statusConfig[application.status as keyof typeof statusConfig]?.icon || AlertCircle;
     const statusInfo = statusConfig[application.status as keyof typeof statusConfig];
+    const issues = application.issues ?? [];
+    const pendingIssues = issues.filter((issue) => issue.status === 'pending');
+    const disburseStepFormIds = disburseMode ? visibleFormIds : [];
+    const currentStepIndex = selectedFormId ? disburseStepFormIds.indexOf(selectedFormId) : -1;
+    const currentStepNumber = currentStepIndex >= 0 ? currentStepIndex + 1 : 0;
+    const isCurrentFormSaved = selectedFormId ? (application.form_saved?.[selectedFormId] === true) : false;
+    const isCurrentFormEditable = selectedFormId ? editableFormIds.includes(selectedFormId) : false;
+    const disburseAmount = application.status === 'pending_disbursement' && application.approved_amount != null
+        ? application.approved_amount
+        : application.requested_amount;
+
+    useEffect(() => {
+        if (disburseMode && disburseStepFormIds.length > 0 && !selectedFormId) {
+            const firstPendingEditable = disburseStepFormIds.find((id) => editableFormIds.includes(id) && !(application.form_saved?.[id]));
+            setSelectedFormId(firstPendingEditable ?? disburseStepFormIds[0]);
+        }
+    }, [application.form_saved, disburseMode, disburseStepFormIds, editableFormIds, selectedFormId]);
+
+    const openIssueAction = (issueId: number, action: 'resolve' | 'reject') => {
+        setSelectedIssueId(issueId);
+        setIssueAction(action);
+        resolveForm.reset();
+        rejectForm.reset();
+    };
+
+    const closeIssueAction = () => {
+        setSelectedIssueId(null);
+        setIssueAction(null);
+        resolveForm.reset();
+        rejectForm.reset();
+    };
+
+    const submitIssueAction = (e: React.FormEvent) => {
+        e.preventDefault();
+        if (!selectedIssueId || !issueAction) return;
+
+        const form = issueAction === 'resolve' ? resolveForm : rejectForm;
+        const path = issueAction === 'resolve' ? 'resolve' : 'reject';
+
+        form.post(`/member/loan-applications/${application.id}/issues/${selectedIssueId}/${path}`, {
+            preserveScroll: true,
+            onSuccess: () => closeIssueAction(),
+        });
+    };
 
     return (
         <AdminLayout>
@@ -244,11 +348,11 @@ export default function Show({ application, routes }: Props) {
                                 </Button>
                             </Link>
                             <div>
-                                <h2 className="text-2xl font-bold text-gray-900">ঋণ আবেদন বিবরণ</h2>
+                                <h2 className="text-2xl font-bold text-gray-900">{disburseMode ? 'ঋণ বিতরণ' : 'ঋণ আবেদন বিবরণ'}</h2>
                                 <p className="text-gray-600">আবেদন নং: {application.application_no}</p>
                             </div>
                         </div>
-                        <div className="flex gap-2 print:hidden">
+                        {!disburseMode && <div className="flex gap-2 print:hidden">
                             {application.status === 'draft' && (
                                 <>
                                     <Link href={routes.edit}>
@@ -290,15 +394,34 @@ export default function Show({ application, routes }: Props) {
                                     Head Office এ পাঠান
                                 </Button>
                             )}
+                            {application.status === 'pending_disbursement' && isBranchUser && routes.disburse && (
+                                application.can_disburse ? (
+                                    <Button
+                                        onClick={() => {
+                                            if (confirm('ঋণ বিতরণ করতে চান?')) {
+                                                router.patch(routes.disburse!);
+                                            }
+                                        }}
+                                    >
+                                        <CheckCircle2 className="w-4 h-4 mr-2" />
+                                        বিতরণ করুন
+                                    </Button>
+                                ) : (
+                                    <Button disabled variant="outline" title="বিতরণের আগে ফর্ম ২ ও ৩ পূরণ করুন">
+                                        <Clock className="w-4 h-4 mr-2" />
+                                        বিতরণ (ফর্ম ২+৩ বাকি)
+                                    </Button>
+                                )
+                            )}
                             <Button variant="outline" onClick={() => window.print()}>
                                 <Printer className="w-4 h-4 mr-2" />
                                 প্রিন্ট
                             </Button>
-                        </div>
+                        </div>}
                     </div>
 
                     {/* Status Card */}
-                    <Card className="mb-6 border-l-4 border-l-primary">
+                    {!disburseMode && <Card className="mb-6 border-l-4 border-l-primary">
                         <CardContent className="p-6">
                             <div className="flex items-center justify-between">
                                 <div className="flex items-center gap-4">
@@ -333,37 +456,251 @@ export default function Show({ application, routes }: Props) {
                                 </div>
                             </div>
                         </CardContent>
-                    </Card>
+                    </Card>}
 
-                    {/* শুধু সেভকৃত ফর্ম - সাবমিটের আগে/অ্যাপ্রুভার/সুপার অ্যাডমিন সবার জন্য একই ভিউ */}
-                    {savedFormIds.length > 0 && (
-                        <Card className="mb-6 border-l-4 border-l-green-600">
+                    {!disburseMode && pendingIssues.length > 0 && (
+                        <div className="mb-6 rounded-xl border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-900 flex items-start gap-3">
+                            <AlertCircle className="w-5 h-5 shrink-0 mt-0.5 text-amber-700" />
+                            <div>
+                                <p className="font-bold">হেড অফিস থেকে {pendingIssues.length} টি সমস্যা পাঠানো হয়েছে</p>
+                                <p className="text-amber-800 mt-1">
+                                    নিচে সমস্যার বিবরণ দেখুন, প্রয়োজনীয় সংশোধন করুন, তারপর উত্তর দিন। সব পেন্ডিং সমস্যা সমাধান না হলে হেড অফিস অনুমোদন দেবে না।
+                                </p>
+                            </div>
+                        </div>
+                    )}
+
+                    {disburseMode && selectedFormId !== null && (
+                        <Card className="mb-6 border-l-4 border-l-emerald-600">
                             <CardHeader>
-                                <CardTitle className="text-base">সেভকৃত ফর্ম</CardTitle>
-                                <CardDescription>যে ফর্মে ডেটা সেভ আছে সেটা বাটনে ক্লিক করে দেখুন ও প্রিন্ট করুন</CardDescription>
+                                <CardTitle className="flex items-center gap-2 text-emerald-800">
+                                    <CheckCircle2 className="w-5 h-5" />
+                                    ধাপ {currentStepNumber} / {disburseStepFormIds.length} - {FORM_NAMES[selectedFormId] || `ফর্ম ${selectedFormId}`}
+                                </CardTitle>
+                                <CardDescription>
+                                    আগের ফর্মগুলো শুধু preview/print করুন। যেগুলো বাকি আছে সেগুলো পূরণ করে পরের ধাপে যান।
+                                </CardDescription>
+                            </CardHeader>
+                            <CardContent />
+                        </Card>
+                    )}
+
+                    {!disburseMode && issues.length > 0 && (
+                        <Card className="mb-6 border-amber-200">
+                            <CardHeader>
+                                <CardTitle className="flex items-center gap-2 text-amber-800">
+                                    <AlertCircle className="w-5 h-5" />
+                                    হেড অফিস থেকে পাঠানো সমস্যা ও শাখার উত্তর
+                                </CardTitle>
+                                <CardDescription>
+                                    {canRespondToIssues
+                                        ? 'পেন্ডিং সমস্যায় উত্তর দিন — সংশোধন সম্পন্ন হলে "সমাধান করেছি" বেছে উত্তর লিখুন।'
+                                        : 'সমস্যা দেখে প্রয়োজনীয় ফর্ম/তথ্য সংশোধন করুন। উত্তর দিতে শাখা ব্যবহারকারী বা শাখা ব্যবস্থাপককে জানান।'}
+                                </CardDescription>
                             </CardHeader>
                             <CardContent className="space-y-4">
-                                <div className="flex flex-wrap gap-2">
-                                    {savedFormIds.map((id) => (
-                                        <Button
-                                            key={id}
-                                            variant={selectedFormId === id ? 'default' : 'outline'}
-                                            onClick={() => setSelectedFormId(selectedFormId === id ? null : id)}
-                                        >
+                                {issues.map((issue) => (
+                                    <div
+                                        key={issue.id}
+                                        className={`p-4 border rounded-lg text-sm ${
+                                            issue.status === 'pending'
+                                                ? 'bg-amber-50 border-amber-200'
+                                                : issue.status === 'resolved'
+                                                  ? 'bg-green-50 border-green-200'
+                                                  : 'bg-red-50 border-red-200'
+                                        }`}
+                                    >
+                                        <div className="flex items-start justify-between gap-3 mb-2">
+                                            <div className="flex items-center gap-2">
+                                                <span className="font-semibold text-gray-900">হেড অফিসের সমস্যা</span>
+                                                <Badge
+                                                    className={
+                                                        issue.status === 'pending'
+                                                            ? 'bg-amber-200 text-amber-800'
+                                                            : issue.status === 'resolved'
+                                                              ? 'bg-green-200 text-green-800'
+                                                              : 'bg-red-200 text-red-800'
+                                                    }
+                                                >
+                                                    {issue.status === 'pending'
+                                                        ? 'পেন্ডিং'
+                                                        : issue.status === 'resolved'
+                                                          ? 'সমাধান করা হয়েছে'
+                                                          : 'প্রত্যাখ্যান করা হয়েছে'}
+                                                </Badge>
+                                            </div>
+                                            <span className="text-xs text-gray-500 whitespace-nowrap">
+                                                {formatDateTime(issue.created_at)}
+                                            </span>
+                                        </div>
+                                        <p className="text-gray-900 whitespace-pre-wrap">{issue.issue_description}</p>
+                                        <p className="text-xs text-gray-600 mt-2">
+                                            রিপোর্টার: {issue.reporter?.name || 'হেড অফিস'}
+                                        </p>
+
+                                        {issue.response_message && (
+                                            <div className="mt-3 p-3 rounded bg-blue-50 border border-blue-200">
+                                                <div className="flex items-center gap-2 mb-1">
+                                                    <MessageSquare className="w-4 h-4 text-blue-700" />
+                                                    <span className="font-semibold text-blue-900">শাখার উত্তর</span>
+                                                </div>
+                                                <p className="text-blue-900 whitespace-pre-wrap">{issue.response_message}</p>
+                                                {issue.responder && (
+                                                    <p className="text-xs text-blue-700 mt-2">
+                                                        — {issue.responder.name}
+                                                        {issue.responded_at && `, ${formatDateTime(issue.responded_at)}`}
+                                                    </p>
+                                                )}
+                                            </div>
+                                        )}
+
+                                        {issue.status === 'pending' && canRespondToIssues && (
+                                            <div className="mt-3 flex flex-wrap gap-2">
+                                                <Button
+                                                    size="sm"
+                                                    onClick={() => openIssueAction(issue.id, 'resolve')}
+                                                >
+                                                    <CheckCircle2 className="w-4 h-4 mr-1" />
+                                                    সমাধান করেছি — উত্তর দিন
+                                                </Button>
+                                                <Button
+                                                    size="sm"
+                                                    variant="outline"
+                                                    className="border-red-200 text-red-700 hover:bg-red-50"
+                                                    onClick={() => openIssueAction(issue.id, 'reject')}
+                                                >
+                                                    <XCircle className="w-4 h-4 mr-1" />
+                                                    সমস্যা অস্বীকার করুন
+                                                </Button>
+                                            </div>
+                                        )}
+
+                                        {issue.status === 'pending' && !issue.response_message && !canRespondToIssues && (
+                                            <p className="mt-3 text-xs text-gray-600 italic">
+                                                শাখা থেকে এখনও উত্তর পাওয়া যায়নি
+                                            </p>
+                                        )}
+                                    </div>
+                                ))}
+                            </CardContent>
+                        </Card>
+                    )}
+
+                    {!disburseMode && editableFormIds.length > 0 && (
+                        <Card className="mb-6 border-l-4 border-l-amber-500">
+                            <CardHeader>
+                                <CardTitle className="text-base">পূরণ করতে হবে</CardTitle>
+                                <CardDescription>
+                                    {application.status === 'pending_disbursement'
+                                        ? 'বিতরণের আগে নিচের ফর্মগুলো পূরণ করুন'
+                                        : isBranchManager
+                                          ? 'অনুমোদন/ফরওয়ার্ডের আগে প্রয়োজনীয় ফর্ম পূরণ করুন'
+                                          : 'প্রয়োজনীয় ফর্ম পূরণ করুন'}
+                                </CardDescription>
+                            </CardHeader>
+                            <CardContent className="flex flex-wrap gap-2">
+                                {editableFormIds.map((id) => (
+                                    <Link key={id} href={buildFormUrl(id)}>
+                                        <Button variant="outline">
                                             <FileText className="w-4 h-4 mr-2" />
-                                            {FORM_NAMES[id] || `ফর্ম ${id}`}
+                                            {FORM_NAMES[id] || `ফর্ম ${id}`} পূরণ করুন
                                         </Button>
-                                    ))}
-                                </div>
+                                    </Link>
+                                ))}
+                            </CardContent>
+                        </Card>
+                    )}
+
+                    {/* শুধু সেভকৃত ফর্ম - সাবমিটের আগে/অ্যাপ্রুভার/সুপার অ্যাডমিন সবার জন্য একই ভিউ */}
+                    {(savedFormIds.length > 0 || (disburseMode && selectedFormId !== null)) && (
+                        <Card className="mb-6 border-l-4 border-l-green-600">
+                            <CardHeader>
+                                <CardTitle className="text-base">{disburseMode ? (FORM_NAMES[selectedFormId || 0] || 'বর্তমান ধাপ') : 'সেভকৃত ফর্ম'}</CardTitle>
+                                <CardDescription>
+                                    {disburseMode
+                                        ? 'এই ফর্মের full preview নিচে দেখুন।'
+                                        : 'যে ফর্মে ডেটা সেভ আছে সেটা বাটনে ক্লিক করে দেখুন ও প্রিন্ট করুন'}
+                                </CardDescription>
+                            </CardHeader>
+                            <CardContent className="space-y-4">
+                                {!disburseMode && (
+                                    <div className="flex flex-wrap gap-2">
+                                        {savedFormIds.map((id) => (
+                                            <Button
+                                                key={id}
+                                                variant={selectedFormId === id ? 'default' : 'outline'}
+                                                onClick={() => setSelectedFormId(selectedFormId === id ? null : id)}
+                                            >
+                                                <FileText className="w-4 h-4 mr-2" />
+                                                {FORM_NAMES[id] || `ফর্ম ${id}`}
+                                            </Button>
+                                        ))}
+                                    </div>
+                                )}
                                 {selectedFormId !== null && (
                                     <div className="rounded-lg border bg-gray-50/50 p-4">
                                         <div className="mb-3 flex items-center justify-between print:hidden">
                                             <span className="font-semibold text-gray-700">{FORM_NAMES[selectedFormId]}</span>
-                                            <Button variant="outline" size="sm" onClick={printFormContent}>
-                                                <Printer className="w-4 h-4 mr-2" />
-                                                প্রিন্ট
-                                            </Button>
+                                            <div className="flex gap-2">
+                                                {isCurrentFormSaved && (
+                                                    <Button variant="outline" size="sm" onClick={printFormContent}>
+                                                        <Printer className="w-4 h-4 mr-2" />
+                                                        প্রিন্ট
+                                                    </Button>
+                                                )}
+                                                {disburseMode && currentStepIndex === disburseStepFormIds.length - 1 && routes.disburse && (
+                                                    application.can_disburse ? (
+                                                        <Button
+                                                            onClick={() => {
+                                                                if (confirm('সব প্রয়োজনীয় ফর্ম পূরণ হয়েছে। এখন ঋণ বিতরণ করতে চান?')) {
+                                                                    router.patch(routes.disburse);
+                                                                }
+                                                            }}
+                                                        >
+                                                            <CheckCircle2 className="w-4 h-4 mr-2" />
+                                                            Submit & Disburse
+                                                        </Button>
+                                                    ) : (
+                                                        <Button disabled variant="outline" title="ফর্ম ২ ও ৩ পূরণ না হওয়া পর্যন্ত বিতরণ হবে না">
+                                                            <Clock className="w-4 h-4 mr-2" />
+                                                            ফর্ম ২+৩ বাকি
+                                                        </Button>
+                                                    )
+                                                )}
+                                                {disburseMode && currentStepIndex < disburseStepFormIds.length - 1 && (
+                                                    <Button onClick={() => setSelectedFormId(disburseStepFormIds[currentStepIndex + 1])}>
+                                                        Next
+                                                    </Button>
+                                                )}
+                                            </div>
                                         </div>
+                                        {disburseMode && !isCurrentFormSaved && selectedFormId === 2 ? (
+                                            <GuarantorCommitment
+                                                embedded
+                                                saveButtonLabel={currentStepIndex === disburseStepFormIds.length - 1 ? 'Save & Submit' : 'Save & Next'}
+                                                afterSaveUrl={currentStepIndex < disburseStepFormIds.length - 1 ? buildDisburseStepUrl(disburseStepFormIds[currentStepIndex + 1]) : buildDisburseStepUrl(selectedFormId)}
+                                                member={application.member_admission}
+                                                loanProduct={application.loan_product}
+                                                loanCategory={application.loan_category}
+                                                requestedAmount={disburseAmount}
+                                                branch={application.branch}
+                                                existingApplication={application}
+                                                savedData={application.guarantor_info}
+                                            />
+                                        ) : disburseMode && !isCurrentFormSaved && selectedFormId === 3 ? (
+                                            <DeathRiskFund
+                                                embedded
+                                                saveButtonLabel={currentStepIndex === disburseStepFormIds.length - 1 ? 'Save & Submit' : 'Save & Next'}
+                                                afterSaveUrl={currentStepIndex < disburseStepFormIds.length - 1 ? buildDisburseStepUrl(disburseStepFormIds[currentStepIndex + 1]) : buildDisburseStepUrl(selectedFormId)}
+                                                member={application.member_admission}
+                                                loanProduct={application.loan_product}
+                                                loanCategory={application.loan_category}
+                                                requestedAmount={disburseAmount}
+                                                branch={application.branch}
+                                                existingApplication={application}
+                                                savedData={application.nominee_info}
+                                            />
+                                        ) : (
                                         <div ref={formPrintRef} className="form-print-area space-y-3 text-sm">
                                             {selectedFormId === 1 && application.loan_agreement_data && (
                                                 <LoanAgreement
@@ -372,7 +709,7 @@ export default function Show({ application, routes }: Props) {
                                                     member={application.member_admission}
                                                     loanProduct={application.loan_product}
                                                     loanCategory={application.loan_category}
-                                                    requestedAmount={application.requested_amount}
+                                                    requestedAmount={disburseAmount}
                                                     branch={application.branch}
                                                 />
                                             )}
@@ -383,7 +720,7 @@ export default function Show({ application, routes }: Props) {
                                                     member={application.member_admission}
                                                     loanProduct={application.loan_product}
                                                     loanCategory={application.loan_category}
-                                                    requestedAmount={application.requested_amount}
+                                                    requestedAmount={disburseAmount}
                                                     branch={application.branch}
                                                 />
                                             )}
@@ -421,19 +758,68 @@ export default function Show({ application, routes }: Props) {
                                                 />
                                             )}
                                         </div>
+                                        )}
                                     </div>
                                 )}
                             </CardContent>
                         </Card>
                     )}
 
-                    {savedFormIds.length === 0 && (
+                    {!disburseMode && savedFormIds.length === 0 && (
                         <p className="text-sm text-gray-500 text-center py-6">
                             এই আবেদনের জন্য এখনও কোন ফর্ম সেভ নেই। সম্পাদনা থেকে ফর্ম পূরণ ও সেভ করুন।
                         </p>
                     )}
                 </div>
             </div>
+
+            {issueAction && selectedIssueId && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+                    <div className="w-full max-w-lg rounded-xl bg-white shadow-xl">
+                        <div className="border-b px-5 py-4">
+                            <h3 className="text-lg font-bold text-gray-900">
+                                {issueAction === 'resolve' ? 'সমস্যা সমাধানের উত্তর' : 'সমস্যা অস্বীকারের উত্তর'}
+                            </h3>
+                            <p className="text-sm text-gray-600 mt-1">
+                                কী সংশোধন করেছেন বা কেন সমস্যা মানছেন না — বিস্তারিত লিখুন (কমপক্ষে ১০ অক্ষর)।
+                            </p>
+                        </div>
+                        <form onSubmit={submitIssueAction} className="p-5 space-y-4">
+                            <textarea
+                                value={issueAction === 'resolve' ? resolveForm.data.response_message : rejectForm.data.response_message}
+                                onChange={(e) =>
+                                    issueAction === 'resolve'
+                                        ? resolveForm.setData('response_message', e.target.value)
+                                        : rejectForm.setData('response_message', e.target.value)
+                                }
+                                rows={5}
+                                className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20"
+                                placeholder="উত্তর লিখুন..."
+                                required
+                                minLength={10}
+                            />
+                            {(issueAction === 'resolve' ? resolveForm.errors.response_message : rejectForm.errors.response_message) && (
+                                <p className="text-xs text-red-600">
+                                    {issueAction === 'resolve'
+                                        ? resolveForm.errors.response_message
+                                        : rejectForm.errors.response_message}
+                                </p>
+                            )}
+                            <div className="flex justify-end gap-2">
+                                <Button type="button" variant="outline" onClick={closeIssueAction}>
+                                    বাতিল
+                                </Button>
+                                <Button
+                                    type="submit"
+                                    disabled={issueAction === 'resolve' ? resolveForm.processing : rejectForm.processing}
+                                >
+                                    {issueAction === 'resolve' ? 'সমাধান সংরক্ষণ' : 'অস্বীকার সংরক্ষণ'}
+                                </Button>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+            )}
 
         </AdminLayout>
     );

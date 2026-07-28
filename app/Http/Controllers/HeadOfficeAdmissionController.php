@@ -152,6 +152,25 @@ class HeadOfficeAdmissionController extends Controller
             }
         }
 
+        if ($request->has('search') && $request->search) {
+            $search = $request->search;
+            $statsQuery->where(function($q) use ($search) {
+                $q->where('application_no', 'like', "%{$search}%")
+                  ->orWhere('applicant_name_en', 'like', "%{$search}%")
+                  ->orWhere('applicant_name_bn', 'like', "%{$search}%")
+                  ->orWhere('mobile_number', 'like', "%{$search}%")
+                  ->orWhere('nid_number', 'like', "%{$search}%");
+            });
+        }
+
+        if ($request->filled('printed')) {
+            if ($request->printed === 'yes') {
+                $statsQuery->whereNotNull('printed_at');
+            } elseif ($request->printed === 'no') {
+                $statsQuery->whereNull('printed_at');
+            }
+        }
+
         $stats = [
             // "Total" mirrors the default (All) list, which excludes drafts.
             'total' => (clone $statsQuery)->where('status', '!=', 'draft')->count(),
@@ -516,10 +535,41 @@ class HeadOfficeAdmissionController extends Controller
 
         $this->applyAccessibleBranchScope($query);
 
-        // Date filter (default: today)
-        $date = $request->input('date', now()->toDateString());
+        $date = $request->input('date');
+        $month = $request->input('month');
+
+        // Default to current month if neither date nor month is passed
+        if (!$date && !$month) {
+            $month = now()->format('Y-m');
+        }
+
         if ($date) {
             $query->whereDate('submitted_at', $date);
+        } elseif ($month) {
+            $parts = explode('-', $month);
+            if (count($parts) === 2) {
+                $query->whereYear('submitted_at', $parts[0])
+                      ->whereMonth('submitted_at', $parts[1]);
+            }
+        }
+
+        // Zone filter
+        if ($request->filled('zone_id')) {
+            $query->whereHas('branch.area', function($q) use ($request) {
+                $q->where('zone_id', $request->zone_id);
+            });
+        }
+
+        // Area filter
+        if ($request->filled('area_id')) {
+            $query->whereHas('branch', function($q) use ($request) {
+                $q->where('area_id', $request->area_id);
+            });
+        }
+
+        // Branch filter
+        if ($request->filled('branch_id')) {
+            $query->where('branch_id', $request->branch_id);
         }
 
         // Search filter
@@ -536,12 +586,21 @@ class HeadOfficeAdmissionController extends Controller
 
         $admissions = $query->orderBy('submitted_at', 'desc')->paginate(20);
 
+        $orgFilters = $this->organizationFilterOptions();
+
         return Inertia::render('HeadOffice/ProcessAdmissions', [
             'admissions' => $admissions,
             'filters' => [
+                'month' => $month,
                 'date' => $date,
                 'search' => $search,
+                'zone_id' => $request->input('zone_id'),
+                'area_id' => $request->input('area_id'),
+                'branch_id' => $request->input('branch_id'),
             ],
+            'zones' => $orgFilters['zones'],
+            'areas' => $orgFilters['areas'],
+            'branches' => $orgFilters['branches'],
         ]);
     }
 
@@ -660,14 +719,46 @@ class HeadOfficeAdmissionController extends Controller
      */
     public function approveAll(Request $request)
     {
-        $date = $request->input('date', now()->toDateString());
+        $date = $request->input('date');
+        $month = $request->input('month');
 
         DB::beginTransaction();
         try {
-            // Get all pending_head_office admissions for the date
-            $admissions = MemberAdmission::where('status', 'pending_head_office')
-                ->whereDate('submitted_at', $date)
-                ->get();
+            // Get all pending_head_office admissions for the date or month
+            $query = MemberAdmission::where('status', 'pending_head_office');
+
+            if ($date) {
+                $query->whereDate('submitted_at', $date);
+            } elseif ($month) {
+                $parts = explode('-', $month);
+                if (count($parts) === 2) {
+                    $query->whereYear('submitted_at', $parts[0])
+                          ->whereMonth('submitted_at', $parts[1]);
+                }
+            } else {
+                $defaultMonth = now()->format('Y-m');
+                $parts = explode('-', $defaultMonth);
+                $query->whereYear('submitted_at', $parts[0])
+                      ->whereMonth('submitted_at', $parts[1]);
+            }
+
+            if ($request->filled('zone_id')) {
+                $query->whereHas('branch.area', function($q) use ($request) {
+                    $q->where('zone_id', $request->zone_id);
+                });
+            }
+
+            if ($request->filled('area_id')) {
+                $query->whereHas('branch', function($q) use ($request) {
+                    $q->where('area_id', $request->area_id);
+                });
+            }
+
+            if ($request->filled('branch_id')) {
+                $query->where('branch_id', $request->branch_id);
+            }
+
+            $admissions = $query->get();
 
             $approvedCount = 0;
             $returnedCount = 0;

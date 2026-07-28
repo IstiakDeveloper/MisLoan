@@ -241,6 +241,7 @@ Route::middleware(['auth', 'verified'])->group(function () {
             Route::put('{id}', [\App\Http\Controllers\Member\LoanApplicationController::class, 'update'])->name('update');
             Route::patch('{id}/submit', [\App\Http\Controllers\Member\LoanApplicationController::class, 'submit'])->name('submit');
             Route::patch('{id}/send-to-head-office', [\App\Http\Controllers\Member\LoanApplicationController::class, 'sendToHeadOffice'])->name('send-to-head-office');
+            Route::patch('{id}/disburse', [\App\Http\Controllers\Member\LoanApplicationController::class, 'disburse'])->name('disburse');
             Route::get('{id}/print', [\App\Http\Controllers\Member\LoanApplicationController::class, 'print'])->name('print');
             Route::delete('{id}', [\App\Http\Controllers\Member\LoanApplicationController::class, 'destroy'])->name('destroy');
 
@@ -283,6 +284,8 @@ Route::middleware(['auth', 'verified'])->group(function () {
         // Head Office Loan Applications (member form-based loans)
         Route::get('loan-applications', [HeadOfficeLoanController::class, 'index'])->name('loan-applications');
         Route::get('loan-applications/print', [HeadOfficeLoanController::class, 'print'])->name('loan-applications.print');
+        Route::get('loan-applications/export', [HeadOfficeLoanController::class, 'exportExcel'])->name('loan-applications.export');
+        Route::post('loan-applications/mark-printed', [HeadOfficeLoanController::class, 'markAsPrinted'])->name('loan-applications.mark-printed');
         Route::get('process-loans', [HeadOfficeLoanController::class, 'process'])->name('process-loans');
         Route::get('loans/{loanApplication}', [HeadOfficeLoanController::class, 'show'])->name('loans.show');
         Route::post('loans/{loanApplication}/issue', [HeadOfficeLoanController::class, 'storeIssue'])->name('loans.issue');

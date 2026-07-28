@@ -69,6 +69,7 @@ class LoanApplication extends Model
         'excel_file_name',
         'total_members',
         'status',
+        'printed_at',
         'submitted_by',
         'submitted_at',
         'reviewed_by',
@@ -125,6 +126,7 @@ class LoanApplication extends Model
         'submitted_at' => 'datetime',
         'reviewed_at' => 'datetime',
         'disbursed_at' => 'datetime',
+        'printed_at' => 'datetime',
         'officer_reviewed_at' => 'datetime',
         'manager_reviewed_at' => 'datetime',
         'committee_reviewed_at' => 'datetime',
@@ -164,6 +166,7 @@ class LoanApplication extends Model
     const STATUS_READY_FOR_HEAD_OFFICE = 'ready_for_head_office';
     const STATUS_PENDING_HEAD_OFFICE = 'pending_head_office';
     const STATUS_APPROVED = 'approved';
+    const STATUS_PENDING_DISBURSEMENT = 'pending_disbursement';
     const STATUS_REJECTED = 'rejected';
     const STATUS_DISBURSED = 'disbursed';
     const STATUS_CANCELLED = 'cancelled';
@@ -253,7 +256,8 @@ class LoanApplication extends Model
 
     public function canBeDisbursed(): bool
     {
-        return $this->status === self::STATUS_APPROVED;
+        return $this->status === self::STATUS_PENDING_DISBURSEMENT
+            || $this->status === self::STATUS_APPROVED;
     }
 
     // Scopes
@@ -270,6 +274,101 @@ class LoanApplication extends Model
     public function scopePending($query)
     {
         return $query->whereIn('status', [self::STATUS_SUBMITTED, self::STATUS_UNDER_REVIEW]);
+    }
+
+    /**
+     * Tracking state for list view: কার কাছে পেন্ডিং / কোন অবস্থায় আছে
+     *
+     * @return array{label: string, pending_with_name: ?string}
+     */
+    public function getTrackingState(): array
+    {
+        $status = $this->status;
+
+        if (in_array($status, [self::STATUS_DRAFT, self::STATUS_REJECTED, self::STATUS_CANCELLED], true)) {
+            return ['label' => '—', 'pending_with_name' => null];
+        }
+
+        if ($status === self::STATUS_DISBURSED) {
+            return ['label' => 'বিতরণকৃত', 'pending_with_name' => null];
+        }
+
+        if ($status === self::STATUS_APPROVED) {
+            return ['label' => 'অনুমোদিত', 'pending_with_name' => null];
+        }
+
+        if ($status === self::STATUS_PENDING_DISBURSEMENT) {
+            return ['label' => 'বিতরণের জন্য অপেক্ষা (শাখা)', 'pending_with_name' => null];
+        }
+
+        if ($status === self::STATUS_NEEDS_CORRECTION) {
+            return ['label' => 'সংশোধনের জন্য ফেরত', 'pending_with_name' => null];
+        }
+
+        if ($status === self::STATUS_PENDING_HEAD_OFFICE) {
+            return ['label' => 'হেড অফিসে', 'pending_with_name' => null];
+        }
+
+        if ($status === self::STATUS_READY_FOR_HEAD_OFFICE) {
+            return ['label' => 'শাখা অনুমোদিত (হেড অফিসে পাঠানোর অপেক্ষা)', 'pending_with_name' => null];
+        }
+
+        $current = $this->getCurrentPendingApprovalForTracking();
+        if (! $current) {
+            if ($status === self::STATUS_SUBMITTED) {
+                return ['label' => 'শাখা ব্যবস্থাপকের কাছে', 'pending_with_name' => null];
+            }
+            if ($status === self::STATUS_UNDER_REVIEW) {
+                return ['label' => 'পর্যালোচনায়', 'pending_with_name' => null];
+            }
+
+            return ['label' => '—', 'pending_with_name' => null];
+        }
+
+        $level = $current->level;
+        $name = $current->relationLoaded('user') ? ($current->user->name ?? null) : null;
+        if ($name === null && $current->user_id) {
+            $name = $current->user->name ?? null;
+        }
+
+        $levelLabels = [
+            'branch' => 'শাখা ব্যবস্থাপকের কাছে',
+            'area' => 'অঞ্চল ব্যবস্থাপকের কাছে',
+            'zone' => 'জোন ব্যবস্থাপকের কাছে',
+            'escalation' => 'অনুমোদকের কাছে',
+            'head_office' => 'হেড অফিসে',
+        ];
+        $label = $levelLabels[$level] ?? 'পর্যালোচনায়';
+        if ($name && $level !== 'branch') {
+            $label .= ' ('.$name.')';
+        }
+
+        return ['label' => $label, 'pending_with_name' => $name];
+    }
+
+    protected function getCurrentPendingApprovalForTracking(): ?LoanApplicationApproval
+    {
+        if ($this->relationLoaded('approvals')) {
+            $pending = $this->approvals->where('status', 'pending')->sortBy('sequence');
+            foreach ($pending as $p) {
+                $previous = $this->approvals->where('sequence', '<', $p->sequence);
+                if ($previous->every(fn ($a) => $a->status === 'approved')) {
+                    return $p;
+                }
+            }
+
+            return null;
+        }
+
+        $pending = $this->approvals()->where('status', 'pending')->orderBy('sequence')->get();
+        foreach ($pending as $p) {
+            $previous = $this->approvals()->where('sequence', '<', $p->sequence)->get();
+            if ($previous->every(fn ($a) => $a->status === 'approved')) {
+                return $p;
+            }
+        }
+
+        return null;
     }
 
 }

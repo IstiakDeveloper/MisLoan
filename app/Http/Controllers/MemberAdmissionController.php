@@ -106,7 +106,7 @@ class MemberAdmissionController extends Controller
               ->orWhere('created_by', $user->id);
         });
 
-        // Build stats query
+        // Build stats query with active date, branch, and search filters (excluding status filter for stats)
         $statsQuery = MemberAdmission::query();
         if (!$user->has_all_access) {
             $accessibleBranchIds = $user->getAccessibleBranches()->pluck('id');
@@ -121,6 +121,28 @@ class MemberAdmissionController extends Controller
             $q->where('status', '!=', 'draft')
               ->orWhere('created_by', $user->id);
         });
+
+        if ($request->has('branch_id') && $request->branch_id) {
+            $statsQuery->where('branch_id', $request->branch_id);
+        }
+
+        if ($request->filled('search')) {
+            $search = $request->search;
+            $statsQuery->where(function($q) use ($search) {
+                $q->where('application_no', 'like', "%{$search}%")
+                  ->orWhere('applicant_name_en', 'like', "%{$search}%")
+                  ->orWhere('applicant_name_bn', 'like', "%{$search}%")
+                  ->orWhere('mobile_number', 'like', "%{$search}%")
+                  ->orWhere('nid_number', 'like', "%{$search}%");
+            });
+        }
+
+        if ($request->filled('from_date')) {
+            $statsQuery->whereDate('created_at', '>=', $request->from_date);
+        }
+        if ($request->filled('to_date')) {
+            $statsQuery->whereDate('created_at', '<=', $request->to_date);
+        }
 
         // Calculate stats
         $stats = [
@@ -165,6 +187,19 @@ class MemberAdmissionController extends Controller
         $admissions = $admissions->through(function (MemberAdmission $admission) {
             $arr = $admission->toArray();
             $arr['tracking_state'] = $admission->getTrackingState();
+            $activeLoan = $admission->loanApplications()
+                ->whereIn('status', [
+                    \App\Models\LoanApplication::STATUS_SUBMITTED,
+                    \App\Models\LoanApplication::STATUS_UNDER_REVIEW,
+                    \App\Models\LoanApplication::STATUS_READY_FOR_HEAD_OFFICE,
+                    \App\Models\LoanApplication::STATUS_PENDING_HEAD_OFFICE,
+                    \App\Models\LoanApplication::STATUS_PENDING_DISBURSEMENT,
+                    \App\Models\LoanApplication::STATUS_DISBURSED,
+                ])
+                ->latest('id')
+                ->first();
+            $arr['has_active_loan'] = $activeLoan !== null;
+            $arr['active_loan_status'] = $activeLoan?->status;
             return $arr;
         });
 

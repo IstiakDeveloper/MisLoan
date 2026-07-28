@@ -135,6 +135,8 @@ export interface MemberAdmission {
     selected_approvers?: number[];
     revision_count?: number;
     revision_comments?: string;
+    has_active_loan?: boolean;
+    active_loan_status?: string | null;
 
     created_at: string;
     updated_at: string;

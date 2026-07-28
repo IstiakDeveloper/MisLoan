@@ -160,8 +160,11 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
 
     const isFieldOfficer = roleName === 'field_officer';
     const isSuperAdmin = roleName === 'super_admin';
+    const isHeadOfficeRole = roleName === 'head_office';
     const isEdRole = roleName === 'ed';
-    const canViewTeamBasedReport = auth.user.has_all_access || isSuperAdmin || roleName === 'head_office' || isEdRole;
+    // Head Office / Super Admin do not approve via /approvals — hide Pending Approvals UI
+    const showPendingApprovalsNav = !isHeadOfficeRole && !isSuperAdmin;
+    const canViewTeamBasedReport = auth.user.has_all_access || isSuperAdmin || isHeadOfficeRole || isEdRole;
     const showConfigurationSection = (!isBranchRole && !isTeamApproverRole) || isEdRole;
     const { canInstall, promptInstall, isInstalled, isStandalone, platform } = usePwaInstallPrompt();
 
@@ -317,7 +320,7 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
         return groups;
     }, [isBranchRole, isEdRole, isTeamApproverRole, branchMenuItems, approverMenuItems, approverOperationsItems, headOfficeMainItems]);
 
-    // Compute items for mobile bottom nav (ensuring Pending Approvals is prioritized)
+    // Compute items for mobile bottom nav (Pending Approvals prioritized for roles that approve)
     const mobileBottomNavItems = useMemo(() => {
         const pendingApprovalItem = {
             name: 'Pending Approvals',
@@ -349,13 +352,13 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
             ].slice(0, 4).filter(Boolean);
         }
 
-        // Head office / super admin / default
+        // Head office / super admin / default — no Pending Approvals (they do not approve)
         const hoTeamItem = headOfficeMainItems.find(m => m.href === '/head-office/team-based-approvals');
         return [
             headOfficeMainItems.find(m => m.href === '/dashboard') || headOfficeMainItems[0],
-            pendingApprovalItem,
-            ...(hoTeamItem ? [hoTeamItem] : []),
             headOfficeMainItems.find(m => m.href === '/head-office/admission-members') || headOfficeMainItems[1],
+            headOfficeMainItems.find(m => m.href === '/head-office/loan-applications') || headOfficeMainItems[2],
+            ...(hoTeamItem ? [hoTeamItem] : []),
         ].slice(0, 4).filter(Boolean);
     }, [isFieldOfficer, isBranchRole, isTeamApproverRole, isEdRole, branchMenuItems, approverMenuItems, approverOperationsItems, headOfficeMainItems, badgeCounts.pendingApprovals]);
 
@@ -694,25 +697,27 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
                                 </button>
                             )}
 
-                            {/* Pending Approvals Quick Header Shortcut */}
-                            <Link
-                                href="/approvals"
-                                className={`relative flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl transition-all duration-200 ${
-                                    path === '/approvals'
-                                        ? 'bg-blue-600 text-white shadow-md shadow-blue-600/20'
-                                        : 'bg-slate-100/90 text-slate-700 hover:bg-blue-50 hover:text-blue-600'
-                                }`}
-                                title="Pending Approvals"
-                                aria-label="Pending Approvals"
-                            >
-                                <ClipboardCheck className="w-4.5 h-4.5 stroke-[1.75]" />
-                                <span className="hidden sm:inline text-xs font-bold">Approvals</span>
-                                {badgeCounts.pendingApprovals != null && badgeCounts.pendingApprovals > 0 && (
-                                    <span className="flex h-4 min-w-[16px] items-center justify-center rounded-full bg-rose-500 px-1 text-[9px] font-extrabold text-white shadow-xs animate-pulse">
-                                        {badgeCounts.pendingApprovals}
-                                    </span>
-                                )}
-                            </Link>
+                            {/* Pending Approvals Quick Header Shortcut (hidden for Head Office / Super Admin) */}
+                            {showPendingApprovalsNav && (
+                                <Link
+                                    href="/approvals"
+                                    className={`relative flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl transition-all duration-200 ${
+                                        path === '/approvals'
+                                            ? 'bg-blue-600 text-white shadow-md shadow-blue-600/20'
+                                            : 'bg-slate-100/90 text-slate-700 hover:bg-blue-50 hover:text-blue-600'
+                                    }`}
+                                    title="Pending Approvals"
+                                    aria-label="Pending Approvals"
+                                >
+                                    <ClipboardCheck className="w-4.5 h-4.5 stroke-[1.75]" />
+                                    <span className="hidden sm:inline text-xs font-bold">Approvals</span>
+                                    {badgeCounts.pendingApprovals != null && badgeCounts.pendingApprovals > 0 && (
+                                        <span className="flex h-4 min-w-[16px] items-center justify-center rounded-full bg-rose-500 px-1 text-[9px] font-extrabold text-white shadow-xs animate-pulse">
+                                            {badgeCounts.pendingApprovals}
+                                        </span>
+                                    )}
+                                </Link>
+                            )}
 
                             {/* Notifications Toggle */}
                             <button
@@ -880,8 +885,8 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
                 </div>
             )}
 
-            {/* Mobile Floating Pending Approvals Quick Overlay Pill (Only shown when pending approvals > 0) */}
-            {isMobile && path !== '/approvals' && (badgeCounts.pendingApprovals || 0) > 0 && (
+            {/* Mobile Floating Pending Approvals pill (hidden for Head Office / Super Admin) */}
+            {showPendingApprovalsNav && isMobile && path !== '/approvals' && (badgeCounts.pendingApprovals || 0) > 0 && (
                 <div className="fixed bottom-20 right-4 z-40 md:hidden animate-in fade-in slide-in-from-bottom-3 duration-300">
                     <Link
                         href="/approvals"

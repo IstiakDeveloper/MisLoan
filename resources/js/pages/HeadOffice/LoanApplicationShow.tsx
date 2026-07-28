@@ -123,6 +123,7 @@ const statusConfig = {
     under_review: { label: 'পর্যালোচনা', color: 'bg-yellow-100 text-yellow-800', icon: Clock },
     pending_head_office: { label: 'হেড অফিসে প্রেরিত', color: 'bg-indigo-100 text-indigo-800', icon: Clock },
     approved: { label: 'অনুমোদিত', color: 'bg-green-100 text-green-800', icon: CheckCircle },
+    pending_disbursement: { label: 'বিতরণের অপেক্ষায়', color: 'bg-amber-100 text-amber-800', icon: Clock },
     rejected: { label: 'প্রত্যাখ্যাত', color: 'bg-red-100 text-red-800', icon: XCircle },
     disbursed: { label: 'বিতরণ হয়েছে', color: 'bg-emerald-100 text-emerald-800', icon: CheckCircle },
     cancelled: { label: 'বাতিল', color: 'bg-gray-100 text-gray-800', icon: XCircle },

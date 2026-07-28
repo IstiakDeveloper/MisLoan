@@ -65,6 +65,7 @@ export default function Index({ admissions, filters, stats }: Props) {
 
     const canApplyLoan = (admission: MemberAdmission) => {
         if (admission.status === 'rejected') return false;
+        if (admission.has_active_loan) return false;
         if (roleName === 'branch_user') return admission.status === 'approved';
         if (!isFieldOfficer) return false;
         return Number(admission.created_by ?? admission.createdBy?.id) === Number(currentUserId);
@@ -117,6 +118,25 @@ export default function Index({ admissions, filters, stats }: Props) {
             .toUpperCase();
     };
 
+    const getActiveLoanBadge = (admission: MemberAdmission) => {
+        if (!admission.has_active_loan) return null;
+
+        const isDisbursed = admission.active_loan_status === 'disbursed';
+        return (
+            <span className={`inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full border text-[11px] font-bold tracking-wide ${
+                isDisbursed
+                    ? 'bg-rose-50 border-rose-200 text-rose-700'
+                    : 'bg-amber-50 border-amber-200 text-amber-700'
+            }`}>
+                <span className={`w-1.5 h-1.5 rounded-full ${isDisbursed ? 'bg-rose-500' : 'bg-amber-500'}`} />
+                {isDisbursed ? 'ঋণ সক্রিয়' : 'ঋণ চলমান'}
+            </span>
+        );
+    };
+
+    const today = new Date().toISOString().split('T')[0];
+    const isTodayFilter = fromDate === today && toDate === today;
+
     const buildParams = () => {
         const params: Record<string, string> = {};
         if (searchQuery) params.search = searchQuery;
@@ -124,6 +144,12 @@ export default function Index({ admissions, filters, stats }: Props) {
         if (fromDate) params.from_date = fromDate;
         if (toDate) params.to_date = toDate;
         return params;
+    };
+
+    const handleTodayFilter = () => {
+        setFromDate(today);
+        setToDate(today);
+        router.get('/member-admissions', { ...buildParams(), from_date: today, to_date: today }, { preserveState: true });
     };
 
     const handleSearch = (e: React.FormEvent) => {
@@ -242,6 +268,19 @@ export default function Index({ admissions, filters, stats }: Props) {
                         </div>
 
                         <div className="flex flex-wrap items-center gap-3 shrink-0">
+                            <button
+                                type="button"
+                                onClick={handleTodayFilter}
+                                className={`inline-flex items-center justify-center gap-2 px-4 py-3 rounded-2xl border text-xs sm:text-sm font-semibold transition-all active:scale-95 ${
+                                    isTodayFilter
+                                        ? 'bg-blue-600 text-white border-blue-500 shadow-md'
+                                        : 'bg-slate-800 hover:bg-slate-700 text-slate-200 border-slate-700'
+                                }`}
+                                title="আজকের ভর্তি আবেদনসমূহ (Today)"
+                            >
+                                <Calendar className="w-4 h-4" />
+                                <span>Today (আজ)</span>
+                            </button>
                             {isFieldOfficer && (
                                 <Link
                                     href="/member-admissions/create"
@@ -280,6 +319,19 @@ export default function Index({ admissions, filters, stats }: Props) {
 
                         {/* Date Range & Buttons */}
                         <div className="flex flex-wrap items-center gap-2">
+                            <button
+                                type="button"
+                                onClick={handleTodayFilter}
+                                className={`px-3 py-2 text-xs font-bold rounded-xl border transition ${
+                                    isTodayFilter
+                                        ? 'bg-blue-600 text-white border-blue-600 shadow-sm'
+                                        : 'bg-slate-100 text-slate-700 border-slate-200 hover:bg-slate-200'
+                                }`}
+                                title="আজকের আবেদনসমূহ (Today)"
+                            >
+                                Today (আজ)
+                            </button>
+
                             <div className="flex items-center gap-1.5 bg-slate-50 border border-slate-200 p-1 rounded-xl">
                                 <input
                                     type="date"
@@ -390,6 +442,7 @@ export default function Index({ admissions, filters, stats }: Props) {
                                         </div>
                                         <div className="shrink-0">{getStatusBadge(admission.status)}</div>
                                     </div>
+                                        {getActiveLoanBadge(admission)}
 
                                     {/* Details Grid */}
                                     <div className="grid grid-cols-2 gap-2.5 bg-slate-50/80 p-3 rounded-2xl border border-slate-100 text-xs">
@@ -541,6 +594,7 @@ export default function Index({ admissions, filters, stats }: Props) {
                                                 <div className="font-bold text-slate-800">
                                                     {admission.applicant_name_bn || admission.applicant_name_en}
                                                 </div>
+                                                {getActiveLoanBadge(admission)}
                                                 {admission.is_legacy && (
                                                     <span className="mt-0.5 inline-flex items-center rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-semibold text-amber-800">
                                                         পুরাতন{admission.loan_dofa ? ` · দফা ${admission.loan_dofa}` : ''}

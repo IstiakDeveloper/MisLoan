@@ -203,10 +203,9 @@ export default function FormSelection({ member, loanProduct, loanCategory, reque
                         <div className="text-sm text-gray-700">
                             <p className="font-semibold mb-1">নোট:</p>
                             <ul className="list-disc list-inside space-y-1 text-xs">
-                                <li>প্রতিটি ফর্ম আলাদাভাবে পূরণ করুন এবং প্রিন্ট করুন</li>
-                                <li>সকল তথ্য সঠিকভাবে পূরণ করুন</li>
-                                <li>প্রয়োজনীয় স্বাক্ষর ও সীল সংগ্রহ করুন</li>
-                                <li>ঋণ অনুমোদনের জন্য সকল ফর্ম জমা দিতে হবে</li>
+                                <li>ফিল্ড অফিসার: সাপ্তাহিক = ফর্ম ১, মাসিক = ফর্ম ৫ পূরণ করে submit করবেন</li>
+                                <li>শাখা ব্যবস্থাপক: প্রয়োজনে ফর্ম ৪ পূরণ করে approve/forward করবেন</li>
+                                <li>শাখা ব্যবহারকারী: HO approve এর পর ফর্ম ২+৩ পূরণ করে disburse করবেন</li>
                             </ul>
                         </div>
                     </div>

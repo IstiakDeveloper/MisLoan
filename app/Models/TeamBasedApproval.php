@@ -15,6 +15,7 @@ class TeamBasedApproval extends Model
 
     protected $fillable = [
         'branch_id',
+        'loan_application_id',
         'created_by',
         'sheet_date',
         'area_manager_id',
@@ -35,6 +36,11 @@ class TeamBasedApproval extends Model
     public function branch(): BelongsTo
     {
         return $this->belongsTo(Branch::class);
+    }
+
+    public function loanApplication(): BelongsTo
+    {
+        return $this->belongsTo(LoanApplication::class);
     }
 
     public function creator(): BelongsTo

@@ -61,6 +61,9 @@ interface Props {
     existingApplication?: any;
     savedData?: DeathRiskFundData;
     onlyPreview?: boolean;
+    embedded?: boolean;
+    afterSaveUrl?: string;
+    saveButtonLabel?: string;
     isLegacy?: boolean;
 }
 
@@ -189,6 +192,12 @@ const calculateAge = (dateOfBirth: string | null): number => {
 };
 
 function formSelectionUrl(isLegacy: boolean, member: any, loanProduct: any, loanCategory: any, requestedAmount: number) {
+    if (typeof window !== 'undefined') {
+        const currentParams = new URLSearchParams(window.location.search);
+        if (currentParams.get('return') === 'disburse' && currentParams.get('application_id')) {
+            return `/member/loan-applications/${currentParams.get('application_id')}?action=disburse`;
+        }
+    }
     const params = new URLSearchParams({ loan_product_id: String(loanProduct.id), loan_category_id: String(loanCategory.id), requested_amount: String(requestedAmount) });
     if (isLegacy) params.set('legacy', '1'); else params.set('member_id', String(member?.id ?? ''));
     return `/member/loan-applications/form-selection?${params.toString()}`;
@@ -203,6 +212,9 @@ export default function DeathRiskFund({
     existingApplication,
     savedData,
     onlyPreview,
+    embedded = false,
+    afterSaveUrl,
+    saveButtonLabel,
     isLegacy = false,
 }: Props) {
     if (onlyPreview && savedData) {
@@ -388,11 +400,27 @@ export default function DeathRiskFund({
         
         const payload: any = { loan_product_id: loanProduct.id, loan_category_id: loanCategory.id, requested_amount: requestedAmount, form_data: data };
         if (isLegacy) payload.legacy = 1; else payload.member_id = member?.id;
+        let autoDisburse = false;
+        if (typeof window !== 'undefined') {
+            const currentParams = new URLSearchParams(window.location.search);
+            if (currentParams.get('action') === 'disburse' && currentParams.get('step') === '3' && existingApplication?.id) {
+                payload.auto_disburse = 1;
+                payload.application_id = existingApplication.id;
+                autoDisburse = true;
+            }
+        }
         router.post(
             '/member/loan-applications/forms/death-risk-fund/save-draft',
             payload,
             {
                 onSuccess: () => {
+                    if (autoDisburse) {
+                        return;
+                    }
+                    if (afterSaveUrl) {
+                        router.visit(afterSaveUrl);
+                        return;
+                    }
                     alert('মৃত্যুজনিত ঋণঝুঁকি তহবিলে অন্তর্ভুক্তির আবেদন পত্র ড্রাফট হিসেবে সংরক্ষিত হয়েছে।');
                     router.visit(formSelectionUrl(isLegacy, member, loanProduct, loanCategory, requestedAmount));
                 },
@@ -1252,8 +1280,8 @@ export default function DeathRiskFund({
         );
     };
 
-    return (
-        <AdminLayout>
+    const pageContent = (
+        <>
             <Head title="মৃত্যুজনিত ঋণঝুঁকি তহবিলে অন্তর্ভুক্তির আবেদন পত্র">
                 <style>{`
                     @media print {
@@ -1317,7 +1345,7 @@ export default function DeathRiskFund({
             <div className="max-w-[1600px] mx-auto p-4">
                 {/* Header */}
                 <div className="flex items-center justify-between mb-4 print:hidden">
-                    <div className="flex items-center gap-3">
+                    {!embedded && <div className="flex items-center gap-3">
                         <button
                             onClick={() => router.visit(formSelectionUrl(isLegacy, member, loanProduct, loanCategory, requestedAmount))}
                             className="flex items-center gap-2 px-3 py-2 bg-gray-200 text-gray-700 text-sm rounded-md hover:bg-gray-300"
@@ -1334,7 +1362,7 @@ export default function DeathRiskFund({
                                 </p>
                             )}
                         </div>
-                    </div>
+                    </div>}
                     <div className="flex gap-2">
                         <button
                             onClick={handleSaveDraft}
@@ -1342,7 +1370,7 @@ export default function DeathRiskFund({
                             className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white text-sm rounded-md hover:bg-blue-700 disabled:opacity-50"
                         >
                             <Save className="w-4 h-4" />
-                            {processing ? 'সংরক্ষণ হচ্ছে...' : 'সংরক্ষণ করুন'}
+                            {processing ? 'সংরক্ষণ হচ্ছে...' : (saveButtonLabel || 'সংরক্ষণ করুন')}
                         </button>
                         <button
                             onClick={handlePrint}
@@ -1376,6 +1404,8 @@ export default function DeathRiskFund({
                     </div>
                 </div>
             </div>
-        </AdminLayout>
+        </>
     );
+
+    return embedded ? pageContent : <AdminLayout>{pageContent}</AdminLayout>;
 }

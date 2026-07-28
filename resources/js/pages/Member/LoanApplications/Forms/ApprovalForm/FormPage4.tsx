@@ -1,8 +1,7 @@
 import React, { useEffect } from 'react';
 import { FormPageProps } from './Types';
-import { numberToWordsBangla } from './PrintPreview';
 import { toLocalDateTimeInput } from './index';
-import { Briefcase, Plane, AlertTriangle, ShieldAlert, Target, Users, CheckCircle2, MessageSquareText } from 'lucide-react';
+import { Briefcase, Plane, ShieldAlert, Target, Users, CheckCircle2, MessageSquareText } from 'lucide-react';
 
 export default function FormPage4({ data, setData }: FormPageProps) {
     const projectName = data.project_name || data.proposed_project_name || '';
@@ -287,43 +286,56 @@ export default function FormPage4({ data, setData }: FormPageProps) {
                 </div>
                 
                 <div className="space-y-3.5">
+                    <p className="text-[11px] text-indigo-700/80 bg-indigo-50 border border-indigo-100 rounded-lg px-3 py-2">
+                        এই অংশ ফিল্ড অফিসার বা শাখা ব্যবহারকারী পূরণ করবেন না। অনুমোদনের সময় সংশ্লিষ্ট অনুমোদনকারীর মন্তব্য ও অনুমোদিত তথ্য এখানে স্বয়ংক্রিয়ভাবে আসবে।
+                    </p>
                     <div className="bg-gray-50/70 p-3.5 rounded-xl border border-gray-200">
                         <label className="block text-xs font-semibold text-gray-700 mb-1">অফিসারের পরিদর্শনোত্তর মন্তব্য</label>
-                        <textarea value={data.officer_post_inspection_comments || ''} onChange={(e) => setData('officer_post_inspection_comments', e.target.value)} className={textareaClass} rows={2} />
+                        <textarea value={data.officer_post_inspection_comments || ''} onChange={(e) => setData('officer_post_inspection_comments', e.target.value)} className={textareaClass} rows={2} placeholder="অফিসারের পরিদর্শনোত্তর মন্তব্য লিখুন..." />
                     </div>
 
                     <div className="bg-gray-50/70 p-3.5 rounded-xl border border-gray-200">
                         <label className="block text-xs font-semibold text-gray-700 mb-1">শাখা ব্যবস্থাপকের পরিদর্শনোত্তর মন্তব্য</label>
-                        <textarea value={data.branch_manager_post_inspection_comments || ''} onChange={(e) => setData('branch_manager_post_inspection_comments', e.target.value)} className={textareaClass} rows={2} />
+                        <textarea value={data.branch_manager_post_inspection_comments || ''} className={readOnlyClass} rows={2} readOnly placeholder="অনুমোদনের সময় মন্তব্য আসবে..." />
                     </div>
 
                     <div className="bg-gray-50/70 p-3.5 rounded-xl border border-gray-200">
                         <label className="block text-xs font-semibold text-gray-700 mb-1">আঞ্চলিক ব্যবস্থাপকের মন্তব্য</label>
-                        <textarea value={data.regional_manager_comments || ''} onChange={(e) => setData('regional_manager_comments', e.target.value)} className={textareaClass} rows={2} />
+                        <textarea value={data.regional_manager_comments || ''} className={readOnlyClass} rows={2} readOnly placeholder="অনুমোদনের সময় মন্তব্য আসবে..." />
                     </div>
 
                     <div className="bg-gray-50/70 p-3.5 rounded-xl border border-gray-200">
                         <label className="block text-xs font-semibold text-gray-700 mb-1">জোনাল ম্যানেজারের মন্তব্য</label>
-                        <textarea value={data.zonal_manager_comments || ''} onChange={(e) => setData('zonal_manager_comments', e.target.value)} className={textareaClass} rows={2} />
+                        <textarea value={data.zonal_manager_comments || ''} className={readOnlyClass} rows={2} readOnly placeholder="অনুমোদনের সময় মন্তব্য আসবে..." />
                     </div>
 
                     <div className="bg-indigo-50/40 p-4 rounded-xl border border-indigo-200 space-y-3">
                         <label className="block text-xs font-bold text-indigo-900">চূড়ান্ত অনুমোদনকারীর মন্তব্য ও চূড়ান্ত অনুমোদিত পরিমাণ</label>
-                        <textarea value={data.final_approver_comments || ''} onChange={(e) => setData('final_approver_comments', e.target.value)} className={textareaClass} rows={2} placeholder="চূড়ান্ত মন্তব্য..." />
+                        <p className="text-[11px] text-indigo-700/80 bg-white/60 border border-indigo-100 rounded-lg px-2.5 py-1.5">
+                            এই অংশ ফিল্ড অফিসার পূরণ করবেন না। শাখা ব্যবস্থাপক (সিলিং এর মধ্যে) বা উচ্চতর অনুমোদনকারী অনুমোদনের সময় নির্ধারণ করবেন।
+                        </p>
+                        <textarea
+                            value={data.final_approver_comments || ''}
+                            className={readOnlyClass}
+                            rows={2}
+                            readOnly
+                            placeholder="অনুমোদনের সময় মন্তব্য আসবে..."
+                        />
                         
                         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5 pt-1">
                             <div>
                                 <label className="block text-xs font-semibold text-gray-700 mb-1">চূড়ান্ত অনুমোদিত ঋণের পরিমাণ (সংখ্যায়)</label>
-                                <input type="number" value={data.final_approved_loan_amount_digits || ''} onChange={(e) => {
-                                    const v = e.target.value;
-                                    setData('final_approved_loan_amount_digits', v);
-                                    const words = numberToWordsBangla(v);
-                                    setData('final_approved_loan_amount_words', words ? words + ' টাকা' : '');
-                                }} className={inputClass} placeholder="টাকা" />
+                                <input
+                                    type="number"
+                                    value={data.final_approved_loan_amount_digits || ''}
+                                    className={readOnlyClass}
+                                    readOnly
+                                    placeholder="অনুমোদনের সময় নির্ধারিত হবে"
+                                />
                             </div>
                             <div>
                                 <label className="block text-xs font-semibold text-gray-700 mb-1">চূড়ান্ত অনুমোদিত ঋণের পরিমাণ (কথায়)</label>
-                                <input type="text" value={data.final_approved_loan_amount_words || ''} onChange={(e) => setData('final_approved_loan_amount_words', e.target.value)} className={readOnlyClass} readOnly placeholder="কথায় অটো আসবে" />
+                                <input type="text" value={data.final_approved_loan_amount_words || ''} className={readOnlyClass} readOnly placeholder="কথায় অটো আসবে" />
                             </div>
                         </div>
                     </div>

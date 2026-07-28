@@ -23,6 +23,27 @@ class BlockListService
         array $blockListData,
         string $rejectionComments,
     ): void {
+        $this->pushRejectedPerson(
+            $approver,
+            (string) ($item->member_name ?: 'N/A'),
+            $branch,
+            $blockListData,
+            $rejectionComments,
+        );
+    }
+
+    /**
+     * Push a rejected person (loan / admission / team-based) to the block_list Customer API.
+     *
+     * @param  array<string, mixed>  $blockListData
+     */
+    public function pushRejectedPerson(
+        User $approver,
+        string $memberName,
+        Branch $branch,
+        array $blockListData,
+        string $rejectionComments,
+    ): void {
         $username = trim((string) $approver->username);
         if ($username === '') {
             throw new RuntimeException('আপনার username সেট করা নেই। Block list-এ যোগ করতে username প্রয়োজন।');
@@ -40,10 +61,12 @@ class BlockListService
             throw new RuntimeException('Block list API কনফিগার করা নেই। সিস্টেম অ্যাডমিনের সাথে যোগাযোগ করুন।');
         }
 
+        $name = trim($memberName) !== '' ? trim($memberName) : 'N/A';
+
         $payload = [
             'blocked_by_username' => $username,
             'branch_code' => $branchCode,
-            'name' => $item->member_name,
+            'name' => $name,
             'name_bn' => $blockListData['name_bn'] ?? null,
             'father_name' => $blockListData['father_name'] ?? null,
             'mother_name' => $blockListData['mother_name'] ?? null,

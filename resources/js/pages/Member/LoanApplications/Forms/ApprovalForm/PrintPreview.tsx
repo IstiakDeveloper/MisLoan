@@ -919,7 +919,7 @@ function renderPage4(d: any) {
 
             <div className="flex justify-between items-end mt-6 px-2 print:mt-10">
                 <div>
-                    <span className="font-bold">টাকা:</span> <span className="border-b border-dotted border-gray-600 inline-block min-w-[120px] font-bold">{d.final_approved_loan_amount_digits ? fmt(d.final_approved_loan_amount_digits) + '/-' : ''}</span>
+                    <span className="font-bold">টাকা:</span> <span className="border-b border-dotted border-gray-600 inline-block min-w-[120px] font-bold">{d.final_approved_loan_amount_digits ? noDecimal(d.final_approved_loan_amount_digits) + '/-' : ''}</span>
                     <span className="font-bold ml-4">কথায়:</span> <span className="border-b border-dotted border-gray-600 inline-block min-w-[250px] font-bold">{d.final_approved_loan_amount_words || ''}</span>
                 </div>
                 <div className="text-center relative">

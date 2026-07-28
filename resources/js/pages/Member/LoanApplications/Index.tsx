@@ -56,6 +56,8 @@ interface LoanApplication {
     status: string;
     requested_amount: number;
     approved_amount?: number;
+    loan_product_id?: number;
+    loan_category_id?: number;
     loan_product: LoanProduct & { installment_type?: string };
     loan_category: LoanCategory;
     created_at: string;
@@ -76,9 +78,17 @@ interface LoanApplication {
         mobile_number?: string;
     };
     visible_form_ids?: number[];
+    editable_form_ids?: number[];
     form_saved?: Record<number, boolean>;
     all_forms_complete?: boolean;
+    can_submit?: boolean;
+    can_disburse?: boolean;
+    member_admission_status?: string;
     issues?: LoanApplicationIssue[];
+    tracking_state?: {
+        label: string;
+        pending_with_name?: string | null;
+    };
 }
 
 interface Stats {
@@ -86,6 +96,7 @@ interface Stats {
     draft: number;
     submitted: number;
     approved: number;
+    pending_disbursement?: number;
     rejected: number;
 }
 
@@ -111,6 +122,7 @@ const statusLabels: Record<string, { label: string; bg: string; text: string; bo
     ready_for_head_office: { label: 'Branch Approved', bg: 'bg-emerald-50', text: 'text-emerald-700', border: 'border-emerald-200' },
     pending_head_office: { label: 'Pending Head Office', bg: 'bg-indigo-50', text: 'text-indigo-700', border: 'border-indigo-200' },
     approved: { label: 'Approved (অনুমোদিত)', bg: 'bg-emerald-100', text: 'text-emerald-800', border: 'border-emerald-300' },
+    pending_disbursement: { label: 'Disburse Pending (বিতরণ অপেক্ষা)', bg: 'bg-amber-50', text: 'text-amber-800', border: 'border-amber-200' },
     rejected: { label: 'Rejected (প্রত্যাখ্যাত)', bg: 'bg-rose-50', text: 'text-rose-700', border: 'border-rose-200' },
     disbursed: { label: 'Disbursed (বিতরণকৃত)', bg: 'bg-purple-50', text: 'text-purple-700', border: 'border-purple-200' },
 };
@@ -152,8 +164,16 @@ export default function Index({ categories, applications, stats, selectedDate, d
     const pageAuth = usePage().props.auth as { user?: { role?: { name: string } } } | undefined;
     const roleName = pageAuth?.user?.role?.name?.toLowerCase() || '';
     const isBranchUser = roleName === 'branch_user';
+    const isBranchManager = roleName === 'branch_manager';
     const isFieldOfficer = roleName === 'field_officer';
     const canCreateLoanApplication = isFieldOfficer || roleName === 'branch_user';
+
+    const handleSubmitApplication = (app: LoanApplication) => {
+        if (!app.can_submit) return;
+        if (confirm(`ঋণ আবেদন ${app.application_no} শাখা ব্যবস্থাপকের কাছে জমা দিতে চান?`)) {
+            router.patch(`/member/loan-applications/${app.id}/submit`, {}, { preserveScroll: true });
+        }
+    };
 
     const now = new Date();
     const today = now.toISOString().split('T')[0];
@@ -202,6 +222,21 @@ export default function Index({ categories, applications, stats, selectedDate, d
             setRequestedAmount(String(preselectedMember.requested_loan_amount));
         }
     }, [preselectedMember, canCreateLoanApplication]);
+
+    const isTodayFilter = currentDateFrom === today && currentDateTo === today;
+
+    const handleTodayFilter = () => {
+        setCurrentDateFrom(today);
+        setCurrentDateTo(today);
+        const params: any = {
+            date_from: today,
+            date_to: today,
+        };
+        if (currentStatusFilter) {
+            params.status = currentStatusFilter;
+        }
+        router.get('/member/loan-applications', params, { preserveState: true });
+    };
 
     const handleDateFilterChange = () => {
         const params: any = {
@@ -353,30 +388,45 @@ export default function Index({ categories, applications, stats, selectedDate, d
     }, [applications, searchQuery]);
 
     const filteredStats = useMemo(() => {
+        if (!searchQuery && stats) {
+            return {
+                total: stats.total || 0,
+                draft: stats.draft || 0,
+                submitted: stats.submitted || 0,
+                approved: stats.approved || 0,
+                pending_disbursement: stats.pending_disbursement || 0,
+                rejected: stats.rejected || 0,
+                pending_head_office: (stats as any).pending_head_office || 0,
+                ready_for_head_office: (stats as any).ready_for_head_office || 0,
+                under_review: (stats as any).under_review || 0,
+                disbursed: (stats as any).disbursed || 0,
+            };
+        }
         return {
             total: filteredApplications.length,
             draft: filteredApplications.filter(app => app.status === 'draft').length,
             submitted: filteredApplications.filter(app => app.status === 'submitted').length,
             approved: filteredApplications.filter(app => app.status === 'approved').length,
+            pending_disbursement: filteredApplications.filter(app => app.status === 'pending_disbursement').length,
             rejected: filteredApplications.filter(app => app.status === 'rejected').length,
             pending_head_office: filteredApplications.filter(app => app.status === 'pending_head_office').length,
             ready_for_head_office: filteredApplications.filter(app => app.status === 'ready_for_head_office').length,
             under_review: filteredApplications.filter(app => app.status === 'under_review').length,
             disbursed: filteredApplications.filter(app => app.status === 'disbursed').length,
         };
-    }, [filteredApplications]);
+    }, [applications, stats, searchQuery, filteredApplications]);
 
     return (
         <AdminLayout>
             <Head title="Loan Applications (ঋণ আবেদন)" />
 
-            <div className="space-y-5">
+            <div className="p-3 md:p-4 space-y-3 max-w-[1600px] mx-auto">
                 {/* Flash Success Message */}
                 {showSuccessMessage && flash?.success && (
-                    <div className="bg-emerald-50 border-2 border-emerald-200 rounded-2xl p-4 flex items-start gap-3 shadow-md">
-                        <CheckCircle className="w-5 h-5 text-emerald-600 flex-shrink-0 mt-0.5" />
+                    <div className="bg-emerald-50 border border-emerald-200 rounded-xl p-3 flex items-start gap-2.5 shadow-sm text-xs">
+                        <CheckCircle className="w-4 h-4 text-emerald-600 flex-shrink-0 mt-0.5" />
                         <div className="flex-1">
-                            <p className="text-sm font-bold text-emerald-900">{flash.success}</p>
+                            <p className="font-bold text-emerald-900">{flash.success}</p>
                         </div>
                         <button
                             onClick={() => setShowSuccessMessage(false)}
@@ -387,242 +437,275 @@ export default function Index({ categories, applications, stats, selectedDate, d
                     </div>
                 )}
 
-                {/* HERO BANNER HEADER */}
-                <div className="relative overflow-hidden rounded-3xl bg-slate-900 text-white p-6 sm:p-8 shadow-xl border border-slate-800">
-                    <div className="absolute -right-12 -bottom-12 w-64 h-64 rounded-full bg-gradient-to-tr from-blue-600/30 to-indigo-500/20 blur-3xl pointer-events-none" />
-                    <div className="absolute left-1/3 -top-12 w-48 h-48 rounded-full bg-emerald-500/10 blur-2xl pointer-events-none" />
-
-                    <div className="relative z-10 flex flex-col md:flex-row md:items-center justify-between gap-6">
-                        <div className="space-y-2 max-w-2xl">
-                            <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-blue-500/15 border border-blue-400/20 text-blue-300 text-xs font-semibold backdrop-blur-md">
-                                <CreditCard className="w-4 h-4 text-blue-400" />
-                                <span>Loan Application Management System</span>
-                            </div>
-                            <h1 className="text-2xl sm:text-3xl font-extrabold tracking-tight text-white leading-tight">
-                                ঋণ আবেদনসমূহ (Loan Applications)
+                {/* COMPACT HEADER BAR */}
+                <div className="bg-slate-900 text-white rounded-xl px-4 py-3 shadow-md flex flex-wrap items-center justify-between gap-3 border border-slate-800">
+                    <div className="flex items-center gap-3">
+                        <div className="p-2 bg-blue-500/20 text-blue-400 rounded-lg border border-blue-500/30">
+                            <CreditCard className="w-5 h-5" />
+                        </div>
+                        <div>
+                            <h1 className="text-lg font-bold text-white tracking-tight">
+                                Loan Applications (ঋণ আবেদনসমূহ)
                             </h1>
-                            <p className="text-slate-300 text-xs sm:text-sm leading-relaxed">
-                                নতুন ঋণ আবেদন তৈরি করুন, আবেদন ফর্মগুলোর অগ্রগতি ট্র্যাক করুন এবং অনুমোদন অবস্থা পর্যবেক্ষণ করুন।
+                            <p className="text-xs text-slate-400">
+                                নতুন ঋণ আবেদন তৈরি করুন, ফর্মের অগ্রগতি ট্র্যাক করুন এবং অনুমোদন স্থিতি পরীক্ষা করুন
                             </p>
                         </div>
+                    </div>
+
+                    <div className="flex items-center gap-2">
+                        <button
+                            type="button"
+                            onClick={handleTodayFilter}
+                            className={`px-3.5 py-2 rounded-lg text-xs font-extrabold shadow transition flex items-center gap-1.5 border ${
+                                isTodayFilter
+                                    ? 'bg-blue-600 text-white border-blue-500'
+                                    : 'bg-slate-800 hover:bg-slate-700 text-slate-300 border-slate-700'
+                            }`}
+                            title="আজকের আবেদনসমূহ (Today)"
+                        >
+                            <Calendar className="w-4 h-4" /> Today (আজ)
+                        </button>
 
                         {canCreateLoanApplication && (
                             <button
                                 onClick={handleNewApplication}
-                                className="inline-flex items-center justify-center gap-2 px-6 py-3.5 rounded-2xl bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white text-xs sm:text-sm font-extrabold shadow-lg shadow-blue-600/30 transition-all active:scale-95 shrink-0"
+                                className="px-4 py-2 rounded-lg bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white text-xs font-extrabold shadow-md transition flex items-center gap-1.5 border border-blue-500/30"
                             >
-                                <Plus className="w-5 h-5" />
+                                <Plus className="w-4 h-4" />
                                 <span>নতুন ঋণ আবেদন</span>
                             </button>
                         )}
                     </div>
                 </div>
 
-                {/* METRIC STATS GRID */}
-                <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
-                    <button
-                        type="button"
+                {/* COMPACT METRIC STATS PILLS */}
+                <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2">
+                    <div
                         onClick={() => {
                             setCurrentStatusFilter('');
                             handleDateFilterChange();
                         }}
-                        className={`p-4 rounded-2xl border text-left transition-all shadow-sm ${
+                        className={`rounded-xl p-2.5 border shadow-sm cursor-pointer transition ${
                             !currentStatusFilter
-                                ? 'bg-slate-900 border-slate-900 text-white ring-2 ring-slate-900/20'
-                                : 'bg-white border-slate-200 hover:border-slate-300 text-slate-800'
+                                ? 'bg-slate-900 border-slate-900 text-white'
+                                : 'bg-white border-slate-200 hover:border-slate-300'
                         }`}
                     >
-                        <div className="flex items-center justify-between">
-                            <span className={`text-[10px] font-bold uppercase tracking-wider ${!currentStatusFilter ? 'text-slate-300' : 'text-slate-500'}`}>
-                                মোট আবেদন
-                            </span>
-                            <Layers className={`w-4 h-4 ${!currentStatusFilter ? 'text-blue-400' : 'text-slate-400'}`} />
-                        </div>
-                        <p className={`text-2xl font-extrabold mt-2 ${!currentStatusFilter ? 'text-white' : 'text-slate-900'}`}>
+                        <span className={`text-[10px] font-bold uppercase block ${!currentStatusFilter ? 'text-slate-300' : 'text-slate-500'}`}>
+                            সর্বমোট
+                        </span>
+                        <span className={`text-lg font-black ${!currentStatusFilter ? 'text-white' : 'text-slate-900'}`}>
                             {filteredStats.total}
-                        </p>
-                    </button>
+                        </span>
+                    </div>
 
-                    <button
-                        type="button"
+                    <div
                         onClick={() => {
                             setCurrentStatusFilter('draft');
                             handleDateFilterChange();
                         }}
-                        className={`p-4 rounded-2xl border text-left transition-all shadow-sm ${
+                        className={`rounded-xl p-2.5 border shadow-sm cursor-pointer transition ${
                             currentStatusFilter === 'draft'
-                                ? 'bg-slate-800 border-slate-800 text-white ring-2 ring-slate-800/20'
-                                : 'bg-white border-slate-200 hover:border-slate-300 text-slate-800'
+                                ? 'bg-slate-800 border-slate-800 text-white'
+                                : 'bg-white border-slate-200 hover:border-slate-300'
                         }`}
                     >
-                        <div className="flex items-center justify-between">
-                            <span className="text-[10px] font-bold uppercase tracking-wider text-slate-600">খসড়া (Draft)</span>
-                            <Clock className="w-4 h-4 text-slate-500" />
-                        </div>
-                        <p className="text-2xl font-extrabold text-slate-700 mt-2">{filteredStats.draft}</p>
-                    </button>
+                        <span className="text-[10px] font-bold uppercase text-slate-500 block">খসড়া (Draft)</span>
+                        <span className="text-lg font-black text-slate-700">{filteredStats.draft}</span>
+                    </div>
 
-                    <button
-                        type="button"
+                    <div
                         onClick={() => {
                             setCurrentStatusFilter('submitted');
                             handleDateFilterChange();
                         }}
-                        className={`p-4 rounded-2xl border text-left transition-all shadow-sm ${
+                        className={`rounded-xl p-2.5 border shadow-sm cursor-pointer transition ${
                             currentStatusFilter === 'submitted'
-                                ? 'bg-blue-600 border-blue-600 text-white ring-2 ring-blue-600/20'
-                                : 'bg-white border-blue-100 hover:border-blue-300 text-blue-900'
+                                ? 'bg-blue-600 border-blue-600 text-white'
+                                : 'bg-white border-blue-100 hover:border-blue-300'
                         }`}
                     >
-                        <div className="flex items-center justify-between">
-                            <span className={`text-[10px] font-bold uppercase tracking-wider ${currentStatusFilter === 'submitted' ? 'text-blue-100' : 'text-blue-600'}`}>
-                                জমা (Submitted)
-                            </span>
-                            <Send className={`w-4 h-4 ${currentStatusFilter === 'submitted' ? 'text-blue-200' : 'text-blue-500'}`} />
-                        </div>
-                        <p className={`text-2xl font-extrabold mt-2 ${currentStatusFilter === 'submitted' ? 'text-white' : 'text-blue-600'}`}>
+                        <span className={`text-[10px] font-bold uppercase block ${currentStatusFilter === 'submitted' ? 'text-blue-100' : 'text-blue-600'}`}>
+                            জমাকৃত
+                        </span>
+                        <span className={`text-lg font-black ${currentStatusFilter === 'submitted' ? 'text-white' : 'text-blue-600'}`}>
                             {filteredStats.submitted}
-                        </p>
-                    </button>
+                        </span>
+                    </div>
 
-                    <button
-                        type="button"
+                    <div
                         onClick={() => {
                             setCurrentStatusFilter('approved');
                             handleDateFilterChange();
                         }}
-                        className={`p-4 rounded-2xl border text-left transition-all shadow-sm ${
+                        className={`rounded-xl p-2.5 border shadow-sm cursor-pointer transition ${
                             currentStatusFilter === 'approved'
-                                ? 'bg-emerald-600 border-emerald-600 text-white ring-2 ring-emerald-600/20'
-                                : 'bg-white border-emerald-100 hover:border-emerald-300 text-emerald-900'
+                                ? 'bg-emerald-600 border-emerald-600 text-white'
+                                : 'bg-white border-emerald-100 hover:border-emerald-300'
                         }`}
                     >
-                        <div className="flex items-center justify-between">
-                            <span className={`text-[10px] font-bold uppercase tracking-wider ${currentStatusFilter === 'approved' ? 'text-emerald-100' : 'text-emerald-600'}`}>
-                                অনুমোদিত (Approved)
-                            </span>
-                            <CheckCircle className={`w-4 h-4 ${currentStatusFilter === 'approved' ? 'text-emerald-200' : 'text-emerald-500'}`} />
-                        </div>
-                        <p className={`text-2xl font-extrabold mt-2 ${currentStatusFilter === 'approved' ? 'text-white' : 'text-emerald-600'}`}>
+                        <span className={`text-[10px] font-bold uppercase block ${currentStatusFilter === 'approved' ? 'text-emerald-100' : 'text-emerald-600'}`}>
+                            অনুমোদিত
+                        </span>
+                        <span className={`text-lg font-black ${currentStatusFilter === 'approved' ? 'text-white' : 'text-emerald-600'}`}>
                             {filteredStats.approved}
-                        </p>
-                    </button>
+                        </span>
+                    </div>
 
-                    <button
-                        type="button"
+                    <div
+                        onClick={() => {
+                            setCurrentStatusFilter('pending_disbursement');
+                            handleDateFilterChange();
+                        }}
+                        className={`rounded-xl p-2.5 border shadow-sm cursor-pointer transition ${
+                            currentStatusFilter === 'pending_disbursement'
+                                ? 'bg-amber-600 border-amber-600 text-white'
+                                : 'bg-white border-amber-100 hover:border-amber-300'
+                        }`}
+                    >
+                        <span className={`text-[10px] font-bold uppercase block ${currentStatusFilter === 'pending_disbursement' ? 'text-amber-100' : 'text-amber-700'}`}>
+                            বিতরণ অপেক্ষা
+                        </span>
+                        <span className={`text-lg font-black ${currentStatusFilter === 'pending_disbursement' ? 'text-white' : 'text-amber-700'}`}>
+                            {filteredStats.pending_disbursement}
+                        </span>
+                    </div>
+
+                    <div
                         onClick={() => {
                             setCurrentStatusFilter('rejected');
                             handleDateFilterChange();
                         }}
-                        className={`p-4 rounded-2xl border text-left transition-all shadow-sm ${
+                        className={`rounded-xl p-2.5 border shadow-sm cursor-pointer transition ${
                             currentStatusFilter === 'rejected'
-                                ? 'bg-rose-600 border-rose-600 text-white ring-2 ring-rose-600/20'
-                                : 'bg-white border-rose-100 hover:border-rose-300 text-rose-900'
+                                ? 'bg-rose-600 border-rose-600 text-white'
+                                : 'bg-white border-rose-100 hover:border-rose-300'
                         }`}
                     >
-                        <div className="flex items-center justify-between">
-                            <span className={`text-[10px] font-bold uppercase tracking-wider ${currentStatusFilter === 'rejected' ? 'text-rose-100' : 'text-rose-600'}`}>
-                                প্রত্যাখ্যাত (Rejected)
-                            </span>
-                            <XCircle className={`w-4 h-4 ${currentStatusFilter === 'rejected' ? 'text-rose-200' : 'text-rose-500'}`} />
-                        </div>
-                        <p className={`text-2xl font-extrabold mt-2 ${currentStatusFilter === 'rejected' ? 'text-white' : 'text-rose-600'}`}>
+                        <span className={`text-[10px] font-bold uppercase block ${currentStatusFilter === 'rejected' ? 'text-rose-100' : 'text-rose-600'}`}>
+                            প্রত্যাখ্যাত
+                        </span>
+                        <span className={`text-lg font-black ${currentStatusFilter === 'rejected' ? 'text-white' : 'text-rose-600'}`}>
                             {filteredStats.rejected}
-                        </p>
-                    </button>
+                        </span>
+                    </div>
                 </div>
 
-                {/* SEARCH & FILTER TOOLBAR */}
-                <div className="bg-white rounded-3xl border border-slate-200/90 p-4 sm:p-5 shadow-sm space-y-4">
-                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+                {/* INTEGRATED SEARCH & FILTER CONTROL BAR */}
+                <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-3 space-y-2 text-xs">
+                    <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2">
+                        {/* Date From */}
                         <div>
-                            <label className="block text-[11px] font-bold text-slate-700 uppercase mb-1">
-                                শুরুর তারিখ (Date From)
+                            <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">
+                                হতে (Date From)
                             </label>
                             <input
                                 type="date"
                                 value={currentDateFrom}
                                 onChange={(e) => setCurrentDateFrom(e.target.value)}
-                                className="w-full px-3 py-2 text-xs md:text-sm font-medium border border-slate-300 rounded-xl bg-slate-50/50 focus:bg-white focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 transition-all"
+                                className="w-full px-2.5 py-1.5 bg-slate-50 border border-slate-300 rounded-lg text-xs"
                             />
                         </div>
 
+                        {/* Date To */}
                         <div>
-                            <label className="block text-[11px] font-bold text-slate-700 uppercase mb-1">
-                                শেষ তারিখ (Date To)
+                            <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">
+                                পর্যন্ত (Date To)
                             </label>
                             <input
                                 type="date"
                                 value={currentDateTo}
                                 onChange={(e) => setCurrentDateTo(e.target.value)}
-                                className="w-full px-3 py-2 text-xs md:text-sm font-medium border border-slate-300 rounded-xl bg-slate-50/50 focus:bg-white focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 transition-all"
+                                className="w-full px-2.5 py-1.5 bg-slate-50 border border-slate-300 rounded-lg text-xs"
                             />
                         </div>
 
+                        {/* Status Filter */}
                         <div>
-                            <label className="block text-[11px] font-bold text-slate-700 uppercase mb-1">
-                                স্ট্যাটাস ফিল্টার
+                            <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">
+                                স্ট্যাটাস (Status)
                             </label>
                             <select
                                 value={currentStatusFilter}
                                 onChange={(e) => setCurrentStatusFilter(e.target.value)}
-                                className="w-full px-3 py-2 text-xs md:text-sm font-medium border border-slate-300 rounded-xl bg-slate-50/50 focus:bg-white focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 transition-all"
+                                className="w-full px-2.5 py-1.5 bg-slate-50 border border-slate-300 rounded-lg text-xs font-medium"
                             >
-                                <option value="">সব স্ট্যাটাস (All Statuses)</option>
+                                <option value="">সকল স্ট্যাটাস</option>
                                 <option value="draft">Draft (খসড়া)</option>
                                 <option value="submitted">Submitted (জমা)</option>
                                 <option value="under_review">Under Review (পর্যালোচনা)</option>
                                 <option value="ready_for_head_office">Branch Approved (শাখা অনুমোদিত)</option>
                                 <option value="pending_head_office">Pending Head Office (হেড অফিসে প্রেরিত)</option>
                                 <option value="approved">Approved (অনুমোদিত)</option>
+                                <option value="pending_disbursement">Disburse Pending (বিতরণ অপেক্ষা)</option>
                                 <option value="rejected">Rejected (প্রত্যাখ্যাত)</option>
                                 <option value="disbursed">Disbursed (বিতরণকৃত)</option>
                             </select>
                         </div>
 
-                        <div className="flex items-end gap-2">
+                        {/* Search Input */}
+                        <div>
+                            <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">
+                                খুঁজুন (Search)
+                            </label>
+                            <div className="relative">
+                                <input
+                                    type="text"
+                                    placeholder="আবেদন নং, নাম, ফোন..."
+                                    value={searchQuery}
+                                    onChange={(e) => setSearchQuery(e.target.value)}
+                                    className="w-full pl-7 pr-6 py-1.5 bg-slate-50 border border-slate-300 rounded-lg text-xs text-slate-800 placeholder-slate-400"
+                                />
+                                <Search className="w-3.5 h-3.5 text-slate-400 absolute left-2 top-1/2 -translate-y-1/2" />
+                                {searchQuery && (
+                                    <button
+                                        onClick={() => setSearchQuery('')}
+                                        className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
+                                    >
+                                        <X className="w-3 h-3" />
+                                    </button>
+                                )}
+                            </div>
+                        </div>
+
+                        {/* Filter & Reset Action Buttons */}
+                        <div className="col-span-2 flex items-end gap-1.5">
+                            <button
+                                type="button"
+                                onClick={handleTodayFilter}
+                                className={`px-2.5 py-1.5 text-xs font-semibold rounded-lg shadow transition flex items-center justify-center gap-1 border ${
+                                    isTodayFilter
+                                        ? 'bg-blue-600 text-white border-blue-500'
+                                        : 'bg-slate-100 hover:bg-slate-200 text-slate-700 border-slate-200'
+                                }`}
+                                title="আজকের আবেদনসমূহ (Today)"
+                            >
+                                <Calendar className="w-3.5 h-3.5" /> আজ
+                            </button>
                             <button
                                 onClick={handleDateFilterChange}
-                                className="flex-1 inline-flex items-center justify-center gap-1.5 px-4 py-2.5 text-xs md:text-sm font-bold bg-slate-900 hover:bg-slate-800 text-white rounded-xl shadow-md transition-all active:scale-95"
+                                className="flex-1 px-3 py-1.5 bg-slate-900 hover:bg-slate-800 text-white text-xs font-semibold rounded-lg shadow transition flex items-center justify-center gap-1"
                             >
-                                <Filter className="w-4 h-4" />
-                                <span>ফিল্টার করুন</span>
+                                <Filter className="w-3.5 h-3.5" /> ফিল্টার
                             </button>
                             <button
                                 onClick={resetFilters}
-                                className="px-3 py-2.5 text-xs md:text-sm font-bold bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl transition-all active:scale-95"
+                                className="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-semibold rounded-lg transition border border-slate-200 flex items-center justify-center gap-1"
                                 title="ফিল্টার রিসেট"
                             >
-                                <RefreshCw className="w-4 h-4" />
+                                <RefreshCw className="w-3.5 h-3.5" /> রিসেট
                             </button>
                         </div>
                     </div>
                 </div>
 
                 {/* APPLICATIONS CONTAINER */}
-                <div className="bg-white rounded-3xl border border-slate-200/90 shadow-sm overflow-hidden p-4 sm:p-5 space-y-4">
-                    {/* Search Input Bar */}
-                    <div className="flex flex-col sm:flex-row items-center justify-between gap-3 pb-3 border-b border-slate-100">
-                        <div className="relative w-full sm:w-80">
-                            <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 pointer-events-none" />
-                            <input
-                                type="text"
-                                placeholder="নাম, আবেদন নং, মোবাইল বা এনআইডি..."
-                                value={searchQuery}
-                                onChange={(e) => setSearchQuery(e.target.value)}
-                                className="w-full pl-10 pr-4 py-2 text-xs md:text-sm font-medium border border-slate-300 rounded-xl bg-slate-50/50 focus:bg-white focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 transition-all"
-                            />
-                            {searchQuery && (
-                                <button
-                                    onClick={() => setSearchQuery('')}
-                                    className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
-                                >
-                                    <X className="w-4 h-4" />
-                                </button>
-                            )}
-                        </div>
-
-                        <span className="text-xs text-slate-500 font-semibold self-end sm:self-center">
+                <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden p-3 md:p-4 space-y-3">
+                    {/* Application List Header */}
+                    <div className="flex items-center justify-between pb-2 border-b border-slate-100 text-xs">
+                        <h3 className="font-bold text-slate-800">ঋণ আবেদনের তালিকা</h3>
+                        <span className="text-slate-500 font-semibold">
                             মোট পাওয়া গেছে: <strong className="text-slate-900 font-bold">{filteredApplications.length}</strong> টি আবেদন
                         </span>
                     </div>
@@ -682,6 +765,12 @@ export default function Index({ categories, applications, stats, selectedDate, d
                                                     {statusInfo.label}
                                                 </span>
                                             </div>
+                                            <div className="col-span-2 flex items-center justify-between pt-1 border-t border-slate-200/50">
+                                                <span className="text-[10px] font-bold uppercase text-slate-400">কার কাছে পেন্ডিং:</span>
+                                                <span className="font-bold text-indigo-700 bg-indigo-50 px-2 py-0.5 rounded text-[11px]">
+                                                    {app.tracking_state?.label ?? '—'}
+                                                </span>
+                                            </div>
                                         </div>
 
                                         {/* Form Completion Progress Pills */}
@@ -716,6 +805,37 @@ export default function Index({ categories, applications, stats, selectedDate, d
                                                 <Eye className="w-3.5 h-3.5" />
                                                 <span>বিবরণ দেখুন</span>
                                             </button>
+                                            {(app.status === 'submitted' || app.status === 'under_review') && isBranchManager && (app.editable_form_ids?.length ?? 0) > 0 && (
+                                                <button
+                                                    onClick={() => router.get(`/member/loan-applications/${app.id}/edit`)}
+                                                    className="inline-flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold text-amber-700 bg-amber-50 hover:bg-amber-100 border border-amber-200 transition active:scale-95"
+                                                    title="ফর্ম আপডেট করুন"
+                                                >
+                                                    <Edit className="w-3.5 h-3.5" />
+                                                    <span>এডিট</span>
+                                                </button>
+                                            )}
+                                            {app.status === 'draft' && app.all_forms_complete && (
+                                                app.can_submit ? (
+                                                    <button
+                                                        onClick={() => handleSubmitApplication(app)}
+                                                        className="inline-flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold text-white bg-emerald-600 hover:bg-emerald-700 border border-emerald-700 transition active:scale-95"
+                                                        title="শাখা ব্যবস্থাপকের কাছে জমা দিন"
+                                                    >
+                                                        <Send className="w-3.5 h-3.5" />
+                                                        <span>সাবমিট</span>
+                                                    </button>
+                                                ) : (
+                                                    <button
+                                                        disabled
+                                                        className="inline-flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold text-slate-400 bg-slate-100 border border-slate-200 cursor-not-allowed"
+                                                        title="সদস্য ভর্তি অনুমোদিত হলে জমা দেওয়া যাবে"
+                                                    >
+                                                        <Send className="w-3.5 h-3.5" />
+                                                        <span>সাবমিট</span>
+                                                    </button>
+                                                )
+                                            )}
                                             {app.status === 'draft' && (
                                                 <button
                                                     onClick={() => router.get(`/member/loan-applications/${app.id}/edit`)}
@@ -725,6 +845,18 @@ export default function Index({ categories, applications, stats, selectedDate, d
                                                     <Edit className="w-4 h-4" />
                                                 </button>
                                             )}
+                                        {app.status === 'pending_disbursement' && isBranchUser && (
+                                            <button
+                                                onClick={() => {
+                                                    router.get(`/member/loan-applications/${app.id}?action=disburse`);
+                                                }}
+                                                className="inline-flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold text-white bg-emerald-600 hover:bg-emerald-700 border border-emerald-700 transition active:scale-95"
+                                                title="বিতরণ প্রক্রিয়া শুরু করুন"
+                                            >
+                                                <CheckCircle className="w-3.5 h-3.5" />
+                                                <span>বিতরণ</span>
+                                            </button>
+                                        )}
                                         </div>
                                     </div>
                                 );
@@ -743,6 +875,7 @@ export default function Index({ categories, applications, stats, selectedDate, d
                                     <th className="px-4 py-3.5 text-left text-[11px] font-extrabold uppercase tracking-wider">ঋণ পণ্য ও ক্যাটাগরি</th>
                                     <th className="px-4 py-3.5 text-left text-[11px] font-extrabold uppercase tracking-wider">পরিমাণ</th>
                                     <th className="px-4 py-3.5 text-left text-[11px] font-extrabold uppercase tracking-wider">স্ট্যাটাস</th>
+                                    <th className="px-4 py-3.5 text-left text-[11px] font-extrabold uppercase tracking-wider">পেন্ডিং অবস্থান</th>
                                     <th className="px-4 py-3.5 text-left text-[11px] font-extrabold uppercase tracking-wider">ফর্ম অগ্রগতি</th>
                                     <th className="px-4 py-3.5 text-right text-[11px] font-extrabold uppercase tracking-wider">অ্যাকশন</th>
                                 </tr>
@@ -818,6 +951,12 @@ export default function Index({ categories, applications, stats, selectedDate, d
                                             </td>
 
                                             <td className="px-4 py-3.5">
+                                                <span className="inline-block text-xs font-bold text-indigo-700 bg-indigo-50 px-2.5 py-1 rounded-md border border-indigo-100">
+                                                    {app.tracking_state?.label ?? '—'}
+                                                </span>
+                                            </td>
+
+                                            <td className="px-4 py-3.5">
                                                 {app.visible_form_ids && app.visible_form_ids.length > 0 ? (
                                                     <div className="flex flex-wrap gap-1">
                                                         {app.visible_form_ids.map((formId) => {
@@ -851,8 +990,39 @@ export default function Index({ categories, applications, stats, selectedDate, d
                                                     >
                                                         <Eye className="w-4 h-4" />
                                                     </button>
+                                                    {(app.status === 'submitted' || app.status === 'under_review') && isBranchManager && (app.editable_form_ids?.length ?? 0) > 0 && (
+                                                        <button
+                                                            onClick={() => router.get(`/member/loan-applications/${app.id}/edit`)}
+                                                            className="inline-flex items-center gap-1 text-xs px-2.5 py-1 bg-amber-50 hover:bg-amber-100 text-amber-700 font-bold rounded-xl border border-amber-200 shadow-sm transition active:scale-95"
+                                                            title="ফর্ম আপডেট করুন"
+                                                        >
+                                                            <Edit className="w-3 h-3" />
+                                                            <span>এডিট</span>
+                                                        </button>
+                                                    )}
                                                     {app.status === 'draft' && (
                                                         <>
+                                                            {app.all_forms_complete && (
+                                                                app.can_submit ? (
+                                                                    <button
+                                                                        onClick={() => handleSubmitApplication(app)}
+                                                                        className="inline-flex items-center gap-1 text-xs px-2.5 py-1 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-xl shadow-sm transition active:scale-95"
+                                                                        title="শাখা ব্যবস্থাপকের কাছে জমা দিন"
+                                                                    >
+                                                                        <Send className="w-3 h-3" />
+                                                                        <span>সাবমিট</span>
+                                                                    </button>
+                                                                ) : (
+                                                                    <button
+                                                                        disabled
+                                                                        className="inline-flex items-center gap-1 text-xs px-2.5 py-1 bg-slate-100 text-slate-400 font-bold rounded-xl border border-slate-200 cursor-not-allowed"
+                                                                        title="সদস্য ভর্তি অনুমোদিত হলে জমা দেওয়া যাবে"
+                                                                    >
+                                                                        <Send className="w-3 h-3" />
+                                                                        <span>সাবমিট</span>
+                                                                    </button>
+                                                                )
+                                                            )}
                                                             <button
                                                                 onClick={() => router.get(`/member/loan-applications/${app.id}/edit`)}
                                                                 className="p-1.5 text-amber-700 hover:bg-amber-50 rounded-xl transition"
@@ -887,6 +1057,18 @@ export default function Index({ categories, applications, stats, selectedDate, d
                                                         >
                                                             <Send className="w-3 h-3" />
                                                             <span>HO পাঠান</span>
+                                                        </button>
+                                                    )}
+                                                    {app.status === 'pending_disbursement' && isBranchUser && (
+                                                        <button
+                                                            onClick={() => {
+                                                                router.get(`/member/loan-applications/${app.id}?action=disburse`);
+                                                            }}
+                                                            className="inline-flex items-center gap-1 text-xs px-2.5 py-1 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-xl shadow-sm transition active:scale-95"
+                                                            title="বিতরণ প্রক্রিয়া শুরু করুন"
+                                                        >
+                                                            <CheckCircle className="w-3 h-3" />
+                                                            <span>বিতরণ</span>
                                                         </button>
                                                     )}
                                                 </div>
