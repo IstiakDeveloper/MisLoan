@@ -9,7 +9,7 @@ import { Spinner } from '@/components/ui/spinner';
 import { store } from '@/routes/login';
 import { request } from '@/routes/password';
 import { Form, Head } from '@inertiajs/react';
-import { Building2, Eye, EyeOff, KeyRound, Lock, User } from 'lucide-react';
+import { Building2, Eye, EyeOff, KeyRound, Lock, User, LayoutGrid } from 'lucide-react';
 import { useMemo, useState } from 'react';
 
 type LoginMode = 'staff' | 'branch';
@@ -54,7 +54,21 @@ export default function Login({
         <>
             <Head title="Login - MisLoan" />
 
-            <div className="flex min-h-svh">
+            <div className="relative flex min-h-svh">
+                {/* Top-Right Return to Mousumi Apps Button */}
+                <div className="absolute top-4 right-4 z-50 sm:top-6 sm:right-6">
+                    <a
+                        href="https://app.mousumibd.org"
+                        target="_self"
+                        className="group inline-flex items-center gap-2 px-3.5 py-2 rounded-xl bg-slate-900 text-white hover:bg-emerald-600 dark:bg-emerald-600 dark:hover:bg-emerald-500 font-bold text-xs shadow-lg hover:shadow-xl transition-all duration-300 transform hover:scale-105"
+                        title="Return to Mousumi Apps Launcher"
+                    >
+                        <div className="flex items-center justify-center w-5 h-5 rounded-lg bg-emerald-500 dark:bg-white/20 text-white p-0.5 shadow-sm group-hover:rotate-12 transition-transform duration-300">
+                            <LayoutGrid className="w-3.5 h-3.5" />
+                        </div>
+                        <span className="tracking-wide">Mousumi Apps</span>
+                    </a>
+                </div>
                 {/* Left Side - Branding */}
                 <div className="hidden lg:flex lg:w-1/2 bg-gradient-to-br from-emerald-600 via-emerald-700 to-teal-800 relative overflow-hidden">
                     <div className="absolute inset-0">

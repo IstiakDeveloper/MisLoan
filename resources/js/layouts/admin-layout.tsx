@@ -2,6 +2,7 @@ import { useState, useEffect, ReactNode, useMemo } from 'react';
 import { Link, usePage, router } from '@inertiajs/react';
 import {
     LayoutDashboard,
+    LayoutGrid,
     Building2,
     Users,
     Shield,
@@ -707,6 +708,17 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
                         </div>
 
                         <div className="flex items-center gap-2">
+                            <a
+                                href="https://app.mousumibd.org"
+                                target="_self"
+                                className="group inline-flex items-center gap-2 px-3 py-1.5 rounded-xl bg-slate-900 text-white hover:bg-emerald-600 dark:bg-emerald-600 dark:hover:bg-emerald-500 font-bold text-xs shadow-md hover:shadow-lg transition-all duration-300 transform hover:scale-105"
+                                title="Return to Mousumi Apps"
+                            >
+                                <div className="flex items-center justify-center w-5 h-5 rounded-lg bg-emerald-500 dark:bg-white/20 text-white p-0.5 shadow-sm group-hover:rotate-12 transition-transform duration-300">
+                                    <LayoutGrid className="w-3.5 h-3.5" />
+                                </div>
+                                <span className="tracking-wide">Mousumi Apps</span>
+                            </a>
                             {canInstall && (
                                 <button
                                     type="button"
