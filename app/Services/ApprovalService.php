@@ -11,6 +11,7 @@ use App\Models\TeamBasedApproval;
 use App\Models\TeamBasedApprovalItem;
 use App\Models\TeamBasedApprovalReview;
 use App\Models\User;
+use App\Services\NotificationService;
 use App\Support\LoanFormVisibility;
 use App\Support\NumberToWordsBangla;
 use Illuminate\Support\Facades\DB;
@@ -200,6 +201,42 @@ class ApprovalService
             }
         });
 
+        // Send notifications
+        $admission = $approval->memberAdmission->fresh(['createdBy', 'submittedBy', 'branch']);
+        $recipients = collect([$admission->createdBy, $admission->submittedBy])->filter();
+
+        if ($approval->level === 'branch') {
+            app(NotificationService::class)->send(
+                users: $recipients,
+                type: 'member_admission',
+                title: 'সদস্য আবেদন শাখা কর্তৃক অনুমোদিত',
+                message: "সদস্য আবেদন নং {$admission->application_no} ({$admission->applicant_name_bn}) শাখা পর্যায় থেকে অনুমোদিত হয়েছে।",
+                notifiable: $admission,
+                actionUrl: "/member-admissions/{$admission->id}",
+                details: [
+                    'আবেদন নং' => $admission->application_no,
+                    'আবেদনকারীর নাম' => $admission->applicant_name_bn ?: $admission->applicant_name_en,
+                    'অনুমোদনকারী' => auth()->user()?->name ?? 'Branch Manager',
+                    'শাখা' => $admission->branch?->name ?? 'N/A',
+                ]
+            );
+        } else {
+            app(NotificationService::class)->send(
+                users: $recipients,
+                type: 'member_admission',
+                title: 'উচ্চতর পর্যায় থেকে সদস্য আবেদন অনুমোদিত',
+                message: "সদস্য আবেদন নং {$admission->application_no} ({$admission->applicant_name_bn}) উচ্চতর অনুমোদনকারী কর্তৃক অনুমোদিত হয়েছে।",
+                notifiable: $admission,
+                actionUrl: "/member-admissions/{$admission->id}",
+                details: [
+                    'আবেদন নং' => $admission->application_no,
+                    'আবেদনকারীর নাম' => $admission->applicant_name_bn ?: $admission->applicant_name_en,
+                    'অনুমোদনকারী' => auth()->user()?->name ?? 'Approver',
+                    'শাখা' => $admission->branch?->name ?? 'N/A',
+                ]
+            );
+        }
+
         return true;
     }
 
@@ -227,6 +264,24 @@ class ApprovalService
 
             $approval->memberAdmission->update(['status' => 'rejected']);
         });
+
+        // Send notifications
+        $admission = $approval->memberAdmission->fresh(['createdBy', 'submittedBy', 'branch']);
+        $recipients = collect([$admission->createdBy, $admission->submittedBy])->filter();
+
+        app(NotificationService::class)->send(
+            users: $recipients,
+            type: 'member_admission',
+            title: 'সদস্য আবেদন বাতিল করা হয়েছে',
+            message: "সদস্য আবেদন নং {$admission->application_no} ({$admission->applicant_name_bn}) বাতিল করা হয়েছে। কারণ: {$comments}",
+            notifiable: $admission,
+            actionUrl: "/member-admissions/{$admission->id}",
+            details: [
+                'আবেদন নং' => $admission->application_no,
+                'আবেদনকারীর নাম' => $admission->applicant_name_bn ?: $admission->applicant_name_en,
+                'বাতিলের কারণ' => $comments,
+            ]
+        );
 
         return true;
     }
@@ -295,6 +350,31 @@ class ApprovalService
                 'returned_by' => auth()->id(),
             ]);
         });
+
+        // Send notifications
+        $admission = $approval->memberAdmission->fresh(['createdBy', 'submittedBy', 'branch']);
+        $recipients = collect([$admission->createdBy, $admission->submittedBy])->filter();
+
+        // Also notify branch managers of the branch
+        $branchManagers = User::where('branch_id', $admission->branch_id)
+            ->where('is_active', 1)
+            ->whereHas('role', fn ($q) => $q->where('name', Role::BRANCH_MANAGER))
+            ->get();
+        $recipients = $recipients->concat($branchManagers);
+
+        app(NotificationService::class)->send(
+            users: $recipients,
+            type: 'member_admission',
+            title: 'সদস্য আবেদন সংশোধনের জন্য ফেরত পাঠানো হয়েছে',
+            message: "সদস্য আবেদন নং {$admission->application_no} ({$admission->applicant_name_bn}) সংশোধনের জন্য ফেরত পাঠানো হয়েছে। মন্তব্য: {$comments}",
+            notifiable: $admission,
+            actionUrl: "/member-admissions/{$admission->id}/edit",
+            details: [
+                'আবেদন নং' => $admission->application_no,
+                'আবেদনকারীর নাম' => $admission->applicant_name_bn ?: $admission->applicant_name_en,
+                'মন্তব্য' => $comments,
+            ]
+        );
 
         return true;
     }
@@ -485,6 +565,43 @@ class ApprovalService
             $admission->update(['status' => 'under_review']);
         });
 
+        // Send notifications
+        $admission = $approval->memberAdmission->fresh(['createdBy', 'submittedBy', 'branch']);
+
+        // 1. Notify target approver
+        app(NotificationService::class)->send(
+            users: $targetUser,
+            type: 'member_admission',
+            title: 'সদস্য আবেদন আপনার পর্যালোচনার জন্য ফরোয়ার্ড করা হয়েছে',
+            message: "সদস্য আবেদন নং {$admission->application_no} ({$admission->applicant_name_bn}) আপনার অনুমোদনের জন্য ফরোয়ার্ড করা হয়েছে।",
+            notifiable: $admission,
+            actionUrl: '/approvals',
+            details: [
+                'আবেদন নং' => $admission->application_no,
+                'আবেদনকারীর নাম' => $admission->applicant_name_bn ?: $admission->applicant_name_en,
+                'শাখা' => $admission->branch?->name ?? 'N/A',
+                'ফরোয়ার্ড করেছেন' => auth()->user()?->name ?? 'Branch Manager',
+            ]
+        );
+
+        // 2. Notify submitter/creator
+        $recipients = collect([$admission->createdBy, $admission->submittedBy])->filter();
+        if ($recipients->isNotEmpty()) {
+            app(NotificationService::class)->send(
+                users: $recipients,
+                type: 'member_admission',
+                title: 'সদস্য আবেদন উচ্চতর অনুমোদনকারীর কাছে প্রেরিত',
+                message: "আপনার সদস্য আবেদন নং {$admission->application_no} ({$admission->applicant_name_bn}) উচ্চতর অনুমোদনকারীর কাছে পাঠানো হয়েছে।",
+                notifiable: $admission,
+                actionUrl: "/member-admissions/{$admission->id}",
+                details: [
+                    'আবেদন নং' => $admission->application_no,
+                    'আবেদনকারীর নাম' => $admission->applicant_name_bn ?: $admission->applicant_name_en,
+                    'অনুমোদনকারী' => $targetUser->name . " (" . ($targetUser->role?->name ?? '') . ")",
+                ]
+            );
+        }
+
         return true;
     }
 
@@ -592,6 +709,42 @@ class ApprovalService
             }
         });
 
+        // Send notifications
+        $loan = $approval->loanApplication->fresh(['submittedBy', 'memberAdmission', 'branch']);
+        if ($loan->submittedBy) {
+            if ($approval->level === 'branch') {
+                app(NotificationService::class)->send(
+                    users: $loan->submittedBy,
+                    type: 'loan_application',
+                    title: 'ঋণ আবেদন শাখা কর্তৃক অনুমোদিত',
+                    message: "ঋণ আবেদন নং {$loan->application_no} ({$loan->memberAdmission?->applicant_name_bn}) শাখা থেকে অনুমোদিত হয়েছে। অনুমোদিত পরিমাণ: " . number_format($approvedAmount) . " টাকা।",
+                    notifiable: $loan,
+                    actionUrl: "/member/loan-applications/{$loan->id}",
+                    details: [
+                        'আবেদন নং' => $loan->application_no,
+                        'সদস্যের নাম' => $loan->memberAdmission?->applicant_name_bn ?: ($loan->memberAdmission?->applicant_name_en ?? 'N/A'),
+                        'অনুমোদিত পরিমাণ' => number_format($approvedAmount) . ' টাকা',
+                        'অনুমোদনকারী' => auth()->user()?->name ?? 'Branch Manager',
+                    ]
+                );
+            } else {
+                app(NotificationService::class)->send(
+                    users: $loan->submittedBy,
+                    type: 'loan_application',
+                    title: 'উচ্চতর পর্যায় থেকে ঋণ আবেদন অনুমোদিত',
+                    message: "ঋণ আবেদন নং {$loan->application_no} ({$loan->memberAdmission?->applicant_name_bn}) উচ্চতর অনুমোদনকারী কর্তৃক অনুমোদিত হয়েছে। অনুমোদিত পরিমাণ: " . number_format($approvedAmount) . " টাকা।",
+                    notifiable: $loan,
+                    actionUrl: "/member/loan-applications/{$loan->id}",
+                    details: [
+                        'আবেদন নং' => $loan->application_no,
+                        'সদস্যের নাম' => $loan->memberAdmission?->applicant_name_bn ?: ($loan->memberAdmission?->applicant_name_en ?? 'N/A'),
+                        'অনুমোদিত পরিমাণ' => number_format($approvedAmount) . ' টাকা',
+                        'অনুমোদনকারী' => auth()->user()?->name ?? 'Approver',
+                    ]
+                );
+            }
+        }
+
         return true;
     }
 
@@ -660,6 +813,24 @@ class ApprovalService
                 );
             }
         });
+
+        // Send notifications
+        $loan = $approval->loanApplication->fresh(['submittedBy', 'memberAdmission', 'branch']);
+        if ($loan->submittedBy) {
+            app(NotificationService::class)->send(
+                users: $loan->submittedBy,
+                type: 'loan_application',
+                title: 'ঋণ আবেদন বাতিল করা হয়েছে',
+                message: "ঋণ আবেদন নং {$loan->application_no} ({$loan->memberAdmission?->applicant_name_bn}) বাতিল করা হয়েছে। কারণ: {$comments}",
+                notifiable: $loan,
+                actionUrl: "/member/loan-applications/{$loan->id}",
+                details: [
+                    'আবেদন নং' => $loan->application_no,
+                    'সদস্যের নাম' => $loan->memberAdmission?->applicant_name_bn ?: ($loan->memberAdmission?->applicant_name_en ?? 'N/A'),
+                    'বাতিলের কারণ' => $comments,
+                ]
+            );
+        }
 
         return true;
     }
@@ -737,6 +908,43 @@ class ApprovalService
                 $this->createTeamBasedApprovalFromLoan($loan, $targetUser, $approval->user);
             }
         });
+
+        // Send notifications
+        $loan = $approval->loanApplication->fresh(['submittedBy', 'memberAdmission', 'branch']);
+
+        // 1. Notify target approver
+        app(NotificationService::class)->send(
+            users: $targetUser,
+            type: 'loan_application',
+            title: 'ঋণ আবেদন আপনার পর্যালোচনার জন্য ফরোয়ার্ড করা হয়েছে',
+            message: "ঋণ আবেদন নং {$loan->application_no} ({$loan->memberAdmission?->applicant_name_bn}) আপনার অনুমোদনের জন্য ফরোয়ার্ড করা হয়েছে। চাহিদাকৃত পরিমাণ: " . number_format($loan->requested_amount ?? 0) . " টাকা।",
+            notifiable: $loan,
+            actionUrl: '/approvals',
+            details: [
+                'আবেদন নং' => $loan->application_no,
+                'সদস্যের নাম' => $loan->memberAdmission?->applicant_name_bn ?: ($loan->memberAdmission?->applicant_name_en ?? 'N/A'),
+                'চাহিদাকৃত ঋণ' => number_format($loan->requested_amount ?? 0) . ' টাকা',
+                'শাখা' => $loan->branch?->name ?? 'N/A',
+                'ফরোয়ার্ড করেছেন' => auth()->user()?->name ?? 'Branch Manager',
+            ]
+        );
+
+        // 2. Notify submitter
+        if ($loan->submittedBy) {
+            app(NotificationService::class)->send(
+                users: $loan->submittedBy,
+                type: 'loan_application',
+                title: 'ঋণ আবেদন উচ্চতর অনুমোদনকারীর কাছে প্রেরিত',
+                message: "আপনার ঋণ আবেদন নং {$loan->application_no} ({$loan->memberAdmission?->applicant_name_bn}) উচ্চতর অনুমোদনকারীর কাছে পাঠানো হয়েছে।",
+                notifiable: $loan,
+                actionUrl: "/member/loan-applications/{$loan->id}",
+                details: [
+                    'আবেদন নং' => $loan->application_no,
+                    'সদস্যের নাম' => $loan->memberAdmission?->applicant_name_bn ?: ($loan->memberAdmission?->applicant_name_en ?? 'N/A'),
+                    'অনুমোদনকারী' => $targetUser->name . " (" . ($targetUser->role?->name ?? '') . ")",
+                ]
+            );
+        }
 
         return true;
     }

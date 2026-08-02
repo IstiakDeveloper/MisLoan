@@ -404,7 +404,7 @@ class MemberAdmission extends Model
      * Generate a simple 5-digit serial application number: 00001, 00002, ...
      * Grows beyond 5 digits when needed (100000, 100001, ...).
      */
-    private static function generateApplicationNumber(): string
+    public static function generateApplicationNumber(): string
     {
         $lastAdmission = self::whereRaw("application_no REGEXP '^[0-9]+$'")
             ->orderByRaw('CAST(application_no AS UNSIGNED) DESC')

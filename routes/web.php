@@ -13,6 +13,7 @@ use App\Http\Controllers\LoanProductController;
 use App\Http\Controllers\MaintenanceController;
 use App\Http\Controllers\MemberAdmissionController;
 use App\Http\Controllers\MemberCategoryController;
+use App\Http\Controllers\NotificationController;
 use App\Http\Controllers\OrganizationController;
 use App\Http\Controllers\ProfileController;
 use App\Http\Controllers\RoleController;
@@ -50,6 +51,14 @@ Route::middleware(['auth', 'verified'])->group(function () {
     Route::put('profile/password', [ProfileController::class, 'updatePassword'])
         ->middleware('throttle:6,1')
         ->name('profile.password.update');
+
+    // Notification Routes - For all authenticated users
+    Route::prefix('notifications')->name('notifications.')->middleware('auth')->group(function () {
+        Route::get('/', [NotificationController::class, 'index'])->name('index');
+        Route::get('{notification}', [NotificationController::class, 'show'])->name('show');
+        Route::patch('{notification}/read', [NotificationController::class, 'markAsRead'])->name('read');
+        Route::post('mark-all-read', [NotificationController::class, 'markAllRead'])->name('mark-all-read');
+    });
 
     // Organization Management Routes - Only for SuperAdmin/Head Office
     Route::prefix('organizations')->name('organizations.')->middleware('head.office')->group(function () {

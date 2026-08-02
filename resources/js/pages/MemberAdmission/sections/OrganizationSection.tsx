@@ -56,6 +56,24 @@ export default function OrganizationSection({
                 <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 sm:gap-3">
                     <div>
                         <label className="mb-0.5 block text-xs font-semibold text-gray-700">
+                            Member Code / সদস্য নং
+                        </label>
+                        <input
+                            type="text"
+                            value={data.application_no || ''}
+                            onChange={(e) => setData('application_no', e.target.value)}
+                            className="w-full rounded-xl border border-gray-300 px-3 py-2 text-xs md:text-sm focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 font-mono font-medium"
+                        />
+                        <p className="mt-1 text-[11px] text-gray-500">
+                            Generated member code — চাইলে পরিবর্তন করতে পারবেন।
+                        </p>
+                        {errors.application_no && (
+                            <p className="mt-1 text-xs text-red-600 font-medium">{errors.application_no}</p>
+                        )}
+                    </div>
+
+                    <div>
+                        <label className="mb-0.5 block text-xs font-semibold text-gray-700">
                             Branch (শাখা) <span className="text-red-500 font-bold">*</span>
                         </label>
                         <select

@@ -15,6 +15,7 @@ class MemberFamilyMember extends Model
         'gender',
         'age_years',
         'age_months',
+        'marital_status',
         'education_level',
         'occupation',
         'monthly_income',

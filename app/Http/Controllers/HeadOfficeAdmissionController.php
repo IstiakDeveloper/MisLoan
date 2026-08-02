@@ -7,6 +7,9 @@ use App\Models\MemberAdmissionIssue;
 use App\Models\Zone;
 use App\Models\Area;
 use App\Models\Branch;
+use App\Models\User;
+use App\Models\Role;
+use App\Services\NotificationService;
 use Illuminate\Http\Request;
 use Inertia\Inertia;
 use Illuminate\Support\Facades\DB;
@@ -692,6 +695,30 @@ class HeadOfficeAdmissionController extends Controller
             'reviewed_by' => auth()->id(),
         ]);
 
+        // Send notifications
+        $admission->loadMissing(['createdBy', 'submittedBy', 'branch']);
+        $recipients = collect([$admission->createdBy, $admission->submittedBy])->filter();
+        $branchManagers = User::where('branch_id', $admission->branch_id)
+            ->where('is_active', 1)
+            ->whereHas('role', fn ($q) => $q->where('name', Role::BRANCH_MANAGER))
+            ->get();
+        $recipients = $recipients->concat($branchManagers);
+
+        app(NotificationService::class)->send(
+            users: $recipients,
+            type: 'member_admission',
+            title: 'সদস্য আবেদন হেড অফিস কর্তৃক চূড়ান্ত অনুমোদিত',
+            message: "সদস্য আবেদন নং {$admission->application_no} ({$admission->applicant_name_bn}) হেড অফিস থেকে চূড়ান্তভাবে অনুমোদিত হয়েছে।",
+            notifiable: $admission,
+            actionUrl: "/member-admissions/{$admission->id}",
+            details: [
+                'আবেদন নং' => $admission->application_no,
+                'আবেদনকারীর নাম' => $admission->applicant_name_bn ?: $admission->applicant_name_en,
+                'শাখা' => $admission->branch?->name ?? 'N/A',
+                'অনুমোদন তারিখ' => now()->format('Y-m-d H:i'),
+            ]
+        );
+
         return back()->with('success', 'Admission approved successfully!');
     }
 
@@ -710,6 +737,25 @@ class HeadOfficeAdmissionController extends Controller
             'reviewed_at' => now(),
             'reviewed_by' => auth()->id(),
         ]);
+
+        // Send notifications
+        $admission->loadMissing(['createdBy', 'submittedBy', 'branch']);
+        $recipients = collect([$admission->createdBy, $admission->submittedBy])->filter();
+
+        app(NotificationService::class)->send(
+            users: $recipients,
+            type: 'member_admission',
+            title: 'সদস্য আবেদন প্রত্যাখ্যান করা হয়েছে',
+            message: "সদস্য আবেদন নং {$admission->application_no} ({$admission->applicant_name_bn}) হেড অফিস কর্তৃক প্রত্যাখ্যান করা হয়েছে। কারণ: {$validated['rejection_reason']}",
+            notifiable: $admission,
+            actionUrl: "/member-admissions/{$admission->id}",
+            details: [
+                'আবেদন নং' => $admission->application_no,
+                'আবেদনকারীর নাম' => $admission->applicant_name_bn ?: $admission->applicant_name_en,
+                'শাখা' => $admission->branch?->name ?? 'N/A',
+                'বাতিলের কারণ' => $validated['rejection_reason'],
+            ]
+        );
 
         return back()->with('success', 'Admission rejected successfully!');
     }
@@ -768,14 +814,38 @@ class HeadOfficeAdmissionController extends Controller
 
                 if ($pendingIssues->count() > 0) {
                     // Has issues - return to branch
+                    $comments = $pendingIssues->pluck('issue_description')->implode("\n\n");
                     $admission->update([
                         'status' => 'needs_revision',
                         'revision_count' => ($admission->revision_count ?? 0) + 1,
-                        'revision_comments' => $pendingIssues->pluck('issue_description')->implode("\n\n"),
+                        'revision_comments' => $comments,
                         'returned_at' => now(),
                         'returned_by' => auth()->id(),
                     ]);
                     $returnedCount++;
+
+                    // Send notification
+                    $admission->loadMissing(['createdBy', 'submittedBy', 'branch']);
+                    $recipients = collect([$admission->createdBy, $admission->submittedBy])->filter();
+                    $branchManagers = User::where('branch_id', $admission->branch_id)
+                        ->where('is_active', 1)
+                        ->whereHas('role', fn ($q) => $q->where('name', Role::BRANCH_MANAGER))
+                        ->get();
+                    $recipients = $recipients->concat($branchManagers);
+
+                    app(NotificationService::class)->send(
+                        users: $recipients,
+                        type: 'member_admission',
+                        title: 'সদস্য আবেদন সংশোধনের জন্য ফেরত পাঠানো হয়েছে',
+                        message: "সদস্য আবেদন নং {$admission->application_no} ({$admission->applicant_name_bn}) সংশোধনের জন্য ফেরত পাঠানো হয়েছে। মন্তব্য: {$comments}",
+                        notifiable: $admission,
+                        actionUrl: "/member-admissions/{$admission->id}/edit",
+                        details: [
+                            'আবেদন নং' => $admission->application_no,
+                            'আবেদনকারীর নাম' => $admission->applicant_name_bn ?: $admission->applicant_name_en,
+                            'মন্তব্য' => $comments,
+                        ]
+                    );
                 } else {
                     // No issues - approve
                     $admission->update([
@@ -784,6 +854,29 @@ class HeadOfficeAdmissionController extends Controller
                         'reviewed_by' => auth()->id(),
                     ]);
                     $approvedCount++;
+
+                    // Send notification
+                    $admission->loadMissing(['createdBy', 'submittedBy', 'branch']);
+                    $recipients = collect([$admission->createdBy, $admission->submittedBy])->filter();
+                    $branchManagers = User::where('branch_id', $admission->branch_id)
+                        ->where('is_active', 1)
+                        ->whereHas('role', fn ($q) => $q->where('name', Role::BRANCH_MANAGER))
+                        ->get();
+                    $recipients = $recipients->concat($branchManagers);
+
+                    app(NotificationService::class)->send(
+                        users: $recipients,
+                        type: 'member_admission',
+                        title: 'সদস্য আবেদন হেড অফিস কর্তৃক চূড়ান্ত অনুমোদিত',
+                        message: "সদস্য আবেদন নং {$admission->application_no} ({$admission->applicant_name_bn}) হেড অফিস থেকে চূড়ান্তভাবে অনুমোদিত হয়েছে।",
+                        notifiable: $admission,
+                        actionUrl: "/member-admissions/{$admission->id}",
+                        details: [
+                            'আবেদন নং' => $admission->application_no,
+                            'আবেদনকারীর নাম' => $admission->applicant_name_bn ?: $admission->applicant_name_en,
+                            'শাখা' => $admission->branch?->name ?? 'N/A',
+                        ]
+                    );
                 }
             }
 

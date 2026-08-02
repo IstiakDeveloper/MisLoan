@@ -7,7 +7,7 @@ import {
     OtherAsset,
 } from '@/types/memberAdmission';
 import { Head, Link, router, useForm, usePage } from '@inertiajs/react';
-import { AlertCircle, ArrowLeft, Save, X } from 'lucide-react';
+import { AlertCircle, ArrowLeft, Save, Send, X } from 'lucide-react';
 import React, { useEffect, useState } from 'react';
 
 import AddressSection from './sections/AddressSection';
@@ -39,6 +39,7 @@ interface Props {
         role: { name: string };
         level?: string;
     }>;
+    for_submit?: boolean;
 }
 
 /** Samity code without branch prefix (first 4 digits). e.g. 00010071 → 0071 */
@@ -68,6 +69,7 @@ export default function Edit({
     samities,
     categories,
     availableApprovers,
+    for_submit = false,
 }: Props) {
     const page = usePage<{
         auth: {
@@ -100,6 +102,7 @@ export default function Edit({
 
     const { data, setData, errors } =
         useForm<MemberAdmissionFormData>({
+            application_no: admission.application_no || '',
             branch_id: admission.branch_id || 0,
             samity_id: admission.samity_id || 0,
             member_category_id: admission.member_category_id || 0,
@@ -329,11 +332,16 @@ export default function Edit({
         }
     };
 
-    const handleSubmit = (saveAsDraft: boolean = false) => {
+    const handleSubmit = (options?: { submitAfterSave?: boolean }) => {
         // Edit page only saves (draft/update). Submit is from the list; incomplete → redirects here with errors.
+        // When for_submit: Save & Submit saves then submits in one request.
+        const submitAfterSave = !!options?.submitAfterSave;
         const formData = new FormData();
         formData.append('_method', 'PUT');
         formData.append('draft', '1');
+        if (submitAfterSave) {
+            formData.append('submit_after_save', '1');
+        }
 
         Object.keys(data).forEach((key) => {
             const val = (data as any)[key];
@@ -358,12 +366,21 @@ export default function Edit({
             }
         });
 
-        router.post(`/member-admissions/${admission.id}?draft=1`, formData, {
+        const postUrl = submitAfterSave
+            ? `/member-admissions/${admission.id}?draft=1&for_submit=1`
+            : `/member-admissions/${admission.id}?draft=1`;
+
+        router.post(postUrl, formData, {
             preserveScroll: true,
             onStart: () => setSaving(true),
             onFinish: () => setSaving(false),
             onSuccess: () => {
-                router.visit('/member-admissions');
+                if (!submitAfterSave) {
+                    router.visit('/member-admissions');
+                }
+            },
+            onError: () => {
+                window.scrollTo({ top: 0, behavior: 'smooth' });
             },
         });
     };
@@ -378,6 +395,7 @@ export default function Edit({
                 gender: 'male',
                 age_years: 0,
                 age_months: 0,
+                marital_status: '',
                 education_level: '',
                 occupation: '',
                 monthly_income: 0,
@@ -457,10 +475,12 @@ export default function Edit({
                                 </span>
                             </div>
                             <h1 className="text-2xl sm:text-3xl font-extrabold tracking-tight text-white leading-tight">
-                                ভর্তি আবেদন সংশোধন ও আপডেট
+                                {for_submit ? 'আবশ্যকীয় তথ্য পূরণ করে জমা দিন' : 'ভর্তি আবেদন সংশোধন ও আপডেট'}
                             </h1>
                             <p className="text-slate-300 text-xs sm:text-sm leading-relaxed">
-                                আবেদনকারীর প্রয়োজনীয় সকল তথ্য হালনাগাদ করুন।
+                                {for_submit
+                                    ? 'লাল চিহ্নিত ফিল্ডগুলো পূরণ করে «সংরক্ষণ ও জমা দিন» চাপুন — আলাদা করে আবার জমা দেওয়ার দরকার নেই।'
+                                    : 'আবেদনকারীর প্রয়োজনীয় সকল তথ্য হালনাগাদ করুন।'}
                             </p>
                         </div>
 
@@ -474,6 +494,17 @@ export default function Edit({
                                 <Save className="w-4 h-4 text-amber-400" />
                                 <span>খসড়া সংরক্ষণ</span>
                             </button>
+                            {for_submit && (
+                                <button
+                                    type="button"
+                                    onClick={() => handleSubmit({ submitAfterSave: true })}
+                                    disabled={saving}
+                                    className="inline-flex items-center justify-center gap-2 px-6 py-3 rounded-2xl bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white text-xs sm:text-sm font-bold shadow-lg shadow-blue-600/30 transition-all active:scale-95 disabled:opacity-50"
+                                >
+                                    <Send className="w-4 h-4" />
+                                    <span>সংরক্ষণ ও জমা দিন</span>
+                                </button>
+                            )}
                         </div>
                     </div>
                 </div>
@@ -490,7 +521,9 @@ export default function Edit({
                                     আবেদনটি জমা দেওয়ার আগে নিচের {errorList.length}টি তথ্য পূরণ/সংশোধন করুন:
                                 </h3>
                                 <p className="text-xs text-red-700 mt-1 mb-3 font-medium">
-                                    লাল চিহ্নিত ফিল্ডগুলো পূরণ করে খসড়া সংরক্ষণ করুন, তারপর তালিকা থেকে আবার জমা দিন।
+                                    {for_submit
+                                        ? 'লাল চিহ্নিত ফিল্ডগুলো পূরণ করে «সংরক্ষণ ও জমা দিন» বাটনে ক্লিক করুন।'
+                                        : 'লাল চিহ্নিত ফিল্ডগুলো পূরণ করে খসড়া সংরক্ষণ করুন, তারপর তালিকা থেকে আবার জমা দিন।'}
                                 </p>
                                 <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-2">
                                     {errorList.map(([key, msg]) => (
@@ -604,6 +637,17 @@ export default function Edit({
                             <Save className="w-4 h-4" />
                             <span>খসড়া সংরক্ষণ (Save Draft)</span>
                         </button>
+                        {for_submit && (
+                            <button
+                                type="button"
+                                onClick={() => handleSubmit({ submitAfterSave: true })}
+                                disabled={saving}
+                                className="w-full sm:w-auto inline-flex items-center justify-center gap-2 px-6 py-2.5 rounded-xl bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white text-xs sm:text-sm font-bold shadow-lg shadow-blue-600/30 transition-all active:scale-95 disabled:opacity-50"
+                            >
+                                <Send className="w-4 h-4" />
+                                <span>সংরক্ষণ ও জমা দিন (Save & Submit)</span>
+                            </button>
+                        )}
                     </div>
                 </div>
 
@@ -616,8 +660,19 @@ export default function Edit({
                         className="flex-1 inline-flex items-center justify-center gap-1.5 py-2.5 px-3 rounded-xl bg-slate-800 text-amber-400 text-xs font-bold shadow-sm active:scale-95 transition disabled:opacity-50"
                     >
                         <Save className="w-4 h-4" />
-                        <span>খসড়া সংরক্ষণ</span>
+                        <span>খসড়া</span>
                     </button>
+                    {for_submit && (
+                        <button
+                            type="button"
+                            onClick={() => handleSubmit({ submitAfterSave: true })}
+                            disabled={saving}
+                            className="flex-[1.5] inline-flex items-center justify-center gap-1.5 py-2.5 px-3 rounded-xl bg-gradient-to-r from-blue-600 to-indigo-600 text-white text-xs font-bold shadow-md active:scale-95 transition disabled:opacity-50"
+                        >
+                            <Send className="w-4 h-4" />
+                            <span>সংরক্ষণ ও জমা</span>
+                        </button>
+                    )}
                 </div>
             </div>
         </AdminLayout>

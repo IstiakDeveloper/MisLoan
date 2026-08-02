@@ -12,7 +12,9 @@ use App\Models\MemberAdmission;
 use App\Models\Role;
 use App\Models\SavingsProduct;
 use App\Models\Samity;
+use App\Models\User;
 use App\Services\ApprovalService;
+use App\Services\NotificationService;
 use App\Support\LoanFormVisibility;
 use Illuminate\Http\Request;
 use Inertia\Inertia;
@@ -944,6 +946,30 @@ class LoanApplicationController extends Controller
             return back()->withErrors(['error' => $e->getMessage()]);
         }
 
+        // Notify Branch Manager(s) of the branch
+        $application->loadMissing(['memberAdmission', 'branch']);
+        $branchManagers = User::where('branch_id', $application->branch_id)
+            ->where('is_active', 1)
+            ->whereHas('role', fn ($q) => $q->where('name', Role::BRANCH_MANAGER))
+            ->get();
+
+        if ($branchManagers->isNotEmpty()) {
+            app(NotificationService::class)->send(
+                users: $branchManagers,
+                type: 'loan_application',
+                title: 'নতুন ঋণ আবেদন জমা হয়েছে',
+                message: "ঋণ আবেদন নং {$application->application_no} ({$application->memberAdmission?->applicant_name_bn}) ব্রাঞ্চে জমা দেওয়া হয়েছে। চাহিদাকৃত পরিমাণ: " . number_format($application->requested_amount ?? 0) . " টাকা।",
+                notifiable: $application,
+                actionUrl: '/approvals',
+                details: [
+                    'আবেদন নং' => $application->application_no,
+                    'সদস্যের নাম' => $application->memberAdmission?->applicant_name_bn ?: ($application->memberAdmission?->applicant_name_en ?? 'N/A'),
+                    'চাহিদাকৃত ঋণ' => number_format($application->requested_amount ?? 0) . ' টাকা',
+                    'শাখা' => $application->branch?->name ?? 'N/A',
+                ]
+            );
+        }
+
         return redirect()->route('member.loan-applications.show', $application->id)
             ->with('success', 'ঋণ আবেদন শাখা ব্যবস্থাপকের কাছে জমা হয়েছে। অনুমোদনের পর শাখা থেকে Head Office এ পাঠানো যাবে।');
     }
@@ -970,6 +996,31 @@ class LoanApplicationController extends Controller
             'submitted_at' => now(),
         ]);
 
+        // Notify Head Office Users
+        $application->loadMissing(['memberAdmission', 'branch']);
+        $headOfficeUsers = User::where('is_active', 1)
+            ->where(function ($q) {
+                $q->where('has_all_access', 1)
+                  ->orWhereHas('role', fn ($r) => $r->whereIn('name', ['super_admin', 'head_office', 'ed']));
+            })->get();
+
+        if ($headOfficeUsers->isNotEmpty()) {
+            app(NotificationService::class)->send(
+                users: $headOfficeUsers,
+                type: 'loan_application',
+                title: 'ঋণ আবেদন হেড অফিসে পাঠানো হয়েছে',
+                message: "ঋণ আবেদন নং {$application->application_no} ({$application->memberAdmission?->applicant_name_bn}) শাখা কর্তৃক হেড অফিসে অনুমোদনের জন্য পাঠানো হয়েছে।",
+                notifiable: $application,
+                actionUrl: '/head-office/process-loans',
+                details: [
+                    'আবেদন নং' => $application->application_no,
+                    'সদস্যের নাম' => $application->memberAdmission?->applicant_name_bn ?: ($application->memberAdmission?->applicant_name_en ?? 'N/A'),
+                    'ঋণের পরিমাণ' => number_format($application->requested_amount ?? 0) . ' টাকা',
+                    'শাখা' => $application->branch?->name ?? 'N/A',
+                ]
+            );
+        }
+
         return redirect()->route('member.loan-applications.show', $application->id)
             ->with('success', 'ঋণ আবেদনটি Head Office এ পাঠানো হয়েছে।');
     }
@@ -984,7 +1035,7 @@ class LoanApplicationController extends Controller
             abort(403, 'শুধুমাত্র শাখা ব্যবহারকারী ঋণ বিতরণ করতে পারবেন।');
         }
 
-        $application = LoanApplication::with('loanProduct')->findOrFail($id);
+        $application = LoanApplication::with(['loanProduct', 'memberAdmission', 'submittedBy'])->findOrFail($id);
         $this->ensureApplicationAccessibleToUser($application, $user);
 
         if ($application->status !== LoanApplication::STATUS_PENDING_DISBURSEMENT) {
@@ -1001,6 +1052,24 @@ class LoanApplicationController extends Controller
             'disbursed_by' => $user->id,
             'disbursed_at' => now(),
         ]);
+
+        // Notify submitter / member
+        if ($application->submittedBy) {
+            app(NotificationService::class)->send(
+                users: $application->submittedBy,
+                type: 'loan_application',
+                title: 'ঋণ বিতরণ সফলভাবে সম্পন্ন হয়েছে',
+                message: "ঋণ আবেদন নং {$application->application_no} ({$application->memberAdmission?->applicant_name_bn}) এর ঋণ বিতরণ করা হয়েছে। পরিমাণ: " . number_format($application->approved_amount ?? $application->requested_amount ?? 0) . " টাকা।",
+                notifiable: $application,
+                actionUrl: "/member/loan-applications/{$application->id}",
+                details: [
+                    'আবেদন নং' => $application->application_no,
+                    'সদস্যের নাম' => $application->memberAdmission?->applicant_name_bn ?: ($application->memberAdmission?->applicant_name_en ?? 'N/A'),
+                    'বিতরণকৃত ঋণ' => number_format($application->approved_amount ?? $application->requested_amount ?? 0) . ' টাকা',
+                    'বিতরণের তারিখ' => now()->format('Y-m-d H:i'),
+                ]
+            );
+        }
 
         return redirect()->route('member.loan-applications.show', $application->id)
             ->with('success', 'ঋণ সফলভাবে বিতরণ করা হয়েছে।');

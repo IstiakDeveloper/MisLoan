@@ -117,6 +117,20 @@ export default function FamilyMembersSection({
                                     />
                                 </div>
                                 <div>
+                                    <label className="mb-0.5 block text-xs font-semibold text-gray-700">Marital Status (বৈবাহিক অবস্থা)</label>
+                                    <select
+                                        value={member.marital_status || ''}
+                                        onChange={(e) => updateFamilyMember(index, 'marital_status', e.target.value)}
+                                        className={inputClass}
+                                    >
+                                        <option value="">বৈবাহিক অবস্থা নির্বাচন করুন</option>
+                                        <option value="single">অবিবাহিত (Single)</option>
+                                        <option value="married">বিবাহিত (Married)</option>
+                                        <option value="widowed">বিধবা/বিপত্নীক (Widowed)</option>
+                                        <option value="divorced">ডিভোর্সড (Divorced)</option>
+                                    </select>
+                                </div>
+                                <div>
                                     <label className="mb-0.5 block text-xs font-semibold text-gray-700">Education Level (শিক্ষাগত যোগ্যতা)</label>
                                     <select
                                         value={member.education_level}

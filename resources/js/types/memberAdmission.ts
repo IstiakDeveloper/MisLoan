@@ -5,6 +5,7 @@ export interface FamilyMember {
     gender: 'male' | 'female' | 'other';
     age_years?: number;
     age_months?: number;
+    marital_status?: 'single' | 'married' | 'divorced' | 'widowed' | '';
     education_level?: string;
     occupation?: string;
     monthly_income?: number;
@@ -168,4 +169,6 @@ export interface MemberAdmission {
     }>;
 }
 
-export type MemberAdmissionFormData = Omit<MemberAdmission, 'id' | 'application_no' | 'created_at' | 'updated_at' | 'status' | 'submitted_at' | 'reviewed_at' | 'branch' | 'samity' | 'member_category' | 'submitted_by' | 'reviewed_by'>;
+export type MemberAdmissionFormData = Omit<MemberAdmission, 'id' | 'created_at' | 'updated_at' | 'status' | 'submitted_at' | 'reviewed_at' | 'branch' | 'samity' | 'member_category' | 'submitted_by' | 'reviewed_by'> & {
+    application_no?: string;
+};

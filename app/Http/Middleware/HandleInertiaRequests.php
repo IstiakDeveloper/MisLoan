@@ -267,6 +267,16 @@ class HandleInertiaRequests extends Middleware
             $badgeCounts['pendingApprovals'] = $memberCount + $loanCount;
         }
 
+        $notifications = [];
+        $unreadNotificationsCount = 0;
+        if ($request->user()) {
+            $unreadNotificationsCount = \App\Models\Notification::where('user_id', $request->user()->id)->unread()->count();
+            $notifications = \App\Models\Notification::where('user_id', $request->user()->id)
+                ->orderBy('created_at', 'desc')
+                ->take(8)
+                ->get();
+        }
+
         return array_merge(parent::share($request), [
             'csrf_token' => csrf_token(),
             'name' => 'MIS Loan',
@@ -282,6 +292,8 @@ class HandleInertiaRequests extends Middleware
             ],
             'sidebarOpen' => ! $request->hasCookie('sidebar_state') || $request->cookie('sidebar_state') === 'true',
             'badgeCounts' => $badgeCounts,
+            'unreadNotificationsCount' => $unreadNotificationsCount,
+            'notifications' => $notifications,
             'siteMaintenance' => Cache::get('site_maintenance', false),
         ]);
     }

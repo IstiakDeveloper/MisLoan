@@ -36,6 +36,7 @@ interface Props {
         email: string;
         role: { name: string };
     }>;
+    suggested_application_no?: string;
 }
 
 /** Samity code without branch prefix (first 4 digits). e.g. 00010071 → 0071 */
@@ -64,6 +65,7 @@ export default function Create({
     samities,
     categories,
     availableApprovers,
+    suggested_application_no = '',
 }: Props) {
     const page = usePage<{
         auth: {
@@ -100,6 +102,7 @@ export default function Create({
 
     const { data, setData, post, processing, errors, transform } =
         useForm<MemberAdmissionFormData>({
+            application_no: suggested_application_no || '',
             branch_id: initialBranchId,
             samity_id: 0,
             member_category_id: 0,
@@ -216,6 +219,12 @@ export default function Create({
         }));
         setMemberTypeChosen(true);
     };
+
+    useEffect(() => {
+        if (suggested_application_no && !data.application_no) {
+            setData('application_no', suggested_application_no);
+        }
+    }, [suggested_application_no]);
 
     useEffect(() => {
         if (currentUser?.name && !data.interviewer_name) {
@@ -382,6 +391,7 @@ export default function Create({
                 gender: 'male',
                 age_years: 0,
                 age_months: 0,
+                marital_status: '',
                 education_level: '',
                 occupation: '',
                 monthly_income: 0,

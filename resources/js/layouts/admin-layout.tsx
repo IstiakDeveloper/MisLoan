@@ -31,10 +31,12 @@ import {
     PieChart,
     CircleUser,
     Coins,
-    FileCheck
+    FileCheck,
+    Mail
 } from 'lucide-react';
 import { useIsMobile } from '@/hooks/use-mobile';
 import { usePwaInstallPrompt } from '@/hooks/usePwaInstallPrompt';
+import NotificationBell from '@/components/NotificationBell';
 
 interface User {
     id: number;
@@ -86,10 +88,16 @@ function isNavItemActive(currentPath: string, href: string): boolean {
     return true;
 }
 
+function isGmailAddress(email?: string | null): boolean {
+    if (!email) return false;
+    return email.trim().toLowerCase().endsWith('@gmail.com');
+}
+
 export default function AdminLayout({ children }: AdminLayoutProps) {
     const page = usePage<PageProps>();
     const { auth, flash, siteMaintenance = false, badgeCounts = {} } = page.props;
     const userAvatarSrc = auth.user?.avatar || (auth.user?.profile_photo ? `/storage/${auth.user.profile_photo}` : null);
+    const hasMailIssue = !isGmailAddress(auth.user?.email);
     const path = (() => {
         try {
             return new URL(page.url).pathname;
@@ -97,6 +105,7 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
             return typeof window !== 'undefined' ? window.location.pathname : '';
         }
     })();
+    const isOnProfilePage = path === '/profile' || path.startsWith('/profile/');
     const isMobile = useIsMobile();
     const [sidebarOpen, setSidebarOpen] = useState(!isMobile);
     const [profileDropdownOpen, setProfileDropdownOpen] = useState(false);
@@ -752,18 +761,8 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
                                 </Link>
                             )}
 
-                            {/* Notifications Toggle */}
-                            <button
-                                type="button"
-                                className="relative p-2 rounded-lg hover:bg-slate-50 text-slate-550 hover:text-slate-800 transition-colors"
-                                aria-label="Notifications"
-                            >
-                                <Bell className="w-4.5 h-4.5 stroke-[1.75]" />
-                                <span className="absolute top-1.5 right-1.5 flex h-2 w-2">
-                                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-rose-400 opacity-75"></span>
-                                    <span className="relative inline-flex rounded-full h-2 w-2 bg-rose-500"></span>
-                                </span>
-                            </button>
+                            {/* Notifications Dropdown Bell */}
+                            <NotificationBell />
 
                             {/* Profile & Always Visible Logout */}
                             <div className="flex items-center gap-2">
@@ -798,6 +797,37 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
                 {/* Main Content Layout Container */}
                 <main className="flex-1 p-4 md:p-6 lg:p-8 pb-20 md:pb-6 lg:pb-8 print:p-0 print:block relative">
                     <div className="max-w-[1600px] mx-auto w-full print:max-w-none print:mx-0 print:block">
+                        {hasMailIssue && !isOnProfilePage && (
+                            <div className="print:hidden mb-4 rounded-2xl border border-amber-300 bg-amber-50 px-4 py-3.5 shadow-sm">
+                                <div className="flex flex-col sm:flex-row sm:items-center gap-3">
+                                    <div className="flex items-start gap-3 flex-1 min-w-0">
+                                        <div className="shrink-0 rounded-xl bg-amber-500/15 p-2 text-amber-700">
+                                            <Mail className="w-5 h-5" />
+                                        </div>
+                                        <div className="min-w-0">
+                                            <p className="text-sm font-bold text-amber-900">
+                                                ইমেইল সমস্যা — প্রোফাইল আপডেট করুন
+                                            </p>
+                                            <p className="text-xs text-amber-800/90 mt-0.5 leading-relaxed">
+                                                আপনার অ্যাকাউন্টে এখন{' '}
+                                                <span className="font-mono font-semibold break-all">
+                                                    {auth.user?.email || 'কোনো ইমেইল নেই'}
+                                                </span>{' '}
+                                                আছে। এটি কোম্পানি/অস্থায়ী ইমেইল হতে পারে। প্রোফাইল থেকে আপনার আসল{' '}
+                                                <strong>@gmail.com</strong> ইমেইল দিন।
+                                            </p>
+                                        </div>
+                                    </div>
+                                    <Link
+                                        href="/profile"
+                                        className="shrink-0 inline-flex items-center justify-center gap-1.5 rounded-xl bg-amber-600 hover:bg-amber-700 text-white px-4 py-2.5 text-xs font-bold shadow-sm transition-colors"
+                                    >
+                                        <User className="w-3.5 h-3.5" />
+                                        প্রোফাইল আপডেট
+                                    </Link>
+                                </div>
+                            </div>
+                        )}
                         {children}
                     </div>
                 </main>

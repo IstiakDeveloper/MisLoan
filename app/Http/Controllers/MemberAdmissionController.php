@@ -7,8 +7,10 @@ use App\Models\Branch;
 use App\Models\Role;
 use App\Models\Samity;
 use App\Models\MemberCategory;
+use App\Models\User;
 use App\Services\ApprovalService;
 use App\Services\ImageCompressionService;
+use App\Services\NotificationService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Inertia\Inertia;
@@ -228,6 +230,7 @@ class MemberAdmissionController extends Controller
             'categories' => $categories,
             'samities' => $samities,
             'availableApprovers' => $approvers,
+            'suggested_application_no' => MemberAdmission::generateApplicationNumber(),
         ]);
     }
 
@@ -237,6 +240,7 @@ class MemberAdmissionController extends Controller
         $saveAsDraft = $this->isDraftSave($request);
 
         $validated = $request->validate([
+            'application_no' => 'nullable|string|max:50|unique:member_admissions,application_no',
             'branch_id' => 'nullable|exists:branches,id',
             'samity_id' => 'nullable|exists:samities,id',
             'member_category_id' => 'nullable|exists:member_categories,id',
@@ -350,6 +354,7 @@ class MemberAdmissionController extends Controller
             'family_members.*.gender' => 'nullable|in:male,female,other',
             'family_members.*.age_years' => 'nullable|integer',
             'family_members.*.age_months' => 'nullable|integer',
+            'family_members.*.marital_status' => 'nullable|in:single,married,divorced,widowed',
             'family_members.*.education_level' => 'nullable|string',
             'family_members.*.occupation' => 'nullable|string',
             'family_members.*.monthly_income' => 'nullable|numeric',
@@ -449,6 +454,10 @@ class MemberAdmissionController extends Controller
                 : true;
             unset($admissionData['selected_approvers'], $admissionData['family_members'], $admissionData['other_assets'], $admissionData['draft']);
 
+            if (empty($admissionData['application_no'])) {
+                unset($admissionData['application_no']);
+            }
+
             // মোট জমির পরিমাণ ও মূল্য (আবাদযোগ্য + অনাবাদি)
             $admissionData['total_land_amount'] = ($admissionData['cultivable_land_amount'] ?? 0) + ($admissionData['non_cultivable_land_amount'] ?? 0);
             $admissionData['total_land_value'] = ($admissionData['cultivable_land_value'] ?? 0) + ($admissionData['non_cultivable_land_value'] ?? 0);
@@ -457,7 +466,7 @@ class MemberAdmissionController extends Controller
             $authUser->loadMissing('role');
             if ($authUser->role?->name === Role::FIELD_OFFICER) {
                 $admissionData['interviewer_name'] = $admissionData['interviewer_name'] ?: $authUser->name;
-                $admissionData['employee_name'] = $admissionData['employee_name'] ?: $authUser->name;
+                $admissionData['employee_name'] = $admissionData['employee_name'] ?: ($authUser->pin ?: $authUser->username);
             }
 
             // Draft = always draft status; legacy final submit auto-approves
@@ -484,6 +493,7 @@ class MemberAdmissionController extends Controller
                         'gender' => $member['gender'],
                         'age_years' => $member['age_years'] ?? null,
                         'age_months' => $member['age_months'] ?? null,
+                        'marital_status' => $member['marital_status'] ?? null,
                         'education_level' => $member['education_level'] ?? null,
                         'occupation' => $member['occupation'] ?? null,
                         'monthly_income' => $member['monthly_income'] ?? null,
@@ -558,7 +568,7 @@ class MemberAdmissionController extends Controller
         ]);
     }
 
-    public function edit(MemberAdmission $memberAdmission)
+    public function edit(Request $request, MemberAdmission $memberAdmission)
     {
         // Head Office / SuperAdmin can edit any status; others only editable ones.
         if (!$this->canManageAnyStatus() && !$memberAdmission->canBeEdited()) {
@@ -584,6 +594,7 @@ class MemberAdmissionController extends Controller
             'categories' => $categories,
             'samities' => $samities,
             'availableApprovers' => $approvers,
+            'for_submit' => $request->boolean('for_submit'),
         ]);
     }
 
@@ -598,6 +609,7 @@ class MemberAdmissionController extends Controller
         $saveAsDraft = $this->isDraftSave($request);
 
         $validated = $request->validate([
+            'application_no' => 'nullable|string|max:50|unique:member_admissions,application_no,' . $memberAdmission->id,
             'branch_id' => 'nullable|exists:branches,id',
             'samity_id' => 'nullable|exists:samities,id',
             'member_category_id' => 'nullable|exists:member_categories,id',
@@ -711,6 +723,7 @@ class MemberAdmissionController extends Controller
             'family_members.*.gender' => 'nullable|in:male,female,other',
             'family_members.*.age_years' => 'nullable|integer',
             'family_members.*.age_months' => 'nullable|integer',
+            'family_members.*.marital_status' => 'nullable|in:single,married,divorced,widowed',
             'family_members.*.education_level' => 'nullable|string',
             'family_members.*.occupation' => 'nullable|string',
             'family_members.*.monthly_income' => 'nullable|numeric',
@@ -748,6 +761,9 @@ class MemberAdmissionController extends Controller
                 unset($updateData['loan_dofa']);
             }
             unset($updateData['selected_approvers'], $updateData['family_members'], $updateData['other_assets'], $updateData['draft']);
+            if (empty($updateData['application_no'])) {
+                unset($updateData['application_no']);
+            }
             if (array_key_exists('permanent_address_same', $updateData)) {
                 $updateData['permanent_address_same'] = (bool) $updateData['permanent_address_same'];
             }
@@ -819,7 +835,7 @@ class MemberAdmissionController extends Controller
             $authUser->loadMissing('role');
             if ($authUser->role?->name === Role::FIELD_OFFICER) {
                 $updateData['interviewer_name'] = $updateData['interviewer_name'] ?: $authUser->name;
-                $updateData['employee_name'] = $updateData['employee_name'] ?: $authUser->name;
+                $updateData['employee_name'] = $updateData['employee_name'] ?: ($authUser->pin ?: $authUser->username);
             }
 
             // মোট জমির পরিমাণ ও মূল্য (আবাদযোগ্য + অনাবাদি)
@@ -856,6 +872,7 @@ class MemberAdmissionController extends Controller
                         'gender' => $member['gender'],
                         'age_years' => $member['age_years'] ?? null,
                         'age_months' => $member['age_months'] ?? null,
+                        'marital_status' => $member['marital_status'] ?? null,
                         'education_level' => $member['education_level'] ?? null,
                         'occupation' => $member['occupation'] ?? null,
                         'monthly_income' => $member['monthly_income'] ?? null,
@@ -881,6 +898,11 @@ class MemberAdmissionController extends Controller
             if ($legacyAutoApproved) {
                 return redirect()->route('member-admissions.index')
                     ->with('success', 'পুরাতন সদস্যের ভর্তি স্বয়ংক্রিয়ভাবে অনুমোদিত হয়েছে!');
+            }
+
+            // Save filled fields then submit in one step (from edit-for-submit flow)
+            if ($request->boolean('submit_after_save') && $memberAdmission->fresh()->isDraft()) {
+                return $this->submit($memberAdmission->fresh());
             }
 
             return redirect()->route('member-admissions.index')
@@ -976,13 +998,19 @@ class MemberAdmissionController extends Controller
         $validator = \Illuminate\Support\Facades\Validator::make($data, $rules, $messages);
 
         if ($validator->fails()) {
-            return redirect()->route('member-admissions.edit', $memberAdmission->id)
+            return redirect()->route('member-admissions.edit', [
+                'memberAdmission' => $memberAdmission->id,
+                'for_submit' => 1,
+            ])
                 ->withErrors($validator)
                 ->with('error', 'আবেদনটি জমা দেওয়ার আগে লাল চিহ্নিত আবশ্যকীয় তথ্যগুলো পূরণ করুন।');
         }
 
         if ($memberAdmission->is_legacy && empty($memberAdmission->loan_dofa)) {
-            return redirect()->route('member-admissions.edit', $memberAdmission->id)
+            return redirect()->route('member-admissions.edit', [
+                'memberAdmission' => $memberAdmission->id,
+                'for_submit' => 1,
+            ])
                 ->withErrors(['loan_dofa' => 'পুরাতন সদস্যের জন্য ঋণের দফা দেওয়া বাধ্যতামূলক।'])
                 ->with('error', 'পুরাতন সদস্যের জন্য ঋণের দফা দেওয়া বাধ্যতামূলক।');
         }
@@ -1015,6 +1043,29 @@ class MemberAdmissionController extends Controller
             $approvalService = app(ApprovalService::class);
             $approvalService->createApprovalWorkflow($memberAdmission);
         });
+
+        // Notify Branch Manager(s) of the branch
+        $branchManagers = User::where('branch_id', $memberAdmission->branch_id)
+            ->where('is_active', 1)
+            ->whereHas('role', fn ($q) => $q->where('name', Role::BRANCH_MANAGER))
+            ->get();
+
+        if ($branchManagers->isNotEmpty()) {
+            app(NotificationService::class)->send(
+                users: $branchManagers,
+                type: 'member_admission',
+                title: 'নতুন সদস্য আবেদন জমা হয়েছে',
+                message: "সদস্য আবেদন নং {$memberAdmission->application_no} ({$memberAdmission->applicant_name_bn}) অনুমোদনের জন্য জমা দেওয়া হয়েছে।",
+                notifiable: $memberAdmission,
+                actionUrl: '/approvals',
+                details: [
+                    'আবেদন নং' => $memberAdmission->application_no,
+                    'আবেদনকারীর নাম' => $memberAdmission->applicant_name_bn ?: $memberAdmission->applicant_name_en,
+                    'মোবাইল' => $memberAdmission->mobile_number ?? 'N/A',
+                    'শাখা' => $memberAdmission->branch?->name ?? 'N/A',
+                ]
+            );
+        }
 
         return redirect()->route('member-admissions.index')
             ->with('success', 'Member admission submitted successfully and sent for approval!');
@@ -1062,6 +1113,29 @@ class MemberAdmissionController extends Controller
             ]);
         });
 
+        // Notify Head Office users
+        $headOfficeUsers = User::where('is_active', 1)
+            ->where(function ($q) {
+                $q->where('has_all_access', 1)
+                  ->orWhereHas('role', fn ($r) => $r->whereIn('name', ['super_admin', 'head_office', 'ed']));
+            })->get();
+
+        if ($headOfficeUsers->isNotEmpty()) {
+            app(NotificationService::class)->send(
+                users: $headOfficeUsers,
+                type: 'member_admission',
+                title: 'সংশোধিত সদস্য আবেদন পুনঃজমা দেওয়া হয়েছে',
+                message: "সদস্য আবেদন নং {$memberAdmission->application_no} ({$memberAdmission->applicant_name_bn}) সংশোধন করে পুনঃজমা দেওয়া হয়েছে।",
+                notifiable: $memberAdmission,
+                actionUrl: '/head-office/process-admissions',
+                details: [
+                    'আবেদন নং' => $memberAdmission->application_no,
+                    'আবেদনকারীর নাম' => $memberAdmission->applicant_name_bn ?: $memberAdmission->applicant_name_en,
+                    'শাখা' => $memberAdmission->branch?->name ?? 'N/A',
+                ]
+            );
+        }
+
         return redirect()->route('member-admissions.index')
             ->with('success', 'Member admission resubmitted successfully!');
     }
@@ -1090,6 +1164,30 @@ class MemberAdmissionController extends Controller
             'submitted_by' => $user->id,
             'submitted_at' => now(),
         ]);
+
+        // Notify Head Office users
+        $headOfficeUsers = User::where('is_active', 1)
+            ->where(function ($q) {
+                $q->where('has_all_access', 1)
+                  ->orWhereHas('role', fn ($r) => $r->whereIn('name', ['super_admin', 'head_office', 'ed']));
+            })->get();
+
+        if ($headOfficeUsers->isNotEmpty()) {
+            app(NotificationService::class)->send(
+                users: $headOfficeUsers,
+                type: 'member_admission',
+                title: 'সদস্য আবেদন হেড অফিসে পাঠানো হয়েছে',
+                message: "সদস্য আবেদন নং {$memberAdmission->application_no} ({$memberAdmission->applicant_name_bn}) শাখা কর্তৃক হেড অফিসে অনুমোদনের জন্য পাঠানো হয়েছে।",
+                notifiable: $memberAdmission,
+                actionUrl: '/head-office/process-admissions',
+                details: [
+                    'আবেদন নং' => $memberAdmission->application_no,
+                    'আবেদনকারীর নাম' => $memberAdmission->applicant_name_bn ?: $memberAdmission->applicant_name_en,
+                    'শাখা' => $memberAdmission->branch?->name ?? 'N/A',
+                    'প্রেরক' => $user->name,
+                ]
+            );
+        }
 
         return redirect()->route('member-admissions.index')
             ->with('success', 'আবেদনটি Head Office এ পাঠানো হয়েছে।');

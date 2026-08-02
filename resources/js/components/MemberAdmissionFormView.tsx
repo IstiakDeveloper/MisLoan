@@ -380,7 +380,7 @@ export default function MemberAdmissionFormView({ admission, printMode }: Props)
                                     <td className={cellClass}>{m ? (genderLabels[m.gender] || m.gender) : ''}</td>
                                     <td className={cellClass}>{m?.age_years ?? ''}</td>
                                     <td className={cellClass}>{m?.age_months ?? ''}</td>
-                                    <td className={cellClass}>{(m as any)?.marital_status ?? ''}</td>
+                                    <td className={cellClass}>{m?.marital_status ? (maritalLabels[m.marital_status] || m.marital_status) : ''}</td>
                                     <td className={cellClass}>{m?.education_level ?? ''}</td>
                                     <td className={cellClass}>{m?.occupation ?? ''}</td>
                                     <td className={cellClass}>{formatAmount(m?.monthly_income)}</td>
@@ -532,8 +532,8 @@ export default function MemberAdmissionFormView({ admission, printMode }: Props)
                     <FormRow label="সঞ্চয়:" value={formatAmount(admission.monthly_savings)} className="w-full sm:flex-1" />
                 </div>
                 <div className="flex flex-col sm:flex-row flex-wrap items-baseline gap-2 sm:gap-4 print:flex-row print:gap-3 print:mb-1">
-                    <FormRow label="২১. গ্রাহক অন্তর্ভূক্তিকালীন কর্মকর্তার নাম:" value={str(admission.employee_name || admission.interviewer_name)} className="w-full sm:flex-1" />
-                    <FormRow label="পিন নং:" value={str((admission as any).surveyor_pin)} />
+                    <FormRow label="২১. সদস্য অন্তর্ভূক্তিকালীন কর্মকর্তার নাম:" value={str(admission.interviewer_name)} className="w-full sm:flex-1" />
+                    <FormRow label="পিন নং:" value={str(admission.employee_name || (admission as any).surveyor_pin)} />
                 </div>
                 <FormRow label="২২. অন্যান্য সংস্থা হতে ঋণ গ্রহণের তথ্য:" value={str(admission.other_loan_info)} />
                 <div className="mt-1 print:mt-3 print:mb-1">

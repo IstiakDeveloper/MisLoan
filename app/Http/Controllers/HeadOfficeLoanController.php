@@ -8,6 +8,9 @@ use App\Models\LoanApplicationIssue;
 use App\Models\Zone;
 use App\Models\Area;
 use App\Models\Branch;
+use App\Models\Role;
+use App\Models\User;
+use App\Services\NotificationService;
 use Illuminate\Http\Request;
 use Inertia\Inertia;
 use Illuminate\Support\Facades\DB;
@@ -691,6 +694,32 @@ class HeadOfficeLoanController extends Controller
             'reviewed_by' => auth()->id(),
         ]);
 
+        // Notify submitter and Branch Managers
+        $loanApplication->loadMissing(['submittedBy', 'memberAdmission', 'branch']);
+        $branchManagers = User::where('branch_id', $loanApplication->branch_id)
+            ->where('is_active', 1)
+            ->whereHas('role', fn ($q) => $q->where('name', Role::BRANCH_MANAGER))
+            ->get();
+
+        $recipients = collect([$loanApplication->submittedBy])->concat($branchManagers)->filter()->unique('id');
+
+        if ($recipients->isNotEmpty()) {
+            app(NotificationService::class)->send(
+                users: $recipients,
+                type: 'loan_application',
+                title: 'ঋণ আবেদন হেড অফিস কর্তৃক অনুমোদিত',
+                message: "ঋণ আবেদন নং {$loanApplication->application_no} ({$loanApplication->memberAdmission?->applicant_name_bn}) হেড অফিস থেকে অনুমোদিত হয়েছে। বিতরণের জন্য শাখায় পাঠানো হয়েছে।",
+                notifiable: $loanApplication,
+                actionUrl: "/member/loan-applications/{$loanApplication->id}",
+                details: [
+                    'আবেদন নং' => $loanApplication->application_no,
+                    'সদস্যের নাম' => $loanApplication->memberAdmission?->applicant_name_bn ?: ($loanApplication->memberAdmission?->applicant_name_en ?? 'N/A'),
+                    'অনুমোদিত পরিমাণ' => number_format($loanApplication->approved_amount ?? $loanApplication->requested_amount ?? 0) . ' টাকা',
+                    'অনুমোদনকারী' => auth()->user()?->name ?? 'Head Office',
+                ]
+            );
+        }
+
         return back()->with('success', 'ঋণ আবেদন অনুমোদিত হয়েছে। বিতরণের জন্য শাখায় ফেরত পাঠানো হয়েছে।');
     }
 
@@ -753,6 +782,32 @@ class HeadOfficeLoanController extends Controller
                     'reviewed_by' => auth()->id(),
                 ]);
                 $approvedCount++;
+
+                // Notify submitter and Branch Managers
+                $loan->loadMissing(['submittedBy', 'memberAdmission', 'branch']);
+                $branchManagers = User::where('branch_id', $loan->branch_id)
+                    ->where('is_active', 1)
+                    ->whereHas('role', fn ($q) => $q->where('name', Role::BRANCH_MANAGER))
+                    ->get();
+
+                $recipients = collect([$loan->submittedBy])->concat($branchManagers)->filter()->unique('id');
+
+                if ($recipients->isNotEmpty()) {
+                    app(NotificationService::class)->send(
+                        users: $recipients,
+                        type: 'loan_application',
+                        title: 'ঋণ আবেদন হেড অফিস কর্তৃক অনুমোদিত',
+                        message: "ঋণ আবেদন নং {$loan->application_no} ({$loan->memberAdmission?->applicant_name_bn}) হেড অফিস থেকে অনুমোদিত হয়েছে। বিতরণের জন্য শাখায় পাঠানো হয়েছে।",
+                        notifiable: $loan,
+                        actionUrl: "/member/loan-applications/{$loan->id}",
+                        details: [
+                            'আবেদন নং' => $loan->application_no,
+                            'সদস্যের নাম' => $loan->memberAdmission?->applicant_name_bn ?: ($loan->memberAdmission?->applicant_name_en ?? 'N/A'),
+                            'অনুমোদিত পরিমাণ' => number_format($loan->approved_amount ?? $loan->requested_amount ?? 0) . ' টাকা',
+                            'অনুমোদনকারী' => auth()->user()?->name ?? 'Head Office',
+                        ]
+                    );
+                }
             }
 
             DB::commit();
@@ -783,6 +838,31 @@ class HeadOfficeLoanController extends Controller
             'reviewed_at' => now(),
             'reviewed_by' => auth()->id(),
         ]);
+
+        // Notify submitter and Branch Managers
+        $loanApplication->loadMissing(['submittedBy', 'memberAdmission', 'branch']);
+        $branchManagers = User::where('branch_id', $loanApplication->branch_id)
+            ->where('is_active', 1)
+            ->whereHas('role', fn ($q) => $q->where('name', Role::BRANCH_MANAGER))
+            ->get();
+
+        $recipients = collect([$loanApplication->submittedBy])->concat($branchManagers)->filter()->unique('id');
+
+        if ($recipients->isNotEmpty()) {
+            app(NotificationService::class)->send(
+                users: $recipients,
+                type: 'loan_application',
+                title: 'ঋণ আবেদন হেড অফিস কর্তৃক বাতিল করা হয়েছে',
+                message: "ঋণ আবেদন নং {$loanApplication->application_no} ({$loanApplication->memberAdmission?->applicant_name_bn}) হেড অফিস কর্তৃক প্রত্যাখ্যান করা হয়েছে। কারণ: {$validated['rejection_reason']}",
+                notifiable: $loanApplication,
+                actionUrl: "/member/loan-applications/{$loanApplication->id}",
+                details: [
+                    'আবেদন নং' => $loanApplication->application_no,
+                    'সদস্যের নাম' => $loanApplication->memberAdmission?->applicant_name_bn ?: ($loanApplication->memberAdmission?->applicant_name_en ?? 'N/A'),
+                    'বাতিলের কারণ' => $validated['rejection_reason'],
+                ]
+            );
+        }
 
         return back()->with('success', 'ঋণ আবেদন প্রত্যাখ্যান হয়েছে।');
     }

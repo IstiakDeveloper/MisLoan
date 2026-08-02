@@ -146,7 +146,7 @@ export default function AdmissionMembersPrint({ admissions, filters, zones, area
     const filterStatusLabel = filters.status ? statusLabels[filters.status] || filters.status : 'সব';
 
     const officerName = (a: MemberAdmissionPrint) =>
-        str(a.createdBy?.name ?? a.employee_name ?? a.interviewer_name);
+        str(a.createdBy?.name ?? a.interviewer_name ?? a.employee_name);
     const memberName = (a: MemberAdmissionPrint) =>
         str(a.applicant_name_bn || a.applicant_name_en);
     const houseCount = (a: MemberAdmissionPrint) => {
