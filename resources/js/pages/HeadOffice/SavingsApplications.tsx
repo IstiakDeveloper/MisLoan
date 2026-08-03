@@ -1,8 +1,9 @@
 import React, { useState, useEffect } from 'react';
 import { Head, router, Link } from '@inertiajs/react';
 import AdminLayout from '@/layouts/admin-layout';
-import { Search, Filter, ChevronLeft, ChevronRight, FileText, X, Landmark, Eye } from 'lucide-react';
+import { Search, Filter, ChevronLeft, ChevronRight, FileText, X, Landmark, Eye, Calculator } from 'lucide-react';
 import { formatDate } from '@/utils/dateUtils';
+import SavingsCalculatorModal from '@/components/SavingsCalculatorModal';
 
 interface Zone {
     id: number;
@@ -139,6 +140,7 @@ export default function SavingsApplications({
     const [selectedZone, setSelectedZone] = useState((filters.zone_id ?? '').toString());
     const [selectedArea, setSelectedArea] = useState((filters.area_id ?? '').toString());
     const [selectedBranch, setSelectedBranch] = useState((filters.branch_id ?? '').toString());
+    const [showCalculatorModal, setShowCalculatorModal] = useState(false);
 
     const [filteredAreas, setFilteredAreas] = useState<Area[]>(areas);
     const [filteredBranches, setFilteredBranches] = useState<Branch[]>(branches);
@@ -228,14 +230,24 @@ export default function SavingsApplications({
             <Head title="Savings Applications - Head Office" />
 
             <div className="space-y-6">
-                <div>
-                    <h1 className="text-2xl font-bold text-gray-900 flex items-center gap-2">
-                        <Landmark className="w-7 h-7 text-indigo-600" />
-                        Savings Applications (সঞ্চয় আবেদন - হেড অফিস)
-                    </h1>
-                    <p className="text-sm text-gray-600 mt-1">
-                        All branch savings applications — filter by date and branch
-                    </p>
+                <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+                    <div>
+                        <h1 className="text-2xl font-bold text-gray-900 flex items-center gap-2">
+                            <Landmark className="w-7 h-7 text-indigo-600" />
+                            Savings Applications (সঞ্চয় আবেদন - হেড অফিস)
+                        </h1>
+                        <p className="text-sm text-gray-600 mt-1">
+                            All branch savings applications — filter by date and branch
+                        </p>
+                    </div>
+
+                    <button
+                        onClick={() => setShowCalculatorModal(true)}
+                        className="inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-700 hover:to-purple-700 text-white text-xs sm:text-sm font-bold shadow-md shadow-indigo-600/20 transition-all active:scale-95 shrink-0 self-start md:self-center"
+                    >
+                        <Calculator className="w-4 h-4 text-emerald-300" />
+                        <span>Savings Calculator</span>
+                    </button>
                 </div>
 
                 {/* Stats */}
@@ -487,6 +499,12 @@ export default function SavingsApplications({
                     )}
                 </div>
             </div>
+
+            {/* Savings Calculator Modal */}
+            <SavingsCalculatorModal
+                open={showCalculatorModal}
+                onOpenChange={setShowCalculatorModal}
+            />
         </AdminLayout>
     );
 }

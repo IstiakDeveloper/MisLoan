@@ -797,6 +797,28 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
                 {/* Main Content Layout Container */}
                 <main className="flex-1 p-4 md:p-6 lg:p-8 pb-20 md:pb-6 lg:pb-8 print:p-0 print:block relative">
                     <div className="max-w-[1600px] mx-auto w-full print:max-w-none print:mx-0 print:block">
+                        {/* FLASH MESSAGE ALERT BANNER */}
+                        {flashMessage && (
+                            <div
+                                className={`print:hidden mb-4 p-4 rounded-2xl border flex items-center justify-between gap-3 shadow-lg transition-all animate-in fade-in slide-in-from-top-2 duration-200 ${getFlashColor(
+                                    flashMessage.type
+                                )}`}
+                            >
+                                <div className="flex items-center gap-3">
+                                    <div className="shrink-0">{getFlashIcon(flashMessage.type)}</div>
+                                    <span className="text-xs sm:text-sm font-bold leading-relaxed">{flashMessage.message}</span>
+                                </div>
+                                <button
+                                    type="button"
+                                    onClick={() => setFlashMessage(null)}
+                                    className="p-1.5 rounded-xl hover:bg-black/5 text-current transition-colors shrink-0"
+                                    title="Close message"
+                                >
+                                    <X className="w-4 h-4" />
+                                </button>
+                            </div>
+                        )}
+
                         {hasMailIssue && !isOnProfilePage && (
                             <div className="print:hidden mb-4 rounded-2xl border border-amber-300 bg-amber-50 px-4 py-3.5 shadow-sm">
                                 <div className="flex flex-col sm:flex-row sm:items-center gap-3">

@@ -116,6 +116,9 @@ Route::middleware(['auth', 'verified'])->group(function () {
     // Samity Management Routes - Only for SuperAdmin/Head Office
     Route::prefix('samities')->name('samities.')->middleware('head.office')->group(function () {
         Route::get('/', [SamityController::class, 'index'])->name('index');
+        Route::get('export', [SamityController::class, 'exportExcel'])->name('export');
+        Route::get('template', [SamityController::class, 'downloadTemplate'])->name('template');
+        Route::post('import', [SamityController::class, 'importExcel'])->name('import');
         Route::get('create', [SamityController::class, 'create'])->name('create');
         Route::post('/', [SamityController::class, 'store'])->name('store');
         Route::get('{samity}/edit', [SamityController::class, 'edit'])->name('edit');

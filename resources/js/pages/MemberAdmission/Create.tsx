@@ -54,10 +54,44 @@ function toNumVal(val: number | string | undefined | null): string | number {
     return val;
 }
 
-function toNumChange(val: string): number | string {
-    if (val === '') return '';
-    const num = Number(val);
-    return isNaN(num) ? '' : num;
+const FIELD_NAMES_BN: Record<string, string> = {
+    application_no: 'সদস্য নং / আবেদন নম্বর',
+    branch_id: 'শাখা (Branch)',
+    samity_id: 'সমিতি (Samity)',
+    member_category_id: 'সদস্য শ্রেণি',
+    survey_date: 'জরিপের তারিখ',
+    admission_date: 'ভর্তির তারিখ',
+    applicant_name_bn: 'আবেদনকারীর নাম (বাংলা)',
+    applicant_name_en: 'আবেদনকারীর নাম (ইংরেজি)',
+    father_name_bn: 'পিতার নাম (বাংলা)',
+    father_name_en: 'পিতার নাম (ইংরেজি)',
+    mother_name_bn: 'মাতার নাম (বাংলা)',
+    mother_name_en: 'মাতার নাম (ইংরেজি)',
+    spouse_name_bn: 'স্বামীর/স্ত্রীর নাম (বাংলা)',
+    spouse_name_en: 'স্বামীর/স্ত্রীর নাম (ইংরেজি)',
+    marital_status: 'বৈবাহিক অবস্থা',
+    mobile_number: 'মোবাইল নম্বর',
+    alternative_mobile: 'বিকল্প মোবাইল নম্বর',
+    present_division: 'বর্তমান বিভাগ',
+    present_district: 'বর্তমান জেলা',
+    present_upazila: 'বর্তমান উপজেলা',
+    nid_number: 'জাতীয় পরিচয়পত্র (NID)',
+    smart_card_number: 'স্মার্ট কার্ড নম্বর',
+    date_of_birth: 'জন্ম তারিখ',
+    gender: 'লিঙ্গ',
+    customer_photo: 'সদস্যের ছবি',
+    customer_nid_photo: 'সদস্যের NID ছবি',
+    guardian_photo: 'অভিভাবকের ছবি',
+    guardian_nid_photo: 'অভিভাবকের NID ছবি',
+    applicant_signature: 'আবেদনকারীর স্বাক্ষর',
+    loan_dofa: 'ঋণের দফা',
+};
+
+function getFieldNameBn(key: string): string {
+    if (FIELD_NAMES_BN[key]) return FIELD_NAMES_BN[key];
+    const baseKey = key.split('.')[0];
+    if (FIELD_NAMES_BN[baseKey]) return FIELD_NAMES_BN[baseKey];
+    return key;
 }
 
 export default function Create({
@@ -366,6 +400,24 @@ export default function Create({
             for (const key of Object.keys(next)) {
                 if (next[key] === '') next[key] = null;
             }
+            if (Array.isArray(next.family_members)) {
+                next.family_members = next.family_members.map((item: any) => {
+                    const cleaned: any = { ...item };
+                    Object.keys(cleaned).forEach((k) => {
+                        if (cleaned[k] === '') cleaned[k] = null;
+                    });
+                    return cleaned;
+                });
+            }
+            if (Array.isArray(next.other_assets)) {
+                next.other_assets = next.other_assets.map((item: any) => {
+                    const cleaned: any = { ...item };
+                    Object.keys(cleaned).forEach((k) => {
+                        if (cleaned[k] === '') cleaned[k] = null;
+                    });
+                    return cleaned;
+                });
+            }
             return next as typeof form;
         });
 
@@ -567,17 +619,31 @@ export default function Create({
                 </div>
 
                 {Object.keys(errors).length > 0 && (
-                    <div className="rounded-2xl border-2 border-red-500 bg-red-50 p-4 sm:p-5 shadow-xl">
-                        <h3 className="text-base font-bold text-red-900">
-                            খসড়া সংরক্ষণ করা যায়নি — নিচের সমস্যাগুলো ঠিক করুন:
-                        </h3>
-                        <ul className="mt-2 grid grid-cols-1 sm:grid-cols-2 gap-2">
-                            {Object.entries(errors).map(([key, msg]) => (
-                                <li key={key} className="text-xs font-semibold text-red-800 bg-white/90 p-2.5 rounded-xl border border-red-200">
-                                    {String(msg)}
-                                </li>
-                            ))}
-                        </ul>
+                    <div className="rounded-2xl border-2 border-red-500 bg-red-50 p-4 sm:p-5 shadow-xl transition-all">
+                        <div className="flex items-start gap-3.5">
+                            <div className="rounded-xl bg-red-600 p-2 text-white shrink-0 shadow-md">
+                                <X className="w-6 h-6 animate-bounce" />
+                            </div>
+                            <div className="flex-1 min-w-0">
+                                <h3 className="text-base sm:text-lg font-extrabold text-red-900 leading-tight">
+                                    খসড়া সংরক্ষণ করা যায়নি — নিচের {Object.keys(errors).length}টি ইনপুট ফিল্ডের সমস্যা ঠিক করুন:
+                                </h3>
+                                <p className="text-xs text-red-700 mt-1 mb-3 font-medium">
+                                    যেসব ফিল্ডে লাল বর্ডার এসেছে সেগুলো সংশোধন করুন।
+                                </p>
+                                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                                    {Object.entries(errors).map(([key, msg]) => (
+                                        <div key={key} className="flex items-start gap-2 text-xs font-semibold text-red-900 bg-white p-2.5 rounded-xl border border-red-200 shadow-xs">
+                                            <span className="w-2 h-2 rounded-full bg-red-600 shrink-0 mt-1" />
+                                            <div className="min-w-0 flex-1">
+                                                <span className="font-bold text-red-950 block">{getFieldNameBn(key)}:</span>
+                                                <span className="text-red-700 font-medium leading-relaxed">{String(msg)}</span>
+                                            </div>
+                                        </div>
+                                    ))}
+                                </div>
+                            </div>
+                        </div>
                     </div>
                 )}
 

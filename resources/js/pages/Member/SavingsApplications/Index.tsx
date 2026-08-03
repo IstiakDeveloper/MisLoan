@@ -21,7 +21,9 @@ import {
     ChevronLeft,
     ChevronRight,
     Sparkles,
+    Calculator,
 } from 'lucide-react';
+import SavingsCalculatorModal from '@/components/SavingsCalculatorModal';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 
@@ -102,6 +104,7 @@ export default function Index({ products, applications, flash }: Props) {
     const [searchQuery, setSearchQuery] = useState('');
     const [showSuccessMessage, setShowSuccessMessage] = useState(!!flash?.success);
     const [showProductModal, setShowProductModal] = useState(false);
+    const [showCalculatorModal, setShowCalculatorModal] = useState(false);
 
     const applicationProducts = useMemo(
         () => products.filter((p) => p.product_code !== G_SAVINGS_PRODUCT_CODE),
@@ -205,15 +208,25 @@ export default function Index({ products, applications, flash }: Props) {
                             </p>
                         </div>
 
-                        {applicationProducts.length > 0 && (
+                        <div className="flex flex-wrap items-center gap-3 shrink-0">
                             <button
-                                onClick={() => setShowProductModal(true)}
-                                className="inline-flex items-center justify-center gap-2 px-5 py-3 rounded-2xl bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-700 hover:to-indigo-700 text-white text-xs sm:text-sm font-bold shadow-lg shadow-purple-600/30 transition-all active:scale-95 shrink-0"
+                                onClick={() => setShowCalculatorModal(true)}
+                                className="inline-flex items-center justify-center gap-2 px-5 py-3 rounded-2xl bg-white/10 hover:bg-white/20 text-white text-xs sm:text-sm font-bold border border-white/20 backdrop-blur-md transition-all active:scale-95 shrink-0"
                             >
-                                <Plus className="w-4 h-4" />
-                                <span>নতুন সঞ্চয় আবেদন</span>
+                                <Calculator className="w-4 h-4 text-emerald-400" />
+                                <span>Savings Calculator</span>
                             </button>
-                        )}
+
+                            {applicationProducts.length > 0 && (
+                                <button
+                                    onClick={() => setShowProductModal(true)}
+                                    className="inline-flex items-center justify-center gap-2 px-5 py-3 rounded-2xl bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-700 hover:to-indigo-700 text-white text-xs sm:text-sm font-bold shadow-lg shadow-purple-600/30 transition-all active:scale-95 shrink-0"
+                                >
+                                    <Plus className="w-4 h-4" />
+                                    <span>নতুন সঞ্চয় আবেদন</span>
+                                </button>
+                            )}
+                        </div>
                     </div>
                 </div>
 
@@ -477,6 +490,12 @@ export default function Index({ products, applications, flash }: Props) {
                         </div>
                     </div>
                 )}
+
+                {/* Savings Calculator Modal */}
+                <SavingsCalculatorModal
+                    open={showCalculatorModal}
+                    onOpenChange={setShowCalculatorModal}
+                />
             </div>
         </AdminLayout>
     );

@@ -66,6 +66,25 @@ class MemberAdmissionController extends Controller
             }
         }
 
+        // Clean nested family_members and other_assets arrays so empty strings become null
+        foreach (['family_members', 'other_assets'] as $arrayKey) {
+            $items = $request->input($arrayKey);
+            if (is_array($items)) {
+                $cleaned = [];
+                foreach ($items as $item) {
+                    if (is_array($item)) {
+                        foreach ($item as $k => $v) {
+                            if ($v === '') {
+                                $item[$k] = null;
+                            }
+                        }
+                        $cleaned[] = $item;
+                    }
+                }
+                $merged[$arrayKey] = $cleaned;
+            }
+        }
+
         if ($merged !== []) {
             $request->merge($merged);
         }
@@ -94,7 +113,10 @@ class MemberAdmissionController extends Controller
         // Filter by branch access (for branch users, regional managers, area/zone managers)
         if (!$user->has_all_access) {
             $accessibleBranchIds = $user->getAccessibleBranches()->pluck('id');
-            $query->whereIn('branch_id', $accessibleBranchIds);
+            $query->where(function ($q) use ($accessibleBranchIds, $user) {
+                $q->whereIn('branch_id', $accessibleBranchIds)
+                  ->orWhere('created_by', $user->id);
+            });
         }
 
         // Field officers only see admissions they created
@@ -112,7 +134,10 @@ class MemberAdmissionController extends Controller
         $statsQuery = MemberAdmission::query();
         if (!$user->has_all_access) {
             $accessibleBranchIds = $user->getAccessibleBranches()->pluck('id');
-            $statsQuery->whereIn('branch_id', $accessibleBranchIds);
+            $statsQuery->where(function ($q) use ($accessibleBranchIds, $user) {
+                $q->whereIn('branch_id', $accessibleBranchIds)
+                  ->orWhere('created_by', $user->id);
+            });
         }
 
         if ($isFieldOfficer) {
@@ -446,6 +471,9 @@ class MemberAdmissionController extends Controller
                   $admissionData['applicant_signature']);
 
             $admissionData['created_by'] = auth()->id();
+            if (empty($admissionData['branch_id']) && auth()->user()?->branch_id) {
+                $admissionData['branch_id'] = auth()->user()->branch_id;
+            }
             $admissionData['is_legacy'] = $isLegacy;
             $admissionData['loan_dofa'] = $isLegacy ? ($validated['loan_dofa'] ?? null) : null;
             $admissionData['permanent_address_same'] = (bool) ($admissionData['permanent_address_same'] ?? false);

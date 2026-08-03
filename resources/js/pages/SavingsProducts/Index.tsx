@@ -21,9 +21,11 @@ import {
     ToggleRight,
     Trash2,
     Wallet,
+    Calculator,
 } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import ProductModal from './Components/ProductModal';
+import SavingsCalculatorModal from '@/components/SavingsCalculatorModal';
 
 interface SavingsProduct {
     id: number;
@@ -74,6 +76,7 @@ export default function Index({ products, filters }: Props) {
     const [filterType, setFilterType] = useState(filters.deposit_type || '');
     const [openDropdown, setOpenDropdown] = useState<number | null>(null);
     const [modalOpen, setModalOpen] = useState(false);
+    const [calculatorModalOpen, setCalculatorModalOpen] = useState(false);
     const [selectedProduct, setSelectedProduct] =
         useState<SavingsProduct | null>(null);
     const [currentPage, setCurrentPage] = useState(1);
@@ -140,15 +143,24 @@ export default function Index({ products, filters }: Props) {
                     description="সঞ্চয় পণ্যের মেয়াদ, জমার ধরন, সীমা এবং সুদের হার পরিচালনা করুন।"
                     icon={Wallet}
                     actions={
-                        canMutate ? (
-                        <button
-                            onClick={handleAddNew}
-                            className="flex min-h-10 w-full items-center justify-center gap-2 rounded-lg bg-white px-4 py-2 text-sm font-semibold text-blue-700 shadow-sm hover:bg-blue-50 focus:ring-4 focus:ring-white/30 focus:outline-none sm:w-auto"
-                        >
-                            <Plus className="size-4" />
-                            Add New (নতুন যোগ করুন)
-                        </button>
-                        ) : undefined
+                        <div className="flex flex-wrap items-center gap-2">
+                            <button
+                                onClick={() => setCalculatorModalOpen(true)}
+                                className="flex min-h-10 w-full items-center justify-center gap-2 rounded-lg bg-white/20 px-4 py-2 text-sm font-semibold text-white backdrop-blur-md shadow-sm hover:bg-white/30 focus:ring-4 focus:ring-white/30 focus:outline-none sm:w-auto"
+                            >
+                                <Calculator className="size-4 text-emerald-300" />
+                                Savings Calculator
+                            </button>
+                            {canMutate && (
+                                <button
+                                    onClick={handleAddNew}
+                                    className="flex min-h-10 w-full items-center justify-center gap-2 rounded-lg bg-white px-4 py-2 text-sm font-semibold text-blue-700 shadow-sm hover:bg-blue-50 focus:ring-4 focus:ring-white/30 focus:outline-none sm:w-auto"
+                                >
+                                    <Plus className="size-4" />
+                                    Add New (নতুন যোগ করুন)
+                                </button>
+                            )}
+                        </div>
                     }
                 />
 
@@ -427,6 +439,11 @@ export default function Index({ products, filters }: Props) {
                 isOpen={modalOpen}
                 onClose={() => setModalOpen(false)}
                 product={selectedProduct}
+            />
+
+            <SavingsCalculatorModal
+                open={calculatorModalOpen}
+                onOpenChange={setCalculatorModalOpen}
             />
         </AdminLayout>
     );
