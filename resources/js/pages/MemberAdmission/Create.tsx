@@ -54,6 +54,12 @@ function toNumVal(val: number | string | undefined | null): string | number {
     return val;
 }
 
+function toNumChange(val: string): number | string {
+    if (val === '') return '';
+    const num = Number(val);
+    return isNaN(num) ? '' : num;
+}
+
 const FIELD_NAMES_BN: Record<string, string> = {
     application_no: 'সদস্য নং / আবেদন নম্বর',
     branch_id: 'শাখা (Branch)',
