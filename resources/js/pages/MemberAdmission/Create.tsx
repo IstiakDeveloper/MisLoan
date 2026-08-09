@@ -6,7 +6,7 @@ import {
     OtherAsset,
 } from '@/types/memberAdmission';
 import { Head, router, useForm, usePage } from '@inertiajs/react';
-import { ChevronRight, History, Save, Send, Sparkles, UserPlus, X } from 'lucide-react';
+import { AlertCircle, ChevronRight, History, Save, Send, Sparkles, UserPlus, X } from 'lucide-react';
 import React, { useEffect, useState } from 'react';
 
 import AddressSection from './sections/AddressSection';
@@ -91,6 +91,7 @@ const FIELD_NAMES_BN: Record<string, string> = {
     guardian_nid_photo: 'অভিভাবকের NID ছবি',
     applicant_signature: 'আবেদনকারীর স্বাক্ষর',
     loan_dofa: 'ঋণের দফা',
+    draft_save: 'খসড়া সংরক্ষণ',
 };
 
 function getFieldNameBn(key: string): string {
@@ -118,8 +119,13 @@ export default function Create({
                 branch?: { id: number };
             };
         };
+        flash?: {
+            success?: string | null;
+            error?: string | null;
+        };
     }>();
     const pageAuth = page.props.auth;
+    const flashError = page.props.flash?.error || null;
     const currentUser = pageAuth.user;
     const isFieldOfficer = pageAuth.user?.role?.name === 'field_officer';
     const [availableSamities, setAvailableSamities] = useState(samities);
@@ -430,8 +436,13 @@ export default function Create({
         post(`/member-admissions?draft=${asDraft ? '1' : '0'}`, {
             preserveScroll: true,
             forceFormData: true,
-            onSuccess: () => {
-                router.visit('/member-admissions');
+            // Do NOT router.visit on success — server redirects to list only when save succeeds.
+            // back()+flash error is still HTTP 200; visiting list here would close the form and lose the draft.
+            onSuccess: (page) => {
+                const flash = (page.props as { flash?: { error?: string | null } })?.flash;
+                if (flash?.error) {
+                    window.scrollTo({ top: 0, behavior: 'smooth' });
+                }
             },
             onError: () => {
                 window.scrollTo({ top: 0, behavior: 'smooth' });
@@ -472,6 +483,12 @@ export default function Create({
     ) => {
         const newMembers = [...data.family_members!];
         newMembers[index] = { ...newMembers[index], [field]: value };
+        setData('family_members', newMembers);
+    };
+
+    const patchFamilyMember = (index: number, patch: Partial<FamilyMember>) => {
+        const newMembers = [...data.family_members!];
+        newMembers[index] = { ...newMembers[index], ...patch };
         setData('family_members', newMembers);
     };
 
@@ -624,6 +641,24 @@ export default function Create({
                     </div>
                 </div>
 
+                {flashError && (
+                    <div className="rounded-2xl border-2 border-amber-500 bg-amber-50 p-4 sm:p-5 shadow-xl">
+                        <div className="flex items-start gap-3.5">
+                            <div className="rounded-xl bg-amber-600 p-2 text-white shrink-0 shadow-md">
+                                <AlertCircle className="w-6 h-6" />
+                            </div>
+                            <div className="flex-1 min-w-0">
+                                <h3 className="text-base sm:text-lg font-extrabold text-amber-950 leading-tight">
+                                    সংরক্ষণ ব্যর্থ — আপনার তথ্য মুছে যায়নি
+                                </h3>
+                                <p className="text-sm text-amber-900 mt-1.5 font-medium leading-relaxed">
+                                    {flashError}
+                                </p>
+                            </div>
+                        </div>
+                    </div>
+                )}
+
                 {Object.keys(errors).length > 0 && (
                     <div className="rounded-2xl border-2 border-red-500 bg-red-50 p-4 sm:p-5 shadow-xl transition-all">
                         <div className="flex items-start gap-3.5">
@@ -712,8 +747,16 @@ export default function Create({
                         addFamilyMember={addFamilyMember}
                         removeFamilyMember={removeFamilyMember}
                         updateFamilyMember={updateFamilyMember}
+                        patchFamilyMember={patchFamilyMember}
                         toNumVal={toNumVal}
                         toNumChange={toNumChange}
+                        applicantDefaults={{
+                            name: data.applicant_name_bn || data.applicant_name_en || '',
+                            gender: data.gender || 'male',
+                            marital_status: data.marital_status || '',
+                            occupation: data.business_details || data.job_details || '',
+                            monthly_income: data.monthly_income,
+                        }}
                     />
 
                     <OtherAssetsSection

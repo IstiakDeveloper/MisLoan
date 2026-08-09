@@ -188,9 +188,17 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
 
     useEffect(() => {
         if (canInstall) {
-            setShowInstallDialog(true);
+            const isDismissed = sessionStorage.getItem('pwa_install_dismissed');
+            if (!isDismissed) {
+                setShowInstallDialog(true);
+            }
         }
     }, [canInstall]);
+
+    const handleDismissInstall = () => {
+        setShowInstallDialog(false);
+        sessionStorage.setItem('pwa_install_dismissed', 'true');
+    };
 
     const branchMenuItemsFull = [
         { name: 'Dashboard', href: '/dashboard', icon: LayoutDashboard },
@@ -864,75 +872,58 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
                 />
             )}
 
-            {/* PWA Install Modal Dialog */}
+            {/* PWA Install Corner Widget */}
             {canInstall && showInstallDialog && (
-                <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/40 backdrop-blur-xs animate-in fade-in duration-200">
-                    <div className="bg-white rounded-2xl shadow-2xl border border-slate-100 max-w-sm w-full relative overflow-hidden animate-in zoom-in-95 duration-200">
-                        <div className="bg-gradient-to-r from-blue-600 to-indigo-600 text-white p-5 relative overflow-hidden">
-                            <div className="absolute -right-4 -top-4 w-16 h-16 bg-white/10 rounded-full blur-md" />
-                            <div className="flex items-start justify-between gap-4 relative z-10">
-                                <div className="flex items-center gap-3">
-                                    <div className="w-10 h-10 rounded-xl bg-white/15 flex items-center justify-center text-white shadow-inner">
-                                        <Building2 className="w-5 h-5 stroke-[1.75]" />
-                                    </div>
-                                    <div>
-                                        <h3 className="text-sm font-bold tracking-wide">MIS Loan Web App</h3>
-                                        <p className="text-[10px] text-blue-100 font-medium mt-0.5">Install on your device</p>
-                                    </div>
+                <div className="fixed bottom-4 right-4 z-50 max-w-sm w-[calc(100%-2rem)] sm:w-80 bg-white/95 backdrop-blur-md rounded-2xl shadow-2xl border border-slate-200/80 overflow-hidden animate-in slide-in-from-bottom-5 fade-in duration-300">
+                    <div className="bg-gradient-to-r from-blue-600 to-indigo-600 text-white p-3.5 relative overflow-hidden">
+                        <div className="absolute -right-4 -top-4 w-14 h-14 bg-white/10 rounded-full blur-md" />
+                        <div className="flex items-center justify-between gap-3 relative z-10">
+                            <div className="flex items-center gap-2.5">
+                                <div className="w-8 h-8 rounded-xl bg-white/15 flex items-center justify-center text-white shadow-inner flex-shrink-0">
+                                    <Building2 className="w-4 h-4 stroke-[2]" />
                                 </div>
-                                <button
-                                    type="button"
-                                    onClick={() => setShowInstallDialog(false)}
-                                    className="p-1 rounded-lg hover:bg-white/10 text-blue-100 hover:text-white transition-colors"
-                                    aria-label="Close"
-                                >
-                                    <X className="w-4.5 h-4.5" />
-                                </button>
+                                <div className="leading-tight">
+                                    <h3 className="text-xs font-bold tracking-wide">MIS Loan Web App</h3>
+                                    <p className="text-[10px] text-blue-100 font-medium">Install on your device</p>
+                                </div>
                             </div>
+                            <button
+                                type="button"
+                                onClick={handleDismissInstall}
+                                className="p-1 rounded-lg hover:bg-white/15 text-blue-100 hover:text-white transition-colors"
+                                aria-label="Close"
+                            >
+                                <X className="w-4 h-4" />
+                            </button>
                         </div>
+                    </div>
 
-                        <div className="p-6">
-                            <p className="text-xs text-slate-500 leading-relaxed mb-5">
-                                Install MIS Loan to your home screen or desktop for a fast, full‑screen app‑like experience with cleaner UI and swift operations.
-                            </p>
-                            
-                            <div className="space-y-3 mb-6">
-                                <div className="flex items-center gap-2.5 text-xs text-slate-650 font-semibold">
-                                    <CheckCircle className="w-4 h-4 text-emerald-500 stroke-[1.75] flex-shrink-0" />
-                                    <span>Quick launcher icon on home screen</span>
-                                </div>
-                                <div className="flex items-center gap-2.5 text-xs text-slate-650 font-semibold">
-                                    <CheckCircle className="w-4 h-4 text-emerald-500 stroke-[1.75] flex-shrink-0" />
-                                    <span>No browser URL bar or controls</span>
-                                </div>
-                                <div className="flex items-center gap-2.5 text-xs text-slate-650 font-semibold">
-                                    <CheckCircle className="w-4 h-4 text-emerald-500 stroke-[1.75] flex-shrink-0" />
-                                    <span>Optimized local device performance</span>
-                                </div>
-                            </div>
-                            
-                            <div className="flex items-center justify-end gap-2.5">
-                                <button
-                                    type="button"
-                                    onClick={() => setShowInstallDialog(false)}
-                                    className="px-4 py-2 rounded-xl text-xs font-bold text-slate-500 hover:bg-slate-50 transition-colors"
-                                >
-                                    Later
-                                </button>
-                                <button
-                                    type="button"
-                                    onClick={async () => {
-                                        console.log('[PWA] Install now clicked, canInstall:', canInstall, 'platform:', platform);
-                                        await promptInstall();
-                                        setShowInstallDialog(false);
-                                    }}
-                                    disabled={isInstalled || isStandalone}
-                                    className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-gradient-to-r from-blue-600 to-indigo-600 text-white text-xs font-bold hover:opacity-95 disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-200 shadow-md shadow-blue-500/10"
-                                >
-                                    <Download className="w-3.5 h-3.5 stroke-[1.75]" />
-                                    Install Now
-                                </button>
-                            </div>
+                    <div className="p-3.5 bg-slate-50/50">
+                        <p className="text-[11px] text-slate-600 leading-relaxed mb-3">
+                            Install MIS Loan to your home screen or desktop for a fast, app-like experience.
+                        </p>
+
+                        <div className="flex items-center justify-end gap-2">
+                            <button
+                                type="button"
+                                onClick={handleDismissInstall}
+                                className="px-3 py-1.5 rounded-xl text-xs font-semibold text-slate-500 hover:bg-slate-200/60 transition-colors"
+                            >
+                                Later
+                            </button>
+                            <button
+                                type="button"
+                                onClick={async () => {
+                                    console.log('[PWA] Install now clicked, canInstall:', canInstall, 'platform:', platform);
+                                    await promptInstall();
+                                    handleDismissInstall();
+                                }}
+                                disabled={isInstalled || isStandalone}
+                                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-gradient-to-r from-blue-600 to-indigo-600 text-white text-xs font-bold hover:opacity-95 disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-200 shadow-md shadow-blue-500/10"
+                            >
+                                <Download className="w-3.5 h-3.5 stroke-[2]" />
+                                Install Now
+                            </button>
                         </div>
                     </div>
                 </div>

@@ -19,10 +19,29 @@ class ImageCompressionService
     public function compressAndStore(UploadedFile $file, string $directory, int $maxWidth = 1200, int $quality = 75)
     {
         try {
-            $extension = strtolower($file->getClientOriginalExtension());
+            $extension = strtolower($file->getClientOriginalExtension() ?: '');
+            $mime = (string) $file->getMimeType();
+
+            // Prefer real mime when extension is missing/wrong (common on phones)
+            if (str_contains($mime, 'jpeg')) {
+                $extension = 'jpg';
+            } elseif (str_contains($mime, 'png')) {
+                $extension = 'png';
+            } elseif (str_contains($mime, 'gif')) {
+                $extension = 'gif';
+            }
+
+            if (!in_array($extension, ['jpg', 'jpeg', 'png', 'gif'], true)) {
+                \Log::warning('Image compression skipped: unsupported type', [
+                    'extension' => $extension,
+                    'mime' => $mime,
+                    'name' => $file->getClientOriginalName(),
+                ]);
+                return false;
+            }
 
             // Generate unique filename
-            $filename = time() . '_' . uniqid() . '.' . $extension;
+            $filename = time() . '_' . uniqid() . '.' . ($extension === 'jpeg' ? 'jpg' : $extension);
             $path = $directory . '/' . $filename;
             $fullPath = storage_path('app/public/' . $path);
 
@@ -37,19 +56,24 @@ class ImageCompressionService
             switch ($extension) {
                 case 'jpg':
                 case 'jpeg':
-                    $source = imagecreatefromjpeg($file->getPathname());
+                    $source = @imagecreatefromjpeg($file->getPathname());
                     break;
                 case 'png':
-                    $source = imagecreatefrompng($file->getPathname());
+                    $source = @imagecreatefrompng($file->getPathname());
                     break;
                 case 'gif':
-                    $source = imagecreatefromgif($file->getPathname());
+                    $source = @imagecreatefromgif($file->getPathname());
                     break;
                 default:
                     return false;
             }
 
             if (!$source) {
+                \Log::error('Image compression failed: could not load image', [
+                    'extension' => $extension,
+                    'mime' => $mime,
+                    'name' => $file->getClientOriginalName(),
+                ]);
                 return false;
             }
 

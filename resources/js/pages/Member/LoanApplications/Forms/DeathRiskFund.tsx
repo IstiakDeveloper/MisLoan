@@ -393,21 +393,24 @@ export default function DeathRiskFund({
     };
 
     const handleSaveDraft = () => {
-        if (!validateForm()) {
-            alert('অনুগ্রহ করে সকল আবশ্যক ক্ষেত্র পূরণ করুন');
-            return;
-        }
-        
-        const payload: any = { loan_product_id: loanProduct.id, loan_category_id: loanCategory.id, requested_amount: requestedAmount, form_data: data };
-        if (isLegacy) payload.legacy = 1; else payload.member_id = member?.id;
+        // Soft draft: incomplete forms can still be saved. Strict checks only for auto-disburse.
         let autoDisburse = false;
         if (typeof window !== 'undefined') {
             const currentParams = new URLSearchParams(window.location.search);
             if (currentParams.get('action') === 'disburse' && currentParams.get('step') === '3' && existingApplication?.id) {
-                payload.auto_disburse = 1;
-                payload.application_id = existingApplication.id;
                 autoDisburse = true;
             }
+        }
+        if (autoDisburse && !validateForm()) {
+            alert('বিতরণের আগে অনুগ্রহ করে সকল আবশ্যক ক্ষেত্র পূরণ করুন');
+            return;
+        }
+        
+        const payload: any = { loan_product_id: loanProduct.id, loan_category_id: loanCategory.id, requested_amount: requestedAmount, form_data: data, draft: 1 };
+        if (isLegacy) payload.legacy = 1; else payload.member_id = member?.id;
+        if (autoDisburse && existingApplication?.id) {
+            payload.auto_disburse = 1;
+            payload.application_id = existingApplication.id;
         }
         router.post(
             '/member/loan-applications/forms/death-risk-fund/save-draft',
@@ -426,7 +429,7 @@ export default function DeathRiskFund({
                 },
                 onError: (errors) => {
                     console.error('Save draft error:', errors);
-                    alert('ড্রাফট সংরক্ষণে ত্রুটি হয়েছে');
+                    alert('খসড়া সার্ভারে সেভ হয়নি — আপনার ফর্মের তথ্য হারায়নি। আবার চেষ্টা করুন।');
                 },
             }
         );

@@ -197,7 +197,7 @@ export default function GuarantorCommitment({
                 },
                 onError: (errors) => {
                     console.error('Save draft error:', errors);
-                    alert('ড্রাফট সংরক্ষণে ত্রুটি হয়েছে');
+                    alert('খসড়া সার্ভারে সেভ হয়নি — আপনার ফর্মের তথ্য হারায়নি। আবার চেষ্টা করুন।');
                 },
             }
         );

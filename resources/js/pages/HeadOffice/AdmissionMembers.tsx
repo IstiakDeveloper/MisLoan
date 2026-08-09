@@ -346,7 +346,7 @@ export default function AdmissionMembers({ admissions, filters, stats, zones, ar
         <AdminLayout>
             <Head title="Admission Members" />
 
-            <div className="max-w-[1400px] mx-auto space-y-5 py-4 px-3 sm:px-6 pb-16">
+            <div className="w-full space-y-5 py-4 px-3 sm:px-6 pb-16">
                 {/* Header */}
                 <div className="relative overflow-hidden flex flex-col sm:flex-row sm:items-center justify-between gap-4 rounded-2xl border border-blue-200 bg-gradient-to-r from-blue-700 via-blue-600 to-sky-600 px-5 py-5 shadow-md shadow-blue-900/10">
                     <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_top_right,_rgba(255,255,255,0.15),_transparent_50%)] pointer-events-none" />
@@ -435,7 +435,7 @@ export default function AdmissionMembers({ admissions, filters, stats, zones, ar
                                         type="text"
                                         value={searchQuery}
                                         onChange={(e) => setSearchQuery(e.target.value)}
-                                        placeholder="আবেদন নং, নাম, মোবাইল, এনআইডি..."
+                                        placeholder="সদস্য নাম্বার, নাম, মোবাইল, এনআইডি..."
                                         className="w-full pl-9 pr-3 py-2 text-sm border border-blue-200 rounded-lg bg-blue-50/30 focus:ring-2 focus:ring-blue-500/20 focus:border-blue-400"
                                     />
                                 </div>
@@ -533,7 +533,7 @@ export default function AdmissionMembers({ admissions, filters, stats, zones, ar
                             >
                                 <option value="">প্রিন্ট: সব</option>
                                 <option value="yes">প্রিন্ট সম্পন্ন</option>
-                                <option value="no">অপ্রিন্টেড</option>
+                                <option value="no">প্রিন্ট হয়নি</option>
                             </select>
                             <button
                                 type="submit"
@@ -629,7 +629,8 @@ export default function AdmissionMembers({ admissions, filters, stats, zones, ar
                         <table className="w-full text-left border-collapse">
                             <thead>
                                 <tr className="bg-gradient-to-r from-blue-700 to-blue-600 text-[11px] font-semibold text-white uppercase tracking-wide">
-                                    <th className="py-3.5 px-3 border-b border-blue-500">আবেদন নং</th>
+                                    <th className="py-3.5 px-3 border-b border-blue-500 text-center">ক্রমিক নং</th>
+                                    <th className="py-3.5 px-3 border-b border-blue-500">সদস্য নাম্বার</th>
                                     <th className="py-3.5 px-3 border-b border-blue-500">সদস্য টাইপ / দফা</th>
                                     <th className="py-3.5 px-3 border-b border-blue-500">আবেদনকারী</th>
                                     <th className="py-3.5 px-3 border-b border-blue-500">মোবাইল</th>
@@ -646,7 +647,7 @@ export default function AdmissionMembers({ admissions, filters, stats, zones, ar
                             <tbody>
                                 {admissions.data.length === 0 ? (
                                     <tr>
-                                        <td colSpan={11} className="py-12 text-center text-slate-400 border-b border-blue-100">
+                                        <td colSpan={13} className="py-12 text-center text-slate-400 border-b border-blue-100">
                                             কোনো ভর্তি আবেদন পাওয়া যায়নি
                                         </td>
                                     </tr>
@@ -660,6 +661,9 @@ export default function AdmissionMembers({ admissions, filters, stats, zones, ar
                                                     index % 2 === 1 ? 'bg-sky-50/40' : 'bg-white'
                                                 }`}
                                             >
+                                                <td className="py-3 px-3 text-center font-bold text-slate-600 text-xs whitespace-nowrap">
+                                                    {((admissions.current_page || 1) - 1) * (admissions.per_page || 15) + index + 1}
+                                                </td>
                                                 <td className="py-3 px-3 font-mono font-semibold text-blue-700 text-xs whitespace-nowrap">
                                                     {admission.application_no}
                                                 </td>
@@ -717,7 +721,7 @@ export default function AdmissionMembers({ admissions, filters, stats, zones, ar
                                                     ) : (
                                                         <span className="inline-flex items-center gap-1 text-slate-400 text-xs">
                                                             <Circle className="w-3.5 h-3.5" />
-                                                            অপ্রিন্টেড
+                                                            প্রিন্ট হয়নি
                                                         </span>
                                                     )}
                                                 </td>

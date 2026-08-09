@@ -94,6 +94,7 @@ const FIELD_NAMES_BN: Record<string, string> = {
     guardian_nid_photo: 'অভিভাবকের NID ছবি',
     applicant_signature: 'আবেদনকারীর স্বাক্ষর',
     loan_dofa: 'ঋণের দফা',
+    draft_save: 'খসড়া সংরক্ষণ',
 };
 
 function getFieldNameBn(key: string): string {
@@ -119,8 +120,13 @@ export default function Edit({
                 has_all_access?: boolean;
             };
         };
+        flash?: {
+            success?: string | null;
+            error?: string | null;
+        };
     }>();
     const [saving, setSaving] = useState(false);
+    const flashError = page.props.flash?.error || null;
 
     const [availableSamities, setAvailableSamities] = useState(samities);
     const [samitySearchQuery, setSamitySearchQuery] = useState('');
@@ -235,12 +241,12 @@ export default function Edit({
             collector_comment: admission.collector_comment || '',
             guardian_name: admission.guardian_name || '',
 
-            // Documents
-            customer_photo: null,
-            customer_nid_photo: null,
-            guardian_photo: null,
-            guardian_nid_photo: null,
-            applicant_signature: null,
+            // Documents — existing paths for preview; File when newly selected; null when removed
+            customer_photo: admission.customer_photo_path || null,
+            customer_nid_photo: admission.customer_nid_photo_path || null,
+            guardian_photo: admission.guardian_photo_path || null,
+            guardian_nid_photo: admission.guardian_nid_photo_path || null,
+            applicant_signature: admission.applicant_signature_path || null,
 
             family_members: admission.family_members || [],
             other_assets: admission.other_assets || [],
@@ -383,8 +389,28 @@ export default function Edit({
             formData.append('submit_after_save', '1');
         }
 
+        const photoFields = [
+            'customer_photo',
+            'customer_nid_photo',
+            'guardian_photo',
+            'guardian_nid_photo',
+            'applicant_signature',
+        ] as const;
+
         Object.keys(data).forEach((key) => {
             const val = (data as any)[key];
+
+            if (photoFields.includes(key as (typeof photoFields)[number])) {
+                if (val instanceof File) {
+                    formData.append(key, val);
+                } else if (val === null || val === '') {
+                    // User removed previously saved photo — tell server to clear it
+                    formData.append(`clear_${key}`, '1');
+                }
+                // string path = keep existing file on server (do not re-send)
+                return;
+            }
+
             if (val === null || val === undefined) return;
             if (
                 (key === 'branch_id' ||
@@ -414,9 +440,11 @@ export default function Edit({
             preserveScroll: true,
             onStart: () => setSaving(true),
             onFinish: () => setSaving(false),
-            onSuccess: () => {
-                if (!submitAfterSave) {
-                    router.visit('/member-admissions');
+            // Server redirects to list only on real success. Error → back to edit with flash/errors.
+            onSuccess: (page) => {
+                const flash = (page.props as { flash?: { error?: string | null } })?.flash;
+                if (flash?.error) {
+                    window.scrollTo({ top: 0, behavior: 'smooth' });
                 }
             },
             onError: () => {
@@ -458,6 +486,12 @@ export default function Edit({
     ) => {
         const newMembers = [...data.family_members!];
         newMembers[index] = { ...newMembers[index], [field]: value };
+        setData('family_members', newMembers);
+    };
+
+    const patchFamilyMember = (index: number, patch: Partial<FamilyMember>) => {
+        const newMembers = [...data.family_members!];
+        newMembers[index] = { ...newMembers[index], ...patch };
         setData('family_members', newMembers);
     };
 
@@ -548,6 +582,24 @@ export default function Edit({
                         </div>
                     </div>
                 </div>
+
+                {flashError && (
+                    <div className="rounded-2xl border-2 border-amber-500 bg-amber-50 p-4 sm:p-5 shadow-xl">
+                        <div className="flex items-start gap-3.5">
+                            <div className="rounded-xl bg-amber-600 p-2.5 text-white shrink-0 shadow-md">
+                                <AlertCircle className="w-6 h-6" />
+                            </div>
+                            <div className="flex-1 min-w-0">
+                                <h3 className="text-base sm:text-lg font-bold text-amber-950 leading-tight">
+                                    আপডেট ব্যর্থ — আগের খসড়া/ছবি মুছে যায়নি
+                                </h3>
+                                <p className="text-sm text-amber-900 mt-1.5 font-medium leading-relaxed">
+                                    {flashError}
+                                </p>
+                            </div>
+                        </div>
+                    </div>
+                )}
 
                 {/* ERROR SUMMARY ALERT BANNER */}
                 {errorList.length > 0 && (
@@ -640,8 +692,16 @@ export default function Edit({
                         addFamilyMember={addFamilyMember}
                         removeFamilyMember={removeFamilyMember}
                         updateFamilyMember={updateFamilyMember}
+                        patchFamilyMember={patchFamilyMember}
                         toNumVal={toNumVal}
                         toNumChange={toNumChange}
+                        applicantDefaults={{
+                            name: data.applicant_name_bn || data.applicant_name_en || '',
+                            gender: data.gender || 'male',
+                            marital_status: data.marital_status || '',
+                            occupation: data.business_details || data.job_details || '',
+                            monthly_income: data.monthly_income,
+                        }}
                     />
 
                     <OtherAssetsSection

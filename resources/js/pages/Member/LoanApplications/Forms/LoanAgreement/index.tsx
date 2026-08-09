@@ -1,7 +1,14 @@
-import { useState, useEffect } from 'react';
-import { Head, useForm, router } from '@inertiajs/react';
+import { useState, useEffect, useMemo, useRef } from 'react';
+import { Head, useForm, router, usePage } from '@inertiajs/react';
 import AdminLayout from '@/layouts/admin-layout';
-import { Printer, Save, Eye, Calculator, ArrowLeft } from 'lucide-react';
+import { Printer, Save, Eye, Calculator, ArrowLeft, AlertCircle } from 'lucide-react';
+import { fileToCompressedDataUrl } from '@/utils/imageUpload';
+import {
+    clearLoanDraftLocal,
+    loadLoanDraftLocal,
+    loanDraftStorageKey,
+    saveLoanDraftLocal,
+} from '@/utils/loanDraftStorage';
 
 import { LoanAgreementData, LoanAgreementProps } from './Types';
 import { LoanAgreementPrintView } from './LoanAgreementPrintView';
@@ -52,8 +59,28 @@ export default function LoanAgreement({
     }
 
     const [showPreview, setShowPreview] = useState(true);
+    const [saving, setSaving] = useState(false);
+    const [saveError, setSaveError] = useState<string | null>(null);
+    const [saveSuccess, setSaveSuccess] = useState<string | null>(null);
+    const [localRestored, setLocalRestored] = useState(false);
+    const skipNextLocalSave = useRef(true);
 
     const landInfo = getAcresAndDecimals(member?.total_land_amount || member?.cultivable_land_amount);
+
+    const draftKey = useMemo(
+        () =>
+            loanDraftStorageKey(
+                'loan_agreement',
+                isLegacy ? 'legacy' : member?.id,
+                loanProduct.id,
+                loanCategory.id
+            ),
+        [isLegacy, member?.id, loanProduct.id, loanCategory.id]
+    );
+
+    const page = usePage<{ flash?: { success?: string | null; error?: string | null } }>();
+    const flashError = page.props.flash?.error || null;
+    const flashSuccess = page.props.flash?.success || null;
 
     const { data, setData, processing } = useForm<LoanAgreementData>({
         // Branch Info
@@ -137,16 +164,41 @@ export default function LoanAgreement({
         branch_manager_signature: null,
     });
 
-    // Load saved draft data if exists
+    // Load server draft, then overlay local backup if present (so unsaved work is never lost)
     useEffect(() => {
-        if (savedData) {
-            setData(prev => ({
+        const local = loadLoanDraftLocal<Partial<LoanAgreementData>>(draftKey);
+        if (savedData || local?.data) {
+            setData((prev) => ({
                 ...prev,
-                ...savedData,
+                ...(savedData || {}),
+                ...(local?.data || {}),
             }));
             setShowPreview(true);
+            if (local?.data) {
+                setLocalRestored(true);
+            }
         }
-    }, [savedData]);
+        // Allow local autosave after initial hydrate
+        const t = setTimeout(() => {
+            skipNextLocalSave.current = false;
+        }, 500);
+        return () => clearTimeout(t);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [draftKey, savedData]);
+
+    // Continuous local backup — survives close / failed server save
+    useEffect(() => {
+        if (skipNextLocalSave.current) return;
+        const t = setTimeout(() => {
+            saveLoanDraftLocal(draftKey, data);
+        }, 700);
+        return () => clearTimeout(t);
+    }, [data, draftKey]);
+
+    useEffect(() => {
+        if (flashError) setSaveError(flashError);
+        if (flashSuccess) setSaveSuccess(flashSuccess);
+    }, [flashError, flashSuccess]);
 
     // Auto-calculate loan details
     useEffect(() => {
@@ -212,19 +264,20 @@ export default function LoanAgreement({
         setShowPreview(true);
     };
 
-    const handleImageUpload = (field: string, file: File | null) => {
+    const handleImageUpload = async (field: string, file: File | null) => {
         if (!file) return;
 
-        if (!file.type.match(/image\/(png|jpg|jpeg)/)) {
+        if (!file.type.match(/image\/(png|jpg|jpeg)/i) && !/\.(png|jpe?g)$/i.test(file.name)) {
             alert('শুধুমাত্র PNG, JPG বা JPEG ফাইল আপলোড করুন');
             return;
         }
 
-        const reader = new FileReader();
-        reader.onloadend = () => {
-            setData(field as any, reader.result as string);
-        };
-        reader.readAsDataURL(file);
+        const result = await fileToCompressedDataUrl(file, { maxWidth: 900 });
+        if (!result.ok) {
+            alert(result.error);
+            return;
+        }
+        setData(field as any, result.dataUrl);
     };
 
     const removeImage = (field: string) => {
@@ -232,22 +285,43 @@ export default function LoanAgreement({
     };
 
     const handleSaveDraft = () => {
+        setSaveError(null);
+        setSaveSuccess(null);
+        setSaving(true);
+
+        // Soft draft: save whatever is filled — no required-field gate
         const payload: any = {
             loan_product_id: loanProduct.id,
             loan_category_id: loanCategory.id,
             requested_amount: requestedAmount,
             agreement_data: data as any,
+            draft: 1,
         };
-        if (isLegacy) payload.legacy = 1; else payload.member_id = member?.id;
+        if (isLegacy) payload.legacy = 1;
+        else payload.member_id = member?.id;
+
+        // Keep a local copy until server confirms
+        saveLoanDraftLocal(draftKey, data);
+
         router.post('/member/loan-applications/forms/loan-agreement/save-draft', payload, {
+            preserveScroll: true,
             onSuccess: () => {
-                alert('ঋণ চুক্তিপত্র সফলভাবে সংরক্ষিত হয়েছে।');
+                clearLoanDraftLocal(draftKey);
+                setLocalRestored(false);
+                setSaveSuccess('খসড়া সফলভাবে সংরক্ষিত হয়েছে। আপনার তথ্য সেভ আছে।');
+                // Stay briefly then return to form list (draft is in DB)
                 router.visit(formSelectionUrl(isLegacy, member, loanProduct, loanCategory, requestedAmount));
             },
             onError: (errors) => {
                 console.error('Save draft error:', errors);
-                alert('ড্রাফট সংরক্ষণে ত্রুটি হয়েছে');
+                const first = Object.values(errors || {})[0];
+                setSaveError(
+                    (typeof first === 'string' && first) ||
+                        'খসড়া সার্ভারে সেভ হয়নি — আপনার ফর্মের তথ্য হারায়নি (লোকাল ব্যাকআপ আছে)। আবার চেষ্টা করুন।'
+                );
+                window.scrollTo({ top: 0, behavior: 'smooth' });
             },
+            onFinish: () => setSaving(false),
         });
     };
 
@@ -373,6 +447,23 @@ export default function LoanAgreement({
             </Head>
 
             <div className="max-w-[1600px] mx-auto p-4 md:p-6 space-y-6">
+                {(saveError || flashError) && (
+                    <div className="rounded-xl border-2 border-amber-500 bg-amber-50 p-4 print:hidden">
+                        <div className="flex items-start gap-3">
+                            <AlertCircle className="w-5 h-5 text-amber-700 shrink-0 mt-0.5" />
+                            <div>
+                                <h3 className="text-sm font-bold text-amber-950">সংরক্ষণ ব্যর্থ — আপনার তথ্য মুছে যায়নি</h3>
+                                <p className="text-sm text-amber-900 mt-1">{saveError || flashError}</p>
+                            </div>
+                        </div>
+                    </div>
+                )}
+                {localRestored && !saveError && (
+                    <div className="rounded-xl border border-blue-200 bg-blue-50 p-3 text-xs text-blue-900 print:hidden">
+                        এই ডিভাইসে আগের অসম্পূর্ণ খসড়া থেকে তথ্য পুনরুদ্ধার করা হয়েছে। «চুক্তিপত্র সংরক্ষণ করুন» চাপলে সার্ভারে সেভ হবে।
+                    </div>
+                )}
+
                 {/* Top Action Header */}
                 <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-white p-4 rounded-xl border border-gray-200 shadow-sm print:hidden">
                     <div className="flex items-center gap-3">
@@ -387,7 +478,7 @@ export default function LoanAgreement({
                             <h1 className="text-base md:text-lg font-bold text-gray-900 flex items-center gap-2">
                                 <span>ঋণ চুক্তিপত্র (Loan Agreement Form)</span>
                             </h1>
-                            <p className="text-xs text-gray-500">MemberAdmission থেকে প্রাপ্ত তথ্যের ভিত্তিতে ফর্ম পূরণ ও প্রিন্ট প্রিভিউ দেখুন</p>
+                            <p className="text-xs text-gray-500">যতটুকু পূরণ আছে খসড়া হিসেবে সেভ করা যাবে — পরে সম্পূর্ণ করে জমা দিন</p>
                             {existingApplication && (
                                 <p className="text-xs text-emerald-600 font-semibold mt-0.5">
                                     ✓ ড্রাফট সংরক্ষিত আছে — Application No: {existingApplication.application_no || 'Pending'}
@@ -407,11 +498,11 @@ export default function LoanAgreement({
                         <button
                             type="button"
                             onClick={handleSaveDraft}
-                            disabled={processing}
+                            disabled={saving || processing}
                             className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white text-xs md:text-sm font-bold rounded-lg hover:bg-blue-700 disabled:opacity-50 transition-all shadow-sm"
                         >
                             <Save className="w-4 h-4" />
-                            <span>{processing ? 'সংরক্ষণ হচ্ছে...' : 'চুক্তিপত্র সংরক্ষণ করুন'}</span>
+                            <span>{saving || processing ? 'সংরক্ষণ হচ্ছে...' : 'খসড়া সংরক্ষণ'}</span>
                         </button>
                         {showPreview && (
                             <button

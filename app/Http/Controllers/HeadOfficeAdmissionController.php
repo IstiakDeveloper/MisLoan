@@ -107,7 +107,7 @@ class HeadOfficeAdmissionController extends Controller
             }
         }
 
-        // Printed filter (প্রিন্ট সম্পন্ন / অপ্রিন্টেড)
+        // Printed filter (প্রিন্ট সম্পন্ন / প্রিন্ট হয়নি)
         if ($request->filled('printed')) {
             if ($request->printed === 'yes') {
                 $query->whereNotNull('printed_at');
@@ -434,7 +434,7 @@ class HeadOfficeAdmissionController extends Controller
                 $admission->createdBy?->name ?? '',
                 $statusLabels[$admission->status] ?? $admission->status,
                 $tracking['label'] ?? '',
-                $admission->printed_at ? 'প্রিন্ট সম্পন্ন' : 'অপ্রিন্টেড',
+                $admission->printed_at ? 'প্রিন্ট সম্পন্ন' : 'প্রিন্ট হয়নি',
                 $admission->submitted_at?->format('Y-m-d') ?? '',
                 $admission->created_at?->format('Y-m-d H:i') ?? '',
             ], null, "A{$row}");

@@ -122,7 +122,7 @@ class HeadOfficeLoanController extends Controller
             }
         }
 
-        // Printed filter (প্রিন্ট সম্পন্ন / অপ্রিন্টেড)
+        // Printed filter (প্রিন্ট সম্পন্ন / প্রিন্ট হয়নি)
         if ($request->filled('printed')) {
             if ($request->printed === 'yes') {
                 $query->whereNotNull('printed_at');
@@ -514,7 +514,7 @@ class HeadOfficeLoanController extends Controller
             $sheet->setCellValue("M{$rowIdx}", $loan->samity?->samity_name ?? '');
             $sheet->setCellValue("N{$rowIdx}", $loan->submitted_at ? formatDate($loan.submitted_at) : '');
             $sheet->setCellValue("O{$rowIdx}", $loan->status);
-            $sheet->setCellValue("P{$rowIdx}", $loan->printed_at ? 'প্রিন্ট সম্পন্ন' : 'অপ্রিন্টেড');
+            $sheet->setCellValue("P{$rowIdx}", $loan->printed_at ? 'প্রিন্ট সম্পন্ন' : 'প্রিন্ট হয়নি');
             $rowIdx++;
         }
 

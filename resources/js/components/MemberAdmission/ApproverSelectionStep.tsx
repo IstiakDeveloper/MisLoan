@@ -1,20 +1,18 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef } from 'react';
 import {
     Camera,
     Upload,
     FileText,
     Trash2,
-    X,
     CheckCircle,
     AlertCircle,
     User,
     CreditCard,
-    PenTool,
     Shield,
     Sparkles,
     RefreshCw,
-    Eye
 } from 'lucide-react';
+import { prepareAdmissionUploadFile } from '@/utils/imageUpload';
 
 interface Approver {
     id: number;
@@ -70,102 +68,46 @@ export default function ApproverSelectionStep({
     const [uploadStatus, setUploadStatus] = useState<{ [key: string]: string }>({});
     const [previewUrls, setPreviewUrls] = useState<{ [key: string]: string }>({});
 
-    // Live Camera state
-    const [activeCameraField, setActiveCameraField] = useState<string | null>(null);
-    const [cameraTitle, setCameraTitle] = useState<string>('');
-    const [cameraError, setCameraError] = useState<string | null>(null);
-    const videoRef = useRef<HTMLVideoElement | null>(null);
-    const streamRef = useRef<MediaStream | null>(null);
-
-    const handleFileChange = (field: string, file: File | null) => {
-        const nextStatus = { ...uploadStatus };
-        const nextPreview = { ...previewUrls };
-
-        if (file) {
-            const fileSizeMB = file.size / 1048576;
-            const fileSizeKB = file.size / 1024;
-
-            if (file.size > 10485760) {
-                nextStatus[field] = `❌ ফাইল সাইজ অনেক বড় (${fileSizeMB.toFixed(2)}MB)। সর্বোচ্চ ১০MB অনুমোদিত।`;
-            } else if (file.size > 2097152) {
-                nextStatus[field] = `⚠️ ফাইলটি ${fileSizeMB.toFixed(2)}MB। আপলোডের সময় অটোকম্প্রেস হয়ে ২MB এর নিচে নেমে যাবে।`;
-            } else {
-                nextStatus[field] = `✓ সফল নির্বাচন: (${fileSizeKB.toFixed(1)} KB)`;
+    const handleFileChange = async (field: string, file: File | null) => {
+        if (!file) {
+            if (previewUrls[field]?.startsWith('blob:')) {
+                URL.revokeObjectURL(previewUrls[field]);
             }
-
-            if (file.type.startsWith('image/')) {
-                nextPreview[field] = URL.createObjectURL(file);
-            } else {
-                nextPreview[field] = '';
-            }
-        } else {
-            nextStatus[field] = '';
-            nextPreview[field] = '';
+            setUploadStatus((prev) => ({ ...prev, [field]: '' }));
+            setPreviewUrls((prev) => ({ ...prev, [field]: '' }));
+            onFieldChange(field, null);
+            return;
         }
 
-        setUploadStatus(nextStatus);
-        setPreviewUrls(nextPreview);
-        onFieldChange(field, file);
-    };
+        setUploadStatus((prev) => ({
+            ...prev,
+            [field]: '⏳ ছবি প্রসেস/কম্প্রেস হচ্ছে… অনুগ্রহ করে অপেক্ষা করুন।',
+        }));
 
-    // Camera Stream Controls
-    const openCameraModal = async (field: string, title: string) => {
-        setActiveCameraField(field);
-        setCameraTitle(title);
-        setCameraError(null);
+        const isNidOrDoc = field.includes('nid');
+        const result = await prepareAdmissionUploadFile(file, {
+            maxWidth: isNidOrDoc ? 1600 : 800,
+        });
 
-        try {
-            const stream = await navigator.mediaDevices.getUserMedia({
-                video: { facingMode: 'environment', width: { ideal: 1280 }, height: { ideal: 720 } },
-                audio: false,
-            });
-            streamRef.current = stream;
-            if (videoRef.current) {
-                videoRef.current.srcObject = stream;
-            }
-        } catch (err: any) {
-            setCameraError('ক্যামেরা চালু করা সম্ভব হয়নি। ডিভাইসের ব্রাউজার পারমিশন নিশ্চিত করুন।');
+        if (!result.ok) {
+            // Do not attach the bad file — keep whatever was already saved/selected
+            setUploadStatus((prev) => ({ ...prev, [field]: `❌ ${result.error}` }));
+            return;
         }
-    };
 
-    const closeCameraModal = () => {
-        if (streamRef.current) {
-            streamRef.current.getTracks().forEach((track) => track.stop());
-            streamRef.current = null;
+        if (previewUrls[field]?.startsWith('blob:')) {
+            URL.revokeObjectURL(previewUrls[field]);
         }
-        setActiveCameraField(null);
-        setCameraError(null);
+
+        const nextPreview =
+            result.file.type.startsWith('image/')
+                ? URL.createObjectURL(result.file)
+                : '';
+
+        setUploadStatus((prev) => ({ ...prev, [field]: result.message }));
+        setPreviewUrls((prev) => ({ ...prev, [field]: nextPreview }));
+        onFieldChange(field, result.file);
     };
-
-    const capturePhotoFromCamera = () => {
-        if (!videoRef.current || !activeCameraField) return;
-        const video = videoRef.current;
-        const canvas = document.createElement('canvas');
-        canvas.width = video.videoWidth || 640;
-        canvas.height = video.videoHeight || 480;
-
-        const ctx = canvas.getContext('2d');
-        if (ctx) {
-            ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-            canvas.toBlob((blob) => {
-                if (blob) {
-                    const file = new File([blob], `${activeCameraField}_cam_${Date.now()}.jpg`, {
-                        type: 'image/jpeg',
-                    });
-                    handleFileChange(activeCameraField, file);
-                    closeCameraModal();
-                }
-            }, 'image/jpeg', 0.9);
-        }
-    };
-
-    useEffect(() => {
-        return () => {
-            if (streamRef.current) {
-                streamRef.current.getTracks().forEach((track) => track.stop());
-            }
-        };
-    }, []);
 
     // Helper to get image preview source
     const getPreviewSource = (field: string, propVal: File | string | null) => {
@@ -351,17 +293,16 @@ export default function ApproverSelectionStep({
                             <span>Document Uploads (ডকুমেন্ট আপলোড)</span>
                         </h3>
                         <p className="text-xs sm:text-sm text-slate-500 mt-1">
-                            ছবি বা NID কার্ড সরাসরি ফাইল গ্যালারি থেকে সিলেক্ট করুন অথবা লাইভ ক্যামেরা দিয়ে ছবি তুলুন।
+                            ফোনে «ক্যামেরা দিয়ে তুলুন» চাপলে সরাসরি ডিভাইসের ক্যামেরা খুলবে। গ্যালারি থেকেও ছবি নেওয়া যাবে।
                         </p>
                     </div>
                     <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-xl bg-blue-50 border border-blue-200 text-blue-800 text-xs font-semibold shrink-0">
                         <Camera className="w-4 h-4 text-blue-600" />
-                        <span>লাইভ ক্যামেরা সাপোর্টেড</span>
+                        <span>ডিভাইস ক্যামেরা</span>
                     </div>
                 </div>
 
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                    {/* 1. Member Photo (Optional) */}
                     <DocumentUploadCard
                         title="Member Photo (সদস্যের ছবি)"
                         subTitle="সদস্যের সাম্প্রতিক রঙিন পাসপোর্ট সাইজ ছবি"
@@ -374,10 +315,8 @@ export default function ApproverSelectionStep({
                         accept="image/jpeg,image/png,image/jpg"
                         icon={<User className="w-5 h-5 text-blue-600" />}
                         onFileSelect={(file) => handleFileChange('customer_photo', file)}
-                        onOpenCamera={() => openCameraModal('customer_photo', 'সদস্যের ছবি')}
                     />
 
-                    {/* 2. Member NID Photo (REQUIRED) */}
                     <DocumentUploadCard
                         title="Member NID Photo (সদস্যের NID ছবি)"
                         subTitle="জাতীয় পরিচয়পত্রের স্পষ্ট ছবি বা PDF"
@@ -390,10 +329,8 @@ export default function ApproverSelectionStep({
                         accept=".jpg,.jpeg,.png,.pdf,image/jpeg,image/png,image/jpg,application/pdf"
                         icon={<CreditCard className="w-5 h-5 text-emerald-600" />}
                         onFileSelect={(file) => handleFileChange('customer_nid_photo', file)}
-                        onOpenCamera={() => openCameraModal('customer_nid_photo', 'সদস্যের NID ছবি')}
                     />
 
-                    {/* 3. Guardian Photo (Optional) */}
                     <DocumentUploadCard
                         title="Guardian Photo (অভিভাবকের ছবি)"
                         subTitle="অভিভাবকের ছবি (প্রযোজ্য ক্ষেত্রে)"
@@ -406,10 +343,8 @@ export default function ApproverSelectionStep({
                         accept="image/jpeg,image/png,image/jpg"
                         icon={<Shield className="w-5 h-5 text-purple-600" />}
                         onFileSelect={(file) => handleFileChange('guardian_photo', file)}
-                        onOpenCamera={() => openCameraModal('guardian_photo', 'অভিভাবকের ছবি')}
                     />
 
-                    {/* 4. Guardian NID Photo (Optional) */}
                     <DocumentUploadCard
                         title="Guardian NID Photo (অভিভাবকের NID)"
                         subTitle="অভিভাবকের জাতীয় পরিচয়পত্র (প্রযোজ্য ক্ষেত্রে)"
@@ -422,85 +357,9 @@ export default function ApproverSelectionStep({
                         accept=".jpg,.jpeg,.png,.pdf,image/jpeg,image/png,image/jpg,application/pdf"
                         icon={<CreditCard className="w-5 h-5 text-indigo-600" />}
                         onFileSelect={(file) => handleFileChange('guardian_nid_photo', file)}
-                        onOpenCamera={() => openCameraModal('guardian_nid_photo', 'অভিভাবকের NID')}
                     />
                 </div>
             </div>
-
-            {/* ── INTERACTIVE LIVE CAMERA STREAM MODAL ─────────────────────────────────── */}
-            {activeCameraField && (
-                <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/80 backdrop-blur-md p-4 animate-fade-in">
-                    <div className="relative w-full max-w-lg overflow-hidden rounded-3xl bg-slate-900 border border-slate-800 text-white shadow-2xl">
-                        {/* Header */}
-                        <div className="flex items-center justify-between px-6 py-4 border-b border-slate-800 bg-slate-900/50">
-                            <div className="flex items-center gap-2.5">
-                                <div className="p-2 rounded-xl bg-blue-600/20 text-blue-400">
-                                    <Camera className="w-5 h-5" />
-                                </div>
-                                <div>
-                                    <h4 className="text-base font-bold text-white">{cameraTitle}</h4>
-                                    <p className="text-xs text-slate-400">ক্যামেরার সামনে সাবজেক্টটি সোজা রাখুন</p>
-                                </div>
-                            </div>
-                            <button
-                                type="button"
-                                onClick={closeCameraModal}
-                                className="p-2 rounded-xl text-slate-400 hover:text-white hover:bg-slate-800 transition"
-                            >
-                                <X className="w-5 h-5" />
-                            </button>
-                        </div>
-
-                        {/* Video Feed Area */}
-                        <div className="relative aspect-video w-full bg-black flex items-center justify-center overflow-hidden">
-                            {cameraError ? (
-                                <div className="p-6 text-center text-red-400 space-y-2">
-                                    <AlertCircle className="w-10 h-10 mx-auto text-red-500" />
-                                    <p className="text-sm font-semibold">{cameraError}</p>
-                                </div>
-                            ) : (
-                                <>
-                                    <video
-                                        ref={videoRef}
-                                        autoPlay
-                                        playsInline
-                                        muted
-                                        className="h-full w-full object-cover"
-                                    />
-                                    {/* Focus guide overlay */}
-                                    <div className="absolute inset-8 border-2 border-dashed border-white/40 rounded-2xl pointer-events-none flex items-center justify-center">
-                                        <span className="text-[10px] uppercase font-bold tracking-widest text-white/50 bg-black/40 px-2 py-1 rounded">
-                                            Frame Subject
-                                        </span>
-                                    </div>
-                                </>
-                            )}
-                        </div>
-
-                        {/* Action Controls */}
-                        <div className="flex items-center justify-between px-6 py-4 bg-slate-900 border-t border-slate-800">
-                            <button
-                                type="button"
-                                onClick={closeCameraModal}
-                                className="px-4 py-2.5 rounded-xl text-xs font-semibold text-slate-300 hover:bg-slate-800 transition"
-                            >
-                                বাতিল
-                            </button>
-
-                            {!cameraError && (
-                                <button
-                                    type="button"
-                                    onClick={capturePhotoFromCamera}
-                                    className="flex items-center gap-2 px-6 py-3 rounded-2xl bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white font-bold text-sm shadow-lg shadow-blue-600/40 active:scale-95 transition-all"
-                                >
-                                    <Camera className="w-5 h-5" />
-                                    <span>ছবি তুলুন (Snap)</span>
-                                </button>
-                            )}
-                        </div>
-                    </div>
-                </div>
-            )}
         </div>
     );
 }
@@ -518,14 +377,12 @@ interface DocCardProps {
     accept: string;
     icon: React.ReactNode;
     onFileSelect: (file: File | null) => void;
-    onOpenCamera: () => void;
 }
 
 function DocumentUploadCard({
     title,
     subTitle,
     required = false,
-    fieldKey,
     fileValue,
     previewSrc,
     error,
@@ -533,10 +390,14 @@ function DocumentUploadCard({
     accept,
     icon,
     onFileSelect,
-    onOpenCamera,
 }: DocCardProps) {
     const fileInputRef = useRef<HTMLInputElement | null>(null);
     const cameraInputRef = useRef<HTMLInputElement | null>(null);
+
+    const openNativeCamera = () => {
+        // Opens system camera on phones (no getUserMedia / browser stream permission needed)
+        cameraInputRef.current?.click();
+    };
 
     const isPdf =
         (fileValue instanceof File && fileValue.type === 'application/pdf') ||
@@ -589,9 +450,17 @@ function DocumentUploadCard({
                 </div>
             )}
 
-            {/* Status info */}
+            {/* Status info (success / processing / client-side reject) */}
             {statusMsg && !error && (
-                <div className="mb-3 text-xs text-blue-700 bg-blue-50/80 px-3 py-1.5 rounded-lg border border-blue-200">
+                <div
+                    className={`mb-3 text-xs px-3 py-1.5 rounded-lg border ${
+                        statusMsg.startsWith('❌')
+                            ? 'text-red-800 bg-red-50 border-red-200 font-semibold'
+                            : statusMsg.startsWith('⏳')
+                              ? 'text-amber-800 bg-amber-50 border-amber-200'
+                              : 'text-blue-700 bg-blue-50/80 border-blue-200'
+                    }`}
+                >
                     {statusMsg}
                 </div>
             )}
@@ -624,13 +493,13 @@ function DocumentUploadCard({
                             <p className="text-[11px] text-slate-500 mt-0.5">
                                 {fileValue instanceof File
                                     ? `${(fileValue.size / 1024).toFixed(1)} KB`
-                                    : 'নথি আপলোড করা আছে'}
+                                    : 'সংরক্ষিত ছবি — চাইলে পরিবর্তন বা রিমুভ করুন'}
                             </p>
 
                             <div className="flex items-center gap-2 mt-2.5">
                                 <button
                                     type="button"
-                                    onClick={onOpenCamera}
+                                    onClick={openNativeCamera}
                                     className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-white border border-slate-300 hover:bg-blue-50 hover:text-blue-600 hover:border-blue-300 text-[11px] font-semibold text-slate-700 transition shadow-xs"
                                 >
                                     <Camera className="w-3.5 h-3.5 text-blue-600" />
@@ -666,14 +535,14 @@ function DocumentUploadCard({
                         নথি বা ছবির ফাইল সিলেক্ট করুন
                     </p>
                     <p className="text-[11px] text-slate-500 mb-3">
-                        JPG, PNG, PDF (সর্বোচ্চ ১০MB)
+                        JPG, PNG, PDF (সর্বোচ্চ ১০MB) — বড় ছবি অটোকম্প্রেস হবে
                     </p>
 
                     {/* Dual Action Buttons: Camera & Gallery */}
                     <div className="flex flex-wrap items-center justify-center gap-2">
                         <button
                             type="button"
-                            onClick={onOpenCamera}
+                            onClick={openNativeCamera}
                             className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold shadow-md shadow-blue-600/20 active:scale-95 transition-all"
                         >
                             <Camera className="w-4 h-4" />
@@ -700,6 +569,7 @@ function DocumentUploadCard({
                 onChange={(e) => {
                     const file = e.target.files?.[0] || null;
                     onFileSelect(file);
+                    e.target.value = '';
                 }}
                 className="hidden"
             />
@@ -713,6 +583,7 @@ function DocumentUploadCard({
                 onChange={(e) => {
                     const file = e.target.files?.[0] || null;
                     onFileSelect(file);
+                    e.target.value = '';
                 }}
                 className="hidden"
             />

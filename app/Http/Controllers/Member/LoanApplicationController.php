@@ -1379,6 +1379,16 @@ class LoanApplicationController extends Controller
     }
 
     /**
+     * Soft-merge draft form JSON.
+     * Incoming keys overwrite (including null = clear). Keys only in existing are kept
+     * so a partial/failed client payload cannot wipe untouched fields.
+     */
+    private function mergeSoftDraftFormData(array $existing, array $incoming): array
+    {
+        return array_merge($existing, $incoming);
+    }
+
+    /**
      * Get or create draft for save (supports legacy and normal member).
      * Returns [LoanApplication $draft, int $samityId, ?array $legacySnapshot].
      */
@@ -1501,45 +1511,60 @@ class LoanApplicationController extends Controller
 
     public function saveLoanAgreementDraft(Request $request)
     {
-        $isLegacy = $request->boolean('legacy');
-        $rules = [
-            'loan_product_id' => 'required|exists:loan_products,id',
-            'loan_category_id' => 'required|exists:loan_categories,id',
-            'requested_amount' => 'required|numeric|min:0',
-            'agreement_data' => 'required|array',
-        ];
-        if (!$isLegacy) {
-            $rules['member_id'] = 'required|exists:member_admissions,id';
+        try {
+            $isLegacy = $request->boolean('legacy');
+            $rules = [
+                'loan_product_id' => 'required|exists:loan_products,id',
+                'loan_category_id' => 'required|exists:loan_categories,id',
+                'requested_amount' => 'required|numeric|min:0',
+                'agreement_data' => 'nullable|array',
+            ];
+            if (!$isLegacy) {
+                $rules['member_id'] = 'required|exists:member_admissions,id';
+            }
+            $validated = $request->validate($rules);
+
+            $memberId = $isLegacy ? null : (int) $validated['member_id'];
+            $legacyKey = $isLegacy ? $request->session()->get('loan_legacy_key') : null;
+            $legacySnapshot = $isLegacy ? $request->session()->get('loan_legacy_member') : null;
+            if ($isLegacy && (!$legacyKey || !$legacySnapshot)) {
+                return redirect()->route('member.loan-applications.index')->with('error', 'আগের সদস্যের সেশন শেষ। আবার সদস্য তথ্য দিন।');
+            }
+
+            $loanApplication = $this->resolveApplicationForFormSave(
+                $request,
+                1,
+                (int) $validated['loan_product_id'],
+                (int) $validated['loan_category_id'],
+                (float) $validated['requested_amount'],
+                $memberId,
+                $legacyKey,
+                $legacySnapshot
+            );
+
+            $agreementData = $validated['agreement_data'] ?? [];
+            if (!is_array($agreementData)) {
+                $agreementData = [];
+            }
+            // Soft merge: keep previously saved signature/image fields if new payload left them empty
+            $existing = is_array($loanApplication->loan_agreement_data) ? $loanApplication->loan_agreement_data : [];
+            $agreementData = $this->mergeSoftDraftFormData($existing, $agreementData);
+
+            $loanApplication->loan_agreement_data = $agreementData;
+            $loanApplication->form_type = 'loan_agreement';
+            $loanApplication->purpose_of_loan = $agreementData['loan_purpose'] ?? ($loanApplication->purpose_of_loan ?: 'ঋণ চুক্তিপত্র অনুযায়ী');
+            $loanApplication->number_of_installments = (int) ($agreementData['number_of_installments'] ?? $loanApplication->number_of_installments ?? 1);
+            $loanApplication->save();
+
+            return redirect()->route('member.loan-applications.index')
+                ->with('success', 'ঋণ চুক্তিপত্র খসড়া হিসেবে সংরক্ষিত হয়েছে।');
+        } catch (\Illuminate\Validation\ValidationException $e) {
+            throw $e;
+        } catch (\Throwable $e) {
+            \Log::error('Loan agreement draft save failed: '.$e->getMessage());
+
+            return back()->withInput()->with('error', 'খসড়া সংরক্ষণ ব্যর্থ: '.$e->getMessage().' — আগের সংরক্ষিত ডাটা মুছে যায়নি।');
         }
-        $validated = $request->validate($rules);
-
-        $memberId = $isLegacy ? null : (int) $validated['member_id'];
-        $legacyKey = $isLegacy ? $request->session()->get('loan_legacy_key') : null;
-        $legacySnapshot = $isLegacy ? $request->session()->get('loan_legacy_member') : null;
-        if ($isLegacy && (!$legacyKey || !$legacySnapshot)) {
-            return redirect()->route('member.loan-applications.index')->with('error', 'আগের সদস্যের সেশন শেষ। আবার সদস্য তথ্য দিন।');
-        }
-
-        $loanApplication = $this->resolveApplicationForFormSave(
-            $request,
-            1,
-            (int) $validated['loan_product_id'],
-            (int) $validated['loan_category_id'],
-            (float) $validated['requested_amount'],
-            $memberId,
-            $legacyKey,
-            $legacySnapshot
-        );
-
-        $agreementData = $validated['agreement_data'];
-        $loanApplication->loan_agreement_data = $agreementData;
-        $loanApplication->form_type = 'loan_agreement';
-        $loanApplication->purpose_of_loan = $agreementData['loan_purpose'] ?? 'ঋণ চুক্তিপত্র অনুযায়ী';
-        $loanApplication->number_of_installments = (int) ($agreementData['number_of_installments'] ?? 1);
-        $loanApplication->save();
-
-        return redirect()->route('member.loan-applications.index')
-            ->with('success', 'ঋণ চুক্তিপত্র সংরক্ষিত হয়েছে। Loan Application ড্রাফট হিসেবে সংরক্ষিত আছে।');
     }
 
     /**
@@ -1905,59 +1930,72 @@ class LoanApplicationController extends Controller
      */
     public function saveLoanApplicationApprovalDraft(Request $request)
     {
-        $isLegacy = $request->boolean('legacy');
-        $rules = [
-            'loan_product_id' => 'required|exists:loan_products,id',
-            'loan_category_id' => 'required|exists:loan_categories,id',
-            'requested_amount' => 'required|numeric|min:0',
-            'form_data' => 'required|array',
-        ];
-        if (!$isLegacy) {
-            $rules['member_id'] = 'required|exists:member_admissions,id';
+        try {
+            $isLegacy = $request->boolean('legacy') || $request->boolean('is_legacy');
+            $rules = [
+                'loan_product_id' => 'required|exists:loan_products,id',
+                'loan_category_id' => 'required|exists:loan_categories,id',
+                'requested_amount' => 'required|numeric|min:0',
+                'form_data' => 'nullable|array',
+            ];
+            if (!$isLegacy) {
+                $rules['member_id'] = 'required|exists:member_admissions,id';
+            }
+            $validated = $request->validate($rules);
+
+            $memberId = $isLegacy ? null : (int) $validated['member_id'];
+            $legacyKey = $isLegacy ? $request->session()->get('loan_legacy_key') : null;
+            $legacySnapshot = $isLegacy ? $request->session()->get('loan_legacy_member') : null;
+            if ($isLegacy && (!$legacyKey || !$legacySnapshot)) {
+                return redirect()->route('member.loan-applications.index')->with('error', 'আগের সদস্যের সেশন শেষ। আবার সদস্য তথ্য দিন।');
+            }
+
+            $loanApplication = $this->resolveApplicationForFormSave(
+                $request,
+                5,
+                (int) $validated['loan_product_id'],
+                (int) $validated['loan_category_id'],
+                (float) $validated['requested_amount'],
+                $memberId,
+                $legacyKey,
+                $legacySnapshot
+            );
+
+            $formData = $validated['form_data'] ?? [];
+            if (!is_array($formData)) {
+                $formData = [];
+            }
+            $existingPlan = is_array($loanApplication->business_plan) ? $loanApplication->business_plan : [];
+            $formData = $this->mergeSoftDraftFormData($existingPlan, $formData);
+
+            // চূড়ান্ত অনুমোদিত পরিমাণ শুধু অনুমোদনকারী সেট করেন — ফর্ম সেভ থেকে আসবে না
+            foreach (['final_approved_loan_amount_digits', 'final_approved_loan_amount_words', 'final_approver_comments'] as $key) {
+                $formData[$key] = $existingPlan[$key] ?? ($formData[$key] ?? '');
+            }
+
+            $loanProduct = LoanProduct::find($validated['loan_product_id']);
+            $numberOfInstallments = $loanProduct->number_of_installments ?? 1;
+            if ($loanProduct && $loanProduct->installment_type === 'weekly' && $loanProduct->duration_months) {
+                $numberOfInstallments = (int) ceil(($loanProduct->duration_months * 30) / 7);
+            } elseif ($loanProduct && $loanProduct->duration_months) {
+                $numberOfInstallments = (int) $loanProduct->duration_months;
+            }
+
+            $loanApplication->business_plan = $formData;
+            $loanApplication->form_type = 'loan_application_approval';
+            $loanApplication->purpose_of_loan = $formData['loan_purpose'] ?? ($loanApplication->purpose_of_loan ?: 'জাগরণ/বুনিয়াদ/আগ্রসর ঋণ আবেদন');
+            $loanApplication->number_of_installments = $numberOfInstallments;
+            $loanApplication->save();
+
+            return redirect()->route('member.loan-applications.index')
+                ->with('success', 'ঋণ আবেদন খসড়া হিসেবে সংরক্ষিত হয়েছে।');
+        } catch (\Illuminate\Validation\ValidationException $e) {
+            throw $e;
+        } catch (\Throwable $e) {
+            \Log::error('Loan approval draft save failed: '.$e->getMessage());
+
+            return back()->withInput()->with('error', 'খসড়া সংরক্ষণ ব্যর্থ: '.$e->getMessage().' — আগের সংরক্ষিত ডাটা মুছে যায়নি।');
         }
-        $validated = $request->validate($rules);
-
-        $memberId = $isLegacy ? null : (int) $validated['member_id'];
-        $legacyKey = $isLegacy ? $request->session()->get('loan_legacy_key') : null;
-        $legacySnapshot = $isLegacy ? $request->session()->get('loan_legacy_member') : null;
-        if ($isLegacy && (!$legacyKey || !$legacySnapshot)) {
-            return redirect()->route('member.loan-applications.index')->with('error', 'আগের সদস্যের সেশন শেষ। আবার সদস্য তথ্য দিন।');
-        }
-
-        $loanApplication = $this->resolveApplicationForFormSave(
-            $request,
-            5,
-            (int) $validated['loan_product_id'],
-            (int) $validated['loan_category_id'],
-            (float) $validated['requested_amount'],
-            $memberId,
-            $legacyKey,
-            $legacySnapshot
-        );
-
-        $formData = $validated['form_data'];
-        $existingPlan = is_array($loanApplication->business_plan) ? $loanApplication->business_plan : [];
-        // চূড়ান্ত অনুমোদিত পরিমাণ শুধু অনুমোদনকারী সেট করেন — ফর্ম সেভ থেকে আসবে না
-        foreach (['final_approved_loan_amount_digits', 'final_approved_loan_amount_words', 'final_approver_comments'] as $key) {
-            $formData[$key] = $existingPlan[$key] ?? '';
-        }
-
-        $loanProduct = LoanProduct::find($validated['loan_product_id']);
-        $numberOfInstallments = $loanProduct->number_of_installments ?? 1;
-        if ($loanProduct && $loanProduct->installment_type === 'weekly' && $loanProduct->duration_months) {
-            $numberOfInstallments = (int) ceil(($loanProduct->duration_months * 30) / 7);
-        } elseif ($loanProduct && $loanProduct->duration_months) {
-            $numberOfInstallments = (int) $loanProduct->duration_months;
-        }
-
-        $loanApplication->business_plan = $formData;
-        $loanApplication->form_type = 'loan_application_approval';
-        $loanApplication->purpose_of_loan = $formData['loan_purpose'] ?? 'জাগরণ/বুনিয়াদ/আগ্রসর ঋণ আবেদন';
-        $loanApplication->number_of_installments = $numberOfInstallments;
-        $loanApplication->save();
-
-        return redirect()->route('member.loan-applications.index')
-            ->with('success', 'জাগরণ/বুনিয়াদ/আগ্রসর ঋণ আবেদন ও অনুমোদনপত্র ড্রাফট হিসেবে সংরক্ষিত হয়েছে।');
     }
 
     /**

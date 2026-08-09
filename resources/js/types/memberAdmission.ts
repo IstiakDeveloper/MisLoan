@@ -119,10 +119,17 @@ export interface MemberAdmission {
     collector_comment?: string;
     guardian_name?: string;
     applicant_signature?: string | File | null;
-    customer_photo?: File | null;
-    customer_nid_photo?: File | null;
-    guardian_photo?: File | null;
-    guardian_nid_photo?: File | null;
+    customer_photo?: File | string | null;
+    customer_nid_photo?: File | string | null;
+    guardian_photo?: File | string | null;
+    guardian_nid_photo?: File | string | null;
+
+    // Stored document paths (from server)
+    customer_photo_path?: string | null;
+    customer_nid_photo_path?: string | null;
+    guardian_photo_path?: string | null;
+    guardian_nid_photo_path?: string | null;
+    applicant_signature_path?: string | null;
 
     // Legacy / old member data entry
     is_legacy?: boolean;

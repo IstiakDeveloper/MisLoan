@@ -10,6 +10,7 @@ const RECIPIENT_OPTIONS = [
     'সহকারি পরিচালক (মাইক্রোফাইন্যান্স)',
     'জোন ব্যবস্থাপক',
     'অঞ্চলিক ব্যবস্থাপক',
+    'শাখা ব্যবস্থাপক',
 ] as const;
 
 export default function FormPage1({ data, setData, member, isLegacy, handleImageUpload, removeImage, savingsProducts, loanRound }: FormPageProps) {

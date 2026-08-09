@@ -692,16 +692,19 @@ export default function ProcessAdmissions({ admissions, filters, zones = [], are
                                     </tr>
                                 </thead>
                                 <tbody className="divide-y divide-slate-100 text-xs">
-                                    {displayedAdmissions.map((admission) => {
+                                    {displayedAdmissions.map((admission, index) => {
                                         const hasIssues = admission.issues.length > 0;
                                         const isRevised = (admission.revision_count || 0) > 0;
 
                                         return (
                                             <tr key={admission.id} className="hover:bg-slate-50/80 transition-colors">
+                                                <td className="py-3 px-4 align-top text-center font-bold text-slate-500 text-xs">
+                                                    {index + 1}
+                                                </td>
                                                 {/* App No & Badges */}
                                                 <td className="py-3 px-4 align-top">
                                                     <div className="space-y-1">
-                                                        <span className="font-mono font-bold text-slate-900 bg-slate-100 px-2 py-0.5 rounded border border-slate-200 inline-block text-xs">
+                                                        <span className="font-mono font-bold text-slate-900 bg-slate-100 px-2 py-0.5 rounded border border-slate-200 inline-block text-xs" title="সদস্য নাম্বার">
                                                             {admission.application_no}
                                                         </span>
                                                         <div>

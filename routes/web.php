@@ -154,6 +154,9 @@ Route::middleware(['auth', 'verified'])->group(function () {
     // Loan Product Management Routes - Only for SuperAdmin/Head Office
     Route::prefix('loan-products')->name('loan-products.')->middleware('head.office')->group(function () {
         Route::get('/', [LoanProductController::class, 'index'])->name('index');
+        Route::get('export', [LoanProductController::class, 'exportExcel'])->name('export');
+        Route::get('template', [LoanProductController::class, 'downloadTemplate'])->name('template');
+        Route::post('import', [LoanProductController::class, 'importExcel'])->name('import');
         Route::post('/', [LoanProductController::class, 'store'])->name('store');
         Route::put('{loanProduct}', [LoanProductController::class, 'update'])->name('update');
         Route::delete('{loanProduct}', [LoanProductController::class, 'destroy'])->name('destroy');
@@ -163,6 +166,9 @@ Route::middleware(['auth', 'verified'])->group(function () {
     // Savings Product Management Routes - Only for SuperAdmin/Head Office
     Route::prefix('savings-products')->name('savings-products.')->middleware('head.office')->group(function () {
         Route::get('/', [SavingsProductController::class, 'index'])->name('index');
+        Route::get('export', [SavingsProductController::class, 'exportExcel'])->name('export');
+        Route::get('template', [SavingsProductController::class, 'downloadTemplate'])->name('template');
+        Route::post('import', [SavingsProductController::class, 'importExcel'])->name('import');
         Route::post('/', [SavingsProductController::class, 'store'])->name('store');
         Route::put('{savingsProduct}', [SavingsProductController::class, 'update'])->name('update');
         Route::delete('{savingsProduct}', [SavingsProductController::class, 'destroy'])->name('destroy');

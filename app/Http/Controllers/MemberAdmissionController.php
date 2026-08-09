@@ -28,6 +28,28 @@ class MemberAdmissionController extends Controller
     }
 
     /**
+     * Clear Bangla messages for oversized / invalid admission document uploads.
+     */
+    private function admissionFileValidationMessages(): array
+    {
+        return [
+            'customer_photo.image' => 'সদস্যের ছবি JPG বা PNG হতে হবে।',
+            'customer_photo.mimes' => 'সদস্যের ছবি JPG বা PNG হতে হবে।',
+            'customer_photo.max' => 'সদস্যের ছবি সর্বোচ্চ ১০MB হতে পারবে। ছোট ছবি দিয়ে আবার চেষ্টা করুন।',
+            'customer_nid_photo.mimes' => 'সদস্যের NID ছবি JPG, PNG বা PDF হতে হবে।',
+            'customer_nid_photo.max' => 'সদস্যের NID ছবি সর্বোচ্চ ১০MB হতে পারবে। ছোট ফাইল দিয়ে আবার চেষ্টা করুন।',
+            'guardian_photo.image' => 'অভিভাবকের ছবি JPG বা PNG হতে হবে।',
+            'guardian_photo.mimes' => 'অভিভাবকের ছবি JPG বা PNG হতে হবে।',
+            'guardian_photo.max' => 'অভিভাবকের ছবি সর্বোচ্চ ১০MB হতে পারবে। ছোট ছবি দিয়ে আবার চেষ্টা করুন।',
+            'guardian_nid_photo.mimes' => 'অভিভাবকের NID ছবি JPG, PNG বা PDF হতে হবে।',
+            'guardian_nid_photo.max' => 'অভিভাবকের NID ছবি সর্বোচ্চ ১০MB হতে পারবে। ছোট ফাইল দিয়ে আবার চেষ্টা করুন।',
+            'applicant_signature.image' => 'স্বাক্ষরের ছবি JPG বা PNG হতে হবে।',
+            'applicant_signature.mimes' => 'স্বাক্ষরের ছবি JPG বা PNG হতে হবে।',
+            'applicant_signature.max' => 'স্বাক্ষরের ছবি সর্বোচ্চ ১০MB হতে পারবে। ছোট ছবি দিয়ে আবার চেষ্টা করুন।',
+        ];
+    }
+
+    /**
      * Draft saves send 0 / "" for empty selects — convert to null so nullable|exists passes.
      */
     private function normalizeAdmissionRequest(Request $request): void
@@ -93,6 +115,76 @@ class MemberAdmissionController extends Controller
     private function isDraftSave(Request $request): bool
     {
         return $request->boolean('draft') || $request->query('draft') == '1';
+    }
+
+    /**
+     * Soft family-member row for draft/create — empty rows skipped; empties → null.
+     * Only include columns that exist so missing migrations never block draft save.
+     */
+    private function buildFamilyMemberRow(int $slNo, array $member): ?array
+    {
+        $name = trim((string) ($member['member_name'] ?? ''));
+        $relation = trim((string) ($member['relation_with_head'] ?? ''));
+        // Completely blank row — skip (draft soft)
+        if ($name === '' && $relation === '') {
+            return null;
+        }
+
+        $gender = $member['gender'] ?? null;
+        if (!in_array($gender, ['male', 'female', 'other'], true)) {
+            $gender = 'other';
+        }
+
+        $row = [
+            'sl_no' => $slNo,
+            // DB columns are NOT NULL — soft placeholders for incomplete draft rows
+            'member_name' => $name !== '' ? $name : 'নাম নেই',
+            'relation_with_head' => $relation !== '' ? $relation : 'নির্ধারিত নয়',
+            'gender' => $gender,
+            'age_years' => isset($member['age_years']) && $member['age_years'] !== '' && $member['age_years'] !== null
+                ? (int) $member['age_years']
+                : null,
+            'age_months' => isset($member['age_months']) && $member['age_months'] !== '' && $member['age_months'] !== null
+                ? (int) $member['age_months']
+                : null,
+            'education_level' => ($member['education_level'] ?? null) !== '' ? ($member['education_level'] ?? null) : null,
+            'occupation' => ($member['occupation'] ?? null) !== '' ? ($member['occupation'] ?? null) : null,
+            'monthly_income' => isset($member['monthly_income']) && $member['monthly_income'] !== '' && $member['monthly_income'] !== null
+                ? $member['monthly_income']
+                : null,
+        ];
+
+        if (\Schema::hasColumn('member_family_members', 'marital_status')) {
+            $ms = $member['marital_status'] ?? null;
+            $row['marital_status'] = in_array($ms, ['single', 'married', 'divorced', 'widowed'], true) ? $ms : null;
+        }
+
+        return $row;
+    }
+
+    /**
+     * Persist family members softly (skip blank rows). Never blocks draft on incomplete rows.
+     */
+    private function syncFamilyMembers(MemberAdmission $admission, ?array $familyMembers): void
+    {
+        $admission->familyMembers()->delete();
+        if (empty($familyMembers) || !is_array($familyMembers)) {
+            return;
+        }
+
+        $sl = 0;
+        foreach ($familyMembers as $member) {
+            if (!is_array($member)) {
+                continue;
+            }
+            $row = $this->buildFamilyMemberRow($sl + 1, $member);
+            if ($row === null) {
+                continue;
+            }
+            $sl++;
+            $row['sl_no'] = $sl;
+            $admission->familyMembers()->create($row);
+        }
     }
 
     public function index(Request $request)
@@ -397,7 +489,7 @@ class MemberAdmissionController extends Controller
             // Legacy / old member
             'is_legacy' => 'nullable|boolean',
             'loan_dofa' => 'nullable|integer|min:1|max:999',
-        ]);
+        ], $this->admissionFileValidationMessages());
 
         $isLegacy = $request->boolean('is_legacy');
         // loan_dofa only required on final submit (not draft)
@@ -415,23 +507,23 @@ class MemberAdmissionController extends Controller
             // Handle file uploads
             $admissionData = $validated;
 
-            // Customer Photo (Required) - Compress
+            // Customer Photo - Compress (no old file to preserve on create)
             if ($request->hasFile('customer_photo')) {
                 $compressedPath = $compressionService->compressPhoto($request->file('customer_photo'), 'admissions/customer_photos');
                 if ($compressedPath) {
                     $admissionData['customer_photo_path'] = $compressedPath;
                 } else {
-                    throw new \Exception('Failed to compress customer photo');
+                    throw new \Exception('সদস্যের ছবি প্রসেস করা যায়নি। অন্য ছবি দিয়ে আবার চেষ্টা করুন। আপনার ফর্মের তথ্য মুছে যায়নি।');
                 }
             }
 
-            // Customer NID Photo (Required) - Compress with higher quality
+            // Customer NID Photo - Compress with higher quality
             if ($request->hasFile('customer_nid_photo')) {
                 $compressedPath = $compressionService->compressDocument($request->file('customer_nid_photo'), 'admissions/customer_nids');
                 if ($compressedPath) {
                     $admissionData['customer_nid_photo_path'] = $compressedPath;
                 } else {
-                    throw new \Exception('Failed to compress customer NID photo');
+                    throw new \Exception('সদস্যের NID ছবি প্রসেস করা যায়নি। অন্য ছবি/ফাইল দিয়ে আবার চেষ্টা করুন। আপনার ফর্মের তথ্য মুছে যায়নি।');
                 }
             }
 
@@ -441,7 +533,7 @@ class MemberAdmissionController extends Controller
                 if ($compressedPath) {
                     $admissionData['guardian_photo_path'] = $compressedPath;
                 } else {
-                    throw new \Exception('Failed to compress guardian photo');
+                    throw new \Exception('অভিভাবকের ছবি প্রসেস করা যায়নি। অন্য ছবি দিয়ে আবার চেষ্টা করুন। আপনার ফর্মের তথ্য মুছে যায়নি।');
                 }
             }
 
@@ -451,7 +543,7 @@ class MemberAdmissionController extends Controller
                 if ($compressedPath) {
                     $admissionData['guardian_nid_photo_path'] = $compressedPath;
                 } else {
-                    throw new \Exception('Failed to compress guardian NID photo');
+                    throw new \Exception('অভিভাবকের NID ছবি প্রসেস করা যায়নি। অন্য ছবি/ফাইল দিয়ে আবার চেষ্টা করুন। আপনার ফর্মের তথ্য মুছে যায়নি।');
                 }
             }
 
@@ -461,7 +553,7 @@ class MemberAdmissionController extends Controller
                 if ($compressedPath) {
                     $admissionData['applicant_signature_path'] = $compressedPath;
                 } else {
-                    throw new \Exception('Failed to compress signature');
+                    throw new \Exception('স্বাক্ষরের ছবি প্রসেস করা যায়নি। অন্য ছবি দিয়ে আবার চেষ্টা করুন। আপনার ফর্মের তথ্য মুছে যায়নি।');
                 }
             }
 
@@ -511,23 +603,8 @@ class MemberAdmissionController extends Controller
 
             $admission = MemberAdmission::create($admissionData);
 
-            // Save family members
-            if (!empty($validated['family_members'])) {
-                foreach ($validated['family_members'] as $index => $member) {
-                    $admission->familyMembers()->create([
-                        'sl_no' => $index + 1,
-                        'member_name' => $member['member_name'],
-                        'relation_with_head' => $member['relation_with_head'],
-                        'gender' => $member['gender'],
-                        'age_years' => $member['age_years'] ?? null,
-                        'age_months' => $member['age_months'] ?? null,
-                        'marital_status' => $member['marital_status'] ?? null,
-                        'education_level' => $member['education_level'] ?? null,
-                        'occupation' => $member['occupation'] ?? null,
-                        'monthly_income' => $member['monthly_income'] ?? null,
-                    ]);
-                }
-            }
+            // Save family members (soft — blank rows skipped; missing columns ignored)
+            $this->syncFamilyMembers($admission, $validated['family_members'] ?? null);
 
             // Save other assets
             if (!empty($validated['other_assets'])) {
@@ -553,7 +630,11 @@ class MemberAdmissionController extends Controller
 
         } catch (\Exception $e) {
             DB::rollBack();
-            return back()->withInput()->with('error', 'Failed to create admission: ' . $e->getMessage());
+            $message = 'খসড়া সংরক্ষণ করা যায়নি: ' . $e->getMessage() . ' — আপনার দেওয়া তথ্য মুছে যায়নি, আবার চেষ্টা করুন।';
+
+            return back()->withInput()->withErrors([
+                'draft_save' => $message,
+            ])->with('error', $message);
         }
     }
 
@@ -768,7 +849,7 @@ class MemberAdmissionController extends Controller
 
             // Legacy / old member (type locked; dofa editable)
             'loan_dofa' => 'nullable|integer|min:1|max:999',
-        ]);
+        ], $this->admissionFileValidationMessages());
 
         // loan_dofa only required on final submit (not draft)
         if ($memberAdmission->is_legacy && !$saveAsDraft && empty($validated['loan_dofa'])) {
@@ -781,6 +862,7 @@ class MemberAdmissionController extends Controller
         try {
             // Initialize compression service
             $compressionService = app(ImageCompressionService::class);
+            $oldPathsToDelete = [];
 
             $updateData = $validated;
             if ($memberAdmission->is_legacy) {
@@ -799,58 +881,76 @@ class MemberAdmissionController extends Controller
                 $updateData['want_sms_service'] = (bool) $updateData['want_sms_service'];
             }
 
-            // Handle customer photo upload - Compress
+            // Compress NEW file first; only delete old file after DB commit succeeds
             if ($request->hasFile('customer_photo')) {
-                $compressionService->delete($memberAdmission->customer_photo_path);
                 $compressedPath = $compressionService->compressPhoto($request->file('customer_photo'), 'admissions/customer_photos');
-                if ($compressedPath) {
-                    $updateData['customer_photo_path'] = $compressedPath;
-                } else {
-                    throw new \Exception('Failed to compress customer photo');
+                if (!$compressedPath) {
+                    throw new \Exception('সদস্যের ছবি প্রসেস করা যায়নি। অন্য ছবি দিয়ে আবার চেষ্টা করুন। আগের ছবি ও খসড়া অপরিবর্তিত আছে।');
                 }
+                if ($memberAdmission->customer_photo_path) {
+                    $oldPathsToDelete[] = $memberAdmission->customer_photo_path;
+                }
+                $updateData['customer_photo_path'] = $compressedPath;
             }
 
-            // Handle customer NID photo upload - Compress
             if ($request->hasFile('customer_nid_photo')) {
-                $compressionService->delete($memberAdmission->customer_nid_photo_path);
                 $compressedPath = $compressionService->compressDocument($request->file('customer_nid_photo'), 'admissions/customer_nids');
-                if ($compressedPath) {
-                    $updateData['customer_nid_photo_path'] = $compressedPath;
-                } else {
-                    throw new \Exception('Failed to compress customer NID photo');
+                if (!$compressedPath) {
+                    throw new \Exception('সদস্যের NID ছবি প্রসেস করা যায়নি। অন্য ছবি/ফাইল দিয়ে আবার চেষ্টা করুন। আগের ছবি ও খসড়া অপরিবর্তিত আছে।');
                 }
+                if ($memberAdmission->customer_nid_photo_path) {
+                    $oldPathsToDelete[] = $memberAdmission->customer_nid_photo_path;
+                }
+                $updateData['customer_nid_photo_path'] = $compressedPath;
             }
 
-            // Handle guardian photo upload - Compress
             if ($request->hasFile('guardian_photo')) {
-                $compressionService->delete($memberAdmission->guardian_photo_path);
                 $compressedPath = $compressionService->compressPhoto($request->file('guardian_photo'), 'admissions/guardian_photos');
-                if ($compressedPath) {
-                    $updateData['guardian_photo_path'] = $compressedPath;
-                } else {
-                    throw new \Exception('Failed to compress guardian photo');
+                if (!$compressedPath) {
+                    throw new \Exception('অভিভাবকের ছবি প্রসেস করা যায়নি। অন্য ছবি দিয়ে আবার চেষ্টা করুন। আগের ছবি ও খসড়া অপরিবর্তিত আছে।');
                 }
+                if ($memberAdmission->guardian_photo_path) {
+                    $oldPathsToDelete[] = $memberAdmission->guardian_photo_path;
+                }
+                $updateData['guardian_photo_path'] = $compressedPath;
             }
 
-            // Handle guardian NID photo upload - Compress
             if ($request->hasFile('guardian_nid_photo')) {
-                $compressionService->delete($memberAdmission->guardian_nid_photo_path);
                 $compressedPath = $compressionService->compressDocument($request->file('guardian_nid_photo'), 'admissions/guardian_nids');
-                if ($compressedPath) {
-                    $updateData['guardian_nid_photo_path'] = $compressedPath;
-                } else {
-                    throw new \Exception('Failed to compress guardian NID photo');
+                if (!$compressedPath) {
+                    throw new \Exception('অভিভাবকের NID ছবি প্রসেস করা যায়নি। অন্য ছবি/ফাইল দিয়ে আবার চেষ্টা করুন। আগের ছবি ও খসড়া অপরিবর্তিত আছে।');
                 }
+                if ($memberAdmission->guardian_nid_photo_path) {
+                    $oldPathsToDelete[] = $memberAdmission->guardian_nid_photo_path;
+                }
+                $updateData['guardian_nid_photo_path'] = $compressedPath;
             }
 
-            // Handle applicant signature upload - Compress
             if ($request->hasFile('applicant_signature')) {
-                $compressionService->delete($memberAdmission->applicant_signature_path);
                 $compressedPath = $compressionService->compressPhoto($request->file('applicant_signature'), 'signatures/applicants');
-                if ($compressedPath) {
-                    $updateData['applicant_signature_path'] = $compressedPath;
-                } else {
-                    throw new \Exception('Failed to compress signature');
+                if (!$compressedPath) {
+                    throw new \Exception('স্বাক্ষরের ছবি প্রসেস করা যায়নি। অন্য ছবি দিয়ে আবার চেষ্টা করুন। আগের ছবি ও খসড়া অপরিবর্তিত আছে।');
+                }
+                if ($memberAdmission->applicant_signature_path) {
+                    $oldPathsToDelete[] = $memberAdmission->applicant_signature_path;
+                }
+                $updateData['applicant_signature_path'] = $compressedPath;
+            }
+
+            // Clear photos the user removed in the edit form (only when no replacement file uploaded)
+            $clearablePhotos = [
+                'customer_photo' => 'customer_photo_path',
+                'customer_nid_photo' => 'customer_nid_photo_path',
+                'guardian_photo' => 'guardian_photo_path',
+                'guardian_nid_photo' => 'guardian_nid_photo_path',
+                'applicant_signature' => 'applicant_signature_path',
+            ];
+            foreach ($clearablePhotos as $field => $pathColumn) {
+                if ($request->boolean("clear_{$field}") && !$request->hasFile($field)) {
+                    if ($memberAdmission->{$pathColumn}) {
+                        $oldPathsToDelete[] = $memberAdmission->{$pathColumn};
+                    }
+                    $updateData[$pathColumn] = null;
                 }
             }
 
@@ -889,24 +989,8 @@ class MemberAdmissionController extends Controller
 
             $memberAdmission->update($updateData);
 
-            // Update family members
-            $memberAdmission->familyMembers()->delete();
-            if (!empty($validated['family_members'])) {
-                foreach ($validated['family_members'] as $index => $member) {
-                    $memberAdmission->familyMembers()->create([
-                        'sl_no' => $index + 1,
-                        'member_name' => $member['member_name'],
-                        'relation_with_head' => $member['relation_with_head'],
-                        'gender' => $member['gender'],
-                        'age_years' => $member['age_years'] ?? null,
-                        'age_months' => $member['age_months'] ?? null,
-                        'marital_status' => $member['marital_status'] ?? null,
-                        'education_level' => $member['education_level'] ?? null,
-                        'occupation' => $member['occupation'] ?? null,
-                        'monthly_income' => $member['monthly_income'] ?? null,
-                    ]);
-                }
-            }
+            // Update family members (soft — blank rows skipped)
+            $this->syncFamilyMembers($memberAdmission, $validated['family_members'] ?? null);
 
             // Update other assets
             $memberAdmission->otherAssets()->delete();
@@ -923,6 +1007,10 @@ class MemberAdmissionController extends Controller
 
             DB::commit();
 
+            foreach ($oldPathsToDelete as $oldPath) {
+                $compressionService->delete($oldPath);
+            }
+
             if ($legacyAutoApproved) {
                 return redirect()->route('member-admissions.index')
                     ->with('success', 'পুরাতন সদস্যের ভর্তি স্বয়ংক্রিয়ভাবে অনুমোদিত হয়েছে!');
@@ -938,7 +1026,11 @@ class MemberAdmissionController extends Controller
 
         } catch (\Exception $e) {
             DB::rollBack();
-            return back()->withInput()->with('error', 'Failed to update admission: ' . $e->getMessage());
+            $message = 'খসড়া আপডেট করা যায়নি: ' . $e->getMessage() . ' — আগের সংরক্ষিত তথ্য মুছে যায়নি।';
+
+            return back()->withInput()->withErrors([
+                'draft_save' => $message,
+            ])->with('error', $message);
         }
     }
 

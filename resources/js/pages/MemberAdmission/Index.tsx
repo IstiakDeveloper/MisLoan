@@ -312,7 +312,7 @@ export default function Index({ admissions, filters, stats }: Props) {
                                 type="text"
                                 value={searchQuery}
                                 onChange={(e) => setSearchQuery(e.target.value)}
-                                placeholder="আবেদন নং, নাম, মোবাইল, এনআইডি খুঁজুন..."
+                                placeholder="সদস্য নাম্বার, নাম, মোবাইল, এনআইডি খুঁজুন..."
                                 className="w-full pl-9 pr-4 py-2.5 text-xs sm:text-sm border border-slate-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 bg-slate-50/50 transition-all"
                             />
                         </div>
@@ -565,7 +565,8 @@ export default function Index({ admissions, filters, stats }: Props) {
                         <table className="w-full text-left border-collapse member-admission-index-table">
                             <thead>
                                 <tr className="bg-slate-50/80 border-b border-slate-200 text-[11px] font-bold text-slate-500 uppercase tracking-wider">
-                                    <th className="py-3.5 px-4">আবেদন নং</th>
+                                    <th className="py-3.5 px-4 text-center">ক্রমিক নং</th>
+                                    <th className="py-3.5 px-4">সদস্য নাম্বার</th>
                                     <th className="py-3.5 px-4">আবেদনকারী</th>
                                     <th className="py-3.5 px-4">মোবাইল</th>
                                     <th className="py-3.5 px-4">শাখা</th>
@@ -580,14 +581,17 @@ export default function Index({ admissions, filters, stats }: Props) {
                             <tbody className="divide-y divide-slate-100 text-sm">
                                 {admissions.data.length === 0 ? (
                                     <tr>
-                                        <td colSpan={10} className="py-12 text-center text-slate-400">
+                                        <td colSpan={11} className="py-12 text-center text-slate-400">
                                             কোনো ভর্তি আবেদন পাওয়া যায়নি
                                         </td>
                                     </tr>
                                 ) : (
-                                    admissions.data.map((admission) => (
+                                    admissions.data.map((admission, index) => (
                                         <tr key={admission.id} className="hover:bg-slate-50/60 transition-colors">
-                                            <td className="py-4 px-4 font-mono font-bold text-blue-700 text-xs">
+                                            <td className="py-4 px-4 text-center font-bold text-slate-500 text-xs whitespace-nowrap">
+                                                {((admissions.current_page || 1) - 1) * (admissions.per_page || 15) + index + 1}
+                                            </td>
+                                            <td className="py-4 px-4 font-mono font-bold text-blue-700 text-xs whitespace-nowrap">
                                                 {admission.application_no}
                                             </td>
                                             <td className="py-4 px-4">

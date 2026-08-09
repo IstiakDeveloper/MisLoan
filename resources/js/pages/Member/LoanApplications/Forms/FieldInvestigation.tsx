@@ -427,17 +427,27 @@ export default function FieldInvestigation({
     }, [savedData]);
 
     const handleSaveDraft = () => {
+        const resumeApprovalId = resumeParams?.get('resume_approval_id');
         const effectiveDofa = data.loan_round != null && data.loan_round >= 1 ? data.loan_round : loanRound;
         const requiredPercent = getRequiredSavingsPercent(loanProduct?.installment_type, effectiveDofa, !!data.is_against_savings, loanProduct?.duration_months);
         const minSavings = Math.ceil((requestedAmount * requiredPercent) / 100);
         const generalAmount = Number(data.general_savings_amount) || 0;
+
+        // Soft draft: savings minimum only blocks when resuming approval; otherwise warn
         if (generalAmount < minSavings) {
-            setErrors({ general_savings_amount: `সাধারণ সঞ্চয় সর্বনিম্ন ${requiredPercent}% (৳${minSavings.toLocaleString('bn-BD')}) থাকতে হবে।` });
-            return;
+            const msg = `সাধারণ সঞ্চয় সর্বনিম্ন ${requiredPercent}% (৳${minSavings.toLocaleString('bn-BD')}) থাকা উচিত।`;
+            if (resumeApprovalId) {
+                setErrors({ general_savings_amount: msg });
+                return;
+            }
+            const ok = confirm(`${msg}\nতবুও খসড়া সেভ করবেন? পরে সংশোধন করতে পারবেন।`);
+            if (!ok) {
+                setErrors({ general_savings_amount: msg });
+                return;
+            }
         }
         setErrors({});
-        const resumeApprovalId = resumeParams?.get('resume_approval_id');
-        const payload: any = { loan_product_id: loanProduct.id, loan_category_id: loanCategory.id, requested_amount: requestedAmount, form_data: { ...data } as any };
+        const payload: any = { loan_product_id: loanProduct.id, loan_category_id: loanCategory.id, requested_amount: requestedAmount, form_data: { ...data } as any, draft: 1 };
         if (isLegacy) payload.legacy = 1; else payload.member_id = member?.id;
         if (resumeApprovalId) {
             payload.resume_approval_id = resumeApprovalId;
@@ -448,16 +458,17 @@ export default function FieldInvestigation({
             '/member/loan-applications/forms/field-investigation/save-draft',
             payload,
             {
+                preserveScroll: true,
                 onSuccess: () => {
                     if (resumeApprovalId) {
                         return;
                     }
-                    alert('সরেজমিনে তদন্ত প্রতিবেদন ড্রাফট হিসেবে সংরক্ষিত হয়েছে।');
+                    alert('সরেজমিনে তদন্ত প্রতিবেদন খসড়া হিসেবে সংরক্ষিত হয়েছে।');
                     router.visit(formSelectionUrl(isLegacy, member, loanProduct, loanCategory, requestedAmount));
                 },
                 onError: (errs) => {
                     console.error('Save draft error:', errs);
-                    alert('ড্রাফট সংরক্ষণে ত্রুটি হয়েছে');
+                    alert('খসড়া সার্ভারে সেভ হয়নি — আপনার ফর্মের তথ্য হারায়নি। আবার চেষ্টা করুন।');
                 },
             }
         );

@@ -534,7 +534,7 @@ export default function LoanApplications({ loans, filters, stats, zones, areas, 
                             >
                                 <option value="">সকল</option>
                                 <option value="yes">প্রিন্ট সম্পন্ন (Printed)</option>
-                                <option value="no">অপ্রিন্টেড (Not Printed)</option>
+                                <option value="no">প্রিন্ট হয়নি (Not Printed)</option>
                             </select>
                         </div>
 
@@ -678,7 +678,7 @@ export default function LoanApplications({ loans, filters, stats, zones, areas, 
                                                     </span>
                                                 ) : (
                                                     <span className="inline-flex items-center px-2 py-0.5 bg-slate-100 text-slate-600 border border-slate-200 text-[10px] font-medium rounded-md">
-                                                        অপ্রিন্টেড
+                                                        প্রিন্ট হয়নি
                                                     </span>
                                                 )}
                                             </td>

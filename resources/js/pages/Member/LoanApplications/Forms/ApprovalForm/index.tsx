@@ -1,8 +1,15 @@
-import React, { useState, useEffect, useRef } from 'react';
-import { Head, useForm, router } from '@inertiajs/react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
+import { Head, useForm, router, usePage } from '@inertiajs/react';
 import AdminLayout from '@/layouts/admin-layout';
-import { Save, Eye, ArrowLeft, X, Minimize2, Printer } from 'lucide-react';
+import { Save, Eye, ArrowLeft, X, Minimize2, Printer, AlertCircle } from 'lucide-react';
 import { useIsMobile } from '@/hooks/use-mobile';
+import { fileToCompressedDataUrl } from '@/utils/imageUpload';
+import {
+    clearLoanDraftLocal,
+    loadLoanDraftLocal,
+    loanDraftStorageKey,
+    saveLoanDraftLocal,
+} from '@/utils/loanDraftStorage';
 
 import { ApprovalFormProps, LoanApplicationApprovalData } from './Types';
 import FormPage1 from './FormPage1';
@@ -100,11 +107,6 @@ export default function ApprovalForm({
     isLegacy = false,
 }: ApprovalFormProps) {
     const categoryName = loanCategory?.category_name_bn || loanCategory?.category_name || 'ঋণ';
-    const [activeStep, setActiveStep] = useState<number>(1);
-    const [showPreview, setShowPreview] = useState(false);
-    const [viewAllPages, setViewAllPages] = useState(false);
-    const [errors, setErrors] = useState<Record<string, string>>({});
-    const isMobile = useIsMobile();
 
     if (onlyPreview && savedData) {
         return (
@@ -113,6 +115,29 @@ export default function ApprovalForm({
             </div>
         );
     }
+
+    const [activeStep, setActiveStep] = useState<number>(1);
+    const [showPreview, setShowPreview] = useState(false);
+    const [viewAllPages, setViewAllPages] = useState(false);
+    const [errors, setErrors] = useState<Record<string, string>>({});
+    const [saveError, setSaveError] = useState<string | null>(null);
+    const [localRestored, setLocalRestored] = useState(false);
+    const [saving, setSaving] = useState(false);
+    const skipNextLocalSave = useRef(true);
+    const isMobile = useIsMobile();
+    const page = usePage<{ flash?: { error?: string | null; success?: string | null } }>();
+    const flashError = page.props.flash?.error || null;
+
+    const draftKey = useMemo(
+        () =>
+            loanDraftStorageKey(
+                'loan_approval',
+                isLegacy ? 'legacy' : member?.id,
+                loanProduct.id,
+                loanCategory.id
+            ),
+        [isLegacy, member?.id, loanProduct.id, loanCategory.id]
+    );
 
     const leftPaneRef = useRef<HTMLDivElement>(null);
     const rightPaneRef = useRef<HTMLDivElement>(null);
@@ -309,11 +334,37 @@ export default function ApprovalForm({
         ...(savedData || {})
     });
 
-    const handleImageUpload = (field: string, file: File | null) => {
+    useEffect(() => {
+        const local = loadLoanDraftLocal<Partial<LoanApplicationApprovalData>>(draftKey);
+        if (local?.data) {
+            setData((prev) => ({ ...prev, ...local.data }));
+            setLocalRestored(true);
+        }
+        const t = setTimeout(() => {
+            skipNextLocalSave.current = false;
+        }, 500);
+        return () => clearTimeout(t);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [draftKey]);
+
+    useEffect(() => {
+        if (skipNextLocalSave.current) return;
+        const t = setTimeout(() => saveLoanDraftLocal(draftKey, data), 700);
+        return () => clearTimeout(t);
+    }, [data, draftKey]);
+
+    useEffect(() => {
+        if (flashError) setSaveError(flashError);
+    }, [flashError]);
+
+    const handleImageUpload = async (field: string, file: File | null) => {
         if (!file) return;
-        const reader = new FileReader();
-        reader.onloadend = () => setData(field, reader.result as string);
-        reader.readAsDataURL(file);
+        const result = await fileToCompressedDataUrl(file, { maxWidth: 900 });
+        if (!result.ok) {
+            alert(result.error);
+            return;
+        }
+        setData(field, result.dataUrl);
     };
 
     const removeImage = (field: string) => setData(field, '');
@@ -321,7 +372,9 @@ export default function ApprovalForm({
     const handleSubmit = (e?: React.FormEvent) => {
         if (e) e.preventDefault();
         setErrors({});
+        setSaveError(null);
 
+        // Soft draft: consistency mismatches only warn — still allow save
         const income = Number(data.project_income_1_2_yr) || 0;
         const expense = Number(data.project_expense_1_2_yr) || 0;
         const net = Number(data.annual_net_profit) || 0;
@@ -332,8 +385,10 @@ export default function ApprovalForm({
             data.project_expense_1_2_yr != null;
         const hasNet = data.annual_net_profit !== '' && data.annual_net_profit != null;
         if (hasIncomeExpense && hasNet && income - expense !== net) {
-            alert(`আয় − ব্যয় = বার্ষিক নিট লাভ হতে হবে।\nএখন: ${income} − ${expense} = ${income - expense}, নিট লাভ: ${net}`);
-            return;
+            const ok = confirm(
+                `আয় − ব্যয় = বার্ষিক নিট লাভ মিলছে না (${income} − ${expense} ≠ ${net}).\nতবুও খসড়া সেভ করবেন? পরে সংশোধন করতে পারবেন।`
+            );
+            if (!ok) return;
         }
 
         const planTotal = Number(data.invest_plan_total) || 0;
@@ -341,15 +396,18 @@ export default function ApprovalForm({
         const hasPlanTotal = data.invest_plan_total !== '' && data.invest_plan_total != null;
         const hasUseTotal = data.invest_use_total !== '' && data.invest_use_total != null;
         if (hasPlanTotal && hasUseTotal && planTotal !== useTotal) {
-            alert(`বিনিয়োগের খাতের মোট (${planTotal}) এবং ঋণের ব্যবহারের মোট (${useTotal}) মিলছে না। দুই মোট সমান হতে হবে।`);
-            return;
+            const ok = confirm(
+                `বিনিয়োগের খাতের মোট (${planTotal}) এবং ঋণের ব্যবহারের মোট (${useTotal}) মিলছে না।\nতবুও খসড়া সেভ করবেন?`
+            );
+            if (!ok) return;
         }
-        
+
         const payload = {
             member_id: isLegacy ? null : member.id,
             loan_product_id: loanProduct.id,
             loan_category_id: loanCategory.id,
             requested_amount: requestedAmount,
+            draft: 1,
             form_data: {
                 ...data,
                 member_type: isOldMemberFromAdmission || isLegacy ? 'old' : 'new',
@@ -360,11 +418,29 @@ export default function ApprovalForm({
                     ? (data.previous_loan_times || loanDofaValue)
                     : '',
             },
-            is_legacy: isLegacy
+            is_legacy: isLegacy,
+            legacy: isLegacy ? 1 : 0,
         };
 
+        setSaving(true);
+        saveLoanDraftLocal(draftKey, data);
+
         router.post(`/member/loan-applications/forms/loan-application-approval/save-draft`, payload, {
-            onError: (err) => { setErrors(err); alert("ফর্ম সেভ করতে সমস্যা হয়েছে। ফিল্ডগুলো চেক করুন।"); }
+            preserveScroll: true,
+            onSuccess: () => {
+                clearLoanDraftLocal(draftKey);
+                setLocalRestored(false);
+            },
+            onError: (err) => {
+                setErrors(err);
+                const first = Object.values(err || {})[0];
+                setSaveError(
+                    (typeof first === 'string' && first) ||
+                        'খসড়া সার্ভারে সেভ হয়নি — আপনার ফর্মের তথ্য হারায়নি (লোকাল ব্যাকআপ আছে)। আবার চেষ্টা করুন।'
+                );
+                window.scrollTo({ top: 0, behavior: 'smooth' });
+            },
+            onFinish: () => setSaving(false),
         });
     };
 
@@ -376,6 +452,23 @@ export default function ApprovalForm({
             <Head title="আগ্রসর আবেদন ও অনুমোদনপত্র" />
             
             <div className="container mx-auto px-2 sm:px-4 py-4 md:py-6 print:p-0 print:m-0 print:w-full print:max-w-none pb-20 sm:pb-6">
+                {(saveError || flashError) && (
+                    <div className="mb-4 rounded-xl border-2 border-amber-500 bg-amber-50 p-4 print:hidden">
+                        <div className="flex items-start gap-3">
+                            <AlertCircle className="w-5 h-5 text-amber-700 shrink-0 mt-0.5" />
+                            <div>
+                                <h3 className="text-sm font-bold text-amber-950">সংরক্ষণ ব্যর্থ — আপনার তথ্য মুছে যায়নি</h3>
+                                <p className="text-sm text-amber-900 mt-1">{saveError || flashError}</p>
+                            </div>
+                        </div>
+                    </div>
+                )}
+                {localRestored && !saveError && (
+                    <div className="mb-4 rounded-xl border border-blue-200 bg-blue-50 p-3 text-xs text-blue-900 print:hidden">
+                        এই ডিভাইসে আগের অসম্পূর্ণ খসড়া থেকে তথ্য পুনরুদ্ধার করা হয়েছে। «সেভ ড্রাফট» চাপলে সার্ভারে সেভ হবে।
+                    </div>
+                )}
+
                 {/* Top Header */}
                 <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-4 md:mb-6 print:hidden gap-3">
                     <div className="w-full md:w-auto">
@@ -422,10 +515,10 @@ export default function ApprovalForm({
                             </button>
                             <button
                                 onClick={() => handleSubmit()}
-                                disabled={processing}
+                                disabled={processing || saving}
                                 className="flex items-center gap-1.5 px-4 py-2 bg-gradient-to-r from-blue-600 to-indigo-600 text-white rounded-lg text-xs md:text-sm hover:from-blue-700 hover:to-indigo-700 shadow-sm transition-all disabled:opacity-50 font-bold whitespace-nowrap"
                             >
-                                <Save className="w-4 h-4" /> <span>{processing ? 'সেভ হচ্ছে...' : 'সেভ ড্রাফট'}</span>
+                                <Save className="w-4 h-4" /> <span>{processing || saving ? 'সেভ হচ্ছে...' : 'খসড়া সংরক্ষণ'}</span>
                             </button>
                         </div>
                     </div>
@@ -531,11 +624,11 @@ export default function ApprovalForm({
                         <button
                             type="button"
                             onClick={() => handleSubmit()}
-                            disabled={processing}
+                            disabled={processing || saving}
                             className="px-4 py-2 bg-gradient-to-r from-blue-600 to-indigo-600 text-white rounded-lg text-xs font-bold active:scale-95 transition-all shadow-md flex items-center gap-1.5"
                         >
                             <Save className="w-4 h-4" />
-                            <span>{processing ? '...' : 'সেভ ড্রাফট'}</span>
+                            <span>{processing || saving ? '...' : 'খসড়া সংরক্ষণ'}</span>
                         </button>
                     </div>
                 </div>
