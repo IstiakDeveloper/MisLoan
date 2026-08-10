@@ -162,6 +162,8 @@ export interface MemberAdmission {
     member_category?: any;
     created_by?: number | { id: number; name: string } | null;
     createdBy?: { id: number; name: string } | null;
+    assigned_officer_id?: number | { id: number; name: string } | null;
+    assignedOfficer?: { id: number; name: string } | null;
     submitted_by?: any;
     reviewed_by?: any;
     family_members?: FamilyMember[];

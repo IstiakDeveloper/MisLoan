@@ -15,6 +15,7 @@ use App\Http\Controllers\MemberAdmissionController;
 use App\Http\Controllers\MemberCategoryController;
 use App\Http\Controllers\NotificationController;
 use App\Http\Controllers\OrganizationController;
+use App\Http\Controllers\PortfolioHandoverController;
 use App\Http\Controllers\ProfileController;
 use App\Http\Controllers\RoleController;
 use App\Http\Controllers\SamityController;
@@ -37,6 +38,10 @@ Route::get('/', function () {
 
 Route::middleware(['auth', 'verified'])->group(function () {
     Route::get('dashboard', [DashboardController::class, 'index'])->name('dashboard');
+
+    // Portfolio handover (allowed while locked; middleware whitelists these routes)
+    Route::get('portfolio-handover', [PortfolioHandoverController::class, 'index'])->name('portfolio-handover.index');
+    Route::post('portfolio-handover', [PortfolioHandoverController::class, 'store'])->name('portfolio-handover.store');
 
     // Site maintenance toggle (Super Admin only)
     Route::post('admin/maintenance/toggle', [MaintenanceController::class, 'toggle'])->name('admin.maintenance.toggle');
@@ -180,6 +185,7 @@ Route::middleware(['auth', 'verified'])->group(function () {
         Route::get('/', [MemberAdmissionController::class, 'index'])->name('index')->middleware('branch.user');
         Route::get('create', [MemberAdmissionController::class, 'create'])->name('create')->middleware('branch.user');
         Route::post('/', [MemberAdmissionController::class, 'store'])->name('store')->middleware('branch.user');
+        Route::post('send-to-head-office-bulk', [MemberAdmissionController::class, 'sendToHeadOfficeBulk'])->name('send-to-head-office-bulk')->middleware('branch.user');
         Route::get('{memberAdmission}', [MemberAdmissionController::class, 'show'])->name('show')->middleware('member.admission.view');
         Route::get('{memberAdmission}/print', [MemberAdmissionController::class, 'printSingle'])->name('print')->middleware('member.admission.view');
         Route::get('{memberAdmission}/edit', [MemberAdmissionController::class, 'edit'])->name('edit')->middleware('member.admission.view');
@@ -256,6 +262,7 @@ Route::middleware(['auth', 'verified'])->group(function () {
 
             Route::get('create/{productId?}', [\App\Http\Controllers\Member\LoanApplicationController::class, 'create'])->name('create');
             Route::post('/', [\App\Http\Controllers\Member\LoanApplicationController::class, 'store'])->name('store');
+            Route::post('send-to-head-office-bulk', [\App\Http\Controllers\Member\LoanApplicationController::class, 'sendToHeadOfficeBulk'])->name('send-to-head-office-bulk');
             Route::get('{id}', [\App\Http\Controllers\Member\LoanApplicationController::class, 'show'])->name('show');
             Route::get('{id}/edit', [\App\Http\Controllers\Member\LoanApplicationController::class, 'edit'])->name('edit');
             Route::put('{id}', [\App\Http\Controllers\Member\LoanApplicationController::class, 'update'])->name('update');

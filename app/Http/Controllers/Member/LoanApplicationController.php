@@ -66,8 +66,8 @@ class LoanApplicationController extends Controller
         }
 
         if ($this->isFieldOfficer($user)) {
-            if ((int) $member->created_by !== (int) $user->id) {
-                abort(403, 'ফিল্ড অফিসার শুধু নিজের তৈরি সদস্যের জন্য ঋণ আবেদন করতে পারবেন।');
+            if (! $member->isAssignedToUser($user)) {
+                abort(403, 'ফিল্ড অফিসার শুধু নিজের দায়িত্বে থাকা সদস্যের জন্য ঋণ আবেদন করতে পারবেন।');
             }
 
             return;
@@ -555,7 +555,7 @@ class LoanApplicationController extends Controller
 
         $members = MemberAdmission::where('branch_id', $branchId)
             ->when($this->isFieldOfficer($user), function ($query) use ($user) {
-                $query->where('created_by', $user->id)
+                $query->assignedToOfficer((int) $user->id)
                     ->where('status', '!=', 'rejected');
             }, function ($query) {
                 $query->where('status', 'approved');
@@ -1023,6 +1023,85 @@ class LoanApplicationController extends Controller
 
         return redirect()->route('member.loan-applications.show', $application->id)
             ->with('success', 'ঋণ আবেদনটি Head Office এ পাঠানো হয়েছে।');
+    }
+
+    /**
+     * Branch user: send multiple ready loan applications to Head Office at once.
+     */
+    public function sendToHeadOfficeBulk(Request $request)
+    {
+        $user = $request->user();
+        $user->loadMissing('role');
+        $roleName = strtolower($user->role->name ?? '');
+
+        if ($roleName !== 'branch_user') {
+            abort(403, 'শুধুমাত্র শাখা ব্যবহারকারী (Branch User) ঋণ আবেদন হেড অফিসে পাঠাতে পারবেন।');
+        }
+
+        $validated = $request->validate([
+            'ids' => 'required|array|min:1',
+            'ids.*' => 'integer|distinct',
+        ]);
+
+        $ids = array_map('intval', $validated['ids']);
+        $applications = LoanApplication::query()
+            ->with(['memberAdmission', 'branch'])
+            ->whereIn('id', $ids)
+            ->where('status', LoanApplication::STATUS_READY_FOR_HEAD_OFFICE)
+            ->get();
+
+        $eligible = $applications->filter(function (LoanApplication $application) use ($user) {
+            try {
+                $this->ensureApplicationAccessibleToUser($application, $user);
+
+                return true;
+            } catch (\Symfony\Component\HttpKernel\Exception\HttpException $e) {
+                return false;
+            }
+        })->values();
+
+        if ($eligible->isEmpty()) {
+            return back()->withErrors(['error' => 'পাঠানোর মতো শাখা অনুমোদিত ঋণ আবেদন পাওয়া যায়নি।']);
+        }
+
+        DB::transaction(function () use ($eligible) {
+            foreach ($eligible as $application) {
+                $application->update([
+                    'status' => LoanApplication::STATUS_PENDING_HEAD_OFFICE,
+                    'submitted_at' => now(),
+                ]);
+            }
+        });
+
+        $count = $eligible->count();
+        $branchName = $eligible->first()?->branch?->name ?? 'N/A';
+        $sampleNos = $eligible->take(5)->pluck('application_no')->filter()->implode(', ');
+
+        $headOfficeUsers = User::where('is_active', 1)
+            ->where(function ($q) {
+                $q->where('has_all_access', 1)
+                    ->orWhereHas('role', fn ($r) => $r->whereIn('name', ['super_admin', 'head_office', 'ed']));
+            })->get();
+
+        if ($headOfficeUsers->isNotEmpty()) {
+            app(NotificationService::class)->send(
+                users: $headOfficeUsers,
+                type: 'loan_application',
+                title: 'একাধিক ঋণ আবেদন হেড অফিসে পাঠানো হয়েছে',
+                message: "{$count}টি ঋণ আবেদন শাখা কর্তৃক হেড অফিসে অনুমোদনের জন্য পাঠানো হয়েছে।",
+                notifiable: $eligible->first(),
+                actionUrl: '/head-office/process-loans',
+                details: [
+                    'মোট' => (string) $count,
+                    'নমুনা আবেদন নং' => $sampleNos ?: 'N/A',
+                    'শাখা' => $branchName,
+                    'প্রেরক' => $user->name,
+                ]
+            );
+        }
+
+        return redirect()->route('member.loan-applications.index')
+            ->with('success', "{$count}টি ঋণ আবেদন Head Office এ পাঠানো হয়েছে।");
     }
 
     /**

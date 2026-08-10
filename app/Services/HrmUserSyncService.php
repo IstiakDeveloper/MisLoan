@@ -150,6 +150,10 @@ class HrmUserSyncService
      * Update branch assignment for an existing MisLoan user (transfer webhook).
      * Does not create users — only updates when PIN/username matches.
      *
+     * Member portfolio is NOT moved here. After transfer, if the FO still has
+     * members assigned at the previous branch, login is locked until they
+     * complete portfolio handover in MisLoan.
+     *
      * @param  array<string, mixed>  $payload
      * @return 'updated'|'not_found'|'skipped'
      */
@@ -175,6 +179,7 @@ class HrmUserSyncService
             return 'skipped';
         }
 
+        // Branch change only — assigned members stay on old branch until FO handover.
         $user->branch_id = $branch->id;
         $user->area_id = $branch->area_id;
         $user->zone_id = $branch->area?->zone_id;

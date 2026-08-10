@@ -68,7 +68,15 @@ export default function Index({ admissions, filters, stats }: Props) {
         if (admission.has_active_loan) return false;
         if (roleName === 'branch_user') return admission.status === 'approved';
         if (!isFieldOfficer) return false;
-        return Number(admission.created_by ?? admission.createdBy?.id) === Number(currentUserId);
+        const assignedId =
+            typeof admission.assigned_officer_id === 'object'
+                ? admission.assigned_officer_id?.id
+                : admission.assigned_officer_id ?? admission.assignedOfficer?.id;
+        const creatorId =
+            typeof admission.created_by === 'object'
+                ? admission.created_by?.id
+                : admission.created_by ?? admission.createdBy?.id;
+        return Number(assignedId ?? creatorId) === Number(currentUserId);
     };
 
     const [searchQuery, setSearchQuery] = useState(filters.search || '');
@@ -86,6 +94,40 @@ export default function Index({ admissions, filters, stats }: Props) {
     const [selectedAdmission, setSelectedAdmission] = useState<MemberAdmission | null>(null);
     const [rejectionReason, setRejectionReason] = useState('');
     const [revisionNote, setRevisionNote] = useState('');
+    const [selectedHoIds, setSelectedHoIds] = useState<number[]>([]);
+    const [bulkSending, setBulkSending] = useState(false);
+
+    const readyForHoIds = admissions.data
+        .filter((a) => a.status === 'ready_for_head_office')
+        .map((a) => a.id);
+    const allReadySelected =
+        readyForHoIds.length > 0 && readyForHoIds.every((id) => selectedHoIds.includes(id));
+
+    const toggleHoSelect = (id: number) => {
+        setSelectedHoIds((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]));
+    };
+
+    const toggleSelectAllReady = () => {
+        setSelectedHoIds(allReadySelected ? [] : readyForHoIds);
+    };
+
+    const sendSelectedToHeadOffice = () => {
+        if (selectedHoIds.length === 0 || bulkSending) return;
+        if (!confirm(`${selectedHoIds.length}টি আবেদন Head Office এ পাঠাতে চান?`)) return;
+
+        setBulkSending(true);
+        router.post(
+            '/member-admissions/send-to-head-office-bulk',
+            { ids: selectedHoIds },
+            {
+                preserveScroll: true,
+                onFinish: () => {
+                    setBulkSending(false);
+                    setSelectedHoIds([]);
+                },
+            },
+        );
+    };
 
     const getStatusBadge = (status: string) => {
         const variants: Record<string, { bg: string; text: string; dot: string; label: string }> = {
@@ -247,7 +289,7 @@ export default function Index({ admissions, filters, stats }: Props) {
         <AdminLayout>
             <Head title="সদস্য ভর্তি প্যানেল" />
 
-            <div className="max-w-7xl mx-auto space-y-6 py-4 px-3 sm:px-6 pb-16 print:block">
+            <div className="p-3 md:p-4 space-y-3 max-w-[1600px] mx-auto pb-16 print:block">
                 {/* ── 1. HERO BANNER HEADER ─────────────────────────────────────────────── */}
                 <div className="relative overflow-hidden rounded-3xl bg-slate-900 text-white p-6 sm:p-8 shadow-xl border border-slate-800 print:hidden">
                     <div className="absolute -right-12 -bottom-12 w-64 h-64 rounded-full bg-gradient-to-tr from-blue-600/30 to-teal-500/20 blur-3xl pointer-events-none" />
@@ -304,6 +346,32 @@ export default function Index({ admissions, filters, stats }: Props) {
 
                 {/* ── 2. SEARCH & FILTER TOOLBAR ─────────────────────────────────────── */}
                 <div className="bg-white rounded-2xl border border-slate-200/80 p-4 shadow-sm space-y-4 print:hidden">
+                    {isBranchUser && readyForHoIds.length > 0 && (
+                        <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-purple-200 bg-purple-50 px-3 py-2.5">
+                            <p className="text-sm text-purple-900">
+                                শাখা অনুমোদিত: <span className="font-semibold">{readyForHoIds.length}</span> · সিলেক্টেড:{' '}
+                                <span className="font-semibold">{selectedHoIds.length}</span>
+                            </p>
+                            <div className="flex flex-wrap items-center gap-2">
+                                <button
+                                    type="button"
+                                    onClick={toggleSelectAllReady}
+                                    className="rounded-lg border border-purple-300 bg-white px-3 py-1.5 text-xs font-semibold text-purple-800 hover:bg-purple-100"
+                                >
+                                    {allReadySelected ? 'সব আনসিলেক্ট' : 'একবারে সব সিলেক্ট'}
+                                </button>
+                                <button
+                                    type="button"
+                                    onClick={sendSelectedToHeadOffice}
+                                    disabled={selectedHoIds.length === 0 || bulkSending}
+                                    className="inline-flex items-center gap-1.5 rounded-lg bg-purple-600 hover:bg-purple-700 disabled:opacity-40 px-3 py-1.5 text-xs font-bold text-white"
+                                >
+                                    <Send className="w-3.5 h-3.5" />
+                                    {bulkSending ? 'পাঠানো হচ্ছে...' : `HO তে পাঠান (${selectedHoIds.length})`}
+                                </button>
+                            </div>
+                        </div>
+                    )}
                     <form onSubmit={handleSearch} className="flex flex-col lg:flex-row items-stretch lg:items-center justify-between gap-4">
                         {/* Search Input Box */}
                         <div className="relative flex-grow max-w-lg">
@@ -420,6 +488,14 @@ export default function Index({ admissions, filters, stats }: Props) {
                                     {/* Header Row */}
                                     <div className="flex items-start justify-between gap-3">
                                         <div className="flex items-center gap-3">
+                                            {isBranchUser && admission.status === 'ready_for_head_office' && (
+                                                <input
+                                                    type="checkbox"
+                                                    checked={selectedHoIds.includes(admission.id)}
+                                                    onChange={() => toggleHoSelect(admission.id)}
+                                                    className="rounded border-slate-300 text-purple-600 focus:ring-purple-500 shrink-0"
+                                                />
+                                            )}
                                             <div className="w-10 h-10 rounded-full bg-gradient-to-tr from-slate-700 to-slate-900 text-white font-bold text-sm flex items-center justify-center shrink-0 shadow-sm">
                                                 {getInitials(admission.applicant_name_en || admission.applicant_name_bn)}
                                             </div>
@@ -565,6 +641,19 @@ export default function Index({ admissions, filters, stats }: Props) {
                         <table className="w-full text-left border-collapse member-admission-index-table">
                             <thead>
                                 <tr className="bg-slate-50/80 border-b border-slate-200 text-[11px] font-bold text-slate-500 uppercase tracking-wider">
+                                    {isBranchUser && (
+                                        <th className="py-3.5 px-3 text-center print:hidden w-10">
+                                            {readyForHoIds.length > 0 && (
+                                                <input
+                                                    type="checkbox"
+                                                    checked={allReadySelected}
+                                                    onChange={toggleSelectAllReady}
+                                                    className="rounded border-slate-300 text-purple-600 focus:ring-purple-500"
+                                                    title="সব সিলেক্ট"
+                                                />
+                                            )}
+                                        </th>
+                                    )}
                                     <th className="py-3.5 px-4 text-center">ক্রমিক নং</th>
                                     <th className="py-3.5 px-4">সদস্য নাম্বার</th>
                                     <th className="py-3.5 px-4">আবেদনকারী</th>
@@ -581,13 +670,25 @@ export default function Index({ admissions, filters, stats }: Props) {
                             <tbody className="divide-y divide-slate-100 text-sm">
                                 {admissions.data.length === 0 ? (
                                     <tr>
-                                        <td colSpan={11} className="py-12 text-center text-slate-400">
+                                        <td colSpan={isBranchUser ? 12 : 11} className="py-12 text-center text-slate-400">
                                             কোনো ভর্তি আবেদন পাওয়া যায়নি
                                         </td>
                                     </tr>
                                 ) : (
                                     admissions.data.map((admission, index) => (
                                         <tr key={admission.id} className="hover:bg-slate-50/60 transition-colors">
+                                            {isBranchUser && (
+                                                <td className="py-4 px-3 text-center print:hidden">
+                                                    {admission.status === 'ready_for_head_office' ? (
+                                                        <input
+                                                            type="checkbox"
+                                                            checked={selectedHoIds.includes(admission.id)}
+                                                            onChange={() => toggleHoSelect(admission.id)}
+                                                            className="rounded border-slate-300 text-purple-600 focus:ring-purple-500"
+                                                        />
+                                                    ) : null}
+                                                </td>
+                                            )}
                                             <td className="py-4 px-4 text-center font-bold text-slate-500 text-xs whitespace-nowrap">
                                                 {((admissions.current_page || 1) - 1) * (admissions.per_page || 15) + index + 1}
                                             </td>

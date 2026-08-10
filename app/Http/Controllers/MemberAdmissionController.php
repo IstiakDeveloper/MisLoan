@@ -207,19 +207,23 @@ class MemberAdmissionController extends Controller
             $accessibleBranchIds = $user->getAccessibleBranches()->pluck('id');
             $query->where(function ($q) use ($accessibleBranchIds, $user) {
                 $q->whereIn('branch_id', $accessibleBranchIds)
-                  ->orWhere('created_by', $user->id);
+                  ->orWhere(function ($q2) use ($user) {
+                      $q2->assignedToOfficer((int) $user->id);
+                  });
             });
         }
 
-        // Field officers only see admissions they created
+        // Field officers only see admissions currently assigned to them
         if ($isFieldOfficer) {
-            $query->where('created_by', $user->id);
+            $query->assignedToOfficer((int) $user->id);
         }
 
-        // Draft privacy constraint: Drafts are only visible to the user who created them
+        // Draft privacy constraint: Drafts are only visible to the assigned officer
         $query->where(function ($q) use ($user) {
             $q->where('status', '!=', 'draft')
-              ->orWhere('created_by', $user->id);
+              ->orWhere(function ($q2) use ($user) {
+                  $q2->assignedToOfficer((int) $user->id);
+              });
         });
 
         // Build stats query with active date, branch, and search filters (excluding status filter for stats)
@@ -228,17 +232,21 @@ class MemberAdmissionController extends Controller
             $accessibleBranchIds = $user->getAccessibleBranches()->pluck('id');
             $statsQuery->where(function ($q) use ($accessibleBranchIds, $user) {
                 $q->whereIn('branch_id', $accessibleBranchIds)
-                  ->orWhere('created_by', $user->id);
+                  ->orWhere(function ($q2) use ($user) {
+                      $q2->assignedToOfficer((int) $user->id);
+                  });
             });
         }
 
         if ($isFieldOfficer) {
-            $statsQuery->where('created_by', $user->id);
+            $statsQuery->assignedToOfficer((int) $user->id);
         }
 
         $statsQuery->where(function ($q) use ($user) {
             $q->where('status', '!=', 'draft')
-              ->orWhere('created_by', $user->id);
+              ->orWhere(function ($q2) use ($user) {
+                  $q2->assignedToOfficer((int) $user->id);
+              });
         });
 
         if ($request->has('branch_id') && $request->branch_id) {
@@ -563,6 +571,7 @@ class MemberAdmissionController extends Controller
                   $admissionData['applicant_signature']);
 
             $admissionData['created_by'] = auth()->id();
+            $admissionData['assigned_officer_id'] = auth()->id();
             if (empty($admissionData['branch_id']) && auth()->user()?->branch_id) {
                 $admissionData['branch_id'] = auth()->user()->branch_id;
             }
@@ -1311,6 +1320,82 @@ class MemberAdmissionController extends Controller
 
         return redirect()->route('member-admissions.index')
             ->with('success', 'আবেদনটি Head Office এ পাঠানো হয়েছে।');
+    }
+
+    /**
+     * Branch user: send multiple ready admissions to Head Office at once.
+     */
+    public function sendToHeadOfficeBulk(Request $request)
+    {
+        $user = auth()->user();
+        $user->loadMissing('role');
+        $roleName = strtolower($user->role->name ?? '');
+
+        if ($roleName !== 'branch_user') {
+            return back()->with('error', 'শুধুমাত্র শাখা ব্যবহারকারী (Branch User) হেড অফিসে পাঠাতে পারবেন।');
+        }
+
+        $validated = $request->validate([
+            'ids' => 'required|array|min:1',
+            'ids.*' => 'integer|distinct',
+        ]);
+
+        $ids = array_map('intval', $validated['ids']);
+
+        $query = MemberAdmission::query()
+            ->whereIn('id', $ids)
+            ->where('status', 'ready_for_head_office');
+
+        if (! $user->has_all_access) {
+            $accessibleBranchIds = $user->getAccessibleBranches()->pluck('id')->all();
+            $query->whereIn('branch_id', $accessibleBranchIds ?: [0]);
+        }
+
+        $admissions = $query->with('branch')->get();
+
+        if ($admissions->isEmpty()) {
+            return back()->with('error', 'পাঠানোর মতো শাখা অনুমোদিত আবেদন পাওয়া যায়নি।');
+        }
+
+        DB::transaction(function () use ($admissions, $user) {
+            foreach ($admissions as $admission) {
+                $admission->update([
+                    'status' => 'pending_head_office',
+                    'submitted_by' => $user->id,
+                    'submitted_at' => now(),
+                ]);
+            }
+        });
+
+        $count = $admissions->count();
+        $branchName = $admissions->first()?->branch?->name ?? 'N/A';
+        $sampleNos = $admissions->take(5)->pluck('application_no')->filter()->implode(', ');
+
+        $headOfficeUsers = User::where('is_active', 1)
+            ->where(function ($q) {
+                $q->where('has_all_access', 1)
+                    ->orWhereHas('role', fn ($r) => $r->whereIn('name', ['super_admin', 'head_office', 'ed']));
+            })->get();
+
+        if ($headOfficeUsers->isNotEmpty()) {
+            app(NotificationService::class)->send(
+                users: $headOfficeUsers,
+                type: 'member_admission',
+                title: 'একাধিক সদস্য আবেদন হেড অফিসে পাঠানো হয়েছে',
+                message: "{$count}টি সদস্য ভর্তি আবেদন শাখা কর্তৃক হেড অফিসে অনুমোদনের জন্য পাঠানো হয়েছে।",
+                notifiable: $admissions->first(),
+                actionUrl: '/head-office/process-admissions',
+                details: [
+                    'মোট' => (string) $count,
+                    'নমুনা আবেদন নং' => $sampleNos ?: 'N/A',
+                    'শাখা' => $branchName,
+                    'প্রেরক' => $user->name,
+                ]
+            );
+        }
+
+        return redirect()->route('member-admissions.index')
+            ->with('success', "{$count}টি আবেদন Head Office এ পাঠানো হয়েছে।");
     }
 
     /**

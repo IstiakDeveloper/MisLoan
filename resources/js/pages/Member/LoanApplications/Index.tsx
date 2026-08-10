@@ -189,6 +189,8 @@ export default function Index({ categories, applications, stats, selectedDate, d
     const [selectedIssue, setSelectedIssue] = useState<{ applicationId: number; issueId: number } | null>(null);
     const [showResolveModal, setShowResolveModal] = useState(false);
     const [showRejectModal, setShowRejectModal] = useState(false);
+    const [selectedHoIds, setSelectedHoIds] = useState<number[]>([]);
+    const [bulkSending, setBulkSending] = useState(false);
 
     const resolveForm = useForm({
         response_message: '',
@@ -415,6 +417,39 @@ export default function Index({ categories, applications, stats, selectedDate, d
             disbursed: filteredApplications.filter(app => app.status === 'disbursed').length,
         };
     }, [applications, stats, searchQuery, filteredApplications]);
+
+    const readyForHoIds = useMemo(
+        () => filteredApplications.filter((a) => a.status === 'ready_for_head_office').map((a) => a.id),
+        [filteredApplications],
+    );
+    const allReadySelected =
+        readyForHoIds.length > 0 && readyForHoIds.every((id) => selectedHoIds.includes(id));
+
+    const toggleHoSelect = (id: number) => {
+        setSelectedHoIds((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]));
+    };
+
+    const toggleSelectAllReady = () => {
+        setSelectedHoIds(allReadySelected ? [] : readyForHoIds);
+    };
+
+    const sendSelectedToHeadOffice = () => {
+        if (selectedHoIds.length === 0 || bulkSending) return;
+        if (!confirm(`${selectedHoIds.length}টি ঋণ আবেদন Head Office এ পাঠাতে চান?`)) return;
+
+        setBulkSending(true);
+        router.post(
+            '/member/loan-applications/send-to-head-office-bulk',
+            { ids: selectedHoIds },
+            {
+                preserveScroll: true,
+                onFinish: () => {
+                    setBulkSending(false);
+                    setSelectedHoIds([]);
+                },
+            },
+        );
+    };
 
     return (
         <AdminLayout>
@@ -710,6 +745,33 @@ export default function Index({ categories, applications, stats, selectedDate, d
                         </span>
                     </div>
 
+                    {isBranchUser && readyForHoIds.length > 0 && (
+                        <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-indigo-200 bg-indigo-50 px-3 py-2.5">
+                            <p className="text-sm text-indigo-900">
+                                শাখা অনুমোদিত: <span className="font-semibold">{readyForHoIds.length}</span> · সিলেক্টেড:{' '}
+                                <span className="font-semibold">{selectedHoIds.length}</span>
+                            </p>
+                            <div className="flex flex-wrap items-center gap-2">
+                                <button
+                                    type="button"
+                                    onClick={toggleSelectAllReady}
+                                    className="rounded-lg border border-indigo-300 bg-white px-3 py-1.5 text-xs font-semibold text-indigo-800 hover:bg-indigo-100"
+                                >
+                                    {allReadySelected ? 'সব আনসিলেক্ট' : 'একবারে সব সিলেক্ট'}
+                                </button>
+                                <button
+                                    type="button"
+                                    onClick={sendSelectedToHeadOffice}
+                                    disabled={selectedHoIds.length === 0 || bulkSending}
+                                    className="inline-flex items-center gap-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-700 disabled:opacity-40 px-3 py-1.5 text-xs font-bold text-white"
+                                >
+                                    <Send className="w-3.5 h-3.5" />
+                                    {bulkSending ? 'পাঠানো হচ্ছে...' : `HO তে পাঠান (${selectedHoIds.length})`}
+                                </button>
+                            </div>
+                        </div>
+                    )}
+
                     {/* MOBILE CARDS VIEW (md:hidden) */}
                     <div className="md:hidden flex flex-col gap-3.5">
                         {filteredApplications.length === 0 ? (
@@ -730,6 +792,14 @@ export default function Index({ categories, applications, stats, selectedDate, d
                                     >
                                         <div className="flex items-start justify-between gap-2 border-b border-slate-100 pb-2.5">
                                             <div className="flex items-center gap-2.5">
+                                                {isBranchUser && app.status === 'ready_for_head_office' && (
+                                                    <input
+                                                        type="checkbox"
+                                                        checked={selectedHoIds.includes(app.id)}
+                                                        onChange={() => toggleHoSelect(app.id)}
+                                                        className="rounded border-slate-300 text-indigo-600 focus:ring-indigo-500 shrink-0"
+                                                    />
+                                                )}
                                                 <div className="w-9 h-9 rounded-xl bg-gradient-to-tr from-blue-600 to-indigo-600 text-white font-extrabold flex items-center justify-center text-xs shadow-sm">
                                                     {(member?.applicant_name_bn || member?.applicant_name_en || 'M')[0]}
                                                 </div>
@@ -869,6 +939,19 @@ export default function Index({ categories, applications, stats, selectedDate, d
                         <table className="w-full text-xs">
                             <thead className="bg-slate-900 text-white">
                                 <tr>
+                                    {isBranchUser && (
+                                        <th className="px-3 py-3.5 text-center w-10">
+                                            {readyForHoIds.length > 0 && (
+                                                <input
+                                                    type="checkbox"
+                                                    checked={allReadySelected}
+                                                    onChange={toggleSelectAllReady}
+                                                    className="rounded border-slate-400 text-indigo-600 focus:ring-indigo-500"
+                                                    title="সব সিলেক্ট"
+                                                />
+                                            )}
+                                        </th>
+                                    )}
                                     <th className="px-4 py-3.5 text-left text-[11px] font-extrabold uppercase tracking-wider">আবেদন নম্বর</th>
                                     <th className="px-4 py-3.5 text-left text-[11px] font-extrabold uppercase tracking-wider">আবেদনকারী সদস্য</th>
                                     <th className="px-4 py-3.5 text-left text-[11px] font-extrabold uppercase tracking-wider">তারিখ</th>
@@ -898,6 +981,18 @@ export default function Index({ categories, applications, stats, selectedDate, d
 
                                     return (
                                         <tr key={app.id} className="hover:bg-slate-50/80 transition-colors">
+                                            {isBranchUser && (
+                                                <td className="px-3 py-3 text-center">
+                                                    {app.status === 'ready_for_head_office' ? (
+                                                        <input
+                                                            type="checkbox"
+                                                            checked={selectedHoIds.includes(app.id)}
+                                                            onChange={() => toggleHoSelect(app.id)}
+                                                            className="rounded border-slate-300 text-indigo-600 focus:ring-indigo-500"
+                                                        />
+                                                    ) : null}
+                                                </td>
+                                            )}
                                             <td className="px-4 py-3.5">
                                                 <span className="font-mono font-bold text-indigo-700 bg-indigo-50 border border-indigo-200 px-2 py-0.5 rounded-lg text-xs">
                                                     {app.application_no}

@@ -134,6 +134,7 @@ class MemberAdmission extends Model
         'returned_by',
         'printed_at',
         'created_by',
+        'assigned_officer_id',
 
         // Legacy / old member data entry
         'is_legacy',
@@ -192,6 +193,39 @@ class MemberAdmission extends Model
     public function createdBy(): BelongsTo
     {
         return $this->belongsTo(User::class, 'created_by');
+    }
+
+    public function assignedOfficer(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'assigned_officer_id');
+    }
+
+    /**
+     * Current responsible officer (assigned), falling back to creator for legacy rows.
+     */
+    public function effectiveOfficerId(): ?int
+    {
+        $id = $this->assigned_officer_id ?? $this->created_by;
+
+        return $id !== null ? (int) $id : null;
+    }
+
+    public function isAssignedToUser(User $user): bool
+    {
+        return $this->effectiveOfficerId() === (int) $user->id;
+    }
+
+    /**
+     * Scope: members currently assigned to this officer (or created by them if unassigned).
+     */
+    public function scopeAssignedToOfficer($query, int $userId)
+    {
+        return $query->where(function ($q) use ($userId) {
+            $q->where('assigned_officer_id', $userId)
+                ->orWhere(function ($q2) use ($userId) {
+                    $q2->whereNull('assigned_officer_id')->where('created_by', $userId);
+                });
+        });
     }
 
     public function submittedBy(): BelongsTo

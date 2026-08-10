@@ -28,8 +28,8 @@ class EnsureCanViewMemberAdmission
             return $next($request);
         }
 
-        // Draft privacy check: Drafts can only be accessed by the creator
-        if ($admission->status === 'draft' && (int) $admission->created_by !== (int) $user->id) {
+        // Draft privacy check: Drafts can only be accessed by the assigned officer
+        if ($admission->status === 'draft' && ! $admission->isAssignedToUser($user)) {
             abort(403, 'Drafts can only be accessed by the creator.');
         }
 
@@ -42,11 +42,11 @@ class EnsureCanViewMemberAdmission
             return $next($request);
         }
 
-        // Field officers may only view admissions they created
+        // Field officers may only view admissions currently assigned to them
         $user->loadMissing('role');
         if ($user->role?->name === \App\Models\Role::FIELD_OFFICER) {
-            if ((int) $admission->created_by !== (int) $user->id) {
-                abort(403, 'ফিল্ড অফিসার শুধু নিজের তৈরি ভর্তি আবেদন দেখতে পারবেন।');
+            if (! $admission->isAssignedToUser($user)) {
+                abort(403, 'ফিল্ড অফিসার শুধু নিজের দায়িত্বে থাকা ভর্তি আবেদন দেখতে পারবেন।');
             }
 
             return $next($request);
