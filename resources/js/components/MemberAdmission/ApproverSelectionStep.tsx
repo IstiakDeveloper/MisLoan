@@ -37,10 +37,12 @@ interface Props {
     collectorComment: string;
     customerPhoto: File | string | null;
     customerNidPhoto: File | string | null;
+    customerNidBackPhoto?: File | string | null;
+    nidBothSides?: boolean;
     guardianPhoto: File | string | null;
     guardianNidPhoto: File | string | null;
     applicantSignature: File | string | null;
-    onFieldChange: (field: string, value: string | File | null) => void;
+    onFieldChange: (field: string, value: string | File | boolean | null) => void;
     errors: any;
 }
 
@@ -59,6 +61,8 @@ export default function ApproverSelectionStep({
     collectorComment,
     customerPhoto,
     customerNidPhoto,
+    customerNidBackPhoto = null,
+    nidBothSides = false,
     guardianPhoto,
     guardianNidPhoto,
     applicantSignature,
@@ -284,28 +288,58 @@ export default function ApproverSelectionStep({
                 </div>
             </div>
 
-            {/* ── PROFESSIONAL DOCUMENT UPLOADS SECTION ─────────────────────────────────── */}
-            <div className="border-t border-gray-200 pt-6 mt-8">
-                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 mb-6">
-                    <div>
-                        <h3 className="text-xl font-extrabold text-slate-900 tracking-tight flex items-center gap-2.5">
-                            <Upload className="w-6 h-6 text-blue-600" />
-                            <span>Document Uploads (ডকুমেন্ট আপলোড)</span>
-                        </h3>
-                        <p className="text-xs sm:text-sm text-slate-500 mt-1">
-                            ফোনে «ক্যামেরা দিয়ে তুলুন» চাপলে সরাসরি ডিভাইসের ক্যামেরা খুলবে। গ্যালারি থেকেও ছবি নেওয়া যাবে।
+            {/* ── DOCUMENT UPLOADS ─────────────────────────────────── */}
+            <div className="border-t border-slate-200/80 pt-6 mt-8">
+                <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+                    <div className="min-w-0">
+                        <div className="flex items-center gap-2">
+                            <span className="inline-flex h-7 w-7 items-center justify-center rounded-lg bg-slate-900 text-white">
+                                <Upload className="h-3.5 w-3.5" />
+                            </span>
+                            <h3 className="text-base font-semibold tracking-tight text-slate-900 sm:text-lg">
+                                Document Uploads
+                                <span className="ml-1.5 font-medium text-slate-500">(ডকুমেন্ট আপলোড)</span>
+                            </h3>
+                        </div>
+                        <p className="mt-1.5 text-[11px] leading-relaxed text-slate-500 sm:text-xs">
+                            ক্যামেরা বা গ্যালারি থেকে আপলোড করুন · JPG / PNG / PDF · সর্বোচ্চ ১০MB (অটোকম্প্রেস)
                         </p>
                     </div>
-                    <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-xl bg-blue-50 border border-blue-200 text-blue-800 text-xs font-semibold shrink-0">
-                        <Camera className="w-4 h-4 text-blue-600" />
-                        <span>ডিভাইস ক্যামেরা</span>
+                    <div className="inline-flex items-center gap-1.5 self-start rounded-md border border-slate-200 bg-slate-50 px-2 py-1 text-[10px] font-semibold text-slate-600 sm:self-auto">
+                        <Camera className="h-3 w-3 text-slate-500" />
+                        ডিভাইস ক্যামেরা সাপোর্টেড
                     </div>
                 </div>
 
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <div className="mb-3 flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2">
+                    <input
+                        type="checkbox"
+                        id="nid_both_sides"
+                        checked={!!nidBothSides}
+                        onChange={(e) => {
+                            const checked = e.target.checked;
+                            onFieldChange('nid_both_sides', checked);
+                            if (!checked) {
+                                handleFileChange('customer_nid_back_photo', null);
+                            }
+                        }}
+                        className="h-3.5 w-3.5 rounded border-slate-300 text-slate-800 focus:ring-slate-400"
+                    />
+                    <label
+                        htmlFor="nid_both_sides"
+                        className="cursor-pointer select-none text-[11px] font-semibold text-slate-700 sm:text-xs"
+                    >
+                        দুই পাশের NID ছবি দিতে চাই
+                        <span className="ml-1 font-normal text-slate-500">
+                            — চেক করলে সামনের ও পেছনের দুইটি স্লট দেখাবে
+                        </span>
+                    </label>
+                </div>
+
+                <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">
                     <DocumentUploadCard
-                        title="Member Photo (সদস্যের ছবি)"
-                        subTitle="সদস্যের সাম্প্রতিক রঙিন পাসপোর্ট সাইজ ছবি"
+                        title="সদস্যের ছবি"
+                        subTitle="পাসপোর্ট সাইজ"
                         required={false}
                         fieldKey="customer_photo"
                         fileValue={customerPhoto}
@@ -313,13 +347,14 @@ export default function ApproverSelectionStep({
                         error={errors.customer_photo}
                         statusMsg={uploadStatus.customer_photo}
                         accept="image/jpeg,image/png,image/jpg"
-                        icon={<User className="w-5 h-5 text-blue-600" />}
+                        icon={<User className="h-3.5 w-3.5" />}
+                        accent="blue"
                         onFileSelect={(file) => handleFileChange('customer_photo', file)}
                     />
 
                     <DocumentUploadCard
-                        title="Member NID Photo (সদস্যের NID ছবি)"
-                        subTitle="জাতীয় পরিচয়পত্রের স্পষ্ট ছবি বা PDF"
+                        title={nidBothSides ? 'NID — সামনের পাশ' : 'সদস্যের NID'}
+                        subTitle={nidBothSides ? 'Front side' : 'ছবি বা PDF'}
                         required={true}
                         fieldKey="customer_nid_photo"
                         fileValue={customerNidPhoto}
@@ -327,13 +362,39 @@ export default function ApproverSelectionStep({
                         error={errors.customer_nid_photo || errors.customer_nid_photo_path}
                         statusMsg={uploadStatus.customer_nid_photo}
                         accept=".jpg,.jpeg,.png,.pdf,image/jpeg,image/png,image/jpg,application/pdf"
-                        icon={<CreditCard className="w-5 h-5 text-emerald-600" />}
+                        icon={<CreditCard className="h-3.5 w-3.5" />}
+                        accent="emerald"
                         onFileSelect={(file) => handleFileChange('customer_nid_photo', file)}
                     />
 
+                    {nidBothSides ? (
+                        <DocumentUploadCard
+                            title="NID — পেছনের পাশ"
+                            subTitle="Back side"
+                            required={true}
+                            fieldKey="customer_nid_back_photo"
+                            fileValue={customerNidBackPhoto}
+                            previewSrc={getPreviewSource(
+                                'customer_nid_back_photo',
+                                customerNidBackPhoto
+                            )}
+                            error={
+                                errors.customer_nid_back_photo ||
+                                errors.customer_nid_back_photo_path
+                            }
+                            statusMsg={uploadStatus.customer_nid_back_photo}
+                            accept=".jpg,.jpeg,.png,.pdf,image/jpeg,image/png,image/jpg,application/pdf"
+                            icon={<CreditCard className="h-3.5 w-3.5" />}
+                            accent="teal"
+                            onFileSelect={(file) =>
+                                handleFileChange('customer_nid_back_photo', file)
+                            }
+                        />
+                    ) : null}
+
                     <DocumentUploadCard
-                        title="Guardian Photo (অভিভাবকের ছবি)"
-                        subTitle="অভিভাবকের ছবি (প্রযোজ্য ক্ষেত্রে)"
+                        title="অভিভাবকের ছবি"
+                        subTitle="প্রযোজ্য ক্ষেত্রে"
                         required={false}
                         fieldKey="guardian_photo"
                         fileValue={guardianPhoto}
@@ -341,13 +402,14 @@ export default function ApproverSelectionStep({
                         error={errors.guardian_photo}
                         statusMsg={uploadStatus.guardian_photo}
                         accept="image/jpeg,image/png,image/jpg"
-                        icon={<Shield className="w-5 h-5 text-purple-600" />}
+                        icon={<Shield className="h-3.5 w-3.5" />}
+                        accent="violet"
                         onFileSelect={(file) => handleFileChange('guardian_photo', file)}
                     />
 
                     <DocumentUploadCard
-                        title="Guardian NID Photo (অভিভাবকের NID)"
-                        subTitle="অভিভাবকের জাতীয় পরিচয়পত্র (প্রযোজ্য ক্ষেত্রে)"
+                        title="অভিভাবকের NID"
+                        subTitle="প্রযোজ্য ক্ষেত্রে"
                         required={false}
                         fieldKey="guardian_nid_photo"
                         fileValue={guardianNidPhoto}
@@ -355,7 +417,8 @@ export default function ApproverSelectionStep({
                         error={errors.guardian_nid_photo}
                         statusMsg={uploadStatus.guardian_nid_photo}
                         accept=".jpg,.jpeg,.png,.pdf,image/jpeg,image/png,image/jpg,application/pdf"
-                        icon={<CreditCard className="w-5 h-5 text-indigo-600" />}
+                        icon={<CreditCard className="h-3.5 w-3.5" />}
+                        accent="indigo"
                         onFileSelect={(file) => handleFileChange('guardian_nid_photo', file)}
                     />
                 </div>
@@ -364,7 +427,7 @@ export default function ApproverSelectionStep({
     );
 }
 
-{/* ── PROFESSIONAL DOCUMENT UPLOAD CARD COMPONENT ─────────────────────────────────── */}
+{/* ── DOCUMENT UPLOAD CARD ─────────────────────────────────── */}
 interface DocCardProps {
     title: string;
     subTitle: string;
@@ -376,8 +439,42 @@ interface DocCardProps {
     statusMsg?: string;
     accept: string;
     icon: React.ReactNode;
+    accent?: 'blue' | 'emerald' | 'teal' | 'violet' | 'indigo';
     onFileSelect: (file: File | null) => void;
 }
+
+const ACCENT = {
+    blue: {
+        icon: 'bg-blue-50 text-blue-700 ring-blue-100',
+        empty: 'hover:border-blue-300 hover:bg-blue-50/40',
+        btn: 'bg-slate-800 hover:bg-slate-900 text-white',
+        cam: 'bg-white text-slate-700 ring-1 ring-slate-200 hover:bg-slate-50',
+    },
+    emerald: {
+        icon: 'bg-emerald-50 text-emerald-700 ring-emerald-100',
+        empty: 'hover:border-emerald-300 hover:bg-emerald-50/40',
+        btn: 'bg-slate-800 hover:bg-slate-900 text-white',
+        cam: 'bg-white text-slate-700 ring-1 ring-slate-200 hover:bg-slate-50',
+    },
+    teal: {
+        icon: 'bg-teal-50 text-teal-700 ring-teal-100',
+        empty: 'hover:border-teal-300 hover:bg-teal-50/40',
+        btn: 'bg-slate-800 hover:bg-slate-900 text-white',
+        cam: 'bg-white text-slate-700 ring-1 ring-slate-200 hover:bg-slate-50',
+    },
+    violet: {
+        icon: 'bg-violet-50 text-violet-700 ring-violet-100',
+        empty: 'hover:border-violet-300 hover:bg-violet-50/40',
+        btn: 'bg-slate-800 hover:bg-slate-900 text-white',
+        cam: 'bg-white text-slate-700 ring-1 ring-slate-200 hover:bg-slate-50',
+    },
+    indigo: {
+        icon: 'bg-indigo-50 text-indigo-700 ring-indigo-100',
+        empty: 'hover:border-indigo-300 hover:bg-indigo-50/40',
+        btn: 'bg-slate-800 hover:bg-slate-900 text-white',
+        cam: 'bg-white text-slate-700 ring-1 ring-slate-200 hover:bg-slate-50',
+    },
+} as const;
 
 function DocumentUploadCard({
     title,
@@ -389,13 +486,14 @@ function DocumentUploadCard({
     statusMsg,
     accept,
     icon,
+    accent = 'blue',
     onFileSelect,
 }: DocCardProps) {
     const fileInputRef = useRef<HTMLInputElement | null>(null);
     const cameraInputRef = useRef<HTMLInputElement | null>(null);
+    const tone = ACCENT[accent];
 
     const openNativeCamera = () => {
-        // Opens system camera on phones (no getUserMedia / browser stream permission needed)
         cameraInputRef.current?.click();
     };
 
@@ -407,161 +505,147 @@ function DocumentUploadCard({
         fileValue instanceof File
             ? fileValue.name
             : typeof fileValue === 'string' && fileValue.trim() !== ''
-            ? fileValue.split('/').pop()
-            : null;
+              ? fileValue.split('/').pop()
+              : null;
+
+    const hasFile = !!(previewSrc || isPdf || fileName);
 
     return (
         <div
-            className={`group relative overflow-hidden rounded-2xl border bg-white p-5 shadow-sm hover:shadow-md transition-all duration-200 ${
+            className={`flex h-full flex-col rounded-xl border bg-white p-3 transition-colors ${
                 error
-                    ? 'border-red-500 bg-red-50/30 ring-2 ring-red-200'
-                    : 'border-slate-200 hover:border-blue-400'
+                    ? 'border-red-300 ring-1 ring-red-100'
+                    : 'border-slate-200 hover:border-slate-300'
             }`}
         >
-            {/* Header: Title & Badges */}
-            <div className="flex items-start justify-between gap-3 mb-3">
-                <div className="flex items-center gap-2.5">
-                    <div className="p-2.5 rounded-xl bg-slate-100 text-slate-700 group-hover:bg-blue-50 group-hover:text-blue-600 transition-colors">
-                        {icon}
+            <div className="mb-2.5 flex items-start gap-2">
+                <span
+                    className={`inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-md ring-1 ${tone.icon}`}
+                >
+                    {icon}
+                </span>
+                <div className="min-w-0 flex-1">
+                    <div className="flex flex-wrap items-center gap-1.5">
+                        <h4 className="truncate text-xs font-semibold text-slate-900">{title}</h4>
+                        {required ? (
+                            <span className="rounded bg-red-50 px-1 py-px text-[9px] font-bold uppercase tracking-wide text-red-600 ring-1 ring-red-100">
+                                Required
+                            </span>
+                        ) : (
+                            <span className="rounded bg-slate-50 px-1 py-px text-[9px] font-medium uppercase tracking-wide text-slate-400 ring-1 ring-slate-100">
+                                Optional
+                            </span>
+                        )}
                     </div>
-                    <div>
-                        <h4 className="text-sm font-bold text-slate-900 leading-snug flex items-center gap-1.5">
-                            <span>{title}</span>
-                            {required ? (
-                                <span className="text-xs px-2 py-0.5 rounded-full bg-red-100 text-red-700 font-bold border border-red-200">
-                                    বাধ্যতামূলক *
-                                </span>
-                            ) : (
-                                <span className="text-[10px] px-2 py-0.5 rounded-full bg-slate-100 text-slate-500 font-medium">
-                                    ঐচ্ছিক
-                                </span>
-                            )}
-                        </h4>
-                        <p className="text-xs text-slate-500 mt-0.5">{subTitle}</p>
-                    </div>
+                    <p className="mt-0.5 truncate text-[10px] text-slate-500">{subTitle}</p>
                 </div>
             </div>
 
-            {/* Error Banner if validation fails */}
-            {error && (
-                <div className="mb-3 flex items-center gap-2 text-xs font-semibold text-red-700 bg-red-100/90 p-2.5 rounded-xl border border-red-200">
-                    <AlertCircle className="w-4 h-4 shrink-0 text-red-600" />
+            {error ? (
+                <div className="mb-2 flex items-start gap-1.5 rounded-md bg-red-50 px-2 py-1.5 text-[10px] font-medium text-red-700 ring-1 ring-red-100">
+                    <AlertCircle className="mt-px h-3 w-3 shrink-0" />
                     <span>{error}</span>
                 </div>
-            )}
+            ) : null}
 
-            {/* Status info (success / processing / client-side reject) */}
-            {statusMsg && !error && (
+            {statusMsg && !error ? (
                 <div
-                    className={`mb-3 text-xs px-3 py-1.5 rounded-lg border ${
+                    className={`mb-2 rounded-md px-2 py-1 text-[10px] ring-1 ${
                         statusMsg.startsWith('❌')
-                            ? 'text-red-800 bg-red-50 border-red-200 font-semibold'
+                            ? 'bg-red-50 text-red-700 ring-red-100'
                             : statusMsg.startsWith('⏳')
-                              ? 'text-amber-800 bg-amber-50 border-amber-200'
-                              : 'text-blue-700 bg-blue-50/80 border-blue-200'
+                              ? 'bg-amber-50 text-amber-800 ring-amber-100'
+                              : 'bg-slate-50 text-slate-600 ring-slate-100'
                     }`}
                 >
                     {statusMsg}
                 </div>
-            )}
+            ) : null}
 
-            {/* Main File Box / Preview State */}
-            {previewSrc || isPdf || fileName ? (
-                <div className="relative overflow-hidden rounded-xl border border-slate-200 bg-slate-50/80 p-3">
-                    <div className="flex items-center gap-3">
-                        {/* Thumbnail / Icon */}
+            {hasFile ? (
+                <div className="mt-auto rounded-lg border border-slate-200 bg-slate-50/80 p-2">
+                    <div className="flex gap-2">
                         {previewSrc && !isPdf ? (
-                            <div className="relative h-20 w-24 rounded-lg overflow-hidden border border-slate-300 bg-white shrink-0 shadow-inner">
+                            <div className="h-14 w-14 shrink-0 overflow-hidden rounded-md border border-slate-200 bg-white">
                                 <img
                                     src={previewSrc}
                                     alt={title}
-                                    className="h-full w-full object-cover group-hover:scale-105 transition-transform duration-300"
+                                    className="h-full w-full object-cover"
                                 />
                             </div>
                         ) : (
-                            <div className="h-16 w-16 rounded-lg bg-blue-100 text-blue-700 flex items-center justify-center shrink-0 border border-blue-200">
-                                <FileText className="w-8 h-8" />
+                            <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-md border border-slate-200 bg-white text-slate-400">
+                                <FileText className="h-5 w-5" />
                             </div>
                         )}
-
-                        {/* Details & Actions */}
-                        <div className="flex-1 min-w-0">
-                            <div className="flex items-center gap-1.5 text-xs font-bold text-slate-800 truncate">
-                                <CheckCircle className="w-4 h-4 text-emerald-600 shrink-0" />
+                        <div className="min-w-0 flex-1">
+                            <div className="flex items-center gap-1 text-[11px] font-semibold text-slate-800">
+                                <CheckCircle className="h-3 w-3 shrink-0 text-emerald-600" />
                                 <span className="truncate">{fileName || 'সংযুক্ত নথি'}</span>
                             </div>
-                            <p className="text-[11px] text-slate-500 mt-0.5">
+                            <p className="mt-0.5 text-[10px] text-slate-500">
                                 {fileValue instanceof File
-                                    ? `${(fileValue.size / 1024).toFixed(1)} KB`
-                                    : 'সংরক্ষিত ছবি — চাইলে পরিবর্তন বা রিমুভ করুন'}
+                                    ? `${(fileValue.size / 1024).toFixed(0)} KB`
+                                    : 'সংরক্ষিত'}
                             </p>
-
-                            <div className="flex items-center gap-2 mt-2.5">
+                            <div className="mt-1.5 flex flex-wrap gap-1">
                                 <button
                                     type="button"
                                     onClick={openNativeCamera}
-                                    className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-white border border-slate-300 hover:bg-blue-50 hover:text-blue-600 hover:border-blue-300 text-[11px] font-semibold text-slate-700 transition shadow-xs"
+                                    className="inline-flex items-center gap-1 rounded-md bg-white px-1.5 py-0.5 text-[10px] font-semibold text-slate-600 ring-1 ring-slate-200 hover:bg-slate-50"
                                 >
-                                    <Camera className="w-3.5 h-3.5 text-blue-600" />
-                                    <span>ক্যামেরা</span>
+                                    <Camera className="h-3 w-3" />
+                                    ক্যামেরা
                                 </button>
                                 <button
                                     type="button"
                                     onClick={() => fileInputRef.current?.click()}
-                                    className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-white border border-slate-300 hover:bg-slate-100 text-[11px] font-semibold text-slate-700 transition shadow-xs"
+                                    className="inline-flex items-center gap-1 rounded-md bg-white px-1.5 py-0.5 text-[10px] font-semibold text-slate-600 ring-1 ring-slate-200 hover:bg-slate-50"
                                 >
-                                    <RefreshCw className="w-3.5 h-3.5" />
-                                    <span>পরিবর্তন</span>
+                                    <RefreshCw className="h-3 w-3" />
+                                    পরিবর্তন
                                 </button>
                                 <button
                                     type="button"
                                     onClick={() => onFileSelect(null)}
-                                    className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-white border border-red-200 hover:bg-red-50 text-[11px] font-semibold text-red-600 transition shadow-xs"
+                                    className="inline-flex items-center gap-1 rounded-md bg-white px-1.5 py-0.5 text-[10px] font-semibold text-red-600 ring-1 ring-red-200 hover:bg-red-50"
                                 >
-                                    <Trash2 className="w-3.5 h-3.5" />
-                                    <span>রিমুভ</span>
+                                    <Trash2 className="h-3 w-3" />
+                                    রিমুভ
                                 </button>
                             </div>
                         </div>
                     </div>
                 </div>
             ) : (
-                /* Empty Upload Zone */
-                <div className="rounded-xl border-2 border-dashed border-slate-300 hover:border-blue-500 bg-slate-50/50 hover:bg-blue-50/30 p-5 text-center transition-all duration-200">
-                    <div className="mx-auto mb-2 flex h-10 w-10 items-center justify-center rounded-full bg-blue-100 text-blue-600">
-                        <Upload className="w-5 h-5" />
+                <div
+                    className={`mt-auto rounded-lg border border-dashed border-slate-300 bg-slate-50/40 px-2.5 py-3 text-center transition-colors ${tone.empty}`}
+                >
+                    <div className="mx-auto mb-1.5 flex h-8 w-8 items-center justify-center rounded-full bg-white text-slate-400 ring-1 ring-slate-200">
+                        <Upload className="h-3.5 w-3.5" />
                     </div>
-                    <p className="text-xs font-semibold text-slate-700 mb-1">
-                        নথি বা ছবির ফাইল সিলেক্ট করুন
-                    </p>
-                    <p className="text-[11px] text-slate-500 mb-3">
-                        JPG, PNG, PDF (সর্বোচ্চ ১০MB) — বড় ছবি অটোকম্প্রেস হবে
-                    </p>
-
-                    {/* Dual Action Buttons: Camera & Gallery */}
-                    <div className="flex flex-wrap items-center justify-center gap-2">
+                    <p className="text-[10px] font-medium text-slate-600">ফাইল আপলোড করুন</p>
+                    <div className="mt-2 flex flex-wrap items-center justify-center gap-1.5">
                         <button
                             type="button"
                             onClick={openNativeCamera}
-                            className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold shadow-md shadow-blue-600/20 active:scale-95 transition-all"
+                            className={`inline-flex items-center gap-1 rounded-md px-2 py-1 text-[10px] font-semibold transition ${tone.cam}`}
                         >
-                            <Camera className="w-4 h-4" />
-                            <span>ক্যামেরা দিয়ে তুলুন</span>
+                            <Camera className="h-3 w-3" />
+                            ক্যামেরা
                         </button>
-
                         <button
                             type="button"
                             onClick={() => fileInputRef.current?.click()}
-                            className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-slate-800 hover:bg-slate-900 text-white text-xs font-bold shadow-md active:scale-95 transition-all"
+                            className={`inline-flex items-center gap-1 rounded-md px-2 py-1 text-[10px] font-semibold shadow-sm transition ${tone.btn}`}
                         >
-                            <Upload className="w-4 h-4" />
-                            <span>ফাইল / গ্যালারি</span>
+                            <Upload className="h-3 w-3" />
+                            গ্যালারি
                         </button>
                     </div>
                 </div>
             )}
 
-            {/* Hidden File Input for Browsing */}
             <input
                 ref={fileInputRef}
                 type="file"
@@ -573,8 +657,6 @@ function DocumentUploadCard({
                 }}
                 className="hidden"
             />
-
-            {/* Native Mobile Camera Input */}
             <input
                 ref={cameraInputRef}
                 type="file"

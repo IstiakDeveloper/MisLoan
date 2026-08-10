@@ -38,6 +38,8 @@ class MemberAdmissionController extends Controller
             'customer_photo.max' => 'সদস্যের ছবি সর্বোচ্চ ১০MB হতে পারবে। ছোট ছবি দিয়ে আবার চেষ্টা করুন।',
             'customer_nid_photo.mimes' => 'সদস্যের NID ছবি JPG, PNG বা PDF হতে হবে।',
             'customer_nid_photo.max' => 'সদস্যের NID ছবি সর্বোচ্চ ১০MB হতে পারবে। ছোট ফাইল দিয়ে আবার চেষ্টা করুন।',
+            'customer_nid_back_photo.mimes' => 'সদস্যের NID পেছনের পাশের ছবি JPG, PNG বা PDF হতে হবে।',
+            'customer_nid_back_photo.max' => 'সদস্যের NID পেছনের পাশের ছবি সর্বোচ্চ ১০MB হতে পারবে। ছোট ফাইল দিয়ে আবার চেষ্টা করুন।',
             'guardian_photo.image' => 'অভিভাবকের ছবি JPG বা PNG হতে হবে।',
             'guardian_photo.mimes' => 'অভিভাবকের ছবি JPG বা PNG হতে হবে।',
             'guardian_photo.max' => 'অভিভাবকের ছবি সর্বোচ্চ ১০MB হতে পারবে। ছোট ছবি দিয়ে আবার চেষ্টা করুন।',
@@ -464,6 +466,8 @@ class MemberAdmissionController extends Controller
             // Customer Documents (Optional) - Max 10MB (will be compressed)
             'customer_photo' => 'nullable|image|mimes:jpeg,png,jpg|max:10240',
             'customer_nid_photo' => 'nullable|file|mimes:jpeg,png,jpg,pdf|max:10240',
+            'customer_nid_back_photo' => 'nullable|file|mimes:jpeg,png,jpg,pdf|max:10240',
+            'nid_both_sides' => 'nullable|boolean',
 
             // Guardian Documents (Optional) - Max 10MB (will be compressed)
             'guardian_photo' => 'nullable|image|mimes:jpeg,png,jpg|max:10240',
@@ -535,6 +539,16 @@ class MemberAdmissionController extends Controller
                 }
             }
 
+            // Customer NID back side (only when both sides selected)
+            if ($request->boolean('nid_both_sides') && $request->hasFile('customer_nid_back_photo')) {
+                $compressedPath = $compressionService->compressDocument($request->file('customer_nid_back_photo'), 'admissions/customer_nids');
+                if ($compressedPath) {
+                    $admissionData['customer_nid_back_photo_path'] = $compressedPath;
+                } else {
+                    throw new \Exception('সদস্যের NID পেছনের পাশের ছবি প্রসেস করা যায়নি। অন্য ছবি/ফাইল দিয়ে আবার চেষ্টা করুন। আপনার ফর্মের তথ্য মুছে যায়নি।');
+                }
+            }
+
             // Guardian Photo (Optional) - Compress
             if ($request->hasFile('guardian_photo')) {
                 $compressedPath = $compressionService->compressPhoto($request->file('guardian_photo'), 'admissions/guardian_photos');
@@ -567,6 +581,7 @@ class MemberAdmissionController extends Controller
 
             // Remove file objects from data
             unset($admissionData['customer_photo'], $admissionData['customer_nid_photo'],
+                  $admissionData['customer_nid_back_photo'],
                   $admissionData['guardian_photo'], $admissionData['guardian_nid_photo'],
                   $admissionData['applicant_signature']);
 
@@ -577,6 +592,10 @@ class MemberAdmissionController extends Controller
             }
             $admissionData['is_legacy'] = $isLegacy;
             $admissionData['loan_dofa'] = $isLegacy ? ($validated['loan_dofa'] ?? null) : null;
+            $admissionData['nid_both_sides'] = $request->boolean('nid_both_sides');
+            if (!$admissionData['nid_both_sides']) {
+                $admissionData['customer_nid_back_photo_path'] = null;
+            }
             $admissionData['permanent_address_same'] = (bool) ($admissionData['permanent_address_same'] ?? false);
             $admissionData['want_sms_service'] = array_key_exists('want_sms_service', $admissionData)
                 ? (bool) $admissionData['want_sms_service']
@@ -826,6 +845,8 @@ class MemberAdmissionController extends Controller
             // Customer Documents (Optional) - Max 10MB (will be compressed)
             'customer_photo' => 'nullable|image|mimes:jpeg,png,jpg|max:10240',
             'customer_nid_photo' => 'nullable|file|mimes:jpeg,png,jpg,pdf|max:10240',
+            'customer_nid_back_photo' => 'nullable|file|mimes:jpeg,png,jpg,pdf|max:10240',
+            'nid_both_sides' => 'nullable|boolean',
 
             // Guardian Documents (Optional) - Max 10MB (will be compressed)
             'guardian_photo' => 'nullable|image|mimes:jpeg,png,jpg|max:10240',
@@ -889,6 +910,13 @@ class MemberAdmissionController extends Controller
             if (array_key_exists('want_sms_service', $updateData)) {
                 $updateData['want_sms_service'] = (bool) $updateData['want_sms_service'];
             }
+            $updateData['nid_both_sides'] = $request->boolean('nid_both_sides');
+            if (!$updateData['nid_both_sides'] && !$request->hasFile('customer_nid_back_photo')) {
+                if ($memberAdmission->customer_nid_back_photo_path) {
+                    $oldPathsToDelete[] = $memberAdmission->customer_nid_back_photo_path;
+                }
+                $updateData['customer_nid_back_photo_path'] = null;
+            }
 
             // Compress NEW file first; only delete old file after DB commit succeeds
             if ($request->hasFile('customer_photo')) {
@@ -911,6 +939,17 @@ class MemberAdmissionController extends Controller
                     $oldPathsToDelete[] = $memberAdmission->customer_nid_photo_path;
                 }
                 $updateData['customer_nid_photo_path'] = $compressedPath;
+            }
+
+            if ($request->boolean('nid_both_sides') && $request->hasFile('customer_nid_back_photo')) {
+                $compressedPath = $compressionService->compressDocument($request->file('customer_nid_back_photo'), 'admissions/customer_nids');
+                if (!$compressedPath) {
+                    throw new \Exception('সদস্যের NID পেছনের পাশের ছবি প্রসেস করা যায়নি। অন্য ছবি/ফাইল দিয়ে আবার চেষ্টা করুন। আগের ছবি ও খসড়া অপরিবর্তিত আছে।');
+                }
+                if ($memberAdmission->customer_nid_back_photo_path) {
+                    $oldPathsToDelete[] = $memberAdmission->customer_nid_back_photo_path;
+                }
+                $updateData['customer_nid_back_photo_path'] = $compressedPath;
             }
 
             if ($request->hasFile('guardian_photo')) {
@@ -950,6 +989,7 @@ class MemberAdmissionController extends Controller
             $clearablePhotos = [
                 'customer_photo' => 'customer_photo_path',
                 'customer_nid_photo' => 'customer_nid_photo_path',
+                'customer_nid_back_photo' => 'customer_nid_back_photo_path',
                 'guardian_photo' => 'guardian_photo_path',
                 'guardian_nid_photo' => 'guardian_nid_photo_path',
                 'applicant_signature' => 'applicant_signature_path',
@@ -965,6 +1005,7 @@ class MemberAdmissionController extends Controller
 
             // Remove file objects from data
             unset($updateData['customer_photo'], $updateData['customer_nid_photo'],
+                  $updateData['customer_nid_back_photo'],
                   $updateData['guardian_photo'], $updateData['guardian_nid_photo'],
                   $updateData['applicant_signature']);
 
@@ -1133,6 +1174,43 @@ class MemberAdmissionController extends Controller
             ])
                 ->withErrors($validator)
                 ->with('error', 'আবেদনটি জমা দেওয়ার আগে লাল চিহ্নিত আবশ্যকীয় তথ্যগুলো পূরণ করুন।');
+        }
+
+        // «নিজ» family row is required and must be filled (feeds loan application later)
+        $selfMember = $memberAdmission->familyMembers()
+            ->where('relation_with_head', 'নিজ')
+            ->first();
+        $selfName = trim((string) ($selfMember?->member_name ?? ''));
+        $selfAge = $selfMember?->age_years;
+        if (
+            !$selfMember
+            || $selfName === ''
+            || $selfName === 'নাম নেই'
+            || $selfAge === null
+            || (int) $selfAge < 1
+        ) {
+            return redirect()->route('member-admissions.edit', [
+                'memberAdmission' => $memberAdmission->id,
+                'for_submit' => 1,
+            ])
+                ->withErrors([
+                    'family_members' => 'পরিবারের সদস্য তালিকায় «নিজ» (আবেদনকারী) সারির নাম ও বয়স পূরণ বাধ্যতামূলক।',
+                ])
+                ->with('error', 'পরিবারের সদস্য তালিকায় «নিজ» (আবেদনকারী) সারির নাম ও বয়স পূরণ বাধ্যতামূলক।');
+        }
+
+        if (
+            $memberAdmission->nid_both_sides
+            && empty($memberAdmission->customer_nid_back_photo_path)
+        ) {
+            return redirect()->route('member-admissions.edit', [
+                'memberAdmission' => $memberAdmission->id,
+                'for_submit' => 1,
+            ])
+                ->withErrors([
+                    'customer_nid_back_photo' => 'দুই পাশের NID নির্বাচন করা হয়েছে — পেছনের পাশের ছবি আপলোড বাধ্যতামূলক।',
+                ])
+                ->with('error', 'দুই পাশের NID নির্বাচন করা হয়েছে — পেছনের পাশের ছবি আপলোড বাধ্যতামূলক।');
         }
 
         if ($memberAdmission->is_legacy && empty($memberAdmission->loan_dofa)) {

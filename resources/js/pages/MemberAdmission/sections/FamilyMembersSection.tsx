@@ -55,16 +55,22 @@ export default function FamilyMembersSection({
     // Track rows where user chose «অন্যান্য» even before typing custom text
     const [customModeByIndex, setCustomModeByIndex] = useState<Record<number, boolean>>({});
 
+    const selfRowIndex = familyMembers.findIndex((m) => m.relation_with_head === 'নিজ');
+    const hasLockedSelf = selfRowIndex >= 0;
+    const isLockedSelfRow = (index: number) => index === selfRowIndex;
+
     const inputClass =
         'w-full rounded-xl border border-gray-300 bg-white px-3 py-2 text-xs md:text-sm focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 font-medium transition-all';
 
     const isCustomRelation = (index: number, relation: string | undefined | null): boolean => {
+        if (isLockedSelfRow(index)) return false;
         if (customModeByIndex[index]) return true;
         if (relation && !isPresetRelation(relation)) return true;
         return false;
     };
 
     const relationSelectValue = (index: number, relation: string | undefined | null): string => {
+        if (isLockedSelfRow(index)) return 'নিজ';
         if (isCustomRelation(index, relation)) return CUSTOM_SENTINEL;
         if (!relation) return '';
         return relation;
@@ -112,6 +118,7 @@ export default function FamilyMembersSection({
     };
 
     const handleRelationSelect = (index: number, selectValue: string) => {
+        if (isLockedSelfRow(index)) return;
         if (selectValue === CUSTOM_SENTINEL) {
             setCustomModeByIndex((prev) => ({ ...prev, [index]: true }));
             const current = familyMembers[index]?.relation_with_head || '';
@@ -133,7 +140,7 @@ export default function FamilyMembersSection({
         <FormSection
             title="৫. পরিবারের সদস্য তালিকা (Family Members)"
             icon={<Users className="w-4 h-4 text-blue-600" />}
-            subtitle="পরিবারের প্রতিটি সদস্যের নাম, সম্পর্ক, বয়স, পেশা ও আয়ের বিবরণ — আবেদনকারী নিজেও «নিজ» হিসেবে যুক্ত করা যাবে"
+            subtitle="প্রথম সারি «নিজ» (আবেদনকারী) — বাধ্যতামূলক; বয়স, শিক্ষা ও পেশা পূরণ করুন। অন্যান্য সদস্য যোগ করা যাবে।"
         >
             <div className="flex justify-end mb-3">
                 <button
@@ -151,32 +158,49 @@ export default function FamilyMembersSection({
                     {familyMembers.map((member, index) => {
                         const selectVal = relationSelectValue(index, member.relation_with_head);
                         const isCustom = isCustomRelation(index, member.relation_with_head);
+                        const lockedSelf = isLockedSelfRow(index);
 
                         return (
                             <div
                                 key={index}
-                                className="rounded-2xl border border-gray-200/90 bg-gray-50/70 p-3.5 sm:p-4 space-y-3 shadow-sm"
+                                className={`rounded-2xl border p-3.5 sm:p-4 space-y-3 shadow-sm ${
+                                    lockedSelf
+                                        ? 'border-emerald-300/90 bg-emerald-50/40'
+                                        : 'border-gray-200/90 bg-gray-50/70'
+                                }`}
                             >
                                 <div className="flex items-center justify-between border-b border-gray-200/80 pb-2.5">
-                                    <span className="text-xs font-bold text-indigo-700 bg-indigo-50 border border-indigo-200 px-2.5 py-0.5 rounded-lg">
+                                    <span
+                                        className={`text-xs font-bold border px-2.5 py-0.5 rounded-lg ${
+                                            lockedSelf
+                                                ? 'text-emerald-800 bg-emerald-50 border-emerald-200'
+                                                : 'text-indigo-700 bg-indigo-50 border-indigo-200'
+                                        }`}
+                                    >
                                         সদস্য #{index + 1}
-                                        {member.relation_with_head === 'নিজ' ? (
-                                            <span className="ml-1.5 text-emerald-700">(নিজ / আবেদনকারী)</span>
+                                        {lockedSelf ? (
+                                            <span className="ml-1.5">(নিজ / আবেদনকারী — বাধ্যতামূলক)</span>
                                         ) : null}
                                     </span>
-                                    <button
-                                        type="button"
-                                        onClick={() => removeFamilyMember(index)}
-                                        className="inline-flex items-center gap-1 text-xs text-red-600 font-bold hover:text-red-800 hover:bg-red-50 p-1.5 rounded-lg transition-all"
-                                    >
-                                        <Trash2 className="h-3.5 w-3.5" />
-                                        <span>মুছে ফেলুন</span>
-                                    </button>
+                                    {!lockedSelf ? (
+                                        <button
+                                            type="button"
+                                            onClick={() => removeFamilyMember(index)}
+                                            className="inline-flex items-center gap-1 text-xs text-red-600 font-bold hover:text-red-800 hover:bg-red-50 p-1.5 rounded-lg transition-all"
+                                        >
+                                            <Trash2 className="h-3.5 w-3.5" />
+                                            <span>মুছে ফেলুন</span>
+                                        </button>
+                                    ) : (
+                                        <span className="text-[10px] font-semibold text-emerald-700">
+                                            মুছা যাবে না
+                                        </span>
+                                    )}
                                 </div>
                                 <div className="grid grid-cols-1 gap-2 sm:gap-3 md:grid-cols-2 lg:grid-cols-4">
                                     <div>
                                         <label className="mb-0.5 block text-xs font-semibold text-gray-700">
-                                            Name (নাম)
+                                            Name (নাম){lockedSelf ? ' *' : ''}
                                         </label>
                                         <input
                                             type="text"
@@ -184,20 +208,29 @@ export default function FamilyMembersSection({
                                             onChange={(e) =>
                                                 updateFamilyMember(index, 'member_name', e.target.value)
                                             }
-                                            className={inputClass}
+                                            readOnly={lockedSelf}
+                                            className={`${inputClass}${lockedSelf ? ' bg-gray-100 text-gray-700' : ''}`}
+                                            placeholder={
+                                                lockedSelf
+                                                    ? 'ব্যক্তিগত তথ্য থেকে আসবে'
+                                                    : undefined
+                                            }
                                         />
                                     </div>
                                     <div className={isCustom ? 'lg:col-span-2' : ''}>
                                         <label className="mb-0.5 block text-xs font-semibold text-gray-700">
-                                            Relationship (সম্পর্ক)
+                                            Relationship (সম্পর্ক){lockedSelf ? ' *' : ''}
                                         </label>
                                         <select
                                             value={selectVal}
                                             onChange={(e) => handleRelationSelect(index, e.target.value)}
-                                            className={inputClass}
+                                            disabled={lockedSelf}
+                                            className={`${inputClass}${lockedSelf ? ' bg-gray-100 text-gray-700' : ''}`}
                                         >
                                             <option value="">সম্পর্ক নির্বাচন করুন</option>
-                                            <option value="নিজ">নিজ (Self / আবেদনকারী)</option>
+                                            <option value="নিজ" disabled={hasLockedSelf && !lockedSelf}>
+                                                নিজ (Self / আবেদনকারী)
+                                            </option>
                                             <option value="স্ত্রী">স্ত্রী (Wife)</option>
                                             <option value="স্বামী">স্বামী (Husband)</option>
                                             <option value="পুত্র">পুত্র (Son)</option>
@@ -233,7 +266,8 @@ export default function FamilyMembersSection({
                                             onChange={(e) =>
                                                 updateFamilyMember(index, 'gender', e.target.value)
                                             }
-                                            className={inputClass}
+                                            disabled={lockedSelf}
+                                            className={`${inputClass}${lockedSelf ? ' bg-gray-100 text-gray-700' : ''}`}
                                         >
                                             <option value="male">পুরুষ (Male)</option>
                                             <option value="female">নারী (Female)</option>
@@ -242,7 +276,7 @@ export default function FamilyMembersSection({
                                     </div>
                                     <div>
                                         <label className="mb-0.5 block text-xs font-semibold text-gray-700">
-                                            Age - Years (বয়স - বছর)
+                                            Age - Years (বয়স - বছর){lockedSelf ? ' *' : ''}
                                         </label>
                                         <input
                                             type="number"
@@ -289,7 +323,8 @@ export default function FamilyMembersSection({
                                                     e.target.value
                                                 )
                                             }
-                                            className={inputClass}
+                                            disabled={lockedSelf}
+                                            className={`${inputClass}${lockedSelf ? ' bg-gray-100 text-gray-700' : ''}`}
                                         >
                                             <option value="">বৈবাহিক অবস্থা নির্বাচন করুন</option>
                                             <option value="single">অবিবাহিত (Single)</option>

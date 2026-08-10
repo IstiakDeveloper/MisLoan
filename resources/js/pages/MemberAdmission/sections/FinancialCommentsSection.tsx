@@ -78,6 +78,8 @@ export default function FinancialCommentsSection({
                         collectorComment={data.collector_comment || ''}
                         customerPhoto={data.customer_photo || null}
                         customerNidPhoto={data.customer_nid_photo || null}
+                        customerNidBackPhoto={data.customer_nid_back_photo || null}
+                        nidBothSides={!!data.nid_both_sides}
                         guardianPhoto={data.guardian_photo || null}
                         guardianNidPhoto={data.guardian_nid_photo || null}
                         applicantSignature={data.applicant_signature || null}

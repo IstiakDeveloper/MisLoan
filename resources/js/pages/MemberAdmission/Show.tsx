@@ -28,6 +28,8 @@ interface Props {
     admission: MemberAdmission & {
         customer_photo_path?: string;
         customer_nid_photo_path?: string;
+        customer_nid_back_photo_path?: string | null;
+        nid_both_sides?: boolean;
         guardian_photo_path?: string;
         guardian_nid_photo_path?: string;
         applicant_signature_path?: string;
@@ -138,12 +140,23 @@ export default function Show({ admission, auth }: Props) {
     // Attachments list
     const attachments = [
         {
-            title: 'সদস্যের NID কার্ডের ছবি',
+            title: 'সদস্যের NID কার্ডের ছবি (সামনের পাশ)',
             fieldKey: 'customer_nid_photo_path',
             path: admission.customer_nid_photo_path,
             required: true,
             icon: <CreditCard className="w-5 h-5 text-emerald-600" />,
         },
+        ...(admission.nid_both_sides || admission.customer_nid_back_photo_path
+            ? [
+                  {
+                      title: 'সদস্যের NID কার্ডের ছবি (পেছনের পাশ)',
+                      fieldKey: 'customer_nid_back_photo_path',
+                      path: admission.customer_nid_back_photo_path,
+                      required: !!admission.nid_both_sides,
+                      icon: <CreditCard className="w-5 h-5 text-teal-600" />,
+                  },
+              ]
+            : []),
         {
             title: 'সদস্যের পাসপোর্ট সাইজ ছবি',
             fieldKey: 'customer_photo_path',

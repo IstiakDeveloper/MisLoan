@@ -121,12 +121,15 @@ export interface MemberAdmission {
     applicant_signature?: string | File | null;
     customer_photo?: File | string | null;
     customer_nid_photo?: File | string | null;
+    customer_nid_back_photo?: File | string | null;
+    nid_both_sides?: boolean;
     guardian_photo?: File | string | null;
     guardian_nid_photo?: File | string | null;
 
     // Stored document paths (from server)
     customer_photo_path?: string | null;
     customer_nid_photo_path?: string | null;
+    customer_nid_back_photo_path?: string | null;
     guardian_photo_path?: string | null;
     guardian_nid_photo_path?: string | null;
     applicant_signature_path?: string | null;

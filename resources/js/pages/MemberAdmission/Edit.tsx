@@ -90,6 +90,7 @@ const FIELD_NAMES_BN: Record<string, string> = {
     gender: 'লিঙ্গ',
     customer_photo: 'সদস্যের ছবি',
     customer_nid_photo: 'সদস্যের NID ছবি',
+    customer_nid_back_photo: 'সদস্যের NID পেছনের পাশ',
     guardian_photo: 'অভিভাবকের ছবি',
     guardian_nid_photo: 'অভিভাবকের NID ছবি',
     applicant_signature: 'আবেদনকারীর স্বাক্ষর',
@@ -244,11 +245,42 @@ export default function Edit({
             // Documents — existing paths for preview; File when newly selected; null when removed
             customer_photo: admission.customer_photo_path || null,
             customer_nid_photo: admission.customer_nid_photo_path || null,
+            customer_nid_back_photo: admission.customer_nid_back_photo_path || null,
+            nid_both_sides:
+                !!admission.nid_both_sides || !!admission.customer_nid_back_photo_path,
             guardian_photo: admission.guardian_photo_path || null,
             guardian_nid_photo: admission.guardian_nid_photo_path || null,
             applicant_signature: admission.applicant_signature_path || null,
 
-            family_members: admission.family_members || [],
+            family_members: (() => {
+                const members = [...(admission.family_members || [])];
+                const selfIdx = members.findIndex(
+                    (m) => m.relation_with_head === 'নিজ'
+                );
+                if (selfIdx < 0) {
+                    members.unshift({
+                        member_name:
+                            admission.applicant_name_bn ||
+                            admission.applicant_name_en ||
+                            '',
+                        relation_with_head: 'নিজ',
+                        gender: (admission.gender as any) || 'male',
+                        age_years: 0,
+                        age_months: 0,
+                        marital_status: (admission.marital_status as any) || '',
+                        education_level: '',
+                        occupation: '',
+                        monthly_income: Number(admission.monthly_income) || 0,
+                        business_details: '',
+                        job_details: '',
+                        other_income_details: '',
+                    });
+                } else if (selfIdx > 0) {
+                    const [row] = members.splice(selfIdx, 1);
+                    members.unshift(row);
+                }
+                return members;
+            })(),
             other_assets: admission.other_assets || [],
             selected_approvers: admission.approver_assignments
                 ? admission.approver_assignments.map((assignment: any) => assignment.approver_user_id)
@@ -269,6 +301,62 @@ export default function Edit({
             }
         }
     }, [data.branch_id, data.samity_id]);
+
+    // Keep default «নিজ» row first and synced with applicant personal info
+    useEffect(() => {
+        setData((prev) => {
+            const members = [...(prev.family_members || [])];
+            let selfIdx = members.findIndex((m) => m.relation_with_head === 'নিজ');
+            const name = prev.applicant_name_bn || prev.applicant_name_en || '';
+            const gender = (prev.gender as FamilyMember['gender']) || 'male';
+            const marital =
+                (prev.marital_status as FamilyMember['marital_status']) || '';
+
+            if (selfIdx < 0) {
+                members.unshift({
+                    member_name: name,
+                    relation_with_head: 'নিজ',
+                    gender,
+                    age_years: 0,
+                    age_months: 0,
+                    marital_status: marital,
+                    education_level: '',
+                    occupation: '',
+                    monthly_income: Number(prev.monthly_income) || 0,
+                    business_details: '',
+                    job_details: '',
+                    other_income_details: '',
+                });
+                return { ...prev, family_members: members };
+            }
+
+            const self = members[selfIdx];
+            const nextSelf: FamilyMember = {
+                ...self,
+                relation_with_head: 'নিজ',
+                member_name: name || self.member_name || '',
+                gender: prev.gender ? gender : self.gender || 'male',
+                marital_status: prev.marital_status
+                    ? marital
+                    : self.marital_status || '',
+            };
+
+            const needsMove = selfIdx > 0;
+            const unchanged =
+                !needsMove &&
+                nextSelf.member_name === self.member_name &&
+                nextSelf.gender === self.gender &&
+                nextSelf.marital_status === self.marital_status;
+            if (unchanged) return prev;
+
+            members[selfIdx] = nextSelf;
+            if (needsMove) {
+                const [row] = members.splice(selfIdx, 1);
+                members.unshift(row);
+            }
+            return { ...prev, family_members: members };
+        });
+    }, [data.applicant_name_bn, data.applicant_name_en, data.gender, data.marital_status]);
 
     const filteredSamities = availableSamities.filter((s) => {
         const q = samitySearchQuery.trim().toLowerCase();
@@ -392,6 +480,7 @@ export default function Edit({
         const photoFields = [
             'customer_photo',
             'customer_nid_photo',
+            'customer_nid_back_photo',
             'guardian_photo',
             'guardian_nid_photo',
             'applicant_signature',
@@ -475,6 +564,13 @@ export default function Edit({
     };
 
     const removeFamilyMember = (index: number) => {
+        const member = data.family_members![index];
+        if (member?.relation_with_head === 'নিজ') {
+            alert(
+                '«নিজ» সদস্য মুছে ফেলা যাবে না — আবেদনকারীর নিজের তথ্য পূরণ করতে হবে।'
+            );
+            return;
+        }
         const newMembers = data.family_members!.filter((_, i) => i !== index);
         setData('family_members', newMembers);
     };
@@ -484,12 +580,21 @@ export default function Edit({
         field: keyof FamilyMember,
         value: any
     ) => {
+        const current = data.family_members![index];
+        if (current?.relation_with_head === 'নিজ' && field === 'relation_with_head') {
+            return;
+        }
         const newMembers = [...data.family_members!];
         newMembers[index] = { ...newMembers[index], [field]: value };
         setData('family_members', newMembers);
     };
 
     const patchFamilyMember = (index: number, patch: Partial<FamilyMember>) => {
+        const current = data.family_members![index];
+        if (current?.relation_with_head === 'নিজ' && 'relation_with_head' in patch) {
+            const { relation_with_head: _locked, ...rest } = patch;
+            patch = rest;
+        }
         const newMembers = [...data.family_members!];
         newMembers[index] = { ...newMembers[index], ...patch };
         setData('family_members', newMembers);

@@ -87,6 +87,7 @@ const FIELD_NAMES_BN: Record<string, string> = {
     gender: 'লিঙ্গ',
     customer_photo: 'সদস্যের ছবি',
     customer_nid_photo: 'সদস্যের NID ছবি',
+    customer_nid_back_photo: 'সদস্যের NID পেছনের পাশ',
     guardian_photo: 'অভিভাবকের ছবি',
     guardian_nid_photo: 'অভিভাবকের NID ছবি',
     applicant_signature: 'আবেদনকারীর স্বাক্ষর',
@@ -244,11 +245,28 @@ export default function Create({
             // Documents
             customer_photo: null,
             customer_nid_photo: null,
+            customer_nid_back_photo: null,
+            nid_both_sides: false,
             guardian_photo: null,
             guardian_nid_photo: null,
             applicant_signature: null,
 
-            family_members: [],
+            family_members: [
+                {
+                    member_name: '',
+                    relation_with_head: 'নিজ',
+                    gender: 'male',
+                    age_years: 0,
+                    age_months: 0,
+                    marital_status: '',
+                    education_level: '',
+                    occupation: '',
+                    monthly_income: 0,
+                    business_details: '',
+                    job_details: '',
+                    other_income_details: '',
+                },
+            ],
             other_assets: [],
             selected_approvers: [],
             is_legacy: false,
@@ -280,6 +298,62 @@ export default function Create({
             setData('employee_name', currentUser.pin || currentUser.username || '');
         }
     }, [currentUser?.name, currentUser?.pin, currentUser?.username]);
+
+    // Keep default «নিজ» row first and synced with applicant personal info
+    useEffect(() => {
+        setData((prev) => {
+            const members = [...(prev.family_members || [])];
+            let selfIdx = members.findIndex((m) => m.relation_with_head === 'নিজ');
+            const name = prev.applicant_name_bn || prev.applicant_name_en || '';
+            const gender = (prev.gender as FamilyMember['gender']) || 'male';
+            const marital =
+                (prev.marital_status as FamilyMember['marital_status']) || '';
+
+            if (selfIdx < 0) {
+                members.unshift({
+                    member_name: name,
+                    relation_with_head: 'নিজ',
+                    gender,
+                    age_years: 0,
+                    age_months: 0,
+                    marital_status: marital,
+                    education_level: '',
+                    occupation: '',
+                    monthly_income: Number(prev.monthly_income) || 0,
+                    business_details: '',
+                    job_details: '',
+                    other_income_details: '',
+                });
+                return { ...prev, family_members: members };
+            }
+
+            const self = members[selfIdx];
+            const nextSelf: FamilyMember = {
+                ...self,
+                relation_with_head: 'নিজ',
+                member_name: name || self.member_name || '',
+                gender: prev.gender ? gender : self.gender || 'male',
+                marital_status: prev.marital_status
+                    ? marital
+                    : self.marital_status || '',
+            };
+
+            const needsMove = selfIdx > 0;
+            const unchanged =
+                !needsMove &&
+                nextSelf.member_name === self.member_name &&
+                nextSelf.gender === self.gender &&
+                nextSelf.marital_status === self.marital_status;
+            if (unchanged) return prev;
+
+            members[selfIdx] = nextSelf;
+            if (needsMove) {
+                const [row] = members.splice(selfIdx, 1);
+                members.unshift(row);
+            }
+            return { ...prev, family_members: members };
+        });
+    }, [data.applicant_name_bn, data.applicant_name_en, data.gender, data.marital_status]);
 
     useEffect(() => {
         if (data.branch_id) {
@@ -472,6 +546,13 @@ export default function Create({
     };
 
     const removeFamilyMember = (index: number) => {
+        const member = data.family_members![index];
+        if (member?.relation_with_head === 'নিজ') {
+            alert(
+                '«নিজ» সদস্য মুছে ফেলা যাবে না — আবেদনকারীর নিজের তথ্য পূরণ করতে হবে।'
+            );
+            return;
+        }
         const newMembers = data.family_members!.filter((_, i) => i !== index);
         setData('family_members', newMembers);
     };
@@ -481,12 +562,21 @@ export default function Create({
         field: keyof FamilyMember,
         value: any
     ) => {
+        const current = data.family_members![index];
+        if (current?.relation_with_head === 'নিজ' && field === 'relation_with_head') {
+            return;
+        }
         const newMembers = [...data.family_members!];
         newMembers[index] = { ...newMembers[index], [field]: value };
         setData('family_members', newMembers);
     };
 
     const patchFamilyMember = (index: number, patch: Partial<FamilyMember>) => {
+        const current = data.family_members![index];
+        if (current?.relation_with_head === 'নিজ' && 'relation_with_head' in patch) {
+            const { relation_with_head: _locked, ...rest } = patch;
+            patch = rest;
+        }
         const newMembers = [...data.family_members!];
         newMembers[index] = { ...newMembers[index], ...patch };
         setData('family_members', newMembers);
