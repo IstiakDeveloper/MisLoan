@@ -195,6 +195,7 @@ Route::middleware(['auth', 'verified'])->group(function () {
         Route::patch('{memberAdmission}/resubmit', [MemberAdmissionController::class, 'resubmit'])->name('resubmit')->middleware('branch.user');
         Route::patch('{memberAdmission}/send-to-head-office', [MemberAdmissionController::class, 'sendToHeadOffice'])->name('send-to-head-office')->middleware('branch.user');
         Route::patch('{memberAdmission}/reject', [MemberAdmissionController::class, 'reject'])->name('reject')->middleware('branch.user');
+        Route::patch('{memberAdmission}/update-member-code', [MemberAdmissionController::class, 'updateMemberCode'])->name('update-member-code');
     });
 
     // Team Based Approval Routes - Branch users + Approver roles
@@ -269,6 +270,7 @@ Route::middleware(['auth', 'verified'])->group(function () {
             Route::patch('{id}/submit', [\App\Http\Controllers\Member\LoanApplicationController::class, 'submit'])->name('submit');
             Route::patch('{id}/send-to-head-office', [\App\Http\Controllers\Member\LoanApplicationController::class, 'sendToHeadOffice'])->name('send-to-head-office');
             Route::patch('{id}/disburse', [\App\Http\Controllers\Member\LoanApplicationController::class, 'disburse'])->name('disburse');
+            Route::patch('{id}/update-member-code', [\App\Http\Controllers\Member\LoanApplicationController::class, 'updateMemberCode'])->name('update-member-code');
             Route::get('{id}/print', [\App\Http\Controllers\Member\LoanApplicationController::class, 'print'])->name('print');
             Route::delete('{id}', [\App\Http\Controllers\Member\LoanApplicationController::class, 'destroy'])->name('destroy');
 

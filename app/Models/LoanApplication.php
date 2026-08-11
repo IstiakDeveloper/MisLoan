@@ -226,17 +226,28 @@ class LoanApplication extends Model
     // Helper methods
     public static function generateApplicationNo(): string
     {
-        $prefix = 'LN';
-        $year = date('Y');
-        $month = date('m');
-        $lastApplication = self::whereYear('created_at', $year)
-            ->whereMonth('created_at', $month)
-            ->orderBy('id', 'desc')
+        $prefix = 'LN'.date('Y').date('m');
+
+        // Soft-deleted rows still occupy unique application_no — include them
+        $lastApplication = self::withTrashed()
+            ->where('application_no', 'like', $prefix.'%')
+            ->orderByDesc('application_no')
             ->first();
 
-        $sequence = $lastApplication ? (int)substr($lastApplication->application_no, -5) + 1 : 1;
+        $sequence = 1;
+        if ($lastApplication && preg_match('/(\d{5})$/', (string) $lastApplication->application_no, $matches)) {
+            $sequence = (int) $matches[1] + 1;
+        }
 
-        return sprintf('%s%s%s%05d', $prefix, $year, $month, $sequence);
+        // Guarantee uniqueness even if gaps/races exist
+        for ($i = 0; $i < 10000; $i++) {
+            $candidate = sprintf('%s%05d', $prefix, $sequence + $i);
+            if (! self::withTrashed()->where('application_no', $candidate)->exists()) {
+                return $candidate;
+            }
+        }
+
+        throw new \RuntimeException('Unable to generate a unique loan application number.');
     }
 
     public function isDraft(): bool

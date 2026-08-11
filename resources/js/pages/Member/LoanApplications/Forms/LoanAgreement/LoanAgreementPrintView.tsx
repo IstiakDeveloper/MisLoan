@@ -26,39 +26,36 @@ export function LoanAgreementPrintView({ data }: { data: LoanAgreementData }) {
 
     return (
         <div
-            className="bg-white border border-gray-300 p-5 sm:p-7 rounded-lg text-gray-900 print:border-none print:p-0 print:m-0 w-full overflow-x-auto"
-            style={{ fontFamily: 'Kalpurush, Arial, sans-serif', fontSize: '12.5px', lineHeight: '1.45', color: '#000' }}
+            className="bg-white border border-gray-300 p-6 sm:p-8 rounded-lg text-gray-900 print:border-none print:p-0 print:m-0 w-full overflow-x-auto"
+            style={{ fontFamily: 'Kalpurush, Arial, sans-serif', fontSize: '14px', lineHeight: '1.6', color: '#000' }}
         >
             {/* PAGE 1: Everything above "সাক্ষীগণের স্বাক্ষর :" */}
-            <div className="page-1-wrapper space-y-3">
-                {/* Header Section */}
-                <div className="relative mb-3 pb-2 border-b border-gray-400">
-                    {/* Logo Left */}
-                    <div className="absolute left-0 top-0">
-                        <div className="border border-black rounded-full p-1 w-16 h-16 flex flex-col items-center justify-center text-center">
-                            <img
-                                src="/logo.png"
-                                alt="Logo"
-                                style={{ height: '28px', width: '28px', objectFit: 'contain' }}
-                                onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}
-                            />
-                            <span className="text-[9px] font-bold leading-none mt-0.5">মৌসুমী</span>
+            <div className="page-1-wrapper space-y-4">
+                {/* Header: page-centered text; logo glued to left of that block */}
+                <div className="mb-3 flex flex-col items-center">
+                    <div className="relative inline-flex flex-col items-center">
+                        <img
+                            src="/logo.png"
+                            alt="মৌসুমী"
+                            className="absolute right-full top-1/2 mr-2 h-[72px] w-[72px] -translate-y-1/2 object-contain"
+                            onError={(e) => {
+                                (e.target as HTMLImageElement).style.display = 'none';
+                            }}
+                        />
+                        <h1 className="text-[22px] font-bold leading-none tracking-wide text-black">মৌসুমী</h1>
+                        <p className="text-[12px] font-semibold leading-tight mt-0.5 text-black">উকিলপাড়া, নওগাঁ</p>
+                        <div className="mt-1.5 inline-block rounded-full border-2 border-black px-5 py-1">
+                            <h2 className="text-[13px] font-bold text-black leading-tight whitespace-nowrap">
+                                ঋণ চুক্তিপত্র
+                            </h2>
                         </div>
                     </div>
-
-                    {/* Header Center */}
-                    <div className="text-center pl-16">
-                        <h1 className="font-bold text-2xl tracking-wide text-black mb-0">মৌসুমী</h1>
-                        <p className="text-xs font-semibold text-gray-800 leading-tight">উকিলপাড়া, নওগাঁ।</p>
-                        <div className="my-1.5">
-                            <span className="border-2 border-black px-5 py-0.5 rounded-full font-bold text-sm inline-block">
-                                (ঋণ চুক্তিপত্র)
-                            </span>
-                        </div>
-                        <p className="text-xs font-bold mt-1">
-                            ঋণ কর্মসূচির নাম : <span className="border-b border-dotted border-gray-800 inline-block min-w-[240px] text-left px-2 text-sm font-bold">{str(d.loan_category_name)}</span>
-                        </p>
-                    </div>
+                    <p className="text-xs font-bold mt-2 text-center">
+                        ঋণ কর্মসূচির নাম :{' '}
+                        <span className="border-b border-dotted border-gray-800 inline-block min-w-[200px] text-left px-2 text-sm font-bold">
+                            {str(d.loan_category_name)}
+                        </span>
+                    </p>
                 </div>
 
                 {/* ১ম পক্ষ (ঋণ দাতা) */}

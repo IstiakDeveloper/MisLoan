@@ -18,6 +18,7 @@ import FormPage3 from './FormPage3';
 import FormPage4 from './FormPage4';
 import PrintPreview from './PrintPreview';
 import { getRequiredSavingsPercent } from '@/components/LoanApplications/GeneralSavingsSection';
+import { afterLoanFormSaveUrl } from '@/utils/loanFormNavigation';
 
 export const toInputDate = (value: string | null | undefined): string => {
     if (value == null || value === '') return '';
@@ -113,10 +114,23 @@ function getFamilyAssetsFromMember(member: any) {
     return rows;
 }
 
-function formSelectionUrl(isLegacy: boolean, member: any, loanProduct: any, loanCategory: any, requestedAmount: number) {
-    const params = new URLSearchParams({ loan_product_id: String(loanProduct.id), loan_category_id: String(loanCategory.id), requested_amount: String(requestedAmount) });
-    if (isLegacy) params.set('legacy', '1'); else params.set('member_id', String(member?.id ?? ''));
-    return `/member/loan-applications/form-selection?${params.toString()}`;
+function resolveBackUrl(
+    isLegacy: boolean,
+    member: any,
+    loanProduct: any,
+    loanCategory: any,
+    requestedAmount: number,
+    existingApplication?: any,
+) {
+    return afterLoanFormSaveUrl({
+        existingApplication,
+        isLegacy,
+        member,
+        loanProduct,
+        loanCategory,
+        requestedAmount,
+        formId: 5,
+    });
 }
 
 export default function ApprovalForm({
@@ -133,14 +147,6 @@ export default function ApprovalForm({
     isLegacy = false,
 }: ApprovalFormProps) {
     const categoryName = loanCategory?.category_name_bn || loanCategory?.category_name || 'ঋণ';
-
-    if (onlyPreview && savedData) {
-        return (
-            <div className="print-container">
-                <PrintPreview formData={savedData} branch={branch} categoryName={categoryName} />
-            </div>
-        );
-    }
 
     const [activeStep, setActiveStep] = useState<number>(1);
     const [showPreview, setShowPreview] = useState(false);
@@ -219,8 +225,6 @@ export default function ApprovalForm({
         current_address_line2: member?.present_post_code || member?.permanent_post_code || '',
         current_address_line3: [member?.present_upazila || member?.permanent_upazila, member?.present_district || member?.permanent_district].filter(Boolean).join(', '),
         nid_smart_card: getNidOrSmartCard(member),
-        occupation: selfFromFamily.occupation,
-        educational_qualification: selfFromFamily.educational_qualification,
         admission_date: member?.admission_date || '',
         family_members_count: (member?.family_members?.length ?? member?.familyMembers?.length ?? 0) || 0,
         earning_members_count: '',
@@ -275,7 +279,16 @@ export default function ApprovalForm({
             { loan_number: '', loan_date: '', loan_amount: '', project_name: '', savings_status: '' },
             { loan_number: '', loan_date: '', loan_amount: '', project_name: '', savings_status: '' },
         ],
-        other_loan_status: Array(7).fill({ current_status: '', round: '', borrower_name: '', mobile: '', remarks: '' }),
+        other_loan_status: Array.from({ length: 7 }, () => ({
+            current_status: '',
+            round: '',
+            borrower_name: '',
+            mobile: '',
+            remarks: '',
+            source_name: '',
+            custom_source: '',
+            is_custom: false,
+        })),
         invest_plan_applied_amount: requestedAmount ? String(requestedAmount) : '',
         invest_use_capital: '',
         invest_plan_own_amount: '',
@@ -548,6 +561,13 @@ export default function ApprovalForm({
         errors,
     };
 
+    if (onlyPreview) {
+        return (
+            <div className="print-container">
+                <PrintPreview formData={data} branch={branch} categoryName={categoryName} />
+            </div>
+        );
+    }
 
     return (
         <AdminLayout>
@@ -594,7 +614,11 @@ export default function ApprovalForm({
                     <div className="flex items-center gap-2 w-full md:w-auto justify-between md:justify-end">
                         <button
                             type="button"
-                            onClick={() => router.visit(formSelectionUrl(isLegacy, member, loanProduct, loanCategory, requestedAmount))}
+                            onClick={() =>
+                                router.visit(
+                                    resolveBackUrl(isLegacy, member, loanProduct, loanCategory, requestedAmount, existingApplication),
+                                )
+                            }
                             className="flex items-center gap-1.5 px-3 py-2 bg-gray-600 text-white rounded-lg text-xs md:text-sm hover:bg-gray-700 transition-all font-medium whitespace-nowrap"
                         >
                             <ArrowLeft className="w-4 h-4" /> <span className="hidden sm:inline">ফর্ম তালিকা</span>

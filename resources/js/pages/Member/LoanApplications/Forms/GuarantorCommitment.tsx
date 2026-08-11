@@ -5,6 +5,7 @@ import { formatDateBangla } from '@/utils/dateUtils';
 import { calculateTotalServiceCharge } from '@/utils/loanInterest';
 import { Save, Printer, Eye, ArrowLeft, ShieldCheck, UserCheck, CreditCard, FileText } from 'lucide-react';
 import { numberToWordsBangla } from './ApprovalForm/PrintPreview';
+import { afterLoanFormSaveUrl } from '@/utils/loanFormNavigation';
 
 interface GuarantorCommitmentData {
     branch_name: string;
@@ -61,16 +62,31 @@ interface Props {
     saveButtonLabel?: string;
 }
 
-function formSelectionUrl(isLegacy: boolean, member: any, loanProduct: any, loanCategory: any, requestedAmount: number) {
+function resolveBackUrl(
+    afterSaveUrl: string | undefined,
+    isLegacy: boolean,
+    member: any,
+    loanProduct: any,
+    loanCategory: any,
+    requestedAmount: number,
+    existingApplication?: any,
+) {
     if (typeof window !== 'undefined') {
         const currentParams = new URLSearchParams(window.location.search);
         if (currentParams.get('return') === 'disburse' && currentParams.get('application_id')) {
             return `/member/loan-applications/${currentParams.get('application_id')}?action=disburse`;
         }
     }
-    const params = new URLSearchParams({ loan_product_id: String(loanProduct.id), loan_category_id: String(loanCategory.id), requested_amount: String(requestedAmount) });
-    if (isLegacy) params.set('legacy', '1'); else params.set('member_id', String(member?.id ?? ''));
-    return `/member/loan-applications/form-selection?${params.toString()}`;
+    return afterLoanFormSaveUrl({
+        afterSaveUrl,
+        existingApplication,
+        isLegacy,
+        member,
+        loanProduct,
+        loanCategory,
+        requestedAmount,
+        formId: 2,
+    });
 }
 
 /** Service charge from base loan amount & product (prorated by duration for annual rates) */
@@ -82,6 +98,47 @@ function calcLoanAmountWithServiceCharge(baseAmount: number, loanProduct: any): 
     const amount = Number(baseAmount) || 0;
     if (amount <= 0) return 0;
     return Math.round(amount + calcServiceCharge(amount, loanProduct));
+}
+
+function buildGuarantorCommitmentDefaults(
+    member: any,
+    loanProduct: any,
+    requestedAmount: number,
+    branch?: any,
+): GuarantorCommitmentData {
+    const baseLoanAmount = Number(requestedAmount) || 0;
+    const loanAmount = calcLoanAmountWithServiceCharge(baseLoanAmount, loanProduct);
+    const words = loanAmount > 0 ? numberToWordsBangla(loanAmount) : '';
+    return {
+        branch_name: branch?.name || '',
+        branch_address: branch?.address || '',
+        guarantor_name: member?.guarantor_name || '',
+        guarantor_father_or_spouse: '',
+        guarantor_nid: '',
+        guarantor_mobile: member?.guarantor_mobile || '',
+        guarantor_village: member?.present_village_road || member?.permanent_village_road || '',
+        guarantor_post_office: member?.present_post_code || member?.permanent_post_code || '',
+        guarantor_upazila: member?.present_upazila || member?.permanent_upazila || '',
+        guarantor_district: member?.present_district || member?.permanent_district || '',
+        guarantor_signature_image: null,
+        member_name: member?.applicant_name_bn || member?.applicant_name_en || '',
+        member_father_or_spouse: member?.father_name_bn || member?.spouse_name_bn || member?.father_name_en || '',
+        member_nid: member?.nid_number || member?.smart_card_number || '',
+        member_mobile: member?.mobile_number || '',
+        member_village: member?.present_village_road || member?.permanent_village_road || '',
+        member_post_office: member?.present_post_code || member?.permanent_post_code || '',
+        member_upazila: member?.present_upazila || member?.permanent_upazila || '',
+        member_district: member?.present_district || member?.permanent_district || '',
+        member_code: member?.application_no || '',
+        samity_name: member?.samity?.samity_name_bn || member?.samity?.samity_name || '',
+        samity_code: member?.samity?.samity_code || member?.samity?.id?.toString() || '',
+        loan_date: new Date().toISOString().split('T')[0],
+        loan_amount: loanAmount,
+        loan_amount_words: words ? words + ' টাকা' : '',
+        witness1_signature_image: null,
+        witness2_signature_image: null,
+        witness3_signature_image: null,
+    };
 }
 
 export default function GuarantorCommitment({
@@ -98,10 +155,12 @@ export default function GuarantorCommitment({
     saveButtonLabel,
     isLegacy = false,
 }: Props) {
-    if (onlyPreview && savedData) {
+    if (onlyPreview) {
+        const defaults = buildGuarantorCommitmentDefaults(member, loanProduct, requestedAmount, branch);
+        const previewData = savedData && Object.keys(savedData).length > 0 ? { ...defaults, ...savedData } : defaults;
         return (
             <div className="print-container">
-                <GuarantorCommitmentPrintView data={savedData} />
+                <GuarantorCommitmentPrintView data={previewData} />
             </div>
         );
     }
@@ -185,12 +244,17 @@ export default function GuarantorCommitment({
             payload,
             {
                 onSuccess: () => {
-                    if (afterSaveUrl) {
-                        router.visit(afterSaveUrl);
-                        return;
-                    }
-                    alert('জামিনদার/দায়িত্ব গ্রহণকারীর অঙ্গীকার নামা ড্রাফট হিসেবে সংরক্ষিত হয়েছে।');
-                    router.visit(formSelectionUrl(isLegacy, member, loanProduct, loanCategory, requestedAmount));
+                    router.visit(
+                        resolveBackUrl(
+                            afterSaveUrl,
+                            isLegacy,
+                            member,
+                            loanProduct,
+                            loanCategory,
+                            requestedAmount,
+                            existingApplication,
+                        ),
+                    );
                 },
                 onError: (errors) => {
                     console.error('Save draft error:', errors);
@@ -214,7 +278,7 @@ export default function GuarantorCommitment({
                     @media print {
                         @page {
                             size: A4 portrait;
-                            margin: 8mm 10mm;
+                            margin: 12mm 15mm;
                         }
 
                         body * {
@@ -254,7 +318,19 @@ export default function GuarantorCommitment({
                 <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-white p-4 rounded-xl border border-gray-200 shadow-sm print:hidden">
                     {!embedded && <div className="flex items-center gap-3">
                         <button
-                            onClick={() => router.visit(formSelectionUrl(isLegacy, member, loanProduct, loanCategory, requestedAmount))}
+                            onClick={() =>
+                                router.visit(
+                                    resolveBackUrl(
+                                        afterSaveUrl,
+                                        isLegacy,
+                                        member,
+                                        loanProduct,
+                                        loanCategory,
+                                        requestedAmount,
+                                        existingApplication,
+                                    ),
+                                )
+                            }
                             className="flex items-center gap-2 px-3 py-2 bg-gray-100 text-gray-700 text-xs md:text-sm font-semibold rounded-lg hover:bg-gray-200 transition-all"
                         >
                             <ArrowLeft className="w-4 h-4" />
@@ -591,7 +667,7 @@ export function GuarantorCommitmentPrintView({ data }: { data: any }) {
     return (
         <div
             className="print-container bg-white rounded-lg border border-gray-300 p-6 sm:p-8 text-gray-900 print:border-none print:p-0 print:m-0 w-full overflow-x-auto"
-            style={{ fontFamily: 'Kalpurush, Arial, sans-serif', fontSize: '13px', lineHeight: '1.5', color: '#000' }}
+            style={{ fontFamily: 'Kalpurush, Arial, sans-serif', fontSize: '14.5px', lineHeight: '1.65', color: '#000' }}
         >
             {/* Header Section */}
             <div className="mb-4 pb-2 border-b border-gray-400">

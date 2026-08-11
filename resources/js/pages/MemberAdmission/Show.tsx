@@ -83,6 +83,28 @@ export default function Show({ admission, auth }: Props) {
     const [selectedImagePreview, setSelectedImagePreview] = useState<{ url: string; title: string } | null>(null);
     const [showLegacyModal, setShowLegacyModal] = useState(false);
 
+    // Member Code Update Modal State
+    const [memberCodeModalOpen, setMemberCodeModalOpen] = useState(false);
+    const [newMemberCode, setNewMemberCode] = useState<string>(admission.application_no || '');
+    const [submittingMemberCode, setSubmittingMemberCode] = useState(false);
+
+    const handleMemberCodeSubmit = (e: React.FormEvent) => {
+        e.preventDefault();
+        if (!newMemberCode.trim()) return;
+        setSubmittingMemberCode(true);
+        router.patch(
+            `/member-admissions/${admission.id}/update-member-code`,
+            { member_code: newMemberCode.trim() },
+            {
+                preserveScroll: true,
+                onFinish: () => {
+                    setSubmittingMemberCode(false);
+                    setMemberCodeModalOpen(false);
+                },
+            }
+        );
+    };
+
     const {
         data: legacyData,
         setData: setLegacyData,
@@ -254,10 +276,23 @@ export default function Show({ admission, auth }: Props) {
                                         </span>
                                     )}
                                 </div>
-                                <p className="text-[11px] sm:text-xs text-slate-500 mt-1 font-medium break-words">
-                                    আবেদন নং: <span className="font-mono font-bold text-blue-700">{admission.application_no}</span>
+                                <p className="text-[11px] sm:text-xs text-slate-500 mt-1 font-medium break-words flex items-center gap-1.5 flex-wrap">
+                                    <span>আবেদন নং / মেম্বার কোড: <span className="font-mono font-bold text-blue-700">{admission.application_no}</span></span>
+                                    {admission.status !== 'disbursed' && (
+                                        <button
+                                            type="button"
+                                            onClick={() => {
+                                                setNewMemberCode(admission.application_no);
+                                                setMemberCodeModalOpen(true);
+                                            }}
+                                            className="inline-flex items-center gap-1 text-[10px] bg-indigo-50 hover:bg-indigo-100 text-indigo-700 px-1.5 py-0.5 rounded border border-indigo-200 font-semibold"
+                                            title="ঋণ বিতরণের পূর্বে মেম্বার কোড পরিবর্তন করুন"
+                                        >
+                                            <Edit className="w-3 h-3 text-indigo-600" /> কোড পরিবর্তন
+                                        </button>
+                                    )}
                                     <span className="text-slate-300 mx-1">|</span>
-                                    সদস্য: <span className="font-bold text-slate-800">{admission.applicant_name_bn || admission.applicant_name_en}</span>
+                                    <span>সদস্য: <span className="font-bold text-slate-800">{admission.applicant_name_bn || admission.applicant_name_en}</span></span>
                                 </p>
                             </div>
                         </div>
@@ -716,6 +751,52 @@ export default function Show({ admission, auth }: Props) {
                     .form-print-page-break-before { page-break-before: always; }
                 }
             `}</style>
+
+            {/* Member Code Update Modal */}
+            {memberCodeModalOpen && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-xs p-4 print:hidden">
+                    <div className="w-full max-w-md rounded-2xl bg-white shadow-2xl overflow-hidden border border-slate-200">
+                        <div className="border-b px-5 py-4 bg-slate-50 flex items-center justify-between">
+                            <div>
+                                <h3 className="text-base font-bold text-slate-900 flex items-center gap-2">
+                                    <Edit className="w-5 h-5 text-indigo-600" /> মেম্বার কোড আপডেট
+                                </h3>
+                                <p className="text-xs text-slate-500 mt-0.5">ঋণ বিতরণের পূর্বে মেম্বার কোড পরিবর্তন বা সংশোধন করা যাবে।</p>
+                            </div>
+                            <button type="button" onClick={() => setMemberCodeModalOpen(false)} className="text-slate-400 hover:text-slate-600 p-1">
+                                <X className="w-5 h-5" />
+                            </button>
+                        </div>
+                        <form onSubmit={handleMemberCodeSubmit} className="p-5 space-y-4">
+                            <div>
+                                <label className="block text-xs font-bold text-slate-700 mb-1">নতুন মেম্বার কোড (Member Code / Application No):</label>
+                                <input
+                                    type="text"
+                                    value={newMemberCode}
+                                    onChange={(e) => setNewMemberCode(e.target.value)}
+                                    className="w-full rounded-xl border border-slate-300 px-3.5 py-2 text-sm focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 font-mono font-bold text-indigo-700 shadow-xs"
+                                    placeholder="যেমন: 42001"
+                                    required
+                                />
+                                <p className="text-[11px] text-slate-500 mt-1">শাখা কোড ভিত্তিক সিরিয়াল মেম্বার কোড (যেমন: 42001)</p>
+                            </div>
+
+                            <div className="flex justify-end gap-2 pt-2 border-t">
+                                <button type="button" className="px-4 py-2 rounded-xl text-xs border border-slate-300 font-semibold text-slate-700 hover:bg-slate-50" onClick={() => setMemberCodeModalOpen(false)}>
+                                    বাতিল
+                                </button>
+                                <button
+                                    type="submit"
+                                    className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-bold shadow-xs"
+                                    disabled={submittingMemberCode}
+                                >
+                                    {submittingMemberCode ? 'আপডেট হচ্ছে...' : 'কোড আপডেট করুন'}
+                                </button>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+            )}
         </AdminLayout>
     );
 }

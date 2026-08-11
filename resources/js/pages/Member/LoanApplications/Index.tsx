@@ -306,8 +306,8 @@ export default function Index({ categories, applications, stats, selectedDate, d
 
     const handleMemberSelect = (member: Member) => {
         if (member.status === 'rejected') return;
-        if (member.has_active_loan && member.active_loans && member.active_loans.length > 0) {
-            alert('এই সদস্যের জন্য সক্রিয় ঋণ আছে। মেয়াদ শেষ হওয়ার আগে নতুন ঋণ আবেদন করা যাবে না।');
+        if (member.has_active_loan) {
+            alert('ঋণ সক্রিয় থাকা পর্যন্ত একই সদস্যের নামে ২ বার ঋণ আবেদন করা যাবে না।');
             return;
         }
         setSelectedMember(member);
@@ -319,8 +319,15 @@ export default function Index({ categories, applications, stats, selectedDate, d
     };
 
     const handleSubmit = () => {
+        if (selectedMember?.has_active_loan) {
+            alert('ঋণ সক্রিয় থাকা পর্যন্ত একই সদস্যের নামে ২ বার ঋণ আবেদন করা যাবে না।');
+            return;
+        }
         if (selectedCategory && selectedProduct && selectedMember && requestedAmount) {
-            router.visit(`/member/loan-applications/form-selection?loan_category_id=${selectedCategory}&loan_product_id=${selectedProduct}&member_id=${selectedMember.id}&requested_amount=${requestedAmount}`);
+            // Creates draft + opens Show hub with all forms generated
+            router.visit(
+                `/member/loan-applications/form-selection?loan_category_id=${selectedCategory}&loan_product_id=${selectedProduct}&member_id=${selectedMember.id}&requested_amount=${requestedAmount}`,
+            );
         }
     };
 
@@ -877,12 +884,12 @@ export default function Index({ categories, applications, stats, selectedDate, d
                                             </button>
                                             {(app.status === 'submitted' || app.status === 'under_review') && isBranchManager && (app.editable_form_ids?.length ?? 0) > 0 && (
                                                 <button
-                                                    onClick={() => router.get(`/member/loan-applications/${app.id}/edit`)}
+                                                    onClick={() => router.get(`/member/loan-applications/${app.id}`)}
                                                     className="inline-flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold text-amber-700 bg-amber-50 hover:bg-amber-100 border border-amber-200 transition active:scale-95"
-                                                    title="ফর্ম আপডেট করুন"
+                                                    title="ফর্ম দেখুন / পূরণ করুন"
                                                 >
                                                     <Edit className="w-3.5 h-3.5" />
-                                                    <span>এডিট</span>
+                                                    <span>ফর্ম</span>
                                                 </button>
                                             )}
                                             {app.status === 'draft' && app.all_forms_complete && (
@@ -908,9 +915,9 @@ export default function Index({ categories, applications, stats, selectedDate, d
                                             )}
                                             {app.status === 'draft' && (
                                                 <button
-                                                    onClick={() => router.get(`/member/loan-applications/${app.id}/edit`)}
+                                                    onClick={() => router.get(`/member/loan-applications/${app.id}`)}
                                                     className="p-2 text-amber-700 bg-amber-50 hover:bg-amber-100 border border-amber-200 rounded-xl transition active:scale-95"
-                                                    title="সম্পাদনা"
+                                                    title="ফর্ম দেখুন / পূরণ করুন"
                                                 >
                                                     <Edit className="w-4 h-4" />
                                                 </button>
@@ -1087,12 +1094,12 @@ export default function Index({ categories, applications, stats, selectedDate, d
                                                     </button>
                                                     {(app.status === 'submitted' || app.status === 'under_review') && isBranchManager && (app.editable_form_ids?.length ?? 0) > 0 && (
                                                         <button
-                                                            onClick={() => router.get(`/member/loan-applications/${app.id}/edit`)}
+                                                            onClick={() => router.get(`/member/loan-applications/${app.id}`)}
                                                             className="inline-flex items-center gap-1 text-xs px-2.5 py-1 bg-amber-50 hover:bg-amber-100 text-amber-700 font-bold rounded-xl border border-amber-200 shadow-sm transition active:scale-95"
-                                                            title="ফর্ম আপডেট করুন"
+                                                            title="ফর্ম দেখুন / পূরণ করুন"
                                                         >
                                                             <Edit className="w-3 h-3" />
-                                                            <span>এডিট</span>
+                                                            <span>ফর্ম</span>
                                                         </button>
                                                     )}
                                                     {app.status === 'draft' && (
@@ -1119,9 +1126,9 @@ export default function Index({ categories, applications, stats, selectedDate, d
                                                                 )
                                                             )}
                                                             <button
-                                                                onClick={() => router.get(`/member/loan-applications/${app.id}/edit`)}
+                                                                onClick={() => router.get(`/member/loan-applications/${app.id}`)}
                                                                 className="p-1.5 text-amber-700 hover:bg-amber-50 rounded-xl transition"
-                                                                title="সম্পাদনা"
+                                                                title="ফর্ম দেখুন / পূরণ করুন"
                                                             >
                                                                 <Edit className="w-4 h-4" />
                                                             </button>
@@ -1237,7 +1244,7 @@ export default function Index({ categories, applications, stats, selectedDate, d
                                                 {memberSearchResults.map((member) => {
                                                     const isRejected = member.status === 'rejected';
                                                     const isApproved = member.status === 'approved';
-                                                    const hasActiveLoan = member.has_active_loan && member.active_loans && member.active_loans.length > 0;
+                                                    const hasActiveLoan = !!member.has_active_loan;
                                                     const isDisabled = isRejected || hasActiveLoan;
 
                                                     const statusLabels: Record<string, string> = {

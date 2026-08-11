@@ -13,17 +13,7 @@ import {
 import { LoanAgreementData, LoanAgreementProps } from './Types';
 import { LoanAgreementPrintView } from './LoanAgreementPrintView';
 import { LoanAgreementForm } from './LoanAgreementForm';
-
-function formSelectionUrl(isLegacy: boolean, member: any, loanProduct: any, loanCategory: any, requestedAmount: number) {
-    const params = new URLSearchParams({
-        loan_product_id: String(loanProduct.id),
-        loan_category_id: String(loanCategory.id),
-        requested_amount: String(requestedAmount),
-    });
-    if (isLegacy) params.set('legacy', '1');
-    else params.set('member_id', String(member?.id ?? ''));
-    return `/member/loan-applications/form-selection?${params.toString()}`;
-}
+import { afterLoanFormSaveUrl } from '@/utils/loanFormNavigation';
 
 function getAcresAndDecimals(totalDecimals: any): { acres: string; decimal: string } {
     if (totalDecimals == null || totalDecimals === '' || isNaN(Number(totalDecimals))) {
@@ -39,6 +29,94 @@ function getAcresAndDecimals(totalDecimals: any): { acres: string; decimal: stri
     };
 }
 
+/** Admission + product defaults for preview when form not yet saved */
+export function buildLoanAgreementDefaults(
+    member: any,
+    loanProduct: any,
+    loanCategory: any,
+    requestedAmount: number,
+    branch?: any,
+): LoanAgreementData {
+    const landInfo = getAcresAndDecimals(member?.total_land_amount || member?.cultivable_land_amount);
+    return {
+        branch_name: branch?.name || '',
+        branch_address: branch?.address || '',
+        member_name_bn: member?.applicant_name_bn || member?.applicant_name_en || '',
+        member_code: member?.application_no || '',
+        father_husband_name: member?.father_name_bn || member?.spouse_name_bn || member?.father_name_en || '',
+        mother_name: member?.mother_name_bn || member?.mother_name_en || '',
+        nid_number: member?.nid_number || member?.smart_card_number || '',
+        mobile_number: member?.mobile_number || '',
+        samity_name: member?.samity?.samity_name_bn || member?.samity?.samity_name || '',
+        samity_code: member?.samity?.samity_code || member?.samity?.id?.toString() || '',
+        village: member?.present_village_road || member?.permanent_village_road || '',
+        union: member?.present_union || member?.permanent_union || '',
+        upazila: member?.present_upazila || member?.permanent_upazila || '',
+        district: member?.present_district || member?.permanent_district || '',
+        loan_amount: requestedAmount || 0,
+        loan_category_name: loanCategory?.category_name_bn || loanCategory?.category_name || '',
+        loan_product_name: loanProduct?.product_name_bn || loanProduct?.product_name || '',
+        loan_purpose: member?.project_name || member?.business_name || member?.main_profession || member?.profession || '',
+        loan_duration_months: loanProduct?.duration_months || 12,
+        service_charge: 0,
+        total_amount: 0,
+        number_of_installments: 0,
+        installment_amount: 0,
+        last_installment_amount: 0,
+        disbursement_date: new Date().toISOString().split('T')[0],
+        last_installment_date: '',
+        applicant_signature_name: member?.applicant_name_bn || '',
+        applicant_signature_image: member?.applicant_signature_path || null,
+        guardian_name: member?.guardian_name || member?.father_name_bn || member?.spouse_name_bn || '',
+        guardian_signature_image: member?.guardian_signature_path || null,
+        president_name: '',
+        president_signature_image: null,
+        secretary_name: '',
+        secretary_signature_image: null,
+        house_acres: '',
+        house_decimal: '',
+        land_acres: landInfo.acres,
+        land_decimal: landInfo.decimal,
+        house_value:
+            member?.total_asset_value != null && Number(member.total_asset_value) > 0
+                ? String(member.total_asset_value)
+                : '',
+        land_value:
+            member?.total_land_value != null && Number(member.total_land_value) > 0
+                ? String(member.total_land_value)
+                : member?.cultivable_land_value != null
+                  ? String(member.cultivable_land_value)
+                  : '',
+        self_emp_full_female: '',
+        self_emp_full_male: '',
+        self_emp_part_female: '',
+        self_emp_part_male: '',
+        wage_emp_full_female: '',
+        wage_emp_full_male: '',
+        wage_emp_part_female: '',
+        wage_emp_part_male: '',
+        credit_officer_name: '',
+        credit_officer_pin: '',
+        credit_officer_signature: null,
+        field_officer_name: '',
+        field_officer_pin: '',
+        field_officer_signature: null,
+        accountant_name: '',
+        accountant_pin: '',
+        accountant_signature: null,
+        branch_manager_name: '',
+        branch_manager_pin: '',
+        branch_manager_signature: null,
+    };
+}
+
+function mergeFormData<T extends Record<string, any>>(defaults: T, savedData?: any): T {
+    if (!savedData || typeof savedData !== 'object' || Object.keys(savedData).length === 0) {
+        return defaults;
+    }
+    return { ...defaults, ...savedData };
+}
+
 export default function LoanAgreement({
     member,
     loanProduct,
@@ -50,10 +128,14 @@ export default function LoanAgreement({
     onlyPreview,
     isLegacy = false,
 }: LoanAgreementProps) {
-    if (onlyPreview && savedData) {
+    if (onlyPreview) {
+        const previewData = mergeFormData(
+            buildLoanAgreementDefaults(member, loanProduct, loanCategory, requestedAmount, branch),
+            savedData,
+        );
         return (
             <div className="print-container">
-                <LoanAgreementPrintView data={savedData} />
+                <LoanAgreementPrintView data={previewData} />
             </div>
         );
     }
@@ -64,8 +146,6 @@ export default function LoanAgreement({
     const [saveSuccess, setSaveSuccess] = useState<string | null>(null);
     const [localRestored, setLocalRestored] = useState(false);
     const skipNextLocalSave = useRef(true);
-
-    const landInfo = getAcresAndDecimals(member?.total_land_amount || member?.cultivable_land_amount);
 
     const draftKey = useMemo(
         () =>
@@ -82,87 +162,9 @@ export default function LoanAgreement({
     const flashError = page.props.flash?.error || null;
     const flashSuccess = page.props.flash?.success || null;
 
-    const { data, setData, processing } = useForm<LoanAgreementData>({
-        // Branch Info
-        branch_name: branch?.name || '',
-        branch_address: branch?.address || '',
-
-        // Member Info (Auto-filled from MemberAdmission)
-        member_name_bn: member?.applicant_name_bn || member?.applicant_name_en || '',
-        member_code: member?.application_no || '',
-        father_husband_name: member?.father_name_bn || member?.spouse_name_bn || member?.father_name_en || '',
-        mother_name: member?.mother_name_bn || member?.mother_name_en || '',
-        nid_number: member?.nid_number || member?.smart_card_number || '',
-        mobile_number: member?.mobile_number || '',
-
-        // Samity Info
-        samity_name: member?.samity?.samity_name_bn || member?.samity?.samity_name || '',
-        samity_code: member?.samity?.samity_code || member?.samity?.id?.toString() || '',
-
-        // Address (Auto-filled from MemberAdmission with fallback)
-        village: member?.present_village_road || member?.permanent_village_road || '',
-        union: member?.present_union || member?.permanent_union || '',
-        upazila: member?.present_upazila || member?.permanent_upazila || '',
-        district: member?.present_district || member?.permanent_district || '',
-
-        // Loan Details
-        loan_amount: requestedAmount || 0,
-        loan_category_name: loanCategory?.category_name_bn || loanCategory?.category_name || '',
-        loan_product_name: loanProduct?.product_name_bn || loanProduct?.product_name || '',
-        loan_purpose: member?.project_name || member?.business_name || member?.main_profession || member?.profession || '',
-        loan_duration_months: loanProduct?.duration_months || 12,
-
-        // Calculated
-        service_charge: 0,
-        total_amount: 0,
-        number_of_installments: 0,
-        installment_amount: 0,
-        last_installment_amount: 0,
-        disbursement_date: new Date().toISOString().split('T')[0],
-        last_installment_date: '',
-
-        // Signatures & Witnesses
-        applicant_signature_name: member?.applicant_name_bn || '',
-        applicant_signature_image: member?.applicant_signature_path || null,
-        guardian_name: member?.guardian_name || member?.father_name_bn || member?.spouse_name_bn || '',
-        guardian_signature_image: member?.guardian_signature_path || null,
-        president_name: '',
-        president_signature_image: null,
-        secretary_name: '',
-        secretary_signature_image: null,
-
-        // Property & Land (Auto-filled from MemberAdmission)
-        house_acres: '',
-        house_decimal: '',
-        land_acres: landInfo.acres,
-        land_decimal: landInfo.decimal,
-        house_value: member?.total_asset_value != null && Number(member.total_asset_value) > 0 ? String(member.total_asset_value) : '',
-        land_value: member?.total_land_value != null && Number(member.total_land_value) > 0 ? String(member.total_land_value) : (member?.cultivable_land_value != null ? String(member.cultivable_land_value) : ''),
-
-        // Employment Statistics
-        self_emp_full_female: '',
-        self_emp_full_male: '',
-        self_emp_part_female: '',
-        self_emp_part_male: '',
-        wage_emp_full_female: '',
-        wage_emp_full_male: '',
-        wage_emp_part_female: '',
-        wage_emp_part_male: '',
-
-        // Officers
-        credit_officer_name: '',
-        credit_officer_pin: '',
-        credit_officer_signature: null,
-        field_officer_name: '',
-        field_officer_pin: '',
-        field_officer_signature: null,
-        accountant_name: '',
-        accountant_pin: '',
-        accountant_signature: null,
-        branch_manager_name: '',
-        branch_manager_pin: '',
-        branch_manager_signature: null,
-    });
+    const { data, setData, processing } = useForm<LoanAgreementData>(
+        buildLoanAgreementDefaults(member, loanProduct, loanCategory, requestedAmount, branch),
+    );
 
     // Load server draft, then overlay local backup if present (so unsaved work is never lost)
     useEffect(() => {
@@ -318,8 +320,17 @@ export default function LoanAgreement({
                 clearLoanDraftLocal(draftKey);
                 setLocalRestored(false);
                 setSaveSuccess('খসড়া সফলভাবে সংরক্ষিত হয়েছে। আপনার তথ্য সেভ আছে।');
-                // Stay briefly then return to form list (draft is in DB)
-                router.visit(formSelectionUrl(isLegacy, member, loanProduct, loanCategory, requestedAmount));
+                router.visit(
+                    afterLoanFormSaveUrl({
+                        existingApplication,
+                        isLegacy,
+                        member,
+                        loanProduct,
+                        loanCategory,
+                        requestedAmount,
+                        formId: 1,
+                    }),
+                );
             },
             onError: (errors) => {
                 console.error('Save draft error:', errors);
@@ -357,8 +368,8 @@ export default function LoanAgreement({
                     ${headHtml}
                     <style>
                         @page {
-                            size: A4;
-                            margin: 1cm;
+                            size: A4 portrait;
+                            margin: 12mm 15mm;
                         }
                         @media print {
                             html, body {
@@ -396,21 +407,8 @@ export default function LoanAgreement({
                 <style>{`
                     @media print {
                         @page {
-                            size: A4;
-                            margin: 1cm;
-                        }
-
-                        html, body, #app {
-                            margin: 0 !important;
-                            padding: 0 !important;
-                            -webkit-print-color-adjust: exact;
-                            print-color-adjust: exact;
-                            background: white !important;
-                        }
-
-                        @page {
                             size: A4 portrait;
-                            margin: 8mm 10mm;
+                            margin: 12mm 15mm;
                         }
 
                         body * {
@@ -477,7 +475,18 @@ export default function LoanAgreement({
                 <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-white p-4 rounded-xl border border-gray-200 shadow-sm print:hidden">
                     <div className="flex items-center gap-3">
                         <button
-                            onClick={() => router.visit(formSelectionUrl(isLegacy, member, loanProduct, loanCategory, requestedAmount))}
+                            onClick={() =>
+                                router.visit(
+                                    afterLoanFormSaveUrl({
+                                        existingApplication,
+                                        isLegacy,
+                                        member,
+                                        loanProduct,
+                                        loanCategory,
+                                        requestedAmount,
+                                    }),
+                                )
+                            }
                             className="flex items-center gap-2 px-3 py-2 bg-gray-100 text-gray-700 text-xs md:text-sm font-semibold rounded-lg hover:bg-gray-200 transition-all"
                         >
                             <ArrowLeft className="w-4 h-4" />

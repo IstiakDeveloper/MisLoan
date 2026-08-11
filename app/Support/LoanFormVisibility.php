@@ -151,36 +151,14 @@ class LoanFormVisibility
     }
 
     /**
-     * All form IDs relevant for display on Show page (saved + editable).
+     * All form IDs relevant for display on Show page.
+     * Always show the full set for this product/amount so blank + filled forms
+     * are available in one hub (FO / BM / disburse stages).
      *
      * @return int[]
      */
     public static function visibleFormIdsForShow(?string $roleName, string $status, ?object $product, float $amount, ?object $category = null): array
     {
-        $editable = self::editableFormIdsForUser($roleName, $status, $product, $amount, $category);
-
-        if ($status === LoanApplication::STATUS_DRAFT || $status === LoanApplication::STATUS_REJECTED) {
-            return array_values(array_unique(array_merge(
-                self::foSubmitFormIds($product, $amount, $category),
-                $editable
-            )));
-        }
-
-        if (in_array($status, [LoanApplication::STATUS_SUBMITTED, LoanApplication::STATUS_UNDER_REVIEW], true)) {
-            return array_values(array_unique(array_merge(
-                self::foSubmitFormIds($product, $amount, $category),
-                self::bmRequiredFormIds($product, $amount, $category)
-            )));
-        }
-
-        if ($status === LoanApplication::STATUS_PENDING_DISBURSEMENT) {
-            return array_values(array_unique(array_merge(
-                self::foSubmitFormIds($product, $amount, $category),
-                self::bmRequiredFormIds($product, $amount, $category),
-                self::disburseFormIds()
-            )));
-        }
-
         return array_values(array_unique(array_merge(
             self::foSubmitFormIds($product, $amount, $category),
             self::bmRequiredFormIds($product, $amount, $category),

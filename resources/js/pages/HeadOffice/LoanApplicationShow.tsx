@@ -1,4 +1,4 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { Head, router, useForm } from '@inertiajs/react';
 import AdminLayout from '@/layouts/admin-layout';
 import { formatDate, formatDateTime } from '@/utils/dateUtils';
@@ -117,6 +117,14 @@ const FORM_NAMES: Record<number, string> = {
     5: 'আবেদন ও অনুমোদনপত্র',
 };
 
+const FORM_FILLERS: Record<number, string> = {
+    1: 'ফিল্ড অফিসার / শাখা ব্যবহারকারী',
+    2: 'শাখা ব্যবহারকারী (বিতরণের আগে)',
+    3: 'শাখা ব্যবহারকারী (বিতরণের আগে)',
+    4: 'শাখা ব্যবস্থাপক',
+    5: 'ফিল্ড অফিসার / শাখা ব্যবহারকারী',
+};
+
 const statusConfig = {
     draft: { label: 'খসড়া', color: 'bg-gray-100 text-gray-800', icon: AlertCircle },
     submitted: { label: 'জমা হয়েছে', color: 'bg-blue-100 text-blue-800', icon: Clock },
@@ -133,6 +141,7 @@ export default function LoanApplicationShow({ loan, flash }: Props) {
     const [showIssueModal, setShowIssueModal] = useState(false);
     const [showRejectModal, setShowRejectModal] = useState(false);
     const [selectedFormId, setSelectedFormId] = useState<number | null>(null);
+    const [printBlank, setPrintBlank] = useState(false);
     const formPrintRef = useRef<HTMLDivElement>(null);
 
     const { data, setData, post, processing, reset } = useForm({
@@ -172,19 +181,10 @@ export default function LoanApplicationShow({ loan, flash }: Props) {
         return true;
     };
 
-    // শুধু সেই ফর্মগুলো দেখাও যেগুলো এই loan application এর জন্য required (visible_form_ids)
-    // এবং সেভ করা হয়েছে (form_saved flag + meaningful data)
-    // Branch account-এর মতোই same logic
-    const visibleFormIds = loan.visible_form_ids || [1, 2, 3, 4, 5]; // Fallback to all if not provided
+    const visibleFormIds = loan.visible_form_ids || [1, 2, 3, 4, 5];
     
     const savedFormIds = visibleFormIds.filter((id) => {
-        // First check: form must be in visible_form_ids (required for this loan)
-        if (!visibleFormIds.includes(id)) return false;
-        
-        // Second check: backend flag must be true
         if (loan.form_saved?.[id] !== true) return false;
-        
-        // Third check: verify actual data exists with meaningful content
         switch (id) {
             case 1:
                 return hasMeaningfulData(loan.loan_agreement_data);
@@ -200,6 +200,16 @@ export default function LoanApplicationShow({ loan, flash }: Props) {
                 return false;
         }
     });
+
+    useEffect(() => {
+        if (selectedFormId == null && visibleFormIds.length > 0) {
+            setSelectedFormId(visibleFormIds[0]);
+        }
+    }, [selectedFormId, visibleFormIds]);
+
+    useEffect(() => {
+        setPrintBlank(false);
+    }, [selectedFormId]);
 
     const printFormContent = () => {
         if (!formPrintRef.current || !selectedFormId) return;
@@ -249,22 +259,50 @@ export default function LoanApplicationShow({ loan, flash }: Props) {
             <Head title={`ঋণ আবেদন - ${loan.application_no}`}>
                 <style>{`
                     @media print {
-                        @page { size: A4; margin: 1cm; }
-                        body * { visibility: hidden !important; }
-                        .form-print-area, .form-print-area * { visibility: visible !important; }
-                        #issues-print-area, #issues-print-area * { visibility: visible !important; }
-                        .form-print-area, #issues-print-area {
+                        @page { size: A4 portrait; margin: 5mm; }
+                        html, body {
+                            background: white !important;
+                            color: black !important;
+                            margin: 0 !important;
+                            padding: 0 !important;
+                            height: auto !important;
+                            overflow: visible !important;
+                        }
+                        body * { 
+                            visibility: hidden !important; 
+                        }
+                        .form-print-area, 
+                        .form-print-area *, 
+                        .print-container, 
+                        .print-container *, 
+                        .printable-area, 
+                        .printable-area *,
+                        .agrosor-a4-page,
+                        .agrosor-a4-page *,
+                        #issues-print-area, 
+                        #issues-print-area * { 
+                            visibility: visible !important; 
+                        }
+                        .form-print-area, 
+                        .print-container, 
+                        .printable-area,
+                        #issues-print-area {
                             position: absolute !important;
                             left: 0 !important;
                             top: 0 !important;
                             width: 100% !important;
                             max-width: 100% !important;
-                            padding: 0 !important;
                             margin: 0 !important;
+                            padding: 0 !important;
                             background: white !important;
                             box-shadow: none !important;
+                            z-index: 999999 !important;
+                            display: block !important;
+                            overflow: visible !important;
                         }
-                        .print\\:hidden { display: none !important; }
+                        .print\\:hidden, nav, header, sidebar { 
+                            display: none !important; 
+                        }
                     }
                 `}</style>
             </Head>
@@ -374,6 +412,9 @@ export default function LoanApplicationShow({ loan, flash }: Props) {
                                 <p><span className="text-gray-600">NID:</span> {loan.member_admission?.nid_number || loan.member_admission?.nid_no || '-'}</p>
                                 <p><span className="text-gray-600">মোবাইল:</span> {loan.member_admission?.mobile_number || loan.member_admission?.mobile_no || '-'}</p>
                                 <p><span className="text-gray-600">ঠিকানা:</span> {loan.member_admission?.present_village_road || loan.member_admission?.present_address_en || '-'}</p>
+                                {loan.submittedBy && (
+                                    <p><span className="text-gray-600">আবেদনকারী:</span> {loan.submittedBy.name}</p>
+                                )}
                             </CardContent>
                         </Card>
 
@@ -559,107 +600,119 @@ export default function LoanApplicationShow({ loan, flash }: Props) {
                         </Card>
                     )}
 
-                    {/* Forms Section */}
-                    {savedFormIds.length > 0 && (
-                        <Card className="mb-6 border-l-4 border-l-green-600">
-                            <CardHeader>
-                                <CardTitle className="text-base">সেভকৃত ফর্ম</CardTitle>
-                                <CardDescription>যে ফর্মে ডেটা সেভ আছে সেটা বাটনে ক্লিক করে দেখুন ও প্রিন্ট করুন</CardDescription>
-                            </CardHeader>
-                            <CardContent className="space-y-4">
-                                <div className="flex flex-wrap gap-2">
-                                    {savedFormIds.map((id) => (
-                                        <Button
+                    {/* Forms hub — all visible forms, one-at-a-time print (data or blank) */}
+                    <Card className="mb-6 border-l-4 border-l-indigo-600">
+                        <CardHeader>
+                            <CardTitle className="text-base">ফর্মসমূহ</CardTitle>
+                            <CardDescription>
+                                প্রতিটি ফর্মে কে পূরণ করেন লেখা আছে। একটা করে প্রিন্ট করুন।
+                            </CardDescription>
+                        </CardHeader>
+                        <CardContent className="space-y-4">
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 print:hidden">
+                                {visibleFormIds.map((id) => {
+                                    const saved = savedFormIds.includes(id);
+                                    const selected = selectedFormId === id;
+                                    return (
+                                        <button
                                             key={id}
-                                            variant={selectedFormId === id ? 'default' : 'outline'}
-                                            onClick={() => setSelectedFormId(selectedFormId === id ? null : id)}
+                                            type="button"
+                                            onClick={() => setSelectedFormId(id)}
+                                            className={[
+                                                'text-left rounded-xl border-2 p-3 transition shadow-sm',
+                                                selected
+                                                    ? 'border-indigo-600 bg-indigo-50 ring-2 ring-indigo-200'
+                                                    : saved
+                                                      ? 'border-emerald-200 bg-emerald-50/40 hover:border-emerald-400'
+                                                      : 'border-amber-200 bg-amber-50/50 hover:border-amber-300',
+                                            ].join(' ')}
                                         >
-                                            <FileText className="w-4 h-4 mr-2" />
-                                            {FORM_NAMES[id] || `ফর্ম ${id}`}
-                                        </Button>
-                                    ))}
-                                </div>
-                                {selectedFormId !== null && (
-                                    <div className="rounded-lg border bg-gray-50/50 p-4">
-                                        <div className="mb-3 flex items-center justify-between print:hidden">
+                                            <div className="flex items-start gap-2">
+                                                <FileText className={`w-5 h-5 shrink-0 mt-0.5 ${selected ? 'text-indigo-600' : 'text-gray-500'}`} />
+                                                <div className="min-w-0 flex-1">
+                                                    <div className="flex flex-wrap items-center gap-1.5">
+                                                        <span className="font-bold text-sm text-gray-900">
+                                                            {FORM_NAMES[id] || `ফর্ম ${id}`}
+                                                        </span>
+                                                        {saved ? (
+                                                            <Badge className="bg-emerald-100 text-emerald-800 text-[10px]">সেভ আছে</Badge>
+                                                        ) : (
+                                                            <Badge className="bg-amber-100 text-amber-800 text-[10px]">বাকি</Badge>
+                                                        )}
+                                                    </div>
+                                                    <p className="text-xs text-gray-600 mt-1">
+                                                        <span className="font-semibold text-gray-800">পূরণ করেন:</span>{' '}
+                                                        {FORM_FILLERS[id] || '—'}
+                                                    </p>
+                                                </div>
+                                            </div>
+                                        </button>
+                                    );
+                                })}
+                            </div>
+                            {selectedFormId !== null && (
+                                <div className="rounded-lg border bg-gray-50/50 p-4">
+                                    <div className="mb-3 flex flex-wrap items-center justify-between gap-2 print:hidden">
+                                        <div>
                                             <span className="font-semibold text-gray-700">{FORM_NAMES[selectedFormId]}</span>
+                                            <p className="text-xs text-gray-600 mt-1">
+                                                পূরণ করেন: <strong>{FORM_FILLERS[selectedFormId]}</strong>
+                                            </p>
+                                        </div>
+                                        <div className="flex gap-2">
+                                            {savedFormIds.includes(selectedFormId) && (
+                                                <Button
+                                                    variant={printBlank ? 'default' : 'outline'}
+                                                    size="sm"
+                                                    onClick={() => setPrintBlank((v) => !v)}
+                                                >
+                                                    ব্ল্যাংক প্রিন্ট মোড
+                                                </Button>
+                                            )}
                                             <Button variant="outline" size="sm" onClick={printFormContent}>
                                                 <Printer className="w-4 h-4 mr-2" />
                                                 প্রিন্ট
                                             </Button>
                                         </div>
-                                        <div ref={formPrintRef} className="form-print-area space-y-3 text-sm">
-                                            {selectedFormId === 1 && loan.loan_agreement_data && (
-                                                <LoanAgreement
-                                                    onlyPreview
-                                                    savedData={loan.loan_agreement_data}
-                                                    member={loan.member_admission}
-                                                    loanProduct={loan.loan_product}
-                                                    loanCategory={loan.loan_category}
-                                                    requestedAmount={loan.requested_amount}
-                                                    branch={loan.branch}
-                                                />
-                                            )}
-                                            {selectedFormId === 2 && loan.guarantor_info && (
-                                                <GuarantorCommitment
-                                                    onlyPreview
-                                                    savedData={loan.guarantor_info}
-                                                    member={loan.member_admission}
-                                                    loanProduct={loan.loan_product}
-                                                    loanCategory={loan.loan_category}
-                                                    requestedAmount={loan.requested_amount}
-                                                    branch={loan.branch}
-                                                />
-                                            )}
-                                            {selectedFormId === 3 && loan.nominee_info && (
-                                                <DeathRiskFund
-                                                    onlyPreview
-                                                    savedData={loan.nominee_info}
-                                                    member={loan.member_admission}
-                                                    loanProduct={loan.loan_product}
-                                                    loanCategory={loan.loan_category}
-                                                    requestedAmount={loan.requested_amount}
-                                                    branch={loan.branch}
-                                                />
-                                            )}
-                                            {selectedFormId === 4 && loan.asset_info && (
-                                                <FieldInvestigation
-                                                    onlyPreview
-                                                    savedData={loan.asset_info}
-                                                    member={loan.member_admission}
-                                                    loanProduct={loan.loan_product}
-                                                    loanCategory={loan.loan_category}
-                                                    requestedAmount={loan.requested_amount}
-                                                    branch={loan.branch}
-                                                />
-                                            )}
-                                            {selectedFormId === 5 && loan.business_plan && (
-                                                <LoanApplicationApproval
-                                                    onlyPreview
-                                                    savedData={loan.business_plan}
-                                                    member={loan.member_admission}
-                                                    loanProduct={loan.loan_product}
-                                                    loanCategory={loan.loan_category}
-                                                    requestedAmount={loan.requested_amount}
-                                                    branch={loan.branch}
-                                                />
-                                            )}
-                                        </div>
                                     </div>
-                                )}
-                            </CardContent>
-                        </Card>
-                    )}
-
-                    {savedFormIds.length === 0 && (
-                        <Card className="mb-6">
-                            <CardContent className="p-6">
-                                <p className="text-sm text-gray-500 text-center">
-                                    এই আবেদনের জন্য এখনও কোন ফর্ম সেভ নেই।
-                                </p>
-                            </CardContent>
-                        </Card>
-                    )}
+                                    <div ref={formPrintRef} className="form-print-area space-y-3 text-sm">
+                                        {(() => {
+                                            const admissionOnly = printBlank || !savedFormIds.includes(selectedFormId);
+                                            const data = admissionOnly
+                                                ? undefined
+                                                : selectedFormId === 1
+                                                  ? loan.loan_agreement_data
+                                                  : selectedFormId === 2
+                                                    ? loan.guarantor_info
+                                                    : selectedFormId === 3
+                                                      ? loan.nominee_info
+                                                      : selectedFormId === 4
+                                                        ? loan.asset_info
+                                                        : loan.business_plan;
+                                            const common = {
+                                                onlyPreview: true as const,
+                                                savedData: data,
+                                                member: loan.member_admission,
+                                                loanProduct: loan.loan_product,
+                                                loanCategory: loan.loan_category,
+                                                requestedAmount: loan.requested_amount,
+                                                branch: loan.branch,
+                                            };
+                                            if (selectedFormId === 1) return <LoanAgreement {...common} />;
+                                            if (selectedFormId === 2) return <GuarantorCommitment {...common} />;
+                                            if (selectedFormId === 3) return <DeathRiskFund {...common} />;
+                                            if (selectedFormId === 4) return <FieldInvestigation {...common} />;
+                                            if (selectedFormId === 5) return <LoanApplicationApproval {...common} />;
+                                            return null;
+                                        })()}
+                                    </div>
+                                </div>
+                            )}
+                            {visibleFormIds.length === 0 && (
+                                <p className="text-sm text-gray-500 text-center py-4">এই আবেদনের জন্য কোনো ফর্ম নেই।</p>
+                            )}
+                        </CardContent>
+                    </Card>
                 </div>
             </div>
 

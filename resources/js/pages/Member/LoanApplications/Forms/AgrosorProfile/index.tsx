@@ -17,16 +17,25 @@ import { AgrosorProfileData, AgrosorProfileProps } from './Types';
 import FormPage1 from './FormPage1';
 import FormPage2 from './FormPage2';
 import PrintPreview from './PrintPreview';
+import { afterLoanFormSaveUrl } from '@/utils/loanFormNavigation';
 
-function formSelectionUrl(isLegacy: boolean, member: any, loanProduct: any, loanCategory: any, requestedAmount: number) {
-    const params = new URLSearchParams({
-        loan_product_id: String(loanProduct.id),
-        loan_category_id: String(loanCategory.id),
-        requested_amount: String(requestedAmount),
+function resolveBackUrl(
+    isLegacy: boolean,
+    member: any,
+    loanProduct: any,
+    loanCategory: any,
+    requestedAmount: number,
+    existingApplication?: any,
+) {
+    return afterLoanFormSaveUrl({
+        existingApplication,
+        isLegacy,
+        member,
+        loanProduct,
+        loanCategory,
+        requestedAmount,
+        formId: 5,
     });
-    if (isLegacy) params.set('legacy', '1');
-    else params.set('member_id', String(member?.id ?? ''));
-    return `/member/loan-applications/form-selection?${params.toString()}`;
 }
 
 const fmt = (v: any): string => {
@@ -410,17 +419,27 @@ export default function AgrosorProfile({
     loanCategory,
     requestedAmount,
     branch,
+    existingApplication,
     savedData,
     onlyPreview,
     isLegacy = false,
 }: AgrosorProfileProps) {
     const categoryName = loanCategory?.category_name_bn || loanCategory?.category_name || 'সুফলন';
 
-    if (onlyPreview && savedData) {
+    if (onlyPreview) {
+        const previewData = buildInitialData(
+            member,
+            loanProduct,
+            loanCategory,
+            requestedAmount,
+            branch,
+            isLegacy,
+            savedData && Object.keys(savedData).length > 0 ? savedData : undefined,
+        );
         const months = getLoanDurationMonths(loanProduct, 6);
         const amount =
-            Number(savedData.applied_loan_amount) ||
-            Number(savedData.fund_applied_loan) ||
+            Number(previewData.applied_loan_amount) ||
+            Number(previewData.fund_applied_loan) ||
             Number(requestedAmount) ||
             0;
         const schedule = calcInstallmentSchedule(
@@ -433,15 +452,15 @@ export default function AgrosorProfile({
             <div className="print-container">
                 <PrintPreview
                     formData={{
-                        ...savedData,
+                        ...previewData,
                         other_loans: normalizeOtherLoans(
-                            savedData.other_loan_status || savedData.other_loans,
+                            previewData.other_loan_status || previewData.other_loans,
                         ),
                         loan_duration_label: `${months} মাস`,
                         service_charge_rate:
                             loanProduct?.interest_rate != null
                                 ? String(loanProduct.interest_rate)
-                                : savedData.service_charge_rate,
+                                : previewData.service_charge_rate,
                         installment_type: 'এককালীন',
                         installment_principal: schedule ? String(schedule.principal) : '',
                         installment_service_charge: schedule ? String(schedule.serviceCharge) : '',
@@ -701,7 +720,7 @@ export default function AgrosorProfile({
                             type="button"
                             onClick={() =>
                                 router.visit(
-                                    formSelectionUrl(isLegacy, member, loanProduct, loanCategory, requestedAmount),
+                                    resolveBackUrl(isLegacy, member, loanProduct, loanCategory, requestedAmount, existingApplication),
                                 )
                             }
                             className="flex items-center gap-1.5 px-3 py-2 bg-gray-600 text-white rounded-lg text-xs md:text-sm hover:bg-gray-700 transition-all font-medium whitespace-nowrap"

@@ -201,21 +201,47 @@ export default function Show({ application, fromHeadOffice = false, backUrl = '/
             <Head title={`Savings Application - ${application.application_no}`}>
                 <style>{`
                     @media print {
-                        body * { visibility: hidden; }
-                        .savings-print-area,
-                        .savings-print-area * { visibility: visible; }
-                        .savings-print-area {
-                            position: absolute;
-                            left: 0;
-                            top: 0;
-                            width: 100%;
-                            max-width: 100%;
-                            padding: 0;
-                            margin: 0;
-                            background: white;
+                        @page { size: A4 portrait; margin: 5mm; }
+                        html, body {
+                            background: white !important;
+                            color: black !important;
+                            margin: 0 !important;
+                            padding: 0 !important;
+                            height: auto !important;
+                            overflow: visible !important;
                         }
-                        .no-print { display: none !important; }
-                        @page { size: A4; margin: 1cm; }
+                        body * { 
+                            visibility: hidden !important; 
+                        }
+                        .savings-print-area,
+                        .savings-print-area *,
+                        .print-container,
+                        .print-container *,
+                        .printable-area,
+                        .printable-area *,
+                        .agrosor-a4-page,
+                        .agrosor-a4-page * { 
+                            visibility: visible !important; 
+                        }
+                        .savings-print-area,
+                        .print-container,
+                        .printable-area {
+                            position: absolute !important;
+                            left: 0 !important;
+                            top: 0 !important;
+                            width: 100% !important;
+                            max-width: 100% !important;
+                            margin: 0 !important;
+                            padding: 0 !important;
+                            background: white !important;
+                            box-shadow: none !important;
+                            z-index: 999999 !important;
+                            display: block !important;
+                            overflow: visible !important;
+                        }
+                        .no-print, .print\\:hidden, nav, header, sidebar { 
+                            display: none !important; 
+                        }
                     }
                 `}</style>
             </Head>

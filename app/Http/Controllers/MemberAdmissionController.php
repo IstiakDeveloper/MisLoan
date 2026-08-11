@@ -1499,4 +1499,33 @@ class MemberAdmissionController extends Controller
         return redirect()->route('member-admissions.index')
             ->with('success', 'Member admission rejected successfully!');
     }
+
+    /**
+     * Update Member Code (application_no) before loan disbursement.
+     */
+    public function updateMemberCode(Request $request, MemberAdmission $memberAdmission)
+    {
+        $hasDisbursedLoan = $memberAdmission->loanApplications()
+            ->where('status', \App\Models\LoanApplication::STATUS_DISBURSED)
+            ->exists();
+
+        if ($hasDisbursedLoan) {
+            return back()->withErrors(['error' => 'ঋণ বিতরণ সম্পন্ন হওয়ার পর মেম্বার কোড পরিবর্তন করা যাবে না।']);
+        }
+
+        $validated = $request->validate([
+            'member_code' => [
+                'required',
+                'string',
+                'max:50',
+                'unique:member_admissions,application_no,' . $memberAdmission->id,
+            ],
+        ]);
+
+        $memberAdmission->update([
+            'application_no' => $validated['member_code'],
+        ]);
+
+        return back()->with('success', 'মেম্বার কোড সফলভাবে আপডেট করা হয়েছে।');
+    }
 }

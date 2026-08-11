@@ -4,6 +4,7 @@ import AdminLayout from '@/layouts/admin-layout';
 import { Save, Printer, Eye, Upload, X, ArrowLeft } from 'lucide-react';
 import { formatDateBangla } from '@/utils/dateUtils';
 import { numberToWordsBangla } from './ApprovalForm/PrintPreview';
+import { afterLoanFormSaveUrl } from '@/utils/loanFormNavigation';
 
 interface DeathRiskFundData {
     // Branch & Date
@@ -81,15 +82,15 @@ function renderDeathRiskFundPreviewPart(partNumber: 1 | 2, formData: any) {
     };
     
     return (
-        <div className={`half-page-form bg-white border border-gray-300 p-1 ${isPart1 ? 'mb-0' : ''}`} style={{ fontSize: '10px', lineHeight: 1.2 }}>
+        <div className={`half-page-form bg-white border border-gray-300 p-1.5 sm:p-2 ${isPart1 ? 'mb-0.5' : ''}`} style={{ fontSize: '11px', lineHeight: 1.3 }}>
             <div className="mb-0.5 border-b border-gray-400 pb-0.5">
                 <div className="flex flex-col items-center justify-center mb-0.5">
                     <div className="flex items-center gap-1.5">
                         <img src="/logo.png" alt="Logo" style={{ height: '30px', width: '30px', objectFit: 'contain' }} onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }} />
                         <div className="text-center">
-                            <h1 className="font-bold leading-tight" style={{ fontSize: '13px', marginBottom: 0 }}>মৌসুমী</h1>
-                            <p className="leading-tight" style={{ fontSize: '8px', marginBottom: '2px' }}>মৃত্যুজনিত ঋণঝুঁকি তহবিলে অন্তর্ভুক্তির আবেদনপত্র</p>
-                            <p className="font-semibold text-gray-700" style={{ fontSize: '8px', marginTop: '1px' }}>{isPart1 ? 'প্রথম অংশ (প্রোফাইলে সংযুক্ত করতে হবে)' : 'দ্বিতীয় অংশ (পাশবইয়ে সংযুক্ত করতে হবে)'}</p>
+                            <h1 className="font-bold leading-tight" style={{ fontSize: '13.5px', marginBottom: 0 }}>মৌসুমী</h1>
+                            <p className="leading-tight" style={{ fontSize: '9px', marginBottom: '1px' }}>মৃত্যুজনিত ঋণঝুঁকি তহবিলে অন্তর্ভুক্তির আবেদনপত্র</p>
+                            <p className="font-semibold text-gray-700" style={{ fontSize: '9px', marginTop: '1px' }}>{isPart1 ? 'প্রথম অংশ (প্রোফাইলে সংযুক্ত করতে হবে)' : 'দ্বিতীয় অংশ (পাশবইয়ে সংযুক্ত করতে হবে)'}</p>
                         </div>
                     </div>
                 </div>
@@ -191,16 +192,89 @@ const calculateAge = (dateOfBirth: string | null): number => {
     return age;
 };
 
-function formSelectionUrl(isLegacy: boolean, member: any, loanProduct: any, loanCategory: any, requestedAmount: number) {
+function buildDeathRiskFundDefaults(
+    member: any,
+    loanProduct: any,
+    loanCategory: any,
+    requestedAmount: number,
+    branch?: any,
+): DeathRiskFundData {
+    const memberPhotoUrl = member?.customer_photo_path
+        ? member.customer_photo_path.startsWith('http')
+            ? member.customer_photo_path
+            : `/storage/${member.customer_photo_path}`
+        : null;
+    const guardianPhotoUrl = member?.guardian_photo_path
+        ? member.guardian_photo_path.startsWith('http')
+            ? member.guardian_photo_path
+            : `/storage/${member.guardian_photo_path}`
+        : null;
+    const amount = Number(requestedAmount) || 0;
+    const words = amount > 0 ? numberToWordsBangla(amount) : '';
+    return {
+        branch_name: branch?.name || '',
+        date: new Date().toISOString().split('T')[0],
+        loan_recipient_photo: memberPhotoUrl,
+        guardian_photo: guardianPhotoUrl,
+        loan_recipient_name: member?.applicant_name_bn || member?.applicant_name_en || '',
+        loan_recipient_code1: member?.application_no || '',
+        loan_recipient_code2: member?.application_no || '',
+        samity_name: member?.samity?.samity_name_bn || member?.samity?.samity_name || '',
+        village: member?.present_village_road || member?.permanent_village_road || '',
+        post_office: member?.present_post_code || member?.permanent_post_code || '',
+        upazila: member?.present_upazila || member?.permanent_upazila || '',
+        district: member?.present_district || member?.permanent_district || '',
+        age: calculateAge(member?.date_of_birth),
+        nid_number: member?.nid_number || '',
+        mobile_number: member?.mobile_number || '',
+        component_name: loanCategory?.category_name_bn || loanCategory?.category_name || '',
+        loan_sanction_date: new Date().toISOString().split('T')[0],
+        loan_amount_received: amount,
+        loan_amount_words: words ? words + ' টাকা' : '',
+        loan_term: loanProduct?.duration_months ? `${loanProduct.duration_months} মাস` : '',
+        guardian_name: member?.guardian_name || '',
+        guardian_age: 0,
+        relationship_with_recipient: '',
+        guardian_village: member?.permanent_village_road || member?.present_village_road || '',
+        guardian_post_office: member?.permanent_post_code || member?.present_post_code || '',
+        guardian_upazila: member?.permanent_upazila || member?.present_upazila || '',
+        guardian_district: member?.permanent_district || member?.present_district || '',
+        guardian_nid: '',
+        guardian_mobile: member?.guarantor_mobile || '',
+        guardian_profession: '',
+        loan_recipient_signature: null,
+        guardian_signature: null,
+        officer_signature: null,
+        accountant_signature: null,
+        branch_manager_signature: null,
+    };
+}
+
+function resolveBackUrl(
+    afterSaveUrl: string | undefined,
+    isLegacy: boolean,
+    member: any,
+    loanProduct: any,
+    loanCategory: any,
+    requestedAmount: number,
+    existingApplication?: any,
+) {
     if (typeof window !== 'undefined') {
         const currentParams = new URLSearchParams(window.location.search);
         if (currentParams.get('return') === 'disburse' && currentParams.get('application_id')) {
             return `/member/loan-applications/${currentParams.get('application_id')}?action=disburse`;
         }
     }
-    const params = new URLSearchParams({ loan_product_id: String(loanProduct.id), loan_category_id: String(loanCategory.id), requested_amount: String(requestedAmount) });
-    if (isLegacy) params.set('legacy', '1'); else params.set('member_id', String(member?.id ?? ''));
-    return `/member/loan-applications/form-selection?${params.toString()}`;
+    return afterLoanFormSaveUrl({
+        afterSaveUrl,
+        existingApplication,
+        isLegacy,
+        member,
+        loanProduct,
+        loanCategory,
+        requestedAmount,
+        formId: 3,
+    });
 }
 
 export default function DeathRiskFund({
@@ -217,14 +291,16 @@ export default function DeathRiskFund({
     saveButtonLabel,
     isLegacy = false,
 }: Props) {
-    if (onlyPreview && savedData) {
+    if (onlyPreview) {
+        const defaults = buildDeathRiskFundDefaults(member, loanProduct, loanCategory, requestedAmount, branch);
+        const previewData = savedData && Object.keys(savedData).length > 0 ? { ...defaults, ...savedData } : defaults;
         return (
             <div className="print-container">
                 <div className="bg-white rounded-lg shadow-lg p-2 print:shadow-none print:p-1 print:rounded-none print:bg-white">
                     <div className="space-y-0 print:space-y-0">
-                        {renderDeathRiskFundPreviewPart(1, savedData)}
+                        {renderDeathRiskFundPreviewPart(1, previewData)}
                         <div className="border-t border-dotted border-gray-400 my-0.5 print:my-0" style={{ marginTop: '2px', marginBottom: '2px' }} />
-                        {renderDeathRiskFundPreviewPart(2, savedData)}
+                        {renderDeathRiskFundPreviewPart(2, previewData)}
                     </div>
                 </div>
             </div>
@@ -420,12 +496,17 @@ export default function DeathRiskFund({
                     if (autoDisburse) {
                         return;
                     }
-                    if (afterSaveUrl) {
-                        router.visit(afterSaveUrl);
-                        return;
-                    }
-                    alert('মৃত্যুজনিত ঋণঝুঁকি তহবিলে অন্তর্ভুক্তির আবেদন পত্র ড্রাফট হিসেবে সংরক্ষিত হয়েছে।');
-                    router.visit(formSelectionUrl(isLegacy, member, loanProduct, loanCategory, requestedAmount));
+                    router.visit(
+                        resolveBackUrl(
+                            afterSaveUrl,
+                            isLegacy,
+                            member,
+                            loanProduct,
+                            loanCategory,
+                            requestedAmount,
+                            existingApplication,
+                        ),
+                    );
                 },
                 onError: (errors) => {
                     console.error('Save draft error:', errors);
@@ -457,8 +538,8 @@ export default function DeathRiskFund({
                     ${headHtml}
                     <style>
                         @page {
-                            size: A4;
-                            margin: 1cm;
+                            size: A4 portrait;
+                            margin: 4mm 6mm;
                         }
                         @media print {
                             html, body {
@@ -1289,8 +1370,8 @@ export default function DeathRiskFund({
                 <style>{`
                     @media print {
                         @page {
-                            size: A4;
-                            margin: 1cm;
+                            size: A4 portrait;
+                            margin: 4mm 6mm;
                         }
                         html, body, #app {
                             margin: 0 !important;
@@ -1350,7 +1431,19 @@ export default function DeathRiskFund({
                 <div className="flex items-center justify-between mb-4 print:hidden">
                     {!embedded && <div className="flex items-center gap-3">
                         <button
-                            onClick={() => router.visit(formSelectionUrl(isLegacy, member, loanProduct, loanCategory, requestedAmount))}
+                            onClick={() =>
+                                router.visit(
+                                    resolveBackUrl(
+                                        afterSaveUrl,
+                                        isLegacy,
+                                        member,
+                                        loanProduct,
+                                        loanCategory,
+                                        requestedAmount,
+                                        existingApplication,
+                                    ),
+                                )
+                            }
                             className="flex items-center gap-2 px-3 py-2 bg-gray-200 text-gray-700 text-sm rounded-md hover:bg-gray-300"
                         >
                             <ArrowLeft className="w-4 h-4" />

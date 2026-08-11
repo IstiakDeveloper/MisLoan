@@ -432,23 +432,51 @@ class MemberAdmission extends Model
 
         static::creating(function ($admission) {
             if (empty($admission->application_no)) {
-                $admission->application_no = self::generateApplicationNumber();
+                $admission->application_no = self::generateApplicationNumber($admission->branch_id);
             }
         });
     }
 
     /**
-     * Generate a simple 5-digit serial application number: 00001, 00002, ...
-     * Grows beyond 5 digits when needed (100000, 100001, ...).
+     * Generate branch code prefix based application number (e.g. branch code 0042 -> 42001, 42002...)
      */
-    public static function generateApplicationNumber(): string
+    public static function generateApplicationNumber(?int $branchId = null): string
     {
-        $lastAdmission = self::whereRaw("application_no REGEXP '^[0-9]+$'")
+        $prefix = '';
+        if (!$branchId && auth()->check() && auth()->user()->branch_id) {
+            $branchId = auth()->user()->branch_id;
+        }
+
+        if ($branchId) {
+            $branch = Branch::find($branchId);
+            if ($branch && $branch->code) {
+                $num = preg_replace('/\D/', '', $branch->code);
+                if ($num !== '') {
+                    $prefix = (string) (int) $num;
+                }
+            }
+        }
+
+        if (empty($prefix)) {
+            $lastAdmission = self::whereRaw("application_no REGEXP '^[0-9]+$'")
+                ->orderByRaw('CAST(application_no AS UNSIGNED) DESC')
+                ->first();
+            $next = $lastAdmission ? (int) $lastAdmission->application_no + 1 : 1;
+            return str_pad((string) $next, 5, '0', STR_PAD_LEFT);
+        }
+
+        // Branch-based code: e.g. prefix 42 -> 42001, 42002, ...
+        $pattern = "^{$prefix}[0-9]{3,}$";
+        $lastAdmission = self::whereRaw("application_no REGEXP '{$pattern}'")
             ->orderByRaw('CAST(application_no AS UNSIGNED) DESC')
             ->first();
 
-        $next = $lastAdmission ? (int) $lastAdmission->application_no + 1 : 1;
+        if ($lastAdmission && is_numeric($lastAdmission->application_no)) {
+            $lastVal = (int) $lastAdmission->application_no;
+            $nextVal = $lastVal + 1;
+            return (string) $nextVal;
+        }
 
-        return str_pad((string) $next, 5, '0', STR_PAD_LEFT);
+        return $prefix . '001';
     }
 }

@@ -86,7 +86,7 @@ export default function PrintPreview({ formData }: { formData: AgrosorProfileDat
         >
             <style>{`
                 @media print {
-                    @page { size: A4 portrait; margin: 6mm; }
+                    @page { size: A4 portrait; margin: 12mm 15mm; }
                     .agrosor-a4-page {
                         width: 100% !important;
                         max-width: 100% !important;

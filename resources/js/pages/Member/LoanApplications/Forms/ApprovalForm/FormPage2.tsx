@@ -21,6 +21,25 @@ export default function FormPage2({ data, setData, requestedAmount }: FormPagePr
 
     const [visibleLoanCount, setVisibleLoanCount] = useState<number>(initialPopulatedLoans);
 
+    const emptyOtherLoan = () => ({
+        current_status: '',
+        round: '',
+        borrower_name: '',
+        mobile: '',
+        remarks: '',
+        source_name: '',
+        custom_source: '',
+        is_custom: false,
+    });
+
+    /** Clone row before patch — avoids shared object refs from Array.fill */
+    const updateOtherLoanRow = (idx: number, patch: Record<string, any>) => {
+        const rows = (data.other_loan_status || []).map((r: any) => ({ ...r }));
+        while (rows.length <= idx) rows.push(emptyOtherLoan());
+        rows[idx] = { ...emptyOtherLoan(), ...rows[idx], ...patch };
+        setData('other_loan_status', rows);
+    };
+
     // সংস্থার অনুমোদনকৃত ঋণ = পেজ ১ এর আবেদনকৃত ঋণ / requested amount
     const appliedLoan =
         data.capital_applied_loan ||
@@ -302,10 +321,8 @@ export default function FormPage2({ data, setData, requestedAmount }: FormPagePr
                                                 <button
                                                     type="button"
                                                     onClick={() => {
-                                                        const rows = [...(data.other_loan_status || [])];
-                                                        rows[idx] = { current_status: '', round: '', borrower_name: '', mobile: '', remarks: '', source_name: '', custom_source: '', is_custom: false };
-                                                        setData('other_loan_status', rows);
-                                                        setVisibleLoanCount(prev => Math.max(1, prev - 1));
+                                                        updateOtherLoanRow(idx, emptyOtherLoan());
+                                                        setVisibleLoanCount((prev) => Math.max(1, prev - 1));
                                                     }}
                                                     className="text-[10px] text-red-500 hover:text-red-700 font-semibold"
                                                 >
@@ -321,16 +338,18 @@ export default function FormPage2({ data, setData, requestedAmount }: FormPagePr
                                                     value={isCustom ? 'custom' : sourceName}
                                                     onChange={(e) => {
                                                         const val = e.target.value;
-                                                        const rows = [...(data.other_loan_status || [])];
-                                                        if (!rows[idx]) rows[idx] = {};
                                                         if (val === 'custom') {
-                                                            rows[idx].is_custom = true;
-                                                            rows[idx].source_name = rows[idx].custom_source || '';
+                                                            updateOtherLoanRow(idx, {
+                                                                is_custom: true,
+                                                                source_name: currentObj.custom_source || '',
+                                                            });
                                                         } else {
-                                                            rows[idx].is_custom = false;
-                                                            rows[idx].source_name = val;
+                                                            updateOtherLoanRow(idx, {
+                                                                is_custom: false,
+                                                                source_name: val,
+                                                                custom_source: '',
+                                                            });
                                                         }
-                                                        setData('other_loan_status', rows);
                                                     }}
                                                     className={inputClass}
                                                 >
@@ -357,12 +376,11 @@ export default function FormPage2({ data, setData, requestedAmount }: FormPagePr
                                                         value={currentObj.custom_source ?? (isCustom ? sourceName : '')}
                                                         onChange={(e) => {
                                                             const txt = e.target.value;
-                                                            const rows = [...(data.other_loan_status || [])];
-                                                            if (!rows[idx]) rows[idx] = {};
-                                                            rows[idx].is_custom = true;
-                                                            rows[idx].custom_source = txt;
-                                                            rows[idx].source_name = txt;
-                                                            setData('other_loan_status', rows);
+                                                            updateOtherLoanRow(idx, {
+                                                                is_custom: true,
+                                                                custom_source: txt,
+                                                                source_name: txt,
+                                                            });
                                                         }}
                                                         className={`${inputClass} mt-2 bg-amber-50/60 border-amber-300`}
                                                     />
@@ -375,12 +393,9 @@ export default function FormPage2({ data, setData, requestedAmount }: FormPagePr
                                                     type="text"
                                                     placeholder="টাকা"
                                                     value={currentObj.current_status || ''}
-                                                    onChange={(e) => {
-                                                        const rows = [...(data.other_loan_status || [])];
-                                                        if (!rows[idx]) rows[idx] = {};
-                                                        rows[idx].current_status = e.target.value;
-                                                        setData('other_loan_status', rows);
-                                                    }}
+                                                    onChange={(e) =>
+                                                        updateOtherLoanRow(idx, { current_status: e.target.value })
+                                                    }
                                                     className={inputClass}
                                                 />
                                             </div>
@@ -393,12 +408,7 @@ export default function FormPage2({ data, setData, requestedAmount }: FormPagePr
                                                     type="text"
                                                     placeholder="মেয়াদ"
                                                     value={currentObj.round || ''}
-                                                    onChange={(e) => {
-                                                        const rows = [...(data.other_loan_status || [])];
-                                                        if (!rows[idx]) rows[idx] = {};
-                                                        rows[idx].round = e.target.value;
-                                                        setData('other_loan_status', rows);
-                                                    }}
+                                                    onChange={(e) => updateOtherLoanRow(idx, { round: e.target.value })}
                                                     className={inputClass}
                                                 />
                                             </div>
@@ -408,12 +418,9 @@ export default function FormPage2({ data, setData, requestedAmount }: FormPagePr
                                                     type="text"
                                                     placeholder="নাম"
                                                     value={currentObj.borrower_name || ''}
-                                                    onChange={(e) => {
-                                                        const rows = [...(data.other_loan_status || [])];
-                                                        if (!rows[idx]) rows[idx] = {};
-                                                        rows[idx].borrower_name = e.target.value;
-                                                        setData('other_loan_status', rows);
-                                                    }}
+                                                    onChange={(e) =>
+                                                        updateOtherLoanRow(idx, { borrower_name: e.target.value })
+                                                    }
                                                     className={inputClass}
                                                 />
                                             </div>
@@ -423,12 +430,7 @@ export default function FormPage2({ data, setData, requestedAmount }: FormPagePr
                                                     type="text"
                                                     placeholder="মোবাইল"
                                                     value={currentObj.mobile || ''}
-                                                    onChange={(e) => {
-                                                        const rows = [...(data.other_loan_status || [])];
-                                                        if (!rows[idx]) rows[idx] = {};
-                                                        rows[idx].mobile = e.target.value;
-                                                        setData('other_loan_status', rows);
-                                                    }}
+                                                    onChange={(e) => updateOtherLoanRow(idx, { mobile: e.target.value })}
                                                     className={inputClass}
                                                 />
                                             </div>
@@ -438,12 +440,7 @@ export default function FormPage2({ data, setData, requestedAmount }: FormPagePr
                                                     type="text"
                                                     placeholder="মন্তব্য"
                                                     value={currentObj.remarks || ''}
-                                                    onChange={(e) => {
-                                                        const rows = [...(data.other_loan_status || [])];
-                                                        if (!rows[idx]) rows[idx] = {};
-                                                        rows[idx].remarks = e.target.value;
-                                                        setData('other_loan_status', rows);
-                                                    }}
+                                                    onChange={(e) => updateOtherLoanRow(idx, { remarks: e.target.value })}
                                                     className={inputClass}
                                                 />
                                             </div>

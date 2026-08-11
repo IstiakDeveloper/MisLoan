@@ -4,6 +4,7 @@ import AdminLayout from '@/layouts/admin-layout';
 import { formatDateBangla } from '@/utils/dateUtils';
 import { Save, Printer, Eye, ArrowLeft, ClipboardList } from 'lucide-react';
 import GeneralSavingsSection, { getRequiredSavingsPercent } from '@/components/LoanApplications/GeneralSavingsSection';
+import { afterLoanFormSaveUrl } from '@/utils/loanFormNavigation';
 
 interface FieldInvestigationData {
     branch_name: string;
@@ -82,11 +83,27 @@ const dofaLabel = (round: number | undefined): string => {
     return labels[round] || `${round}তম দফা`;
 };
 
+/** NID or Smart Card from member admission (whichever is filled) */
+function resolveMemberIdentityNumber(member: any): string {
+    const candidates = [
+        member?.nid_number,
+        member?.nid_no,
+        member?.national_id,
+        member?.smart_card_number,
+        member?.smart_card_no,
+        member?.smartcard_number,
+    ];
+    for (const v of candidates) {
+        if (v != null && String(v).trim() !== '') return String(v).trim();
+    }
+    return '';
+}
+
 /** Module-level: full preview with given data (for onlyPreview on Show page) */
 function renderFieldInvestigationPreviewContent(formData: any) {
     const d = formData || {};
     return (
-        <div className="bg-white border border-gray-300 p-4 print:p-2" style={{ fontSize: '11px' }}>
+        <div className="bg-white border border-gray-300 p-5 sm:p-7 print:p-3" style={{ fontSize: '13.5px', lineHeight: '1.6' }}>
             <div className="flex flex-col items-center justify-center mb-3 border-b-2 border-gray-400 pb-2">
                 <div className="flex items-center justify-center gap-3 mb-1">
                     <img src="/logo.png" alt="Logo" className="h-16 w-16 object-contain print:h-14 print:w-14" onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }} />
@@ -115,7 +132,7 @@ function renderFieldInvestigationPreviewContent(formData: any) {
                         <span className="border-b border-dotted border-gray-600 flex-1 min-h-[12px]">{d.samity_code || ''}</span>
                     </div>
                     <div className="flex gap-1 items-baseline">
-                        <span className="w-36 flex-shrink-0">জাতীয় পরিচয়পত্র নং:</span>
+                        <span className="w-36 flex-shrink-0">জাতীয় পরিচয়পত্র / স্মার্ট কার্ড নং:</span>
                         <span className="border-b border-dotted border-gray-600 flex-1 min-h-[12px]">{d.nid_number || ''}</span>
                         <span className="w-32 flex-shrink-0 ml-2">সদস্যের মোবাইল নং:</span>
                         <span className="border-b border-dotted border-gray-600 flex-1 min-h-[12px]">{d.member_mobile || ''}</span>
@@ -321,10 +338,100 @@ function renderFieldInvestigationPreviewContent(formData: any) {
     );
 }
 
-function formSelectionUrl(isLegacy: boolean, member: any, loanProduct: any, loanCategory: any, requestedAmount: number) {
-    const params = new URLSearchParams({ loan_product_id: String(loanProduct.id), loan_category_id: String(loanCategory.id), requested_amount: String(requestedAmount) });
-    if (isLegacy) params.set('legacy', '1'); else params.set('member_id', String(member?.id ?? ''));
-    return `/member/loan-applications/form-selection?${params.toString()}`;
+function buildFieldInvestigationDefaults(
+    member: any,
+    requestedAmount: number,
+    branch?: any,
+    loanRound = 1,
+): FieldInvestigationData {
+    return {
+        branch_name: branch?.name || '',
+        branch_address: branch?.address || '',
+        field_visit_date: new Date().toISOString().split('T')[0],
+        loan_disbursement_date: '',
+        member_name: member?.applicant_name_bn || member?.applicant_name_en || '',
+        member_no: member?.application_no || '',
+        samity_name: member?.samity?.samity_name_bn || member?.samity?.samity_name || '',
+        samity_code: member?.samity?.samity_code || member?.samity?.id?.toString() || '',
+        nid_number: resolveMemberIdentityNumber(member),
+        member_mobile: member?.mobile_number || '',
+        information_provider_name: '',
+        information_provider_mobile: '',
+        relationship_with_member: '',
+        main_profession: member?.business_details || member?.job_details || member?.other_income_details || '',
+        family_members_count: (member?.family_members?.length ?? member?.familyMembers?.length ?? 0) || 0,
+        earning_members_count: 0,
+        previous_loan_amount: 0,
+        current_loan_demand: requestedAmount || 0,
+        own_land_amount:
+            member?.total_land_amount != null && Number(member.total_land_amount) > 0
+                ? String(member.total_land_amount)
+                : member?.cultivable_land_amount != null && Number(member.cultivable_land_amount) > 0
+                  ? String(member.cultivable_land_amount)
+                  : '',
+        mortgaged_land_amount: '',
+        land_value:
+            member?.total_land_value != null && Number(member.total_land_value) > 0
+                ? Number(member.total_land_value)
+                : member?.cultivable_land_value != null
+                  ? Number(member.cultivable_land_value)
+                  : 0,
+        house_type: member?.house_type || '',
+        room_count:
+            (member?.brick_house_count || 0) +
+            (member?.semi_brick_house_count || 0) +
+            (member?.tin_house_count || 0) +
+            (member?.mud_house_count || 0),
+        has_tubewell: false,
+        has_latrine: false,
+        cow_count: member?.cow_buffalo_count || 0,
+        buffalo_count: 0,
+        goat_count: member?.goat_sheep_count || 0,
+        sheep_count: 0,
+        duck_chicken_count: member?.duck_chicken_count || 0,
+        primary_school_count: 0,
+        secondary_school_count: 0,
+        college_count: 0,
+        madrasah_count: 0,
+        university_count: 0,
+        savings_amount: 0,
+        house_identification: '',
+        other_organization_loans: member?.other_loan_info || '',
+        previous_repayment_type: '',
+        general_savings_default_count: 0,
+        emergency_savings_default_count: 0,
+        term_savings_default_count: 0,
+        term_savings_due_installments: 0,
+        term_savings_due_amount: 0,
+        comments: member?.collector_comment || '',
+        member_signature: member?.applicant_signature_path || null,
+        branch_manager_signature: null,
+        general_savings_product_id: null,
+        general_savings_amount: 0,
+        is_against_savings: false,
+        against_savings_product_id: null,
+        against_savings_amount: 0,
+        loan_round: loanRound,
+    };
+}
+
+function resolveBackUrl(
+    isLegacy: boolean,
+    member: any,
+    loanProduct: any,
+    loanCategory: any,
+    requestedAmount: number,
+    existingApplication?: any,
+) {
+    return afterLoanFormSaveUrl({
+        existingApplication,
+        isLegacy,
+        member,
+        loanProduct,
+        loanCategory,
+        requestedAmount,
+        formId: 4,
+    });
 }
 
 export default function FieldInvestigation({
@@ -342,10 +449,18 @@ export default function FieldInvestigation({
 }: Props) {
     const resumeParams = typeof window !== 'undefined' ? new URLSearchParams(window.location.search) : null;
     const isResumeApproval = !!resumeParams?.get('resume_approval_id');
-    if (onlyPreview && savedData) {
+    if (onlyPreview) {
+        const defaults = buildFieldInvestigationDefaults(member, requestedAmount, branch, loanRound);
+        const previewData =
+            savedData && Object.keys(savedData).length > 0
+                ? { ...defaults, ...savedData }
+                : defaults;
+        if (!String(previewData.nid_number || '').trim()) {
+            previewData.nid_number = resolveMemberIdentityNumber(member);
+        }
         return (
             <div className="print-container">
-                {renderFieldInvestigationPreviewContent(savedData)}
+                {renderFieldInvestigationPreviewContent(previewData)}
             </div>
         );
     }
@@ -369,7 +484,7 @@ export default function FieldInvestigation({
         member_no: member?.application_no || '',
         samity_name: member?.samity?.samity_name_bn || member?.samity?.samity_name || '',
         samity_code: member?.samity?.samity_code || member?.samity?.id?.toString() || '',
-        nid_number: member?.nid_number || '',
+        nid_number: resolveMemberIdentityNumber(member),
         member_mobile: member?.mobile_number || '',
         information_provider_name: '',
         information_provider_mobile: '',
@@ -419,13 +534,26 @@ export default function FieldInvestigation({
     // Load saved data if exists
     useEffect(() => {
         if (savedData) {
-            setData(prev => ({
-                ...prev,
-                ...savedData,
-            }));
+            setData((prev) => {
+                const merged = { ...prev, ...savedData };
+                // Older drafts may have blank nid — fill from admission (NID or smart card)
+                if (!String(merged.nid_number || '').trim()) {
+                    merged.nid_number = resolveMemberIdentityNumber(member);
+                }
+                return merged;
+            });
             setShowPreview(true);
         }
     }, [savedData]);
+
+    // Keep identity number from admission when still empty
+    useEffect(() => {
+        const fromAdmission = resolveMemberIdentityNumber(member);
+        if (fromAdmission && !String(data.nid_number || '').trim()) {
+            setData('nid_number', fromAdmission);
+        }
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [member?.nid_number, member?.smart_card_number, member?.nid_no]);
 
     const handleSaveDraft = () => {
         const resumeApprovalId = resumeParams?.get('resume_approval_id');
@@ -465,7 +593,7 @@ export default function FieldInvestigation({
                         return;
                     }
                     alert('সরেজমিনে তদন্ত প্রতিবেদন খসড়া হিসেবে সংরক্ষিত হয়েছে।');
-                    router.visit(formSelectionUrl(isLegacy, member, loanProduct, loanCategory, requestedAmount));
+                    router.visit(resolveBackUrl(isLegacy, member, loanProduct, loanCategory, requestedAmount, existingApplication));
                 },
                 onError: (errs) => {
                     console.error('Save draft error:', errs);
@@ -484,7 +612,7 @@ export default function FieldInvestigation({
             <Head title="সরেজমিনে তদন্ত প্রতিবেদন">
                 <style>{`
                     @media print {
-                        @page { size: A4; margin: 1cm; }
+                        @page { size: A4 portrait; margin: 12mm 15mm; }
                         body * { visibility: hidden !important; }
                         .print-container, .print-container * { visibility: visible !important; }
                         .print-container {
@@ -502,7 +630,11 @@ export default function FieldInvestigation({
                     <div className="mb-6 flex flex-col sm:flex-row sm:items-center justify-between gap-4 print:hidden">
                         <div className="flex items-center gap-4">
                             <button
-                                onClick={() => router.visit(formSelectionUrl(isLegacy, member, loanProduct, loanCategory, requestedAmount))}
+                                onClick={() =>
+                                    router.visit(
+                                        resolveBackUrl(isLegacy, member, loanProduct, loanCategory, requestedAmount, existingApplication),
+                                    )
+                                }
                                 className="flex items-center gap-2 px-3 py-2 bg-gray-100 text-gray-700 text-sm rounded-lg hover:bg-gray-200"
                             >
                                 <ArrowLeft className="w-4 h-4" />
@@ -593,7 +725,7 @@ export default function FieldInvestigation({
                                         <input type="text" value={data.samity_code} onChange={(e) => setData('samity_code', e.target.value)} className={inputClass} />
                                     </div>
                                     <div>
-                                        <label className={labelClass}>জাতীয় পরিচয়পত্র নং</label>
+                                        <label className={labelClass}>জাতীয় পরিচয়পত্র / স্মার্ট কার্ড নং</label>
                                         <input type="text" value={data.nid_number} onChange={(e) => setData('nid_number', e.target.value)} className={inputClass} />
                                     </div>
                                     <div>
