@@ -639,13 +639,15 @@ class HeadOfficeLoanController extends Controller
 
         // Determine visible form IDs based on loan product and amount
         $product = $loanApplication->loanProduct;
+        $category = $loanApplication->loanCategory ?? $product?->loanCategory;
         $amount = (float) $loanApplication->requested_amount;
         $formSaved = LoanFormVisibility::buildFormSavedMap($loanApplication);
         $visibleFormIds = LoanFormVisibility::visibleFormIdsForShow(
             auth()->user()?->role?->name ?? '',
             (string) $loanApplication->status,
             $product,
-            $amount
+            $amount,
+            $category
         );
 
         $loanApplication->visible_form_ids = $visibleFormIds;

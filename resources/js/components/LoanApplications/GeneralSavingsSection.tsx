@@ -15,11 +15,13 @@ interface GeneralSavingsSectionProps {
     loanRound: number;
     /** Current form data slice for this section */
     data: {
+        /** সদস্যের মোট সঞ্চয় (বর্তমানে কত আছে) */
+        savings_amount?: number | string | null;
         general_savings_product_id?: number | string | null;
-        general_savings_amount?: number;
+        general_savings_amount?: number | string | null;
         is_against_savings?: boolean;
         against_savings_product_id?: number | string | null;
-        against_savings_amount?: number;
+        against_savings_amount?: number | string | null;
         /** User-selected দফা (1, 2, 3, 4, ...) when showDofaSelector is true */
         loan_round?: number;
     };
@@ -84,7 +86,19 @@ export default function GeneralSavingsSection({
         isAgainstSavings,
         durationMonths
     );
-    const minAmount = Math.ceil((requestedAmount * requiredPercent) / 100);
+    const minAmount = Math.ceil((Number(requestedAmount) || 0) * requiredPercent / 100);
+    const generalAmountNum = Number(data.general_savings_amount);
+    const hasGeneralAmount =
+        data.general_savings_amount !== '' &&
+        data.general_savings_amount != null &&
+        !Number.isNaN(generalAmountNum);
+    const belowMinimum =
+        (Number(requestedAmount) || 0) > 0 &&
+        (!hasGeneralAmount || generalAmountNum < minAmount);
+    const liveError = belowMinimum
+        ? `সাধারণ সঞ্চয় সর্বনিম্ন ${requiredPercent}% হতে হবে — অন্তত ৳${minAmount.toLocaleString('bn-BD')} দিন। এখন আছে: ৳${hasGeneralAmount ? generalAmountNum.toLocaleString('bn-BD') : '০'}।`
+        : '';
+    const amountError = errors.general_savings_amount || liveError;
 
     const isSixMonthly =
         str(loanProduct?.installment_type).toLowerCase() === 'weekly' ||
@@ -106,6 +120,7 @@ export default function GeneralSavingsSection({
     const inputClass = compact
         ? 'w-full border rounded px-2 py-1.5 text-sm'
         : 'w-full border rounded px-3 py-2';
+    const errorInputClass = `${inputClass} border-red-500 bg-red-50/60 ring-1 ring-red-200 focus:border-red-500 focus:ring-red-200`;
 
     return (
         <div className="border rounded-lg p-4 bg-amber-50/50 border-amber-200 space-y-4">
@@ -180,6 +195,36 @@ export default function GeneralSavingsSection({
                 </div>
             )}
 
+            {/* মোট সঞ্চয় — সদস্যের কাছে এখন কত আছে */}
+            <div>
+                <label className={labelClass}>
+                    মোট সঞ্চয়ের পরিমাণ (৳) <span className="text-red-600">*</span>
+                </label>
+                <input
+                    type="number"
+                    min={0}
+                    step={1}
+                    value={data.savings_amount ?? ''}
+                    onChange={(e) =>
+                        setData(
+                            'savings_amount',
+                            e.target.value === '' ? '' : parseFloat(e.target.value)
+                        )
+                    }
+                    className={
+                        errors.savings_amount ? errorInputClass : inputClass
+                    }
+                    placeholder="সদস্যের মোট সঞ্চয় কত আছে"
+                />
+                {errors.savings_amount ? (
+                    <p className="text-red-600 text-xs mt-1 font-medium">{errors.savings_amount}</p>
+                ) : (
+                    <p className="text-xs text-gray-600 mt-0.5">
+                        সদস্যের বর্তমান মোট সঞ্চয়ের পরিমাণ লিখুন।
+                    </p>
+                )}
+            </div>
+
             {/* সঞ্চয়ের বিপরিতে checkbox */}
             <div className="flex items-center gap-2">
                 <input
@@ -223,7 +268,7 @@ export default function GeneralSavingsSection({
                         />
                     </div>
                     <p className="text-xs text-amber-800 bg-amber-100 border border-amber-300 rounded px-2 py-1">
-                        সঞ্চয়ের বিপরিতে হলে সাধারণ সঞ্চয় সর্বনিম্ন ২% ({requestedAmount ? `৳${Math.ceil((requestedAmount * 2) / 100).toLocaleString('bn-BD')}` : '—'}) থাকলেই হবে।
+                        সঞ্চয়ের বিপরিতে হলে সাধারণ সঞ্চয় সর্বনিম্ন ২% ({requestedAmount ? `৳${Math.ceil((Number(requestedAmount) * 2) / 100).toLocaleString('bn-BD')}` : '—'}) থাকলেই হবে।
                     </p>
                 </>
             ) : (
@@ -234,10 +279,11 @@ export default function GeneralSavingsSection({
                 </p>
             )}
 
-            {/* General savings amount */}
+            {/* General savings amount — must meet required % */}
             <div>
                 <label className={labelClass}>
-                    সাধারণ সঞ্চয়ের পরিমাণ (৳) <span className="text-red-600">*</span> সর্বনিম্ন ৳{minAmount.toLocaleString('bn-BD')} ({requiredPercent}%)
+                    সাধারণ সঞ্চয়ের পরিমাণ (৳) <span className="text-red-600">*</span>{' '}
+                    সর্বনিম্ন ৳{minAmount.toLocaleString('bn-BD')} ({requiredPercent}%)
                 </label>
                 <input
                     type="number"
@@ -245,11 +291,16 @@ export default function GeneralSavingsSection({
                     step={1}
                     value={data.general_savings_amount ?? ''}
                     onChange={(e) => setData('general_savings_amount', e.target.value === '' ? '' : parseFloat(e.target.value))}
-                    className={inputClass}
+                    className={amountError ? errorInputClass : inputClass}
+                    aria-invalid={!!amountError}
                 />
-                {errors.general_savings_amount && (
-                    <p className="text-red-600 text-xs mt-1">{errors.general_savings_amount}</p>
-                )}
+                {amountError ? (
+                    <p className="text-red-600 text-xs mt-1 font-semibold">{amountError}</p>
+                ) : hasGeneralAmount ? (
+                    <p className="text-emerald-700 text-xs mt-1 font-medium">
+                        ঠিক আছে — প্রয়োজনীয় {requiredPercent}% পূরণ হয়েছে।
+                    </p>
+                ) : null}
             </div>
         </div>
     );

@@ -233,7 +233,8 @@ function renderFieldInvestigationPreviewContent(formData: any) {
                             <td className="border border-gray-600 px-1 py-0.5">
                                 <div className="space-y-0.5">
                                     <div className="flex gap-1"><span className="w-28">ঋণের দফা:</span><span className="border-b border-dotted border-gray-600 flex-1 min-h-[10px]">{dofaLabel(d.loan_round)}</span></div>
-                                    <div className="flex gap-1"><span className="w-28">সাধারণ সঞ্চয় পরিমাণ (৳):</span><span className="border-b border-dotted border-gray-600 flex-1 min-h-[10px]">{d.general_savings_amount ?? d.savings_amount ?? ''}</span></div>
+                                    <div className="flex gap-1"><span className="w-28">মোট সঞ্চয় (৳):</span><span className="border-b border-dotted border-gray-600 flex-1 min-h-[10px]">{d.savings_amount ?? ''}</span></div>
+                                    <div className="flex gap-1"><span className="w-28">সাধারণ সঞ্চয় পরিমাণ (৳):</span><span className="border-b border-dotted border-gray-600 flex-1 min-h-[10px]">{d.general_savings_amount ?? ''}</span></div>
                                     <div className="flex gap-1"><span className="w-28">সঞ্চয়ের বিপরিতে:</span><span className="border-b border-dotted border-gray-600 flex-1 min-h-[10px]">{d.is_against_savings ? 'হ্যাঁ' : 'না'}</span></div>
                                     {d.is_against_savings && (
                                         <>
@@ -789,6 +790,7 @@ export default function FieldInvestigation({
                                                 showDofaSelector
                                                 compact
                                                 data={{
+                                                    savings_amount: data.savings_amount,
                                                     general_savings_product_id: data.general_savings_product_id,
                                                     general_savings_amount: data.general_savings_amount,
                                                     is_against_savings: data.is_against_savings,
@@ -798,9 +800,6 @@ export default function FieldInvestigation({
                                                 }}
                                                 setData={(key, value) => {
                                                     setData(key as any, value);
-                                                    if (key === 'general_savings_amount' && (typeof value === 'number' || value === '')) {
-                                                        setData('savings_amount', typeof value === 'number' ? value : 0);
-                                                    }
                                                 }}
                                                 errors={errors}
                                             />

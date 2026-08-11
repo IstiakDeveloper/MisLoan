@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Head, router, Link } from '@inertiajs/react';
+import { Head, router, Link, useForm } from '@inertiajs/react';
 import AdminLayout from '@/layouts/admin-layout';
 import { formatDate } from '@/utils/dateUtils';
 import {
@@ -22,6 +22,7 @@ import {
     Phone,
     MapPin,
     Download,
+    UserCheck,
 } from 'lucide-react';
 import { MemberAdmission } from '@/types/memberAdmission';
 
@@ -112,7 +113,19 @@ export default function AdmissionMembers({ admissions, filters, stats, zones, ar
     const [showHistoryModal, setShowHistoryModal] = useState(false);
     const [selectedAdmission, setSelectedAdmission] = useState<MemberAdmission | null>(null);
     const [showPrintModal, setShowPrintModal] = useState(false);
+    const [showLegacyModal, setShowLegacyModal] = useState(false);
     const [markAsPrintedCheckbox, setMarkAsPrintedCheckbox] = useState(false);
+
+    const {
+        data: legacyData,
+        setData: setLegacyData,
+        patch: patchLegacy,
+        processing: legacyProcessing,
+        reset: resetLegacy,
+        errors: legacyErrors,
+    } = useForm({
+        loan_dofa: '' as string | number,
+    });
 
     const today = new Date().toISOString().split('T')[0];
     const monthStart = `${today.slice(0, 7)}-01`;
@@ -277,6 +290,29 @@ export default function AdmissionMembers({ admissions, filters, stats, zones, ar
         setShowHistoryModal(true);
     };
 
+    const openLegacyModal = (admission: MemberAdmission) => {
+        setSelectedAdmission(admission);
+        setLegacyData('loan_dofa', admission.loan_dofa ?? '');
+        setShowLegacyModal(true);
+    };
+
+    const closeLegacyModal = () => {
+        setShowLegacyModal(false);
+        setSelectedAdmission(null);
+        resetLegacy();
+    };
+
+    const handleMarkLegacy = (e: React.FormEvent) => {
+        e.preventDefault();
+        if (!selectedAdmission) return;
+        if (confirm(`আবেদন নং ${selectedAdmission.application_no} পুরাতন সদস্য হিসেবে চিহ্নিত করে দফা ${legacyData.loan_dofa} দিয়ে স্বয়ংক্রিয় অনুমোদন করতে চান?`)) {
+            patchLegacy(`/head-office/admissions/${selectedAdmission.id}/mark-legacy`, {
+                preserveScroll: true,
+                onSuccess: () => closeLegacyModal(),
+            });
+        }
+    };
+
     const hasActiveFilters =
         searchQuery ||
         statusFilter ||
@@ -317,6 +353,15 @@ export default function AdmissionMembers({ admissions, filters, stats, zones, ar
             >
                 <Pencil className="w-4 h-4" />
             </Link>
+            {!admission.is_legacy && admission.status !== 'rejected' && (
+                <button
+                    onClick={() => openLegacyModal(admission)}
+                    className="p-1.5 text-orange-700 hover:text-white hover:bg-orange-600 border border-orange-200 hover:border-orange-600 rounded-md transition"
+                    title="পুরাতন সদস্য হিসেবে চিহ্নিত করুন"
+                >
+                    <UserCheck className="w-4 h-4" />
+                </button>
+            )}
             {admission.status === 'approved' && (admission.revision_count ?? 0) > 0 && (
                 <button
                     onClick={() => openHistoryModal(admission)}
@@ -882,6 +927,72 @@ export default function AdmissionMembers({ admissions, filters, stats, zones, ar
                                     Close
                                 </button>
                             </div>
+                        </div>
+                    </div>
+                )}
+
+                {/* Mark as Legacy Modal */}
+                {showLegacyModal && selectedAdmission && (
+                    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+                        <div className="bg-white rounded-2xl shadow-xl max-w-md w-full overflow-hidden">
+                            <div className="bg-orange-600 text-white px-5 py-4 flex items-center justify-between">
+                                <div>
+                                    <h3 className="text-base font-bold flex items-center gap-2">
+                                        <UserCheck className="w-5 h-5" />
+                                        পুরাতন সদস্য হিসেবে চিহ্নিত করুন
+                                    </h3>
+                                    <p className="text-xs text-orange-100 mt-0.5">
+                                        {selectedAdmission.application_no} — {selectedAdmission.applicant_name_en}
+                                    </p>
+                                </div>
+                                <button
+                                    type="button"
+                                    onClick={closeLegacyModal}
+                                    className="p-1.5 rounded-lg text-orange-100 hover:text-white hover:bg-orange-700"
+                                >
+                                    <X className="w-5 h-5" />
+                                </button>
+                            </div>
+                            <form onSubmit={handleMarkLegacy} className="p-5 space-y-4">
+                                <p className="text-sm text-slate-600 leading-relaxed">
+                                    এই আবেদনটি <strong>পুরাতন সদস্য</strong> হিসেবে চিহ্নিত হবে, ঋণের দফা সেট হবে এবং
+                                    স্বয়ংক্রিয়ভাবে <strong>অনুমোদিত</strong> হবে।
+                                </p>
+                                <div>
+                                    <label className="block text-xs font-semibold text-slate-700 mb-1">
+                                        ঋণের দফা <span className="text-red-500">*</span>
+                                    </label>
+                                    <input
+                                        type="number"
+                                        min={1}
+                                        max={999}
+                                        required
+                                        value={legacyData.loan_dofa}
+                                        onChange={(e) => setLegacyData('loan_dofa', e.target.value)}
+                                        className="w-full px-3 py-2.5 bg-slate-50 border border-slate-300 rounded-xl text-sm focus:ring-1 focus:ring-orange-500 focus:bg-white"
+                                        placeholder="যেমন: ১, ২, ৩..."
+                                    />
+                                    {legacyErrors.loan_dofa && (
+                                        <p className="text-xs text-red-600 mt-1">{legacyErrors.loan_dofa}</p>
+                                    )}
+                                </div>
+                                <div className="flex justify-end gap-2 pt-2 border-t border-slate-100">
+                                    <button
+                                        type="button"
+                                        onClick={closeLegacyModal}
+                                        className="px-4 py-2 text-sm font-medium text-slate-700 bg-slate-100 rounded-xl hover:bg-slate-200"
+                                    >
+                                        বাতিল
+                                    </button>
+                                    <button
+                                        type="submit"
+                                        disabled={legacyProcessing || !legacyData.loan_dofa}
+                                        className="px-4 py-2 text-sm font-medium text-white bg-orange-600 rounded-xl hover:bg-orange-700 disabled:opacity-50"
+                                    >
+                                        {legacyProcessing ? 'সংরক্ষণ হচ্ছে...' : 'পুরাতন করে অনুমোদন করুন'}
+                                    </button>
+                                </div>
+                            </form>
                         </div>
                     </div>
                 )}

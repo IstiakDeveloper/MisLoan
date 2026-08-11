@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { Head, useForm, router } from '@inertiajs/react';
 import AdminLayout from '@/layouts/admin-layout';
 import { formatDateBangla } from '@/utils/dateUtils';
+import { calculateTotalServiceCharge } from '@/utils/loanInterest';
 import { Save, Printer, Eye, ArrowLeft, ShieldCheck, UserCheck, CreditCard, FileText } from 'lucide-react';
 import { numberToWordsBangla } from './ApprovalForm/PrintPreview';
 
@@ -72,13 +73,9 @@ function formSelectionUrl(isLegacy: boolean, member: any, loanProduct: any, loan
     return `/member/loan-applications/form-selection?${params.toString()}`;
 }
 
-/** Service charge from base loan amount & product (same logic as ApprovalForm) */
+/** Service charge from base loan amount & product (prorated by duration for annual rates) */
 function calcServiceCharge(baseAmount: number, loanProduct: any): number {
-    const amount = Number(baseAmount) || 0;
-    if (amount <= 0) return 0;
-    const scPerThousand = Number(loanProduct?.service_charge_per_thousand) || 0;
-    const rate = Number(loanProduct?.interest_rate ?? loanProduct?.service_charge ?? 0);
-    return scPerThousand > 0 ? (amount / 1000) * scPerThousand : amount * (rate / 100);
+    return calculateTotalServiceCharge(baseAmount, loanProduct);
 }
 
 function calcLoanAmountWithServiceCharge(baseAmount: number, loanProduct: any): number {

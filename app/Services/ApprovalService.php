@@ -690,6 +690,17 @@ class ApprovalService
 
             $pendingCount = $loan->approvals()->where('status', 'pending')->count();
 
+            // Write this approver's comments into form business_plan (office section)
+            $this->syncLoanApproverCommentsToBusinessPlan(
+                $loan->fresh(),
+                $approval->level,
+                $comments,
+                $pendingCount === 0,
+                $pendingCount === 0 ? $approvedAmount : null,
+            );
+
+            $loan = $loan->fresh();
+
             if ($pendingCount === 0) {
                 $words = NumberToWordsBangla::convert($approvedAmount);
                 $businessPlan = is_array($loan->business_plan) ? $loan->business_plan : [];
@@ -896,6 +907,15 @@ class ApprovalService
                 'status' => 'pending',
             ]);
             $loan->update(['status' => LoanApplication::STATUS_UNDER_REVIEW]);
+
+            // BM forward comments → office section (খ)
+            $this->syncLoanApproverCommentsToBusinessPlan(
+                $loan->fresh(),
+                'branch',
+                $comments,
+                false,
+                null,
+            );
 
             if ((float) ($loan->requested_amount ?? 0) > self::BRANCH_MANAGER_LOAN_CEILING) {
                 $loan->loadMissing([
@@ -1306,5 +1326,45 @@ class ApprovalService
 
             return false;
         })->values();
+    }
+
+    /**
+     * Map approver-level comments into loan business_plan office section fields
+     * (4-page + Agrosor Profile print/form).
+     */
+    private function syncLoanApproverCommentsToBusinessPlan(
+        LoanApplication $loan,
+        string $level,
+        ?string $comments,
+        bool $isFinal = false,
+        ?int $approvedAmount = null,
+    ): void {
+        $text = is_string($comments) ? trim($comments) : '';
+        $businessPlan = is_array($loan->business_plan) ? $loan->business_plan : [];
+
+        if ($text !== '') {
+            if ($level === 'branch') {
+                $businessPlan['branch_manager_post_inspection_comments'] = $text;
+                $businessPlan['bm_comments'] = $text;
+            } elseif ($level === 'area') {
+                $businessPlan['regional_manager_comments'] = $text;
+                $businessPlan['rm_comments'] = $text;
+            } elseif ($level === 'zone') {
+                $businessPlan['zonal_manager_comments'] = $text;
+                // Agrosor PDF has no separate ZM slot — keep on zonal; if final, also final below
+            }
+
+            if ($isFinal || $level === 'escalation') {
+                $businessPlan['final_approver_comments'] = $text;
+            }
+        }
+
+        if ($isFinal && $approvedAmount !== null) {
+            $words = NumberToWordsBangla::convert($approvedAmount);
+            $businessPlan['final_approved_loan_amount_digits'] = (string) $approvedAmount;
+            $businessPlan['final_approved_loan_amount_words'] = $words ? $words.' টাকা' : '';
+        }
+
+        $loan->update(['business_plan' => $businessPlan]);
     }
 }

@@ -17,6 +17,7 @@ import FormPage2 from './FormPage2';
 import FormPage3 from './FormPage3';
 import FormPage4 from './FormPage4';
 import PrintPreview from './PrintPreview';
+import { getRequiredSavingsPercent } from '@/components/LoanApplications/GeneralSavingsSection';
 
 export const toInputDate = (value: string | null | undefined): string => {
     if (value == null || value === '') return '';
@@ -58,6 +59,31 @@ function getAgeFromDOB(dob: string | null | undefined, refDate: string | null | 
     const m = ref.getMonth() - birth.getMonth();
     if (m < 0 || (m === 0 && ref.getDate() < birth.getDate())) age--;
     return age >= 0 ? String(age) : '';
+}
+
+/** পারিবারিক তথ্যের «নিজ» সারি থেকে পেশা ও শিক্ষাগত যোগ্যতা */
+function getSelfOccupationAndEducation(member: any): {
+    occupation: string;
+    educational_qualification: string;
+} {
+    if (!member) {
+        return { occupation: '', educational_qualification: '' };
+    }
+    const family =
+        member.family_members ?? member.familyMembers ?? [];
+    const self = Array.isArray(family)
+        ? family.find((m: any) => m?.relation_with_head === 'নিজ')
+        : null;
+
+    const occupation =
+        String(self?.occupation || '').trim() ||
+        String(member.business_details || '').trim() ||
+        String(member.job_details || '').trim() ||
+        '';
+
+    const educational_qualification = String(self?.education_level || '').trim();
+
+    return { occupation, educational_qualification };
 }
 
 const fromData = (v: any): string => (v !== null && v !== undefined && v !== '' ? String(v) : '');
@@ -166,6 +192,7 @@ export default function ApprovalForm({
     const annualNetFromAdmission = member?.estimated_annual_project_income != null && member?.estimated_annual_project_income !== ''
         ? fmtValue(member.estimated_annual_project_income)
         : '';
+    const selfFromFamily = getSelfOccupationAndEducation(member);
 
     const { data, setData, processing } = useForm<LoanApplicationApprovalData>({
         category_name: categoryName,
@@ -192,8 +219,8 @@ export default function ApprovalForm({
         current_address_line2: member?.present_post_code || member?.permanent_post_code || '',
         current_address_line3: [member?.present_upazila || member?.permanent_upazila, member?.present_district || member?.permanent_district].filter(Boolean).join(', '),
         nid_smart_card: getNidOrSmartCard(member),
-        occupation: '',
-        educational_qualification: '',
+        occupation: selfFromFamily.occupation,
+        educational_qualification: selfFromFamily.educational_qualification,
         admission_date: member?.admission_date || '',
         family_members_count: (member?.family_members?.length ?? member?.familyMembers?.length ?? 0) || 0,
         earning_members_count: '',
@@ -201,12 +228,12 @@ export default function ApprovalForm({
         previous_loan_amount: '',
         last_repaid_loan_amount: '',
         last_repaid_project_name: isOldMemberFromAdmission ? projectNameFromAdmission : '',
-        savings_amount: 0,
+        savings_amount: '',
         general_savings_product_id: null,
-        general_savings_amount: 0,
+        general_savings_amount: '',
         is_against_savings: false,
         against_savings_product_id: null,
-        against_savings_amount: 0,
+        against_savings_amount: '',
         loan_round: loanRound,
         loan_proposal_date: '',
         project_name: projectNameFromAdmission,
@@ -281,21 +308,31 @@ export default function ApprovalForm({
                 : ''),
         installment_type: (() => {
             const t = String(loanProduct?.installment_type || '').toLowerCase();
+            if (t === 'lump_sum' || t.includes('lump')) return 'এককালীন';
             if (t === 'weekly' || t.includes('week')) return 'সাপ্তাহিক কিস্তি';
             return 'মাসিক কিস্তি';
         })(),
         installment_principal: (() => {
             const amount = Number(requestedAmount) || 0;
-            const n = Number(loanProduct?.number_of_installments) || Number(loanProduct?.duration_months) || 0;
+            const t = String(loanProduct?.installment_type || '').toLowerCase();
+            const n = t === 'lump_sum' || t.includes('lump')
+                ? 1
+                : (Number(loanProduct?.number_of_installments) || Number(loanProduct?.duration_months) || 0);
             return amount > 0 && n > 0 ? String(Math.round(amount / n)) : '';
         })(),
         installment_service_charge: (() => {
             const amount = Number(requestedAmount) || 0;
-            const n = Number(loanProduct?.number_of_installments) || Number(loanProduct?.duration_months) || 0;
+            const t = String(loanProduct?.installment_type || '').toLowerCase();
+            const n = t === 'lump_sum' || t.includes('lump')
+                ? 1
+                : (Number(loanProduct?.number_of_installments) || Number(loanProduct?.duration_months) || 0);
             if (amount <= 0 || n <= 0) return '';
             const scPerThousand = Number(loanProduct?.service_charge_per_thousand) || 0;
             const rate = Number(loanProduct?.interest_rate || 0);
-            const totalSc = scPerThousand > 0 ? (amount / 1000) * scPerThousand : amount * (rate / 100);
+            const months = Number(loanProduct?.duration_months || 12) || 12;
+            const totalSc = scPerThousand > 0
+                ? (amount / 1000) * scPerThousand
+                : amount * (rate / 100) * (months / 12);
             return String(Math.round(totalSc / n));
         })(),
         number_of_installments: loanProduct?.number_of_installments
@@ -331,13 +368,30 @@ export default function ApprovalForm({
         final_approved_loan_amount_digits: '',
         final_approved_loan_amount_words: '',
         
-        ...(savedData || {})
+        ...(savedData || {}),
+        // Draft-এ খালি থাকলে ভর্তি ফর্মের «নিজ» সারি থেকে নিন
+        occupation:
+            String((savedData as any)?.occupation || '').trim() ||
+            selfFromFamily.occupation,
+        educational_qualification:
+            String((savedData as any)?.educational_qualification || '').trim() ||
+            selfFromFamily.educational_qualification,
     });
 
     useEffect(() => {
         const local = loadLoanDraftLocal<Partial<LoanApplicationApprovalData>>(draftKey);
         if (local?.data) {
-            setData((prev) => ({ ...prev, ...local.data }));
+            setData((prev) => {
+                const merged = { ...prev, ...local.data };
+                return {
+                    ...merged,
+                    occupation:
+                        String(merged.occupation || '').trim() || selfFromFamily.occupation,
+                    educational_qualification:
+                        String(merged.educational_qualification || '').trim() ||
+                        selfFromFamily.educational_qualification,
+                };
+            });
             setLocalRestored(true);
         }
         const t = setTimeout(() => {
@@ -373,6 +427,41 @@ export default function ApprovalForm({
         if (e) e.preventDefault();
         setErrors({});
         setSaveError(null);
+
+        // Soft draft: savings % — show red error + confirm before save
+        const effectiveDofa =
+            data.loan_round != null && Number(data.loan_round) >= 1
+                ? Number(data.loan_round)
+                : loanRound || 1;
+        const requiredPercent = getRequiredSavingsPercent(
+            loanProduct?.installment_type,
+            effectiveDofa,
+            !!data.is_against_savings,
+            loanProduct?.duration_months
+        );
+        const minSavings = Math.ceil(((Number(requestedAmount) || 0) * requiredPercent) / 100);
+        const generalAmount = Number(data.general_savings_amount) || 0;
+        const totalSavingsRaw = data.savings_amount;
+        const totalSavingsEmpty =
+            totalSavingsRaw === '' ||
+            totalSavingsRaw == null ||
+            Number.isNaN(Number(totalSavingsRaw));
+
+        if (totalSavingsEmpty) {
+            const msg = 'মোট সঞ্চয়ের পরিমাণ লিখুন (সদস্যের কাছে এখন কত সঞ্চয় আছে)।';
+            setErrors({ savings_amount: msg });
+            const ok = confirm(`${msg}\nতবুও খসড়া সেভ করবেন?`);
+            if (!ok) return;
+            setErrors({});
+        }
+
+        if ((Number(requestedAmount) || 0) > 0 && generalAmount < minSavings) {
+            const msg = `সাধারণ সঞ্চয় সর্বনিম্ন ${requiredPercent}% (৳${minSavings.toLocaleString('bn-BD')}) থাকা উচিত। এখন আছে ৳${generalAmount.toLocaleString('bn-BD')}।`;
+            setErrors({ general_savings_amount: msg });
+            const ok = confirm(`${msg}\nতবুও খসড়া সেভ করবেন? পরে সংশোধন করতে পারবেন।`);
+            if (!ok) return;
+            setErrors({});
+        }
 
         // Soft draft: consistency mismatches only warn — still allow save
         const income = Number(data.project_income_1_2_yr) || 0;
@@ -444,7 +533,20 @@ export default function ApprovalForm({
         });
     };
 
-    const commonProps = { data, setData, member, isLegacy, handleImageUpload, removeImage, loanProduct, loanCategory, requestedAmount, savingsProducts, loanRound };
+    const commonProps = {
+        data,
+        setData,
+        member,
+        isLegacy,
+        handleImageUpload,
+        removeImage,
+        loanProduct,
+        loanCategory,
+        requestedAmount,
+        savingsProducts,
+        loanRound,
+        errors,
+    };
 
 
     return (

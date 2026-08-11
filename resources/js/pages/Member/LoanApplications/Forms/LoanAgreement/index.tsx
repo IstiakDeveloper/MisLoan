@@ -209,18 +209,25 @@ export default function LoanAgreement({
 
     const calculateLoanDetails = () => {
         const loanAmount = parseFloat(data.loan_amount.toString()) || 0;
-        const serviceChargeRate = loanProduct?.service_charge_per_thousand || loanProduct?.interest_rate || 0;
-        const serviceCharge = (loanAmount / 1000) * serviceChargeRate;
+        const scPerThousand = Number(loanProduct?.service_charge_per_thousand) || 0;
+        const interestRate = Number(loanProduct?.interest_rate || 0);
+        const durationMonths = Number(loanProduct?.duration_months || 12) || 12;
+
+        // service_charge_per_thousand = fixed for term; else annual % prorated by months/12
+        const serviceCharge = scPerThousand > 0
+            ? (loanAmount / 1000) * scPerThousand
+            : loanAmount * (interestRate / 100) * (durationMonths / 12);
         const totalAmount = loanAmount + serviceCharge;
 
         const installmentType = (loanProduct?.installment_type || '').toLowerCase();
-        const durationMonths = loanProduct?.duration_months || 12;
         let numberOfInstallments = 0;
 
-        if (installmentType === 'weekly') {
+        if (installmentType === 'lump_sum') {
+            numberOfInstallments = 1;
+        } else if (installmentType === 'weekly') {
             numberOfInstallments = Math.ceil((durationMonths * 30) / 7);
         } else {
-            numberOfInstallments = durationMonths;
+            numberOfInstallments = Number(loanProduct?.number_of_installments) || durationMonths;
         }
 
         const installmentAmountPerThousand = loanProduct?.installment_amount_per_thousand || 0;
@@ -242,7 +249,9 @@ export default function LoanAgreement({
         const disbursementDate = data.disbursement_date ? new Date(data.disbursement_date) : new Date();
         const lastInstallmentDate = new Date(disbursementDate);
 
-        if (installmentType === 'weekly') {
+        if (installmentType === 'lump_sum') {
+            lastInstallmentDate.setMonth(lastInstallmentDate.getMonth() + durationMonths);
+        } else if (installmentType === 'weekly') {
             lastInstallmentDate.setDate(lastInstallmentDate.getDate() + (numberOfInstallments * 7));
         } else {
             lastInstallmentDate.setMonth(lastInstallmentDate.getMonth() + numberOfInstallments);

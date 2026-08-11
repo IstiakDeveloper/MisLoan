@@ -87,17 +87,18 @@ class LoanApplicationController extends Controller
 
     private function attachFormMeta(LoanApplication $application, $user, ?array $formSavedOverride = null): void
     {
-        $application->loadMissing(['loanProduct', 'memberAdmission']);
+        $application->loadMissing(['loanProduct.loanCategory', 'loanCategory', 'memberAdmission']);
         $product = $application->loanProduct;
+        $category = $application->loanCategory ?? $product?->loanCategory;
         $amount = (float) ($application->requested_amount ?? 0);
         $roleName = $user->role?->name ?? '';
         $status = (string) $application->status;
 
         $formSaved = $formSavedOverride ?? LoanFormVisibility::buildFormSavedMap($application);
-        $submitRequired = LoanFormVisibility::requiredFormIdsForAction('submit', $product, $amount);
+        $submitRequired = LoanFormVisibility::requiredFormIdsForAction('submit', $product, $amount, $category);
         $disburseRequired = LoanFormVisibility::disburseFormIds();
-        $editableFormIds = LoanFormVisibility::editableFormIdsForUser($roleName, $status, $product, $amount);
-        $visibleFormIds = LoanFormVisibility::visibleFormIdsForShow($roleName, $status, $product, $amount);
+        $editableFormIds = LoanFormVisibility::editableFormIdsForUser($roleName, $status, $product, $amount, $category);
+        $visibleFormIds = LoanFormVisibility::visibleFormIdsForShow($roleName, $status, $product, $amount, $category);
 
         $memberAdmission = $application->memberAdmission;
         $application->member_admission_status = $memberAdmission?->status;
@@ -168,10 +169,11 @@ class LoanApplicationController extends Controller
         }
 
         if ($this->isBranchManager($user)) {
-            $loanProduct = LoanProduct::find($loanProductId);
+            $loanProduct = LoanProduct::with('loanCategory')->find($loanProductId);
+            $loanCategory = LoanCategory::find($loanCategoryId);
             $bmEditableFormIds = array_values(array_unique(array_merge(
-                LoanFormVisibility::foSubmitFormIds($loanProduct, $requestedAmount),
-                LoanFormVisibility::bmRequiredFormIds($loanProduct, $requestedAmount)
+                LoanFormVisibility::foSubmitFormIds($loanProduct, $requestedAmount, $loanCategory),
+                LoanFormVisibility::bmRequiredFormIds($loanProduct, $requestedAmount, $loanCategory)
             )));
 
             if (in_array($formId, $bmEditableFormIds, true)) {
@@ -901,7 +903,7 @@ class LoanApplicationController extends Controller
     public function submit(Request $request, $id)
     {
         $user = $request->user();
-        $application = LoanApplication::with('loanProduct')->findOrFail($id);
+        $application = LoanApplication::with(['loanProduct.loanCategory', 'loanCategory'])->findOrFail($id);
         $this->ensureApplicationAccessibleToUser($application, $user);
 
         if (!$application->canBeEdited()) {
@@ -921,8 +923,9 @@ class LoanApplicationController extends Controller
         }
 
         $product = $application->loanProduct;
+        $category = $application->loanCategory ?? $product?->loanCategory;
         $amount = (float) $application->requested_amount;
-        $submitRequired = LoanFormVisibility::requiredFormIdsForAction('submit', $product, $amount);
+        $submitRequired = LoanFormVisibility::requiredFormIdsForAction('submit', $product, $amount, $category);
         $formSaved = LoanFormVisibility::buildFormSavedMap($application);
         $allRequiredSaved = LoanFormVisibility::allRequiredFormsSaved($submitRequired, $formSaved);
 
@@ -1181,7 +1184,8 @@ class LoanApplicationController extends Controller
                 $user->role?->name,
                 (string) $application->status,
                 $application->loanProduct,
-                (float) ($application->requested_amount ?? 0)
+                (float) ($application->requested_amount ?? 0),
+                $application->loanCategory
             );
             $firstEditableFormId = $editableFormIds[0] ?? null;
             $formRoute = match ($firstEditableFormId) {
@@ -1374,7 +1378,8 @@ class LoanApplicationController extends Controller
             $roleName,
             LoanApplication::STATUS_DRAFT,
             $loanProduct,
-            $amount
+            $amount,
+            $loanCategory
         );
 
         return Inertia::render('Member/LoanApplications/FormSelection', [
@@ -2047,14 +2052,30 @@ class LoanApplicationController extends Controller
             $existingPlan = is_array($loanApplication->business_plan) ? $loanApplication->business_plan : [];
             $formData = $this->mergeSoftDraftFormData($existingPlan, $formData);
 
-            // চূড়ান্ত অনুমোদিত পরিমাণ শুধু অনুমোদনকারী সেট করেন — ফর্ম সেভ থেকে আসবে না
-            foreach (['final_approved_loan_amount_digits', 'final_approved_loan_amount_words', 'final_approver_comments'] as $key) {
+            // চূড়ান্ত অনুমোদিত পরিমাণ + অফিস মন্তব্য শুধু অনুমোদনকারী সেট করেন — ফর্ম সেভ থেকে আসবে না
+            foreach ([
+                'final_approved_loan_amount_digits',
+                'final_approved_loan_amount_words',
+                'final_approver_comments',
+                'branch_manager_post_inspection_comments',
+                'bm_comments',
+                'regional_manager_comments',
+                'rm_comments',
+                'zonal_manager_comments',
+            ] as $key) {
                 $formData[$key] = $existingPlan[$key] ?? ($formData[$key] ?? '');
             }
 
             $loanProduct = LoanProduct::find($validated['loan_product_id']);
+            $loanCategory = LoanCategory::find($validated['loan_category_id']);
             $numberOfInstallments = $loanProduct->number_of_installments ?? 1;
-            if ($loanProduct && $loanProduct->installment_type === 'weekly' && $loanProduct->duration_months) {
+            $isSufolonProfile = ($formData['form_variant'] ?? null) === 'agrosor_profile'
+                || LoanFormVisibility::isSufolon($loanProduct, $loanCategory);
+
+            if ($isSufolonProfile) {
+                // Sufolon: one lump-sum repayment at end of term
+                $numberOfInstallments = 1;
+            } elseif ($loanProduct && $loanProduct->installment_type === 'weekly' && $loanProduct->duration_months) {
                 $numberOfInstallments = (int) ceil(($loanProduct->duration_months * 30) / 7);
             } elseif ($loanProduct && $loanProduct->duration_months) {
                 $numberOfInstallments = (int) $loanProduct->duration_months;
@@ -2062,7 +2083,9 @@ class LoanApplicationController extends Controller
 
             $loanApplication->business_plan = $formData;
             $loanApplication->form_type = 'loan_application_approval';
-            $loanApplication->purpose_of_loan = $formData['loan_purpose'] ?? ($loanApplication->purpose_of_loan ?: 'জাগরণ/বুনিয়াদ/আগ্রসর ঋণ আবেদন');
+            $loanApplication->purpose_of_loan = $formData['loan_purpose']
+                ?? ($loanApplication->purpose_of_loan
+                    ?: ($isSufolonProfile ? 'সুফলন/অগ্রসর ঋণ আবেদন' : 'জাগরণ/বুনিয়াদ/আগ্রসর ঋণ আবেদন'));
             $loanApplication->number_of_installments = $numberOfInstallments;
             $loanApplication->save();
 

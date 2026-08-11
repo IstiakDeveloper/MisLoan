@@ -61,7 +61,17 @@ const forms = [
     }
 ];
 
+function isSufolonCategory(loanCategory: any, loanProduct: any): boolean {
+    const code = String(loanCategory?.category_code || '').toUpperCase();
+    if (code === 'SFL') return true;
+    const cat = `${loanCategory?.category_name || ''} ${loanCategory?.category_name_bn || ''}`.toLowerCase();
+    if (cat.includes('sufolon') || cat.includes('শুফলন') || cat.includes('সুফলন')) return true;
+    const pn = `${loanProduct?.product_name || ''} ${loanProduct?.product_name_bn || ''}`.toLowerCase();
+    return pn.includes('sufolon') || pn.includes('সুফলন') || pn.includes('শুফলন');
+}
+
 export default function FormSelection({ member, loanProduct, loanCategory, requestedAmount, visibleFormIds = [1, 2, 3, 4, 5], hasLoanAgreementDraft, hasGuarantorCommitmentDraft, hasDeathRiskFundDraft, hasFieldInvestigationDraft, hasLoanApplicationApprovalDraft, isLegacy = false }: Props) {
+    const sufolon = isSufolonCategory(loanCategory, loanProduct);
     // Backend-এর visibleFormIds অনুযায়ী ফর্ম ফিল্টার ও সাজানো (যেমন মাসিকের ক্ষেত্রে ৫ নং ১ নাম্বারে)
     const visibleForms = forms
         .filter((f) => visibleFormIds.includes(f.id))
@@ -155,11 +165,17 @@ export default function FormSelection({ member, loanProduct, loanCategory, reque
                                     <div className="flex items-start justify-between mb-2">
                                         <div>
                                             <h3 className="text-base font-bold text-gray-900 mb-1">
-                                                {form.id === 5 && loanCategory?.category_name_bn
+                                                {form.id === 5 && sufolon
+                                                    ? 'অগ্রসর ঋণ আবেদন ও অনুমোদনপত্র (সুফলন প্রোফাইল)'
+                                                    : form.id === 5 && loanCategory?.category_name_bn
                                                     ? `${loanCategory.category_name_bn} ঋণ আবেদন ও অনুমোদনপত্র`
                                                     : form.name_bn}
                                             </h3>
-                                            <p className="text-xs text-gray-600 mb-2">{form.name_en}</p>
+                                            <p className="text-xs text-gray-600 mb-2">
+                                                {form.id === 5 && sufolon
+                                                    ? 'Agrosor / Sufolon 2-page Profile Form'
+                                                    : form.name_en}
+                                            </p>
                                         </div>
                                         <div className="flex flex-col items-end gap-1">
                                             {form.required && (
@@ -176,7 +192,9 @@ export default function FormSelection({ member, loanProduct, loanCategory, reque
                                         </div>
                                     </div>
                                     <p className="text-sm text-gray-600 mb-3">
-                                        {form.id === 5 && loanCategory?.category_name_bn
+                                        {form.id === 5 && sufolon
+                                            ? 'সুফলন ক্যাটাগরির ৯৯ হাজারের উপরে — ২ পাতার অগ্রসর প্রোফাইল ফর্ম'
+                                            : form.id === 5 && loanCategory?.category_name_bn
                                             ? `${loanCategory.category_name_bn} ক্যাটাগরির ঋণ আবেদন ও অনুমোদন ফরম`
                                             : form.description}
                                     </p>
@@ -204,6 +222,7 @@ export default function FormSelection({ member, loanProduct, loanCategory, reque
                             <p className="font-semibold mb-1">নোট:</p>
                             <ul className="list-disc list-inside space-y-1 text-xs">
                                 <li>ফিল্ড অফিসার: সাপ্তাহিক = ফর্ম ১, মাসিক = ফর্ম ৫ পূরণ করে submit করবেন</li>
+                                <li>সুফলন: ৯৯ হাজার পর্যন্ত = ঋণ চুক্তিপত্র (ফর্ম ১), এর উপরে = অগ্রসর প্রোফাইল (ফর্ম ৫)</li>
                                 <li>শাখা ব্যবস্থাপক: প্রয়োজনে ফর্ম ৪ পূরণ করে approve/forward করবেন</li>
                                 <li>শাখা ব্যবহারকারী: HO approve এর পর ফর্ম ২+৩ পূরণ করে disburse করবেন</li>
                             </ul>

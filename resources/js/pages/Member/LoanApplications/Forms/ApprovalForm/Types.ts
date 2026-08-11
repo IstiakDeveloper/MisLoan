@@ -28,4 +28,5 @@ export interface FormPageProps {
     requestedAmount?: number;
     savingsProducts?: Array<any>;
     loanRound?: number;
+    errors?: Record<string, string>;
 }

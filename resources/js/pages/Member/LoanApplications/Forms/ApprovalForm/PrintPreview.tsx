@@ -171,7 +171,10 @@ function renderPage1(d: any, branch?: any, categoryName?: string) {
             <div data-sync="item-13" className="mb-1">
                 <span>১৩. সাধারণ সঞ্চয় (দফা ও পরিমাণ):</span>
                 <span className="border-b border-dotted border-gray-600 inline-block min-w-[40px] mx-1 align-bottom">{dofaLabel(d.loan_round)}</span>
-                <span className="ml-1">পরিমাণ (৳):</span><span className="border-b border-dotted border-gray-600 inline-block min-w-[80px] mx-1 align-bottom">{noDecimal(d.general_savings_amount ?? d.savings_amount)}</span>
+                <span className="ml-1">মোট সঞ্চয় (৳):</span>
+                <span className="border-b border-dotted border-gray-600 inline-block min-w-[80px] mx-1 align-bottom">{noDecimal(d.savings_amount)}</span>
+                <span className="ml-1">সাধারণ সঞ্চয় (৳):</span>
+                <span className="border-b border-dotted border-gray-600 inline-block min-w-[80px] mx-1 align-bottom">{noDecimal(d.general_savings_amount)}</span>
                 <span className="ml-1">সঞ্চয়ের বিপরিতে:</span><span className="border-b border-dotted border-gray-600 inline-block min-w-[32px] mx-1 align-bottom">{d.is_against_savings ? 'হ্যাঁ' : 'না'}</span>
                 {d.is_against_savings && d.against_savings_amount != null && d.against_savings_amount !== '' && (
                     <span className="ml-1">বিপরিতে পরিমাণ (৳):</span>

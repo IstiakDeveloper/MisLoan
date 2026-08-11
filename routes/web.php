@@ -304,6 +304,7 @@ Route::middleware(['auth', 'verified'])->group(function () {
         Route::delete('admissions/{admission}', [HeadOfficeAdmissionController::class, 'destroy'])->name('admissions.destroy');
         Route::post('admissions/{admission}/issue', [HeadOfficeAdmissionController::class, 'storeIssue'])->name('admissions.issue');
         Route::patch('admissions/{admission}/approve', [HeadOfficeAdmissionController::class, 'approveSingle'])->name('admissions.approve');
+        Route::patch('admissions/{admission}/mark-legacy', [HeadOfficeAdmissionController::class, 'markAsLegacy'])->name('admissions.mark-legacy');
         Route::patch('admissions/{admission}/reject', [HeadOfficeAdmissionController::class, 'rejectSingle'])->name('admissions.reject');
         Route::post('admissions/approve-all', [HeadOfficeAdmissionController::class, 'approveAll'])->name('admissions.approve-all');
         Route::delete('issues/{issue}', [HeadOfficeAdmissionController::class, 'deleteIssue'])->name('issues.delete');

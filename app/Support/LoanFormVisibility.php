@@ -9,20 +9,79 @@ class LoanFormVisibility
 {
     public const ONE_LAKH = 100000.0;
 
+    /** Sufolon: ঋণ চুক্তিপত্র up to this amount; above → Agrosor Profile (Form 5) */
+    public const SUFOLON_AGREEMENT_MAX = 99000.0;
+
     public static function isWeekly(?object $product): bool
     {
         return strtolower((string) ($product->installment_type ?? 'monthly')) === 'weekly';
     }
 
-    /** Field Officer submit: weekly = Form 1, monthly = Form 5 */
-    public static function foSubmitFormIds(?object $product, float $amount): array
+    public static function isSufolon(?object $product = null, ?object $category = null): bool
     {
+        if ($category) {
+            $code = strtoupper(trim((string) ($category->category_code ?? '')));
+            if ($code === 'SFL') {
+                return true;
+            }
+            $catName = mb_strtolower(
+                trim((string) ($category->category_name ?? '').' '.($category->category_name_bn ?? '')),
+                'UTF-8'
+            );
+            if (
+                str_contains($catName, 'sufolon')
+                || str_contains($catName, 'শুফলন')
+                || str_contains($catName, 'সুফলন')
+            ) {
+                return true;
+            }
+        }
+
+        if (! $product) {
+            return false;
+        }
+
+        $rel = $product->loanCategory ?? $product->loan_category ?? null;
+        if ($rel && self::isSufolon(null, $rel)) {
+            return true;
+        }
+
+        $pCode = strtoupper(trim((string) ($product->product_code ?? '')));
+        if ($pCode === 'SFL' || str_contains($pCode, 'SUFOLON')) {
+            return true;
+        }
+
+        $pName = mb_strtolower(
+            trim((string) ($product->product_name ?? '').' '.($product->product_name_bn ?? '')),
+            'UTF-8'
+        );
+
+        return str_contains($pName, 'sufolon')
+            || str_contains($pName, 'সুফলন')
+            || str_contains($pName, 'শুফলন');
+    }
+
+    /** Field Officer submit: weekly = Form 1, monthly = Form 5; Sufolon ≤99k = Form 1, >99k = Form 5 */
+    public static function foSubmitFormIds(?object $product, float $amount, ?object $category = null): array
+    {
+        if (self::isSufolon($product, $category)) {
+            return $amount <= self::SUFOLON_AGREEMENT_MAX ? [1] : [5];
+        }
+
         return self::isWeekly($product) ? [1] : [5];
     }
 
-    /** Branch Manager before approve/forward: Form 4 when weekly or monthly < 1L */
-    public static function bmRequiredFormIds(?object $product, float $amount): array
+    /** Branch Manager before approve/forward: Form 4 when weekly or monthly < 1L (Sufolon Form-1 path always needs Form 4) */
+    public static function bmRequiredFormIds(?object $product, float $amount, ?object $category = null): array
     {
+        if (self::isSufolon($product, $category)) {
+            if ($amount <= self::SUFOLON_AGREEMENT_MAX) {
+                return [4];
+            }
+
+            return $amount < self::ONE_LAKH ? [4] : [];
+        }
+
         if (self::isWeekly($product)) {
             return [4];
         }
@@ -41,7 +100,7 @@ class LoanFormVisibility
      *
      * @return int[]
      */
-    public static function editableFormIdsForUser(?string $roleName, string $status, ?object $product, float $amount): array
+    public static function editableFormIdsForUser(?string $roleName, string $status, ?object $product, float $amount, ?object $category = null): array
     {
         $roleName = strtolower((string) $roleName);
 
@@ -56,8 +115,8 @@ class LoanFormVisibility
         if (in_array($status, [LoanApplication::STATUS_SUBMITTED, LoanApplication::STATUS_UNDER_REVIEW], true)) {
             if ($roleName === Role::BRANCH_MANAGER) {
                 return array_values(array_unique(array_merge(
-                    self::foSubmitFormIds($product, $amount),
-                    self::bmRequiredFormIds($product, $amount)
+                    self::foSubmitFormIds($product, $amount, $category),
+                    self::bmRequiredFormIds($product, $amount, $category)
                 )));
             }
 
@@ -66,10 +125,10 @@ class LoanFormVisibility
 
         if (in_array($status, [LoanApplication::STATUS_DRAFT, LoanApplication::STATUS_REJECTED, LoanApplication::STATUS_NEEDS_CORRECTION], true)) {
             if ($roleName === Role::FIELD_OFFICER) {
-                return self::foSubmitFormIds($product, $amount);
+                return self::foSubmitFormIds($product, $amount, $category);
             }
             if (in_array($roleName, [Role::BRANCH_USER, Role::BRANCH_MANAGER], true)) {
-                return self::foSubmitFormIds($product, $amount);
+                return self::foSubmitFormIds($product, $amount, $category);
             }
         }
 
@@ -81,11 +140,11 @@ class LoanFormVisibility
      *
      * @return int[]
      */
-    public static function requiredFormIdsForAction(string $action, ?object $product, float $amount): array
+    public static function requiredFormIdsForAction(string $action, ?object $product, float $amount, ?object $category = null): array
     {
         return match ($action) {
-            'submit' => self::foSubmitFormIds($product, $amount),
-            'bm_approve', 'bm_forward' => self::bmRequiredFormIds($product, $amount),
+            'submit' => self::foSubmitFormIds($product, $amount, $category),
+            'bm_approve', 'bm_forward' => self::bmRequiredFormIds($product, $amount, $category),
             'disburse' => self::disburseFormIds(),
             default => [],
         };
@@ -96,35 +155,35 @@ class LoanFormVisibility
      *
      * @return int[]
      */
-    public static function visibleFormIdsForShow(?string $roleName, string $status, ?object $product, float $amount): array
+    public static function visibleFormIdsForShow(?string $roleName, string $status, ?object $product, float $amount, ?object $category = null): array
     {
-        $editable = self::editableFormIdsForUser($roleName, $status, $product, $amount);
+        $editable = self::editableFormIdsForUser($roleName, $status, $product, $amount, $category);
 
         if ($status === LoanApplication::STATUS_DRAFT || $status === LoanApplication::STATUS_REJECTED) {
             return array_values(array_unique(array_merge(
-                self::foSubmitFormIds($product, $amount),
+                self::foSubmitFormIds($product, $amount, $category),
                 $editable
             )));
         }
 
         if (in_array($status, [LoanApplication::STATUS_SUBMITTED, LoanApplication::STATUS_UNDER_REVIEW], true)) {
             return array_values(array_unique(array_merge(
-                self::foSubmitFormIds($product, $amount),
-                self::bmRequiredFormIds($product, $amount)
+                self::foSubmitFormIds($product, $amount, $category),
+                self::bmRequiredFormIds($product, $amount, $category)
             )));
         }
 
         if ($status === LoanApplication::STATUS_PENDING_DISBURSEMENT) {
             return array_values(array_unique(array_merge(
-                self::foSubmitFormIds($product, $amount),
-                self::bmRequiredFormIds($product, $amount),
+                self::foSubmitFormIds($product, $amount, $category),
+                self::bmRequiredFormIds($product, $amount, $category),
                 self::disburseFormIds()
             )));
         }
 
         return array_values(array_unique(array_merge(
-            self::foSubmitFormIds($product, $amount),
-            self::bmRequiredFormIds($product, $amount),
+            self::foSubmitFormIds($product, $amount, $category),
+            self::bmRequiredFormIds($product, $amount, $category),
             self::disburseFormIds()
         )));
     }
@@ -191,10 +250,11 @@ class LoanFormVisibility
 
     public static function assertBmFormsComplete(LoanApplication $loan): void
     {
-        $loan->loadMissing('loanProduct');
+        $loan->loadMissing(['loanProduct.loanCategory', 'loanCategory']);
         $product = $loan->loanProduct;
+        $category = $loan->loanCategory ?? $product?->loanCategory;
         $amount = (float) ($loan->requested_amount ?? 0);
-        $required = self::bmRequiredFormIds($product, $amount);
+        $required = self::bmRequiredFormIds($product, $amount, $category);
 
         if ($required === []) {
             return;

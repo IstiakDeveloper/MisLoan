@@ -1,6 +1,9 @@
 import React, { useEffect } from 'react';
 import { FormPageProps } from './Types';
 import { Calculator, Calendar, ShieldCheck, UserCheck, DollarSign } from 'lucide-react';
+import { calcInstallmentSchedule } from '@/utils/loanInterest';
+
+export { calcInstallmentSchedule } from '@/utils/loanInterest';
 
 /** Convert duration months → years label (e.g. 12 → "১", 18 → "১.৫", 24 → "২") */
 export function formatLoanYearsLabel(months: number | string | null | undefined): string {
@@ -19,43 +22,6 @@ export function getLoanYears(months: number | string | null | undefined): number
     const m = Number(months) || 0;
     if (m <= 0) return 1;
     return Math.round((m / 12) * 100) / 100;
-}
-
-function getInstallmentTypeLabel(product: any): string {
-    const t = String(product?.installment_type || '').toLowerCase();
-    if (t === 'weekly' || t.includes('week') || t.includes('সাপ্তাহ')) return 'সাপ্তাহিক কিস্তি';
-    if (t === 'monthly' || t.includes('month') || t.includes('মাস')) return 'মাসিক কিস্তি';
-    return 'মাসিক কিস্তি';
-}
-
-/** Per-installment principal + service charge from loan amount & product */
-export function calcInstallmentSchedule(
-    loanAmount: number,
-    loanProduct: any,
-    durationMonths?: number | string | null,
-): { principal: number; serviceCharge: number; installments: number; typeLabel: string } | null {
-    const amount = Number(loanAmount) || 0;
-    if (amount <= 0) return null;
-
-    const months = Number(durationMonths || loanProduct?.duration_months || loanProduct?.loan_duration_months || 0);
-    const installments = Number(loanProduct?.number_of_installments) || months || 0;
-    if (installments <= 0) return null;
-
-    const scPerThousand = Number(loanProduct?.service_charge_per_thousand);
-    const rate = Number(
-        loanProduct?.interest_rate ?? loanProduct?.service_charge ?? loanProduct?.service_charge_rate ?? 0,
-    );
-    const totalServiceCharge =
-        scPerThousand > 0
-            ? (amount / 1000) * scPerThousand
-            : amount * (rate / 100);
-
-    return {
-        principal: Math.round(amount / installments),
-        serviceCharge: Math.round(totalServiceCharge / installments),
-        installments,
-        typeLabel: getInstallmentTypeLabel(loanProduct),
-    };
 }
 
 export default function FormPage3({ data, setData, member, loanProduct, requestedAmount }: FormPageProps) {

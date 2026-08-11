@@ -680,6 +680,95 @@ class HeadOfficeAdmissionController extends Controller
     }
 
     /**
+     * Convert a "new" admission to legacy/old member, set loan dofa, and auto-approve.
+     */
+    public function markAsLegacy(Request $request, MemberAdmission $admission)
+    {
+        $this->ensureCanAccessBranch($admission->branch_id);
+
+        if ($admission->is_legacy) {
+            return back()->with('error', 'এই আবেদনটি ইতিমধ্যে পুরাতন সদস্য হিসেবে চিহ্নিত।');
+        }
+
+        if ($admission->status === 'rejected') {
+            return back()->with('error', 'প্রত্যাখ্যাত আবেদন পুরাতন সদস্য হিসেবে চিহ্নিত করা যাবে না।');
+        }
+
+        $validated = $request->validate([
+            'loan_dofa' => 'required|integer|min:1|max:999',
+        ], [
+            'loan_dofa.required' => 'পুরাতন সদস্যের জন্য ঋণের দফা দেওয়া বাধ্যতামূলক।',
+            'loan_dofa.integer' => 'ঋণের দফা সংখ্যায় হতে হবে।',
+            'loan_dofa.min' => 'ঋণের দফা কমপক্ষে ১ হতে হবে।',
+            'loan_dofa.max' => 'ঋণের দফা সর্বোচ্চ ৯৯৯ হতে পারে।',
+        ]);
+
+        $authUser = auth()->user();
+
+        DB::transaction(function () use ($admission, $validated, $authUser) {
+            // Close out any pending approval chain
+            $admission->approvals()
+                ->where('status', 'pending')
+                ->update([
+                    'status' => 'approved',
+                    'approved_at' => now(),
+                    'comments' => 'পুরাতন সদস্য হিসেবে হেড অফিস কর্তৃক স্বয়ংক্রিয় অনুমোদন',
+                ]);
+
+            // Clear pending issues so legacy approval is not blocked later
+            $admission->issues()
+                ->where('status', 'pending')
+                ->update([
+                    'status' => 'resolved',
+                    'resolved_at' => now(),
+                    'resolved_by' => $authUser->id,
+                ]);
+
+            $updateData = [
+                'is_legacy' => true,
+                'loan_dofa' => $validated['loan_dofa'],
+                'status' => 'approved',
+                'reviewed_by' => $authUser->id,
+                'reviewed_at' => now(),
+                'rejection_reason' => null,
+            ];
+
+            if (!$admission->submitted_at) {
+                $updateData['submitted_by'] = $admission->submitted_by ?: $authUser->id;
+                $updateData['submitted_at'] = now();
+            }
+
+            $admission->update($updateData);
+        });
+
+        $admission->refresh()->loadMissing(['createdBy', 'submittedBy', 'branch']);
+        $recipients = collect([$admission->createdBy, $admission->submittedBy])->filter();
+        $branchManagers = User::where('branch_id', $admission->branch_id)
+            ->where('is_active', 1)
+            ->whereHas('role', fn ($q) => $q->where('name', Role::BRANCH_MANAGER))
+            ->get();
+        $recipients = $recipients->concat($branchManagers);
+
+        app(NotificationService::class)->send(
+            users: $recipients,
+            type: 'member_admission',
+            title: 'সদস্য আবেদন পুরাতন সদস্য হিসেবে অনুমোদিত',
+            message: "সদস্য আবেদন নং {$admission->application_no} ({$admission->applicant_name_bn}) হেড অফিস থেকে পুরাতন সদস্য (দফা {$validated['loan_dofa']}) হিসেবে চিহ্নিত ও অনুমোদিত হয়েছে।",
+            notifiable: $admission,
+            actionUrl: "/member-admissions/{$admission->id}",
+            details: [
+                'আবেদন নং' => $admission->application_no,
+                'আবেদনকারীর নাম' => $admission->applicant_name_bn ?: $admission->applicant_name_en,
+                'শাখা' => $admission->branch?->name ?? 'N/A',
+                'ঋণের দফা' => $validated['loan_dofa'],
+                'অনুমোদন তারিখ' => now()->format('Y-m-d H:i'),
+            ]
+        );
+
+        return back()->with('success', 'আবেদনটি পুরাতন সদস্য হিসেবে চিহ্নিত ও অনুমোদিত হয়েছে।');
+    }
+
+    /**
      * Approve single admission
      */
     public function approveSingle(MemberAdmission $admission)

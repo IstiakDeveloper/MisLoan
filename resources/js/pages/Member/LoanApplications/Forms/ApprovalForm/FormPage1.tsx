@@ -13,7 +13,19 @@ const RECIPIENT_OPTIONS = [
     'শাখা ব্যবস্থাপক',
 ] as const;
 
-export default function FormPage1({ data, setData, member, isLegacy, handleImageUpload, removeImage, savingsProducts, loanRound }: FormPageProps) {
+export default function FormPage1({
+    data,
+    setData,
+    member,
+    isLegacy,
+    handleImageUpload,
+    removeImage,
+    savingsProducts,
+    loanRound,
+    loanProduct,
+    requestedAmount,
+    errors = {},
+}: FormPageProps) {
     const fromAdmission = !!(member && !isLegacy);
     const isOldMember = data.member_type === 'old' || !!(member?.is_legacy) || !!isLegacy;
 
@@ -222,12 +234,32 @@ export default function FormPage1({ data, setData, member, isLegacy, handleImage
 
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
                     <div>
-                        <label className="block text-xs font-semibold text-gray-700 mb-1">৫. পেশা</label>
-                        <input type="text" value={data.occupation || ''} onChange={(e) => setData('occupation', e.target.value)} className={warningClass} placeholder="পেশা লিখুন" />
+                        <label className="block text-xs font-semibold text-gray-700 mb-1 flex items-center justify-between">
+                            <span>৫. পেশা</span>
+                            {fromAdmission && <Lock className="w-3 h-3 text-gray-400" />}
+                        </label>
+                        <input
+                            type="text"
+                            value={data.occupation || ''}
+                            onChange={(e) => setData('occupation', e.target.value)}
+                            readOnly={fromAdmission}
+                            className={fromAdmission ? inputClass : warningClass}
+                            placeholder="পারিবারিক তথ্য (নিজ) থেকে আসবে"
+                        />
                     </div>
                     <div>
-                        <label className="block text-xs font-semibold text-gray-700 mb-1">৬. শিক্ষাগত যোগ্যতা</label>
-                        <input type="text" value={data.educational_qualification || ''} onChange={(e) => setData('educational_qualification', e.target.value)} className={warningClass} placeholder="শিক্ষাগত যোগ্যতা লিখুন" />
+                        <label className="block text-xs font-semibold text-gray-700 mb-1 flex items-center justify-between">
+                            <span>৬. শিক্ষাগত যোগ্যতা</span>
+                            {fromAdmission && <Lock className="w-3 h-3 text-gray-400" />}
+                        </label>
+                        <input
+                            type="text"
+                            value={data.educational_qualification || ''}
+                            onChange={(e) => setData('educational_qualification', e.target.value)}
+                            readOnly={fromAdmission}
+                            className={fromAdmission ? inputClass : warningClass}
+                            placeholder="পারিবারিক তথ্য (নিজ) থেকে আসবে"
+                        />
                     </div>
                 </div>
 
@@ -292,12 +324,22 @@ export default function FormPage1({ data, setData, member, isLegacy, handleImage
 
                 <div data-sync="item-13" className={`rounded-xl ${fromAdmission ? 'p-3 bg-gray-50 border border-gray-200' : ''}`}>
                     <GeneralSavingsSection
-                        data={data}
-                        setData={setData}
                         savingsProducts={savingsProducts || []}
+                        loanProduct={loanProduct || {}}
+                        requestedAmount={Number(requestedAmount) || 0}
                         loanRound={loanRound || 1}
-                        isLegacy={isLegacy || false}
-                        member={member}
+                        compact
+                        data={{
+                            savings_amount: data.savings_amount,
+                            general_savings_product_id: data.general_savings_product_id,
+                            general_savings_amount: data.general_savings_amount,
+                            is_against_savings: data.is_against_savings,
+                            against_savings_product_id: data.against_savings_product_id,
+                            against_savings_amount: data.against_savings_amount,
+                            loan_round: data.loan_round,
+                        }}
+                        setData={(key, value) => setData(key, value)}
+                        errors={errors}
                     />
                 </div>
 
