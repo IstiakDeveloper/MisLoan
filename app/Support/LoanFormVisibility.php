@@ -71,9 +71,15 @@ class LoanFormVisibility
         return self::isWeekly($product) ? [1] : [5];
     }
 
-    /** Branch Manager before approve/forward: Form 4 when weekly or monthly < 1L (Sufolon Form-1 path always needs Form 4) */
+    public const BM_CEILING = 70000.0;
+
+    /** Branch Manager before approve/forward: Form 4 is required only when loan amount is within BM ceiling (<= 70,000 TK) */
     public static function bmRequiredFormIds(?object $product, float $amount, ?object $category = null): array
     {
+        if ($amount > self::BM_CEILING) {
+            return [];
+        }
+
         if (self::isSufolon($product, $category)) {
             if ($amount <= self::SUFOLON_AGREEMENT_MAX) {
                 return [4];
@@ -240,7 +246,7 @@ class LoanFormVisibility
 
         $saved = self::buildFormSavedMap($loan);
         if (! self::allRequiredFormsSaved($required, $saved)) {
-            throw new \Exception('অনুমোদন/ফরওয়ার্ড করার আগে সরেজমিন তদন্ত প্রতিবেদন (ফর্ম ৪) পূরণ করতে হবে।');
+            throw new \Exception('অনুমোদন করার আগে সরেজমিন তদন্ত প্রতিবেদন (ফর্ম ৪) পূরণ করতে হবে।');
         }
     }
 }

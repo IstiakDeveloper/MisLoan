@@ -20,11 +20,48 @@ class ApprovalController extends Controller
     /**
      * Display pending approvals for current user
      */
-    public function index()
+    public function index(Request $request)
     {
-        $user = auth()->user();
+        $user = $request->user();
+        $zoneId = $request->input('zone_id');
+        $areaId = $request->input('area_id');
+        $branchId = $request->input('branch_id');
+
         $pendingApprovals = $this->approvalService->getPendingApprovalsForUser($user);
         $pendingLoanApprovals = $this->approvalService->getPendingLoanApprovalsForUser($user);
+
+        if ($branchId) {
+            $pendingApprovals = $pendingApprovals->filter(fn ($a) => (string) ($a->memberAdmission?->branch_id) === (string) $branchId)->values();
+            $pendingLoanApprovals = $pendingLoanApprovals->filter(fn ($a) => (string) ($a->loanApplication?->branch_id) === (string) $branchId)->values();
+        }
+        if ($areaId) {
+            $pendingApprovals = $pendingApprovals->filter(fn ($a) => (string) ($a->memberAdmission?->branch?->area_id) === (string) $areaId)->values();
+            $pendingLoanApprovals = $pendingLoanApprovals->filter(fn ($a) => (string) ($a->loanApplication?->branch?->area_id) === (string) $areaId)->values();
+        }
+        if ($zoneId) {
+            $pendingApprovals = $pendingApprovals->filter(fn ($a) => (string) ($a->memberAdmission?->branch?->area?->zone_id) === (string) $zoneId)->values();
+            $pendingLoanApprovals = $pendingLoanApprovals->filter(fn ($a) => (string) ($a->loanApplication?->branch?->area?->zone_id) === (string) $zoneId)->values();
+        }
+
+        $accessibleBranches = $user->getAccessibleBranches();
+        $branches = $accessibleBranches->map(fn ($b) => [
+            'id' => $b->id,
+            'name' => $b->name,
+            'code' => $b->code,
+            'area_id' => $b->area_id,
+        ])->values();
+
+        $areaIds = $branches->pluck('area_id')->filter()->unique();
+        $areas = \App\Models\Area::query()
+            ->whereIn('id', $areaIds)
+            ->orderBy('name')
+            ->get(['id', 'name', 'code', 'zone_id']);
+
+        $zoneIds = $areas->pluck('zone_id')->filter()->unique();
+        $zones = \App\Models\Zone::query()
+            ->whereIn('id', $zoneIds)
+            ->orderBy('name')
+            ->get(['id', 'name', 'code']);
 
         $loanApprovalsData = $pendingLoanApprovals->map(function ($approval) {
             $loan = $approval->loanApplication;
@@ -107,6 +144,14 @@ class ApprovalController extends Controller
         return Inertia::render('Approvals/Index', [
             'approvals' => $approvalsData,
             'loanApprovals' => $loanApprovalsData,
+            'zones' => $zones,
+            'areas' => $areas,
+            'branches' => $branches,
+            'filters' => [
+                'zone_id' => $zoneId,
+                'area_id' => $areaId,
+                'branch_id' => $branchId,
+            ],
         ]);
     }
 

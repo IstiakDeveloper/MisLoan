@@ -143,16 +143,32 @@ interface PaginatedReviews {
     total?: number;
 }
 
+interface ZoneOption {
+    id: number;
+    name: string;
+    code?: string | null;
+}
+
+interface AreaOption {
+    id: number;
+    name: string;
+    code?: string | null;
+    zone_id: number;
+}
+
 interface BranchOption {
     id: number;
     name: string;
     code?: string | null;
+    area_id?: number | null;
 }
 
 interface Props {
     reviews: PaginatedReviews;
     filters: {
         status?: string;
+        zone_id?: number | string;
+        area_id?: number | string;
         branch_id?: number | string;
         approver_id?: number | string;
         date_from?: string;
@@ -160,6 +176,8 @@ interface Props {
         approval_flow?: string | null;
         per_page?: number;
     };
+    zones?: ZoneOption[];
+    areas?: AreaOption[];
     branches: BranchOption[];
     approverOptions: {
         id: number;
@@ -180,8 +198,10 @@ interface Props {
     };
 }
 
-export default function TeamBasedApprovalApproverIndex({ reviews, filters, branches, approverOptions, forwardToOptions = [], stats }: Props) {
+export default function TeamBasedApprovalApproverIndex({ reviews, filters, zones = [], areas = [], branches, approverOptions, forwardToOptions = [], stats }: Props) {
     const currentStatus = filters.status ?? '';
+    const currentZoneId = (filters.zone_id ?? '').toString();
+    const currentAreaId = (filters.area_id ?? '').toString();
     const currentBranchId = (filters.branch_id ?? '').toString();
     const currentApproverId = (filters.approver_id ?? '').toString();
     const currentFrom = filters.date_from || '';
@@ -234,10 +254,29 @@ export default function TeamBasedApprovalApproverIndex({ reviews, filters, branc
     const [showFiltersMobile, setShowFiltersMobile] = React.useState(false);
     const [selectedItemIds, setSelectedItemIds] = React.useState<number[]>([]);
 
+    const filteredAreas = React.useMemo(() => {
+        if (!currentZoneId) return areas;
+        return areas.filter((a) => String(a.zone_id) === currentZoneId);
+    }, [areas, currentZoneId]);
+
+    const filteredBranches = React.useMemo(() => {
+        let list = branches;
+        if (currentZoneId) {
+            const areaIds = new Set(filteredAreas.map((a) => String(a.id)));
+            list = list.filter((b) => b.area_id != null && areaIds.has(String(b.area_id)));
+        }
+        if (currentAreaId) {
+            list = list.filter((b) => String(b.area_id) === currentAreaId);
+        }
+        return list;
+    }, [branches, currentZoneId, currentAreaId, filteredAreas]);
+
     const getActiveFilterParams = (extra: Record<string, unknown> = {}) => ({
         status: currentStatus || undefined,
         date_from: currentFrom || undefined,
         date_to: currentTo || undefined,
+        zone_id: currentZoneId || undefined,
+        area_id: currentAreaId || undefined,
         branch_id: currentBranchId || undefined,
         approver_id: currentApproverId || undefined,
         approval_flow: currentApprovalFlow || undefined,
@@ -245,6 +284,33 @@ export default function TeamBasedApprovalApproverIndex({ reviews, filters, branc
         page: reviews.current_page ?? 1,
         ...extra,
     });
+
+    const handleZoneChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
+        const newZone = e.target.value;
+        router.get(
+            '/team-based-approvals/for-approver',
+            getActiveFilterParams({
+                zone_id: newZone || undefined,
+                area_id: undefined,
+                branch_id: undefined,
+                page: 1,
+            }),
+            { preserveScroll: true, preserveState: true }
+        );
+    };
+
+    const handleAreaChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
+        const newArea = e.target.value;
+        router.get(
+            '/team-based-approvals/for-approver',
+            getActiveFilterParams({
+                area_id: newArea || undefined,
+                branch_id: undefined,
+                page: 1,
+            }),
+            { preserveScroll: true, preserveState: true }
+        );
+    };
 
     const applyFilter = (
         status: string,
@@ -1061,7 +1127,41 @@ export default function TeamBasedApprovalApproverIndex({ reviews, filters, branc
                     </div>
 
                     <div className={`${showFiltersMobile ? 'block' : 'hidden'} md:block mt-4 md:mt-0 space-y-4`}>
-                        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-3">
+                        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-7 gap-3">
+                            {zones.length > 0 && (
+                                <div className="flex flex-col gap-1">
+                                    <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Zone</span>
+                                    <select
+                                        value={currentZoneId}
+                                        onChange={handleZoneChange}
+                                        className="w-full border border-slate-300 rounded-lg px-3 py-2 text-xs bg-white focus:outline-none focus:ring-2 focus:ring-blue-500/15 focus:border-blue-500 transition-all text-slate-800"
+                                    >
+                                        <option value="">All Zones</option>
+                                        {zones.map((zone) => (
+                                            <option key={zone.id} value={zone.id}>
+                                                {zone.name} {zone.code ? `(${zone.code})` : ''}
+                                            </option>
+                                        ))}
+                                    </select>
+                                </div>
+                            )}
+                            {areas.length > 0 && (
+                                <div className="flex flex-col gap-1">
+                                    <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Region / Area</span>
+                                    <select
+                                        value={currentAreaId}
+                                        onChange={handleAreaChange}
+                                        className="w-full border border-slate-300 rounded-lg px-3 py-2 text-xs bg-white focus:outline-none focus:ring-2 focus:ring-blue-500/15 focus:border-blue-500 transition-all text-slate-800"
+                                    >
+                                        <option value="">All Regions</option>
+                                        {filteredAreas.map((area) => (
+                                            <option key={area.id} value={area.id}>
+                                                {area.name} {area.code ? `(${area.code})` : ''}
+                                            </option>
+                                        ))}
+                                    </select>
+                                </div>
+                            )}
                             <div className="flex flex-col gap-1">
                                 <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Branch</span>
                                 <select
@@ -1070,7 +1170,7 @@ export default function TeamBasedApprovalApproverIndex({ reviews, filters, branc
                                     className="w-full border border-slate-300 rounded-lg px-3 py-2 text-xs bg-white focus:outline-none focus:ring-2 focus:ring-blue-500/15 focus:border-blue-500 transition-all text-slate-800"
                                 >
                                     <option value="">All Branches</option>
-                                    {branches.map((branch) => (
+                                    {filteredBranches.map((branch) => (
                                         <option key={branch.id} value={branch.id}>
                                             {branch.name} {branch.code ? `(${branch.code})` : ''}
                                         </option>

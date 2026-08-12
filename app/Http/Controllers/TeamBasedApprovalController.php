@@ -644,7 +644,20 @@ class TeamBasedApprovalController extends Controller
                 'id',
                 'name',
                 'code',
+                'area_id',
             ]);
+
+        $areaIds = $branches->pluck('area_id')->filter()->unique();
+        $areas = \App\Models\Area::query()
+            ->whereIn('id', $areaIds)
+            ->orderBy('name')
+            ->get(['id', 'name', 'code', 'zone_id']);
+
+        $zoneIds = $areas->pluck('zone_id')->filter()->unique();
+        $zones = \App\Models\Zone::query()
+            ->whereIn('id', $zoneIds)
+            ->orderBy('name')
+            ->get(['id', 'name', 'code']);
 
         // Approver list for filter: (1) all approvers who can access any of current user's branches
         // (2) + everyone who has a review in the visible set (RM, ZM, ADMF etc.) so "who approved" filter is complete
@@ -713,6 +726,8 @@ class TeamBasedApprovalController extends Controller
             'reviews' => $reviews,
             'filters' => [
                 'status' => $status,
+                'zone_id' => $zoneId,
+                'area_id' => $areaId,
                 'branch_id' => $branchId,
                 'approver_id' => $approverId,
                 'date_from' => $dateFrom,
@@ -720,6 +735,8 @@ class TeamBasedApprovalController extends Controller
                 'approval_flow' => $approvalFlow,
                 'per_page' => $perPage,
             ],
+            'zones' => $zones,
+            'areas' => $areas,
             'branches' => $branches,
             'approverOptions' => $approverOptions,
             'forwardToOptions' => $forwardToOptions,

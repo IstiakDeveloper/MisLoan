@@ -297,7 +297,7 @@ class ApprovalService
             ->whereHas('memberAdmission', function ($query) {
                 $query->whereIn('status', ['submitted', 'under_review']);
             })
-            ->with(['memberAdmission.branch', 'memberAdmission.samity'])
+            ->with(['memberAdmission.branch.area', 'memberAdmission.samity'])
             ->get();
 
         return $approvals->filter(function ($approval) {
@@ -1312,7 +1312,7 @@ class ApprovalService
             ->whereHas('loanApplication', function ($query) {
                 $query->whereIn('status', [LoanApplication::STATUS_SUBMITTED, LoanApplication::STATUS_UNDER_REVIEW]);
             })
-            ->with(['loanApplication.memberAdmission', 'loanApplication.branch', 'loanApplication.loanProduct', 'loanApplication.loanCategory'])
+            ->with(['loanApplication.memberAdmission', 'loanApplication.branch.area', 'loanApplication.loanProduct', 'loanApplication.loanCategory'])
             ->get();
 
         return $approvals->filter(function ($approval) {

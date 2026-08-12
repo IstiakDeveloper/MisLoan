@@ -150,12 +150,47 @@ async function fetchBlockListUsernameVerify(
     };
 }
 
+interface ZoneOption {
+    id: number;
+    name: string;
+    code?: string;
+}
+
+interface AreaOption {
+    id: number;
+    name: string;
+    code?: string;
+    zone_id: number;
+}
+
+interface BranchOption {
+    id: number;
+    name: string;
+    code?: string;
+    area_id: number;
+}
+
 interface Props {
     approvals: Approval[];
     loanApprovals?: LoanApproval[];
+    zones?: ZoneOption[];
+    areas?: AreaOption[];
+    branches?: BranchOption[];
+    filters?: {
+        zone_id?: string;
+        area_id?: string;
+        branch_id?: string;
+    };
 }
 
-export default function Index({ approvals = [], loanApprovals = [] }: Props) {
+export default function Index({
+    approvals = [],
+    loanApprovals = [],
+    zones = [],
+    areas = [],
+    branches = [],
+    filters = {},
+}: Props) {
     const { auth } = usePage().props as {
         auth?: { user?: { username?: string | null } };
     };
@@ -163,6 +198,46 @@ export default function Index({ approvals = [], loanApprovals = [] }: Props) {
 
     const [searchQuery, setSearchQuery] = useState('');
     const [activeTab, setActiveTab] = useState<'all' | 'admissions' | 'loans'>('all');
+
+    const [selectedZone, setSelectedZone] = useState(filters?.zone_id || '');
+    const [selectedArea, setSelectedArea] = useState(filters?.area_id || '');
+    const [selectedBranch, setSelectedBranch] = useState(filters?.branch_id || '');
+
+    useEffect(() => {
+        setSelectedZone(filters?.zone_id || '');
+        setSelectedArea(filters?.area_id || '');
+        setSelectedBranch(filters?.branch_id || '');
+    }, [filters]);
+
+    const filteredAreas = useMemo(() => {
+        if (!selectedZone) return areas;
+        return areas.filter((a) => String(a.zone_id) === String(selectedZone));
+    }, [areas, selectedZone]);
+
+    const filteredBranches = useMemo(() => {
+        let list = branches;
+        if (selectedZone) {
+            const areaIds = new Set(filteredAreas.map((a) => String(a.id)));
+            list = list.filter((b) => areaIds.has(String(b.area_id)));
+        }
+        if (selectedArea) {
+            list = list.filter((b) => String(b.area_id) === String(selectedArea));
+        }
+        return list;
+    }, [branches, selectedZone, selectedArea, filteredAreas]);
+
+    const handleLocationFilterChange = (zoneVal: string, areaVal: string, branchVal: string) => {
+        setSelectedZone(zoneVal);
+        setSelectedArea(areaVal);
+        setSelectedBranch(branchVal);
+
+        const params: Record<string, string> = {};
+        if (zoneVal) params.zone_id = zoneVal;
+        if (areaVal) params.area_id = areaVal;
+        if (branchVal) params.branch_id = branchVal;
+
+        router.get('/approvals', params, { preserveState: true, preserveScroll: true });
+    };
 
     const [selectedApproval, setSelectedApproval] = useState<Approval | null>(null);
     const [action, setAction] = useState<'approve' | 'reject' | 'return' | 'forward' | null>(null);
@@ -608,6 +683,62 @@ export default function Index({ approvals = [], loanApprovals = [] }: Props) {
                             )}
                         </div>
                     </div>
+
+                    {/* Zone, Region (Area) & Branch Filters Bar */}
+                    {(zones.length > 0 || areas.length > 0 || branches.length > 0) && (
+                        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-3 border-t border-slate-200/60">
+                            {/* Zone Filter */}
+                            <div className="flex flex-col gap-1">
+                                <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">জোন (Zone)</span>
+                                <select
+                                    value={selectedZone}
+                                    onChange={(e) => handleLocationFilterChange(e.target.value, '', '')}
+                                    className="w-full border border-slate-300 rounded-xl px-3 py-1.5 text-xs bg-white text-slate-800 focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all"
+                                >
+                                    <option value="">সকল জোন (All Zones)</option>
+                                    {zones.map((z) => (
+                                        <option key={z.id} value={z.id}>
+                                            {z.name} {z.code ? `(${z.code})` : ''}
+                                        </option>
+                                    ))}
+                                </select>
+                            </div>
+
+                            {/* Regional / Area Filter */}
+                            <div className="flex flex-col gap-1">
+                                <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">অঞ্চল (Region / Area)</span>
+                                <select
+                                    value={selectedArea}
+                                    onChange={(e) => handleLocationFilterChange(selectedZone, e.target.value, '')}
+                                    className="w-full border border-slate-300 rounded-xl px-3 py-1.5 text-xs bg-white text-slate-800 focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all"
+                                >
+                                    <option value="">সকল অঞ্চল (All Regions)</option>
+                                    {filteredAreas.map((a) => (
+                                        <option key={a.id} value={a.id}>
+                                            {a.name} {a.code ? `(${a.code})` : ''}
+                                        </option>
+                                    ))}
+                                </select>
+                            </div>
+
+                            {/* Branch Filter */}
+                            <div className="flex flex-col gap-1">
+                                <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">শাখা (Branch)</span>
+                                <select
+                                    value={selectedBranch}
+                                    onChange={(e) => handleLocationFilterChange(selectedZone, selectedArea, e.target.value)}
+                                    className="w-full border border-slate-300 rounded-xl px-3 py-1.5 text-xs bg-white text-slate-800 focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all"
+                                >
+                                    <option value="">সকল শাখা (All Branches)</option>
+                                    {filteredBranches.map((b) => (
+                                        <option key={b.id} value={b.id}>
+                                            {b.name} {b.code ? `(${b.code})` : ''}
+                                        </option>
+                                    ))}
+                                </select>
+                            </div>
+                        </div>
+                    )}
                 </div>
 
                 {/* ── 3. EMPTY STATE ─────────────────────────────────────────────── */}
