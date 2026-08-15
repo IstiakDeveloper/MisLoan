@@ -14,6 +14,7 @@ import { LoanAgreementData, LoanAgreementProps } from './Types';
 import { LoanAgreementPrintView } from './LoanAgreementPrintView';
 import { LoanAgreementForm } from './LoanAgreementForm';
 import { afterLoanFormSaveUrl } from '@/utils/loanFormNavigation';
+import { isSufolonLoan } from '@/utils/loanInterest';
 
 function getAcresAndDecimals(totalDecimals: any): { acres: string; decimal: string } {
     if (totalDecimals == null || totalDecimals === '' || isNaN(Number(totalDecimals))) {
@@ -59,6 +60,10 @@ export function buildLoanAgreementDefaults(
         loan_purpose: member?.project_name || member?.business_name || member?.main_profession || member?.profession || '',
         loan_duration_months: loanProduct?.duration_months || 12,
         service_charge: 0,
+        service_charge_rate: loanProduct?.interest_rate != null && loanProduct?.interest_rate !== ''
+            ? String(loanProduct.interest_rate)
+            : (loanCategory?.interest_rate != null && loanCategory?.interest_rate !== '' ? String(loanCategory.interest_rate) : ''),
+        interest_rate: loanProduct?.interest_rate != null ? Number(loanProduct.interest_rate) : (loanCategory?.interest_rate != null ? Number(loanCategory.interest_rate) : 0),
         total_amount: 0,
         number_of_installments: 0,
         installment_amount: 0,
@@ -221,47 +226,68 @@ export default function LoanAgreement({
             : loanAmount * (interestRate / 100) * (durationMonths / 12);
         const totalAmount = loanAmount + serviceCharge;
 
-        const installmentType = (loanProduct?.installment_type || '').toLowerCase();
-        let numberOfInstallments = 0;
+        const isSufolon = isSufolonLoan(loanCategory, loanProduct);
+        const rawInstallmentType = (loanProduct?.installment_type || '').toLowerCase();
+        const isLumpSum = isSufolon || rawInstallmentType === 'lump_sum' || rawInstallmentType.includes('lump') || rawInstallmentType.includes('এককাল');
 
-        if (installmentType === 'lump_sum') {
+        let numberOfInstallments = 0;
+        let installmentAmount = 0;
+        let lastInstallmentAmount = 0;
+
+        if (isLumpSum) {
             numberOfInstallments = 1;
-        } else if (installmentType === 'weekly') {
+            installmentAmount = totalAmount;
+            lastInstallmentAmount = totalAmount;
+        } else if (rawInstallmentType === 'weekly') {
             numberOfInstallments = Math.ceil((durationMonths * 30) / 7);
+            const installmentAmountPerThousand = loanProduct?.installment_amount_per_thousand || 0;
+            if (installmentAmountPerThousand > 0) {
+                installmentAmount = (loanAmount / 1000) * installmentAmountPerThousand;
+            } else {
+                installmentAmount = totalAmount / numberOfInstallments;
+            }
+            const lastInstallmentPerThousand = loanProduct?.last_installment_per_thousand || installmentAmountPerThousand;
+            if (lastInstallmentPerThousand > 0) {
+                lastInstallmentAmount = (loanAmount / 1000) * lastInstallmentPerThousand;
+            } else {
+                lastInstallmentAmount = installmentAmount;
+            }
         } else {
             numberOfInstallments = Number(loanProduct?.number_of_installments) || durationMonths;
-        }
-
-        const installmentAmountPerThousand = loanProduct?.installment_amount_per_thousand || 0;
-        let installmentAmount = 0;
-        if (installmentAmountPerThousand > 0) {
-            installmentAmount = (loanAmount / 1000) * installmentAmountPerThousand;
-        } else if (numberOfInstallments > 0) {
-            installmentAmount = totalAmount / numberOfInstallments;
-        }
-
-        const lastInstallmentPerThousand = loanProduct?.last_installment_per_thousand || installmentAmountPerThousand;
-        let lastInstallmentAmount = 0;
-        if (lastInstallmentPerThousand > 0) {
-            lastInstallmentAmount = (loanAmount / 1000) * lastInstallmentPerThousand;
-        } else {
-            lastInstallmentAmount = installmentAmount;
+            const installmentAmountPerThousand = loanProduct?.installment_amount_per_thousand || 0;
+            if (installmentAmountPerThousand > 0) {
+                installmentAmount = (loanAmount / 1000) * installmentAmountPerThousand;
+            } else if (numberOfInstallments > 0) {
+                installmentAmount = totalAmount / numberOfInstallments;
+            }
+            const lastInstallmentPerThousand = loanProduct?.last_installment_per_thousand || installmentAmountPerThousand;
+            if (lastInstallmentPerThousand > 0) {
+                lastInstallmentAmount = (loanAmount / 1000) * lastInstallmentPerThousand;
+            } else {
+                lastInstallmentAmount = installmentAmount;
+            }
         }
 
         const disbursementDate = data.disbursement_date ? new Date(data.disbursement_date) : new Date();
         const lastInstallmentDate = new Date(disbursementDate);
 
-        if (installmentType === 'lump_sum') {
+        if (isLumpSum) {
             lastInstallmentDate.setMonth(lastInstallmentDate.getMonth() + durationMonths);
-        } else if (installmentType === 'weekly') {
+        } else if (rawInstallmentType === 'weekly') {
             lastInstallmentDate.setDate(lastInstallmentDate.getDate() + (numberOfInstallments * 7));
         } else {
             lastInstallmentDate.setMonth(lastInstallmentDate.getMonth() + numberOfInstallments);
         }
 
+        const scRate = interestRate > 0
+            ? String(interestRate)
+            : (scPerThousand > 0 ? String(scPerThousand / 10) : (loanAmount > 0 ? ((serviceCharge / loanAmount) * 100).toFixed(2).replace(/\.00$/, '') : ''));
+
         setData(prev => ({
             ...prev,
             service_charge: Math.round(serviceCharge),
+            service_charge_rate: scRate,
+            interest_rate: interestRate,
             total_amount: Math.round(totalAmount),
             number_of_installments: numberOfInstallments,
             installment_amount: Math.round(installmentAmount),

@@ -21,6 +21,27 @@ export function LoanAgreementPrintView({ data }: { data: LoanAgreementData }) {
     const fullTimeTotal = num(selfFullFemale) + num(selfFullMale) + num(wageFullFemale) + num(wageFullMale);
     const partTimeTotal = num(selfPartFemale) + num(selfPartMale) + num(wagePartFemale) + num(wagePartMale);
 
+    // Calculate service charge percentage rate for terms clause (4)
+    const serviceChargeRate = d.service_charge_rate != null && d.service_charge_rate !== ''
+        ? String(d.service_charge_rate)
+        : (d.interest_rate != null && d.interest_rate !== '' && Number(d.interest_rate) > 0
+            ? String(d.interest_rate)
+            : (num(d.loan_amount) > 0 && num(d.service_charge) > 0
+                ? ((num(d.service_charge) / num(d.loan_amount)) * 100).toFixed(2).replace(/\.00$/, '')
+                : ''));
+
+    // Sufolon loans are 6-month lump-sum repayments (1 installment)
+    const totalAmount = num(d.total_amount || (num(d.loan_amount) + num(d.service_charge)));
+    const catName = `${d.loan_category_name || ''}`.toLowerCase();
+    const prodName = `${d.loan_product_name || ''}`.toLowerCase();
+    const isSufolon = catName.includes('sufolon') || catName.includes('সুফলন') || catName.includes('শুফলন') ||
+                      prodName.includes('sufolon') || prodName.includes('সুফলন') || prodName.includes('শুফলন') ||
+                      num(d.number_of_installments) === 1;
+
+    const displayInstallments = isSufolon ? 1 : (num(d.number_of_installments) || 1);
+    const displayInstallmentAmount = isSufolon ? totalAmount : (num(d.installment_amount) || totalAmount);
+    const displayLastInstallmentAmount = isSufolon ? totalAmount : (num(d.last_installment_amount) || displayInstallmentAmount);
+
     // Convert mobile number to array of 11 digits for grid boxes
     const mobileDigits = (str(d.mobile_number) || '').padEnd(11, ' ').slice(0, 11).split('');
 
@@ -120,16 +141,16 @@ export function LoanAgreementPrintView({ data }: { data: LoanAgreementData }) {
                         </thead>
                         <tbody>
                             <tr className="text-center font-medium h-8">
-                                <td className="border border-black px-1.5 py-1 text-left">{str(d.loan_product_name)} {d.loan_purpose ? `(${d.loan_purpose})` : ''}</td>
+                                <td className="border border-black px-1.5 py-1 text-left">{str(d.loan_purpose)}</td>
                                 <td className="border border-black px-1.5 py-1 whitespace-nowrap">{str(d.loan_duration_months)} মাস</td>
                                 <td className="border border-black px-1.5 py-1 text-left font-bold whitespace-nowrap">{str(d.member_name_bn)}</td>
                                 <td className="border border-black px-1.5 py-1 font-bold text-green-800 whitespace-nowrap">{num(d.loan_amount).toLocaleString('bn-BD')}</td>
                                 <td className="border border-black px-1.5 py-1 whitespace-nowrap">{num(d.total_amount || d.loan_amount + d.service_charge).toLocaleString('bn-BD')}</td>
                                 <td className="border border-black px-1.5 py-1 whitespace-nowrap">{fmt(d.disbursement_date)}</td>
                                 <td className="border border-black px-1.5 py-1 whitespace-nowrap">{fmt(d.last_installment_date)}</td>
-                                <td className="border border-black px-1.5 py-1 whitespace-nowrap">{str(d.number_of_installments)}</td>
-                                <td className="border border-black px-1.5 py-1 whitespace-nowrap">{num(d.installment_amount).toLocaleString('bn-BD')}</td>
-                                <td className="border border-black px-1.5 py-1 whitespace-nowrap">{num(d.last_installment_amount).toLocaleString('bn-BD')}</td>
+                                <td className="border border-black px-1.5 py-1 whitespace-nowrap">{str(displayInstallments)}</td>
+                                <td className="border border-black px-1.5 py-1 whitespace-nowrap">{num(displayInstallmentAmount).toLocaleString('bn-BD')}</td>
+                                <td className="border border-black px-1.5 py-1 whitespace-nowrap">{num(displayLastInstallmentAmount).toLocaleString('bn-BD')}</td>
                             </tr>
                         </tbody>
                     </table>
@@ -139,7 +160,7 @@ export function LoanAgreementPrintView({ data }: { data: LoanAgreementData }) {
                 <div className="space-y-1 text-xs sm:text-[12px] leading-relaxed mb-3">
                     <p>(১) ২য় পক্ষ চুক্তিপত্রে উল্লেখিত উদ্দেশ্য ছাড়া অন্য কোন প্রকল্পে ঋণের টাকা ব্যবহার করতে পারবেন না।</p>
                     <p>(৩) গৃহীত ঋণের শর্তানুযায়ী ব্যবহার নিশ্চিত করার জন্য ঋণ গ্রহীতাগণ মৌসুমীর দায়িত্বপ্রাপ্ত অফিসারের নিকট আয়-ব্যয়ের হিসাব দেখাতে বাধ্য থাকবেন।</p>
-                    <p>(৪) ঋণ ফেরত দেওয়ার নিয়ম অনুযায়ী ২য় পক্ষ ১ম পক্ষের নিকট {d.service_charge ? `${str(d.service_charge)}` : '........'}% হারে সেবামূল্যসহ ঋণের টাকা ফেরত দিতে বাধ্য থাকবেন।</p>
+                    <p>(৪) ঋণ ফেরত দেওয়ার নিয়ম অনুযায়ী ২য় পক্ষ ১ম পক্ষের নিকট {serviceChargeRate ? `${str(serviceChargeRate)}` : '........'}% হারে সেবামূল্যসহ ঋণের টাকা ফেরত দিতে বাধ্য থাকবেন।</p>
                     <p>(৫) সমিতির ঋণ গ্রহীতাগণ স্বনির্ভর হওয়ার লক্ষ্যে সমিতির নির্ধারিত হার অনুযায়ী সঞ্চয় তহবিল জমা করবেন।</p>
                     <p>(৬) যদি কোন বিশেষ কারণে ২য় পক্ষ নির্দিষ্ট সময়ে ঋণের কিস্তি পরিশোধে ব্যর্থ হন, সেক্ষেত্রে অবশ্যই লিখিতভাবে গ্রহণযোগ্য কারণ দর্শানো সাপেক্ষে ২য় পক্ষ ১ম পক্ষ বরাবর নির্ধারিত জরিমানা সহ সংশ্লিষ্ট ঋণের কিস্তির টাকা প্রদান করতে বাধ্য থাকবেন।</p>
                     <p>(৭) এতদিন পর্যন্ত উপরোক্ত ঋণের টাকা ও তার উপর ধার্যকৃত সেবামূল্য পরিশোধ না হবে, ততদিন পর্যন্ত উক্ত ঋণের টাকা দ্বারা অর্জিত সম্পত্তি ১ম পক্ষের সম্পত্তি হিসাবে বিবেচিত হবে।</p>

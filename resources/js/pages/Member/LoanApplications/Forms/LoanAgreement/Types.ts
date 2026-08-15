@@ -19,6 +19,8 @@ export interface LoanAgreementData {
     loan_purpose: string;
     loan_duration_months: number;
     service_charge: number;
+    service_charge_rate?: string | number;
+    interest_rate?: string | number;
     total_amount: number;
     number_of_installments: number;
     installment_amount: number;

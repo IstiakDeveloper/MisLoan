@@ -85,6 +85,9 @@ interface Loan {
         applicant_name_bn: string;
         nid_number?: string;
         mobile_number?: string;
+        application_no?: string;
+        is_legacy?: boolean | number;
+        loan_dofa?: number | string | null;
     };
     issues: Issue[];
 }
@@ -692,7 +695,7 @@ export default function ProcessLoans({ loans, filters, zones = [], areas = [], b
                             <table className="w-full text-left border-collapse">
                                 <thead>
                                     <tr className="bg-slate-50 border-b border-slate-200 text-slate-500 text-[11px] font-bold uppercase tracking-wider">
-                                        <th className="py-3 px-4">আবেদন নং</th>
+                                        <th className="py-3 px-4">সদস্য নং</th>
                                         <th className="py-3 px-4">সদস্য টাইপ / দফা</th>
                                         <th className="py-3 px-4">সদস্য তথ্য</th>
                                         <th className="py-3 px-4">ক্যাটাগরি ও প্রোডাক্ট</th>
@@ -710,11 +713,11 @@ export default function ProcessLoans({ loans, filters, zones = [], areas = [], b
 
                                         return (
                                             <tr key={loan.id} className="hover:bg-slate-50/80 transition-colors">
-                                                {/* App No */}
+                                                {/* Member No */}
                                                 <td className="py-3 px-4 align-top font-mono font-bold text-slate-900">
                                                     <div className="space-y-1">
                                                         <span className="bg-slate-100 px-2 py-0.5 rounded border border-slate-200 inline-block text-xs">
-                                                            {loan.application_no}
+                                                            {loan.member_admission?.application_no || loan.application_no}
                                                         </span>
                                                         {isRevised && (
                                                             <div>

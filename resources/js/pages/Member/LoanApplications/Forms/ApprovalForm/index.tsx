@@ -563,7 +563,7 @@ export default function ApprovalForm({
 
     if (onlyPreview) {
         return (
-            <div className="print-container">
+            <div className="print-container" style={{ fontFamily: 'Kalpurush, Arial, sans-serif', color: '#000' }}>
                 <PrintPreview formData={data} branch={branch} categoryName={categoryName} />
             </div>
         );
@@ -571,7 +571,51 @@ export default function ApprovalForm({
 
     return (
         <AdminLayout>
-            <Head title="আগ্রসর আবেদন ও অনুমোদনপত্র" />
+            <Head title="আগ্রসর আবেদন ও অনুমোদনপত্র">
+                <style>{`
+                    @media print {
+                        @page {
+                            size: A4 portrait;
+                            margin: 12mm 15mm;
+                        }
+
+                        body * {
+                            visibility: hidden !important;
+                            box-shadow: none !important;
+                        }
+
+                        .print-container,
+                        .print-container * {
+                            visibility: visible !important;
+                            font-family: Kalpurush, Arial, sans-serif !important;
+                        }
+
+                        .print-container .font-mono,
+                        .print-container .font-mono * {
+                            font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace !important;
+                        }
+
+                        nav, header, aside, .sidebar, [role="navigation"], .print\\:hidden {
+                            display: none !important;
+                        }
+
+                        .print-container {
+                            position: absolute !important;
+                            left: 0 !important;
+                            top: 0 !important;
+                            width: 100% !important;
+                            max-width: 100% !important;
+                            margin: 0 !important;
+                            padding: 0 !important;
+                            background: white !important;
+                        }
+
+                        p, span, td, th, div {
+                            color: black !important;
+                        }
+                    }
+                `}</style>
+            </Head>
             
             <div className="container mx-auto px-2 sm:px-4 py-4 md:py-6 print:p-0 print:m-0 print:w-full print:max-w-none pb-20 sm:pb-6">
                 {(saveError || flashError) && (

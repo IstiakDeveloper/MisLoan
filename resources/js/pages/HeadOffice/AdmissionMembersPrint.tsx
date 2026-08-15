@@ -326,8 +326,20 @@ export default function AdmissionMembersPrint({ admissions, filters, zones, area
                                     <td className="col-sl">{index + 1}</td>
                                     <td className="col-branch">{admission.branch?.name ?? '—'}</td>
                                     <td className="col-officer">{officerName(admission)}</td>
-                                    <td className="col-component">{str(admission.member_category?.category_name)}</td>
-                                    <td className="col-member">{memberName(admission)}</td>
+                                    <td className="col-member">
+                                        <div style={{ fontWeight: 'bold' }}>
+                                            <span>{memberName(admission)}</span>
+                                            {admission.is_legacy ? (
+                                                <span style={{ fontSize: '7.5px', color: '#b45309', marginLeft: '4px', fontWeight: 'bold' }}>
+                                                    (দফা: {admission.loan_dofa ?? 1})
+                                                </span>
+                                            ) : (
+                                                <span style={{ fontSize: '7.5px', color: '#047857', marginLeft: '4px', fontWeight: 'bold' }}>
+                                                    (নতুন)
+                                                </span>
+                                            )}
+                                        </div>
+                                    </td>
                                     <td className="col-samity">{str(admission.samity?.samity_name)}</td>
                                     <td className="col-mobile">{str(admission.mobile_number)}</td>
                                     <td className="col-num">{houseCount(admission)}</td>

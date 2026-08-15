@@ -41,6 +41,7 @@ class HeadOfficeLoanController extends Controller
             'loanProduct:id,product_name,product_name_bn,product_code',
             'loanCategory:id,category_name,category_name_bn',
             'memberAdmission:id,applicant_name_en,applicant_name_bn,nid_number,mobile_number,application_no,is_legacy,loan_dofa',
+            'samity:id,samity_name,samity_name_bn',
             'submittedBy:id,name'
         ])
         ->select([
@@ -50,6 +51,7 @@ class HeadOfficeLoanController extends Controller
             'loan_product_id',
             'loan_category_id',
             'branch_id',
+            'samity_id',
             'status',
             'requested_amount',
             'approved_amount',
@@ -245,7 +247,8 @@ class HeadOfficeLoanController extends Controller
             'branch.area.zone:id,name',
             'loanProduct:id,product_name,product_name_bn,product_code',
             'loanCategory:id,category_name,category_name_bn',
-            'memberAdmission:id,applicant_name_en,applicant_name_bn,nid_number,mobile_number,application_no',
+            'memberAdmission:id,applicant_name_en,applicant_name_bn,nid_number,mobile_number,application_no,is_legacy,loan_dofa',
+            'samity:id,samity_name,samity_name_bn',
             'submittedBy:id,name'
         ])
         ->select([
@@ -255,9 +258,13 @@ class HeadOfficeLoanController extends Controller
             'loan_product_id',
             'loan_category_id',
             'branch_id',
+            'samity_id',
             'status',
             'requested_amount',
             'approved_amount',
+            'savings_amount',
+            'business_plan',
+            'asset_info',
             'created_at',
             'submitted_at',
             'printed_at',
@@ -327,8 +334,40 @@ class HeadOfficeLoanController extends Controller
             }
         }
 
-        // Get all matching records (no pagination for print)
-        $loans = $query->orderBy('created_at', 'desc')->get();
+        // Get all matching records sorted by branch code (no pagination for print)
+        $loans = $query->orderBy(
+            \App\Models\Branch::select('code')->whereColumn('branches.id', 'loan_applications.branch_id'),
+            'asc'
+        )->orderBy('created_at', 'desc')->get();
+
+        // Calculate and attach accurate savings details from business_plan, asset_info, and loan attributes
+        $loans->transform(function ($loan) {
+            $businessPlan = is_array($loan->business_plan) ? $loan->business_plan : (json_decode($loan->business_plan ?? '', true) ?: []);
+            $assetInfo = is_array($loan->asset_info) ? $loan->asset_info : (json_decode($loan->asset_info ?? '', true) ?: []);
+
+            $savingsGeneral = $businessPlan['general_savings_amount']
+                ?? $assetInfo['general_savings_amount']
+                ?? $assetInfo['savings_amount']
+                ?? $loan->savings_amount
+                ?? null;
+
+            $savingsOther = (!empty($businessPlan['is_against_savings']) ? ($businessPlan['against_savings_amount'] ?? 0) : 0)
+                + (!empty($assetInfo['is_against_savings']) ? ($assetInfo['against_savings_amount'] ?? 0) : 0);
+
+            $savingsGeneralNum = $savingsGeneral !== null && $savingsGeneral !== '' ? (float) $savingsGeneral : 0;
+            $savingsOtherNum = (float) $savingsOther;
+            $savingsTotal = $savingsGeneralNum + $savingsOtherNum;
+
+            $requested = (float) ($loan->requested_amount ?? 0);
+            $generalPercent = $requested > 0 ? round(($savingsGeneralNum / $requested) * 100, 1) : 0;
+
+            $loan->savings_general = $savingsGeneralNum;
+            $loan->savings_other = $savingsOtherNum;
+            $loan->savings_total = $savingsTotal;
+            $loan->general_savings_percent = $generalPercent;
+
+            return $loan;
+        });
 
         $orgFilters = $this->organizationFilterOptions();
 
@@ -596,7 +635,7 @@ class HeadOfficeLoanController extends Controller
                 'samity:id,samity_name',
                 'loanProduct:id,product_name,product_name_bn',
                 'loanCategory:id,category_name,category_name_bn',
-                'memberAdmission:id,applicant_name_bn,applicant_name_en,nid_number,mobile_number,is_legacy,loan_dofa',
+                'memberAdmission:id,applicant_name_bn,applicant_name_en,nid_number,mobile_number,is_legacy,loan_dofa,application_no',
                 'submittedBy:id,name',
                 'issues' => function ($q) {
                     $q->where('status', 'pending')
@@ -872,10 +911,15 @@ class HeadOfficeLoanController extends Controller
     }
 
     /**
-     * Delete loan application (only draft and submitted status)
+     * Delete loan application (only draft and submitted status, restricted to SuperAdmin)
      */
     public function destroy(LoanApplication $loanApplication)
     {
+        $user = auth()->user();
+        if (!$user || !$user->isSuperAdmin()) {
+            return back()->with('error', 'শুধুমাত্র সুপার অ্যাডমিন ঋণ আবেদন মুছে ফেলতে পারবেন।');
+        }
+
         // Only draft and submitted loans can be deleted
         if (!in_array($loanApplication->status, ['draft', 'submitted'])) {
             return back()->with('error', 'Only draft and submitted loan applications can be deleted!');

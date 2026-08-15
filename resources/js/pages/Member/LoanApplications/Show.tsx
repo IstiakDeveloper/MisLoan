@@ -168,6 +168,7 @@ const FORM_ROUTES: Record<number, string> = {
 
 const statusConfig = {
     draft: { label: 'খসড়া', color: 'bg-slate-100 text-slate-800 border-slate-300', icon: AlertCircle },
+    pending: { label: 'অপেক্ষমাণ', color: 'bg-amber-100 text-amber-800 border-amber-300', icon: Clock },
     submitted: { label: 'জমা হয়েছে', color: 'bg-blue-100 text-blue-800 border-blue-300', icon: Clock },
     under_review: { label: 'শাখা পর্যালোচনা', color: 'bg-yellow-100 text-yellow-800 border-yellow-300', icon: Clock },
     ready_for_head_office: { label: 'শাখা অনুমোদিত', color: 'bg-emerald-100 text-emerald-800 border-emerald-300', icon: CheckCircle2 },
@@ -438,8 +439,12 @@ export default function Show({ application, routes }: Props) {
         );
     };
 
-    const StatusIcon = statusConfig[application.status as keyof typeof statusConfig]?.icon || AlertCircle;
-    const statusInfo = statusConfig[application.status as keyof typeof statusConfig];
+    const statusInfo = statusConfig[application.status as keyof typeof statusConfig] || {
+        label: application.status || 'খসড়া',
+        color: 'bg-slate-100 text-slate-800 border-slate-300',
+        icon: AlertCircle,
+    };
+    const StatusIcon = statusInfo.icon || AlertCircle;
     const issues = application.issues ?? [];
     const pendingIssues = issues.filter((issue) => issue.status === 'pending');
     const applicant = application.submittedBy || application.submitted_by;
@@ -678,8 +683,15 @@ export default function Show({ application, routes }: Props) {
                             z-index: 9999999 !important;
                         }
 
+                        #dedicated-print-portal,
                         #dedicated-print-portal * {
                             visibility: visible !important;
+                            font-family: Kalpurush, Arial, sans-serif !important;
+                        }
+
+                        #dedicated-print-portal .font-mono,
+                        #dedicated-print-portal .font-mono * {
+                            font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace !important;
                         }
 
                         #dedicated-print-portal .agrosor-a4-page {

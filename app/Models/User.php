@@ -245,7 +245,7 @@ class User extends Authenticatable
      */
     public function isSuperAdmin(): bool
     {
-        return $this->role?->name === Role::SUPER_ADMIN;
+        return in_array($this->role?->name, [Role::SUPER_ADMIN, 'superadmin', 'Super Admin'], true);
     }
 
     /**

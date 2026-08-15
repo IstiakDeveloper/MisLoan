@@ -1,6 +1,9 @@
 import React from 'react';
 import { formatDateBangla } from '@/utils/dateUtils';
 
+const PRINT_FONT = 'Kalpurush, Arial, sans-serif';
+const pageFontStyle = { fontFamily: PRINT_FONT, color: '#000' } as const;
+
 const DATE_BOX_COUNT = 8;
 const DateDigitBoxes = ({ dateStr }: { dateStr: string }) => {
     const digits = (dateStr || '').replace(/\D/g, '').split('');
@@ -80,12 +83,12 @@ function renderPage1(d: any, branch?: any, categoryName?: string) {
     const fmt = formatDateBangla;
     const nidDigits = (d.nid_smart_card || '').replace(/\D/g, '').slice(0, 17).split('');
     return (
-        <div id="preview-page-1" data-sync="page-1" className="bg-white border border-gray-300 p-5 print:p-0 print:border-none text-[13.5px] print:text-[13px] print:leading-normal" style={{ pageBreakAfter: 'always' }}>
+        <div id="preview-page-1" data-sync="page-1" className="bg-white border border-gray-300 p-5 print:p-0 print:border-none text-[13.5px] print:text-[13px] print:leading-normal" style={{ ...pageFontStyle, pageBreakAfter: 'always' }}>
             <div className="flex flex-col items-center justify-center mb-2 border-b-2 border-gray-400 pb-1">
                 <div className="flex items-center gap-3 mb-1">
                     <img src="/logo.png" alt="Logo" className="h-14 w-14 object-contain print:block" onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }} />
                     <div className="text-center">
-                        <h1 className="text-[12px] font-bold leading-tight print:text-[12px]">মৌসুমী</h1>
+                        <h1 className="text-[22px] font-bold leading-tight text-black print:text-[20px]">মৌসুমী</h1>
                         <p className="text-[12px] leading-tight print:text-[12px]">{branch?.address || d.branch_address || 'উকিলপাড়া, নওগাঁ।'}</p>
                     </div>
                 </div>
@@ -274,7 +277,7 @@ function renderPage2(d: any, categoryName?: string) {
     const cat = categoryName || d.category_name || 'ঋণ';
     const fmt = formatDateBangla;
     return (
-        <div id="preview-page-2" data-sync="page-2" className="bg-white border border-gray-300 p-5 print:p-0 print:border-none text-[13.5px] print:text-[13px] print:leading-normal" style={{ pageBreakAfter: 'always' }}>
+        <div id="preview-page-2" data-sync="page-2" className="bg-white border border-gray-300 p-5 print:p-0 print:border-none text-[13.5px] print:text-[13px] print:leading-normal" style={{ ...pageFontStyle, pageBreakAfter: 'always' }}>
             <div className="flex justify-center mb-1">
                 <div className="inline-block text-center rounded-lg border-2 border-gray-600 px-3 py-1">
                     <h2 className="text-[12px] font-bold print:text-[12px]">{cat} ঋণের প্রোফাইল</h2>
@@ -640,7 +643,7 @@ function renderPage3(d: any) {
     const total_payable = inst_total * installment_count;
 
     return (
-        <div id="preview-page-3" data-sync="page-3" className="bg-white border border-gray-300 p-5 print:p-0 print:border-none text-[13.5px] print:text-[13px] print:leading-normal" style={{ pageBreakAfter: 'always' }}>
+        <div id="preview-page-3" data-sync="page-3" className="bg-white border border-gray-300 p-5 print:p-0 print:border-none text-[13.5px] print:text-[13px] print:leading-normal" style={{ ...pageFontStyle, pageBreakAfter: 'always' }}>
             <div className="mb-6">
                 <h3 className="font-bold mb-3 text-[13px]">০৪. উদ্যোগের {yearsLabel} বছর এর সম্ভাব্য আয়-ব্যয় হিসাব:</h3>
                 <table className="w-full border-collapse border border-gray-600 mb-3 text-center align-middle">
@@ -808,7 +811,7 @@ function renderPage3(d: any) {
 function renderPage4(d: any) {
     const fmt = formatDateBangla;
     return (
-        <div id="preview-page-4" data-sync="page-4" className="bg-white border border-gray-300 p-5 print:p-0 print:border-none text-[14px] print:text-[13.5px] print:leading-normal">
+        <div id="preview-page-4" data-sync="page-4" className="bg-white border border-gray-300 p-5 print:p-0 print:border-none text-[14px] print:text-[13.5px] print:leading-normal" style={pageFontStyle}>
             <div className="mb-6">
                 <div className="font-bold mb-3">০৪. চাকরিজীবীর ক্ষেত্রে (প্রযোজ্য ক্ষেত্রে): <span className="font-normal border-b border-dotted border-gray-600 inline-block min-w-[250px]">{d.employee_workplace_name || ''}</span> মাসিক বেতন: <span className="font-normal border-b border-dotted border-gray-600 inline-block min-w-[250px]">{noDecimal(d.employee_monthly_salary)}</span> হাতে প্রাপ্তি: <span className="font-normal border-b border-dotted border-gray-600 inline-block min-w-[250px]">{noDecimal(d.employee_received_in_hand)}</span></div>
                 <div className="mb-3">অন্যান্য খাতের আয়: <span className="border-b border-dotted border-gray-600 inline-block min-w-[250px]">{noDecimal(d.employee_other_income)}</span> কর্মস্থলে ঋণ অনুমোদনকারীর উপস্থিতির তারিখ ও সময়: <span className="border-b border-dotted border-gray-600 inline-block min-w-[250px]">{(d.employee_approver_presence_time || '').replace('T', ' ')}</span> সাথে কে ছিলো: <span className="border-b border-dotted border-gray-600 inline-block min-w-[250px]">{d.employee_who_was_with || ''}</span></div>
@@ -939,7 +942,16 @@ function renderPage4(d: any) {
 export default function LoanApplicationApprovalPrint({ formData: d, branch, categoryName: cat }: any) {
     if (!d) return null;
     return (
-        <div className="w-[21cm] min-h-[29.7cm] mx-auto bg-white p-8 print:p-0">
+        <div
+            className="loan-approval-print print-container w-[21cm] min-h-[29.7cm] mx-auto bg-white p-8 print:p-0"
+            style={{ fontFamily: PRINT_FONT, color: '#000' }}
+        >
+            <style>{`
+                .loan-approval-print,
+                .loan-approval-print *:not(.font-mono) {
+                    font-family: ${PRINT_FONT} !important;
+                }
+            `}</style>
             {renderPage1(d, branch, cat)}
             {renderPage2(d, cat)}
             {renderPage3(d)}

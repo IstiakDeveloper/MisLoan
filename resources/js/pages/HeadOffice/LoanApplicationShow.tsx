@@ -127,14 +127,17 @@ const FORM_FILLERS: Record<number, string> = {
 
 const statusConfig = {
     draft: { label: 'খসড়া', color: 'bg-gray-100 text-gray-800', icon: AlertCircle },
+    pending: { label: 'অপেক্ষমাণ', color: 'bg-amber-100 text-amber-800', icon: Clock },
     submitted: { label: 'জমা হয়েছে', color: 'bg-blue-100 text-blue-800', icon: Clock },
     under_review: { label: 'পর্যালোচনা', color: 'bg-yellow-100 text-yellow-800', icon: Clock },
+    ready_for_head_office: { label: 'শাখা অনুমোদিত', color: 'bg-indigo-100 text-indigo-800', icon: Clock },
     pending_head_office: { label: 'হেড অফিসে প্রেরিত', color: 'bg-indigo-100 text-indigo-800', icon: Clock },
     approved: { label: 'অনুমোদিত', color: 'bg-green-100 text-green-800', icon: CheckCircle },
     pending_disbursement: { label: 'বিতরণের অপেক্ষায়', color: 'bg-amber-100 text-amber-800', icon: Clock },
     rejected: { label: 'প্রত্যাখ্যাত', color: 'bg-red-100 text-red-800', icon: XCircle },
     disbursed: { label: 'বিতরণ হয়েছে', color: 'bg-emerald-100 text-emerald-800', icon: CheckCircle },
     cancelled: { label: 'বাতিল', color: 'bg-gray-100 text-gray-800', icon: XCircle },
+    needs_correction: { label: 'সংশোধন প্রয়োজন', color: 'bg-orange-100 text-orange-800', icon: AlertCircle },
 };
 
 export default function LoanApplicationShow({ loan, flash }: Props) {
@@ -251,8 +254,12 @@ export default function LoanApplicationShow({ loan, flash }: Props) {
         });
     };
 
-    const StatusIcon = statusConfig[loan.status as keyof typeof statusConfig]?.icon || AlertCircle;
-    const statusInfo = statusConfig[loan.status as keyof typeof statusConfig];
+    const statusInfo = statusConfig[loan.status as keyof typeof statusConfig] || {
+        label: loan.status || 'খসড়া',
+        color: 'bg-gray-100 text-gray-800',
+        icon: AlertCircle,
+    };
+    const StatusIcon = statusInfo.icon || AlertCircle;
 
     return (
         <AdminLayout>
@@ -281,7 +288,14 @@ export default function LoanApplicationShow({ loan, flash }: Props) {
                         .agrosor-a4-page *,
                         #issues-print-area, 
                         #issues-print-area * { 
-                            visibility: visible !important; 
+                            visibility: visible !important;
+                            font-family: Kalpurush, Arial, sans-serif !important;
+                        }
+                        .form-print-area .font-mono,
+                        .form-print-area .font-mono *,
+                        .print-container .font-mono,
+                        .print-container .font-mono * {
+                            font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace !important;
                         }
                         .form-print-area, 
                         .print-container, 

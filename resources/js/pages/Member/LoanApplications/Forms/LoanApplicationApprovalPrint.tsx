@@ -85,7 +85,7 @@ function renderPage1(d: any, branch?: any, categoryName?: string) {
                 <div className="flex items-center gap-3 mb-1">
                     <img src="/logo.png" alt="Logo" className="h-14 w-14 object-contain print:block" onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }} />
                     <div className="text-center">
-                        <h1 className="text-[12px] font-bold leading-tight print:text-[12px]">মৌসুমী</h1>
+                        <h1 className="text-[22px] font-bold leading-tight text-black print:text-[20px]">মৌসুমী</h1>
                         <p className="text-[12px] leading-tight print:text-[12px]">{branch?.address || d.branch_address || 'উকিলপাড়া, নওগাঁ।'}</p>
                     </div>
                 </div>
@@ -936,7 +936,10 @@ function renderPage4(d: any) {
 export default function LoanApplicationApprovalPrint({ formData: d, branch, categoryName: cat }: any) {
     if (!d) return null;
     return (
-        <div className="w-[21cm] min-h-[29.7cm] mx-auto bg-white p-8 print:p-0">
+        <div
+            className="w-[21cm] min-h-[29.7cm] mx-auto bg-white p-8 print:p-0"
+            style={{ fontFamily: 'Kalpurush, Arial, sans-serif', color: '#000' }}
+        >
             {renderPage1(d, branch, cat)}
             {renderPage2(d, cat)}
             {renderPage3(d)}

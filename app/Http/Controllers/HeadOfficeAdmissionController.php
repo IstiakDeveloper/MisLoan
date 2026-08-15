@@ -281,8 +281,11 @@ class HeadOfficeAdmissionController extends Controller
             }
         }
 
-        // Get all matching records (no pagination for print)
-        $admissions = $query->orderBy('created_at', 'desc')->get();
+        // Get all matching records sorted by branch code (no pagination for print)
+        $admissions = $query->orderBy(
+            \App\Models\Branch::select('code')->whereColumn('branches.id', 'member_admissions.branch_id'),
+            'asc'
+        )->orderBy('created_at', 'desc')->get();
 
         $orgFilters = $this->organizationFilterOptions();
 
@@ -989,10 +992,15 @@ class HeadOfficeAdmissionController extends Controller
     }
 
     /**
-     * Delete admission. A member with any loan application cannot be deleted.
+     * Delete admission (restricted to SuperAdmin). A member with any loan application cannot be deleted.
      */
     public function destroy(MemberAdmission $admission)
     {
+        $user = auth()->user();
+        if (!$user || !$user->isSuperAdmin()) {
+            return back()->with('error', 'শুধুমাত্র সুপার অ্যাডমিন সদস্য ভর্তি মুছে ফেলতে পারবেন।');
+        }
+
         $this->ensureCanAccessBranch($admission->branch_id);
 
         // A member linked to any loan application cannot be deleted.

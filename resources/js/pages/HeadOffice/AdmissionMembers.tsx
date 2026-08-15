@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Head, router, Link, useForm } from '@inertiajs/react';
+import { Head, router, Link, useForm, usePage } from '@inertiajs/react';
 import AdminLayout from '@/layouts/admin-layout';
 import { formatDate } from '@/utils/dateUtils';
 import {
@@ -23,8 +23,10 @@ import {
     MapPin,
     Download,
     UserCheck,
+    Sparkles,
 } from 'lucide-react';
 import { MemberAdmission } from '@/types/memberAdmission';
+import AutoFitTableContainer from '@/components/AutoFitTableContainer';
 
 interface Zone {
     id: number;
@@ -108,6 +110,10 @@ function branchLabel(admission: MemberAdmission): { name: string; meta?: string 
 }
 
 export default function AdmissionMembers({ admissions, filters, stats, zones, areas, branches }: Props) {
+    const { auth } = usePage().props as any;
+    const roleName = auth?.user?.role?.name || (typeof auth?.user?.role === 'string' ? auth?.user?.role : '');
+    const isSuperAdmin = roleName === 'super_admin' || roleName === 'superadmin' || roleName === 'Super Admin';
+
     const [searchQuery, setSearchQuery] = useState(filters.search || '');
     const [statusFilter, setStatusFilter] = useState(filters.status || '');
     const [showHistoryModal, setShowHistoryModal] = useState(false);
@@ -371,18 +377,20 @@ export default function AdmissionMembers({ admissions, filters, stats, zones, ar
                     <FileText className="w-4 h-4" />
                 </button>
             )}
-            {(admission.loan_applications_count ?? 0) > 0 ? (
-                <span className="p-1.5 text-slate-300 cursor-not-allowed" title="ঋণ আবেদন থাকায় মুছে ফেলা যাবে না">
-                    <Trash2 className="w-4 h-4" />
-                </span>
-            ) : (
-                <button
-                    onClick={() => handleDelete(admission.id, admission.application_no)}
-                    className="p-1.5 text-rose-500 hover:text-white hover:bg-rose-600 border border-rose-200 hover:border-rose-600 rounded-md transition"
-                    title="মুছুন"
-                >
-                    <Trash2 className="w-4 h-4" />
-                </button>
+            {isSuperAdmin && (
+                (admission.loan_applications_count ?? 0) > 0 ? (
+                    <span className="p-1.5 text-slate-300 cursor-not-allowed" title="ঋণ আবেদন থাকায় মুছে ফেলা যাবে না">
+                        <Trash2 className="w-4 h-4" />
+                    </span>
+                ) : (
+                    <button
+                        onClick={() => handleDelete(admission.id, admission.application_no)}
+                        className="p-1.5 text-rose-500 hover:text-white hover:bg-rose-600 border border-rose-200 hover:border-rose-600 rounded-md transition"
+                        title="মুছুন"
+                    >
+                        <Trash2 className="w-4 h-4" />
+                    </button>
+                )
             )}
         </div>
     );
@@ -669,121 +677,149 @@ export default function AdmissionMembers({ admissions, filters, stats, zones, ar
                         )}
                     </div>
 
-                    {/* Desktop table */}
-                    <div className="hidden md:block overflow-x-auto">
-                        <table className="w-full text-left border-collapse">
-                            <thead>
-                                <tr className="bg-gradient-to-r from-blue-700 to-blue-600 text-[11px] font-semibold text-white uppercase tracking-wide">
-                                    <th className="py-3.5 px-3 border-b border-blue-500 text-center">ক্রমিক নং</th>
-                                    <th className="py-3.5 px-3 border-b border-blue-500">সদস্য নাম্বার</th>
-                                    <th className="py-3.5 px-3 border-b border-blue-500">সদস্য টাইপ / দফা</th>
-                                    <th className="py-3.5 px-3 border-b border-blue-500">আবেদনকারী</th>
-                                    <th className="py-3.5 px-3 border-b border-blue-500">মোবাইল</th>
-                                    <th className="py-3.5 px-3 border-b border-blue-500">শাখা</th>
-                                    <th className="py-3.5 px-3 border-b border-blue-500">সমিতি</th>
-                                    <th className="py-3.5 px-3 border-b border-blue-500">তৈরি করেছেন</th>
-                                    <th className="py-3.5 px-3 border-b border-blue-500">স্ট্যাটাস</th>
-                                    <th className="py-3.5 px-3 border-b border-blue-500">পেন্ডিং অবস্থান</th>
-                                    <th className="py-3.5 px-3 border-b border-blue-500">প্রিন্ট</th>
-                                    <th className="py-3.5 px-3 border-b border-blue-500">তারিখ</th>
-                                    <th className="py-3.5 px-3 border-b border-blue-500 text-right">অ্যাকশন</th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                {admissions.data.length === 0 ? (
-                                    <tr>
-                                        <td colSpan={13} className="py-12 text-center text-slate-400 border-b border-blue-100">
-                                            কোনো ভর্তি আবেদন পাওয়া যায়নি
-                                        </td>
+                    {/* Desktop table with auto-fit zoom scaling */}
+                    <div className="hidden md:block">
+                        <AutoFitTableContainer
+                            minWidth={1200}
+                            storageKey="ho_admission_members_table"
+                            title="সদস্য ভর্তি আবেদন তালিকা"
+                            subtitle={`(পৃষ্ঠা ${admissions.current_page || 1}/${admissions.last_page || 1} · মোট ${admissions.total || 0} টি)`}
+                        >
+                            <table className="w-full text-left border-collapse table-auto">
+                                <thead>
+                                    <tr className="bg-gradient-to-r from-blue-700 to-blue-600 text-[11px] font-semibold text-white uppercase tracking-wide">
+                                        <th className="py-2.5 px-2.5 border-b border-blue-500 text-center w-10">ক্রমিক</th>
+                                        <th className="py-2.5 px-2.5 border-b border-blue-500">আবেদন নং ও টাইপ</th>
+                                        <th className="py-2.5 px-2.5 border-b border-blue-500">আবেদনকারী ও মোবাইল</th>
+                                        <th className="py-2.5 px-2.5 border-b border-blue-500">শাখা ও সমিতি</th>
+                                        <th className="py-2.5 px-2.5 border-b border-blue-500">তৈরি ও তারিখ</th>
+                                        <th className="py-2.5 px-2.5 border-b border-blue-500">স্ট্যাটাস</th>
+                                        <th className="py-2.5 px-2.5 border-b border-blue-500">পেন্ডিং অবস্থান</th>
+                                        <th className="py-2.5 px-2.5 border-b border-blue-500 text-center">প্রিন্ট</th>
+                                        <th className="py-2.5 px-2.5 border-b border-blue-500 text-center">অ্যাকশন</th>
                                     </tr>
-                                ) : (
-                                    admissions.data.map((admission, index) => {
-                                        const branch = branchLabel(admission);
-                                        return (
-                                            <tr
-                                                key={admission.id}
-                                                className={`text-sm border-b border-blue-100 hover:bg-blue-50/70 transition-colors ${
-                                                    index % 2 === 1 ? 'bg-sky-50/40' : 'bg-white'
-                                                }`}
-                                            >
-                                                <td className="py-3 px-3 text-center font-bold text-slate-600 text-xs whitespace-nowrap">
-                                                    {((admissions.current_page || 1) - 1) * (admissions.per_page || 15) + index + 1}
-                                                </td>
-                                                <td className="py-3 px-3 font-mono font-semibold text-blue-700 text-xs whitespace-nowrap">
-                                                    {admission.application_no}
-                                                </td>
-                                                <td className="py-3 px-3 whitespace-nowrap">
-                                                    {admission.is_legacy ? (
-                                                        <span className="inline-flex items-center px-2 py-0.5 bg-amber-100 text-amber-800 text-[11px] font-medium rounded-full">
-                                                            পুরাতন{admission.loan_dofa ? ` · দফা ${admission.loan_dofa}` : ''}
-                                                        </span>
-                                                    ) : (
-                                                        <span className="inline-flex items-center px-2 py-0.5 bg-emerald-100 text-emerald-800 text-[11px] font-medium rounded-full">
-                                                            নতুন সদস্য
-                                                        </span>
-                                                    )}
-                                                </td>
-                                                <td className="py-3 px-3">
-                                                    <div className="font-semibold text-slate-900">
-                                                        {admission.applicant_name_bn || admission.applicant_name_en}
-                                                    </div>
-                                                    {admission.applicant_name_bn && admission.applicant_name_en && (
-                                                        <div className="text-xs text-slate-500">{admission.applicant_name_en}</div>
-                                                    )}
-                                                    {admission.member_category?.category_name && (
-                                                        <div className="text-[10px] text-blue-400 mt-0.5">
-                                                            {admission.member_category.category_name}
+                                </thead>
+                                <tbody>
+                                    {admissions.data.length === 0 ? (
+                                        <tr>
+                                            <td colSpan={9} className="py-12 text-center text-slate-400 border-b border-blue-100">
+                                                কোনো ভর্তি আবেদন পাওয়া যায়নি
+                                            </td>
+                                        </tr>
+                                    ) : (
+                                        admissions.data.map((admission, index) => {
+                                            const branch = branchLabel(admission);
+                                            return (
+                                                <tr
+                                                    key={admission.id}
+                                                    className={`text-xs border-b border-blue-100/70 hover:bg-blue-50/70 transition-colors ${
+                                                        index % 2 === 1 ? 'bg-sky-50/30' : 'bg-white'
+                                                    }`}
+                                                >
+                                                    {/* Serial No */}
+                                                    <td className="py-2 px-2 text-center font-bold text-slate-500 text-[11px] whitespace-nowrap">
+                                                        {((admissions.current_page || 1) - 1) * (admissions.per_page || 15) + index + 1}
+                                                    </td>
+
+                                                    {/* App No & Member Type */}
+                                                    <td className="py-2 px-2.5 whitespace-nowrap">
+                                                        <div className="font-mono font-bold text-blue-700 text-xs">
+                                                            {admission.application_no}
                                                         </div>
-                                                    )}
-                                                </td>
-                                                <td className="py-3 px-3 text-slate-700 whitespace-nowrap">{admission.mobile_number || '—'}</td>
-                                                <td className="py-3 px-3">
-                                                    <div className="font-medium text-slate-800 flex items-center gap-1.5">
-                                                        <Building2 className="w-3.5 h-3.5 text-blue-400 shrink-0" />
-                                                        {branch.name}
-                                                    </div>
-                                                    {branch.meta && (
-                                                        <div className="text-[11px] text-slate-400 mt-0.5 pl-5">{branch.meta}</div>
-                                                    )}
-                                                </td>
-                                                <td className="py-3 px-3 text-slate-700">
-                                                    {admission.samity?.samity_name || '—'}
-                                                </td>
-                                                <td className="py-3 px-3 text-slate-700">{creatorName(admission)}</td>
-                                                <td className="py-3 px-3">{getStatusBadge(admission.status)}</td>
-                                                <td className="py-3 px-3">
-                                                    <span className="inline-flex items-center gap-1 font-semibold text-blue-800 bg-blue-50 border border-blue-200 px-2 py-1 rounded-md text-[11px]">
-                                                        <MapPin className="w-3 h-3 shrink-0 text-blue-500" />
-                                                        {admission.tracking_state?.label ?? '—'}
-                                                    </span>
-                                                </td>
-                                                <td className="py-3 px-3 text-sm">
-                                                    {admission.printed_at ? (
-                                                        <span className="inline-flex items-center gap-1 text-emerald-700 text-xs font-medium">
-                                                            <CheckCircle className="w-3.5 h-3.5" />
-                                                            সম্পন্ন
+                                                        <div className="mt-0.5">
+                                                            {admission.is_legacy ? (
+                                                                <span className="inline-flex items-center px-1.5 py-0.2 bg-amber-100 text-amber-800 text-[10px] font-semibold rounded">
+                                                                    পুরাতন{admission.loan_dofa ? ` · দফা ${admission.loan_dofa}` : ''}
+                                                                </span>
+                                                            ) : (
+                                                                <span className="inline-flex items-center px-1.5 py-0.2 bg-emerald-100 text-emerald-800 text-[10px] font-semibold rounded">
+                                                                    নতুন সদস্য
+                                                                </span>
+                                                            )}
+                                                        </div>
+                                                    </td>
+
+                                                    {/* Applicant Name & Mobile */}
+                                                    <td className="py-2 px-2.5">
+                                                        <div className="font-bold text-slate-900 leading-tight">
+                                                            {admission.applicant_name_bn || admission.applicant_name_en}
+                                                        </div>
+                                                        <div className="font-mono text-slate-600 text-[11px] flex items-center gap-1 mt-0.5">
+                                                            <Phone className="w-3 h-3 text-blue-500 shrink-0" />
+                                                            <span>{admission.mobile_number || '—'}</span>
+                                                        </div>
+                                                        {admission.member_category?.category_name && (
+                                                            <div className="text-[10px] text-blue-500 font-medium mt-0.5">
+                                                                {admission.member_category.category_name}
+                                                            </div>
+                                                        )}
+                                                    </td>
+
+                                                    {/* Branch & Samity */}
+                                                    <td className="py-2 px-2.5">
+                                                        <div className="font-semibold text-slate-800 flex items-center gap-1 leading-tight">
+                                                            <Building2 className="w-3 h-3 text-blue-500 shrink-0" />
+                                                            <span>{branch.name}</span>
+                                                        </div>
+                                                        <div className="text-[11px] text-slate-600 mt-0.5">
+                                                            {admission.samity?.samity_name || '—'}
+                                                        </div>
+                                                        {branch.meta && (
+                                                            <div className="text-[10px] text-slate-400 truncate max-w-[130px]">{branch.meta}</div>
+                                                        )}
+                                                    </td>
+
+                                                    {/* Creator & Date */}
+                                                    <td className="py-2 px-2.5 whitespace-nowrap">
+                                                        <div className="text-slate-700 font-medium text-[11.5px]">
+                                                            {creatorName(admission)}
+                                                        </div>
+                                                        <div className="text-slate-400 text-[10.5px] mt-0.5">
+                                                            {admission.submitted_at
+                                                                ? formatDate(admission.submitted_at)
+                                                                : formatDate(admission.created_at)}
+                                                        </div>
+                                                    </td>
+
+                                                    {/* Status */}
+                                                    <td className="py-2 px-2 whitespace-nowrap">
+                                                        {getStatusBadge(admission.status)}
+                                                    </td>
+
+                                                    {/* Pending Position */}
+                                                    <td className="py-2 px-2 whitespace-nowrap">
+                                                        <span className="inline-flex items-center gap-1 font-semibold text-blue-800 bg-blue-50 border border-blue-200 px-2 py-0.5 rounded-md text-[10.5px]">
+                                                            <MapPin className="w-3 h-3 shrink-0 text-blue-500" />
+                                                            {admission.tracking_state?.label ?? '—'}
                                                         </span>
-                                                    ) : (
-                                                        <span className="inline-flex items-center gap-1 text-slate-400 text-xs">
-                                                            <Circle className="w-3.5 h-3.5" />
-                                                            প্রিন্ট হয়নি
-                                                        </span>
-                                                    )}
-                                                </td>
-                                                <td className="py-3 px-3 text-slate-600 text-xs whitespace-nowrap">
-                                                    {admission.submitted_at
-                                                        ? formatDate(admission.submitted_at)
-                                                        : formatDate(admission.created_at)}
-                                                </td>
-                                                <td className="py-3 px-3">
-                                                    <ActionButtons admission={admission} />
-                                                </td>
-                                            </tr>
-                                        );
-                                    })
-                                )}
-                            </tbody>
-                        </table>
+                                                    </td>
+
+                                                    {/* Print Status */}
+                                                    <td className="py-2 px-2 text-center whitespace-nowrap">
+                                                        {admission.printed_at ? (
+                                                            <span className="inline-flex items-center gap-1 text-emerald-700 text-[10.5px] font-semibold bg-emerald-50 border border-emerald-200 px-1.5 py-0.5 rounded">
+                                                                <CheckCircle className="w-3 h-3 text-emerald-600" />
+                                                                প্রিন্ট
+                                                            </span>
+                                                        ) : (
+                                                            <span className="inline-flex items-center gap-1 text-slate-400 text-[10.5px] bg-slate-50 border border-slate-200 px-1.5 py-0.5 rounded">
+                                                                <Circle className="w-2.5 h-2.5" />
+                                                                হয়নি
+                                                            </span>
+                                                        )}
+                                                    </td>
+
+                                                    {/* Actions */}
+                                                    <td className="py-2 px-2 text-center whitespace-nowrap">
+                                                        <ActionButtons admission={admission} />
+                                                    </td>
+                                                </tr>
+                                            );
+                                        })
+                                    )}
+                                </tbody>
+                            </table>
+                        </AutoFitTableContainer>
                     </div>
 
                     {admissions.last_page > 1 && (
