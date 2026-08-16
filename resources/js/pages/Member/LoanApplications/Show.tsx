@@ -750,24 +750,9 @@ export default function Show({ application, routes }: Props) {
                                 <div className="flex items-center gap-2 flex-wrap">
                                     <h2 className="text-lg sm:text-2xl font-bold text-slate-900 tracking-tight">ঋণ আবেদন হাব</h2>
                                     
-                                    <div className="flex items-center gap-1">
-                                        <Badge variant="outline" className="font-mono text-[11px] sm:text-xs text-indigo-700 bg-indigo-50 border-indigo-200 font-semibold px-2 py-0.5">
-                                            মেম্বার কোড: {application.member_admission?.application_no || '-'}
-                                        </Badge>
-                                        {application.status !== 'disbursed' && (
-                                            <button
-                                                type="button"
-                                                onClick={() => {
-                                                    setNewMemberCode(application.member_admission?.application_no || '');
-                                                    setMemberCodeModalOpen(true);
-                                                }}
-                                                className="p-1 rounded hover:bg-slate-200 text-slate-600 transition"
-                                                title="মেম্বার কোড পরিবর্তন করুন (বিতরণের আগে করতে পারবেন)"
-                                            >
-                                                <Edit className="w-3.5 h-3.5 text-indigo-600" />
-                                            </button>
-                                        )}
-                                    </div>
+                                    <Badge variant="outline" className="font-mono text-[11px] sm:text-xs text-indigo-700 bg-indigo-50 border-indigo-200 font-semibold px-2 py-0.5">
+                                        আবেদন নং: {application.application_no || '-'}
+                                    </Badge>
 
                                     <Badge className={`${statusInfo?.color || 'bg-slate-100 text-slate-800'} text-[11px] sm:text-xs font-medium border px-2 py-0.5`}>
                                         <StatusIcon className="w-3 h-3 mr-1 inline" />
@@ -937,22 +922,7 @@ export default function Show({ application, routes }: Props) {
                             <div className="min-w-0 flex-1">
                                 <p className="text-[10px] sm:text-[11px] font-semibold uppercase tracking-wider text-slate-400">সদস্যের নাম</p>
                                 <p className="text-xs sm:text-sm font-bold text-slate-900 truncate" title={memberName}>{memberName}</p>
-                                <div className="flex items-center gap-1 mt-0.5">
-                                    <p className="text-[10px] sm:text-xs text-slate-500 font-mono truncate">কোড: {application.member_admission?.application_no || '-'}</p>
-                                    {application.status !== 'disbursed' && (
-                                        <button
-                                            type="button"
-                                            onClick={() => {
-                                                setNewMemberCode(application.member_admission?.application_no || '');
-                                                setMemberCodeModalOpen(true);
-                                            }}
-                                            className="text-indigo-600 hover:text-indigo-800 p-0.5"
-                                            title="মেম্বার কোড পরিবর্তন করুন"
-                                        >
-                                            <Edit className="w-3 h-3" />
-                                        </button>
-                                    )}
-                                </div>
+                                <p className="text-[10px] sm:text-xs text-slate-500 font-mono truncate mt-0.5">আবেদন নং: {application.application_no || '-'}</p>
                             </div>
                         </div>
 
@@ -1341,6 +1311,10 @@ export default function Show({ application, routes }: Props) {
                                         </CardTitle>
                                     </CardHeader>
                                     <CardContent className="p-3.5 sm:p-4 space-y-2.5 sm:space-y-3 text-xs sm:text-sm">
+                                        <div className="flex justify-between py-1.5 border-b border-slate-100">
+                                            <span className="text-slate-500">আবেদন নং:</span>
+                                            <span className="font-mono font-bold text-indigo-700">{application.application_no || '-'}</span>
+                                        </div>
                                         <div className="flex justify-between py-1.5 border-b border-slate-100">
                                             <span className="text-slate-500">ঋণ ক্যাটাগরি:</span>
                                             <span className="font-semibold text-slate-900">

@@ -10,8 +10,6 @@ import {
     Edit,
     Trash2,
     Send,
-    ChevronLeft,
-    ChevronRight,
     RotateCcw,
     Ban,
     Printer,
@@ -27,6 +25,9 @@ import {
     Sparkles,
 } from 'lucide-react';
 import { MemberAdmission } from '@/types/memberAdmission';
+import ListPagination from '@/components/ListPagination';
+import AutoFitTableContainer from '@/components/AutoFitTableContainer';
+import { keepListFilters } from '@/utils/branchLabel';
 
 interface Props {
     admissions: {
@@ -43,6 +44,7 @@ interface Props {
         search?: string;
         from_date?: string;
         to_date?: string;
+        per_page?: number | string;
     };
     stats: {
         total: number;
@@ -120,7 +122,7 @@ export default function Index({ admissions, filters, stats }: Props) {
             '/member-admissions/send-to-head-office-bulk',
             { ids: selectedHoIds },
             {
-                preserveScroll: true,
+                ...keepListFilters,
                 onFinish: () => {
                     setBulkSending(false);
                     setSelectedHoIds([]);
@@ -185,6 +187,7 @@ export default function Index({ admissions, filters, stats }: Props) {
         if (statusFilter) params.status = statusFilter;
         if (fromDate) params.from_date = fromDate;
         if (toDate) params.to_date = toDate;
+        params.per_page = String(admissions.per_page || filters.per_page || 20);
         return params;
     };
 
@@ -210,7 +213,7 @@ export default function Index({ admissions, filters, stats }: Props) {
 
     const handleDelete = (id: number, applicationNo: string) => {
         if (confirm(`আবেদন নং ${applicationNo} মুছে ফেলতে চান?`)) {
-            router.delete(`/member-admissions/${id}`);
+            router.delete(`/member-admissions/${id}`, keepListFilters);
         }
     };
 
@@ -219,7 +222,7 @@ export default function Index({ admissions, filters, stats }: Props) {
             ? `আবেদন নং ${applicationNo} পুরাতন সদস্য — জমা দিলে স্বয়ংক্রিয়ভাবে অনুমোদিত হবে। চালিয়ে যাবেন?`
             : `আবেদন নং ${applicationNo} জমা দিতে চান?`;
         if (confirm(msg)) {
-            router.patch(`/member-admissions/${id}/submit`);
+            router.patch(`/member-admissions/${id}/submit`, {}, keepListFilters);
         }
     };
 
@@ -240,6 +243,7 @@ export default function Index({ admissions, filters, stats }: Props) {
                 revision_note: revisionNote,
             },
             {
+                ...keepListFilters,
                 onSuccess: () => {
                     setShowResubmitModal(false);
                     setSelectedAdmission(null);
@@ -266,6 +270,7 @@ export default function Index({ admissions, filters, stats }: Props) {
                 rejection_reason: rejectionReason,
             },
             {
+                ...keepListFilters,
                 onSuccess: () => {
                     setShowRejectModal(false);
                     setSelectedAdmission(null);
@@ -611,7 +616,7 @@ export default function Index({ admissions, filters, stats }: Props) {
                                             <button
                                                 onClick={() => {
                                                     if (confirm(`এই আবেদনটি Head Office এ পাঠাতে চান? (${admission.application_no})`)) {
-                                                        router.patch(`/member-admissions/${admission.id}/send-to-head-office`);
+                                                        router.patch(`/member-admissions/${admission.id}/send-to-head-office`, {}, keepListFilters);
                                                     }
                                                 }}
                                                 className="p-2 text-white bg-purple-600 hover:bg-purple-700 rounded-xl transition"
@@ -637,206 +642,203 @@ export default function Index({ admissions, filters, stats }: Props) {
                     </div>
 
                     {/* ── DESKTOP TABLE VIEW (hidden md:block) ────────────────────────── */}
-                    <div className="hidden md:block member-admission-index-table-wrap overflow-x-auto print:overflow-visible print:block">
-                        <table className="w-full text-left border-collapse member-admission-index-table">
-                            <thead>
-                                <tr className="bg-slate-50/80 border-b border-slate-200 text-[11px] font-bold text-slate-500 uppercase tracking-wider">
-                                    {isBranchUser && (
-                                        <th className="py-3.5 px-3 text-center print:hidden w-10">
-                                            {readyForHoIds.length > 0 && (
-                                                <input
-                                                    type="checkbox"
-                                                    checked={allReadySelected}
-                                                    onChange={toggleSelectAllReady}
-                                                    className="rounded border-slate-300 text-purple-600 focus:ring-purple-500"
-                                                    title="সব সিলেক্ট"
-                                                />
-                                            )}
-                                        </th>
-                                    )}
-                                    <th className="py-3.5 px-4 text-center">ক্রমিক নং</th>
-                                    <th className="py-3.5 px-4">সদস্য নাম্বার</th>
-                                    <th className="py-3.5 px-4">আবেদনকারী</th>
-                                    <th className="py-3.5 px-4">মোবাইল</th>
-                                    <th className="py-3.5 px-4">শাখা</th>
-                                    <th className="py-3.5 px-4">সমিতি</th>
-                                    <th className="py-3.5 px-4">ক্যাটাগরি</th>
-                                    <th className="py-3.5 px-4">স্ট্যাটাস</th>
-                                    <th className="py-3.5 px-4">পেন্ডিং অবস্থান</th>
-                                    <th className="py-3.5 px-4">তারিখ</th>
-                                    <th className="py-3.5 px-4 text-right print:hidden">অ্যাকশন</th>
-                                </tr>
-                            </thead>
-                            <tbody className="divide-y divide-slate-100 text-sm">
-                                {admissions.data.length === 0 ? (
-                                    <tr>
-                                        <td colSpan={isBranchUser ? 12 : 11} className="py-12 text-center text-slate-400">
-                                            কোনো ভর্তি আবেদন পাওয়া যায়নি
-                                        </td>
+                    <div className="hidden md:block member-admission-index-table-wrap print:overflow-visible print:block">
+                        <AutoFitTableContainer
+                            minWidth={1150}
+                            storageKey="member_admissions_table"
+                            title="সদস্য ভর্তি আবেদন তালিকা"
+                            subtitle={`(পৃষ্ঠা ${admissions.current_page || 1}/${admissions.last_page || 1} · মোট ${admissions.total || 0} টি)`}
+                        >
+                            <table className="w-full text-left border-collapse member-admission-index-table">
+                                <thead>
+                                    <tr className="bg-slate-50/80 border-b border-slate-200 text-[11px] font-bold text-slate-500 uppercase tracking-wider">
+                                        {isBranchUser && (
+                                            <th className="py-3.5 px-3 text-center print:hidden w-10">
+                                                {readyForHoIds.length > 0 && (
+                                                    <input
+                                                        type="checkbox"
+                                                        checked={allReadySelected}
+                                                        onChange={toggleSelectAllReady}
+                                                        className="rounded border-slate-300 text-purple-600 focus:ring-purple-500"
+                                                        title="সব সিলেক্ট"
+                                                    />
+                                                )}
+                                            </th>
+                                        )}
+                                        <th className="py-3.5 px-4 text-center">ক্রমিক নং</th>
+                                        <th className="py-3.5 px-4">সদস্য নাম্বার</th>
+                                        <th className="py-3.5 px-4">আবেদনকারী</th>
+                                        <th className="py-3.5 px-4">মোবাইল</th>
+                                        <th className="py-3.5 px-4">শাখা</th>
+                                        <th className="py-3.5 px-4">সমিতি</th>
+                                        <th className="py-3.5 px-4">ক্যাটাগরি</th>
+                                        <th className="py-3.5 px-4">স্ট্যাটাস</th>
+                                        <th className="py-3.5 px-4">পেন্ডিং অবস্থান</th>
+                                        <th className="py-3.5 px-4">তারিখ</th>
+                                        <th className="py-3.5 px-4 text-right print:hidden">অ্যাকশন</th>
                                     </tr>
-                                ) : (
-                                    admissions.data.map((admission, index) => (
-                                        <tr key={admission.id} className="hover:bg-slate-50/60 transition-colors">
-                                            {isBranchUser && (
-                                                <td className="py-4 px-3 text-center print:hidden">
-                                                    {admission.status === 'ready_for_head_office' ? (
-                                                        <input
-                                                            type="checkbox"
-                                                            checked={selectedHoIds.includes(admission.id)}
-                                                            onChange={() => toggleHoSelect(admission.id)}
-                                                            className="rounded border-slate-300 text-purple-600 focus:ring-purple-500"
-                                                        />
-                                                    ) : null}
-                                                </td>
-                                            )}
-                                            <td className="py-4 px-4 text-center font-bold text-slate-500 text-xs whitespace-nowrap">
-                                                {((admissions.current_page || 1) - 1) * (admissions.per_page || 15) + index + 1}
-                                            </td>
-                                            <td className="py-4 px-4 font-mono font-bold text-blue-700 text-xs whitespace-nowrap">
-                                                {admission.application_no}
-                                            </td>
-                                            <td className="py-4 px-4">
-                                                <div className="font-bold text-slate-800">
-                                                    {admission.applicant_name_bn || admission.applicant_name_en}
-                                                </div>
-                                                {getActiveLoanBadge(admission)}
-                                                {admission.is_legacy && (
-                                                    <span className="mt-0.5 inline-flex items-center rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-semibold text-amber-800">
-                                                        পুরাতন{admission.loan_dofa ? ` · দফা ${admission.loan_dofa}` : ''}
-                                                    </span>
-                                                )}
-                                                {admission.applicant_name_bn && admission.applicant_name_en && (
-                                                    <div className="text-xs text-slate-500 font-medium">{admission.applicant_name_en}</div>
-                                                )}
-                                            </td>
-                                            <td className="py-4 px-4 font-medium text-slate-700 whitespace-nowrap">{admission.mobile_number}</td>
-                                            <td className="py-4 px-4 font-medium text-slate-700">{admission.branch?.name || '–'}</td>
-                                            <td className="py-4 px-4 font-medium text-slate-700">{admission.samity?.samity_name || '–'}</td>
-                                            <td className="py-4 px-4 font-medium text-slate-700">{admission.member_category?.category_name || '–'}</td>
-                                            <td className="py-4 px-4">{getStatusBadge(admission.status)}</td>
-                                            <td className="py-4 px-4">
-                                                <span className="inline-block text-xs font-bold text-indigo-700 bg-indigo-50 px-2.5 py-1 rounded-md border border-indigo-100">
-                                                    {admission.tracking_state?.label ?? '—'}
-                                                </span>
-                                            </td>
-                                            <td className="py-4 px-4 text-xs font-medium text-slate-500 whitespace-nowrap">
-                                                {formatDate(admission.created_at)}
-                                            </td>
-                                            <td className="py-4 px-4 text-right print:hidden">
-                                                <div className="flex items-center justify-end gap-1">
-                                                    <Link
-                                                        href={`/member-admissions/${admission.id}`}
-                                                        className="p-2 text-slate-600 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
-                                                        title="দেখুন"
-                                                    >
-                                                        <Eye className="w-4 h-4" />
-                                                    </Link>
-
-                                                    {canApplyLoan(admission) && (
-                                                        <Link
-                                                            href={`/member/loan-applications?member_id=${admission.id}`}
-                                                            className="p-2 text-indigo-600 hover:bg-indigo-50 rounded-lg transition-colors"
-                                                            title="ঋণ আবেদন"
-                                                        >
-                                                            <Banknote className="w-4 h-4" />
-                                                        </Link>
-                                                    )}
-
-                                                    {(admission.status === 'draft' || admission.status === 'rejected') && (
-                                                        <>
-                                                            <Link
-                                                                href={`/member-admissions/${admission.id}/edit`}
-                                                                className="p-2 text-amber-600 hover:bg-amber-50 rounded-lg transition-colors"
-                                                                title="সম্পাদনা"
-                                                            >
-                                                                <Edit className="w-4 h-4" />
-                                                            </Link>
-                                                            {admission.status === 'draft' && (
-                                                                <button
-                                                                    onClick={() => handleSubmit(admission.id, admission.application_no, admission.is_legacy)}
-                                                                    className="p-2 text-emerald-600 hover:bg-emerald-50 rounded-lg transition-colors"
-                                                                    title={admission.is_legacy ? 'সংরক্ষণ ও অটো অনুমোদন' : 'জমা দিন'}
-                                                                >
-                                                                    <Send className="w-4 h-4" />
-                                                                </button>
-                                                            )}
-                                                        </>
-                                                    )}
-
-                                                    {admission.status === 'needs_revision' && !isFieldOfficer && (
-                                                        <>
-                                                            <button
-                                                                onClick={() => openResubmitModal(admission)}
-                                                                className="p-2 text-emerald-600 hover:bg-emerald-50 rounded-lg transition-colors"
-                                                                title="পুনরায় জমা"
-                                                            >
-                                                                <RotateCcw className="w-4 h-4" />
-                                                            </button>
-                                                            <button
-                                                                onClick={() => openRejectModal(admission)}
-                                                                className="p-2 text-rose-600 hover:bg-rose-50 rounded-lg transition-colors"
-                                                                title="প্রত্যাখ্যান"
-                                                            >
-                                                                <Ban className="w-4 h-4" />
-                                                            </button>
-                                                        </>
-                                                    )}
-
-                                                    {admission.status === 'ready_for_head_office' && isBranchUser && (
-                                                        <button
-                                                            onClick={() => {
-                                                                if (confirm(`এই আবেদনটি Head Office এ পাঠাতে চান? (${admission.application_no})`)) {
-                                                                    router.patch(`/member-admissions/${admission.id}/send-to-head-office`);
-                                                                }
-                                                            }}
-                                                            className="p-2 text-purple-600 hover:bg-purple-50 rounded-lg transition-colors"
-                                                            title="Head Office এ পাঠান"
-                                                        >
-                                                            <Send className="w-4 h-4" />
-                                                        </button>
-                                                    )}
-
-                                                    {admission.status === 'draft' && (
-                                                        <button
-                                                            onClick={() => handleDelete(admission.id, admission.application_no)}
-                                                            className="p-2 text-rose-600 hover:bg-rose-50 rounded-lg transition-colors"
-                                                            title="মুছুন"
-                                                        >
-                                                            <Trash2 className="w-4 h-4" />
-                                                        </button>
-                                                    )}
-                                                </div>
+                                </thead>
+                                <tbody className="divide-y divide-slate-100 text-sm">
+                                    {admissions.data.length === 0 ? (
+                                        <tr>
+                                            <td colSpan={isBranchUser ? 12 : 11} className="py-12 text-center text-slate-400">
+                                                কোনো ভর্তি আবেদন পাওয়া যায়নি
                                             </td>
                                         </tr>
-                                    ))
-                                )}
-                            </tbody>
-                        </table>
+                                    ) : (
+                                        admissions.data.map((admission, index) => (
+                                            <tr key={admission.id} className="hover:bg-slate-50/60 transition-colors">
+                                                {isBranchUser && (
+                                                    <td className="py-4 px-3 text-center print:hidden">
+                                                        {admission.status === 'ready_for_head_office' ? (
+                                                            <input
+                                                                type="checkbox"
+                                                                checked={selectedHoIds.includes(admission.id)}
+                                                                onChange={() => toggleHoSelect(admission.id)}
+                                                                className="rounded border-slate-300 text-purple-600 focus:ring-purple-500"
+                                                            />
+                                                        ) : null}
+                                                    </td>
+                                                )}
+                                                <td className="py-4 px-4 text-center font-bold text-slate-500 text-xs whitespace-nowrap">
+                                                    {((admissions.current_page || 1) - 1) * (admissions.per_page || 15) + index + 1}
+                                                </td>
+                                                <td className="py-4 px-4 font-mono font-bold text-blue-700 text-xs whitespace-nowrap">
+                                                    {admission.application_no}
+                                                </td>
+                                                <td className="py-4 px-4">
+                                                    <div className="font-bold text-slate-800">
+                                                        {admission.applicant_name_bn || admission.applicant_name_en}
+                                                    </div>
+                                                    {getActiveLoanBadge(admission)}
+                                                    {admission.is_legacy && (
+                                                        <span className="mt-0.5 inline-flex items-center rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-semibold text-amber-800">
+                                                            পুরাতন{admission.loan_dofa ? ` · দফা ${admission.loan_dofa}` : ''}
+                                                        </span>
+                                                    )}
+                                                    {admission.applicant_name_bn && admission.applicant_name_en && (
+                                                        <div className="text-xs text-slate-500 font-medium">{admission.applicant_name_en}</div>
+                                                    )}
+                                                </td>
+                                                <td className="py-4 px-4 font-medium text-slate-700 whitespace-nowrap">{admission.mobile_number}</td>
+                                                <td className="py-4 px-4 font-medium text-slate-700">{admission.branch?.name || '–'}</td>
+                                                <td className="py-4 px-4 font-medium text-slate-700">{admission.samity?.samity_name || '–'}</td>
+                                                <td className="py-4 px-4 font-medium text-slate-700">{admission.member_category?.category_name || '–'}</td>
+                                                <td className="py-4 px-4">{getStatusBadge(admission.status)}</td>
+                                                <td className="py-4 px-4">
+                                                    <span className="inline-block text-xs font-bold text-indigo-700 bg-indigo-50 px-2.5 py-1 rounded-md border border-indigo-100">
+                                                        {admission.tracking_state?.label ?? '—'}
+                                                    </span>
+                                                </td>
+                                                <td className="py-4 px-4 text-xs font-medium text-slate-500 whitespace-nowrap">
+                                                    {formatDate(admission.created_at)}
+                                                </td>
+                                                <td className="py-4 px-4 text-right print:hidden">
+                                                    <div className="flex items-center justify-end gap-1">
+                                                        <Link
+                                                            href={`/member-admissions/${admission.id}`}
+                                                            className="p-2 text-slate-600 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
+                                                            title="দেখুন"
+                                                        >
+                                                            <Eye className="w-4 h-4" />
+                                                        </Link>
+
+                                                        {canApplyLoan(admission) && (
+                                                            <Link
+                                                                href={`/member/loan-applications?member_id=${admission.id}`}
+                                                                className="p-2 text-indigo-600 hover:bg-indigo-50 rounded-lg transition-colors"
+                                                                title="ঋণ আবেদন"
+                                                            >
+                                                                <Banknote className="w-4 h-4" />
+                                                            </Link>
+                                                        )}
+
+                                                        {(admission.status === 'draft' || admission.status === 'rejected') && (
+                                                            <>
+                                                                <Link
+                                                                    href={`/member-admissions/${admission.id}/edit`}
+                                                                    className="p-2 text-amber-600 hover:bg-amber-50 rounded-lg transition-colors"
+                                                                    title="সম্পাদনা"
+                                                                >
+                                                                    <Edit className="w-4 h-4" />
+                                                                </Link>
+                                                                {admission.status === 'draft' && (
+                                                                    <button
+                                                                        onClick={() => handleSubmit(admission.id, admission.application_no, admission.is_legacy)}
+                                                                        className="p-2 text-emerald-600 hover:bg-emerald-50 rounded-lg transition-colors"
+                                                                        title={admission.is_legacy ? 'সংরক্ষণ ও অটো অনুমোদন' : 'জমা দিন'}
+                                                                    >
+                                                                        <Send className="w-4 h-4" />
+                                                                    </button>
+                                                                )}
+                                                            </>
+                                                        )}
+
+                                                        {admission.status === 'needs_revision' && !isFieldOfficer && (
+                                                            <>
+                                                                <button
+                                                                    onClick={() => openResubmitModal(admission)}
+                                                                    className="p-2 text-emerald-600 hover:bg-emerald-50 rounded-lg transition-colors"
+                                                                    title="পুনরায় জমা"
+                                                                >
+                                                                    <RotateCcw className="w-4 h-4" />
+                                                                </button>
+                                                                <button
+                                                                    onClick={() => openRejectModal(admission)}
+                                                                    className="p-2 text-rose-600 hover:bg-rose-50 rounded-lg transition-colors"
+                                                                    title="প্রত্যাখ্যান"
+                                                                >
+                                                                    <Ban className="w-4 h-4" />
+                                                                </button>
+                                                            </>
+                                                        )}
+
+                                                        {admission.status === 'ready_for_head_office' && isBranchUser && (
+                                                            <button
+                                                                onClick={() => {
+                                                                    if (confirm(`এই আবেদনটি Head Office এ পাঠাতে চান? (${admission.application_no})`)) {
+                                                                        router.patch(`/member-admissions/${admission.id}/send-to-head-office`, {}, keepListFilters);
+                                                                    }
+                                                                }}
+                                                                className="p-2 text-purple-600 hover:bg-purple-50 rounded-lg transition-colors"
+                                                                title="Head Office এ পাঠান"
+                                                            >
+                                                                <Send className="w-4 h-4" />
+                                                            </button>
+                                                        )}
+
+                                                        {admission.status === 'draft' && (
+                                                            <button
+                                                                onClick={() => handleDelete(admission.id, admission.application_no)}
+                                                                className="p-2 text-rose-600 hover:bg-rose-50 rounded-lg transition-colors"
+                                                                title="মুছুন"
+                                                            >
+                                                                <Trash2 className="w-4 h-4" />
+                                                            </button>
+                                                        )}
+                                                    </div>
+                                                </td>
+                                            </tr>
+                                        ))
+                                    )}
+                                </tbody>
+                            </table>
+                        </AutoFitTableContainer>
                     </div>
 
-                    {/* Pagination Container */}
-                    {admissions.last_page > 1 && (
-                        <div className="p-4 border-t border-slate-100 bg-slate-50/50 flex flex-col sm:flex-row items-center justify-between gap-3 text-xs text-slate-600 print:hidden">
-                            <span>দেখাচ্ছে {admissions.from}–{admissions.to} (সর্বমোট {admissions.total})</span>
-                            <div className="flex items-center gap-2">
-                                <Link
-                                    href={`/member-admissions?page=${admissions.current_page - 1}${searchQuery ? `&search=${searchQuery}` : ''}${statusFilter ? `&status=${statusFilter}` : ''}${fromDate ? `&from_date=${fromDate}` : ''}${toDate ? `&to_date=${toDate}` : ''}`}
-                                    className={`p-2 rounded-xl border font-bold ${admissions.current_page === 1 ? 'border-slate-200 text-slate-300 cursor-not-allowed' : 'border-slate-300 bg-white hover:bg-slate-100 text-slate-700'}`}
-                                    preserveState
-                                >
-                                    <ChevronLeft className="w-4 h-4" />
-                                </Link>
-                                <span className="font-bold px-2">পৃষ্ঠা {admissions.current_page} / {admissions.last_page}</span>
-                                <Link
-                                    href={`/member-admissions?page=${admissions.current_page + 1}${searchQuery ? `&search=${searchQuery}` : ''}${statusFilter ? `&status=${statusFilter}` : ''}${fromDate ? `&from_date=${fromDate}` : ''}${toDate ? `&to_date=${toDate}` : ''}`}
-                                    className={`p-2 rounded-xl border font-bold ${admissions.current_page === admissions.last_page ? 'border-slate-200 text-slate-300 cursor-not-allowed' : 'border-slate-300 bg-white hover:bg-slate-100 text-slate-700'}`}
-                                    preserveState
-                                >
-                                    <ChevronRight className="w-4 h-4" />
-                                </Link>
-                            </div>
-                        </div>
-                    )}
+                    <ListPagination
+                        meta={admissions}
+                        onPageChange={(page) =>
+                            router.get('/member-admissions', { ...buildParams(), page }, { preserveState: true, preserveScroll: true })
+                        }
+                        onPerPageChange={(size) =>
+                            router.get(
+                                '/member-admissions',
+                                { ...buildParams(), per_page: size, page: 1 },
+                                { preserveState: true, preserveScroll: true },
+                            )
+                        }
+                    />
                 </div>
 
                 <style>{`

@@ -652,7 +652,7 @@ export default function FieldInvestigation({
                                 </p>
                                 {existingApplication && (
                                     <p className="text-xs text-emerald-600 font-semibold mt-1">
-                                        ✓ Draft সংরক্ষিত — Application No: {existingApplication.application_no || 'Pending'}
+                                        ✓ Draft সংরক্ষিত — আবেদন নং: {existingApplication.application_no || 'Pending'}
                                     </p>
                                 )}
                             </div>

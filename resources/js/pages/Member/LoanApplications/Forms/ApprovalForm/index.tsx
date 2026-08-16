@@ -645,7 +645,10 @@ export default function ApprovalForm({
                             {isLegacy ? (
                                 <span className="font-semibold text-amber-600 bg-amber-50 px-2 py-0.5 rounded border border-amber-200">উত্তরাধিকার/ম্যানুয়াল আবেদন</span>
                             ) : (
-                                <span>সদস্য: <strong className="text-gray-900">{member?.applicant_name_bn || member?.applicant_name_en}</strong> ({member?.application_no})</span>
+                                <span>সদস্য: <strong className="text-gray-900">{member?.applicant_name_bn || member?.applicant_name_en}</strong></span>
+                            )}
+                            {existingApplication?.application_no && (
+                                <span>আবেদন নং: <strong className="font-mono text-gray-900">{existingApplication.application_no}</strong></span>
                             )}
                             <span className="hidden sm:inline text-gray-300">|</span>
                             <span>ক্যাটাগরি: <strong className="text-gray-900">{categoryName}</strong></span>

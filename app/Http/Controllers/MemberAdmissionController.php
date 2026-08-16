@@ -17,6 +17,8 @@ use Inertia\Inertia;
 
 class MemberAdmissionController extends Controller
 {
+    use Concerns\ResolvesListPerPage;
+
     /**
      * Head Office / SuperAdmin / full-access users may edit admissions in any status.
      */
@@ -311,7 +313,8 @@ class MemberAdmissionController extends Controller
             $query->whereDate('created_at', '<=', $request->to_date);
         }
 
-        $admissions = $query->orderBy('created_at', 'desc')->paginate(15);
+        $perPage = $this->resolvePerPage($request);
+        $admissions = $query->orderBy('created_at', 'desc')->paginate($perPage)->withQueryString();
 
         $admissions = $admissions->through(function (MemberAdmission $admission) {
             $arr = $admission->toArray();
@@ -334,14 +337,17 @@ class MemberAdmissionController extends Controller
 
         return Inertia::render('MemberAdmission/Index', [
             'admissions' => $admissions,
-            'filters' => $request->only(['status', 'branch_id', 'search', 'from_date', 'to_date']),
+            'filters' => array_merge(
+                $request->only(['status', 'branch_id', 'search', 'from_date', 'to_date']),
+                ['per_page' => $perPage]
+            ),
             'stats' => $stats,
         ]);
     }
 
     public function create()
     {
-        $branches = Branch::with(['area.zone'])->active()->orderBy('name')->get();
+        $branches = Branch::with(['area.zone'])->active()->orderedByCode()->get();
         $categories = MemberCategory::active()->orderBy('category_name')->get();
         $samities = Samity::with(['branch'])->active()->orderBy('samity_name')->get();
 
@@ -714,7 +720,7 @@ class MemberAdmissionController extends Controller
 
         $memberAdmission->load(['familyMembers', 'otherAssets']);
 
-        $branches = Branch::with(['area.zone'])->active()->orderBy('name')->get();
+        $branches = Branch::with(['area.zone'])->active()->orderedByCode()->get();
         $categories = MemberCategory::active()->orderBy('category_name')->get();
         $samities = Samity::where('branch_id', $memberAdmission->branch_id)->active()->get();
 
@@ -1093,8 +1099,7 @@ class MemberAdmissionController extends Controller
 
         $memberAdmission->delete();
 
-        return redirect()->route('member-admissions.index')
-            ->with('success', 'Member admission deleted successfully!');
+        return $this->redirectToListPreservingFilters('member-admissions.index', 'Member admission deleted successfully!');
     }
 
     public function submit(MemberAdmission $memberAdmission)
@@ -1236,8 +1241,7 @@ class MemberAdmissionController extends Controller
                 ]);
             });
 
-            return redirect()->route('member-admissions.index')
-                ->with('success', 'পুরাতন সদস্যের ভর্তি স্বয়ংক্রিয়ভাবে অনুমোদিত হয়েছে!');
+            return $this->redirectToListPreservingFilters('member-admissions.index', 'পুরাতন সদস্যের ভর্তি স্বয়ংক্রিয়ভাবে অনুমোদিত হয়েছে!');
         }
 
         DB::transaction(function () use ($memberAdmission, $authUser) {
@@ -1274,8 +1278,7 @@ class MemberAdmissionController extends Controller
             );
         }
 
-        return redirect()->route('member-admissions.index')
-            ->with('success', 'Member admission submitted successfully and sent for approval!');
+        return $this->redirectToListPreservingFilters('member-admissions.index', 'Member admission submitted successfully and sent for approval!');
     }
 
     /**
@@ -1343,8 +1346,7 @@ class MemberAdmissionController extends Controller
             );
         }
 
-        return redirect()->route('member-admissions.index')
-            ->with('success', 'Member admission resubmitted successfully!');
+        return $this->redirectToListPreservingFilters('member-admissions.index', 'Member admission resubmitted successfully!');
     }
 
     /**
@@ -1396,8 +1398,7 @@ class MemberAdmissionController extends Controller
             );
         }
 
-        return redirect()->route('member-admissions.index')
-            ->with('success', 'আবেদনটি Head Office এ পাঠানো হয়েছে।');
+        return back()->with('success', 'আবেদনটি Head Office এ পাঠানো হয়েছে।');
     }
 
     /**
@@ -1472,8 +1473,7 @@ class MemberAdmissionController extends Controller
             );
         }
 
-        return redirect()->route('member-admissions.index')
-            ->with('success', "{$count}টি আবেদন Head Office এ পাঠানো হয়েছে।");
+        return $this->redirectToListPreservingFilters('member-admissions.index', "{$count}টি আবেদন Head Office এ পাঠানো হয়েছে।");
     }
 
     /**
@@ -1496,8 +1496,7 @@ class MemberAdmissionController extends Controller
             'reviewed_at' => now(),
         ]);
 
-        return redirect()->route('member-admissions.index')
-            ->with('success', 'Member admission rejected successfully!');
+        return $this->redirectToListPreservingFilters('member-admissions.index', 'Member admission rejected successfully!');
     }
 
     /**

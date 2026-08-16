@@ -73,7 +73,7 @@ trait ScopesToAccessibleBranches
             return [
                 'zones' => Zone::active()->orderBy('name')->get(),
                 'areas' => Area::active()->with('zone')->orderBy('name')->get(),
-                'branches' => Branch::active()->with('area.zone')->orderBy('name')->get(),
+                'branches' => Branch::active()->with('area.zone')->orderedByCode()->get(),
             ];
         }
 
@@ -82,7 +82,7 @@ trait ScopesToAccessibleBranches
         $branches = Branch::active()
             ->with('area.zone')
             ->whereIn('id', $ids ?: [0])
-            ->orderBy('name')
+            ->orderedByCode()
             ->get();
 
         $areaIds = $branches->pluck('area_id')->unique()->filter()->values()->all();

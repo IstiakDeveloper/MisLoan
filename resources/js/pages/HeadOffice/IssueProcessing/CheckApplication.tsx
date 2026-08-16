@@ -9,6 +9,7 @@ import {
     Calendar,
     ArrowLeft,
 } from 'lucide-react';
+import { PhoneCallLink } from '@/components/ui/PhoneCallLink';
 
 interface Member {
     id: number;
@@ -222,7 +223,9 @@ export default function CheckApplication({ application, applicationType }: Props
                                             {idx + 1}. {member.member_name}
                                         </p>
                                         {member.mobile && (
-                                            <p className="text-sm text-gray-600">{member.mobile}</p>
+                                            <div className="text-sm">
+                                                <PhoneCallLink phone={member.mobile} className="text-gray-600 font-mono" />
+                                            </div>
                                         )}
                                     </div>
                                     {member.family_monthly_income && (

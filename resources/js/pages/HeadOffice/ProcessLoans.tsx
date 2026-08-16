@@ -2,6 +2,10 @@ import React, { useState, useMemo } from 'react';
 import { Head, router, useForm } from '@inertiajs/react';
 import AdminLayout from '@/layouts/admin-layout';
 import { formatDate, formatDateTime } from '@/utils/dateUtils';
+import ListPagination from '@/components/ListPagination';
+import AutoFitTableContainer from '@/components/AutoFitTableContainer';
+import { formatBranchLabel, keepListFilters, sortBranchesByCode } from '@/utils/branchLabel';
+import { PhoneCallLink } from '@/components/ui/PhoneCallLink';
 import {
     Search,
     Calendar,
@@ -10,7 +14,6 @@ import {
     AlertTriangle,
     X,
     Eye,
-    UserCheck,
     XCircle,
     Building2,
     Clock,
@@ -20,12 +23,10 @@ import {
     Phone,
     CreditCard,
     Sparkles,
-    ChevronLeft,
-    ChevronRight,
     Users,
     MapPin,
     Building,
-    DollarSign
+    DollarSign,
 } from 'lucide-react';
 
 interface Zone {
@@ -90,6 +91,7 @@ interface Loan {
         loan_dofa?: number | string | null;
     };
     issues: Issue[];
+    status?: string;
 }
 
 interface Props {
@@ -99,6 +101,8 @@ interface Props {
         last_page: number;
         per_page: number;
         total: number;
+        from?: number | null;
+        to?: number | null;
     };
     filters: {
         month?: string;
@@ -107,6 +111,7 @@ interface Props {
         zone_id?: number | string;
         area_id?: number | string;
         branch_id?: number | string;
+        per_page?: number | string;
     };
     zones?: Zone[];
     areas?: Area[];
@@ -158,11 +163,13 @@ export default function ProcessLoans({ loans, filters, zones = [], areas = [], b
     }, [areas, selectedZone]);
 
     const filteredBranches = useMemo(() => {
-        return branches.filter((b) => {
-            if (selectedArea) return b.area_id.toString() === selectedArea;
-            if (selectedZone) return filteredAreas.some((a) => a.id === b.area_id);
-            return true;
-        });
+        return sortBranchesByCode(
+            branches.filter((b) => {
+                if (selectedArea) return b.area_id.toString() === selectedArea;
+                if (selectedZone) return filteredAreas.some((a) => a.id === b.area_id);
+                return true;
+            }),
+        );
     }, [branches, selectedArea, selectedZone, filteredAreas]);
 
     // Apply Filter Changes
@@ -172,7 +179,8 @@ export default function ProcessLoans({ loans, filters, zones = [], areas = [], b
         newSearch?: string,
         newZone?: string,
         newArea?: string,
-        newBranch?: string
+        newBranch?: string,
+        extra: { page?: number; per_page?: number } = {},
     ) => {
         const queryParams: Record<string, string> = {};
         const targetMonth = newMonth !== undefined ? newMonth : monthFilter;
@@ -195,6 +203,12 @@ export default function ProcessLoans({ loans, filters, zones = [], areas = [], b
         if (targetZone) queryParams.zone_id = targetZone;
         if (targetArea) queryParams.area_id = targetArea;
         if (targetBranch) queryParams.branch_id = targetBranch;
+
+        const perPage = extra.per_page ?? Number(filters.per_page || loans.per_page || 20);
+        queryParams.per_page = String(perPage);
+        if (extra.page) {
+            queryParams.page = String(extra.page);
+        }
 
         router.get('/head-office/process-loans', queryParams, {
             preserveState: true,
@@ -284,6 +298,7 @@ export default function ProcessLoans({ loans, filters, zones = [], areas = [], b
 
         post(`/head-office/loans/${selectedLoan.id}/issue`, {
             preserveScroll: true,
+            preserveState: true,
             onSuccess: () => {
                 closeIssueModal();
             },
@@ -311,7 +326,7 @@ export default function ProcessLoans({ loans, filters, zones = [], areas = [], b
                 area_id: selectedArea || undefined,
                 branch_id: selectedBranch || undefined,
             }, {
-                preserveScroll: true,
+                ...keepListFilters,
             });
         }
     };
@@ -322,18 +337,14 @@ export default function ProcessLoans({ loans, filters, zones = [], areas = [], b
             return;
         }
 
-        if (confirm(`ঋণ আবেদনপত্র নং ${loan.application_no} (${loan.member_admission?.applicant_name_bn || loan.member_admission?.applicant_name_en}) অনুমোদন করতে চান?`)) {
-            router.patch(`/head-office/loans/${loan.id}/approve`, {}, {
-                preserveScroll: true,
-            });
+        if (confirm(`সদস্য নং ${loan.member_admission?.application_no || loan.application_no} (${loan.member_admission?.applicant_name_bn || loan.member_admission?.applicant_name_en}) অনুমোদন করতে চান?`)) {
+            router.patch(`/head-office/loans/${loan.id}/approve`, {}, keepListFilters);
         }
     };
 
     const handleDeleteIssue = (issueId: number) => {
         if (confirm('এই সমস্যা রেকর্ডটি মুছে ফেলতে চান?')) {
-            router.delete(`/head-office/issues/${issueId}`, {
-                preserveScroll: true,
-            });
+            router.delete(`/head-office/issues/${issueId}`, keepListFilters);
         }
     };
 
@@ -367,6 +378,7 @@ export default function ProcessLoans({ loans, filters, zones = [], areas = [], b
         router.patch(`/head-office/loans/${selectedLoan.id}/reject`, {
             rejection_reason: rejectionReason,
         }, {
+            ...keepListFilters,
             onSuccess: () => {
                 closeRejectModal();
             },
@@ -573,7 +585,7 @@ export default function ProcessLoans({ loans, filters, zones = [], areas = [], b
                                 <option value="">সকল শাখা</option>
                                 {filteredBranches.map((branch) => (
                                     <option key={branch.id} value={branch.id}>
-                                        {branch.name}
+                                        {formatBranchLabel(branch)}
                                     </option>
                                 ))}
                             </select>
@@ -589,7 +601,7 @@ export default function ProcessLoans({ loans, filters, zones = [], areas = [], b
                                     type="text"
                                     value={searchQuery}
                                     onChange={(e) => setSearchQuery(e.target.value)}
-                                    placeholder="নাম, NID, ফোন, আবেদন নং..."
+                                    placeholder="নাম, NID, ফোন, সদস্য নং..."
                                     className="w-full pl-8 pr-7 py-1.5 bg-slate-50 border border-slate-300 rounded-lg text-xs text-slate-800 placeholder-slate-400 focus:ring-1 focus:ring-indigo-500 focus:bg-white"
                                 />
                                 <Search className="w-3.5 h-3.5 text-slate-400 absolute left-2.5 top-1/2 -translate-y-1/2" />
@@ -691,7 +703,12 @@ export default function ProcessLoans({ loans, filters, zones = [], areas = [], b
                             </button>
                         </div>
                     ) : (
-                        <div className="overflow-x-auto">
+                        <AutoFitTableContainer
+                            minWidth={1200}
+                            storageKey="ho_process_loans_table"
+                            title="ঋণ আবেদন প্রক্রিয়াকরণ তালিকা"
+                            subtitle={`(মোট ${displayedLoans.length} টি)`}
+                        >
                             <table className="w-full text-left border-collapse">
                                 <thead>
                                     <tr className="bg-slate-50 border-b border-slate-200 text-slate-500 text-[11px] font-bold uppercase tracking-wider">
@@ -752,9 +769,15 @@ export default function ProcessLoans({ loans, filters, zones = [], areas = [], b
                                                         <p className="text-[11px] text-slate-500">
                                                             {loan.member_admission?.applicant_name_bn}
                                                         </p>
-                                                        <p className="text-[11px] text-slate-500">
-                                                            {loan.member_admission?.mobile_number}
-                                                        </p>
+                                                        {loan.member_admission?.mobile_number && (
+                                                            <div className="pt-0.5">
+                                                                <PhoneCallLink
+                                                                    phone={loan.member_admission.mobile_number}
+                                                                    className="text-[11px] text-slate-600 font-mono"
+                                                                    iconClassName="w-3 h-3 text-blue-500"
+                                                                />
+                                                            </div>
+                                                        )}
                                                     </div>
                                                 </td>
 
@@ -880,35 +903,14 @@ export default function ProcessLoans({ loans, filters, zones = [], areas = [], b
                                     })}
                                 </tbody>
                             </table>
-                        </div>
+                        </AutoFitTableContainer>
                     )}
 
-                    {/* Pagination Bar */}
-                    {loans.last_page > 1 && (
-                        <div className="px-4 py-3 border-t border-slate-200 flex items-center justify-between bg-slate-50/50 text-xs">
-                            <span className="text-slate-600 font-medium">
-                                পেজ {loans.current_page} / {loans.last_page} (মোট {loans.total} টি রেকর্ড)
-                            </span>
-                            <div className="flex items-center gap-2">
-                                {loans.current_page > 1 && (
-                                    <button
-                                        onClick={() => router.get(`/head-office/process-loans?page=${loans.current_page - 1}&month=${monthFilter}&date=${dateFilter}&search=${searchQuery}&zone_id=${selectedZone}&area_id=${selectedArea}&branch_id=${selectedBranch}`)}
-                                        className="px-3 py-1 bg-white border border-slate-300 hover:bg-slate-100 text-slate-700 font-semibold rounded-lg transition flex items-center gap-1"
-                                    >
-                                        <ChevronLeft className="w-3.5 h-3.5" /> পূর্ববর্তী
-                                    </button>
-                                )}
-                                {loans.current_page < loans.last_page && (
-                                    <button
-                                        onClick={() => router.get(`/head-office/process-loans?page=${loans.current_page + 1}&month=${monthFilter}&date=${dateFilter}&search=${searchQuery}&zone_id=${selectedZone}&area_id=${selectedArea}&branch_id=${selectedBranch}`)}
-                                        className="px-3 py-1 bg-indigo-600 hover:bg-indigo-700 text-white font-semibold rounded-lg transition flex items-center gap-1 shadow-sm"
-                                    >
-                                        পরবর্তী <ChevronRight className="w-3.5 h-3.5" />
-                                    </button>
-                                )}
-                            </div>
-                        </div>
-                    )}
+                    <ListPagination
+                        meta={loans}
+                        onPageChange={(page) => applyFilters(undefined, undefined, undefined, undefined, undefined, undefined, { page })}
+                        onPerPageChange={(size) => applyFilters(undefined, undefined, undefined, undefined, undefined, undefined, { per_page: size, page: 1 })}
+                    />
                 </div>
             </div>
 
@@ -923,7 +925,7 @@ export default function ProcessLoans({ loans, filters, zones = [], areas = [], b
                                     যাচাই ও ঋণ আবেদন সমস্যা চিহ্নিতকরণ
                                 </h3>
                                 <p className="text-xs text-slate-300 mt-0.5">
-                                    আবেদন নং: {selectedLoan.application_no} | {selectedLoan.member_admission?.applicant_name_bn}
+                                    সদস্য নং: {selectedLoan.member_admission?.application_no || selectedLoan.application_no} | {selectedLoan.member_admission?.applicant_name_bn}
                                 </p>
                             </div>
                             <button onClick={closeIssueModal} className="text-slate-400 hover:text-white p-1 rounded-lg hover:bg-slate-800 transition">
@@ -1021,7 +1023,7 @@ export default function ProcessLoans({ loans, filters, zones = [], areas = [], b
 
                         <div className="p-5 space-y-3 text-xs">
                             <p className="text-slate-600">
-                                আবেদন নং: <strong className="text-slate-900">{selectedLoan.application_no}</strong> ({selectedLoan.member_admission?.applicant_name_bn})
+                                সদস্য নং: <strong className="text-slate-900">{selectedLoan.member_admission?.application_no || selectedLoan.application_no}</strong> ({selectedLoan.member_admission?.applicant_name_bn})
                             </p>
                             <div>
                                 <label className="block text-xs font-semibold text-slate-700 mb-1">

@@ -210,7 +210,7 @@ class HeadOfficeTeamBasedApprovalController extends Controller
 
         $zones = Zone::active()->orderBy('name')->get();
         $areas = Area::active()->with('zone')->orderBy('name')->get();
-        $branches = Branch::active()->with('area.zone')->orderBy('name')->get();
+        $branches = Branch::active()->with('area.zone')->orderedByCode()->get();
         $approverOptions = $this->buildHeadOfficeApproverOptions();
 
         return Inertia::render('HeadOffice/TeamBasedApprovals', [

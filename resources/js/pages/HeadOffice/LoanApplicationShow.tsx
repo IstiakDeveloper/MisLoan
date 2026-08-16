@@ -5,12 +5,14 @@ import { formatDate, formatDateTime } from '@/utils/dateUtils';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
-import { ArrowLeft, FileText, User, Banknote, AlertCircle, CheckCircle, XCircle, Printer, Clock, MessageSquare } from 'lucide-react';
+import { ArrowLeft, FileText, User, Banknote, AlertCircle, CheckCircle, XCircle, Printer, Clock, MessageSquare, Wrench } from 'lucide-react';
 import GuarantorCommitment from '../Member/LoanApplications/Forms/GuarantorCommitment';
 import DeathRiskFund from '../Member/LoanApplications/Forms/DeathRiskFund';
 import LoanAgreement from '../Member/LoanApplications/Forms/LoanAgreement';
 import FieldInvestigation from '../Member/LoanApplications/Forms/FieldInvestigation';
 import LoanApplicationApproval from '../Member/LoanApplications/Forms/LoanApplicationApproval';
+import HeadOfficeModificationModal, { useCanHeadOfficeModify } from '@/components/HeadOfficeModificationModal';
+import { PhoneCallLink } from '@/components/ui/PhoneCallLink';
 
 interface Loan {
     id: number;
@@ -141,8 +143,10 @@ const statusConfig = {
 };
 
 export default function LoanApplicationShow({ loan, flash }: Props) {
+    const canModify = useCanHeadOfficeModify();
     const [showIssueModal, setShowIssueModal] = useState(false);
     const [showRejectModal, setShowRejectModal] = useState(false);
+    const [showModificationModal, setShowModificationModal] = useState(false);
     const [selectedFormId, setSelectedFormId] = useState<number | null>(null);
     const [printBlank, setPrintBlank] = useState(false);
     const formPrintRef = useRef<HTMLDivElement>(null);
@@ -260,10 +264,11 @@ export default function LoanApplicationShow({ loan, flash }: Props) {
         icon: AlertCircle,
     };
     const StatusIcon = statusInfo.icon || AlertCircle;
+    const memberNo = loan.member_admission?.application_no || loan.application_no;
 
     return (
         <AdminLayout>
-            <Head title={`ঋণ আবেদন - ${loan.application_no}`}>
+            <Head title={`ঋণ আবেদন - ${memberNo}`}>
                 <style>{`
                     @media print {
                         @page { size: A4 portrait; margin: 5mm; }
@@ -343,10 +348,20 @@ export default function LoanApplicationShow({ loan, flash }: Props) {
                             </Button>
                             <div>
                                 <h2 className="text-2xl font-bold text-gray-900">ঋণ আবেদন বিবরণ</h2>
-                                <p className="text-gray-600">আবেদন নং: {loan.application_no}</p>
+                                <p className="text-gray-600">সদস্য নং: {memberNo}</p>
                             </div>
                         </div>
                         <div className="flex gap-2 print:hidden">
+                            {canModify && loan.status !== 'draft' && loan.status !== 'disbursed' && loan.status !== 'cancelled' && (
+                                <Button
+                                    variant="outline"
+                                    onClick={() => setShowModificationModal(true)}
+                                    className="border-slate-300"
+                                >
+                                    <Wrench className="w-4 h-4 mr-2" />
+                                    Modification
+                                </Button>
+                            )}
                             <Button 
                                 variant="outline" 
                                 onClick={() => setShowIssueModal(true)}
@@ -422,9 +437,17 @@ export default function LoanApplicationShow({ loan, flash }: Props) {
                                 </CardTitle>
                             </CardHeader>
                             <CardContent className="space-y-2 text-sm">
+                                <p><span className="text-gray-600">সদস্য নং:</span> <span className="font-mono font-semibold">{memberNo || '-'}</span></p>
                                 <p><span className="text-gray-600">নাম:</span> {loan.member_admission?.applicant_name_bn || loan.member_admission?.applicant_name_en || '-'}</p>
                                 <p><span className="text-gray-600">NID:</span> {loan.member_admission?.nid_number || loan.member_admission?.nid_no || '-'}</p>
-                                <p><span className="text-gray-600">মোবাইল:</span> {loan.member_admission?.mobile_number || loan.member_admission?.mobile_no || '-'}</p>
+                                <div className="flex items-center gap-1.5">
+                                    <span className="text-gray-600">মোবাইল:</span>
+                                    <PhoneCallLink
+                                        phone={loan.member_admission?.mobile_number || loan.member_admission?.mobile_no}
+                                        className="font-mono font-semibold text-blue-700"
+                                        iconClassName="w-3.5 h-3.5 text-blue-500"
+                                    />
+                                </div>
                                 <p><span className="text-gray-600">ঠিকানা:</span> {loan.member_admission?.present_village_road || loan.member_admission?.present_address_en || '-'}</p>
                                 {loan.submittedBy && (
                                     <p><span className="text-gray-600">আবেদনকারী:</span> {loan.submittedBy.name}</p>
@@ -476,7 +499,7 @@ export default function LoanApplicationShow({ loan, flash }: Props) {
                                                     printWindow.document.write(`
                                                         <html>
                                                             <head>
-                                                                <title>সমস্যা ও উত্তর - ${loan.application_no}</title>
+                                                                <title>সমস্যা ও উত্তর - ${memberNo}</title>
                                                                 <style>
                                                                     body { font-family: 'Kalpurush', Arial, sans-serif; padding: 20px; }
                                                                     .header { text-align: center; margin-bottom: 30px; border-bottom: 2px solid #333; padding-bottom: 15px; }
@@ -493,7 +516,7 @@ export default function LoanApplicationShow({ loan, flash }: Props) {
                                                             <body>
                                                                 <div class="header">
                                                                     <h1>ঋণ আবেদন সমস্যা ও উত্তর</h1>
-                                                                    <p>আবেদন নং: ${loan.application_no}</p>
+                                                                    <p>সদস্য নং: ${memberNo}</p>
                                                                     <p>তারিখ: ${formatDate(new Date())}</p>
                                                                 </div>
                                                                 ${Array.from(printContent.children).map((item: any) => item.outerHTML).join('')}
@@ -769,6 +792,17 @@ export default function LoanApplicationShow({ loan, flash }: Props) {
                     />
                 </div>
             )}
+            <HeadOfficeModificationModal
+                open={showModificationModal}
+                onClose={() => setShowModificationModal(false)}
+                entityType="loan"
+                target={{
+                    id: loan.id,
+                    applicationNo: memberNo,
+                    applicantName: loan.member_admission?.applicant_name_bn || loan.member_admission?.applicant_name_en,
+                    status: loan.status,
+                }}
+            />
         </AdminLayout>
     );
 }

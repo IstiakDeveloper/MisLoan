@@ -7,8 +7,9 @@ import {
     Search, Eye, Edit, Trash2, X, AlertTriangle, MessageSquare, Send,
     Filter, RefreshCw, UserCheck, Layers, CreditCard, ChevronRight, AlertCircle, ArrowUpRight, Sparkles
 } from 'lucide-react';
-import { Button } from '@/components/ui/button';
-import { Badge } from '@/components/ui/badge';
+import ListPagination from '@/components/ListPagination';
+import AutoFitTableContainer from '@/components/AutoFitTableContainer';
+import { keepListFilters } from '@/utils/branchLabel';
 
 interface LoanProduct {
     id: number;
@@ -102,12 +103,22 @@ interface Stats {
 
 interface Props {
     categories: LoanCategory[];
-    applications: LoanApplication[];
+    applications: {
+        data: LoanApplication[];
+        current_page: number;
+        last_page: number;
+        per_page: number;
+        total: number;
+        from?: number | null;
+        to?: number | null;
+    };
     stats: Stats;
     selectedDate: string;
     dateFrom?: string;
     dateTo?: string;
     statusFilter?: string;
+    searchFilter?: string;
+    perPage?: number;
     preselectedMember?: Member | null;
     flash?: {
         success?: string;
@@ -160,7 +171,7 @@ interface Member {
     active_loans?: ActiveLoan[];
 }
 
-export default function Index({ categories, applications, stats, selectedDate, dateFrom, dateTo, statusFilter = '', preselectedMember = null, flash }: Props) {
+export default function Index({ categories, applications, stats, selectedDate, dateFrom, dateTo, statusFilter = '', searchFilter = '', perPage = 20, preselectedMember = null, flash }: Props) {
     const pageAuth = usePage().props.auth as { user?: { role?: { name: string } } } | undefined;
     const roleName = pageAuth?.user?.role?.name?.toLowerCase() || '';
     const isBranchUser = roleName === 'branch_user';
@@ -171,7 +182,7 @@ export default function Index({ categories, applications, stats, selectedDate, d
     const handleSubmitApplication = (app: LoanApplication) => {
         if (!app.can_submit) return;
         if (confirm(`ঋণ আবেদন ${app.application_no} শাখা ব্যবস্থাপকের কাছে জমা দিতে চান?`)) {
-            router.patch(`/member/loan-applications/${app.id}/submit`, {}, { preserveScroll: true });
+            router.patch(`/member/loan-applications/${app.id}/submit`, {}, keepListFilters);
         }
     };
 
@@ -181,7 +192,7 @@ export default function Index({ categories, applications, stats, selectedDate, d
     const [currentDateFrom, setCurrentDateFrom] = useState(dateFrom || firstDayOfMonth);
     const [currentDateTo, setCurrentDateTo] = useState(dateTo || today);
     const [currentStatusFilter, setCurrentStatusFilter] = useState(statusFilter);
-    const [searchQuery, setSearchQuery] = useState('');
+    const [searchQuery, setSearchQuery] = useState(searchFilter);
     const [showNewModal, setShowNewModal] = useState(!!preselectedMember && canCreateLoanApplication);
     const [selectedCategory, setSelectedCategory] = useState<number | null>(null);
     const [selectedProduct, setSelectedProduct] = useState<number | null>(null);
@@ -227,28 +238,52 @@ export default function Index({ categories, applications, stats, selectedDate, d
 
     const isTodayFilter = currentDateFrom === today && currentDateTo === today;
 
+    const buildListParams = (overrides: Record<string, string | number> = {}) => {
+        const params: Record<string, string | number> = {
+            date_from: currentDateFrom,
+            date_to: currentDateTo,
+            per_page: applications.per_page || perPage || 20,
+            ...overrides,
+        };
+        const status = Object.prototype.hasOwnProperty.call(overrides, 'status')
+            ? overrides.status
+            : currentStatusFilter;
+        if (status) {
+            params.status = status as string;
+        } else {
+            delete params.status;
+        }
+        const search = Object.prototype.hasOwnProperty.call(overrides, 'search')
+            ? overrides.search
+            : searchQuery;
+        if (search) {
+            params.search = search as string;
+        } else {
+            delete params.search;
+        }
+        Object.keys(params).forEach((key) => {
+            if (params[key] === '' || params[key] === undefined || params[key] === null) {
+                delete params[key];
+            }
+        });
+        return params;
+    };
+
+    const applyListFilters = (overrides: Record<string, string | number> = {}) => {
+        router.get('/member/loan-applications', buildListParams(overrides), {
+            preserveState: true,
+            preserveScroll: true,
+        });
+    };
+
     const handleTodayFilter = () => {
         setCurrentDateFrom(today);
         setCurrentDateTo(today);
-        const params: any = {
-            date_from: today,
-            date_to: today,
-        };
-        if (currentStatusFilter) {
-            params.status = currentStatusFilter;
-        }
-        router.get('/member/loan-applications', params, { preserveState: true });
+        applyListFilters({ date_from: today, date_to: today, page: 1 });
     };
 
     const handleDateFilterChange = () => {
-        const params: any = {
-            date_from: currentDateFrom,
-            date_to: currentDateTo,
-        };
-        if (currentStatusFilter) {
-            params.status = currentStatusFilter;
-        }
-        router.get('/member/loan-applications', params, { preserveState: true });
+        applyListFilters({ page: 1 });
     };
 
     const resetFilters = () => {
@@ -259,6 +294,7 @@ export default function Index({ categories, applications, stats, selectedDate, d
         router.get('/member/loan-applications', {
             date_from: firstDayOfMonth,
             date_to: today,
+            per_page: applications.per_page || perPage || 20,
         }, { preserveState: true });
     };
 
@@ -371,63 +407,26 @@ export default function Index({ categories, applications, stats, selectedDate, d
         }
     };
 
-    const filteredApplications = useMemo(() => {
-        return applications.filter(app => {
-            if (!searchQuery) return true;
-            
-            const searchLower = searchQuery.toLowerCase().trim();
-            const memberNameBn = app.member_admission?.applicant_name_bn?.toLowerCase() || '';
-            const memberNameEn = app.member_admission?.applicant_name_en?.toLowerCase() || '';
-            const memberCode = app.member_admission?.application_no?.toLowerCase() || '';
-            const nidNumber = app.member_admission?.nid_number?.toLowerCase() || '';
-            const mobileNumber = app.member_admission?.mobile_number?.toLowerCase() || '';
-            const applicationNo = app.application_no?.toLowerCase() || '';
-            const productName = app.loan_product?.product_name?.toLowerCase() || '';
-            
-            return (
-                applicationNo.includes(searchLower) ||
-                memberNameBn.includes(searchLower) ||
-                memberNameEn.includes(searchLower) ||
-                memberCode.includes(searchLower) ||
-                nidNumber.includes(searchLower) ||
-                mobileNumber.includes(searchLower) ||
-                productName.includes(searchLower)
-            );
-        });
-    }, [applications, searchQuery]);
+    const applicationRows = applications.data ?? [];
 
     const filteredStats = useMemo(() => {
-        if (!searchQuery && stats) {
-            return {
-                total: stats.total || 0,
-                draft: stats.draft || 0,
-                submitted: stats.submitted || 0,
-                approved: stats.approved || 0,
-                pending_disbursement: stats.pending_disbursement || 0,
-                rejected: stats.rejected || 0,
-                pending_head_office: (stats as any).pending_head_office || 0,
-                ready_for_head_office: (stats as any).ready_for_head_office || 0,
-                under_review: (stats as any).under_review || 0,
-                disbursed: (stats as any).disbursed || 0,
-            };
-        }
         return {
-            total: filteredApplications.length,
-            draft: filteredApplications.filter(app => app.status === 'draft').length,
-            submitted: filteredApplications.filter(app => app.status === 'submitted').length,
-            approved: filteredApplications.filter(app => app.status === 'approved').length,
-            pending_disbursement: filteredApplications.filter(app => app.status === 'pending_disbursement').length,
-            rejected: filteredApplications.filter(app => app.status === 'rejected').length,
-            pending_head_office: filteredApplications.filter(app => app.status === 'pending_head_office').length,
-            ready_for_head_office: filteredApplications.filter(app => app.status === 'ready_for_head_office').length,
-            under_review: filteredApplications.filter(app => app.status === 'under_review').length,
-            disbursed: filteredApplications.filter(app => app.status === 'disbursed').length,
+            total: stats.total || 0,
+            draft: stats.draft || 0,
+            submitted: stats.submitted || 0,
+            approved: stats.approved || 0,
+            pending_disbursement: stats.pending_disbursement || 0,
+            rejected: stats.rejected || 0,
+            pending_head_office: (stats as any).pending_head_office || 0,
+            ready_for_head_office: (stats as any).ready_for_head_office || 0,
+            under_review: (stats as any).under_review || 0,
+            disbursed: (stats as any).disbursed || 0,
         };
-    }, [applications, stats, searchQuery, filteredApplications]);
+    }, [stats]);
 
     const readyForHoIds = useMemo(
-        () => filteredApplications.filter((a) => a.status === 'ready_for_head_office').map((a) => a.id),
-        [filteredApplications],
+        () => applicationRows.filter((a) => a.status === 'ready_for_head_office').map((a) => a.id),
+        [applicationRows],
     );
     const allReadySelected =
         readyForHoIds.length > 0 && readyForHoIds.every((id) => selectedHoIds.includes(id));
@@ -449,7 +448,7 @@ export default function Index({ categories, applications, stats, selectedDate, d
             '/member/loan-applications/send-to-head-office-bulk',
             { ids: selectedHoIds },
             {
-                preserveScroll: true,
+                ...keepListFilters,
                 onFinish: () => {
                     setBulkSending(false);
                     setSelectedHoIds([]);
@@ -526,7 +525,7 @@ export default function Index({ categories, applications, stats, selectedDate, d
                     <div
                         onClick={() => {
                             setCurrentStatusFilter('');
-                            handleDateFilterChange();
+                            applyListFilters({ status: '', page: 1 });
                         }}
                         className={`rounded-xl p-2.5 border shadow-sm cursor-pointer transition ${
                             !currentStatusFilter
@@ -545,7 +544,7 @@ export default function Index({ categories, applications, stats, selectedDate, d
                     <div
                         onClick={() => {
                             setCurrentStatusFilter('draft');
-                            handleDateFilterChange();
+                            applyListFilters({ status: 'draft', page: 1 });
                         }}
                         className={`rounded-xl p-2.5 border shadow-sm cursor-pointer transition ${
                             currentStatusFilter === 'draft'
@@ -560,7 +559,7 @@ export default function Index({ categories, applications, stats, selectedDate, d
                     <div
                         onClick={() => {
                             setCurrentStatusFilter('submitted');
-                            handleDateFilterChange();
+                            applyListFilters({ status: 'submitted', page: 1 });
                         }}
                         className={`rounded-xl p-2.5 border shadow-sm cursor-pointer transition ${
                             currentStatusFilter === 'submitted'
@@ -579,7 +578,7 @@ export default function Index({ categories, applications, stats, selectedDate, d
                     <div
                         onClick={() => {
                             setCurrentStatusFilter('approved');
-                            handleDateFilterChange();
+                            applyListFilters({ status: 'approved', page: 1 });
                         }}
                         className={`rounded-xl p-2.5 border shadow-sm cursor-pointer transition ${
                             currentStatusFilter === 'approved'
@@ -598,7 +597,7 @@ export default function Index({ categories, applications, stats, selectedDate, d
                     <div
                         onClick={() => {
                             setCurrentStatusFilter('pending_disbursement');
-                            handleDateFilterChange();
+                            applyListFilters({ status: 'pending_disbursement', page: 1 });
                         }}
                         className={`rounded-xl p-2.5 border shadow-sm cursor-pointer transition ${
                             currentStatusFilter === 'pending_disbursement'
@@ -617,7 +616,7 @@ export default function Index({ categories, applications, stats, selectedDate, d
                     <div
                         onClick={() => {
                             setCurrentStatusFilter('rejected');
-                            handleDateFilterChange();
+                            applyListFilters({ status: 'rejected', page: 1 });
                         }}
                         className={`rounded-xl p-2.5 border shadow-sm cursor-pointer transition ${
                             currentStatusFilter === 'rejected'
@@ -694,9 +693,15 @@ export default function Index({ categories, applications, stats, selectedDate, d
                             <div className="relative">
                                 <input
                                     type="text"
-                                    placeholder="আবেদন নং, নাম, ফোন..."
+                                    placeholder="সদস্য কোড, নাম, ফোন..."
                                     value={searchQuery}
                                     onChange={(e) => setSearchQuery(e.target.value)}
+                                    onKeyDown={(e) => {
+                                        if (e.key === 'Enter') {
+                                            e.preventDefault();
+                                            applyListFilters({ page: 1 });
+                                        }
+                                    }}
                                     className="w-full pl-7 pr-6 py-1.5 bg-slate-50 border border-slate-300 rounded-lg text-xs text-slate-800 placeholder-slate-400"
                                 />
                                 <Search className="w-3.5 h-3.5 text-slate-400 absolute left-2 top-1/2 -translate-y-1/2" />
@@ -748,7 +753,7 @@ export default function Index({ categories, applications, stats, selectedDate, d
                     <div className="flex items-center justify-between pb-2 border-b border-slate-100 text-xs">
                         <h3 className="font-bold text-slate-800">ঋণ আবেদনের তালিকা</h3>
                         <span className="text-slate-500 font-semibold">
-                            মোট পাওয়া গেছে: <strong className="text-slate-900 font-bold">{filteredApplications.length}</strong> টি আবেদন
+                            মোট পাওয়া গেছে: <strong className="text-slate-900 font-bold">{applications.total}</strong> টি আবেদন
                         </span>
                     </div>
 
@@ -757,7 +762,7 @@ export default function Index({ categories, applications, stats, selectedDate, d
                             <p className="text-sm text-indigo-900">
                                 শাখা অনুমোদিত: <span className="font-semibold">{readyForHoIds.length}</span> · সিলেক্টেড:{' '}
                                 <span className="font-semibold">{selectedHoIds.length}</span>
-                            </p>
+                        </p>
                             <div className="flex flex-wrap items-center gap-2">
                                 <button
                                     type="button"
@@ -781,13 +786,14 @@ export default function Index({ categories, applications, stats, selectedDate, d
 
                     {/* MOBILE CARDS VIEW (md:hidden) */}
                     <div className="md:hidden flex flex-col gap-3.5">
-                        {filteredApplications.length === 0 ? (
+                        {applicationRows.length === 0 ? (
                             <div className="p-8 text-center text-slate-400 text-xs font-medium">
                                 কোনো ঋণ আবেদন পাওয়া যায়নি।
                             </div>
                         ) : (
-                            filteredApplications.map((app) => {
+                            applicationRows.map((app) => {
                                 const member = app.member_display ?? app.member_admission;
+                                const memberCode = member?.application_no || member?.member_code || app.member_code || '—';
                                 const pendingIssues = app.issues?.filter((issue) => issue.status === 'pending') || [];
                                 const hasPendingIssues = pendingIssues.length > 0;
                                 let statusInfo = statusLabels[app.status] || statusLabels.draft;
@@ -814,9 +820,20 @@ export default function Index({ categories, applications, stats, selectedDate, d
                                                     <h3 className="font-extrabold text-slate-900 text-xs sm:text-sm">
                                                         {member?.applicant_name_bn || member?.applicant_name_en || 'N/A'}
                                                     </h3>
-                                                    <span className="text-[10px] font-mono font-bold text-indigo-600 bg-indigo-50 px-1.5 py-0.5 rounded">
-                                                        {app.application_no}
-                                                    </span>
+                                                    <div className="flex items-center gap-1.5 mt-0.5">
+                                                        <span className="text-[10px] font-mono font-bold text-indigo-600 bg-indigo-50 border border-indigo-200 px-1.5 py-0.5 rounded">
+                                                            {memberCode}
+                                                        </span>
+                                                        {member?.is_legacy ? (
+                                                            <span className="text-[9px] font-semibold text-amber-800 bg-amber-50 border border-amber-200 px-1 rounded">
+                                                                পুরাতন{member.loan_dofa ? ` · দফা ${member.loan_dofa}` : ''}
+                                                            </span>
+                                                        ) : member ? (
+                                                            <span className="text-[9px] font-semibold text-emerald-800 bg-emerald-50 border border-emerald-200 px-1 rounded">
+                                                                নতুন সদস্য
+                                                            </span>
+                                                        ) : null}
+                                                    </div>
                                                 </div>
                                             </div>
                                             <div className="text-right">
@@ -860,6 +877,7 @@ export default function Index({ categories, applications, stats, selectedDate, d
                                                         return (
                                                             <span
                                                                 key={formId}
+                                                                title={FORM_NAMES[formId] || `ফর্ম ${formId}`}
                                                                 className={`px-2 py-0.5 rounded-lg text-[10px] font-bold ${
                                                                     isSaved
                                                                         ? 'bg-emerald-100 text-emerald-800 border border-emerald-300'
@@ -942,251 +960,278 @@ export default function Index({ categories, applications, stats, selectedDate, d
                     </div>
 
                     {/* DESKTOP TABLE VIEW (hidden md:block) */}
-                    <div className="hidden md:block overflow-x-auto rounded-2xl border border-slate-200">
-                        <table className="w-full text-xs">
-                            <thead className="bg-slate-900 text-white">
-                                <tr>
-                                    {isBranchUser && (
-                                        <th className="px-3 py-3.5 text-center w-10">
-                                            {readyForHoIds.length > 0 && (
-                                                <input
-                                                    type="checkbox"
-                                                    checked={allReadySelected}
-                                                    onChange={toggleSelectAllReady}
-                                                    className="rounded border-slate-400 text-indigo-600 focus:ring-indigo-500"
-                                                    title="সব সিলেক্ট"
-                                                />
-                                            )}
-                                        </th>
-                                    )}
-                                    <th className="px-4 py-3.5 text-left text-[11px] font-extrabold uppercase tracking-wider">আবেদন নম্বর</th>
-                                    <th className="px-4 py-3.5 text-left text-[11px] font-extrabold uppercase tracking-wider">আবেদনকারী সদস্য</th>
-                                    <th className="px-4 py-3.5 text-left text-[11px] font-extrabold uppercase tracking-wider">তারিখ</th>
-                                    <th className="px-4 py-3.5 text-left text-[11px] font-extrabold uppercase tracking-wider">ঋণ পণ্য ও ক্যাটাগরি</th>
-                                    <th className="px-4 py-3.5 text-left text-[11px] font-extrabold uppercase tracking-wider">পরিমাণ</th>
-                                    <th className="px-4 py-3.5 text-left text-[11px] font-extrabold uppercase tracking-wider">স্ট্যাটাস</th>
-                                    <th className="px-4 py-3.5 text-left text-[11px] font-extrabold uppercase tracking-wider">পেন্ডিং অবস্থান</th>
-                                    <th className="px-4 py-3.5 text-left text-[11px] font-extrabold uppercase tracking-wider">ফর্ম অগ্রগতি</th>
-                                    <th className="px-4 py-3.5 text-right text-[11px] font-extrabold uppercase tracking-wider">অ্যাকশন</th>
-                                </tr>
-                            </thead>
-                            <tbody className="divide-y divide-slate-100 bg-white font-medium">
-                                {filteredApplications.map((app) => {
-                                    const member = app.member_display ?? app.member_admission;
-                                    const pendingIssues = app.issues?.filter((issue) => issue.status === 'pending') || [];
-                                    const hasPendingIssues = pendingIssues.length > 0;
-                                    let statusInfo = statusLabels[app.status] || statusLabels.draft;
-
-                                    if (hasPendingIssues && (app.status === 'pending_head_office' || app.status === 'under_review' || app.status === 'submitted')) {
-                                        statusInfo = {
-                                            label: `সমস্যা আছে (${pendingIssues.length})`,
-                                            bg: 'bg-amber-100',
-                                            text: 'text-amber-900',
-                                            border: 'border-amber-300'
-                                        };
-                                    }
-
-                                    return (
-                                        <tr key={app.id} className="hover:bg-slate-50/80 transition-colors">
-                                            {isBranchUser && (
-                                                <td className="px-3 py-3 text-center">
-                                                    {app.status === 'ready_for_head_office' ? (
-                                                        <input
-                                                            type="checkbox"
-                                                            checked={selectedHoIds.includes(app.id)}
-                                                            onChange={() => toggleHoSelect(app.id)}
-                                                            className="rounded border-slate-300 text-indigo-600 focus:ring-indigo-500"
-                                                        />
-                                                    ) : null}
-                                                </td>
-                                            )}
-                                            <td className="px-4 py-3.5">
-                                                <span className="font-mono font-bold text-indigo-700 bg-indigo-50 border border-indigo-200 px-2 py-0.5 rounded-lg text-xs">
-                                                    {app.application_no}
-                                                </span>
-                                            </td>
-
-                                            <td className="px-4 py-3.5">
-                                                {member ? (
-                                                    <div className="flex items-center gap-3">
-                                                        <div className="w-8 h-8 rounded-xl bg-gradient-to-tr from-blue-600 to-indigo-600 text-white font-extrabold flex items-center justify-center text-xs shadow-sm">
-                                                            {(member.applicant_name_bn || member.applicant_name_en || 'M')[0]}
-                                                        </div>
-                                                        <div>
-                                                            <div className="font-extrabold text-slate-900 text-xs sm:text-sm">
-                                                                {member.applicant_name_bn || member.applicant_name_en}
-                                                            </div>
-                                                            <div className="text-[11px] text-slate-500 font-medium">
-                                                                {member.mobile_number || member.nid_number}
-                                                            </div>
-                                                        </div>
-                                                    </div>
-                                                ) : (
-                                                    <span className="text-slate-400 font-medium text-xs">N/A</span>
+                    <div className="hidden md:block">
+                        <AutoFitTableContainer
+                            minWidth={1150}
+                            storageKey="branch_loan_applications_table"
+                            title="ঋণ আবেদনের তালিকা"
+                            subtitle={`(পৃষ্ঠা ${applications.current_page || 1}/${applications.last_page || 1} · মোট ${applications.total || 0} টি)`}
+                        >
+                            <table className="w-full text-xs">
+                                <thead className="bg-slate-900 text-white">
+                                    <tr>
+                                        {isBranchUser && (
+                                            <th className="px-3 py-3.5 text-center w-10">
+                                                {readyForHoIds.length > 0 && (
+                                                    <input
+                                                        type="checkbox"
+                                                        checked={allReadySelected}
+                                                        onChange={toggleSelectAllReady}
+                                                        className="rounded border-slate-400 text-indigo-600 focus:ring-indigo-500"
+                                                        title="সব সিলেক্ট"
+                                                    />
                                                 )}
-                                            </td>
-
-                                            <td className="px-4 py-3.5 text-slate-600 font-medium">
-                                                {formatDate(app.created_at)}
-                                            </td>
-
-                                            <td className="px-4 py-3.5">
-                                                <div className="font-bold text-slate-900">{app.loan_product?.product_name}</div>
-                                                <div className="text-[10px] text-slate-500 font-medium">{app.loan_category?.category_name}</div>
-                                            </td>
-
-                                            <td className="px-4 py-3.5">
-                                                <div className="font-black text-emerald-600 text-sm">
-                                                    ৳{formatAmount(app.requested_amount)}
-                                                </div>
-                                                {app.approved_amount && (
-                                                    <div className="text-[10px] text-emerald-700 font-bold">
-                                                        অনুমোদিত: ৳{formatAmount(app.approved_amount)}
-                                                    </div>
-                                                )}
-                                            </td>
-
-                                            <td className="px-4 py-3.5">
-                                                <span className={`inline-block px-2.5 py-1 rounded-xl text-[11px] font-extrabold border ${statusInfo.bg} ${statusInfo.text} ${statusInfo.border}`}>
-                                                    {statusInfo.label}
-                                                </span>
-                                            </td>
-
-                                            <td className="px-4 py-3.5">
-                                                <span className="inline-block text-xs font-bold text-indigo-700 bg-indigo-50 px-2.5 py-1 rounded-md border border-indigo-100">
-                                                    {app.tracking_state?.label ?? '—'}
-                                                </span>
-                                            </td>
-
-                                            <td className="px-4 py-3.5">
-                                                {app.visible_form_ids && app.visible_form_ids.length > 0 ? (
-                                                    <div className="flex flex-wrap gap-1">
-                                                        {app.visible_form_ids.map((formId) => {
-                                                            const isSaved = app.form_saved?.[formId];
-                                                            return (
-                                                                <span
-                                                                    key={formId}
-                                                                    title={FORM_NAMES[formId] || `ফর্ম ${formId}`}
-                                                                    className={`px-1.5 py-0.5 rounded text-[10px] font-bold ${
-                                                                        isSaved
-                                                                            ? 'bg-emerald-100 text-emerald-800 border border-emerald-300'
-                                                                            : 'bg-slate-100 text-slate-400 border border-slate-200'
-                                                                    }`}
-                                                                >
-                                                                    F{formId} {isSaved ? '✓' : ''}
-                                                                </span>
-                                                            );
-                                                        })}
-                                                    </div>
-                                                ) : (
-                                                    <span className="text-slate-400 text-[11px]">—</span>
-                                                )}
-                                            </td>
-
-                                            <td className="px-4 py-3.5 text-right">
-                                                <div className="flex items-center justify-end gap-1.5">
-                                                    <button
-                                                        onClick={() => router.get(`/member/loan-applications/${app.id}`)}
-                                                        className="p-1.5 text-indigo-700 hover:bg-indigo-50 rounded-xl transition"
-                                                        title="বিবরণ দেখুন"
-                                                    >
-                                                        <Eye className="w-4 h-4" />
-                                                    </button>
-                                                    {(app.status === 'submitted' || app.status === 'under_review') && isBranchManager && (app.editable_form_ids?.length ?? 0) > 0 && (
-                                                        <button
-                                                            onClick={() => router.get(`/member/loan-applications/${app.id}`)}
-                                                            className="inline-flex items-center gap-1 text-xs px-2.5 py-1 bg-amber-50 hover:bg-amber-100 text-amber-700 font-bold rounded-xl border border-amber-200 shadow-sm transition active:scale-95"
-                                                            title="ফর্ম দেখুন / পূরণ করুন"
-                                                        >
-                                                            <Edit className="w-3 h-3" />
-                                                            <span>ফর্ম</span>
-                                                        </button>
-                                                    )}
-                                                    {app.status === 'draft' && (
-                                                        <>
-                                                            {app.all_forms_complete && (
-                                                                app.can_submit ? (
-                                                                    <button
-                                                                        onClick={() => handleSubmitApplication(app)}
-                                                                        className="inline-flex items-center gap-1 text-xs px-2.5 py-1 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-xl shadow-sm transition active:scale-95"
-                                                                        title="শাখা ব্যবস্থাপকের কাছে জমা দিন"
-                                                                    >
-                                                                        <Send className="w-3 h-3" />
-                                                                        <span>সাবমিট</span>
-                                                                    </button>
-                                                                ) : (
-                                                                    <button
-                                                                        disabled
-                                                                        className="inline-flex items-center gap-1 text-xs px-2.5 py-1 bg-slate-100 text-slate-400 font-bold rounded-xl border border-slate-200 cursor-not-allowed"
-                                                                        title="সদস্য ভর্তি অনুমোদিত হলে জমা দেওয়া যাবে"
-                                                                    >
-                                                                        <Send className="w-3 h-3" />
-                                                                        <span>সাবমিট</span>
-                                                                    </button>
-                                                                )
-                                                            )}
-                                                            <button
-                                                                onClick={() => router.get(`/member/loan-applications/${app.id}`)}
-                                                                className="p-1.5 text-amber-700 hover:bg-amber-50 rounded-xl transition"
-                                                                title="ফর্ম দেখুন / পূরণ করুন"
-                                                            >
-                                                                <Edit className="w-4 h-4" />
-                                                            </button>
-                                                            <button
-                                                                onClick={() => {
-                                                                    if (confirm(`আপনি কি নিশ্চিত যে আপনি এই ঋণ আবেদনটি মুছে ফেলতে চান?\n\nআবেদন নং: ${app.application_no}`)) {
-                                                                        router.delete(`/member/loan-applications/${app.id}`, {
-                                                                            preserveScroll: true,
-                                                                        });
-                                                                    }
-                                                                }}
-                                                                className="p-1.5 text-red-600 hover:bg-red-50 rounded-xl transition"
-                                                                title="মুছে ফেলুন"
-                                                            >
-                                                                <Trash2 className="w-4 h-4" />
-                                                            </button>
-                                                        </>
-                                                    )}
-                                                    {app.status === 'ready_for_head_office' && isBranchUser && (
-                                                        <button
-                                                            onClick={() => {
-                                                                if (confirm(`ঋণ আবেদন ${app.application_no} Head Office এ পাঠাতে চান?`)) {
-                                                                    router.patch(`/member/loan-applications/${app.id}/send-to-head-office`);
-                                                                }
-                                                            }}
-                                                            className="inline-flex items-center gap-1 text-xs px-2.5 py-1 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-xl shadow-sm transition active:scale-95"
-                                                            title="Head Office এ পাঠান"
-                                                        >
-                                                            <Send className="w-3 h-3" />
-                                                            <span>HO পাঠান</span>
-                                                        </button>
-                                                    )}
-                                                    {app.status === 'pending_disbursement' && isBranchUser && (
-                                                        <button
-                                                            onClick={() => {
-                                                                router.get(`/member/loan-applications/${app.id}?action=disburse`);
-                                                            }}
-                                                            className="inline-flex items-center gap-1 text-xs px-2.5 py-1 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-xl shadow-sm transition active:scale-95"
-                                                            title="বিতরণ প্রক্রিয়া শুরু করুন"
-                                                        >
-                                                            <CheckCircle className="w-3 h-3" />
-                                                            <span>বিতরণ</span>
-                                                        </button>
-                                                    )}
-                                                </div>
+                                            </th>
+                                        )}
+                                        <th className="px-4 py-3.5 text-left text-[11px] font-extrabold uppercase tracking-wider">সদস্য কোড ও টাইপ</th>
+                                        <th className="px-4 py-3.5 text-left text-[11px] font-extrabold uppercase tracking-wider">আবেদনকারী সদস্য</th>
+                                        <th className="px-4 py-3.5 text-left text-[11px] font-extrabold uppercase tracking-wider">তারিখ</th>
+                                        <th className="px-4 py-3.5 text-left text-[11px] font-extrabold uppercase tracking-wider">ঋণ পণ্য ও ক্যাটাগরি</th>
+                                        <th className="px-4 py-3.5 text-left text-[11px] font-extrabold uppercase tracking-wider">পরিমাণ</th>
+                                        <th className="px-4 py-3.5 text-left text-[11px] font-extrabold uppercase tracking-wider">স্ট্যাটাস</th>
+                                        <th className="px-4 py-3.5 text-left text-[11px] font-extrabold uppercase tracking-wider">পেন্ডিং অবস্থান</th>
+                                        <th className="px-4 py-3.5 text-left text-[11px] font-extrabold uppercase tracking-wider">ফর্ম অগ্রগতি</th>
+                                        <th className="px-4 py-3.5 text-right text-[11px] font-extrabold uppercase tracking-wider">অ্যাকশন</th>
+                                    </tr>
+                                </thead>
+                                <tbody className="divide-y divide-slate-100 bg-white font-medium">
+                                    {applicationRows.length === 0 ? (
+                                        <tr>
+                                            <td colSpan={isBranchUser ? 10 : 9} className="text-center py-12 text-slate-400">
+                                                <FileText className="w-10 h-10 mx-auto mb-2 text-slate-300" />
+                                                <p className="text-sm font-semibold">কোনো ঋণ আবেদন পাওয়া যায়নি।</p>
                                             </td>
                                         </tr>
-                                    );
-                                })}
-                            </tbody>
-                        </table>
-                        {filteredApplications.length === 0 && (
-                            <div className="text-center py-12 text-slate-400">
-                                <FileText className="w-10 h-10 mx-auto mb-2 text-slate-300" />
-                                <p className="text-sm font-semibold">কোনো ঋণ আবেদন পাওয়া যায়নি।</p>
-                            </div>
-                        )}
+                                    ) : (
+                                        applicationRows.map((app) => {
+                                            const member = app.member_display ?? app.member_admission;
+                                            const memberCode = member?.application_no || member?.member_code || app.member_code || '—';
+                                            const pendingIssues = app.issues?.filter((issue) => issue.status === 'pending') || [];
+                                            const hasPendingIssues = pendingIssues.length > 0;
+                                            let statusInfo = statusLabels[app.status] || statusLabels.draft;
+
+                                            if (hasPendingIssues && (app.status === 'pending_head_office' || app.status === 'under_review' || app.status === 'submitted')) {
+                                                statusInfo = {
+                                                    label: `সমস্যা আছে (${pendingIssues.length})`,
+                                                    bg: 'bg-amber-100',
+                                                    text: 'text-amber-900',
+                                                    border: 'border-amber-300'
+                                                };
+                                            }
+
+                                            return (
+                                                <tr key={app.id} className="hover:bg-slate-50/80 transition-colors">
+                                                    {isBranchUser && (
+                                                        <td className="px-3 py-3 text-center">
+                                                            {app.status === 'ready_for_head_office' ? (
+                                                                <input
+                                                                    type="checkbox"
+                                                                    checked={selectedHoIds.includes(app.id)}
+                                                                    onChange={() => toggleHoSelect(app.id)}
+                                                                    className="rounded border-slate-300 text-indigo-600 focus:ring-indigo-500"
+                                                                />
+                                                            ) : null}
+                                                        </td>
+                                                    )}
+                                                    <td className="px-4 py-3.5">
+                                                        <div className="font-mono font-bold text-indigo-700 bg-indigo-50 border border-indigo-200 px-2 py-0.5 rounded-lg text-xs inline-block">
+                                                            {memberCode}
+                                                        </div>
+                                                        {member?.is_legacy !== undefined && (
+                                                            <div className="mt-1">
+                                                                {member.is_legacy ? (
+                                                                    <span className="inline-flex items-center px-1.5 py-0.2 bg-amber-50 text-amber-800 border border-amber-200 text-[10px] font-semibold rounded">
+                                                                        পুরাতন{member.loan_dofa ? ` · দফা ${member.loan_dofa}` : ''}
+                                                                    </span>
+                                                                ) : (
+                                                                    <span className="inline-flex items-center px-1.5 py-0.2 bg-emerald-50 text-emerald-800 border border-emerald-200 text-[10px] font-semibold rounded">
+                                                                        নতুন সদস্য
+                                                                    </span>
+                                                                )}
+                                                            </div>
+                                                        )}
+                                                    </td>
+
+                                                    <td className="px-4 py-3.5">
+                                                        {member ? (
+                                                            <div className="flex items-center gap-3">
+                                                                <div className="w-8 h-8 rounded-xl bg-gradient-to-tr from-blue-600 to-indigo-600 text-white font-extrabold flex items-center justify-center text-xs shadow-sm">
+                                                                    {(member.applicant_name_bn || member.applicant_name_en || 'M')[0]}
+                                                                </div>
+                                                                <div>
+                                                                    <div className="font-extrabold text-slate-900 text-xs sm:text-sm">
+                                                                        {member.applicant_name_bn || member.applicant_name_en}
+                                                                    </div>
+                                                                    <div className="text-[11px] text-slate-500 font-medium">
+                                                                        {member.mobile_number || member.nid_number}
+                                                                    </div>
+                                                                </div>
+                                                            </div>
+                                                        ) : (
+                                                            <span className="text-slate-400 font-medium text-xs">N/A</span>
+                                                        )}
+                                                    </td>
+
+                                                    <td className="px-4 py-3.5 text-slate-600 font-medium">
+                                                        {formatDate(app.created_at)}
+                                                    </td>
+
+                                                    <td className="px-4 py-3.5">
+                                                        <div className="font-bold text-slate-900">{app.loan_product?.product_name}</div>
+                                                        <div className="text-[10px] text-slate-500 font-medium">{app.loan_category?.category_name}</div>
+                                                    </td>
+
+                                                    <td className="px-4 py-3.5">
+                                                        <div className="font-black text-emerald-600 text-sm">
+                                                            ৳{formatAmount(app.requested_amount)}
+                                                        </div>
+                                                        {app.approved_amount && (
+                                                            <div className="text-[10px] text-emerald-700 font-bold">
+                                                                অনুমোদিত: ৳{formatAmount(app.approved_amount)}
+                                                            </div>
+                                                        )}
+                                                    </td>
+
+                                                    <td className="px-4 py-3.5">
+                                                        <span className={`inline-block px-2.5 py-1 rounded-xl text-[11px] font-extrabold border ${statusInfo.bg} ${statusInfo.text} ${statusInfo.border}`}>
+                                                            {statusInfo.label}
+                                                        </span>
+                                                    </td>
+
+                                                    <td className="px-4 py-3.5">
+                                                        <span className="inline-block text-xs font-bold text-indigo-700 bg-indigo-50 px-2.5 py-1 rounded-md border border-indigo-100">
+                                                            {app.tracking_state?.label ?? '—'}
+                                                        </span>
+                                                    </td>
+
+                                                    <td className="px-4 py-3.5">
+                                                        {app.visible_form_ids && app.visible_form_ids.length > 0 ? (
+                                                            <div className="flex flex-wrap gap-1">
+                                                                {app.visible_form_ids.map((formId) => {
+                                                                    const isSaved = app.form_saved?.[formId];
+                                                                    return (
+                                                                        <span
+                                                                            key={formId}
+                                                                            title={FORM_NAMES[formId] || `ফর্ম ${formId}`}
+                                                                            className={`px-1.5 py-0.5 rounded text-[10px] font-bold ${
+                                                                                isSaved
+                                                                                    ? 'bg-emerald-100 text-emerald-800 border border-emerald-300'
+                                                                                    : 'bg-slate-100 text-slate-400 border border-slate-200'
+                                                                            }`}
+                                                                        >
+                                                                            F{formId} {isSaved ? '✓' : ''}
+                                                                        </span>
+                                                                    );
+                                                                })}
+                                                            </div>
+                                                        ) : (
+                                                            <span className="text-slate-400 text-[11px]">—</span>
+                                                        )}
+                                                    </td>
+
+                                                    <td className="px-4 py-3.5 text-right">
+                                                        <div className="flex items-center justify-end gap-1.5">
+                                                            <button
+                                                                onClick={() => router.get(`/member/loan-applications/${app.id}`)}
+                                                                className="p-1.5 text-indigo-700 hover:bg-indigo-50 rounded-xl transition"
+                                                                title="বিবরণ দেখুন"
+                                                            >
+                                                                <Eye className="w-4 h-4" />
+                                                            </button>
+                                                            {(app.status === 'submitted' || app.status === 'under_review') && isBranchManager && (app.editable_form_ids?.length ?? 0) > 0 && (
+                                                                <button
+                                                                    onClick={() => router.get(`/member/loan-applications/${app.id}`)}
+                                                                    className="inline-flex items-center gap-1 text-xs px-2.5 py-1 bg-amber-50 hover:bg-amber-100 text-amber-700 font-bold rounded-xl border border-amber-200 shadow-sm transition active:scale-95"
+                                                                    title="ফর্ম দেখুন / পূরণ করুন"
+                                                                >
+                                                                    <Edit className="w-3 h-3" />
+                                                                    <span>ফর্ম</span>
+                                                                </button>
+                                                            )}
+                                                            {app.status === 'draft' && (
+                                                                <>
+                                                                    {app.all_forms_complete && (
+                                                                        app.can_submit ? (
+                                                                            <button
+                                                                                onClick={() => handleSubmitApplication(app)}
+                                                                                className="inline-flex items-center gap-1 text-xs px-2.5 py-1 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-xl shadow-sm transition active:scale-95"
+                                                                                title=" শাখা ব্যবস্থাপকের কাছে জমা দিন"
+                                                                            >
+                                                                                <Send className="w-3 h-3" />
+                                                                                <span>সাবমিট</span>
+                                                                            </button>
+                                                                        ) : (
+                                                                            <button
+                                                                                disabled
+                                                                                className="inline-flex items-center gap-1 text-xs px-2.5 py-1 bg-slate-100 text-slate-400 font-bold rounded-xl border border-slate-200 cursor-not-allowed"
+                                                                                title="সদস্য ভর্তি অনুমোদিত হলে জমা দেওয়া যাবে"
+                                                                            >
+                                                                                <Send className="w-3 h-3" />
+                                                                                <span>সাবমিট</span>
+                                                                            </button>
+                                                                        )
+                                                                    )}
+                                                                    <button
+                                                                        onClick={() => router.get(`/member/loan-applications/${app.id}`)}
+                                                                        className="p-1.5 text-amber-700 hover:bg-amber-50 rounded-xl transition"
+                                                                        title="ফর্ম দেখুন / পূরণ করুন"
+                                                                    >
+                                                                        <Edit className="w-4 h-4" />
+                                                                    </button>
+                                                                    <button
+                                                                        onClick={() => {
+                                                                            if (confirm(`আপনি কি নিশ্চিত যে আপনি এই ঋণ আবেদনটি মুছে ফেলতে চান?\n\nসদস্য: ${member?.applicant_name_bn || member?.applicant_name_en || ''} (${memberCode})`)) {
+                                                                                router.delete(`/member/loan-applications/${app.id}`, keepListFilters);
+                                                                            }
+                                                                        }}
+                                                                        className="p-1.5 text-red-600 hover:bg-red-50 rounded-xl transition"
+                                                                        title="মুছে ফেলুন"
+                                                                    >
+                                                                        <Trash2 className="w-4 h-4" />
+                                                                    </button>
+                                                                </>
+                                                            )}
+                                                            {app.status === 'ready_for_head_office' && isBranchUser && (
+                                                                <button
+                                                                    onClick={() => {
+                                                                        if (confirm(`সদস্য ${member?.applicant_name_bn || member?.applicant_name_en || ''} (${memberCode}) এর ঋণ আবেদন Head Office এ পাঠাতে চান?`)) {
+                                                                            router.patch(`/member/loan-applications/${app.id}/send-to-head-office`, {}, keepListFilters);
+                                                                        }
+                                                                    }}
+                                                                    className="inline-flex items-center gap-1 text-xs px-2.5 py-1 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-xl shadow-sm transition active:scale-95"
+                                                                    title="Head Office এ পাঠান"
+                                                                >
+                                                                    <Send className="w-3 h-3" />
+                                                                    <span>HO পাঠান</span>
+                                                                </button>
+                                                            )}
+                                                            {app.status === 'pending_disbursement' && isBranchUser && (
+                                                                <button
+                                                                    onClick={() => {
+                                                                        router.get(`/member/loan-applications/${app.id}?action=disburse`);
+                                                                    }}
+                                                                    className="inline-flex items-center gap-1 text-xs px-2.5 py-1 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-xl shadow-sm transition active:scale-95"
+                                                                    title="বিতরণ প্রক্রিয়া শুরু করুন"
+                                                                >
+                                                                    <CheckCircle className="w-3 h-3" />
+                                                                    <span>বিতরণ</span>
+                                                                </button>
+                                                            )}
+                                                        </div>
+                                                    </td>
+                                                </tr>
+                                            );
+                                        })
+                                    )}
+                                </tbody>
+                            </table>
+                        </AutoFitTableContainer>
                     </div>
+                    <ListPagination
+                        meta={applications}
+                        onPageChange={(page) => applyListFilters({ page })}
+                        onPerPageChange={(size) => applyListFilters({ per_page: size, page: 1 })}
+                    />
                 </div>
             </div>
 

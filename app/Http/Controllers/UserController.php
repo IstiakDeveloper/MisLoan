@@ -60,7 +60,7 @@ class UserController extends Controller
         $roles = Role::select(['id', 'name', 'display_name'])->get();
         $zones = Zone::where('is_active', true)->get(['id', 'name', 'code']);
         $areas = Area::where('is_active', true)->get(['id', 'name', 'code', 'zone_id']);
-        $branches = Branch::where('is_active', true)->get(['id', 'name', 'code', 'area_id']);
+        $branches = Branch::where('is_active', true)->orderedByCode()->get(['id', 'name', 'code', 'area_id']);
 
         $stats = [
             'total' => User::count(),

@@ -525,7 +525,7 @@ export default function LoanAgreement({
                             <p className="text-xs text-gray-500">যতটুকু পূরণ আছে খসড়া হিসেবে সেভ করা যাবে — পরে সম্পূর্ণ করে জমা দিন</p>
                             {existingApplication && (
                                 <p className="text-xs text-emerald-600 font-semibold mt-0.5">
-                                    ✓ ড্রাফট সংরক্ষিত আছে — Application No: {existingApplication.application_no || 'Pending'}
+                                    ✓ ড্রাফট সংরক্ষিত আছে — আবেদন নং: {existingApplication.application_no || 'Pending'}
                                 </p>
                             )}
                         </div>

@@ -3,6 +3,8 @@ import AdminLayout from '@/layouts/admin-layout';
 import { formatDate, formatDateTime } from '@/utils/dateUtils';
 import { formatCurrency as formatCurrencyBase } from '@/utils/formatAmount';
 import { Head, Link, router } from '@inertiajs/react';
+import { formatBranchLabel, sortBranchesByCode } from '@/utils/branchLabel';
+import { PhoneCallLink } from '@/components/ui/PhoneCallLink';
 import {
     FileSpreadsheet,
     Download,
@@ -126,9 +128,11 @@ export default function Submissions({ applications, zones, areas, branches, unre
         ? areas.filter(a => a.zone_id === parseInt(selectedZone))
         : areas;
 
-    const filteredBranches = selectedArea
-        ? branches.filter(b => b.area_id === parseInt(selectedArea))
-        : branches;
+    const filteredBranches = sortBranchesByCode(
+        selectedArea
+            ? branches.filter(b => b.area_id === parseInt(selectedArea))
+            : branches,
+    );
 
     const hasActiveFilter = selectedZone || selectedArea || selectedBranch || selectedStatus;
 
@@ -404,7 +408,7 @@ export default function Submissions({ applications, zones, areas, branches, unre
                                 >
                                     <option value="">All Branches</option>
                                     {filteredBranches.map((branch) => (
-                                        <option key={branch.id} value={branch.id}>{branch.name}</option>
+                                        <option key={branch.id} value={branch.id}>{formatBranchLabel(branch)}</option>
                                     ))}
                                 </select>
                             </div>
@@ -562,7 +566,7 @@ export default function Submissions({ applications, zones, areas, branches, unre
                                                             {member.member_code || '-'}
                                                         </td>
                                                         <td className="px-3 py-3 text-sm text-gray-700">
-                                                            {member.member_mobile || '-'}
+                                                            <PhoneCallLink phone={member.member_mobile} className="text-gray-700 font-mono text-xs" />
                                                         </td>
                                                         <td className="px-3 py-3 text-sm text-right text-gray-700">
                                                             {member.general_savings ? formatCurrency(member.general_savings) : '-'}

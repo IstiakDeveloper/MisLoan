@@ -25,6 +25,7 @@ import {
     Filter,
 } from 'lucide-react';
 import React, { useState } from 'react';
+import { formatBranchLabel, sortBranchesByCode } from '@/utils/branchLabel';
 
 interface BranchOption {
     id: number;
@@ -202,9 +203,9 @@ export default function Index({ auth, samities, branches = [], filters }: Props)
                                     className="h-10 w-full rounded-lg border border-slate-300 bg-white pr-8 pl-9 text-sm text-slate-800 outline-none focus:border-blue-500 focus:ring-4 focus:ring-blue-100"
                                 >
                                     <option value="">All Branches</option>
-                                    {branches.map((b) => (
+                                    {sortBranchesByCode(branches).map((b) => (
                                         <option key={b.id} value={b.id}>
-                                            {b.name} ({b.code})
+                                            {formatBranchLabel(b)}
                                         </option>
                                     ))}
                                 </select>

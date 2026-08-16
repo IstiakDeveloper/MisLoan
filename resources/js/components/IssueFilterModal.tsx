@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { X, Search, AlertCircle } from 'lucide-react';
 import { router } from '@inertiajs/react';
+import { formatBranchLabel, sortBranchesByCode } from '@/utils/branchLabel';
 
 interface IssueFilterModalProps {
     isOpen: boolean;
@@ -139,9 +140,9 @@ const IssueFilterModal = ({ isOpen, onClose, zones, areas, branches, onSubmit }:
                                 className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
                             >
                                 <option value="">সব শাখা</option>
-                                {branches.map((branch) => (
+                                {sortBranchesByCode(branches).map((branch) => (
                                     <option key={branch.id} value={branch.id}>
-                                        {branch.name}
+                                        {formatBranchLabel(branch)}
                                     </option>
                                 ))}
                             </select>

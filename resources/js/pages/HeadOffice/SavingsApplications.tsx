@@ -4,6 +4,8 @@ import AdminLayout from '@/layouts/admin-layout';
 import { Search, Filter, ChevronLeft, ChevronRight, FileText, X, Landmark, Eye, Calculator } from 'lucide-react';
 import { formatDate } from '@/utils/dateUtils';
 import SavingsCalculatorModal from '@/components/SavingsCalculatorModal';
+import { formatBranchLabel, sortBranchesByCode } from '@/utils/branchLabel';
+import { PhoneCallLink } from '@/components/ui/PhoneCallLink';
 
 interface Zone {
     id: number;
@@ -158,15 +160,15 @@ export default function SavingsApplications({
 
     useEffect(() => {
         if (selectedArea) {
-            setFilteredBranches(branches.filter((b) => b.area_id.toString() === selectedArea));
+            setFilteredBranches(sortBranchesByCode(branches.filter((b) => b.area_id.toString() === selectedArea)));
             if (selectedBranch && !branches.find((b) => b.id.toString() === selectedBranch && b.area_id.toString() === selectedArea)) {
                 setSelectedBranch('');
             }
         } else if (selectedZone) {
             const zoneAreaIds = filteredAreas.map((a) => a.id);
-            setFilteredBranches(branches.filter((b) => zoneAreaIds.includes(b.area_id)));
+            setFilteredBranches(sortBranchesByCode(branches.filter((b) => zoneAreaIds.includes(b.area_id))));
         } else {
-            setFilteredBranches(branches);
+            setFilteredBranches(sortBranchesByCode(branches));
         }
     }, [selectedArea, selectedZone, filteredAreas, branches]);
 
@@ -353,7 +355,7 @@ export default function SavingsApplications({
                             >
                                 <option value="">All Branches</option>
                                 {filteredBranches.map((b) => (
-                                    <option key={b.id} value={b.id}>{b.name}</option>
+                                    <option key={b.id} value={b.id}>{formatBranchLabel(b)}</option>
                                 ))}
                             </select>
                             <select
@@ -422,9 +424,18 @@ export default function SavingsApplications({
                                                     <div className="text-sm text-gray-900">
                                                         {(app.member_admission ?? app.memberAdmission)?.applicant_name_bn || (app.member_admission ?? app.memberAdmission)?.applicant_name_en || '—'}
                                                     </div>
-                                                    <div className="text-xs text-gray-500">
-                                                        {(app.member_admission ?? app.memberAdmission)?.application_no && `Member: ${(app.member_admission ?? app.memberAdmission)?.application_no}`}
-                                                        {(app.member_admission ?? app.memberAdmission)?.mobile_number && ` | ${(app.member_admission ?? app.memberAdmission)?.mobile_number}`}
+                                                    <div className="text-xs text-gray-500 flex flex-wrap items-center gap-1">
+                                                        {(app.member_admission ?? app.memberAdmission)?.application_no && <span>Member: {(app.member_admission ?? app.memberAdmission)?.application_no}</span>}
+                                                        {(app.member_admission ?? app.memberAdmission)?.mobile_number && (
+                                                            <>
+                                                                <span>|</span>
+                                                                <PhoneCallLink
+                                                                    phone={(app.member_admission ?? app.memberAdmission)?.mobile_number}
+                                                                    className="text-xs text-blue-600"
+                                                                    iconClassName="w-2.5 h-2.5 text-blue-500"
+                                                                />
+                                                            </>
+                                                        )}
                                                     </div>
                                                 </td>
                                                 <td className="px-4 py-3 text-sm text-gray-900">{app.branch?.name || '—'}</td>

@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers\Member;
 
+use App\Http\Controllers\Concerns\ResolvesListPerPage;
 use App\Http\Controllers\Controller;
 use App\Models\LoanApplication;
 use App\Models\LoanApplicationApproval;
@@ -23,6 +24,8 @@ use Illuminate\Support\Str;
 
 class LoanApplicationController extends Controller
 {
+    use ResolvesListPerPage;
+
     private function isFieldOfficer($user): bool
     {
         $user->loadMissing('role');
@@ -344,6 +347,8 @@ class LoanApplicationController extends Controller
         $dateFrom = $request->input('date_from', now()->startOfMonth()->toDateString());
         $dateTo = $request->input('date_to', now()->toDateString());
         $statusFilter = $request->input('status', ''); // Empty means all statuses
+        $searchFilter = $request->input('search', '');
+        $perPage = $this->resolvePerPage($request);
         $isFieldOfficer = $this->isFieldOfficer($user);
 
         // Get loan categories with active products using the correct relationship name
@@ -369,7 +374,7 @@ class LoanApplicationController extends Controller
         $applications = LoanApplication::with([
                 'loanProduct:id,product_name,product_name_bn,product_code,installment_type',
                 'loanCategory:id,category_name,category_name_bn',
-                'memberAdmission:id,applicant_name_en,applicant_name_bn,application_no,nid_number,mobile_number,status',
+                'memberAdmission:id,applicant_name_en,applicant_name_bn,application_no,nid_number,mobile_number,status,is_legacy,loan_dofa',
                 'branch:id,name,code',
                 'approvals' => function ($query) {
                     $query->select('id', 'loan_application_id', 'user_id', 'level', 'sequence', 'status')
@@ -395,6 +400,18 @@ class LoanApplicationController extends Controller
             ->when($statusFilter, function ($query) use ($statusFilter) {
                 $query->where('status', $statusFilter);
             })
+            ->when($searchFilter, function ($query) use ($searchFilter) {
+                $query->where(function ($q) use ($searchFilter) {
+                    $q->where('application_no', 'like', "%{$searchFilter}%")
+                      ->orWhereHas('memberAdmission', function ($mq) use ($searchFilter) {
+                          $mq->where('applicant_name_en', 'like', "%{$searchFilter}%")
+                            ->orWhere('applicant_name_bn', 'like', "%{$searchFilter}%")
+                            ->orWhere('mobile_number', 'like', "%{$searchFilter}%")
+                            ->orWhere('nid_number', 'like', "%{$searchFilter}%")
+                            ->orWhere('application_no', 'like', "%{$searchFilter}%");
+                      });
+                });
+            })
             ->orderBy('created_at', 'desc')
             ->with('samity:id,samity_name,samity_name_bn,samity_code')
             ->select([
@@ -403,7 +420,8 @@ class LoanApplicationController extends Controller
                 'requested_amount', 'approved_amount', 'created_at', 'updated_at',
                 'submitted_at', 'reviewed_at', 'purpose_of_loan', 'legacy_member_snapshot',
             ])
-            ->get();
+            ->paginate($perPage)
+            ->withQueryString();
 
         // Form completion flags in a separate query (no ORDER BY = no sort buffer).
         $formFlags = collect();
@@ -420,7 +438,7 @@ class LoanApplicationController extends Controller
         }
 
         // ফর্ম অনুযায়ী কমপ্লিশন: প্রতিটি আবেদনের জন্য stage-aware form meta
-        $applications = $applications->map(function ($app) use ($request, $formFlags) {
+        $applications->getCollection()->transform(function ($app) use ($request, $formFlags) {
             $flags = $formFlags->get($app->id);
             $formSavedOverride = $flags ? [
                 1 => (bool) $flags->has_form_1,
@@ -469,6 +487,8 @@ class LoanApplicationController extends Controller
             'dateFrom' => $dateFrom,
             'dateTo' => $dateTo,
             'statusFilter' => $statusFilter,
+            'searchFilter' => $searchFilter,
+            'perPage' => $perPage,
             'preselectedMember' => $this->resolvePreselectedMember($request),
         ]);
     }
@@ -1089,8 +1109,7 @@ class LoanApplicationController extends Controller
             );
         }
 
-        return redirect()->route('member.loan-applications.show', $application->id)
-            ->with('success', 'ঋণ আবেদনটি Head Office এ পাঠানো হয়েছে।');
+        return back()->with('success', 'ঋণ আবেদনটি Head Office এ পাঠানো হয়েছে।');
     }
 
     /**
@@ -1168,8 +1187,7 @@ class LoanApplicationController extends Controller
             );
         }
 
-        return redirect()->route('member.loan-applications.index')
-            ->with('success', "{$count}টি ঋণ আবেদন Head Office এ পাঠানো হয়েছে।");
+        return $this->redirectToListPreservingFilters('member.loan-applications.index', "{$count}টি ঋণ আবেদন Head Office এ পাঠানো হয়েছে।");
     }
 
     /**
@@ -2150,8 +2168,7 @@ class LoanApplicationController extends Controller
         
         $application->delete();
         
-        return redirect()->route('member.loan-applications.index')
-            ->with('success', 'ঋণ আবেদন সফলভাবে মুছে ফেলা হয়েছে।');
+        return $this->redirectToListPreservingFilters('member.loan-applications.index', 'ঋণ আবেদন সফলভাবে মুছে ফেলা হয়েছে।');
     }
 
     /**

@@ -3,6 +3,8 @@ import { Head, router } from '@inertiajs/react';
 import AdminLayout from '@/layouts/admin-layout';
 import TeamBasedExportBar from '@/components/team-based/TeamBasedExportBar';
 import { formatDate } from '@/utils/dateUtils';
+import { formatBranchLabel, sortBranchesByCode } from '@/utils/branchLabel';
+import { PhoneCallLink } from '@/components/ui/PhoneCallLink';
 
 function rowHasReviewHistory(row: {
     status?: string;
@@ -218,9 +220,9 @@ export default function TeamBasedApprovals({ approvals, filters, stats, zones, a
     };
 
     const filteredAreas = areas.filter((a) => !zoneId || a.zone_id.toString() === zoneId);
-    const filteredBranches = branches.filter(
+    const filteredBranches = sortBranchesByCode(branches.filter(
         (b) => (!zoneId || filteredAreas.some((a) => a.id === b.area_id)) && (!areaId || b.area_id.toString() === areaId)
-    );
+    ));
 
     const handlePageChange = (page: number) => {
         if (page < 1 || page > approvals.last_page) return;
@@ -763,10 +765,8 @@ export default function TeamBasedApprovals({ approvals, filters, stats, zones, a
                                 className="w-full border border-slate-300 rounded-lg px-3 py-2 text-xs bg-white focus:outline-none focus:ring-2 focus:ring-blue-500/15 focus:border-blue-500 transition-all text-slate-800"
                             >
                                 <option value="">All Branches</option>
-                                {branches
-                                    .filter((b) => !areaId || b.area_id.toString() === areaId)
-                                    .map((b) => (
-                                        <option key={b.id} value={b.id}>{b.name} ({b.code})</option>
+                                {filteredBranches.map((b) => (
+                                        <option key={b.id} value={b.id}>{formatBranchLabel(b)}</option>
                                     ))}
                             </select>
                         </div>
@@ -972,7 +972,9 @@ export default function TeamBasedApprovals({ approvals, filters, stats, zones, a
                                         <td className="border whitespace-nowrap font-mono">{row.member_code || ''}</td>
                                     )}
                                     {colVis.member_phone && (
-                                        <td className="border whitespace-nowrap">{row.member_phone || ''}</td>
+                                        <td className="border whitespace-nowrap">
+                                            <PhoneCallLink phone={row.member_phone} className="text-slate-800" />
+                                        </td>
                                     )}
                                     {colVis.samity_number && (
                                         <td className="border whitespace-nowrap">{row.samity_number || ''}</td>

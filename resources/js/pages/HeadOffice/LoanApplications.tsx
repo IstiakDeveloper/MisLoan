@@ -9,8 +9,6 @@ import {
     Pencil,
     CalendarDays,
     Filter,
-    ChevronLeft,
-    ChevronRight,
     Trash2,
     FileText,
     X,
@@ -29,9 +27,18 @@ import {
     UserCheck,
     Check,
     Download,
-    Sparkles
+    Sparkles,
+    Wrench,
 } from 'lucide-react';
 import AutoFitTableContainer from '@/components/AutoFitTableContainer';
+import ListPagination from '@/components/ListPagination';
+import SuperAdminDeletePinModal from '@/components/SuperAdminDeletePinModal';
+import { formatBranchLabel, keepListFilters, sortBranchesByCode } from '@/utils/branchLabel';
+import { PhoneCallLink } from '@/components/ui/PhoneCallLink';
+import HeadOfficeModificationModal, {
+    useCanHeadOfficeModify,
+    type ModificationTarget,
+} from '@/components/HeadOfficeModificationModal';
 
 interface Zone {
     id: number;
@@ -123,12 +130,14 @@ interface Props {
         date_to?: string;
         had_issues?: string;
         printed?: string;
+        per_page?: number | string;
     };
     stats: {
         total: number;
         draft: number;
         submitted: number;
         under_review: number;
+        ready_for_head_office?: number;
         pending_head_office: number;
         approved: number;
         pending_disbursement?: number;
@@ -138,12 +147,15 @@ interface Props {
     zones: Zone[];
     areas: Area[];
     branches: Branch[];
+    viewAllLoans?: boolean;
 }
 
-export default function LoanApplications({ loans, filters, stats, zones, areas, branches }: Props) {
+export default function LoanApplications({ loans, filters, stats, zones, areas, branches, viewAllLoans = false }: Props) {
     const { auth } = usePage().props as any;
     const roleName = auth?.user?.role?.name || (typeof auth?.user?.role === 'string' ? auth?.user?.role : '');
     const isSuperAdmin = roleName === 'super_admin' || roleName === 'superadmin' || roleName === 'Super Admin';
+    const canModify = useCanHeadOfficeModify();
+    const canViewAllLoans = isSuperAdmin || !!auth?.user?.has_all_access || viewAllLoans;
 
     const [searchQuery, setSearchQuery] = useState(filters.search || '');
     const [statusFilter, setStatusFilter] = useState(filters.status || '');
@@ -151,6 +163,10 @@ export default function LoanApplications({ loans, filters, stats, zones, areas, 
 
     // Modals
     const [showPrintModal, setShowPrintModal] = useState(false);
+    const [modificationTarget, setModificationTarget] = useState<ModificationTarget | null>(null);
+    const [selectedIds, setSelectedIds] = useState<number[]>([]);
+    const [deleteIntent, setDeleteIntent] = useState<{ type: 'single'; id: number; label: string } | { type: 'bulk' } | null>(null);
+    const [deleteProcessing, setDeleteProcessing] = useState(false);
     const [markAsPrintedCheckbox, setMarkAsPrintedCheckbox] = useState(false);
 
     // Date filters - default to current month (1st .. today)
@@ -185,16 +201,16 @@ export default function LoanApplications({ loans, filters, stats, zones, areas, 
     useEffect(() => {
         if (selectedArea) {
             const filtered = branches.filter(branch => branch.area_id.toString() === selectedArea);
-            setFilteredBranches(filtered);
+            setFilteredBranches(sortBranchesByCode(filtered));
             if (selectedBranch && !filtered.find(b => b.id.toString() === selectedBranch)) {
                 setSelectedBranch('');
             }
         } else if (selectedZone) {
             const zoneAreaIds = filteredAreas.map(a => a.id);
             const filtered = branches.filter(branch => zoneAreaIds.includes(branch.area_id));
-            setFilteredBranches(filtered);
+            setFilteredBranches(sortBranchesByCode(filtered));
         } else {
-            setFilteredBranches(branches);
+            setFilteredBranches(sortBranchesByCode(branches));
         }
     }, [selectedArea, selectedZone, filteredAreas, branches]);
 
@@ -209,6 +225,7 @@ export default function LoanApplications({ loans, filters, stats, zones, areas, 
             date_to: dateTo,
             had_issues: hadIssues,
             printed: printedFilter,
+            per_page: loans.per_page || filters.per_page || 20,
             ...overrides,
         };
 
@@ -249,9 +266,55 @@ export default function LoanApplications({ loans, filters, stats, zones, areas, 
     };
 
     const handleDelete = (loan: LoanApplication) => {
-        if (confirm(`আপনি কি নিশ্চিত যে ঋণ আবেদন নং ${loan.application_no} মুছে ফেলতে চান?`)) {
-            router.delete(`/head-office/loans/${loan.id}`, { preserveScroll: true });
+        setDeleteIntent({ type: 'single', id: loan.id, label: loan.member_admission?.application_no || loan.application_no });
+    };
+
+    const toggleSelect = (id: number) => {
+        setSelectedIds((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]));
+    };
+
+    const pageIds = loans.data.map((loan) => loan.id);
+    const allPageSelected = pageIds.length > 0 && pageIds.every((id) => selectedIds.includes(id));
+
+    const toggleSelectAllOnPage = () => {
+        if (allPageSelected) {
+            setSelectedIds((prev) => prev.filter((id) => !pageIds.includes(id)));
+        } else {
+            setSelectedIds((prev) => Array.from(new Set([...prev, ...pageIds])));
         }
+    };
+
+    const confirmDeleteWithPin = (pin: string) => {
+        if (!deleteIntent) {
+            return;
+        }
+        setDeleteProcessing(true);
+        const isBulk = deleteIntent.type === 'bulk';
+        const url = isBulk ? '/head-office/loans/bulk' : `/head-office/loans/${deleteIntent.id}`;
+        const data = isBulk ? { pin, ids: selectedIds } : { pin };
+
+        router.delete(url, {
+            data,
+            ...keepListFilters,
+            onSuccess: () => {
+                setDeleteIntent(null);
+                if (isBulk) {
+                    setSelectedIds([]);
+                } else if (deleteIntent.type === 'single') {
+                    setSelectedIds((prev) => prev.filter((id) => id !== deleteIntent.id));
+                }
+            },
+            onFinish: () => setDeleteProcessing(false),
+        });
+    };
+
+    const openModificationModal = (loan: LoanApplication) => {
+        setModificationTarget({
+            id: loan.id,
+            applicationNo: loan.member_admission?.application_no || loan.application_no,
+            applicantName: loan.member_admission?.applicant_name_bn || loan.member_admission?.applicant_name_en,
+            status: loan.status,
+        });
     };
 
     const handlePrintConfirm = () => {
@@ -260,9 +323,7 @@ export default function LoanApplications({ loans, filters, stats, zones, areas, 
         window.open(printUrl, '_blank');
 
         if (markAsPrintedCheckbox) {
-            router.post('/head-office/loan-applications/mark-printed', params, {
-                preserveScroll: true,
-            });
+            router.post('/head-office/loan-applications/mark-printed', params, keepListFilters);
         }
 
         setShowPrintModal(false);
@@ -279,6 +340,7 @@ export default function LoanApplications({ loans, filters, stats, zones, areas, 
             draft: { label: 'ড্রাফট', bg: 'bg-slate-100 border-slate-300', text: 'text-slate-700' },
             submitted: { label: 'জমাকৃত', bg: 'bg-blue-50 border-blue-200', text: 'text-blue-700' },
             under_review: { label: 'যাচাইাধীন', bg: 'bg-amber-50 border-amber-200', text: 'text-amber-700' },
+            ready_for_head_office: { label: 'শাখা অনুমোদিত', bg: 'bg-violet-50 border-violet-200', text: 'text-violet-700' },
             pending_head_office: { label: 'হেড অফিস পেন্ডিং', bg: 'bg-indigo-50 border-indigo-200', text: 'text-indigo-700' },
             approved: { label: 'অনুমোদিত', bg: 'bg-emerald-50 border-emerald-200', text: 'text-emerald-700' },
             pending_disbursement: { label: 'বিতরণ অপেক্ষা', bg: 'bg-amber-50 border-amber-200', text: 'text-amber-800' },
@@ -307,10 +369,14 @@ export default function LoanApplications({ loans, filters, stats, zones, areas, 
                         </div>
                         <div>
                             <h1 className="text-lg font-bold text-white tracking-tight">
-                                Loan Applications (সকল ঋণ আবেদনসমূহ)
+                                {canViewAllLoans
+                                    ? 'Loan Applications (সকল ঋণ আবেদনসমূহ)'
+                                    : 'Loan Applications (হেড অফিসে আসা ঋণ আবেদন)'}
                             </h1>
                             <p className="text-xs text-slate-400">
-                                সকল শাখা হতে প্রাপ্ত ঋণ আবেদনপত্রের তথ্য, ফিল্টারিং, প্রিন্ট ও রিপোর্ট
+                                {canViewAllLoans
+                                    ? 'সকল শাখা হতে প্রাপ্ত ঋণ আবেদনপত্রের তথ্য, ফিল্টারিং, প্রিন্ট ও রিপোর্ট'
+                                    : 'হেড অফিসে আসা ঋণ আবেদনপত্রের তথ্য, ফিল্টারিং, প্রিন্ট ও রিপোর্ট'}
                             </p>
                         </div>
                     </div>
@@ -397,6 +463,15 @@ export default function LoanApplications({ loans, filters, stats, zones, areas, 
                         <span className="text-lg font-black text-teal-700">{stats.disbursed}</span>
                     </div>
 
+                    {canViewAllLoans && (
+                        <>
+                    <div
+                        onClick={() => { setStatusFilter('ready_for_head_office'); applyFilters({ status: 'ready_for_head_office' }); }}
+                        className={`bg-white rounded-xl p-2.5 border shadow-sm cursor-pointer transition ${statusFilter === 'ready_for_head_office' ? 'border-violet-500 bg-violet-50' : 'border-violet-100 hover:border-violet-300'}`}
+                    >
+                        <span className="text-[10px] font-bold uppercase text-violet-600 block">শাখা অনুমোদিত</span>
+                        <span className="text-lg font-black text-violet-700">{stats.ready_for_head_office ?? 0}</span>
+                    </div>
                     <div
                         onClick={() => { setStatusFilter('under_review'); applyFilters({ status: 'under_review' }); }}
                         className={`bg-white rounded-xl p-2.5 border shadow-sm cursor-pointer transition ${statusFilter === 'under_review' ? 'border-amber-500 bg-amber-50' : 'border-amber-100 hover:border-amber-300'}`}
@@ -412,6 +487,8 @@ export default function LoanApplications({ loans, filters, stats, zones, areas, 
                         <span className="text-[10px] font-bold uppercase text-blue-600 block">জমাকৃত</span>
                         <span className="text-lg font-black text-blue-700">{stats.submitted}</span>
                     </div>
+                        </>
+                    )}
 
                     <div
                         onClick={() => { setStatusFilter('rejected'); applyFilters({ status: 'rejected' }); }}
@@ -489,7 +566,7 @@ export default function LoanApplications({ loans, filters, stats, zones, areas, 
                             >
                                 <option value="">সকল শাখা</option>
                                 {filteredBranches.map((b) => (
-                                    <option key={b.id} value={b.id}>{b.name}</option>
+                                    <option key={b.id} value={b.id}>{formatBranchLabel(b)}</option>
                                 ))}
                             </select>
                         </div>
@@ -507,10 +584,15 @@ export default function LoanApplications({ loans, filters, stats, zones, areas, 
                                 <option value="approved">অনুমোদিত</option>
                                 <option value="pending_disbursement">বিতরণ অপেক্ষা</option>
                                 <option value="disbursed">বিতরণকৃত</option>
-                                <option value="under_review">যাচাইাধীন</option>
-                                <option value="submitted">জমাকৃত</option>
+                                {canViewAllLoans && (
+                                    <>
+                                        <option value="ready_for_head_office">শাখা অনুমোদিত</option>
+                                        <option value="under_review">যাচাইাধীন</option>
+                                        <option value="submitted">জমাকৃত</option>
+                                        <option value="draft">ড্রাফট</option>
+                                    </>
+                                )}
                                 <option value="rejected">প্রত্যাখ্যাত</option>
-                                <option value="draft">ড্রাফট</option>
                             </select>
                         </div>
 
@@ -569,6 +651,27 @@ export default function LoanApplications({ loans, filters, stats, zones, areas, 
                 </div>
 
                 {/* Main Loans Table with AutoFit Container */}
+                {isSuperAdmin && selectedIds.length > 0 && (
+                    <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-rose-200 bg-rose-50 px-4 py-3">
+                        <p className="text-sm text-rose-800 font-medium">{selectedIds.length} টি ঋণ আবেদন নির্বাচিত</p>
+                        <div className="flex flex-wrap gap-2">
+                            <button
+                                type="button"
+                                onClick={() => setSelectedIds([])}
+                                className="px-4 py-2 rounded-lg border border-slate-300 bg-white text-xs font-medium text-slate-700 hover:bg-slate-50"
+                            >
+                                নির্বাচন সরান
+                            </button>
+                            <button
+                                type="button"
+                                onClick={() => setDeleteIntent({ type: 'bulk' })}
+                                className="px-4 py-2 rounded-lg bg-rose-600 text-white text-xs font-semibold hover:bg-rose-700 shadow-sm"
+                            >
+                                নির্বাচিত মুছুন
+                            </button>
+                        </div>
+                    </div>
+                )}
                 {loans.data.length === 0 ? (
                     <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-12 text-center text-slate-500">
                         <FileText className="w-12 h-12 mx-auto mb-3 text-slate-400" />
@@ -585,12 +688,22 @@ export default function LoanApplications({ loans, filters, stats, zones, areas, 
                         <table className="w-full text-left border-collapse table-auto">
                             <thead>
                                 <tr className="bg-slate-50 border-b border-slate-200 text-slate-600 text-[11px] font-bold uppercase tracking-wider">
+                                    {isSuperAdmin && (
+                                        <th className="py-2.5 px-2 text-center w-8">
+                                            <input
+                                                type="checkbox"
+                                                checked={allPageSelected}
+                                                onChange={toggleSelectAllOnPage}
+                                                className="h-3.5 w-3.5 rounded border-slate-300 text-rose-600 focus:ring-rose-500"
+                                            />
+                                        </th>
+                                    )}
                                     <th className="py-2.5 px-2.5">সদস্য নং ও টাইপ</th>
                                     <th className="py-2.5 px-2.5">পণ্য ও ক্যাটাগরি</th>
                                     <th className="py-2.5 px-2.5">আবেদনকারী ও মোবাইল</th>
                                     <th className="py-2.5 px-2.5">পরিমাণ (টাকা)</th>
                                     <th className="py-2.5 px-2.5"> শাখা ও সমিতি</th>
-                                    <th className="py-2.5 px-2.5">তারিখ</th>
+                                    <th className="py-2.5 px-2.5">জমাদানের তারিখ</th>
                                     <th className="py-2.5 px-2.5 text-center">প্রিন্ট</th>
                                     <th className="py-2.5 px-2.5">স্ট্যাটাস</th>
                                     <th className="py-2.5 px-2.5 text-center">অ্যাকশন</th>
@@ -599,6 +712,16 @@ export default function LoanApplications({ loans, filters, stats, zones, areas, 
                             <tbody className="divide-y divide-slate-100 text-xs">
                                 {loans.data.map((loan) => (
                                     <tr key={loan.id} className="hover:bg-slate-50/80 transition-colors">
+                                        {isSuperAdmin && (
+                                            <td className="py-2 px-2 text-center">
+                                                <input
+                                                    type="checkbox"
+                                                    checked={selectedIds.includes(loan.id)}
+                                                    onChange={() => toggleSelect(loan.id)}
+                                                    className="h-3.5 w-3.5 rounded border-slate-300 text-rose-600 focus:ring-rose-500"
+                                                />
+                                            </td>
+                                        )}
                                         {/* Member No & Member Type */}
                                         <td className="py-2 px-2.5 whitespace-nowrap">
                                             <div className="font-mono font-bold text-blue-700 text-xs">
@@ -633,8 +756,12 @@ export default function LoanApplications({ loans, filters, stats, zones, areas, 
                                                 {loan.member_admission?.applicant_name_en || loan.member_admission?.applicant_name_bn || '—'}
                                             </div>
                                             {loan.member_admission?.mobile_number && (
-                                                <div className="text-[10.5px] text-slate-500 font-mono mt-0.5">
-                                                    {loan.member_admission.mobile_number}
+                                                <div className="text-[10.5px] mt-0.5">
+                                                    <PhoneCallLink
+                                                        phone={loan.member_admission.mobile_number}
+                                                        className="text-slate-600 font-mono"
+                                                        iconClassName="w-3 h-3 text-blue-500"
+                                                    />
                                                 </div>
                                             )}
                                         </td>
@@ -695,6 +822,16 @@ export default function LoanApplications({ loans, filters, stats, zones, areas, 
                                                     <Eye className="w-4 h-4" />
                                                 </Link>
 
+                                                {canModify && loan.status !== 'draft' && loan.status !== 'disbursed' && loan.status !== 'cancelled' && (
+                                                    <button
+                                                        onClick={() => openModificationModal(loan)}
+                                                        className="p-1.5 text-slate-600 hover:text-white hover:bg-slate-800 rounded-lg transition"
+                                                        title="Modification"
+                                                    >
+                                                        <Wrench className="w-4 h-4" />
+                                                    </button>
+                                                )}
+
                                                 {loan.status === 'pending_head_office' && (
                                                     <Link
                                                         href="/head-office/process-loans"
@@ -706,7 +843,7 @@ export default function LoanApplications({ loans, filters, stats, zones, areas, 
                                                     </Link>
                                                 )}
 
-                                                {isSuperAdmin && (loan.status === 'draft' || loan.status === 'submitted') && (
+                                                {isSuperAdmin && (
                                                     <button
                                                         onClick={() => handleDelete(loan)}
                                                         className="p-1.5 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition"
@@ -724,32 +861,11 @@ export default function LoanApplications({ loans, filters, stats, zones, areas, 
                     </AutoFitTableContainer>
                 )}
 
-                {/* Pagination Bar */}
-                {loans.last_page > 1 && (
-                    <div className="bg-white rounded-xl shadow-xs border border-slate-200 px-4 py-3 flex items-center justify-between text-xs">
-                        <span className="text-slate-600 font-medium">
-                            পেজ {loans.current_page} / {loans.last_page} (মোট {loans.total} টি রেকর্ড)
-                        </span>
-                        <div className="flex items-center gap-2">
-                            {loans.current_page > 1 && (
-                                <button
-                                    onClick={() => applyFilters({ page: loans.current_page - 1 })}
-                                    className="px-3 py-1 bg-white border border-slate-300 hover:bg-slate-100 text-slate-700 font-semibold rounded-lg transition flex items-center gap-1"
-                                >
-                                    <ChevronLeft className="w-3.5 h-3.5" /> পূর্ববর্তী
-                                </button>
-                            )}
-                            {loans.current_page < loans.last_page && (
-                                <button
-                                    onClick={() => applyFilters({ page: loans.current_page + 1 })}
-                                    className="px-3 py-1 bg-indigo-600 hover:bg-indigo-700 text-white font-semibold rounded-lg transition flex items-center gap-1 shadow-sm"
-                                >
-                                    পরবর্তী <ChevronRight className="w-3.5 h-3.5" />
-                                </button>
-                            )}
-                        </div>
-                    </div>
-                )}
+                <ListPagination
+                    meta={loans}
+                    onPageChange={(page) => applyFilters({ page })}
+                    onPerPageChange={(size) => applyFilters({ per_page: size, page: 1 })}
+                />
             </div>
 
             {/* Print Confirmation Modal (Identical to Member Admission Print Modal) */}
@@ -793,6 +909,24 @@ export default function LoanApplications({ loans, filters, stats, zones, areas, 
                     </div>
                 </div>
             )}
+            <HeadOfficeModificationModal
+                open={!!modificationTarget}
+                onClose={() => setModificationTarget(null)}
+                entityType="loan"
+                target={modificationTarget}
+            />
+            <SuperAdminDeletePinModal
+                open={!!deleteIntent}
+                title="ঋণ আবেদন মুছে ফেলুন"
+                description={
+                    deleteIntent?.type === 'bulk'
+                        ? `নির্বাচিত ${selectedIds.length} টি ঋণ আবেদন মুছে ফেলতে PIN দিন।`
+                        : `সদস্য নং ${deleteIntent?.type === 'single' ? deleteIntent.label : ''} মুছে ফেলতে PIN দিন।`
+                }
+                processing={deleteProcessing}
+                onClose={() => setDeleteIntent(null)}
+                onConfirm={confirmDeleteWithPin}
+            />
         </AdminLayout>
     );
 }

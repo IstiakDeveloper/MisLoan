@@ -94,6 +94,11 @@ class Branch extends Model
         return $query->where('is_active', true);
     }
 
+    public function scopeOrderedByCode($query)
+    {
+        return $query->orderBy('code');
+    }
+
     public function getFullNameAttribute(): string
     {
         return "{$this->name} ({$this->area->name}, {$this->area->zone->name})";

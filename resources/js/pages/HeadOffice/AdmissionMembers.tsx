@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Head, router, Link, useForm, usePage } from '@inertiajs/react';
+import { Head, router, Link, usePage } from '@inertiajs/react';
 import AdminLayout from '@/layouts/admin-layout';
 import { formatDate } from '@/utils/dateUtils';
 import {
@@ -8,8 +8,6 @@ import {
     Pencil,
     CalendarDays,
     Filter,
-    ChevronLeft,
-    ChevronRight,
     PlayCircle,
     Trash2,
     FileText,
@@ -22,11 +20,19 @@ import {
     Phone,
     MapPin,
     Download,
-    UserCheck,
     Sparkles,
+    Wrench,
 } from 'lucide-react';
 import { MemberAdmission } from '@/types/memberAdmission';
 import AutoFitTableContainer from '@/components/AutoFitTableContainer';
+import ListPagination from '@/components/ListPagination';
+import SuperAdminDeletePinModal from '@/components/SuperAdminDeletePinModal';
+import { formatBranchLabel, keepListFilters, sortBranchesByCode } from '@/utils/branchLabel';
+import { PhoneCallLink } from '@/components/ui/PhoneCallLink';
+import HeadOfficeModificationModal, {
+    useCanHeadOfficeModify,
+    type ModificationTarget,
+} from '@/components/HeadOfficeModificationModal';
 
 interface Zone {
     id: number;
@@ -74,6 +80,7 @@ interface Props {
         date_to?: string;
         had_issues?: string;
         printed?: string;
+        per_page?: number | string;
     };
     stats: {
         total: number;
@@ -88,6 +95,7 @@ interface Props {
     zones: Zone[];
     areas: Area[];
     branches: Branch[];
+    viewAllAdmissions?: boolean;
 }
 
 function creatorName(admission: MemberAdmission): string {
@@ -109,29 +117,23 @@ function branchLabel(admission: MemberAdmission): { name: string; meta?: string 
     return { name: branch.name, meta };
 }
 
-export default function AdmissionMembers({ admissions, filters, stats, zones, areas, branches }: Props) {
+export default function AdmissionMembers({ admissions, filters, stats, zones, areas, branches, viewAllAdmissions = false }: Props) {
     const { auth } = usePage().props as any;
     const roleName = auth?.user?.role?.name || (typeof auth?.user?.role === 'string' ? auth?.user?.role : '');
     const isSuperAdmin = roleName === 'super_admin' || roleName === 'superadmin' || roleName === 'Super Admin';
+    const canModify = useCanHeadOfficeModify();
+    const canViewAllAdmissions = isSuperAdmin || !!auth?.user?.has_all_access || viewAllAdmissions;
 
     const [searchQuery, setSearchQuery] = useState(filters.search || '');
     const [statusFilter, setStatusFilter] = useState(filters.status || '');
     const [showHistoryModal, setShowHistoryModal] = useState(false);
     const [selectedAdmission, setSelectedAdmission] = useState<MemberAdmission | null>(null);
     const [showPrintModal, setShowPrintModal] = useState(false);
-    const [showLegacyModal, setShowLegacyModal] = useState(false);
+    const [modificationTarget, setModificationTarget] = useState<ModificationTarget | null>(null);
+    const [selectedIds, setSelectedIds] = useState<number[]>([]);
+    const [deleteIntent, setDeleteIntent] = useState<{ type: 'single'; id: number; label: string } | { type: 'bulk' } | null>(null);
+    const [deleteProcessing, setDeleteProcessing] = useState(false);
     const [markAsPrintedCheckbox, setMarkAsPrintedCheckbox] = useState(false);
-
-    const {
-        data: legacyData,
-        setData: setLegacyData,
-        patch: patchLegacy,
-        processing: legacyProcessing,
-        reset: resetLegacy,
-        errors: legacyErrors,
-    } = useForm({
-        loan_dofa: '' as string | number,
-    });
 
     const today = new Date().toISOString().split('T')[0];
     const monthStart = `${today.slice(0, 7)}-01`;
@@ -163,15 +165,15 @@ export default function AdmissionMembers({ admissions, filters, stats, zones, ar
     useEffect(() => {
         if (selectedArea) {
             const filtered = branches.filter((branch) => branch.area_id.toString() === selectedArea);
-            setFilteredBranches(filtered);
+            setFilteredBranches(sortBranchesByCode(filtered));
             if (selectedBranch && !filtered.find((b) => b.id.toString() === selectedBranch)) {
                 setSelectedBranch('');
             }
         } else if (selectedZone) {
             const zoneAreaIds = filteredAreas.map((a) => a.id);
-            setFilteredBranches(branches.filter((branch) => zoneAreaIds.includes(branch.area_id)));
+            setFilteredBranches(sortBranchesByCode(branches.filter((branch) => zoneAreaIds.includes(branch.area_id))));
         } else {
-            setFilteredBranches(branches);
+            setFilteredBranches(sortBranchesByCode(branches));
         }
     }, [selectedArea, selectedZone, filteredAreas, branches]);
 
@@ -210,6 +212,7 @@ export default function AdmissionMembers({ admissions, filters, stats, zones, ar
         date_to: dateTo,
         had_issues: hadIssues,
         printed: printedFilter,
+        per_page: String(admissions.per_page || filters.per_page || 20),
         ...overrides,
     });
 
@@ -264,17 +267,26 @@ export default function AdmissionMembers({ admissions, filters, stats, zones, ar
         return params;
     };
 
-    const buildPageUrl = (page: number) => {
-        const params = new URLSearchParams(getPrintParams());
-        params.set('page', String(page));
-        return `/head-office/admission-members?${params.toString()}`;
+    const goToPage = (page: number) => {
+        router.get('/head-office/admission-members', filterPayload({ page: String(page) }), {
+            preserveState: true,
+            preserveScroll: true,
+        });
+    };
+
+    const changePerPage = (size: number) => {
+        router.get(
+            '/head-office/admission-members',
+            filterPayload({ per_page: String(size), page: '1' }),
+            { preserveState: true, preserveScroll: true },
+        );
     };
 
     const handlePrintConfirm = () => {
         const params = getPrintParams();
         window.open(`/head-office/admission-members/print?${new URLSearchParams(params).toString()}`, '_blank');
         if (markAsPrintedCheckbox) {
-            router.post('/head-office/admission-members/mark-printed', params, { preserveScroll: true });
+            router.post('/head-office/admission-members/mark-printed', params, keepListFilters);
         }
         setShowPrintModal(false);
         setMarkAsPrintedCheckbox(false);
@@ -286,9 +298,46 @@ export default function AdmissionMembers({ admissions, filters, stats, zones, ar
     };
 
     const handleDelete = (id: number, applicationNo: string) => {
-        if (confirm(`Are you sure you want to delete application ${applicationNo}?`)) {
-            router.delete(`/head-office/admissions/${id}`, { preserveScroll: true });
+        setDeleteIntent({ type: 'single', id, label: applicationNo });
+    };
+
+    const toggleSelect = (id: number) => {
+        setSelectedIds((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]));
+    };
+
+    const pageIds = admissions.data.map((a) => a.id);
+    const allPageSelected = pageIds.length > 0 && pageIds.every((id) => selectedIds.includes(id));
+
+    const toggleSelectAllOnPage = () => {
+        if (allPageSelected) {
+            setSelectedIds((prev) => prev.filter((id) => !pageIds.includes(id)));
+        } else {
+            setSelectedIds((prev) => Array.from(new Set([...prev, ...pageIds])));
         }
+    };
+
+    const confirmDeleteWithPin = (pin: string) => {
+        if (!deleteIntent) {
+            return;
+        }
+        setDeleteProcessing(true);
+        const isBulk = deleteIntent.type === 'bulk';
+        const url = isBulk ? '/head-office/admissions/bulk' : `/head-office/admissions/${deleteIntent.id}`;
+        const data = isBulk ? { pin, ids: selectedIds } : { pin };
+
+        router.delete(url, {
+            data,
+            ...keepListFilters,
+            onSuccess: () => {
+                setDeleteIntent(null);
+                if (isBulk) {
+                    setSelectedIds([]);
+                } else if (deleteIntent.type === 'single') {
+                    setSelectedIds((prev) => prev.filter((id) => id !== deleteIntent.id));
+                }
+            },
+            onFinish: () => setDeleteProcessing(false),
+        });
     };
 
     const openHistoryModal = (admission: MemberAdmission) => {
@@ -296,27 +345,15 @@ export default function AdmissionMembers({ admissions, filters, stats, zones, ar
         setShowHistoryModal(true);
     };
 
-    const openLegacyModal = (admission: MemberAdmission) => {
-        setSelectedAdmission(admission);
-        setLegacyData('loan_dofa', admission.loan_dofa ?? '');
-        setShowLegacyModal(true);
-    };
-
-    const closeLegacyModal = () => {
-        setShowLegacyModal(false);
-        setSelectedAdmission(null);
-        resetLegacy();
-    };
-
-    const handleMarkLegacy = (e: React.FormEvent) => {
-        e.preventDefault();
-        if (!selectedAdmission) return;
-        if (confirm(`আবেদন নং ${selectedAdmission.application_no} পুরাতন সদস্য হিসেবে চিহ্নিত করে দফা ${legacyData.loan_dofa} দিয়ে স্বয়ংক্রিয় অনুমোদন করতে চান?`)) {
-            patchLegacy(`/head-office/admissions/${selectedAdmission.id}/mark-legacy`, {
-                preserveScroll: true,
-                onSuccess: () => closeLegacyModal(),
-            });
-        }
+    const openModificationModal = (admission: MemberAdmission) => {
+        setModificationTarget({
+            id: admission.id,
+            applicationNo: admission.application_no,
+            applicantName: admission.applicant_name_bn || admission.applicant_name_en,
+            status: admission.status,
+            isLegacy: !!admission.is_legacy,
+            loanDofa: admission.loan_dofa,
+        });
     };
 
     const hasActiveFilters =
@@ -332,9 +369,13 @@ export default function AdmissionMembers({ admissions, filters, stats, zones, ar
 
     const statCards = [
         { label: 'সর্বমোট', count: stats.total, filter: '' },
-        { label: 'খসড়া', count: stats.draft, filter: 'draft' },
-        { label: 'জমা', count: stats.submitted, filter: 'submitted' },
-        { label: 'পর্যালোচনা', count: stats.under_review, filter: 'under_review' },
+        ...(canViewAllAdmissions
+            ? [
+                  { label: 'খসড়া', count: stats.draft, filter: 'draft' },
+                  { label: 'জমা', count: stats.submitted, filter: 'submitted' },
+                  { label: 'পর্যালোচনা', count: stats.under_review, filter: 'under_review' },
+              ]
+            : []),
         { label: 'হেড অফিস', count: stats.pending_head_office, filter: 'pending_head_office' },
         { label: 'সংশোধন', count: stats.needs_revision || 0, filter: 'needs_revision' },
         { label: 'অনুমোদিত', count: stats.approved, filter: 'approved' },
@@ -359,13 +400,13 @@ export default function AdmissionMembers({ admissions, filters, stats, zones, ar
             >
                 <Pencil className="w-4 h-4" />
             </Link>
-            {!admission.is_legacy && admission.status !== 'rejected' && (
+            {canModify && admission.status !== 'draft' && (
                 <button
-                    onClick={() => openLegacyModal(admission)}
-                    className="p-1.5 text-orange-700 hover:text-white hover:bg-orange-600 border border-orange-200 hover:border-orange-600 rounded-md transition"
-                    title="পুরাতন সদস্য হিসেবে চিহ্নিত করুন"
+                    onClick={() => openModificationModal(admission)}
+                    className="p-1.5 text-slate-700 hover:text-white hover:bg-slate-800 border border-slate-200 hover:border-slate-800 rounded-md transition"
+                    title="Modification"
                 >
-                    <UserCheck className="w-4 h-4" />
+                    <Wrench className="w-4 h-4" />
                 </button>
             )}
             {admission.status === 'approved' && (admission.revision_count ?? 0) > 0 && (
@@ -378,11 +419,6 @@ export default function AdmissionMembers({ admissions, filters, stats, zones, ar
                 </button>
             )}
             {isSuperAdmin && (
-                (admission.loan_applications_count ?? 0) > 0 ? (
-                    <span className="p-1.5 text-slate-300 cursor-not-allowed" title="ঋণ আবেদন থাকায় মুছে ফেলা যাবে না">
-                        <Trash2 className="w-4 h-4" />
-                    </span>
-                ) : (
                     <button
                         onClick={() => handleDelete(admission.id, admission.application_no)}
                         className="p-1.5 text-rose-500 hover:text-white hover:bg-rose-600 border border-rose-200 hover:border-rose-600 rounded-md transition"
@@ -390,7 +426,6 @@ export default function AdmissionMembers({ admissions, filters, stats, zones, ar
                     >
                         <Trash2 className="w-4 h-4" />
                     </button>
-                )
             )}
         </div>
     );
@@ -412,7 +447,9 @@ export default function AdmissionMembers({ admissions, filters, stats, zones, ar
                             সদস্য ভর্তি তালিকা
                         </h1>
                         <p className="text-sm text-blue-100 mt-0.5">
-                            সব শাখার ভর্তি আবেদন · পেন্ডিং অবস্থান ট্র্যাকিং
+                            {canViewAllAdmissions
+                                ? 'সব শাখার ভর্তি আবেদন · পেন্ডিং অবস্থান ট্র্যাকিং'
+                                : 'হেড অফিসে আসা ভর্তি আবেদন'}
                         </p>
                     </div>
                     <div className="relative z-10 flex flex-wrap items-center gap-2 shrink-0">
@@ -552,7 +589,7 @@ export default function AdmissionMembers({ admissions, filters, stats, zones, ar
                                 <option value="">সব শাখা</option>
                                 {filteredBranches.map((branch) => (
                                     <option key={branch.id} value={branch.id.toString()}>
-                                        {branch.name}
+                                        {formatBranchLabel(branch)}
                                     </option>
                                 ))}
                             </select>
@@ -562,9 +599,13 @@ export default function AdmissionMembers({ admissions, filters, stats, zones, ar
                                 className="px-2.5 py-2 text-sm border border-blue-200 rounded-lg bg-white"
                             >
                                 <option value="">সব স্ট্যাটাস</option>
-                                <option value="draft">খসড়া</option>
-                                <option value="submitted">জমা</option>
-                                <option value="under_review">পর্যালোচনায়</option>
+                                {canViewAllAdmissions && (
+                                    <>
+                                        <option value="draft">খসড়া</option>
+                                        <option value="submitted">জমা</option>
+                                        <option value="under_review">পর্যালোচনায়</option>
+                                    </>
+                                )}
                                 <option value="pending_head_office">হেড অফিসে</option>
                                 <option value="approved">অনুমোদিত</option>
                                 <option value="rejected">প্রত্যাখ্যাত</option>
@@ -609,6 +650,28 @@ export default function AdmissionMembers({ admissions, filters, stats, zones, ar
                     </form>
                 </div>
 
+                {isSuperAdmin && selectedIds.length > 0 && (
+                    <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-rose-200 bg-rose-50 px-4 py-3">
+                        <p className="text-sm text-rose-800 font-medium">{selectedIds.length} টি আবেদন নির্বাচিত</p>
+                        <div className="flex flex-wrap gap-2">
+                            <button
+                                type="button"
+                                onClick={() => setSelectedIds([])}
+                                className="px-4 py-2 rounded-lg border border-slate-300 bg-white text-xs font-medium text-slate-700 hover:bg-slate-50"
+                            >
+                                নির্বাচন সরান
+                            </button>
+                            <button
+                                type="button"
+                                onClick={() => setDeleteIntent({ type: 'bulk' })}
+                                className="px-4 py-2 rounded-lg bg-rose-600 text-white text-xs font-semibold hover:bg-rose-700 shadow-sm"
+                            >
+                                নির্বাচিত মুছুন
+                            </button>
+                        </div>
+                    </div>
+                )}
+
                 {/* List */}
                 <div className="bg-white rounded-xl border border-blue-200 shadow-sm overflow-hidden">
                     {/* Mobile cards */}
@@ -621,6 +684,15 @@ export default function AdmissionMembers({ admissions, filters, stats, zones, ar
                                 return (
                                     <div key={admission.id} className="p-4 space-y-3">
                                         <div className="flex items-start justify-between gap-3">
+                                            <div className="flex items-start gap-2 min-w-0">
+                                                {isSuperAdmin && (
+                                                    <input
+                                                        type="checkbox"
+                                                        checked={selectedIds.includes(admission.id)}
+                                                        onChange={() => toggleSelect(admission.id)}
+                                                        className="mt-1 h-4 w-4 rounded border-slate-300 text-rose-600 focus:ring-rose-500"
+                                                    />
+                                                )}
                                             <div>
                                                 <span className="text-xs font-mono font-semibold text-blue-700 bg-blue-50 px-2 py-0.5 rounded-md border border-blue-200">
                                                     {admission.application_no}
@@ -632,14 +704,19 @@ export default function AdmissionMembers({ admissions, filters, stats, zones, ar
                                                     <p className="text-xs text-slate-500">{admission.applicant_name_en}</p>
                                                 )}
                                             </div>
+                                            </div>
                                             {getStatusBadge(admission.status)}
                                         </div>
                                         <div className="grid grid-cols-2 gap-2.5 bg-blue-50/50 p-3 rounded-lg border border-blue-100 text-xs">
                                             <div>
                                                 <span className="text-[10px] font-semibold uppercase text-blue-400 block">মোবাইল</span>
-                                                <p className="font-medium text-slate-800 flex items-center gap-1 mt-0.5">
-                                                    <Phone className="w-3 h-3 text-blue-400" /> {admission.mobile_number || '—'}
-                                                </p>
+                                                <div className="font-medium text-slate-800 flex items-center gap-1 mt-0.5">
+                                                    <PhoneCallLink
+                                                        phone={admission.mobile_number}
+                                                        className="text-slate-800"
+                                                        iconClassName="w-3 h-3 text-blue-400"
+                                                    />
+                                                </div>
                                             </div>
                                             <div>
                                                 <span className="text-[10px] font-semibold uppercase text-blue-400 block">শাখা</span>
@@ -655,6 +732,12 @@ export default function AdmissionMembers({ admissions, filters, stats, zones, ar
                                                 <span className="text-[10px] font-semibold uppercase text-blue-400 block">সমিতি</span>
                                                 <p className="font-medium text-slate-800 truncate mt-0.5">
                                                     {admission.samity?.samity_name || '—'}
+                                                </p>
+                                            </div>
+                                            <div>
+                                                <span className="text-[10px] font-semibold uppercase text-blue-400 block">জমাদানের তারিখ</span>
+                                                <p className="font-bold text-slate-800 truncate mt-0.5">
+                                                    {formatDate(admission.submitted_at || admission.created_at)}
                                                 </p>
                                             </div>
                                             <div>
@@ -688,11 +771,21 @@ export default function AdmissionMembers({ admissions, filters, stats, zones, ar
                             <table className="w-full text-left border-collapse table-auto">
                                 <thead>
                                     <tr className="bg-gradient-to-r from-blue-700 to-blue-600 text-[11px] font-semibold text-white uppercase tracking-wide">
+                                        {isSuperAdmin && (
+                                            <th className="py-2.5 px-2 border-b border-blue-500 text-center w-8">
+                                                <input
+                                                    type="checkbox"
+                                                    checked={allPageSelected}
+                                                    onChange={toggleSelectAllOnPage}
+                                                    className="h-3.5 w-3.5 rounded border-blue-300 text-rose-600 focus:ring-rose-500"
+                                                />
+                                            </th>
+                                        )}
                                         <th className="py-2.5 px-2.5 border-b border-blue-500 text-center w-10">ক্রমিক</th>
                                         <th className="py-2.5 px-2.5 border-b border-blue-500">আবেদন নং ও টাইপ</th>
                                         <th className="py-2.5 px-2.5 border-b border-blue-500">আবেদনকারী ও মোবাইল</th>
                                         <th className="py-2.5 px-2.5 border-b border-blue-500">শাখা ও সমিতি</th>
-                                        <th className="py-2.5 px-2.5 border-b border-blue-500">তৈরি ও তারিখ</th>
+                                        <th className="py-2.5 px-2.5 border-b border-blue-500">জমাদানের তারিখ</th>
                                         <th className="py-2.5 px-2.5 border-b border-blue-500">স্ট্যাটাস</th>
                                         <th className="py-2.5 px-2.5 border-b border-blue-500">পেন্ডিং অবস্থান</th>
                                         <th className="py-2.5 px-2.5 border-b border-blue-500 text-center">প্রিন্ট</th>
@@ -702,7 +795,7 @@ export default function AdmissionMembers({ admissions, filters, stats, zones, ar
                                 <tbody>
                                     {admissions.data.length === 0 ? (
                                         <tr>
-                                            <td colSpan={9} className="py-12 text-center text-slate-400 border-b border-blue-100">
+                                            <td colSpan={isSuperAdmin ? 10 : 9} className="py-12 text-center text-slate-400 border-b border-blue-100">
                                                 কোনো ভর্তি আবেদন পাওয়া যায়নি
                                             </td>
                                         </tr>
@@ -716,6 +809,16 @@ export default function AdmissionMembers({ admissions, filters, stats, zones, ar
                                                         index % 2 === 1 ? 'bg-sky-50/30' : 'bg-white'
                                                     }`}
                                                 >
+                                                    {isSuperAdmin && (
+                                                        <td className="py-2 px-2 text-center">
+                                                            <input
+                                                                type="checkbox"
+                                                                checked={selectedIds.includes(admission.id)}
+                                                                onChange={() => toggleSelect(admission.id)}
+                                                                className="h-3.5 w-3.5 rounded border-slate-300 text-rose-600 focus:ring-rose-500"
+                                                            />
+                                                        </td>
+                                                    )}
                                                     {/* Serial No */}
                                                     <td className="py-2 px-2 text-center font-bold text-slate-500 text-[11px] whitespace-nowrap">
                                                         {((admissions.current_page || 1) - 1) * (admissions.per_page || 15) + index + 1}
@@ -745,8 +848,11 @@ export default function AdmissionMembers({ admissions, filters, stats, zones, ar
                                                             {admission.applicant_name_bn || admission.applicant_name_en}
                                                         </div>
                                                         <div className="font-mono text-slate-600 text-[11px] flex items-center gap-1 mt-0.5">
-                                                            <Phone className="w-3 h-3 text-blue-500 shrink-0" />
-                                                            <span>{admission.mobile_number || '—'}</span>
+                                                            <PhoneCallLink
+                                                                phone={admission.mobile_number}
+                                                                className="text-slate-700"
+                                                                iconClassName="w-3 h-3 text-blue-500 shrink-0"
+                                                            />
                                                         </div>
                                                         {admission.member_category?.category_name && (
                                                             <div className="text-[10px] text-blue-500 font-medium mt-0.5">
@@ -769,16 +875,16 @@ export default function AdmissionMembers({ admissions, filters, stats, zones, ar
                                                         )}
                                                     </td>
 
-                                                    {/* Creator & Date */}
+                                                    {/* Submission Date */}
                                                     <td className="py-2 px-2.5 whitespace-nowrap">
-                                                        <div className="text-slate-700 font-medium text-[11.5px]">
-                                                            {creatorName(admission)}
+                                                        <div className="font-bold text-slate-800 text-xs">
+                                                            {formatDate(admission.submitted_at || admission.created_at)}
                                                         </div>
-                                                        <div className="text-slate-400 text-[10.5px] mt-0.5">
-                                                            {admission.submitted_at
-                                                                ? formatDate(admission.submitted_at)
-                                                                : formatDate(admission.created_at)}
-                                                        </div>
+                                                        {creatorName(admission) !== '—' && (
+                                                            <div className="text-slate-400 text-[10px] mt-0.5" title="তৈরি করেছেন">
+                                                                এন্ট্রি: {creatorName(admission)}
+                                                            </div>
+                                                        )}
                                                     </td>
 
                                                     {/* Status */}
@@ -822,42 +928,11 @@ export default function AdmissionMembers({ admissions, filters, stats, zones, ar
                         </AutoFitTableContainer>
                     </div>
 
-                    {admissions.last_page > 1 && (
-                        <div className="px-4 py-3 border-t border-blue-100 bg-blue-50/50 flex items-center justify-between">
-                            <div className="text-sm text-slate-600">
-                                <span className="font-medium">{admissions.from}</span>–
-                                <span className="font-medium">{admissions.to}</span> /{' '}
-                                <span className="font-medium">{admissions.total}</span>
-                            </div>
-                            <div className="flex items-center gap-2">
-                                <Link
-                                    href={buildPageUrl(admissions.current_page - 1)}
-                                    className={`p-2 rounded-lg border ${
-                                        admissions.current_page === 1
-                                            ? 'border-blue-100 text-slate-300 pointer-events-none'
-                                            : 'border-blue-200 text-blue-700 hover:bg-white bg-white'
-                                    }`}
-                                    preserveState
-                                >
-                                    <ChevronLeft className="w-4 h-4" />
-                                </Link>
-                                <span className="text-sm text-slate-600 px-2">
-                                    {admissions.current_page} / {admissions.last_page}
-                                </span>
-                                <Link
-                                    href={buildPageUrl(admissions.current_page + 1)}
-                                    className={`p-2 rounded-lg border ${
-                                        admissions.current_page === admissions.last_page
-                                            ? 'border-blue-100 text-slate-300 pointer-events-none'
-                                            : 'border-blue-200 text-blue-700 hover:bg-white bg-white'
-                                    }`}
-                                    preserveState
-                                >
-                                    <ChevronRight className="w-4 h-4" />
-                                </Link>
-                            </div>
-                        </div>
-                    )}
+                    <ListPagination
+                        meta={admissions}
+                        onPageChange={goToPage}
+                        onPerPageChange={changePerPage}
+                    />
                 </div>
 
                 {/* Print Modal */}
@@ -967,71 +1042,24 @@ export default function AdmissionMembers({ admissions, filters, stats, zones, ar
                     </div>
                 )}
 
-                {/* Mark as Legacy Modal */}
-                {showLegacyModal && selectedAdmission && (
-                    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-                        <div className="bg-white rounded-2xl shadow-xl max-w-md w-full overflow-hidden">
-                            <div className="bg-orange-600 text-white px-5 py-4 flex items-center justify-between">
-                                <div>
-                                    <h3 className="text-base font-bold flex items-center gap-2">
-                                        <UserCheck className="w-5 h-5" />
-                                        পুরাতন সদস্য হিসেবে চিহ্নিত করুন
-                                    </h3>
-                                    <p className="text-xs text-orange-100 mt-0.5">
-                                        {selectedAdmission.application_no} — {selectedAdmission.applicant_name_en}
-                                    </p>
-                                </div>
-                                <button
-                                    type="button"
-                                    onClick={closeLegacyModal}
-                                    className="p-1.5 rounded-lg text-orange-100 hover:text-white hover:bg-orange-700"
-                                >
-                                    <X className="w-5 h-5" />
-                                </button>
-                            </div>
-                            <form onSubmit={handleMarkLegacy} className="p-5 space-y-4">
-                                <p className="text-sm text-slate-600 leading-relaxed">
-                                    এই আবেদনটি <strong>পুরাতন সদস্য</strong> হিসেবে চিহ্নিত হবে, ঋণের দফা সেট হবে এবং
-                                    স্বয়ংক্রিয়ভাবে <strong>অনুমোদিত</strong> হবে।
-                                </p>
-                                <div>
-                                    <label className="block text-xs font-semibold text-slate-700 mb-1">
-                                        ঋণের দফা <span className="text-red-500">*</span>
-                                    </label>
-                                    <input
-                                        type="number"
-                                        min={1}
-                                        max={999}
-                                        required
-                                        value={legacyData.loan_dofa}
-                                        onChange={(e) => setLegacyData('loan_dofa', e.target.value)}
-                                        className="w-full px-3 py-2.5 bg-slate-50 border border-slate-300 rounded-xl text-sm focus:ring-1 focus:ring-orange-500 focus:bg-white"
-                                        placeholder="যেমন: ১, ২, ৩..."
-                                    />
-                                    {legacyErrors.loan_dofa && (
-                                        <p className="text-xs text-red-600 mt-1">{legacyErrors.loan_dofa}</p>
-                                    )}
-                                </div>
-                                <div className="flex justify-end gap-2 pt-2 border-t border-slate-100">
-                                    <button
-                                        type="button"
-                                        onClick={closeLegacyModal}
-                                        className="px-4 py-2 text-sm font-medium text-slate-700 bg-slate-100 rounded-xl hover:bg-slate-200"
-                                    >
-                                        বাতিল
-                                    </button>
-                                    <button
-                                        type="submit"
-                                        disabled={legacyProcessing || !legacyData.loan_dofa}
-                                        className="px-4 py-2 text-sm font-medium text-white bg-orange-600 rounded-xl hover:bg-orange-700 disabled:opacity-50"
-                                    >
-                                        {legacyProcessing ? 'সংরক্ষণ হচ্ছে...' : 'পুরাতন করে অনুমোদন করুন'}
-                                    </button>
-                                </div>
-                            </form>
-                        </div>
-                    </div>
-                )}
+                <HeadOfficeModificationModal
+                    open={!!modificationTarget}
+                    onClose={() => setModificationTarget(null)}
+                    entityType="admission"
+                    target={modificationTarget}
+                />
+                <SuperAdminDeletePinModal
+                    open={!!deleteIntent}
+                    title="সদস্য ভর্তি মুছে ফেলুন"
+                    description={
+                        deleteIntent?.type === 'bulk'
+                            ? `নির্বাচিত ${selectedIds.length} টি সদস্য ভর্তি মুছে ফেলতে PIN দিন। সংশ্লিষ্ট ঋণ আবেদনও মুছে যাবে।`
+                            : `আবেদন নং ${deleteIntent?.type === 'single' ? deleteIntent.label : ''} মুছে ফেলতে PIN দিন।`
+                    }
+                    processing={deleteProcessing}
+                    onClose={() => setDeleteIntent(null)}
+                    onConfirm={confirmDeleteWithPin}
+                />
             </div>
         </AdminLayout>
     );

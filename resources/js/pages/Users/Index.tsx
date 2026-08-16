@@ -11,6 +11,7 @@ import {
 import { useCanMutate } from '@/hooks/use-can-mutate';
 import AdminLayout from '@/layouts/admin-layout';
 import { Head, router, usePage } from '@inertiajs/react';
+import { formatBranchLabel, sortBranchesByCode } from '@/utils/branchLabel';
 import {
     Building,
     CheckCircle2,
@@ -172,14 +173,14 @@ export default function Index({
     }, [areas, filterZone]);
 
     const availableBranches = useMemo(() => {
+        let list = branches;
         if (filterArea) {
-            return branches.filter((b) => b.area_id === Number(filterArea));
-        }
-        if (filterZone) {
+            list = branches.filter((b) => b.area_id === Number(filterArea));
+        } else if (filterZone) {
             const validAreaIds = new Set(availableAreas.map((a) => a.id));
-            return branches.filter((b) => validAreaIds.has(b.area_id));
+            list = branches.filter((b) => validAreaIds.has(b.area_id));
         }
-        return branches;
+        return sortBranchesByCode(list);
     }, [branches, filterArea, filterZone, availableAreas]);
 
     // Active filter chips calculation
@@ -827,7 +828,7 @@ export default function Index({
                                                     key={branch.id}
                                                     value={branch.id}
                                                 >
-                                                    {branch.name}
+                                                    {formatBranchLabel(branch)}
                                                 </option>
                                             ))}
                                         </select>
@@ -1456,12 +1457,12 @@ export default function Index({
                                     <option value="all">
                                         All Branches (send separate mail per branch)
                                     </option>
-                                    {branches.map((branch) => (
+                                    {sortBranchesByCode(branches).map((branch) => (
                                         <option
                                             key={branch.id}
                                             value={branch.id}
                                         >
-                                            {branch.name}
+                                            {formatBranchLabel(branch)}
                                         </option>
                                     ))}
                                 </select>

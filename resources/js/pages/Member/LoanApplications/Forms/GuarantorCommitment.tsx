@@ -346,7 +346,7 @@ export default function GuarantorCommitment({
                             </p>
                             {existingApplication && (
                                 <p className="text-xs text-emerald-600 font-semibold mt-0.5">
-                                    ✓ ড্রাফট সংরক্ষিত আছে — Application No: {existingApplication.application_no || 'Pending'}
+                                    ✓ ড্রাফট সংরক্ষিত আছে — আবেদন নং: {existingApplication.application_no || 'Pending'}
                                 </p>
                             )}
                         </div>

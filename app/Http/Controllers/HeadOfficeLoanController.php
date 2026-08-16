@@ -10,6 +10,7 @@ use App\Models\Area;
 use App\Models\Branch;
 use App\Models\Role;
 use App\Models\User;
+use App\Services\ApprovalService;
 use App\Services\NotificationService;
 use Illuminate\Http\Request;
 use Inertia\Inertia;
@@ -19,6 +20,8 @@ use Carbon\Carbon;
 class HeadOfficeLoanController extends Controller
 {
     use Concerns\ScopesToAccessibleBranches;
+    use Concerns\RequiresSuperAdminDeletePin;
+    use Concerns\ResolvesListPerPage;
 
     /**
      * Display loan applications (all for HO; assigned zone/area for approvers/managers)
@@ -61,6 +64,7 @@ class HeadOfficeLoanController extends Controller
         ]);
 
         $this->applyAccessibleBranchScope($query);
+        $this->applyHeadOfficeStageVisibility($query);
 
         // Date range filter
         if ($dateFrom && $dateTo) {
@@ -137,6 +141,7 @@ class HeadOfficeLoanController extends Controller
         // Use select to avoid loading large columns
         $statsQuery = LoanApplication::select('id', 'status', 'created_at', 'branch_id');
         $this->applyAccessibleBranchScope($statsQuery);
+        $this->applyHeadOfficeStageVisibility($statsQuery);
 
         // Apply same date filter to stats
         if ($dateFrom && $dateTo) {
@@ -202,6 +207,7 @@ class HeadOfficeLoanController extends Controller
             'draft' => (clone $statsQuery)->where('status', 'draft')->count(),
             'submitted' => (clone $statsQuery)->where('status', 'submitted')->count(),
             'under_review' => (clone $statsQuery)->where('status', 'under_review')->count(),
+            'ready_for_head_office' => (clone $statsQuery)->where('status', 'ready_for_head_office')->count(),
             'pending_head_office' => (clone $statsQuery)->where('status', 'pending_head_office')->count(),
             'approved' => (clone $statsQuery)->where('status', 'approved')->count(),
             'rejected' => (clone $statsQuery)->where('status', 'rejected')->count(),
@@ -209,7 +215,8 @@ class HeadOfficeLoanController extends Controller
             'disbursed' => (clone $statsQuery)->where('status', 'disbursed')->count(),
         ];
 
-        $loans = $query->orderBy('created_at', 'desc')->paginate(20);
+        $perPage = $this->resolvePerPage($request);
+        $loans = $query->orderBy('created_at', 'desc')->paginate($perPage)->withQueryString();
 
         $orgFilters = $this->organizationFilterOptions();
 
@@ -220,12 +227,14 @@ class HeadOfficeLoanController extends Controller
                 [
                     'date_from' => $dateFrom,
                     'date_to' => $dateTo,
+                    'per_page' => $perPage,
                 ]
             ),
             'stats' => $stats,
             'zones' => $orgFilters['zones'],
             'areas' => $orgFilters['areas'],
             'branches' => $orgFilters['branches'],
+            'viewAllLoans' => ! $this->shouldRestrictToHeadOfficeStage(),
         ]);
     }
 
@@ -271,6 +280,7 @@ class HeadOfficeLoanController extends Controller
         ]);
 
         $this->applyAccessibleBranchScope($query);
+        $this->applyHeadOfficeStageVisibility($query);
 
         if ($dateFrom && $dateTo) {
             $query->whereBetween('created_at', [$startOfDay, $endOfDay]);
@@ -387,6 +397,7 @@ class HeadOfficeLoanController extends Controller
     {
         $query = LoanApplication::query();
         $this->applyAccessibleBranchScope($query);
+        $this->applyHeadOfficeStageVisibility($query);
 
         $dateFrom = $request->date_from ?? now()->startOfMonth()->toDateString();
         $dateTo = $request->date_to ?? now()->toDateString();
@@ -418,7 +429,8 @@ class HeadOfficeLoanController extends Controller
                         $mq->where('applicant_name_en', 'like', "%{$search}%")
                             ->orWhere('applicant_name_bn', 'like', "%{$search}%")
                             ->orWhere('mobile_number', 'like', "%{$search}%")
-                            ->orWhere('nid_number', 'like', "%{$search}%");
+                            ->orWhere('nid_number', 'like', "%{$search}%")
+                            ->orWhere('application_no', 'like', "%{$search}%");
                     });
             });
         }
@@ -453,6 +465,7 @@ class HeadOfficeLoanController extends Controller
         ]);
 
         $this->applyAccessibleBranchScope($query);
+        $this->applyHeadOfficeStageVisibility($query);
 
         $dateFrom = $request->date_from ?? now()->startOfMonth()->toDateString();
         $dateTo = $request->date_to ?? now()->toDateString();
@@ -488,7 +501,8 @@ class HeadOfficeLoanController extends Controller
                         $mq->where('applicant_name_en', 'like', "%{$search}%")
                             ->orWhere('applicant_name_bn', 'like', "%{$search}%")
                             ->orWhere('mobile_number', 'like', "%{$search}%")
-                            ->orWhere('nid_number', 'like', "%{$search}%");
+                            ->orWhere('nid_number', 'like', "%{$search}%")
+                            ->orWhere('application_no', 'like', "%{$search}%");
                     });
             });
         }
@@ -517,7 +531,7 @@ class HeadOfficeLoanController extends Controller
 
         $headers = [
             'ক্রমিক',
-            'আবেদন নং',
+            'সদস্য নং',
             'আবেদনকারীর নাম (EN)',
             'আবেদনকারীর নাম (BN)',
             'NID নম্বর',
@@ -539,7 +553,7 @@ class HeadOfficeLoanController extends Controller
         $rowIdx = 2;
         foreach ($loans as $index => $loan) {
             $sheet->setCellValue("A{$rowIdx}", $index + 1);
-            $sheet->setCellValue("B{$rowIdx}", $loan->application_no);
+            $sheet->setCellValue("B{$rowIdx}", $loan->memberAdmission?->application_no ?? $loan->application_no);
             $sheet->setCellValue("C{$rowIdx}", $loan->memberAdmission?->applicant_name_en ?? '');
             $sheet->setCellValue("D{$rowIdx}", $loan->memberAdmission?->applicant_name_bn ?? '');
             $sheet->setCellValue("E{$rowIdx}", $loan->memberAdmission?->nid_number ?? '');
@@ -627,6 +641,7 @@ class HeadOfficeLoanController extends Controller
             });
         }
 
+        $perPage = $this->resolvePerPage($request);
         $loans = $query->orderBy('submitted_at', 'desc')
             ->with([
                 'branch:id,name,area_id',
@@ -642,7 +657,8 @@ class HeadOfficeLoanController extends Controller
                         ->with('reporter:id,name');
                 },
             ])
-            ->paginate(20);
+            ->paginate($perPage)
+            ->withQueryString();
 
         $orgFilters = $this->organizationFilterOptions();
 
@@ -655,6 +671,7 @@ class HeadOfficeLoanController extends Controller
                 'zone_id' => $request->input('zone_id'),
                 'area_id' => $request->input('area_id'),
                 'branch_id' => $request->input('branch_id'),
+                'per_page' => $perPage,
             ],
             'zones' => $orgFilters['zones'],
             'areas' => $orgFilters['areas'],
@@ -664,6 +681,7 @@ class HeadOfficeLoanController extends Controller
     public function show(LoanApplication $loanApplication)
     {
         $this->ensureCanAccessBranch($loanApplication->branch_id);
+        $this->ensureHeadOfficeCanViewLoan($loanApplication);
 
         $loanApplication->load([
             'branch.area.zone',
@@ -911,24 +929,160 @@ class HeadOfficeLoanController extends Controller
     }
 
     /**
-     * Delete loan application (only draft and submitted status, restricted to SuperAdmin)
+     * Reset all loan approvals back to Branch Manager.
      */
-    public function destroy(LoanApplication $loanApplication)
+    public function resetApproval(LoanApplication $loanApplication)
     {
-        $user = auth()->user();
-        if (!$user || !$user->isSuperAdmin()) {
-            return back()->with('error', 'শুধুমাত্র সুপার অ্যাডমিন ঋণ আবেদন মুছে ফেলতে পারবেন।');
+        $this->ensureCanAccessBranch($loanApplication->branch_id);
+
+        if (in_array($loanApplication->status, [
+            LoanApplication::STATUS_DRAFT,
+            LoanApplication::STATUS_DISBURSED,
+            LoanApplication::STATUS_CANCELLED,
+        ], true)) {
+            return back()->with('error', 'এই অবস্থার ঋণ আবেদনের অনুমোদন রিসেট করা যাবে না।');
         }
 
-        // Only draft and submitted loans can be deleted
-        if (!in_array($loanApplication->status, ['draft', 'submitted'])) {
-            return back()->with('error', 'Only draft and submitted loan applications can be deleted!');
+        try {
+            DB::transaction(function () use ($loanApplication) {
+                $updateData = [
+                    'status' => LoanApplication::STATUS_SUBMITTED,
+                    'reviewed_by' => null,
+                    'reviewed_at' => null,
+                    'rejection_reason' => null,
+                    'selected_approvers' => null,
+                ];
+
+                if (!$loanApplication->submitted_at) {
+                    $updateData['submitted_by'] = $loanApplication->submitted_by ?: auth()->id();
+                    $updateData['submitted_at'] = now();
+                }
+
+                $loanApplication->update($updateData);
+
+                app(ApprovalService::class)->createLoanApprovalWorkflow($loanApplication);
+            });
+        } catch (\Exception $e) {
+            return back()->with('error', $e->getMessage());
         }
 
-        $loanApplication->delete();
+        $loanApplication->refresh()->loadMissing(['submittedBy', 'memberAdmission', 'branch']);
+        $branchManagers = User::where('branch_id', $loanApplication->branch_id)
+            ->where('is_active', 1)
+            ->whereHas('role', fn ($q) => $q->where('name', Role::BRANCH_MANAGER))
+            ->get();
+        $recipients = collect([$loanApplication->submittedBy])
+            ->concat($branchManagers)
+            ->filter()
+            ->unique('id');
 
-        return back()->with('success', 'Loan application deleted successfully!');
+        if ($recipients->isNotEmpty()) {
+            app(NotificationService::class)->send(
+                users: $recipients,
+                type: 'loan_application',
+                title: 'ঋণ আবেদনের অনুমোদন রিসেট করা হয়েছে',
+                message: "ঋণ আবেদন নং {$loanApplication->application_no} ({$loanApplication->memberAdmission?->applicant_name_bn}) হেড অফিস থেকে শাখা ব্যবস্থাপক পর্যায়ে রিসেট করা হয়েছে।",
+                notifiable: $loanApplication,
+                actionUrl: '/approvals',
+                details: [
+                    'আবেদন নং' => $loanApplication->application_no,
+                    'সদস্যের নাম' => $loanApplication->memberAdmission?->applicant_name_bn
+                        ?: ($loanApplication->memberAdmission?->applicant_name_en ?? 'N/A'),
+                    'শাখা' => $loanApplication->branch?->name ?? 'N/A',
+                ]
+            );
+        }
+
+        return back()->with('success', 'অনুমোদন শাখা ব্যবস্থাপক পর্যায়ে রিসেট করা হয়েছে।');
     }
 
+    /**
+     * Delete loan application (SuperAdmin only, PIN required; any status).
+     */
+    public function destroy(Request $request, LoanApplication $loanApplication)
+    {
+        if ($denied = $this->denyUnlessSuperAdminDeletePin($request)) {
+            return $denied;
+        }
+
+        $this->ensureCanAccessBranch($loanApplication->branch_id);
+        $loanApplication->forceDelete();
+
+        return back()->with('success', 'ঋণ আবেদন মুছে ফেলা হয়েছে।');
+    }
+
+    /**
+     * Bulk delete loan applications (SuperAdmin only, PIN required).
+     */
+    public function bulkDestroy(Request $request)
+    {
+        if ($denied = $this->denyUnlessSuperAdminDeletePin($request)) {
+            return $denied;
+        }
+
+        $validated = $request->validate([
+            'ids' => 'required|array|min:1',
+            'ids.*' => 'integer',
+        ]);
+
+        $query = LoanApplication::whereIn('id', $validated['ids']);
+        $this->applyAccessibleBranchScope($query);
+        $count = $query->count();
+        $query->each(function (LoanApplication $loan) {
+            $loan->forceDelete();
+        });
+
+        return back()->with('success', $count . ' টি ঋণ আবেদন মুছে ফেলা হয়েছে।');
+    }
+
+    /**
+     * Head Office role sees only loans that have reached Head Office.
+     * SuperAdmin continues to see the full list.
+     */
+    private function shouldRestrictToHeadOfficeStage(): bool
+    {
+        $user = auth()->user();
+        if (! $user) {
+            return false;
+        }
+
+        $user->loadMissing('role');
+        $roleName = strtolower((string) $user->role?->name);
+
+        if ($user->isSuperAdmin() || $user->has_all_access || in_array($roleName, ['super_admin', 'superadmin'], true)) {
+            return false;
+        }
+
+        return $roleName === Role::HEAD_OFFICE;
+    }
+
+    private function headOfficeVisibleLoanStatuses(): array
+    {
+        return [
+            LoanApplication::STATUS_PENDING_HEAD_OFFICE,
+            LoanApplication::STATUS_APPROVED,
+            LoanApplication::STATUS_PENDING_DISBURSEMENT,
+            LoanApplication::STATUS_DISBURSED,
+            LoanApplication::STATUS_REJECTED,
+            LoanApplication::STATUS_NEEDS_CORRECTION,
+        ];
+    }
+
+    private function applyHeadOfficeStageVisibility($query): void
+    {
+        if ($this->shouldRestrictToHeadOfficeStage()) {
+            $query->whereIn('status', $this->headOfficeVisibleLoanStatuses());
+        }
+    }
+
+    private function ensureHeadOfficeCanViewLoan(LoanApplication $loanApplication): void
+    {
+        if (
+            $this->shouldRestrictToHeadOfficeStage()
+            && ! in_array($loanApplication->status, $this->headOfficeVisibleLoanStatuses(), true)
+        ) {
+            abort(403, 'এই ঋণ আবেদনটি এখনও হেড অফিসে আসেনি।');
+        }
+    }
 }
 

@@ -123,4 +123,9 @@ return [
         'store' => env('APP_MAINTENANCE_STORE', 'database'),
     ],
 
+    /*
+    | SuperAdmin delete confirmation PIN (Head Office bulk/single delete).
+    */
+    'superadmin_delete_pin' => env('SUPERADMIN_DELETE_PIN', '8934'),
+
 ];

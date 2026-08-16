@@ -3,26 +3,30 @@ import { Head, router, usePage } from '@inertiajs/react';
 import AdminLayout from '@/layouts/admin-layout';
 import { SmartDateInput } from '@/components/ui/SmartDateInput';
 import { formatDate } from '@/utils/dateUtils';
+import { formatBranchLabel, keepListFilters, sortBranchesByCode } from '@/utils/branchLabel';
+import { formatCurrency } from '@/utils/formatAmount';
+import AutoFitTableContainer from '@/components/AutoFitTableContainer';
 import {
-    CheckCircle,
+    CheckCircle2,
     XCircle,
     RotateCcw,
     Eye,
-    Edit,
+    Edit3,
     MessageSquare,
-    Share2,
     Search,
-    ShieldCheck,
     Building2,
     Users,
     Clock,
-    User,
-    FileText,
-    Sparkles,
     AlertCircle,
-    ArrowUpRight,
-    Filter,
     X,
+    Copy,
+    Check,
+    ArrowUpRight,
+    Coins,
+    AlertTriangle,
+    RefreshCw,
+    ShieldCheck,
+    UserCheck,
 } from 'lucide-react';
 
 interface EscalationApprover {
@@ -192,7 +196,7 @@ export default function Index({
     filters = {},
 }: Props) {
     const { auth } = usePage().props as {
-        auth?: { user?: { username?: string | null } };
+        auth?: { user?: { username?: string | null; name?: string; role?: { name: string } } };
     };
     const authUsername = auth?.user?.username ?? '';
 
@@ -203,11 +207,21 @@ export default function Index({
     const [selectedArea, setSelectedArea] = useState(filters?.area_id || '');
     const [selectedBranch, setSelectedBranch] = useState(filters?.branch_id || '');
 
+    const [copiedAppNo, setCopiedAppNo] = useState<string | null>(null);
+
+    // Revision notes popup modal
+    const [revisionModalData, setRevisionModalData] = useState<{
+        applicant_name: string;
+        application_no: string;
+        revision_count: number;
+        revision_comments: string | null;
+    } | null>(null);
+
     useEffect(() => {
-        setSelectedZone(filters?.zone_id || '');
-        setSelectedArea(filters?.area_id || '');
-        setSelectedBranch(filters?.branch_id || '');
-    }, [filters]);
+        setSelectedZone(filters?.zone_id ? String(filters.zone_id) : '');
+        setSelectedArea(filters?.area_id ? String(filters.area_id) : '');
+        setSelectedBranch(filters?.branch_id ? String(filters.branch_id) : '');
+    }, [filters?.zone_id, filters?.area_id, filters?.branch_id]);
 
     const filteredAreas = useMemo(() => {
         if (!selectedZone) return areas;
@@ -223,7 +237,7 @@ export default function Index({
         if (selectedArea) {
             list = list.filter((b) => String(b.area_id) === String(selectedArea));
         }
-        return list;
+        return sortBranchesByCode(list);
     }, [branches, selectedZone, selectedArea, filteredAreas]);
 
     const handleLocationFilterChange = (zoneVal: string, areaVal: string, branchVal: string) => {
@@ -239,12 +253,31 @@ export default function Index({
         router.get('/approvals', params, { preserveState: true, preserveScroll: true });
     };
 
+    const hasActiveFilters = Boolean(selectedZone || selectedArea || selectedBranch || searchQuery);
+
+    const resetFilters = () => {
+        setSelectedZone('');
+        setSelectedArea('');
+        setSelectedBranch('');
+        setSearchQuery('');
+        router.get('/approvals', {}, { preserveState: true, preserveScroll: true });
+    };
+
+    const copyToClipboard = (text: string) => {
+        navigator.clipboard.writeText(text);
+        setCopiedAppNo(text);
+        setTimeout(() => setCopiedAppNo(null), 2000);
+    };
+
+    // Member Admission Modals state
     const [selectedApproval, setSelectedApproval] = useState<Approval | null>(null);
     const [action, setAction] = useState<'approve' | 'reject' | 'return' | 'forward' | null>(null);
     const [comments, setComments] = useState('');
     const [forwardToUserId, setForwardToUserId] = useState<string>('');
     const [showModal, setShowModal] = useState(false);
+    const [isSubmitting, setIsSubmitting] = useState(false);
 
+    // Loan Modals state
     const [selectedLoanApproval, setSelectedLoanApproval] = useState<LoanApproval | null>(null);
     const [loanAction, setLoanAction] = useState<'approve' | 'reject' | 'forward' | null>(null);
     const [loanComments, setLoanComments] = useState('');
@@ -261,7 +294,7 @@ export default function Index({
     // Search Filtering
     const filteredApprovals = useMemo(() => {
         if (!searchQuery.trim()) return approvals;
-        const q = searchQuery.toLowerCase();
+        const q = searchQuery.toLowerCase().trim();
         return approvals.filter(
             (a) =>
                 a.application_no?.toLowerCase().includes(q) ||
@@ -274,7 +307,7 @@ export default function Index({
 
     const filteredLoanApprovals = useMemo(() => {
         if (!searchQuery.trim()) return loanApprovals;
-        const q = searchQuery.toLowerCase();
+        const q = searchQuery.toLowerCase().trim();
         return loanApprovals.filter(
             (l) =>
                 l.application_no?.toLowerCase().includes(q) ||
@@ -283,6 +316,11 @@ export default function Index({
                 l.branch_name?.toLowerCase().includes(q)
         );
     }, [loanApprovals, searchQuery]);
+
+    // Financial Metrics Calculation
+    const totalLoanRequestedAmount = useMemo(() => {
+        return loanApprovals.reduce((acc, curr) => acc + (Number(curr.requested_amount) || 0), 0);
+    }, [loanApprovals]);
 
     const handleAction = (approval: Approval, actionType: 'approve' | 'reject' | 'return' | 'forward') => {
         const isBranch = approval.level === 'branch';
@@ -307,9 +345,11 @@ export default function Index({
     const submitAction = () => {
         if (!selectedApproval || !action) return;
         if (action === 'forward' && !forwardToUserId) {
-            alert('অনুগ্রহ করে ফরওয়ার্ড করার জন্য একজন অনুমোদনকারী নির্বাচন করুন।');
+            alert('অনুগ্রহ করে ফরওয়ার্ড করার জন্য একজন অনুমোদনকারী কর্মকর্তা নির্বাচন করুন।');
             return;
         }
+
+        setIsSubmitting(true);
 
         if (action === 'forward') {
             router.patch(
@@ -319,14 +359,16 @@ export default function Index({
                     comments,
                 },
                 {
-                    preserveScroll: true,
+                    ...keepListFilters,
                     onSuccess: () => {
                         setShowModal(false);
                         setSelectedApproval(null);
                         setAction(null);
                         setComments('');
                         setForwardToUserId('');
+                        setIsSubmitting(false);
                     },
+                    onError: () => setIsSubmitting(false),
                 }
             );
             return;
@@ -339,13 +381,15 @@ export default function Index({
         };
 
         router.patch(routes[action as keyof typeof routes], { comments }, {
-            preserveScroll: true,
+            ...keepListFilters,
             onSuccess: () => {
                 setShowModal(false);
                 setSelectedApproval(null);
                 setAction(null);
                 setComments('');
+                setIsSubmitting(false);
             },
+            onError: () => setIsSubmitting(false),
         });
     };
 
@@ -410,6 +454,7 @@ export default function Index({
         setUsernameVerified(false);
         setUsernameVerifyError(null);
         setUsernameVerifying(false);
+        setIsSubmitting(false);
     };
 
     const verifyBlockListUsername = useCallback(async () => {
@@ -492,11 +537,13 @@ export default function Index({
 
         if (loanAction === 'approve') {
             const amount = Number(loanApprovedAmount);
-            if (!loanApprovedAmount.trim() || Number.isNaN(amount) || amount < 0) {
-                alert('চূড়ান্ত অনুমোদিত ঋণের পরিমাণ দিন।');
+            if (!loanApprovedAmount.trim() || Number.isNaN(amount) || amount <= 0) {
+                alert('সঠিক ও চূড়ান্ত অনুমোদিত ঋণের পরিমাণ দিন।');
                 return;
             }
         }
+
+        setIsSubmitting(true);
 
         if (loanAction === 'forward') {
             router.patch(
@@ -506,8 +553,9 @@ export default function Index({
                     comments: loanComments,
                 },
                 {
-                    preserveScroll: true,
+                    ...keepListFilters,
                     onSuccess: () => resetLoanModal(),
+                    onError: () => setIsSubmitting(false),
                 }
             );
             return;
@@ -537,29 +585,51 @@ export default function Index({
             `/approvals/loan/${selectedLoanApproval.id}/${loanAction}`,
             payload,
             {
-                preserveScroll: true,
+                ...keepListFilters,
                 onSuccess: () => resetLoanModal(),
+                onError: () => setIsSubmitting(false),
             }
         );
     };
 
     const getLevelBadge = (level: string) => {
-        const badges: Record<string, { bg: string; text: string; dot: string; label: string }> = {
-            branch: { bg: 'bg-blue-50 border-blue-200', text: 'text-blue-700', dot: 'bg-blue-500', label: 'Branch (শাখা)' },
-            area: { bg: 'bg-emerald-50 border-emerald-200', text: 'text-emerald-700', dot: 'bg-emerald-500', label: 'Area (অঞ্চল)' },
-            zone: { bg: 'bg-purple-50 border-purple-200', text: 'text-purple-700', dot: 'bg-purple-500', label: 'Zone (জোন)' },
-            head_office: { bg: 'bg-rose-50 border-rose-200', text: 'text-rose-700', dot: 'bg-rose-500', label: 'Head Office (হেড অফিস)' },
+        const badges: Record<string, { bg: string; text: string; border: string; label: string }> = {
+            branch: {
+                bg: 'bg-blue-50',
+                border: 'border-blue-200',
+                text: 'text-blue-700',
+                label: 'শাখা',
+            },
+            area: {
+                bg: 'bg-emerald-50',
+                border: 'border-emerald-200',
+                text: 'text-emerald-700',
+                label: 'অঞ্চল',
+            },
+            zone: {
+                bg: 'bg-purple-50',
+                border: 'border-purple-200',
+                text: 'text-purple-700',
+                label: 'জোন',
+            },
+            head_office: {
+                bg: 'bg-rose-50',
+                border: 'border-rose-200',
+                text: 'text-rose-700',
+                label: 'হেড অফিস',
+            },
         };
         const config = badges[level as keyof typeof badges] || {
-            bg: 'bg-slate-50 border-slate-200',
+            bg: 'bg-slate-50',
+            border: 'border-slate-200',
             text: 'text-slate-700',
-            dot: 'bg-slate-400',
             label: level,
         };
 
         return (
-            <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full border text-[11px] font-bold tracking-wide uppercase ${config.bg} ${config.text}`}>
-                <span className={`w-1.5 h-1.5 rounded-full ${config.dot}`} />
+            <span
+                className={`inline-flex items-center px-2 py-0.5 rounded-md border text-[11px] font-semibold ${config.bg} ${config.border} ${config.text}`}
+            >
                 {config.label}
             </span>
         );
@@ -576,126 +646,123 @@ export default function Index({
     };
 
     const isHeadOffice = (level: string) => level === 'head_office';
-    const isBranchLevel = (level: string) => level === 'branch';
-
     const totalCount = approvals.length + loanApprovals.length;
-    const revCount = approvals.filter((a) => a.revision_count > 0).length;
+    const totalFilteredCount = filteredApprovals.length + filteredLoanApprovals.length;
 
     return (
         <AdminLayout>
-            <Head title="Pending Approvals Command Center" />
+            <Head title="Pending Approvals | অপেক্ষমান অনুমোদন" />
 
-            <div className="max-w-7xl mx-auto space-y-6 py-4 px-3 sm:px-6 pb-16">
-                {/* ── 1. HERO HEADER BANNER ────────────────────────────────────────── */}
-                <div className="relative overflow-hidden rounded-3xl bg-slate-900 text-white p-6 sm:p-8 shadow-xl border border-slate-800">
-                    <div className="absolute -right-12 -bottom-12 w-64 h-64 rounded-full bg-gradient-to-tr from-blue-600/30 to-purple-600/20 blur-3xl pointer-events-none" />
-                    <div className="absolute right-1/3 -top-12 w-48 h-48 rounded-full bg-emerald-500/10 blur-2xl pointer-events-none" />
-
-                    <div className="relative z-10 flex flex-col md:flex-row md:items-center justify-between gap-6">
-                        <div className="space-y-2 max-w-2xl">
-                            <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-blue-500/10 border border-blue-400/20 text-blue-300 text-xs font-semibold backdrop-blur-md">
-                                <ShieldCheck className="w-4 h-4 text-blue-400" />
-                                <span>Approval Management System</span>
+            <div className="max-w-[1600px] mx-auto space-y-3 p-3 md:p-4 pb-16">
+                {/* ── UNIFIED COMPACT HEADER & FILTER CONTAINER ──────────────── */}
+                <div className="bg-white rounded-xl border border-slate-200/90 p-3 sm:p-3.5 shadow-xs space-y-2.5">
+                    {/* Top Row: Title, Counter Badges, Tabs & Refresh */}
+                    <div className="flex flex-wrap items-center justify-between gap-2.5 pb-2.5 border-b border-slate-100">
+                        {/* Title & Summary Badges */}
+                        <div className="flex flex-wrap items-center gap-2">
+                            <div className="flex items-center gap-2">
+                                <div className="w-8 h-8 rounded-lg bg-blue-600 text-white flex items-center justify-center shadow-xs">
+                                    <ShieldCheck className="w-4 h-4" />
+                                </div>
+                                <h1 className="text-base font-extrabold tracking-tight text-slate-900">
+                                    অপেক্ষমান অনুমোদন
+                                </h1>
                             </div>
-                            <h1 className="text-2xl sm:text-3xl font-extrabold tracking-tight text-white leading-tight">
-                                অপেক্ষমান অনুমোদন (Pending Approvals)
-                            </h1>
-                            <p className="text-slate-300 text-xs sm:text-sm leading-relaxed">
-                                সদস্য ভর্তি ও ঋণ আবেদনসমূহ যাচাই করুন এবং অত্যন্ত দ্রুত সিদ্ধান্ত বা ফরওয়ার্ড সম্পন্ন করুন।
-                            </p>
+
+                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-xs font-bold bg-amber-50 text-amber-800 border border-amber-200">
+                                <Clock className="w-3 h-3 text-amber-600" />
+                                {totalCount} টি মুলতবি
+                            </span>
+
+                            {totalLoanRequestedAmount > 0 && (
+                                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-xs font-bold bg-emerald-50 text-emerald-800 border border-emerald-200">
+                                    <Coins className="w-3 h-3 text-emerald-600" />
+                                    ঋণ দাবি: ৳ {formatCurrency(totalLoanRequestedAmount)}
+                                </span>
+                            )}
                         </div>
 
-                        {/* Quick KPI Badge Group */}
-                        <div className="flex flex-wrap gap-2.5 sm:gap-3 shrink-0">
-                            <div className="bg-slate-800/80 border border-slate-700/80 backdrop-blur-md px-4 py-3 rounded-2xl flex flex-col items-center justify-center min-w-[90px]">
-                                <span className="text-2xl sm:text-3xl font-black text-amber-400 leading-none">{totalCount}</span>
-                                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mt-1">মোট পেন্ডিং</span>
+                        {/* Right: Quick Tab Switcher & Refresh */}
+                        <div className="flex items-center gap-2 self-stretch sm:self-auto justify-between sm:justify-end">
+                            <div className="inline-flex rounded-lg border border-slate-200 bg-slate-100 p-0.5 text-xs font-bold">
+                                <button
+                                    type="button"
+                                    onClick={() => setActiveTab('all')}
+                                    className={`px-2.5 py-1 rounded-md transition ${
+                                        activeTab === 'all'
+                                            ? 'bg-white text-slate-900 shadow-2xs'
+                                            : 'text-slate-600 hover:text-slate-900'
+                                    }`}
+                                >
+                                    সব ({totalCount})
+                                </button>
+                                <button
+                                    type="button"
+                                    onClick={() => setActiveTab('admissions')}
+                                    className={`px-2.5 py-1 rounded-md transition ${
+                                        activeTab === 'admissions'
+                                            ? 'bg-white text-blue-700 shadow-2xs'
+                                            : 'text-slate-600 hover:text-slate-900'
+                                    }`}
+                                >
+                                    ভর্তি ({approvals.length})
+                                </button>
+                                <button
+                                    type="button"
+                                    onClick={() => setActiveTab('loans')}
+                                    className={`px-2.5 py-1 rounded-md transition ${
+                                        activeTab === 'loans'
+                                            ? 'bg-white text-emerald-700 shadow-2xs'
+                                            : 'text-slate-600 hover:text-slate-900'
+                                    }`}
+                                >
+                                    ঋণ ({loanApprovals.length})
+                                </button>
                             </div>
-                            <div className="bg-slate-800/80 border border-slate-700/80 backdrop-blur-md px-4 py-3 rounded-2xl flex flex-col items-center justify-center min-w-[90px]">
-                                <span className="text-2xl sm:text-3xl font-black text-blue-400 leading-none">{approvals.length}</span>
-                                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mt-1">সদস্য ভর্তি</span>
-                            </div>
-                            <div className="bg-slate-800/80 border border-slate-700/80 backdrop-blur-md px-4 py-3 rounded-2xl flex flex-col items-center justify-center min-w-[90px]">
-                                <span className="text-2xl sm:text-3xl font-black text-emerald-400 leading-none">{loanApprovals.length}</span>
-                                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mt-1">ঋণ আবেদন</span>
-                            </div>
+
+                            <button
+                                type="button"
+                                onClick={() => router.reload()}
+                                className="p-1.5 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 text-slate-600 hover:text-slate-900 shadow-2xs transition"
+                                title="রিফ্রেশ করুন"
+                            >
+                                <RefreshCw className="w-4 h-4" />
+                            </button>
                         </div>
                     </div>
-                </div>
 
-                {/* ── 2. SEARCH & NAVIGATION TABS ─────────────────────────────────── */}
-                <div className="bg-white rounded-2xl border border-slate-200/80 p-4 shadow-sm space-y-4">
-                    <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-4">
-                        {/* Tab Switcher */}
-                        <div className="inline-flex p-1 bg-slate-100/80 rounded-xl gap-1 border border-slate-200/50 self-start">
-                            <button
-                                type="button"
-                                onClick={() => setActiveTab('all')}
-                                className={`px-4 py-2 rounded-lg text-xs font-bold transition-all ${
-                                    activeTab === 'all'
-                                        ? 'bg-white text-slate-900 shadow-sm'
-                                        : 'text-slate-600 hover:text-slate-900'
-                                }`}
-                            >
-                                সব আবেদন ({totalCount})
-                            </button>
-                            <button
-                                type="button"
-                                onClick={() => setActiveTab('admissions')}
-                                className={`px-4 py-2 rounded-lg text-xs font-bold transition-all ${
-                                    activeTab === 'admissions'
-                                        ? 'bg-blue-600 text-white shadow-sm'
-                                        : 'text-slate-600 hover:text-slate-900'
-                                }`}
-                            >
-                                সদস্য ভর্তি ({approvals.length})
-                            </button>
-                            <button
-                                type="button"
-                                onClick={() => setActiveTab('loans')}
-                                className={`px-4 py-2 rounded-lg text-xs font-bold transition-all ${
-                                    activeTab === 'loans'
-                                        ? 'bg-emerald-600 text-white shadow-sm'
-                                        : 'text-slate-600 hover:text-slate-900'
-                                }`}
-                            >
-                                ঋণ আবেদন ({loanApprovals.length})
-                            </button>
-                        </div>
-
-                        {/* Search Input Box */}
-                        <div className="relative flex-grow max-w-md">
-                            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 pointer-events-none" />
+                    {/* Bottom Row: Search & Location Filters in 1 Clean Compact Bar */}
+                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-12 gap-2">
+                        {/* Search Input */}
+                        <div className="lg:col-span-4 relative">
+                            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-400 pointer-events-none" />
                             <input
                                 type="text"
                                 value={searchQuery}
                                 onChange={(e) => setSearchQuery(e.target.value)}
-                                placeholder="আবেদন নং, নাম, শাখা বা সমিতি খুঁজুন..."
-                                className="w-full pl-9 pr-9 py-2 text-xs sm:text-sm border border-slate-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 bg-slate-50/50 transition-all"
+                                placeholder="আবেদন নং, নাম, সমিতি বা শাখা খুঁজুন..."
+                                className="w-full h-8.5 pl-8 pr-7 text-xs border border-slate-300 rounded-lg bg-white text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-1 focus:ring-blue-500 focus:border-blue-500 transition"
                             />
                             {searchQuery && (
                                 <button
+                                    type="button"
                                     onClick={() => setSearchQuery('')}
-                                    className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
+                                    className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
                                 >
-                                    <X className="w-4 h-4" />
+                                    <X className="w-3.5 h-3.5" />
                                 </button>
                             )}
                         </div>
-                    </div>
 
-                    {/* Zone, Region (Area) & Branch Filters Bar */}
-                    {(zones.length > 0 || areas.length > 0 || branches.length > 0) && (
-                        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-3 border-t border-slate-200/60">
-                            {/* Zone Filter */}
-                            <div className="flex flex-col gap-1">
-                                <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">জোন (Zone)</span>
+                        {/* Zone Filter */}
+                        {zones.length > 0 && (
+                            <div className="lg:col-span-2">
                                 <select
                                     value={selectedZone}
                                     onChange={(e) => handleLocationFilterChange(e.target.value, '', '')}
-                                    className="w-full border border-slate-300 rounded-xl px-3 py-1.5 text-xs bg-white text-slate-800 focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all"
+                                    className="h-8.5 w-full border border-slate-300 rounded-lg px-2.5 text-xs bg-white text-slate-800 focus:outline-none focus:ring-1 focus:ring-blue-500 focus:border-blue-500 transition"
                                 >
-                                    <option value="">সকল জোন (All Zones)</option>
+                                    <option value="">সকল জোন ({zones.length})</option>
                                     {zones.map((z) => (
                                         <option key={z.id} value={z.id}>
                                             {z.name} {z.code ? `(${z.code})` : ''}
@@ -703,16 +770,17 @@ export default function Index({
                                     ))}
                                 </select>
                             </div>
+                        )}
 
-                            {/* Regional / Area Filter */}
-                            <div className="flex flex-col gap-1">
-                                <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">অঞ্চল (Region / Area)</span>
+                        {/* Area Filter */}
+                        {areas.length > 0 && (
+                            <div className="lg:col-span-2">
                                 <select
                                     value={selectedArea}
                                     onChange={(e) => handleLocationFilterChange(selectedZone, e.target.value, '')}
-                                    className="w-full border border-slate-300 rounded-xl px-3 py-1.5 text-xs bg-white text-slate-800 focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all"
+                                    className="h-8.5 w-full border border-slate-300 rounded-lg px-2.5 text-xs bg-white text-slate-800 focus:outline-none focus:ring-1 focus:ring-blue-500 focus:border-blue-500 transition"
                                 >
-                                    <option value="">সকল অঞ্চল (All Regions)</option>
+                                    <option value="">সকল অঞ্চল ({filteredAreas.length})</option>
                                     {filteredAreas.map((a) => (
                                         <option key={a.id} value={a.id}>
                                             {a.name} {a.code ? `(${a.code})` : ''}
@@ -720,166 +788,183 @@ export default function Index({
                                     ))}
                                 </select>
                             </div>
+                        )}
 
-                            {/* Branch Filter */}
-                            <div className="flex flex-col gap-1">
-                                <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">শাখা (Branch)</span>
+                        {/* Branch Filter */}
+                        {branches.length > 0 && (
+                            <div className="lg:col-span-3">
                                 <select
                                     value={selectedBranch}
                                     onChange={(e) => handleLocationFilterChange(selectedZone, selectedArea, e.target.value)}
-                                    className="w-full border border-slate-300 rounded-xl px-3 py-1.5 text-xs bg-white text-slate-800 focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all"
+                                    className="h-8.5 w-full border border-slate-300 rounded-lg px-2.5 text-xs bg-white text-slate-800 focus:outline-none focus:ring-1 focus:ring-blue-500 focus:border-blue-500 transition"
                                 >
-                                    <option value="">সকল শাখা (All Branches)</option>
+                                    <option value="">সকল শাখা ({filteredBranches.length})</option>
                                     {filteredBranches.map((b) => (
                                         <option key={b.id} value={b.id}>
-                                            {b.name} {b.code ? `(${b.code})` : ''}
+                                            {formatBranchLabel(b)}
                                         </option>
                                     ))}
                                 </select>
                             </div>
-                        </div>
-                    )}
+                        )}
+
+                        {/* Reset Filter Button */}
+                        {hasActiveFilters && (
+                            <div className="lg:col-span-1 flex items-center">
+                                <button
+                                    type="button"
+                                    onClick={resetFilters}
+                                    className="h-8.5 w-full inline-flex items-center justify-center gap-1 rounded-lg border border-rose-200 bg-rose-50 px-2 text-xs font-bold text-rose-700 hover:bg-rose-100 transition"
+                                    title="ফিল্টার রিসেট"
+                                >
+                                    <RotateCcw className="w-3 h-3" />
+                                    রিসেট
+                                </button>
+                            </div>
+                        )}
+                    </div>
                 </div>
 
-                {/* ── 3. EMPTY STATE ─────────────────────────────────────────────── */}
-                {totalCount === 0 || (filteredApprovals.length === 0 && filteredLoanApprovals.length === 0) ? (
-                    <div className="bg-white rounded-3xl border border-slate-200/80 p-12 text-center shadow-sm max-w-2xl mx-auto my-8">
-                        <div className="w-20 h-20 rounded-full bg-emerald-50 text-emerald-600 flex items-center justify-center mx-auto mb-4 border border-emerald-100 shadow-inner">
-                            <CheckCircle className="w-10 h-10" />
+                {/* ── EMPTY STATE VIEW ────────────────────────────────────── */}
+                {totalCount === 0 || totalFilteredCount === 0 ? (
+                    <div className="rounded-xl border border-slate-200 bg-white p-8 text-center shadow-xs">
+                        <div className="w-12 h-12 mx-auto rounded-full bg-emerald-50 text-emerald-600 flex items-center justify-center mb-3 border border-emerald-100">
+                            {totalCount === 0 ? <CheckCircle2 className="w-6 h-6" /> : <Search className="w-6 h-6 text-slate-400" />}
                         </div>
-                        <h3 className="text-xl font-bold text-slate-900 mb-2">কোনো অপেক্ষমান আবেদন নেই</h3>
-                        <p className="text-slate-500 text-sm max-w-md mx-auto">
-                            {searchQuery
-                                ? 'আপনার সার্চ ফিল্টারের সাথে কোনো আবেদন মেইল করেনি। রিসেট করে আবার চেষ্টা করুন।'
-                                : 'আপনার অনুমোদনের অপেক্ষায় এই মুহূর্তে কোনো আবেদন নেই। সব কাজ সম্পন্ন হয়েছে!'}
+                        <h3 className="text-sm font-bold text-slate-900">
+                            {totalCount === 0 ? 'সব আবেদন সম্পন্ন হয়েছে!' : 'কোনো আবেদন মেলেনি'}
+                        </h3>
+                        <p className="mt-1 text-xs text-slate-500 max-w-sm mx-auto">
+                            {totalCount === 0
+                                ? 'এই মুহূর্তে আপনার জন্য অনুমোদনের অপেক্ষায় কোনো মুলতবি আবেদন নেই।'
+                                : 'বর্তমান ফিল্টারের সাথে কোনো আবেদন খুঁজে পাওয়া যায়নি।'}
                         </p>
+                        {hasActiveFilters && (
+                            <button
+                                type="button"
+                                onClick={resetFilters}
+                                className="mt-3.5 inline-flex items-center gap-1.5 rounded-lg bg-slate-900 text-white px-3.5 py-1.5 text-xs font-bold hover:bg-slate-800 transition"
+                            >
+                                <RotateCcw className="w-3.5 h-3.5" />
+                                ফিল্টার রিসেট করুন
+                            </button>
+                        )}
                     </div>
                 ) : (
                     <>
-                        {/* ── 4. MEMBER ADMISSION APPROVALS SECTION ─────────────────────── */}
+                        {/* ── MEMBER ADMISSION APPROVALS SECTION ────────────────── */}
                         {(activeTab === 'all' || activeTab === 'admissions') && filteredApprovals.length > 0 && (
-                            <div className="space-y-4">
-                                <div className="flex items-center justify-between">
-                                    <div className="flex items-center gap-2">
-                                        <div className="w-3 h-3 rounded-full bg-blue-600" />
-                                        <h2 className="text-base sm:text-lg font-bold text-slate-900">
-                                            সদস্য ভর্তি আবেদন ({filteredApprovals.length})
-                                        </h2>
-                                    </div>
+                            <div className="space-y-2">
+                                <div className="flex items-center gap-2">
+                                    <h2 className="text-xs font-bold text-slate-800 uppercase tracking-wider">
+                                        সদস্য ভর্তি আবেদন
+                                    </h2>
+                                    <span className="px-1.5 py-0.2 rounded text-[11px] font-bold bg-blue-100 text-blue-800">
+                                        {filteredApprovals.length}
+                                    </span>
                                 </div>
 
                                 {/* MOBILE CARDS VIEW (md:hidden) */}
-                                <div className="md:hidden flex flex-col gap-4">
+                                <div className="md:hidden flex flex-col gap-2.5">
                                     {filteredApprovals.map((approval) => (
                                         <div
                                             key={approval.id}
-                                            className="bg-white rounded-2xl border border-slate-200/90 shadow-sm hover:shadow-md transition-all p-4 space-y-4 relative overflow-hidden"
+                                            className="rounded-xl border border-slate-200 bg-white p-3 shadow-xs space-y-2.5"
                                         >
-                                            {/* Card Top Strip Accent */}
-                                            <div className="absolute top-0 left-0 right-0 h-1 bg-gradient-to-r from-blue-500 to-indigo-600" />
-
-                                            {/* Applicant Header */}
-                                            <div className="flex items-start justify-between gap-3 pt-1">
-                                                <div className="flex items-center gap-3">
-                                                    <div className="w-10 h-10 rounded-full bg-gradient-to-tr from-blue-600 to-indigo-600 text-white font-bold text-sm flex items-center justify-center shrink-0 shadow-sm">
+                                            {/* Card Top Header */}
+                                            <div className="flex items-start justify-between gap-2">
+                                                <div className="flex items-center gap-2.5">
+                                                    <div className="w-8 h-8 rounded-lg bg-blue-600 text-white font-bold text-xs flex items-center justify-center shrink-0">
                                                         {getInitials(approval.applicant_name)}
                                                     </div>
                                                     <div>
-                                                        <h3 className="font-bold text-slate-900 text-sm leading-snug">
+                                                        <h3 className="font-bold text-slate-900 text-xs leading-snug">
                                                             {approval.applicant_name}
                                                         </h3>
                                                         {approval.applicant_name_bn && (
-                                                            <p className="text-xs text-slate-500 font-medium">
+                                                            <p className="text-[11px] text-slate-500">
                                                                 {approval.applicant_name_bn}
                                                             </p>
                                                         )}
-                                                        <span className="inline-block text-[10px] font-mono font-bold text-blue-700 bg-blue-50 px-2 py-0.5 rounded border border-blue-200 mt-1">
-                                                            {approval.application_no}
-                                                        </span>
+                                                        <button
+                                                            type="button"
+                                                            onClick={() => copyToClipboard(approval.application_no)}
+                                                            className="inline-flex items-center gap-1 text-[10px] font-mono text-slate-600 bg-slate-100 hover:bg-slate-200 px-1.5 py-0.2 rounded border border-slate-200 mt-0.5"
+                                                        >
+                                                            {copiedAppNo === approval.application_no ? (
+                                                                <>
+                                                                    <Check className="w-2.5 h-2.5 text-emerald-600" />
+                                                                    <span className="text-emerald-700 font-sans">কপি হয়েছে</span>
+                                                                </>
+                                                            ) : (
+                                                                <>
+                                                                    <span>{approval.application_no}</span>
+                                                                    <Copy className="w-2.5 h-2.5 text-slate-400" />
+                                                                </>
+                                                            )}
+                                                        </button>
                                                     </div>
                                                 </div>
                                                 <div className="shrink-0">{getLevelBadge(approval.level)}</div>
                                             </div>
 
-                                            {/* Details Info Grid */}
-                                            <div className="grid grid-cols-2 gap-3 bg-slate-50/70 p-3 rounded-xl border border-slate-100 text-xs">
-                                                <div className="space-y-0.5">
-                                                    <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 flex items-center gap-1">
-                                                        <Building2 className="w-3 h-3 text-slate-400" /> শাখা
-                                                    </span>
+                                            {/* Info Grid */}
+                                            <div className="grid grid-cols-2 gap-2 bg-slate-50 p-2 rounded-lg border border-slate-100 text-[11px]">
+                                                <div>
+                                                    <span className="text-[9px] font-bold uppercase text-slate-400 block">শাখা ও সমিতি</span>
                                                     <p className="font-semibold text-slate-800 truncate">{approval.branch_name}</p>
+                                                    <p className="text-slate-500 truncate">{approval.samity_name}</p>
                                                 </div>
-
-                                                <div className="space-y-0.5">
-                                                    <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 flex items-center gap-1">
-                                                        <Users className="w-3 h-3 text-slate-400" /> সমিতি
-                                                    </span>
-                                                    <p className="font-semibold text-slate-800 truncate">{approval.samity_name}</p>
-                                                </div>
-
-                                                <div className="space-y-0.5">
-                                                    <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 flex items-center gap-1">
-                                                        <Clock className="w-3 h-3 text-slate-400" /> জমার তারিখ
-                                                    </span>
-                                                    <p className="font-semibold text-slate-700">{formatDate(approval.submitted_at)}</p>
-                                                </div>
-
-                                                <div className="space-y-0.5">
-                                                    <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 flex items-center gap-1">
-                                                        <AlertCircle className="w-3 h-3 text-slate-400" /> রিভিশন
-                                                    </span>
+                                                <div>
+                                                    <span className="text-[9px] font-bold uppercase text-slate-400 block">তারিখ ও রিভিশন</span>
+                                                    <p className="text-slate-700">{formatDate(approval.submitted_at)}</p>
                                                     {approval.revision_count > 0 ? (
-                                                        <div className="flex items-center gap-1">
-                                                            <span className="px-2 py-0.5 text-[10px] bg-amber-100 text-amber-800 rounded font-bold border border-amber-200">
-                                                                Rev: {approval.revision_count}
-                                                            </span>
-                                                            {approval.revision_comments && (
-                                                                <button
-                                                                    onClick={() => alert(approval.revision_comments)}
-                                                                    className="text-blue-600 p-0.5"
-                                                                >
-                                                                    <MessageSquare className="w-3.5 h-3.5" />
-                                                                </button>
-                                                            )}
-                                                        </div>
+                                                        <button
+                                                            type="button"
+                                                            onClick={() => setRevisionModalData(approval)}
+                                                            className="inline-flex items-center gap-1 text-[10px] font-bold text-amber-800 bg-amber-100 px-1.5 py-0.2 rounded border border-amber-200 mt-0.5"
+                                                        >
+                                                            <span>Rev {approval.revision_count}</span>
+                                                            <MessageSquare className="w-2.5 h-2.5" />
+                                                        </button>
                                                     ) : (
-                                                        <p className="text-slate-500 font-medium">-</p>
+                                                        <span className="text-slate-400">-</span>
                                                     )}
                                                 </div>
                                             </div>
 
-                                            {/* Action Buttons Toolbar */}
-                                            <div className="flex flex-wrap items-center gap-2 pt-1 border-t border-slate-100">
+                                            {/* Action Buttons */}
+                                            <div className="grid grid-cols-2 gap-1.5 pt-1 border-t border-slate-100">
                                                 <button
                                                     onClick={() => router.visit(`/member-admissions/${approval.member_admission_id}`)}
-                                                    className="flex-1 inline-flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl text-xs font-semibold text-slate-700 bg-slate-100 hover:bg-slate-200 border border-slate-200 transition-colors active:scale-95"
+                                                    className="inline-flex items-center justify-center gap-1 px-2 py-1.5 rounded-lg text-xs font-semibold text-slate-700 bg-white hover:bg-slate-50 border border-slate-200"
                                                 >
-                                                    <Eye className="w-3.5 h-3.5 text-slate-600" /> দেখুন
+                                                    <Eye className="w-3.5 h-3.5 text-slate-500" /> বিবরণ
                                                 </button>
                                                 <button
                                                     onClick={() => router.visit(`/member-admissions/${approval.member_admission_id}/edit`)}
-                                                    className="flex-1 inline-flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl text-xs font-semibold text-blue-700 bg-blue-50 hover:bg-blue-100 border border-blue-200 transition-colors active:scale-95"
+                                                    className="inline-flex items-center justify-center gap-1 px-2 py-1.5 rounded-lg text-xs font-semibold text-blue-700 bg-blue-50 hover:bg-blue-100 border border-blue-200"
                                                 >
-                                                    <Edit className="w-3.5 h-3.5 text-blue-600" /> এডিট
+                                                    <Edit3 className="w-3.5 h-3.5 text-blue-600" /> এডিট
                                                 </button>
                                                 <button
                                                     onClick={() => handleAction(approval, 'approve')}
-                                                    className="flex-1 inline-flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold text-white bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 transition-all shadow-sm active:scale-95"
+                                                    className="inline-flex items-center justify-center gap-1 px-2 py-2 rounded-lg text-xs font-bold text-white bg-emerald-600 hover:bg-emerald-700"
                                                 >
-                                                    <CheckCircle className="w-3.5 h-3.5" /> অনুমোদন
+                                                    <CheckCircle2 className="w-3.5 h-3.5" /> অনুমোদন
                                                 </button>
                                                 <button
                                                     onClick={() => handleAction(approval, 'reject')}
-                                                    className="flex-1 inline-flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold text-white bg-gradient-to-r from-rose-600 to-red-600 hover:from-rose-700 hover:to-red-700 transition-all shadow-sm active:scale-95"
+                                                    className="inline-flex items-center justify-center gap-1 px-2 py-2 rounded-lg text-xs font-bold text-white bg-rose-600 hover:bg-rose-700"
                                                 >
                                                     <XCircle className="w-3.5 h-3.5" /> বাতিল
                                                 </button>
                                                 {isHeadOffice(approval.level) && (
                                                     <button
                                                         onClick={() => handleAction(approval, 'return')}
-                                                        className="w-full inline-flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold text-amber-900 bg-amber-100 hover:bg-amber-200 border border-amber-300 transition-all active:scale-95"
+                                                        className="col-span-2 inline-flex items-center justify-center gap-1 px-2 py-1.5 rounded-lg text-xs font-bold text-amber-900 bg-amber-50 hover:bg-amber-100 border border-amber-200"
                                                     >
-                                                        <RotateCcw className="w-3.5 h-3.5" /> Return to Branch
+                                                        <RotateCcw className="w-3.5 h-3.5 text-amber-700" /> শাখায় ফেরত
                                                     </button>
                                                 )}
                                             </div>
@@ -888,243 +973,363 @@ export default function Index({
                                 </div>
 
                                 {/* DESKTOP TABLE VIEW (hidden md:block) */}
-                                <div className="hidden md:block bg-white rounded-2xl border border-slate-200/80 shadow-sm overflow-x-auto">
-                                    <table className="w-full text-left border-collapse">
-                                        <thead>
-                                            <tr className="bg-slate-50/80 border-b border-slate-200 text-[11px] font-bold text-slate-500 uppercase tracking-wider">
-                                                <th className="py-3.5 px-4">আবেদন নং</th>
-                                                <th className="py-3.5 px-4">আবেদনকারী</th>
-                                                <th className="py-3.5 px-4">শাখা</th>
-                                                <th className="py-3.5 px-4">সমিতি</th>
-                                                <th className="py-3.5 px-4">লেভেল</th>
-                                                <th className="py-3.5 px-4">রিভিশন</th>
-                                                <th className="py-3.5 px-4">জমার তারিখ</th>
-                                                <th className="py-3.5 px-4 text-right">অ্যাকশন</th>
-                                            </tr>
-                                        </thead>
-                                        <tbody className="divide-y divide-slate-100 text-sm">
-                                            {filteredApprovals.map((approval) => (
-                                                <tr key={approval.id} className="hover:bg-slate-50/60 transition-colors group">
-                                                    <td className="py-4 px-4 font-mono font-bold text-blue-700 text-xs">
-                                                        {approval.application_no}
-                                                    </td>
-                                                    <td className="py-4 px-4">
-                                                        <div className="font-bold text-slate-800">{approval.applicant_name}</div>
-                                                        {approval.applicant_name_bn && (
-                                                            <div className="text-xs text-slate-500 font-medium">
-                                                                {approval.applicant_name_bn}
+                                <div className="hidden md:block">
+                                    <AutoFitTableContainer
+                                        minWidth={1050}
+                                        storageKey="approvals_admission_table"
+                                        title="সদস্য ভর্তি অনুমোদন তালিকা"
+                                        subtitle={`(মোট ${filteredApprovals.length} টি)`}
+                                    >
+                                        <table className="w-full text-left border-collapse">
+                                            <thead>
+                                                <tr className="bg-slate-50 border-b border-slate-200 text-[11px] font-bold text-slate-500 uppercase tracking-wider">
+                                                    <th className="py-2.5 px-3.5">আবেদন নং</th>
+                                                    <th className="py-2.5 px-3.5">আবেদনকারী</th>
+                                                    <th className="py-2.5 px-3.5">শাখা ও সমিতি</th>
+                                                    <th className="py-2.5 px-3.5">লেভেল</th>
+                                                    <th className="py-2.5 px-3.5">রিভিশন</th>
+                                                    <th className="py-2.5 px-3.5">জমার তারিখ</th>
+                                                    <th className="py-2.5 px-3.5 text-right">পদক্ষেপ</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody className="divide-y divide-slate-100 text-xs">
+                                                {filteredApprovals.map((approval) => (
+                                                    <tr key={approval.id} className="hover:bg-slate-50/80 transition-colors group">
+                                                        <td className="py-2.5 px-3.5">
+                                                            <button
+                                                                type="button"
+                                                                onClick={() => copyToClipboard(approval.application_no)}
+                                                                className="inline-flex items-center gap-1 font-mono font-bold text-slate-800 bg-slate-100 hover:bg-slate-200 px-1.5 py-0.5 rounded border border-slate-200 transition"
+                                                                title="কপি করতে ক্লিক করুন"
+                                                            >
+                                                                {copiedAppNo === approval.application_no ? (
+                                                                    <>
+                                                                        <Check className="w-3 h-3 text-emerald-600" />
+                                                                        <span className="text-emerald-700 font-sans text-[10px]">কপি</span>
+                                                                    </>
+                                                                ) : (
+                                                                    <>
+                                                                        <span>{approval.application_no}</span>
+                                                                        <Copy className="w-3 h-3 text-slate-400 group-hover:text-slate-600" />
+                                                                    </>
+                                                                )}
+                                                            </button>
+                                                        </td>
+                                                        <td className="py-2.5 px-3.5">
+                                                            <div className="font-bold text-slate-900">{approval.applicant_name}</div>
+                                                            {approval.applicant_name_bn && (
+                                                                <div className="text-[11px] text-slate-500">
+                                                                    {approval.applicant_name_bn}
+                                                                </div>
+                                                            )}
+                                                        </td>
+                                                        <td className="py-2.5 px-3.5 space-y-0.5">
+                                                            <div className="font-semibold text-slate-800 flex items-center gap-1">
+                                                                <Building2 className="w-3 h-3 text-slate-400 shrink-0" />
+                                                                <span>{approval.branch_name}</span>
                                                             </div>
-                                                        )}
-                                                    </td>
-                                                    <td className="py-4 px-4 font-medium text-slate-700">{approval.branch_name}</td>
-                                                    <td className="py-4 px-4 font-medium text-slate-700">{approval.samity_name}</td>
-                                                    <td className="py-4 px-4">{getLevelBadge(approval.level)}</td>
-                                                    <td className="py-4 px-4">
-                                                        {approval.revision_count > 0 ? (
-                                                            <div className="flex items-center gap-1.5">
-                                                                <span className="px-2.5 py-0.5 text-xs font-bold bg-amber-100 text-amber-800 rounded-md border border-amber-200">
-                                                                    Rev: {approval.revision_count}
-                                                                </span>
-                                                                {approval.revision_comments && (
+                                                            <div className="text-slate-500 text-[11px] flex items-center gap-1">
+                                                                <Users className="w-3 h-3 text-slate-400 shrink-0" />
+                                                                <span>{approval.samity_name}</span>
+                                                            </div>
+                                                        </td>
+                                                        <td className="py-2.5 px-3.5">{getLevelBadge(approval.level)}</td>
+                                                        <td className="py-2.5 px-3.5">
+                                                            {approval.revision_count > 0 ? (
+                                                                <button
+                                                                    type="button"
+                                                                    onClick={() => setRevisionModalData(approval)}
+                                                                    className="inline-flex items-center gap-1 px-2 py-0.5 text-xs font-bold bg-amber-100 text-amber-900 rounded border border-amber-200 hover:bg-amber-200 transition"
+                                                                    title="রিভিশন নোট দেখুন"
+                                                                >
+                                                                    <span>Rev: {approval.revision_count}</span>
+                                                                    <MessageSquare className="w-3 h-3 text-amber-700" />
+                                                                </button>
+                                                            ) : (
+                                                                <span className="text-xs text-slate-400 font-medium">-</span>
+                                                            )}
+                                                        </td>
+                                                        <td className="py-2.5 px-3.5 text-slate-600">
+                                                            {formatDate(approval.submitted_at)}
+                                                        </td>
+                                                        <td className="py-2.5 px-3.5 text-right">
+                                                            <div className="flex items-center justify-end gap-1">
+                                                                <button
+                                                                    onClick={() => router.visit(`/member-admissions/${approval.member_admission_id}`)}
+                                                                    className="inline-flex items-center gap-1 px-2 py-1 text-xs font-semibold text-slate-700 bg-white hover:bg-slate-100 rounded border border-slate-200 transition"
+                                                                    title="বিস্তারিত দেখুন"
+                                                                >
+                                                                    <Eye className="w-3.5 h-3.5 text-slate-500" />
+                                                                    <span>দেখুন</span>
+                                                                </button>
+                                                                <button
+                                                                    onClick={() => router.visit(`/member-admissions/${approval.member_admission_id}/edit`)}
+                                                                    className="p-1 text-blue-600 hover:bg-blue-50 rounded transition"
+                                                                    title="সম্পাদনা করুন"
+                                                                >
+                                                                    <Edit3 className="w-3.5 h-3.5" />
+                                                                </button>
+                                                                <button
+                                                                    onClick={() => handleAction(approval, 'approve')}
+                                                                    className="inline-flex items-center gap-1 px-2.5 py-1 text-xs font-bold text-white bg-emerald-600 hover:bg-emerald-700 rounded shadow-2xs transition active:scale-95"
+                                                                    title="অনুমোদন করুন"
+                                                                >
+                                                                    <CheckCircle2 className="w-3 h-3" />
+                                                                    <span>অনুমোদন</span>
+                                                                </button>
+                                                                <button
+                                                                    onClick={() => handleAction(approval, 'reject')}
+                                                                    className="inline-flex items-center gap-1 px-2 py-1 text-xs font-bold text-rose-700 bg-rose-50 hover:bg-rose-100 rounded border border-rose-200 transition active:scale-95"
+                                                                    title="বাতিল করুন"
+                                                                >
+                                                                    <XCircle className="w-3 h-3" />
+                                                                    <span>বাতিল</span>
+                                                                </button>
+                                                                {isHeadOffice(approval.level) && (
                                                                     <button
-                                                                        onClick={() => alert(approval.revision_comments)}
-                                                                        className="text-blue-600 hover:text-blue-800 p-1"
-                                                                        title="রিভিশন মন্তব্য দেখুন"
+                                                                        onClick={() => handleAction(approval, 'return')}
+                                                                        className="p-1 text-amber-700 hover:bg-amber-50 rounded transition"
+                                                                        title="শাখায় ফেরত পাঠান"
                                                                     >
-                                                                        <MessageSquare className="w-4 h-4" />
+                                                                        <RotateCcw className="w-3.5 h-3.5" />
                                                                     </button>
                                                                 )}
                                                             </div>
-                                                        ) : (
-                                                            <span className="text-xs text-slate-400 font-medium">-</span>
-                                                        )}
-                                                    </td>
-                                                    <td className="py-4 px-4 text-xs font-medium text-slate-500">
-                                                        {formatDate(approval.submitted_at)}
-                                                    </td>
-                                                    <td className="py-4 px-4 text-right">
-                                                        <div className="flex items-center justify-end gap-1.5">
-                                                            <button
-                                                                onClick={() => router.visit(`/member-admissions/${approval.member_admission_id}`)}
-                                                                className="p-2 text-slate-600 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
-                                                                title="বিবরণ দেখুন"
-                                                            >
-                                                                <Eye className="w-4 h-4" />
-                                                            </button>
-                                                            <button
-                                                                onClick={() => router.visit(`/member-admissions/${approval.member_admission_id}/edit`)}
-                                                                className="p-2 text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
-                                                                title="সম্পাদনা করুন"
-                                                            >
-                                                                <Edit className="w-4 h-4" />
-                                                            </button>
-                                                            <button
-                                                                onClick={() => handleAction(approval, 'approve')}
-                                                                className="p-2 text-emerald-600 hover:bg-emerald-50 rounded-lg transition-colors"
-                                                                title="অনুমোদন করুন"
-                                                            >
-                                                                <CheckCircle className="w-4 h-4" />
-                                                            </button>
-                                                            <button
-                                                                onClick={() => handleAction(approval, 'reject')}
-                                                                className="p-2 text-rose-600 hover:bg-rose-50 rounded-lg transition-colors"
-                                                                title="বাতিল করুন"
-                                                            >
-                                                                <XCircle className="w-4 h-4" />
-                                                            </button>
-                                                            {isHeadOffice(approval.level) && (
-                                                                <button
-                                                                    onClick={() => handleAction(approval, 'return')}
-                                                                    className="p-2 text-amber-600 hover:bg-amber-50 rounded-lg transition-colors"
-                                                                    title="শাখায় ফেরত পাঠান"
-                                                                >
-                                                                    <RotateCcw className="w-4 h-4" />
-                                                                </button>
-                                                            )}
-                                                        </div>
-                                                    </td>
-                                                </tr>
-                                            ))}
-                                        </tbody>
-                                    </table>
+                                                        </td>
+                                                    </tr>
+                                                ))}
+                                            </tbody>
+                                        </table>
+                                    </AutoFitTableContainer>
                                 </div>
                             </div>
                         )}
 
-                        {/* ── 5. LOAN APPROVALS SECTION ───────────────────────────────────── */}
+                        {/* ── LOAN APPROVALS SECTION ────────────────────────────── */}
                         {(activeTab === 'all' || activeTab === 'loans') && filteredLoanApprovals.length > 0 && (
-                            <div className="space-y-4 pt-4">
-                                <div className="flex items-center justify-between">
-                                    <div className="flex items-center gap-2">
-                                        <div className="w-3 h-3 rounded-full bg-emerald-600" />
-                                        <h2 className="text-base sm:text-lg font-bold text-slate-900">
-                                            ঋণ আবেদন অনুমোদন ({filteredLoanApprovals.length})
-                                        </h2>
-                                    </div>
+                            <div className="space-y-2 pt-1">
+                                <div className="flex items-center gap-2">
+                                    <h2 className="text-xs font-bold text-slate-800 uppercase tracking-wider">
+                                        ঋণ আবেদন যাচাই ও অনুমোদন
+                                    </h2>
+                                    <span className="px-1.5 py-0.2 rounded text-[11px] font-bold bg-emerald-100 text-emerald-800">
+                                        {filteredLoanApprovals.length}
+                                    </span>
                                 </div>
 
                                 {/* MOBILE CARDS VIEW FOR LOAN APPROVALS (md:hidden) */}
-                                <div className="md:hidden flex flex-col gap-4">
-                                    {filteredLoanApprovals.map((la) => (
-                                        <div
-                                            key={la.id}
-                                            className="bg-white rounded-2xl border border-slate-200/90 shadow-sm hover:shadow-md transition-all p-4 space-y-4 relative overflow-hidden"
-                                        >
-                                            {/* Card Top Accent */}
-                                            <div className="absolute top-0 left-0 right-0 h-1 bg-gradient-to-r from-emerald-500 to-teal-600" />
-
-                                            <div className="flex items-start justify-between gap-3 pt-1">
-                                                <div>
-                                                    <span className="text-[11px] font-mono font-bold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200">
-                                                        {la.application_no}
-                                                    </span>
-                                                    <h3 className="font-bold text-slate-900 text-base mt-1">
-                                                        {la.applicant_name_bn || la.applicant_name}
-                                                    </h3>
+                                <div className="md:hidden flex flex-col gap-2.5">
+                                    {filteredLoanApprovals.map((la) => {
+                                        const isHighAmount = la.level === 'branch' && Number(la.requested_amount || 0) > 70000;
+                                        return (
+                                            <div
+                                                key={la.id}
+                                                className="rounded-xl border border-slate-200 bg-white p-3 shadow-xs space-y-2.5"
+                                            >
+                                                <div className="flex items-start justify-between gap-2">
+                                                    <div>
+                                                        <button
+                                                            type="button"
+                                                            onClick={() => copyToClipboard(la.application_no)}
+                                                            className="inline-flex items-center gap-1 text-[10px] font-mono text-slate-600 bg-slate-100 hover:bg-slate-200 px-1.5 py-0.2 rounded border border-slate-200"
+                                                        >
+                                                            {copiedAppNo === la.application_no ? (
+                                                                <>
+                                                                    <Check className="w-2.5 h-2.5 text-emerald-600" />
+                                                                    <span className="text-emerald-700 font-sans">কপি</span>
+                                                                </>
+                                                            ) : (
+                                                                <>
+                                                                    <span>{la.application_no}</span>
+                                                                    <Copy className="w-2.5 h-2.5 text-slate-400" />
+                                                                </>
+                                                            )}
+                                                        </button>
+                                                        <h3 className="font-bold text-slate-900 text-xs mt-0.5">
+                                                            {la.applicant_name_bn || la.applicant_name}
+                                                        </h3>
+                                                    </div>
+                                                    <div className="text-right">
+                                                        <span className="text-[9px] font-bold uppercase text-slate-400 block">
+                                                            আবেদনকৃত ঋণ
+                                                        </span>
+                                                        <span className="text-sm font-extrabold text-emerald-700 tabular-nums">
+                                                            ৳ {Number(la.requested_amount).toLocaleString('bn-BD')}
+                                                        </span>
+                                                    </div>
                                                 </div>
-                                                <div className="text-right">
-                                                    <span className="text-xs text-slate-400 font-bold uppercase tracking-wider block">আবেদনকৃত ঋণ</span>
-                                                    <span className="text-base font-black text-emerald-600">
-                                                        ৳{Number(la.requested_amount).toLocaleString()}
-                                                    </span>
+
+                                                {isHighAmount && (
+                                                    <div className="flex items-center gap-1 p-1.5 rounded-lg bg-amber-50 border border-amber-200 text-amber-900 text-[10px] font-semibold">
+                                                        <AlertTriangle className="w-3 h-3 text-amber-600 shrink-0" />
+                                                        <span>৭০,০০০+ টাকার ঋণ: উচ্চতর অনুমোদন প্রয়োজন</span>
+                                                    </div>
+                                                )}
+
+                                                <div className="grid grid-cols-2 gap-2 bg-slate-50 p-2 rounded-lg border border-slate-100 text-[11px]">
+                                                    <div>
+                                                        <span className="text-[9px] font-bold uppercase text-slate-400 block">শাখা</span>
+                                                        <p className="font-semibold text-slate-800 truncate">{la.branch_name}</p>
+                                                    </div>
+                                                    <div>
+                                                        <span className="text-[9px] font-bold uppercase text-slate-400 block">তারিখ</span>
+                                                        <p className="text-slate-700">{la.submitted_at ? formatDate(la.submitted_at) : '-'}</p>
+                                                    </div>
+                                                </div>
+
+                                                <div className="grid grid-cols-3 gap-1.5 pt-1 border-t border-slate-100">
+                                                    <button
+                                                        onClick={() => router.visit(`/member/loan-applications/${la.loan_application_id}`)}
+                                                        className="inline-flex items-center justify-center gap-1 px-2 py-1.5 rounded-lg text-xs font-semibold text-slate-700 bg-white hover:bg-slate-50 border border-slate-200"
+                                                    >
+                                                        <Eye className="w-3.5 h-3.5 text-slate-500" /> দেখুন
+                                                    </button>
+                                                    <button
+                                                        onClick={() => handleLoanAction(la, 'approve')}
+                                                        className={`inline-flex items-center justify-center gap-1 px-2 py-1.5 rounded-lg text-xs font-bold text-white ${
+                                                            isHighAmount ? 'bg-blue-600 hover:bg-blue-700' : 'bg-emerald-600 hover:bg-emerald-700'
+                                                        }`}
+                                                    >
+                                                        {isHighAmount ? <ArrowUpRight className="w-3 h-3" /> : <CheckCircle2 className="w-3 h-3" />}
+                                                        <span>{isHighAmount ? 'ফরওয়ার্ড' : 'অনুমোদন'}</span>
+                                                    </button>
+                                                    <button
+                                                        onClick={() => handleLoanAction(la, 'reject')}
+                                                        className="inline-flex items-center justify-center gap-1 px-2 py-1.5 rounded-lg text-xs font-bold text-rose-700 bg-rose-50 hover:bg-rose-100 border border-rose-200"
+                                                    >
+                                                        <XCircle className="w-3 h-3" /> বাতিল
+                                                    </button>
                                                 </div>
                                             </div>
-
-                                            <div className="grid grid-cols-2 gap-3 bg-slate-50/70 p-3 rounded-xl border border-slate-100 text-xs">
-                                                <div>
-                                                    <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 block">শাখার নাম</span>
-                                                    <p className="font-semibold text-slate-800 mt-0.5">{la.branch_name}</p>
-                                                </div>
-                                                <div>
-                                                    <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 block">জমার তারিখ</span>
-                                                    <p className="font-semibold text-slate-700 mt-0.5">
-                                                        {la.submitted_at ? formatDate(la.submitted_at) : '-'}
-                                                    </p>
-                                                </div>
-                                            </div>
-
-                                            <div className="flex items-center gap-2 pt-1 border-t border-slate-100">
-                                                <button
-                                                    onClick={() => router.visit(`/member/loan-applications/${la.loan_application_id}`)}
-                                                    className="flex-1 inline-flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl text-xs font-semibold text-slate-700 bg-slate-100 hover:bg-slate-200 border border-slate-200 transition-colors active:scale-95"
-                                                >
-                                                    <Eye className="w-3.5 h-3.5 text-slate-600" /> দেখুন
-                                                </button>
-                                                <button
-                                                    onClick={() => handleLoanAction(la, 'approve')}
-                                                    className="flex-1 inline-flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold text-white bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 transition-all shadow-sm active:scale-95"
-                                                >
-                                                    <CheckCircle className="w-3.5 h-3.5" /> অনুমোদন
-                                                </button>
-                                                <button
-                                                    onClick={() => handleLoanAction(la, 'reject')}
-                                                    className="flex-1 inline-flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold text-white bg-gradient-to-r from-rose-600 to-red-600 hover:from-rose-700 hover:to-red-700 transition-all shadow-sm active:scale-95"
-                                                >
-                                                    <XCircle className="w-3.5 h-3.5" /> প্রত্যাখ্যান
-                                                </button>
-                                            </div>
-                                        </div>
-                                    ))}
+                                        );
+                                    })}
                                 </div>
 
                                 {/* DESKTOP TABLE VIEW FOR LOAN APPROVALS (hidden md:block) */}
-                                <div className="hidden md:block bg-white rounded-2xl border border-slate-200/80 shadow-sm overflow-x-auto">
-                                    <table className="w-full text-left border-collapse">
-                                        <thead>
-                                            <tr className="bg-slate-50/80 border-b border-slate-200 text-[11px] font-bold text-slate-500 uppercase tracking-wider">
-                                                <th className="py-3.5 px-4">আবেদন নং</th>
-                                                <th className="py-3.5 px-4">আবেদনকারী</th>
-                                                <th className="py-3.5 px-4">শাখা</th>
-                                                <th className="py-3.5 px-4 text-right">আবেদনকৃত পরিমাণ</th>
-                                                <th className="py-3.5 px-4">জমার তারিখ</th>
-                                                <th className="py-3.5 px-4 text-right">অ্যাকশন</th>
-                                            </tr>
-                                        </thead>
-                                        <tbody className="divide-y divide-slate-100 text-sm">
-                                            {filteredLoanApprovals.map((la) => (
-                                                <tr key={la.id} className="hover:bg-slate-50/60 transition-colors">
-                                                    <td className="py-4 px-4 font-mono font-bold text-emerald-700 text-xs">
-                                                        {la.application_no}
-                                                    </td>
-                                                    <td className="py-4 px-4 font-bold text-slate-800">
-                                                        {la.applicant_name_bn || la.applicant_name}
-                                                    </td>
-                                                    <td className="py-4 px-4 font-medium text-slate-700">{la.branch_name}</td>
-                                                    <td className="py-4 px-4 text-right font-black text-slate-900">
-                                                        ৳{Number(la.requested_amount).toLocaleString()}
-                                                    </td>
-                                                    <td className="py-4 px-4 text-xs font-medium text-slate-500">
-                                                        {la.submitted_at ? formatDate(la.submitted_at) : '-'}
-                                                    </td>
-                                                    <td className="py-4 px-4 text-right">
-                                                        <div className="flex items-center justify-end gap-1.5">
-                                                            <button
-                                                                onClick={() => router.visit(`/member/loan-applications/${la.loan_application_id}`)}
-                                                                className="p-2 text-slate-600 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
-                                                                title="বিবরণ দেখুন"
-                                                            >
-                                                                <Eye className="w-4 h-4" />
-                                                            </button>
-                                                            <button
-                                                                onClick={() => handleLoanAction(la, 'approve')}
-                                                                className="p-2 text-emerald-600 hover:bg-emerald-50 rounded-lg transition-colors"
-                                                                title="অনুমোদন করুন"
-                                                            >
-                                                                <CheckCircle className="w-4 h-4" />
-                                                            </button>
-                                                            <button
-                                                                onClick={() => handleLoanAction(la, 'reject')}
-                                                                className="p-2 text-rose-600 hover:bg-rose-50 rounded-lg transition-colors"
-                                                                title="প্রত্যাখ্যান করুন"
-                                                            >
-                                                                <XCircle className="w-4 h-4" />
-                                                            </button>
-                                                        </div>
-                                                    </td>
+                                <div className="hidden md:block">
+                                    <AutoFitTableContainer
+                                        minWidth={1100}
+                                        storageKey="approvals_loan_table"
+                                        title="ঋণ আবেদন অনুমোদন তালিকা"
+                                        subtitle={`(মোট ${filteredLoanApprovals.length} টি)`}
+                                    >
+                                        <table className="w-full text-left border-collapse">
+                                            <thead>
+                                                <tr className="bg-slate-50 border-b border-slate-200 text-[11px] font-bold text-slate-500 uppercase tracking-wider">
+                                                    <th className="py-2.5 px-3.5">আবেদন নং</th>
+                                                    <th className="py-2.5 px-3.5">আবেদনকারী</th>
+                                                    <th className="py-2.5 px-3.5">শাখা</th>
+                                                    <th className="py-2.5 px-3.5 text-right">আবেদনকৃত পরিমাণ</th>
+                                                    <th className="py-2.5 px-3.5">জমার তারিখ</th>
+                                                    <th className="py-2.5 px-3.5 text-right">পদক্ষেপ</th>
                                                 </tr>
-                                            ))}
-                                        </tbody>
-                                    </table>
+                                            </thead>
+                                            <tbody className="divide-y divide-slate-100 text-xs">
+                                                {filteredLoanApprovals.map((la) => {
+                                                    const isHighAmount = la.level === 'branch' && Number(la.requested_amount || 0) > 70000;
+                                                    return (
+                                                        <tr key={la.id} className="hover:bg-slate-50/80 transition-colors group">
+                                                            <td className="py-2.5 px-3.5">
+                                                                <button
+                                                                    type="button"
+                                                                    onClick={() => copyToClipboard(la.application_no)}
+                                                                    className="inline-flex items-center gap-1 font-mono font-bold text-slate-800 bg-slate-100 hover:bg-slate-200 px-1.5 py-0.5 rounded border border-slate-200 transition"
+                                                                    title="কপি করতে ক্লিক করুন"
+                                                                >
+                                                                    {copiedAppNo === la.application_no ? (
+                                                                        <>
+                                                                            <Check className="w-3 h-3 text-emerald-600" />
+                                                                            <span className="text-emerald-700 font-sans text-[10px]">কপি</span>
+                                                                        </>
+                                                                    ) : (
+                                                                        <>
+                                                                            <span>{la.application_no}</span>
+                                                                            <Copy className="w-3 h-3 text-slate-400 group-hover:text-slate-600" />
+                                                                        </>
+                                                                    )}
+                                                                </button>
+                                                            </td>
+                                                            <td className="py-2.5 px-3.5">
+                                                                <div className="font-bold text-slate-900">
+                                                                    {la.applicant_name_bn || la.applicant_name}
+                                                                </div>
+                                                                {la.applicant_name_bn && la.applicant_name !== la.applicant_name_bn && (
+                                                                    <div className="text-[11px] text-slate-500 font-medium">
+                                                                        {la.applicant_name}
+                                                                    </div>
+                                                                )}
+                                                            </td>
+                                                            <td className="py-2.5 px-3.5">
+                                                                <div className="font-semibold text-slate-800 flex items-center gap-1">
+                                                                    <Building2 className="w-3 h-3 text-slate-400 shrink-0" />
+                                                                    <span>{la.branch_name}</span>
+                                                                </div>
+                                                            </td>
+                                                            <td className="py-2.5 px-3.5 text-right">
+                                                                <div className="inline-flex flex-col items-end">
+                                                                    <span className="font-extrabold text-slate-900 tabular-nums">
+                                                                        ৳ {Number(la.requested_amount).toLocaleString('bn-BD')}
+                                                                    </span>
+                                                                    {isHighAmount && (
+                                                                        <span className="inline-flex items-center gap-1 text-[9px] font-bold text-amber-700 bg-amber-50 border border-amber-200 px-1 py-0.2 rounded mt-0.5">
+                                                                            <AlertTriangle className="w-2.5 h-2.5 text-amber-600" />
+                                                                            উচ্চতর অনুমোদন
+                                                                        </span>
+                                                                    )}
+                                                                </div>
+                                                            </td>
+                                                            <td className="py-2.5 px-3.5 text-slate-600">
+                                                                {la.submitted_at ? formatDate(la.submitted_at) : '-'}
+                                                            </td>
+                                                            <td className="py-2.5 px-3.5 text-right">
+                                                                <div className="flex items-center justify-end gap-1">
+                                                                    <button
+                                                                        onClick={() => router.visit(`/member/loan-applications/${la.loan_application_id}`)}
+                                                                        className="inline-flex items-center gap-1 px-2 py-1 text-xs font-semibold text-slate-700 bg-white hover:bg-slate-100 rounded border border-slate-200 transition"
+                                                                        title="বিস্তারিত দেখুন"
+                                                                    >
+                                                                        <Eye className="w-3.5 h-3.5 text-slate-500" />
+                                                                        <span>দেখুন</span>
+                                                                    </button>
+
+                                                                    <button
+                                                                        onClick={() => handleLoanAction(la, 'approve')}
+                                                                        className={`inline-flex items-center gap-1 px-2.5 py-1 text-xs font-bold text-white rounded shadow-2xs transition active:scale-95 ${
+                                                                            isHighAmount
+                                                                                ? 'bg-blue-600 hover:bg-blue-700'
+                                                                                : 'bg-emerald-600 hover:bg-emerald-700'
+                                                                        }`}
+                                                                        title={isHighAmount ? 'উচ্চতর অনুমোদনে ফরওয়ার্ড' : 'ঋণ অনুমোদন করুন'}
+                                                                    >
+                                                                        {isHighAmount ? (
+                                                                            <>
+                                                                                <ArrowUpRight className="w-3 h-3" />
+                                                                                <span>ফরওয়ার্ড</span>
+                                                                            </>
+                                                                        ) : (
+                                                                            <>
+                                                                                <CheckCircle2 className="w-3 h-3" />
+                                                                                <span>অনুমোদন</span>
+                                                                            </>
+                                                                        )}
+                                                                    </button>
+
+                                                                    <button
+                                                                        onClick={() => handleLoanAction(la, 'reject')}
+                                                                        className="inline-flex items-center gap-1 px-2 py-1 text-xs font-bold text-rose-700 bg-rose-50 hover:bg-rose-100 rounded border border-rose-200 transition active:scale-95"
+                                                                        title="ঋণ আবেদন প্রত্যাখ্যান করুন"
+                                                                    >
+                                                                        <XCircle className="w-3 h-3" />
+                                                                        <span>বাতিল</span>
+                                                                    </button>
+                                                                </div>
+                                                            </td>
+                                                        </tr>
+                                                    );
+                                                })}
+                                            </tbody>
+                                        </table>
+                                    </AutoFitTableContainer>
                                 </div>
                             </div>
                         )}
@@ -1132,58 +1337,140 @@ export default function Index({
                 )}
             </div>
 
-            {/* ── 6. MEMBER ADMISSION ACTION MODAL ────────────────────────────────────── */}
-            {showModal && selectedApproval && (
-                <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center z-50 p-4 overflow-y-auto animate-in fade-in duration-200">
-                    <div className="bg-white rounded-3xl p-6 max-w-md w-full max-h-[90vh] overflow-y-auto shadow-2xl border border-slate-100 space-y-4">
-                        <div className="flex items-center justify-between border-b border-slate-100 pb-3">
-                            <h3 className="text-lg font-bold text-slate-900">
-                                {action === 'approve' && 'আবেদন অনুমোদন'}
-                                {action === 'reject' && 'আবেদন বাতিল'}
-                                {action === 'return' && 'শাখায় ফেরত পাঠান'}
-                                {action === 'forward' && 'উচ্চতর অনুমোদনকারী নির্বাচন ও অনুমোদন'}
-                            </h3>
+            {/* ── REVISION DETAILS MODAL ────────────────────────────────────── */}
+            {revisionModalData && (
+                <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center z-50 p-4 animate-in fade-in duration-200">
+                    <div className="bg-white rounded-2xl p-5 max-w-lg w-full shadow-2xl border border-slate-200 space-y-3.5">
+                        <div className="flex items-center justify-between border-b border-slate-100 pb-2.5">
+                            <div className="flex items-center gap-2">
+                                <div className="w-7 h-7 rounded-lg bg-amber-100 text-amber-800 flex items-center justify-center">
+                                    <MessageSquare className="w-3.5 h-3.5" />
+                                </div>
+                                <div>
+                                    <h3 className="text-sm font-bold text-slate-900">রিভিশন ইতিহাস ও মন্তব্য</h3>
+                                    <p className="text-[11px] text-slate-500">মোট রিভিশন: {revisionModalData.revision_count} বার</p>
+                                </div>
+                            </div>
                             <button
-                                onClick={() => setShowModal(false)}
-                                className="p-1 rounded-full text-slate-400 hover:text-slate-600 hover:bg-slate-100"
+                                onClick={() => setRevisionModalData(null)}
+                                className="p-1 rounded-full text-slate-400 hover:text-slate-600 hover:bg-slate-100 transition"
                             >
-                                <X className="w-5 h-5" />
+                                <X className="w-4 h-4" />
                             </button>
                         </div>
 
-                        <div className="bg-slate-50 p-3.5 rounded-2xl border border-slate-200/80 space-y-1 text-xs">
-                            <p className="text-slate-500 font-medium">
-                                আবেদন নম্বর: <strong className="text-blue-700 font-mono">{selectedApproval.application_no}</strong>
+                        <div className="bg-slate-50 p-3 rounded-xl border border-slate-200/80 space-y-1 text-xs">
+                            <p className="text-slate-600 font-medium">
+                                আবেদন নম্বর: <strong className="font-mono text-blue-700">{revisionModalData.application_no}</strong>
                             </p>
-                            <p className="text-slate-500 font-medium">
-                                আবেদনকারী: <strong className="text-slate-800">{selectedApproval.applicant_name}</strong>
+                            <p className="text-slate-600 font-medium">
+                                সদস্য নাম: <strong className="text-slate-900">{revisionModalData.applicant_name}</strong>
                             </p>
-                            {selectedApproval.requested_loan_amount && (
-                                <p className="text-slate-500 font-medium">
-                                    ঋণ চাহিদা: <strong className="text-slate-900">৳{Number(selectedApproval.requested_loan_amount).toLocaleString()}</strong>
-                                </p>
-                            )}
                         </div>
 
+                        <div className="space-y-1">
+                            <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider">
+                                মন্তব্যসমূহ
+                            </label>
+                            <div className="p-3 rounded-xl bg-amber-50/70 border border-amber-200 text-xs text-amber-950 font-medium leading-relaxed max-h-52 overflow-y-auto whitespace-pre-wrap">
+                                {revisionModalData.revision_comments || 'কোনো মন্তব্য পাওয়া যায়নি।'}
+                            </div>
+                        </div>
+
+                        <div className="flex justify-end pt-1">
+                            <button
+                                type="button"
+                                onClick={() => setRevisionModalData(null)}
+                                className="px-4 py-2 bg-slate-900 text-white rounded-xl text-xs font-bold hover:bg-slate-800 transition"
+                            >
+                                বন্ধ করুন
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* ── MEMBER ADMISSION ACTION MODAL ───────────────────────────── */}
+            {showModal && selectedApproval && action && (
+                <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center z-50 p-4 overflow-y-auto animate-in fade-in duration-200">
+                    <div className="bg-white rounded-2xl p-5 max-w-md w-full shadow-2xl border border-slate-200 space-y-3.5">
+                        <div className="flex items-center justify-between border-b border-slate-100 pb-2.5">
+                            <div className="flex items-center gap-2">
+                                <div className={`w-7 h-7 rounded-lg flex items-center justify-center ${
+                                    action === 'approve'
+                                        ? 'bg-emerald-100 text-emerald-700'
+                                        : action === 'reject'
+                                          ? 'bg-rose-100 text-rose-700'
+                                          : action === 'forward'
+                                            ? 'bg-blue-100 text-blue-700'
+                                            : 'bg-amber-100 text-amber-700'
+                                }`}>
+                                    {action === 'approve' && <CheckCircle2 className="w-4 h-4" />}
+                                    {action === 'reject' && <XCircle className="w-4 h-4" />}
+                                    {action === 'forward' && <ArrowUpRight className="w-4 h-4" />}
+                                    {action === 'return' && <RotateCcw className="w-4 h-4" />}
+                                </div>
+                                <h3 className="text-sm font-bold text-slate-900">
+                                    {action === 'approve' && 'সদস্য ভর্তি অনুমোদন'}
+                                    {action === 'reject' && 'সদস্য ভর্তি বাতিল'}
+                                    {action === 'return' && 'শাখায় ফেরত পাঠান'}
+                                    {action === 'forward' && 'উচ্চতর কর্মকর্তা নির্বাচন ও ফরওয়ার্ড'}
+                                </h3>
+                            </div>
+                            <button
+                                onClick={() => setShowModal(false)}
+                                className="p-1 rounded-full text-slate-400 hover:text-slate-600 hover:bg-slate-100 transition"
+                            >
+                                <X className="w-4 h-4" />
+                            </button>
+                        </div>
+
+                        {/* Summary Pill Box */}
+                        <div className="bg-slate-50 p-3 rounded-xl border border-slate-200/80 space-y-1 text-xs">
+                            <div className="flex justify-between items-center">
+                                <span className="text-slate-500">আবেদন নম্বর:</span>
+                                <strong className="font-mono text-blue-700 bg-white px-1.5 py-0.2 rounded border border-slate-200">
+                                    {selectedApproval.application_no}
+                                </strong>
+                            </div>
+                            <div className="flex justify-between items-center">
+                                <span className="text-slate-500">আবেদনকারী:</span>
+                                <strong className="text-slate-900">{selectedApproval.applicant_name}</strong>
+                            </div>
+                            <div className="flex justify-between items-center">
+                                <span className="text-slate-500">শাখা ও সমিতি:</span>
+                                <span className="text-slate-800 font-semibold">{selectedApproval.branch_name} · {selectedApproval.samity_name}</span>
+                            </div>
+                            {selectedApproval.requested_loan_amount ? (
+                                <div className="flex justify-between items-center pt-1 border-t border-slate-200/60">
+                                    <span className="text-slate-500">ঋণ চাহিদা:</span>
+                                    <strong className="text-emerald-700 font-bold">
+                                        ৳ {Number(selectedApproval.requested_loan_amount).toLocaleString('bn-BD')}
+                                    </strong>
+                                </div>
+                            ) : null}
+                        </div>
+
+                        {/* Forward Specific Selection */}
                         {action === 'forward' && (
-                            <div className="space-y-3">
-                                <div className="bg-amber-50 p-3 rounded-2xl border border-amber-200/80 text-xs text-amber-900 space-y-1">
-                                    <p className="font-bold flex items-center gap-1.5">
-                                        <AlertCircle className="w-4 h-4 text-amber-600 shrink-0" />
-                                        <span>উচ্চতর অনুমোদনকারী নির্বাচন বাধ্যতামূলক</span>
+                            <div className="space-y-2">
+                                <div className="bg-amber-50 p-2.5 rounded-xl border border-amber-200 text-xs text-amber-900 space-y-1">
+                                    <p className="font-bold flex items-center gap-1">
+                                        <AlertCircle className="w-3.5 h-3.5 text-amber-600 shrink-0" />
+                                        <span>উচ্চতর কর্মকর্তা নির্বাচন প্রয়োজন</span>
                                     </p>
-                                    <p className="text-[11px] leading-relaxed">
-                                        এই আবেদনের ঋণ চাহিদা <strong>৳{Number(selectedApproval.requested_loan_amount || 0).toLocaleString()}</strong> (৭০,০০০ টাকার বেশি)। শাখা ব্যবস্থাপকের সরাসরি অনুমোদনের পরিবর্তে পরবর্তী অনুমোদনকারী কর্মকর্তা নির্বাচন করতে হবে।
+                                    <p className="text-[11px] leading-relaxed text-amber-800">
+                                        ঋণ চাহিদা <strong>৳ {Number(selectedApproval.requested_loan_amount || 0).toLocaleString('bn-BD')}</strong> (৭০,০০০ টাকার বেশি)। পরবর্তী কর্মকর্তা নির্বাচন করুন।
                                     </p>
                                 </div>
-                                <div className="space-y-1.5">
+                                <div className="space-y-1">
                                     <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider">
-                                        অনুমোদনকারী কর্মকর্তা নির্বাচন করুন <span className="text-red-500">*</span>
+                                        কর্মকর্তা <span className="text-rose-500">*</span>
                                     </label>
                                     <select
                                         value={forwardToUserId}
                                         onChange={(e) => setForwardToUserId(e.target.value)}
-                                        className="w-full border border-slate-300 rounded-xl px-3 py-2.5 text-xs bg-white focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 text-slate-800 font-semibold"
+                                        className="w-full border border-slate-300 rounded-xl px-2.5 py-2 text-xs bg-white focus:outline-none focus:ring-1 focus:ring-blue-500 focus:border-blue-500 text-slate-900 font-semibold transition"
                                     >
                                         <option value="">-- কর্মকর্তা নির্বাচন করুন --</option>
                                         {(selectedApproval.escalation_approvers ?? []).map((u) => (
@@ -1196,25 +1483,25 @@ export default function Index({
                             </div>
                         )}
 
-                        <div className="space-y-1.5">
+                        <div className="space-y-1">
                             <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider">
-                                মন্তব্য / কারণ {action !== 'approve' && action !== 'forward' && <span className="text-red-500">*</span>}
+                                মন্তব্য {action !== 'approve' && action !== 'forward' && <span className="text-rose-500">*</span>}
                             </label>
                             <textarea
                                 value={comments}
                                 onChange={(e) => setComments(e.target.value)}
-                                rows={4}
-                                className="w-full border border-slate-300 rounded-xl p-3 text-xs focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 text-slate-800"
+                                rows={3}
+                                className="w-full border border-slate-300 rounded-xl p-2.5 text-xs focus:outline-none focus:ring-1 focus:ring-blue-500 focus:border-blue-500 text-slate-900 transition"
                                 placeholder={action === 'forward' ? 'ঐচ্ছিক মন্তব্য লিখুন...' : 'এখানে বিস্তারিত মন্তব্য লিখুন...'}
                                 required={action !== 'approve' && action !== 'forward'}
                             />
                         </div>
 
-                        <div className="flex items-center justify-end gap-3 pt-2">
+                        <div className="flex items-center justify-end gap-2 pt-1">
                             <button
                                 type="button"
                                 onClick={() => setShowModal(false)}
-                                className="px-4 py-2.5 border border-slate-300 rounded-xl text-xs font-bold text-slate-700 hover:bg-slate-50 transition"
+                                className="px-3.5 py-2 border border-slate-300 rounded-xl text-xs font-bold text-slate-700 hover:bg-slate-50 transition"
                             >
                                 বাতিল
                             </button>
@@ -1222,174 +1509,197 @@ export default function Index({
                                 type="button"
                                 onClick={submitAction}
                                 disabled={
+                                    isSubmitting ||
                                     (action !== 'approve' && action !== 'forward' && !comments.trim()) ||
                                     (action === 'forward' && !forwardToUserId)
                                 }
-                                className="px-5 py-2.5 bg-blue-600 text-white rounded-xl text-xs font-bold hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed shadow-sm transition"
+                                className={`px-4 py-2 rounded-xl text-xs font-bold text-white shadow-xs transition disabled:opacity-50 disabled:cursor-not-allowed ${
+                                    action === 'approve'
+                                        ? 'bg-emerald-600 hover:bg-emerald-700'
+                                        : action === 'reject'
+                                          ? 'bg-rose-600 hover:bg-rose-700'
+                                          : action === 'forward'
+                                            ? 'bg-blue-600 hover:bg-blue-700'
+                                            : 'bg-amber-600 hover:bg-amber-700'
+                                }`}
                             >
-                                নিশ্চিত করুন
+                                {isSubmitting ? 'প্রসেসিং...' : 'নিশ্চিত করুন'}
                             </button>
                         </div>
                     </div>
                 </div>
             )}
 
-            {/* ── 7. LOAN ACTION MODAL ────────────────────────────────────────────────── */}
+            {/* ── LOAN ACTION MODAL ────────────────────────────────────────── */}
             {showLoanModal && selectedLoanApproval && loanAction && (
                 <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center z-50 p-4 overflow-y-auto animate-in fade-in duration-200">
-                    <div className={`bg-white rounded-3xl p-6 w-full max-h-[90vh] overflow-y-auto shadow-2xl border border-slate-100 space-y-4 ${loanAction === 'reject' ? 'max-w-xl' : 'max-w-md'}`}>
-                        <div className="flex items-center justify-between border-b border-slate-100 pb-3">
-                            <h3 className="text-lg font-bold text-slate-900">
-                                {loanAction === 'approve'
-                                    ? 'ঋণ আবেদন অনুমোদন'
-                                    : loanAction === 'forward'
-                                      ? 'উচ্চতর অনুমোদনকারীর কাছে ফরওয়ার্ড'
-                                      : 'ঋণ আবেদন প্রত্যাখ্যান'}
-                            </h3>
+                    <div className={`bg-white rounded-2xl p-5 w-full max-h-[90vh] overflow-y-auto shadow-2xl border border-slate-200 space-y-3.5 ${loanAction === 'reject' ? 'max-w-xl' : 'max-w-md'}`}>
+                        <div className="flex items-center justify-between border-b border-slate-100 pb-2.5">
+                            <div className="flex items-center gap-2">
+                                <div className={`w-7 h-7 rounded-lg flex items-center justify-center ${
+                                    loanAction === 'approve'
+                                        ? 'bg-emerald-100 text-emerald-700'
+                                        : loanAction === 'forward'
+                                          ? 'bg-blue-100 text-blue-700'
+                                          : 'bg-rose-100 text-rose-700'
+                                }`}>
+                                    {loanAction === 'approve' && <CheckCircle2 className="w-4 h-4" />}
+                                    {loanAction === 'forward' && <ArrowUpRight className="w-4 h-4" />}
+                                    {loanAction === 'reject' && <XCircle className="w-4 h-4" />}
+                                </div>
+                                <h3 className="text-sm font-bold text-slate-900">
+                                    {loanAction === 'approve'
+                                        ? 'ঋণ আবেদন অনুমোদন'
+                                        : loanAction === 'forward'
+                                          ? 'উচ্চতর অনুমোদনকারীর নিকট ফরওয়ার্ড'
+                                          : 'ঋণ আবেদন প্রত্যাখ্যান ও ব্লক লিস্ট'}
+                                </h3>
+                            </div>
                             <button
                                 onClick={resetLoanModal}
-                                className="p-1 rounded-full text-slate-400 hover:text-slate-600 hover:bg-slate-100"
+                                className="p-1 rounded-full text-slate-400 hover:text-slate-600 hover:bg-slate-100 transition"
                             >
-                                <X className="w-5 h-5" />
+                                <X className="w-4 h-4" />
                             </button>
                         </div>
 
-                        <div className="bg-slate-50 p-3.5 rounded-2xl border border-slate-200/80 space-y-1 text-xs">
-                            <p className="text-slate-500 font-medium">
-                                আবেদন নম্বর: <strong className="text-emerald-700 font-mono">{selectedLoanApproval.application_no}</strong>
-                            </p>
-                            <p className="text-slate-500 font-medium">
-                                আবেদনকারী: <strong className="text-slate-800">{selectedLoanApproval.applicant_name_bn || selectedLoanApproval.applicant_name}</strong>
-                            </p>
-                            <p className="text-slate-500 font-medium">
-                                পরিমাণ: <strong className="text-slate-900">৳{Number(selectedLoanApproval.requested_amount).toLocaleString()}</strong>
-                            </p>
-                            {loanAction === 'reject' && selectedLoanApproval.level !== 'branch' && (
-                                <p className="text-amber-700 bg-amber-50 border border-amber-200 rounded-lg p-2 mt-2">
-                                    প্রত্যাখ্যান হলে টিম ভিত্তিক অনুমোদনও (থাকলে) প্রত্যাখ্যান হবে এবং Block List-এ যোগ করা যাবে।
-                                </p>
-                            )}
-                            {loanAction === 'reject' && selectedLoanApproval.level === 'branch' && (
-                                <p className="text-amber-700 bg-amber-50 border border-amber-200 rounded-lg p-2 mt-2">
-                                    শাখা ব্যবস্থাপক প্রত্যাখ্যান: ঋণ reject + Block List (টিম ভিত্তিক প্রযোজ্য নয়)।
-                                </p>
-                            )}
+                        {/* Summary Box */}
+                        <div className="bg-slate-50 p-3 rounded-xl border border-slate-200/80 space-y-1 text-xs">
+                            <div className="flex justify-between items-center">
+                                <span className="text-slate-500">আবেদন নম্বর:</span>
+                                <strong className="font-mono text-emerald-700 bg-white px-1.5 py-0.2 rounded border border-slate-200">
+                                    {selectedLoanApproval.application_no}
+                                </strong>
+                            </div>
+                            <div className="flex justify-between items-center">
+                                <span className="text-slate-500">আবেদনকারী:</span>
+                                <strong className="text-slate-900">{selectedLoanApproval.applicant_name_bn || selectedLoanApproval.applicant_name}</strong>
+                            </div>
+                            <div className="flex justify-between items-center">
+                                <span className="text-slate-500">শাখা:</span>
+                                <span className="text-slate-800 font-semibold">{selectedLoanApproval.branch_name}</span>
+                            </div>
+                            <div className="flex justify-between items-center pt-1 border-t border-slate-200/60">
+                                <span className="text-slate-500">আবেদনকৃত পরিমাণ:</span>
+                                <strong className="text-slate-900 font-extrabold">
+                                    ৳ {Number(selectedLoanApproval.requested_amount).toLocaleString('bn-BD')}
+                                </strong>
+                            </div>
                         </div>
 
-                        {loanAction === 'forward' && (selectedLoanApproval.escalation_approvers?.length ?? 0) > 0 && (
+                        {/* Escalation Approver for Forward */}
+                        {loanAction === 'forward' && (
                             <div className="space-y-1.5">
                                 <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider">
-                                    অনুমোদনকারী নির্বাচন করুন <span className="text-red-500">*</span>
+                                    কর্মকর্তা নির্বাচন <span className="text-rose-500">*</span>
                                 </label>
                                 <select
                                     value={loanForwardToUserId}
                                     onChange={(e) => setLoanForwardToUserId(e.target.value)}
-                                    className="w-full border border-slate-300 rounded-xl p-3 text-xs focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 text-slate-800"
+                                    className="w-full border border-slate-300 rounded-xl px-2.5 py-2 text-xs bg-white text-slate-900 font-semibold focus:outline-none focus:ring-1 focus:ring-blue-500 focus:border-blue-500 transition"
                                 >
                                     <option value="">নির্বাচন করুন...</option>
                                     {selectedLoanApproval.escalation_approvers?.map((approver) => (
                                         <option key={approver.id} value={approver.id}>
-                                            {approver.name} ({approver.role_name})
+                                            {approver.name} ({approver.role_name || approver.level})
                                         </option>
                                     ))}
                                 </select>
-                                <p className="text-[11px] text-amber-700 bg-amber-50 border border-amber-200 rounded-lg p-2">
-                                    ৭০,০০০ টাকার বেশি ঋণের জন্য উচ্চতর অনুমোদনকারীর কাছে ফরওয়ার্ড করতে হবে।
+                                <p className="text-[11px] text-amber-800 bg-amber-50 border border-amber-200 rounded-lg p-2">
+                                    ৭০,০০০ টাকার বেশি ঋণের জন্য উচ্চতর কর্মকর্তার কাছে ফরওয়ার্ড করা হচ্ছে।
                                 </p>
                             </div>
                         )}
 
+                        {/* Approval Amount Input */}
                         {loanAction === 'approve' && (
                             <div className="space-y-1.5">
                                 <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider">
-                                    চূড়ান্ত অনুমোদিত ঋণের পরিমাণ (সংখ্যায়) <span className="text-red-500">*</span>
+                                    চূড়ান্ত অনুমোদিত ঋণের পরিমাণ (সংখ্যায়) <span className="text-rose-500">*</span>
                                 </label>
-                                <div className="flex items-center overflow-hidden rounded-xl border border-slate-300 bg-white focus-within:ring-2 focus-within:ring-emerald-500/20 focus-within:border-emerald-500">
-                                    <span className="px-3 text-sm font-bold text-slate-500 bg-slate-50 border-r border-slate-200 self-stretch flex items-center">৳</span>
+                                <div className="flex items-center overflow-hidden rounded-xl border border-slate-300 bg-white focus-within:ring-1 focus-within:ring-emerald-500 focus-within:border-emerald-500 transition">
+                                    <span className="px-3 text-xs font-bold text-slate-600 bg-slate-50 border-r border-slate-200 self-stretch flex items-center">৳</span>
                                     <input
                                         type="number"
-                                        min={0}
+                                        min={1}
                                         step={1}
                                         value={loanApprovedAmount}
                                         onChange={(e) => setLoanApprovedAmount(e.target.value)}
-                                        className="w-full p-3 text-sm font-semibold text-slate-900 outline-none"
+                                        className="w-full p-2.5 text-xs font-bold text-slate-900 outline-none"
                                         placeholder="অনুমোদিত পরিমাণ লিখুন"
                                     />
                                 </div>
-                                <p className="text-[11px] text-slate-500">
-                                    আবেদনকৃত: ৳{Number(selectedLoanApproval.requested_amount).toLocaleString('bn-BD')}
-                                </p>
+                                <div className="flex items-center justify-between text-[11px] text-slate-500">
+                                    <span>আবেদনকৃত: ৳ {Number(selectedLoanApproval.requested_amount).toLocaleString('bn-BD')}</span>
+                                    <button
+                                        type="button"
+                                        onClick={() => setLoanApprovedAmount(String(Math.round(Number(selectedLoanApproval.requested_amount))))}
+                                        className="text-emerald-700 font-bold hover:underline"
+                                    >
+                                        পূর্ণ পরিমাণ সেট করুন
+                                    </button>
+                                </div>
                             </div>
                         )}
 
-                        <div className="space-y-1.5">
+                        {/* Comments Area */}
+                        <div className="space-y-1">
                             <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider">
-                                মন্তব্য {loanAction === 'reject' && <span className="text-red-500">*</span>}
+                                মন্তব্য {loanAction === 'reject' && <span className="text-rose-500">*</span>}
                             </label>
                             <textarea
                                 value={loanComments}
                                 onChange={(e) => setLoanComments(e.target.value)}
-                                rows={4}
-                                className="w-full border border-slate-300 rounded-xl p-3 text-xs focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 text-slate-800"
-                                placeholder={loanAction === 'approve' ? 'ঐচ্ছিক মন্তব্য লিখুন...' : 'প্রত্যাখ্যানের কারণ লিখুন...'}
+                                rows={2.5}
+                                className="w-full border border-slate-300 rounded-xl p-2.5 text-xs focus:outline-none focus:ring-1 focus:ring-blue-500 focus:border-blue-500 text-slate-900 transition"
+                                placeholder={loanAction === 'approve' ? 'ঐচ্ছিক মন্তব্য লিখুন...' : 'প্রত্যাখ্যানের কারণ উল্লেখ করুন...'}
                                 required={loanAction === 'reject'}
                             />
                         </div>
 
+                        {/* Reject + Block List Section */}
                         {loanAction === 'reject' && (
-                            <div className="space-y-3">
-                                <label className="flex cursor-pointer items-start gap-3 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+                            <div className="space-y-2.5">
+                                <label className="flex cursor-pointer items-start gap-2.5 rounded-xl border border-slate-200 bg-slate-50 p-2.5 transition">
                                     <input
                                         type="checkbox"
                                         checked={loanPushToBlockList}
                                         onChange={(e) => setLoanPushToBlockList(e.target.checked)}
-                                        className="mt-0.5 h-4 w-4 rounded border-slate-300 text-indigo-600"
+                                        className="mt-0.5 h-3.5 w-3.5 rounded border-slate-300 text-rose-600 focus:ring-rose-500"
                                     />
                                     <div>
-                                        <p className="text-sm font-bold text-slate-800">Block List-এ যোগ করুন</p>
-                                        <p className="mt-0.5 text-xs text-slate-500">আনচেক করলে শুধু ঋণ reject হবে</p>
+                                        <p className="text-xs font-bold text-slate-900">Block List-এ সদস্যের তথ্য সংরক্ষণ করুন</p>
+                                        <p className="text-[10px] text-slate-500">আনচেক করলে শুধুমাত্র ঋণ বাতিল হবে</p>
                                     </div>
                                 </label>
 
                                 {loanPushToBlockList && (
-                                    <div className="space-y-3 rounded-2xl border border-rose-200/80 bg-gradient-to-br from-rose-50/80 via-white to-orange-50/40 p-4 shadow-sm">
-                                        <div className={`rounded-xl border p-3 ${usernameVerifyError ? 'border-rose-300 bg-rose-50/80' : usernameVerified ? 'border-emerald-300 bg-emerald-50/60' : 'border-slate-200 bg-white'}`}>
-                                            <div className="flex flex-wrap items-center gap-2">
-                                                <p className="flex-1 text-xs text-slate-500">
-                                                    {authUsername?.trim() ? (
-                                                        <>
-                                                            Block list Username:{' '}
-                                                            <span className={`font-semibold ${usernameVerified ? 'text-emerald-700' : usernameVerifyError ? 'text-rose-700' : 'text-slate-700'}`}>
-                                                                {authUsername}
-                                                            </span>
-                                                        </>
-                                                    ) : (
-                                                        <span className="font-semibold text-rose-600">Username সেট করা নেই</span>
-                                                    )}
-                                                    {selectedLoanApproval.branch_code ? (
-                                                        <span className="text-slate-400"> · শাখা {selectedLoanApproval.branch_code}</span>
-                                                    ) : null}
+                                    <div className="space-y-2.5 rounded-xl border border-rose-200 bg-rose-50/40 p-3">
+                                        <div className={`rounded-lg border p-2 ${usernameVerifyError ? 'border-rose-300 bg-rose-50' : usernameVerified ? 'border-emerald-300 bg-emerald-50/70' : 'border-slate-200 bg-white'}`}>
+                                            <div className="flex flex-wrap items-center justify-between gap-1.5">
+                                                <p className="text-[11px] text-slate-600 font-medium">
+                                                    অপারেটর:{' '}
+                                                    <span className={`font-bold ${usernameVerified ? 'text-emerald-800' : usernameVerifyError ? 'text-rose-800' : 'text-slate-800'}`}>
+                                                        {authUsername || 'সেট নেই'}
+                                                    </span>
                                                 </p>
                                                 <button
                                                     type="button"
                                                     onClick={() => verifyBlockListUsername()}
                                                     disabled={usernameVerifying}
-                                                    className="inline-flex items-center gap-1 rounded-lg border border-slate-200 bg-white px-2 py-1 text-[10px] font-bold text-slate-600 disabled:opacity-60"
+                                                    className="inline-flex items-center gap-1 rounded border border-slate-300 bg-white px-2 py-0.5 text-[10px] font-bold text-slate-700 hover:bg-slate-50 disabled:opacity-60 transition"
                                                 >
-                                                    {usernameVerifying ? 'যাচাই...' : 'যাচাই করুন'}
+                                                    {usernameVerifying ? 'যাচাই হচ্ছে...' : 'যাচাই'}
                                                 </button>
                                             </div>
                                             {usernameVerifyError && (
-                                                <p className="mt-1 text-[11px] font-medium text-rose-600">{usernameVerifyError}</p>
-                                            )}
-                                            {usernameVerified && !usernameVerifyError && (
-                                                <p className="mt-1 text-[11px] font-medium text-emerald-700">Block list-এ username মিলেছে</p>
+                                                <p className="mt-1 text-[10px] font-semibold text-rose-600">{usernameVerifyError}</p>
                                             )}
                                         </div>
 
-                                        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-                                            <div className="sm:col-span-2">
-                                                <label className="text-[11px] font-bold text-slate-500 uppercase">
+                                        <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                                            <div>
+                                                <label className="text-[10px] font-bold text-slate-600 uppercase">
                                                     NID <span className="text-rose-500">*</span>
                                                 </label>
                                                 <input
@@ -1408,15 +1718,16 @@ export default function Index({
                                                                   : null,
                                                         }));
                                                     }}
-                                                    placeholder="শুধু সংখ্যা"
-                                                    className={`mt-1 w-full border rounded-xl px-3.5 py-2.5 text-sm bg-white outline-none ${loanBlockErrors.nid_number ? 'border-rose-400' : 'border-slate-200'}`}
+                                                    placeholder="NID নম্বর"
+                                                    className={`mt-0.5 w-full border rounded-lg px-2.5 py-1.5 text-xs bg-white outline-none ${loanBlockErrors.nid_number ? 'border-rose-400' : 'border-slate-300'}`}
                                                 />
                                                 {loanBlockErrors.nid_number && (
-                                                    <p className="mt-1 text-[11px] font-medium text-rose-600">{loanBlockErrors.nid_number}</p>
+                                                    <p className="mt-0.5 text-[10px] text-rose-600 font-medium">{loanBlockErrors.nid_number}</p>
                                                 )}
                                             </div>
+
                                             <div>
-                                                <label className="text-[11px] font-bold text-slate-500 uppercase">
+                                                <label className="text-[10px] font-bold text-slate-600 uppercase">
                                                     ফোন <span className="text-rose-500">*</span>
                                                 </label>
                                                 <input
@@ -1436,63 +1747,59 @@ export default function Index({
                                                         }));
                                                     }}
                                                     placeholder="01XXXXXXXXX"
-                                                    className={`mt-1 w-full border rounded-xl px-3.5 py-2.5 text-sm bg-white outline-none ${loanBlockErrors.phone_number ? 'border-rose-400' : 'border-slate-200'}`}
+                                                    className={`mt-0.5 w-full border rounded-lg px-2.5 py-1.5 text-xs bg-white outline-none ${loanBlockErrors.phone_number ? 'border-rose-400' : 'border-slate-300'}`}
                                                 />
                                                 {loanBlockErrors.phone_number && (
-                                                    <p className="mt-1 text-[11px] font-medium text-rose-600">{loanBlockErrors.phone_number}</p>
+                                                    <p className="mt-0.5 text-[10px] text-rose-600 font-medium">{loanBlockErrors.phone_number}</p>
                                                 )}
                                             </div>
+
                                             <div>
-                                                <label className="text-[11px] font-bold text-slate-500 uppercase">নাম (বাংলা)</label>
+                                                <label className="text-[10px] font-bold text-slate-600 uppercase">নাম (বাংলা)</label>
                                                 <input
                                                     type="text"
                                                     value={loanBlockList.name_bn ?? ''}
                                                     onChange={(e) => setLoanBlockField('name_bn', e.target.value)}
-                                                    className="mt-1 w-full border border-slate-200 rounded-xl px-3.5 py-2.5 text-sm bg-white outline-none"
+                                                    className="mt-0.5 w-full border border-slate-300 rounded-lg px-2.5 py-1.5 text-xs bg-white outline-none"
                                                 />
                                             </div>
+
                                             <div>
-                                                <label className="text-[11px] font-bold text-slate-500 uppercase">জন্ম তারিখ</label>
+                                                <label className="text-[10px] font-bold text-slate-600 uppercase">জন্ম তারিখ</label>
                                                 <SmartDateInput
                                                     value={loanBlockList.dob}
                                                     onChange={(v) => setLoanBlockField('dob', v)}
-                                                    className="mt-1"
+                                                    className="mt-0.5"
                                                 />
                                             </div>
+
                                             <div>
-                                                <label className="text-[11px] font-bold text-slate-500 uppercase">পিতার নাম</label>
+                                                <label className="text-[10px] font-bold text-slate-600 uppercase">পিতার নাম</label>
                                                 <input
                                                     type="text"
                                                     value={loanBlockList.father_name ?? ''}
                                                     onChange={(e) => setLoanBlockField('father_name', e.target.value)}
-                                                    className="mt-1 w-full border border-slate-200 rounded-xl px-3.5 py-2.5 text-sm bg-white outline-none"
+                                                    className="mt-0.5 w-full border border-slate-300 rounded-lg px-2.5 py-1.5 text-xs bg-white outline-none"
                                                 />
                                             </div>
+
                                             <div>
-                                                <label className="text-[11px] font-bold text-slate-500 uppercase">মাতার নাম</label>
+                                                <label className="text-[10px] font-bold text-slate-600 uppercase">মাতার নাম</label>
                                                 <input
                                                     type="text"
                                                     value={loanBlockList.mother_name ?? ''}
                                                     onChange={(e) => setLoanBlockField('mother_name', e.target.value)}
-                                                    className="mt-1 w-full border border-slate-200 rounded-xl px-3.5 py-2.5 text-sm bg-white outline-none"
+                                                    className="mt-0.5 w-full border border-slate-300 rounded-lg px-2.5 py-1.5 text-xs bg-white outline-none"
                                                 />
                                             </div>
-                                            <div>
-                                                <label className="text-[11px] font-bold text-slate-500 uppercase">স্বামী/স্ত্রীর নাম</label>
-                                                <input
-                                                    type="text"
-                                                    value={loanBlockList.spouse_name ?? ''}
-                                                    onChange={(e) => setLoanBlockField('spouse_name', e.target.value)}
-                                                    className="mt-1 w-full border border-slate-200 rounded-xl px-3.5 py-2.5 text-sm bg-white outline-none"
-                                                />
-                                            </div>
+
                                             <div className="sm:col-span-2">
-                                                <label className="text-[11px] font-bold text-slate-500 uppercase">ঠিকানা</label>
+                                                <label className="text-[10px] font-bold text-slate-600 uppercase">ঠিকানা</label>
                                                 <textarea
-                                                    rows={2}
+                                                    rows={1.5}
                                                     value={loanBlockList.address ?? ''}
                                                     onChange={(e) => setLoanBlockField('address', e.target.value)}
-                                                    className="mt-1 w-full border border-slate-200 rounded-xl px-3.5 py-2.5 text-sm bg-white outline-none resize-none"
+                                                    className="mt-0.5 w-full border border-slate-300 rounded-lg px-2.5 py-1.5 text-xs bg-white outline-none resize-none"
                                                 />
                                             </div>
                                         </div>
@@ -1501,11 +1808,11 @@ export default function Index({
                             </div>
                         )}
 
-                        <div className="flex items-center justify-end gap-3 pt-2">
+                        <div className="flex items-center justify-end gap-2 pt-1">
                             <button
                                 type="button"
                                 onClick={resetLoanModal}
-                                className="px-4 py-2.5 border border-slate-300 rounded-xl text-xs font-bold text-slate-700 hover:bg-slate-50 transition"
+                                className="px-3.5 py-2 border border-slate-300 rounded-xl text-xs font-bold text-slate-700 hover:bg-slate-50 transition"
                             >
                                 বাতিল
                             </button>
@@ -1513,6 +1820,7 @@ export default function Index({
                                 type="button"
                                 onClick={submitLoanAction}
                                 disabled={
+                                    isSubmitting ||
                                     (loanAction === 'approve' && !loanApprovedAmount.trim()) ||
                                     (loanAction === 'forward' && !loanForwardToUserId) ||
                                     (loanAction === 'reject' && (
@@ -1527,7 +1835,7 @@ export default function Index({
                                         ))
                                     ))
                                 }
-                                className={`px-5 py-2.5 rounded-xl text-xs font-bold text-white shadow-sm transition disabled:opacity-50 disabled:cursor-not-allowed ${
+                                className={`px-4 py-2 rounded-xl text-xs font-bold text-white shadow-xs transition disabled:opacity-50 disabled:cursor-not-allowed ${
                                     loanAction === 'approve'
                                         ? 'bg-emerald-600 hover:bg-emerald-700'
                                         : loanAction === 'forward'
@@ -1535,11 +1843,13 @@ export default function Index({
                                           : 'bg-rose-600 hover:bg-rose-700'
                                 }`}
                             >
-                                {loanAction === 'approve'
-                                    ? 'অনুমোদন করুন'
-                                    : loanAction === 'forward'
-                                      ? 'ফরওয়ার্ড করুন'
-                                      : 'প্রত্যাখ্যান করুন'}
+                                {isSubmitting
+                                    ? 'প্রসেসিং...'
+                                    : loanAction === 'approve'
+                                      ? 'অনুমোদন করুন'
+                                      : loanAction === 'forward'
+                                        ? 'ফরওয়ার্ড করুন'
+                                        : 'প্রত্যাখ্যান নিশ্চিত'}
                             </button>
                         </div>
                     </div>

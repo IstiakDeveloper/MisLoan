@@ -639,7 +639,7 @@ class TeamBasedApprovalController extends Controller
         // Branch list for this approver: all branches this user can access (for filtering)
         $branches = Branch::query()
             ->whereIn('id', $user->getAccessibleBranches()->pluck('id'))
-            ->orderBy('name')
+            ->orderedByCode()
             ->get([
                 'id',
                 'name',

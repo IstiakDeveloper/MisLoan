@@ -4,6 +4,7 @@ import axios from 'axios';
 import AdminLayout from '@/layouts/admin-layout';
 import { formatDate } from '@/utils/dateUtils';
 import { Save, Send, AlertCircle, CheckCircle, Trash2, X, Eye, XCircle, Check } from 'lucide-react';
+import { PhoneCallLink } from '@/components/ui/PhoneCallLink';
 import { useFetchData } from '@/hooks/useAutoRefresh';
 
 interface Member {
@@ -500,7 +501,9 @@ const Dashboard = ({ members: initialMembers, selectedDate, applicationType }: P
                                                         <p className="text-xs text-gray-500">{member.application_no}</p>
                                                     </div>
                                                 </td>
-                                                <td className="px-6 py-4 text-sm text-gray-700">{member.mobile}</td>
+                                                <td className="px-6 py-4 text-sm text-gray-700">
+                                                    <PhoneCallLink phone={member.mobile} />
+                                                </td>
                                                 <td className="px-6 py-4 text-sm text-gray-700">{member.branch_name || '-'}</td>
                                                 <td className="px-6 py-4 text-center">
                                                     {member.status === 'approved' ? (
@@ -669,7 +672,9 @@ const Dashboard = ({ members: initialMembers, selectedDate, applicationType }: P
                                 <div className="grid grid-cols-2 gap-4">
                                     <div>
                                         <p className="text-xs text-gray-500 font-medium">Mobile</p>
-                                        <p className="font-semibold text-gray-900">{selectedMember.mobile}</p>
+                                        <div className="font-semibold text-gray-900 mt-0.5">
+                                            <PhoneCallLink phone={selectedMember.mobile} />
+                                        </div>
                                     </div>
                                     <div>
                                         <p className="text-xs text-gray-500 font-medium">NID</p>

@@ -4,6 +4,7 @@ import TeamBasedExportBar from '@/components/team-based/TeamBasedExportBar';
 import TeamBasedDecisionModal, { type DecisionFormState } from '@/components/team-based/TeamBasedDecisionModal';
 import React from 'react';
 import { formatDate } from '@/utils/dateUtils';
+import { formatBranchLabel, sortBranchesByCode } from '@/utils/branchLabel';
 
 function rowHasReviewHistory(row: {
     review_status?: string;
@@ -268,7 +269,7 @@ export default function TeamBasedApprovalApproverIndex({ reviews, filters, zones
         if (currentAreaId) {
             list = list.filter((b) => String(b.area_id) === currentAreaId);
         }
-        return list;
+        return sortBranchesByCode(list);
     }, [branches, currentZoneId, currentAreaId, filteredAreas]);
 
     const getActiveFilterParams = (extra: Record<string, unknown> = {}) => ({
@@ -1172,7 +1173,7 @@ export default function TeamBasedApprovalApproverIndex({ reviews, filters, zones
                                     <option value="">All Branches</option>
                                     {filteredBranches.map((branch) => (
                                         <option key={branch.id} value={branch.id}>
-                                            {branch.name} {branch.code ? `(${branch.code})` : ''}
+                                            {formatBranchLabel(branch)}
                                         </option>
                                     ))}
                                 </select>

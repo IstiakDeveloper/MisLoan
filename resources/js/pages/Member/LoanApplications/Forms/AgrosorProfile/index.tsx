@@ -700,8 +700,15 @@ export default function AgrosorProfile({
                                     সদস্য:{' '}
                                     <strong className="text-gray-900">
                                         {member?.applicant_name_bn || member?.applicant_name_en}
-                                    </strong>{' '}
-                                    ({member?.application_no})
+                                    </strong>
+                                </span>
+                            )}
+                            {existingApplication?.application_no && (
+                                <span>
+                                    আবেদন নং:{' '}
+                                    <strong className="font-mono text-gray-900">
+                                        {existingApplication.application_no}
+                                    </strong>
                                 </span>
                             )}
                             <span className="hidden sm:inline text-gray-300">|</span>

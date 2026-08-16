@@ -1454,7 +1454,7 @@ export default function DeathRiskFund({
                             <p className="text-xs text-gray-600">Form পূরণ করুন এবং সংরক্ষণ করুন।</p>
                             {existingApplication && (
                                 <p className="text-xs text-blue-600 mt-1">
-                                    ✓ Draft সংরক্ষিত আছে - Application No: {existingApplication.application_no || 'Pending'}
+                                    ✓ Draft সংরক্ষিত আছে - আবেদন নং: {existingApplication.application_no || 'Pending'}
                                 </p>
                             )}
                         </div>

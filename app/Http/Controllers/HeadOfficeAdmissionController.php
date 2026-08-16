@@ -9,6 +9,7 @@ use App\Models\Area;
 use App\Models\Branch;
 use App\Models\User;
 use App\Models\Role;
+use App\Services\ApprovalService;
 use App\Services\NotificationService;
 use Illuminate\Http\Request;
 use Inertia\Inertia;
@@ -24,6 +25,8 @@ use PhpOffice\PhpSpreadsheet\Cell\Coordinate;
 class HeadOfficeAdmissionController extends Controller
 {
     use Concerns\ScopesToAccessibleBranches;
+    use Concerns\RequiresSuperAdminDeletePin;
+    use Concerns\ResolvesListPerPage;
 
     /**
      * Display admissions (all branches for HO; assigned zone/area for approvers/managers)
@@ -40,6 +43,7 @@ class HeadOfficeAdmissionController extends Controller
         ])->withCount('loanApplications');
 
         $this->applyAccessibleBranchScope($query);
+        $this->applyHeadOfficeStageVisibility($query);
 
         // Default date filter - current month (1st of month .. today)
         $dateFrom = $request->date_from ?? now()->startOfMonth()->toDateString();
@@ -119,6 +123,7 @@ class HeadOfficeAdmissionController extends Controller
         // Calculate stats based on current filters (excluding status filter for stats)
         $statsQuery = MemberAdmission::query();
         $this->applyAccessibleBranchScope($statsQuery);
+        $this->applyHeadOfficeStageVisibility($statsQuery);
 
         // Apply same date filter to stats
         if ($dateFrom && $dateTo) {
@@ -186,7 +191,8 @@ class HeadOfficeAdmissionController extends Controller
             'needs_revision' => (clone $statsQuery)->where('status', 'needs_revision')->count(),
         ];
 
-        $admissions = $query->orderBy('created_at', 'desc')->paginate(20);
+        $perPage = $this->resolvePerPage($request);
+        $admissions = $query->orderBy('created_at', 'desc')->paginate($perPage)->withQueryString();
 
         $admissions = $admissions->through(function (MemberAdmission $admission) {
             $arr = $admission->toArray();
@@ -203,12 +209,14 @@ class HeadOfficeAdmissionController extends Controller
                 [
                     'date_from' => $dateFrom,
                     'date_to' => $dateTo,
+                    'per_page' => $perPage,
                 ]
             ),
             'stats' => $stats,
             'zones' => $orgFilters['zones'],
             'areas' => $orgFilters['areas'],
             'branches' => $orgFilters['branches'],
+            'viewAllAdmissions' => ! $this->shouldRestrictToHeadOfficeStage(),
         ]);
     }
 
@@ -226,6 +234,7 @@ class HeadOfficeAdmissionController extends Controller
         ]);
 
         $this->applyAccessibleBranchScope($query);
+        $this->applyHeadOfficeStageVisibility($query);
 
         // Apply same filters as index
         $dateFrom = $request->date_from ?? now()->startOfMonth()->toDateString();
@@ -312,6 +321,7 @@ class HeadOfficeAdmissionController extends Controller
         ]);
 
         $this->applyAccessibleBranchScope($query);
+        $this->applyHeadOfficeStageVisibility($query);
 
         $dateFrom = $request->date_from ?? now()->startOfMonth()->toDateString();
         $dateTo = $request->date_to ?? now()->toDateString();
@@ -476,6 +486,8 @@ class HeadOfficeAdmissionController extends Controller
     public function markAsPrinted(Request $request)
     {
         $query = MemberAdmission::query();
+        $this->applyAccessibleBranchScope($query);
+        $this->applyHeadOfficeStageVisibility($query);
 
         $dateFrom = $request->date_from ?? now()->startOfMonth()->toDateString();
         $dateTo = $request->date_to ?? now()->toDateString();
@@ -585,12 +597,14 @@ class HeadOfficeAdmissionController extends Controller
                 $q->where('applicant_name_en', 'like', "%{$search}%")
                   ->orWhere('applicant_name_bn', 'like', "%{$search}%")
                   ->orWhere('nid_number', 'like', "%{$search}%")
+                  ->orWhere('smart_card_number', 'like', "%{$search}%")
                   ->orWhere('mobile_number', 'like', "%{$search}%")
                   ->orWhere('application_no', 'like', "%{$search}%");
             });
         }
 
-        $admissions = $query->orderBy('submitted_at', 'desc')->paginate(20);
+        $perPage = $this->resolvePerPage($request);
+        $admissions = $query->orderBy('submitted_at', 'desc')->paginate($perPage)->withQueryString();
 
         $orgFilters = $this->organizationFilterOptions();
 
@@ -603,6 +617,7 @@ class HeadOfficeAdmissionController extends Controller
                 'zone_id' => $request->input('zone_id'),
                 'area_id' => $request->input('area_id'),
                 'branch_id' => $request->input('branch_id'),
+                'per_page' => $perPage,
             ],
             'zones' => $orgFilters['zones'],
             'areas' => $orgFilters['areas'],
@@ -616,6 +631,7 @@ class HeadOfficeAdmissionController extends Controller
     public function show(MemberAdmission $admission)
     {
         $this->ensureCanAccessBranch($admission->branch_id);
+        $this->ensureHeadOfficeCanViewAdmission($admission);
 
         $admission->load([
             'branch.area.zone',
@@ -647,6 +663,7 @@ class HeadOfficeAdmissionController extends Controller
     public function printSingle(MemberAdmission $admission)
     {
         $this->ensureCanAccessBranch($admission->branch_id);
+        $this->ensureHeadOfficeCanViewAdmission($admission);
 
         $admission->load([
             'branch.area.zone',
@@ -769,6 +786,69 @@ class HeadOfficeAdmissionController extends Controller
         );
 
         return back()->with('success', 'আবেদনটি পুরাতন সদস্য হিসেবে চিহ্নিত ও অনুমোদিত হয়েছে।');
+    }
+
+    /**
+     * Reset all approvals back to Branch Manager.
+     */
+    public function resetApproval(MemberAdmission $admission)
+    {
+        $this->ensureCanAccessBranch($admission->branch_id);
+
+        if ($admission->status === 'draft') {
+            return back()->with('error', 'খসড়া আবেদনের অনুমোদন রিসেট করা যাবে না।');
+        }
+
+        try {
+            DB::transaction(function () use ($admission) {
+                $updateData = [
+                    'status' => 'submitted',
+                    'reviewed_by' => null,
+                    'reviewed_at' => null,
+                    'rejection_reason' => null,
+                    'selected_approvers' => null,
+                ];
+
+                if (!$admission->submitted_at) {
+                    $updateData['submitted_by'] = $admission->submitted_by ?: auth()->id();
+                    $updateData['submitted_at'] = now();
+                }
+
+                $admission->update($updateData);
+
+                app(ApprovalService::class)->createApprovalWorkflow($admission);
+            });
+        } catch (\Exception $e) {
+            return back()->with('error', $e->getMessage());
+        }
+
+        $admission->refresh()->loadMissing(['createdBy', 'submittedBy', 'branch']);
+        $branchManagers = User::where('branch_id', $admission->branch_id)
+            ->where('is_active', 1)
+            ->whereHas('role', fn ($q) => $q->where('name', Role::BRANCH_MANAGER))
+            ->get();
+        $recipients = collect([$admission->createdBy, $admission->submittedBy])
+            ->concat($branchManagers)
+            ->filter()
+            ->unique('id');
+
+        if ($recipients->isNotEmpty()) {
+            app(NotificationService::class)->send(
+                users: $recipients,
+                type: 'member_admission',
+                title: 'সদস্য আবেদনের অনুমোদন রিসেট করা হয়েছে',
+                message: "সদস্য আবেদন নং {$admission->application_no} ({$admission->applicant_name_bn}) হেড অফিস থেকে শাখা ব্যবস্থাপক পর্যায়ে রিসেট করা হয়েছে।",
+                notifiable: $admission,
+                actionUrl: '/approvals',
+                details: [
+                    'আবেদন নং' => $admission->application_no,
+                    'আবেদনকারীর নাম' => $admission->applicant_name_bn ?: $admission->applicant_name_en,
+                    'শাখা' => $admission->branch?->name ?? 'N/A',
+                ]
+            );
+        }
+
+        return back()->with('success', 'অনুমোদন শাখা ব্যবস্থাপক পর্যায়ে রিসেট করা হয়েছে।');
     }
 
     /**
@@ -992,24 +1072,104 @@ class HeadOfficeAdmissionController extends Controller
     }
 
     /**
-     * Delete admission (restricted to SuperAdmin). A member with any loan application cannot be deleted.
+     * Delete admission (SuperAdmin only, PIN required). Related loans are also removed.
      */
-    public function destroy(MemberAdmission $admission)
+    public function destroy(Request $request, MemberAdmission $admission)
     {
-        $user = auth()->user();
-        if (!$user || !$user->isSuperAdmin()) {
-            return back()->with('error', 'শুধুমাত্র সুপার অ্যাডমিন সদস্য ভর্তি মুছে ফেলতে পারবেন।');
+        if ($denied = $this->denyUnlessSuperAdminDeletePin($request)) {
+            return $denied;
         }
 
         $this->ensureCanAccessBranch($admission->branch_id);
+        $this->deleteAdmissionWithRelations($admission);
 
-        // A member linked to any loan application cannot be deleted.
-        if ($admission->loanApplications()->exists()) {
-            return back()->with('error', 'এই সদস্যের ঋণ আবেদন থাকায় মুছে ফেলা যাবে না।');
+        return back()->with('success', 'সদস্য ভর্তি মুছে ফেলা হয়েছে।');
+    }
+
+    /**
+     * Bulk delete admissions (SuperAdmin only, PIN required).
+     */
+    public function bulkDestroy(Request $request)
+    {
+        if ($denied = $this->denyUnlessSuperAdminDeletePin($request)) {
+            return $denied;
         }
 
-        $admission->delete();
+        $validated = $request->validate([
+            'ids' => 'required|array|min:1',
+            'ids.*' => 'integer',
+        ]);
 
-        return back()->with('success', 'Member admission deleted successfully!');
+        $query = MemberAdmission::whereIn('id', $validated['ids']);
+        $this->applyAccessibleBranchScope($query);
+        $admissions = $query->get();
+
+        foreach ($admissions as $admission) {
+            $this->deleteAdmissionWithRelations($admission);
+        }
+
+        return back()->with('success', $admissions->count() . ' টি সদস্য ভর্তি মুছে ফেলা হয়েছে।');
+    }
+
+    private function deleteAdmissionWithRelations(MemberAdmission $admission): void
+    {
+        DB::transaction(function () use ($admission) {
+            $admission->loanApplications()->withTrashed()->each(function ($loan) {
+                $loan->forceDelete();
+            });
+            $admission->approvals()->delete();
+            $admission->issues()->delete();
+            $admission->familyMembers()->delete();
+            $admission->otherAssets()->delete();
+            $admission->delete();
+        });
+    }
+
+    /**
+     * Head Office role sees only admissions that have reached Head Office.
+     * SuperAdmin continues to see the full list.
+     */
+    private function shouldRestrictToHeadOfficeStage(): bool
+    {
+        $user = auth()->user();
+        if (! $user) {
+            return false;
+        }
+
+        $user->loadMissing('role');
+        $roleName = strtolower((string) $user->role?->name);
+
+        if ($user->isSuperAdmin() || $user->has_all_access || in_array($roleName, ['super_admin', 'superadmin'], true)) {
+            return false;
+        }
+
+        return $roleName === Role::HEAD_OFFICE;
+    }
+
+    private function applyHeadOfficeStageVisibility($query): void
+    {
+        if ($this->shouldRestrictToHeadOfficeStage()) {
+            $query->whereIn('status', [
+                'pending_head_office',
+                'approved',
+                'rejected',
+                'needs_revision',
+            ]);
+        }
+    }
+
+    private function ensureHeadOfficeCanViewAdmission(MemberAdmission $admission): void
+    {
+        if (
+            $this->shouldRestrictToHeadOfficeStage()
+            && ! in_array($admission->status, [
+                'pending_head_office',
+                'approved',
+                'rejected',
+                'needs_revision',
+            ], true)
+        ) {
+            abort(403, 'এই আবেদনটি এখনও হেড অফিসে আসেনি।');
+        }
     }
 }

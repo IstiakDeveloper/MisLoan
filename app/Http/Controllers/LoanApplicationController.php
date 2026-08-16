@@ -674,7 +674,7 @@ class LoanApplicationController extends Controller
         // Get filter options
         $zones = Zone::where('is_active', true)->orderBy('name')->get(['id', 'name', 'code']);
         $areas = Area::where('is_active', true)->orderBy('name')->get(['id', 'name', 'code', 'zone_id']);
-        $branches = Branch::where('is_active', true)->orderBy('name')->get(['id', 'name', 'code', 'area_id']);
+        $branches = Branch::where('is_active', true)->orderedByCode()->get(['id', 'name', 'code', 'area_id']);
 
         // Get unread count
         $unreadCount = LoanApplication::whereNull('reviewed_at')->count();

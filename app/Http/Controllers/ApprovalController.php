@@ -43,7 +43,7 @@ class ApprovalController extends Controller
             $pendingLoanApprovals = $pendingLoanApprovals->filter(fn ($a) => (string) ($a->loanApplication?->branch?->area?->zone_id) === (string) $zoneId)->values();
         }
 
-        $accessibleBranches = $user->getAccessibleBranches();
+        $accessibleBranches = $user->getAccessibleBranches()->sortBy('code')->values();
         $branches = $accessibleBranches->map(fn ($b) => [
             'id' => $b->id,
             'name' => $b->name,
@@ -167,8 +167,7 @@ class ApprovalController extends Controller
         $success = $this->approvalService->approve($approval, $request->comments);
 
         if ($success) {
-            return redirect()->route('approvals.index')
-                ->with('success', 'Application approved successfully!');
+            return $this->redirectToListPreservingFilters('approvals.index', 'Application approved successfully!');
         }
 
         return back()->with('error', 'Unable to approve this application.');
@@ -186,8 +185,7 @@ class ApprovalController extends Controller
         $success = $this->approvalService->reject($approval, $request->comments);
 
         if ($success) {
-            return redirect()->route('approvals.index')
-                ->with('success', 'Application rejected successfully!');
+            return $this->redirectToListPreservingFilters('approvals.index', 'Application rejected successfully!');
         }
 
         return back()->with('error', 'Unable to reject this application.');
@@ -206,8 +204,7 @@ class ApprovalController extends Controller
         $success = $this->approvalService->forwardToApprover($approval, (int) $request->forward_to_user_id, $request->comments);
 
         if ($success) {
-            return redirect()->route('approvals.index')
-                ->with('success', 'Application forwarded to selected approver.');
+            return $this->redirectToListPreservingFilters('approvals.index', 'Application forwarded to selected approver.');
         }
 
         return back()->with('error', 'Unable to forward this application.');
@@ -225,8 +222,7 @@ class ApprovalController extends Controller
         $success = $this->approvalService->returnToBranch($approval, $request->comments);
 
         if ($success) {
-            return redirect()->route('approvals.index')
-                ->with('success', 'Application returned to branch for revision!');
+            return $this->redirectToListPreservingFilters('approvals.index', 'Application returned to branch for revision!');
         }
 
         return back()->with('error', 'Unable to return this application.');
@@ -270,7 +266,7 @@ class ApprovalController extends Controller
         }
 
         if ($success) {
-            return redirect()->route('approvals.index')->with('success', 'ঋণ আবেদন অনুমোদিত হয়েছে।');
+            return $this->redirectToListPreservingFilters('approvals.index', 'ঋণ আবেদন অনুমোদিত হয়েছে।');
         }
         return back()->with('error', 'অনুমোদন করা যাচ্ছে না।');
     }
@@ -331,7 +327,7 @@ class ApprovalController extends Controller
                 $message .= ' টিম ভিত্তিক অনুমোদনও প্রত্যাখ্যান হয়েছে (থাকলে)।';
             }
 
-            return redirect()->route('approvals.index')->with('success', $message);
+            return $this->redirectToListPreservingFilters('approvals.index', $message);
         }
 
         return back()->with('error', 'প্রত্যাখ্যান করা যাচ্ছে না।');
@@ -363,7 +359,7 @@ class ApprovalController extends Controller
                 $message .= ' টিম ভিত্তিক অনুমোদন স্বয়ংক্রিয়ভাবে পোস্ট হয়েছে।';
             }
 
-            return redirect()->route('approvals.index')->with('success', $message);
+            return $this->redirectToListPreservingFilters('approvals.index', $message);
         }
 
         return back()->with('error', 'ফরওয়ার্ড করা যাচ্ছে না।');

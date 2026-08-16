@@ -36,7 +36,7 @@ class SamityController extends Controller
         $samities = $query->orderBy('created_at', 'desc')->paginate($request->integer('per_page', 50))->withQueryString();
 
         $branches = Branch::active()
-            ->orderBy('name')
+            ->orderedByCode()
             ->get(['id', 'name', 'code']);
 
         return Inertia::render('Organization/Samity/Index', [
@@ -50,7 +50,7 @@ class SamityController extends Controller
     {
         $branches = Branch::with(['area.zone'])
             ->active()
-            ->orderBy('name')
+            ->orderedByCode()
             ->get();
 
         return Inertia::render('Organization/Samity/Create', [
@@ -81,7 +81,7 @@ class SamityController extends Controller
 
         $branches = Branch::with(['area.zone'])
             ->active()
-            ->orderBy('name')
+            ->orderedByCode()
             ->get();
 
         return Inertia::render('Organization/Samity/Edit', [

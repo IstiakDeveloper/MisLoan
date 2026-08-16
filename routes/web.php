@@ -303,10 +303,12 @@ Route::middleware(['auth', 'verified'])->group(function () {
         Route::get('process-admissions', [HeadOfficeAdmissionController::class, 'process'])->name('process-admissions');
         Route::get('admissions/{admission}', [HeadOfficeAdmissionController::class, 'show'])->name('admissions.show');
         Route::get('admissions/{admission}/print', [HeadOfficeAdmissionController::class, 'printSingle'])->name('admissions.print');
+        Route::delete('admissions/bulk', [HeadOfficeAdmissionController::class, 'bulkDestroy'])->name('admissions.bulk-destroy');
         Route::delete('admissions/{admission}', [HeadOfficeAdmissionController::class, 'destroy'])->name('admissions.destroy');
         Route::post('admissions/{admission}/issue', [HeadOfficeAdmissionController::class, 'storeIssue'])->name('admissions.issue');
         Route::patch('admissions/{admission}/approve', [HeadOfficeAdmissionController::class, 'approveSingle'])->name('admissions.approve');
         Route::patch('admissions/{admission}/mark-legacy', [HeadOfficeAdmissionController::class, 'markAsLegacy'])->name('admissions.mark-legacy');
+        Route::patch('admissions/{admission}/reset-approval', [HeadOfficeAdmissionController::class, 'resetApproval'])->name('admissions.reset-approval');
         Route::patch('admissions/{admission}/reject', [HeadOfficeAdmissionController::class, 'rejectSingle'])->name('admissions.reject');
         Route::post('admissions/approve-all', [HeadOfficeAdmissionController::class, 'approveAll'])->name('admissions.approve-all');
         Route::delete('issues/{issue}', [HeadOfficeAdmissionController::class, 'deleteIssue'])->name('issues.delete');
@@ -322,6 +324,8 @@ Route::middleware(['auth', 'verified'])->group(function () {
         Route::patch('loans/{loanApplication}/approve', [HeadOfficeLoanController::class, 'approveSingle'])->name('loans.approve');
         Route::post('loans/approve-all', [HeadOfficeLoanController::class, 'approveAll'])->name('loans.approve-all');
         Route::patch('loans/{loanApplication}/reject', [HeadOfficeLoanController::class, 'rejectSingle'])->name('loans.reject');
+        Route::patch('loans/{loanApplication}/reset-approval', [HeadOfficeLoanController::class, 'resetApproval'])->name('loans.reset-approval');
+        Route::delete('loans/bulk', [HeadOfficeLoanController::class, 'bulkDestroy'])->name('loans.bulk-destroy');
         Route::delete('loans/{loanApplication}', [HeadOfficeLoanController::class, 'destroy'])->name('loans.destroy');
 
         // Head Office Savings Applications (view only; no HO approval)

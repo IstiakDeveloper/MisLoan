@@ -170,9 +170,9 @@ export default function AutoFitTableContainer({
     const toggleFullscreen = () => {
         if (!wrapperRef.current) return;
         if (!document.fullscreenElement) {
-            wrapperRef.current.requestFullscreen().then(() => setIsFullscreen(true)).catch(() => {});
+            wrapperRef.current.requestFullscreen().then(() => setIsFullscreen(true)).catch(() => { });
         } else {
-            document.exitFullscreen().then(() => setIsFullscreen(false)).catch(() => {});
+            document.exitFullscreen().then(() => setIsFullscreen(false)).catch(() => { });
         }
     };
 
@@ -190,9 +190,8 @@ export default function AutoFitTableContainer({
     return (
         <div
             ref={wrapperRef}
-            className={`bg-white rounded-xl shadow-xs border border-slate-200/80 transition-all ${
-                isFullscreen ? 'p-4 bg-slate-50 overflow-auto h-screen' : ''
-            } ${className}`}
+            className={`bg-white rounded-xl shadow-xs border border-slate-200/80 transition-all ${isFullscreen ? 'p-4 bg-slate-50 overflow-auto h-screen' : ''
+                } ${className}`}
         >
             {/* Top Toolbar / Zoom Control Bar */}
             <div className="flex flex-wrap items-center justify-between gap-2 px-3.5 py-2.5 bg-slate-50/80 border-b border-slate-200/80 rounded-t-xl text-xs select-none">
@@ -212,11 +211,10 @@ export default function AutoFitTableContainer({
                     <button
                         type="button"
                         onClick={handleToggleAutoFit}
-                        className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-md text-[11px] font-semibold transition shadow-2xs border ${
-                            isAutoFit
+                        className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-md text-[11px] font-semibold transition shadow-2xs border ${isAutoFit
                                 ? 'bg-blue-600 text-white border-blue-600 hover:bg-blue-700 shadow-blue-500/20'
                                 : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-100 hover:text-blue-600'
-                        }`}
+                            }`}
                         title="ডিসপ্লে সাইজ অনুযায়ী স্বয়ংক্রিয় জুম ফিট (Auto Fit to Screen)"
                     >
                         <Sparkles className={`w-3 h-3 ${isAutoFit ? 'text-amber-300' : 'text-blue-500'}`} />
@@ -243,11 +241,10 @@ export default function AutoFitTableContainer({
                         <button
                             type="button"
                             onClick={handleReset100}
-                            className={`px-1.5 py-0.5 text-[10.5px] font-mono font-bold rounded transition ${
-                                !isAutoFit && percentage === 100
+                            className={`px-1.5 py-0.5 text-[10.5px] font-mono font-bold rounded transition ${!isAutoFit && percentage === 100
                                     ? 'bg-blue-50 text-blue-700'
                                     : 'text-slate-600 hover:bg-slate-100'
-                            }`}
+                                }`}
                             title="১০০% জুমে রিসেট করুন (Reset to 100%)"
                         >
                             {!isAutoFit ? `${percentage}%` : '100%'}

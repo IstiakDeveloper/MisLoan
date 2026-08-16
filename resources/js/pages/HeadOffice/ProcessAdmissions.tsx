@@ -2,6 +2,10 @@ import React, { useState, useMemo } from 'react';
 import { Head, router, useForm } from '@inertiajs/react';
 import AdminLayout from '@/layouts/admin-layout';
 import { formatDate, formatDateTime } from '@/utils/dateUtils';
+import ListPagination from '@/components/ListPagination';
+import AutoFitTableContainer from '@/components/AutoFitTableContainer';
+import { formatBranchLabel, keepListFilters, sortBranchesByCode } from '@/utils/branchLabel';
+import { PhoneCallLink } from '@/components/ui/PhoneCallLink';
 import {
     Search,
     Calendar,
@@ -20,11 +24,10 @@ import {
     Phone,
     CreditCard,
     Sparkles,
-    ChevronLeft,
     ChevronRight,
     Users,
     MapPin,
-    Building
+    Building,
 } from 'lucide-react';
 
 interface Zone {
@@ -62,12 +65,14 @@ interface Admission {
     applicant_name_en: string;
     applicant_name_bn: string;
     nid_number?: string;
+    smart_card_number?: string;
     mobile_number: string;
     submitted_at: string;
     revision_count?: number;
     revision_comments?: string;
     is_legacy?: boolean;
     loan_dofa?: number | null;
+    status?: string;
     branch: {
         name: string;
     };
@@ -87,6 +92,8 @@ interface Props {
         last_page: number;
         per_page: number;
         total: number;
+        from?: number | null;
+        to?: number | null;
     };
     filters: {
         month?: string;
@@ -95,6 +102,7 @@ interface Props {
         zone_id?: number | string;
         area_id?: number | string;
         branch_id?: number | string;
+        per_page?: number | string;
     };
     zones?: Zone[];
     areas?: Area[];
@@ -133,22 +141,10 @@ export default function ProcessAdmissions({ admissions, filters, zones = [], are
     const [showIssueModal, setShowIssueModal] = useState(false);
     const [showViewModal, setShowViewModal] = useState(false);
     const [showRejectModal, setShowRejectModal] = useState(false);
-    const [showLegacyModal, setShowLegacyModal] = useState(false);
     const [rejectionReason, setRejectionReason] = useState('');
 
     const { data, setData, post, processing, reset, errors } = useForm({
         issue_description: '',
-    });
-
-    const {
-        data: legacyData,
-        setData: setLegacyData,
-        patch: patchLegacy,
-        processing: legacyProcessing,
-        reset: resetLegacy,
-        errors: legacyErrors,
-    } = useForm({
-        loan_dofa: '' as string | number,
     });
 
     // Cascading Filter Computations
@@ -158,11 +154,13 @@ export default function ProcessAdmissions({ admissions, filters, zones = [], are
     }, [areas, selectedZone]);
 
     const filteredBranches = useMemo(() => {
-        return branches.filter((b) => {
-            if (selectedArea) return b.area_id.toString() === selectedArea;
-            if (selectedZone) return filteredAreas.some((a) => a.id === b.area_id);
-            return true;
-        });
+        return sortBranchesByCode(
+            branches.filter((b) => {
+                if (selectedArea) return b.area_id.toString() === selectedArea;
+                if (selectedZone) return filteredAreas.some((a) => a.id === b.area_id);
+                return true;
+            }),
+        );
     }, [branches, selectedArea, selectedZone, filteredAreas]);
 
     // Apply Filter Changes
@@ -172,7 +170,8 @@ export default function ProcessAdmissions({ admissions, filters, zones = [], are
         newSearch?: string,
         newZone?: string,
         newArea?: string,
-        newBranch?: string
+        newBranch?: string,
+        extra: { page?: number; per_page?: number } = {},
     ) => {
         const queryParams: Record<string, string> = {};
         const targetMonth = newMonth !== undefined ? newMonth : monthFilter;
@@ -195,6 +194,12 @@ export default function ProcessAdmissions({ admissions, filters, zones = [], are
         if (targetZone) queryParams.zone_id = targetZone;
         if (targetArea) queryParams.area_id = targetArea;
         if (targetBranch) queryParams.branch_id = targetBranch;
+
+        const perPage = extra.per_page ?? Number(filters.per_page || admissions.per_page || 20);
+        queryParams.per_page = String(perPage);
+        if (extra.page) {
+            queryParams.page = String(extra.page);
+        }
 
         router.get('/head-office/process-admissions', queryParams, {
             preserveState: true,
@@ -284,6 +289,7 @@ export default function ProcessAdmissions({ admissions, filters, zones = [], are
 
         post(`/head-office/admissions/${selectedAdmission.id}/issue`, {
             preserveScroll: true,
+            preserveState: true,
             onSuccess: () => {
                 closeIssueModal();
             },
@@ -311,7 +317,7 @@ export default function ProcessAdmissions({ admissions, filters, zones = [], are
                 area_id: selectedArea || undefined,
                 branch_id: selectedBranch || undefined,
             }, {
-                preserveScroll: true,
+                ...keepListFilters,
             });
         }
     };
@@ -323,43 +329,13 @@ export default function ProcessAdmissions({ admissions, filters, zones = [], are
         }
 
         if (confirm(`আবেদনপত্র নং ${admission.application_no} (${admission.applicant_name_en}) অনুমোদন করতে চান?`)) {
-            router.patch(`/head-office/admissions/${admission.id}/approve`, {}, {
-                preserveScroll: true,
-            });
-        }
-    };
-
-    const openLegacyModal = (admission: Admission) => {
-        setSelectedAdmission(admission);
-        setLegacyData('loan_dofa', admission.loan_dofa ?? '');
-        setShowLegacyModal(true);
-    };
-
-    const closeLegacyModal = () => {
-        setShowLegacyModal(false);
-        setSelectedAdmission(null);
-        resetLegacy();
-    };
-
-    const handleMarkLegacy = (e: React.FormEvent) => {
-        e.preventDefault();
-        if (!selectedAdmission) return;
-
-        if (confirm(`আবেদন নং ${selectedAdmission.application_no} পুরাতন সদস্য হিসেবে চিহ্নিত করে দফা ${legacyData.loan_dofa} দিয়ে স্বয়ংক্রিয় অনুমোদন করতে চান?`)) {
-            patchLegacy(`/head-office/admissions/${selectedAdmission.id}/mark-legacy`, {
-                preserveScroll: true,
-                onSuccess: () => {
-                    closeLegacyModal();
-                },
-            });
+            router.patch(`/head-office/admissions/${admission.id}/approve`, {}, keepListFilters);
         }
     };
 
     const handleDeleteIssue = (issueId: number) => {
         if (confirm('এই সমস্যা রেকর্ডটি মুছে ফেলতে চান?')) {
-            router.delete(`/head-office/issues/${issueId}`, {
-                preserveScroll: true,
-            });
+            router.delete(`/head-office/issues/${issueId}`, keepListFilters);
         }
     };
 
@@ -393,6 +369,7 @@ export default function ProcessAdmissions({ admissions, filters, zones = [], are
         router.patch(`/head-office/admissions/${selectedAdmission.id}/reject`, {
             rejection_reason: rejectionReason,
         }, {
+            ...keepListFilters,
             onSuccess: () => {
                 closeRejectModal();
             },
@@ -599,7 +576,7 @@ export default function ProcessAdmissions({ admissions, filters, zones = [], are
                                 <option value="">সকল শাখা</option>
                                 {filteredBranches.map((branch) => (
                                     <option key={branch.id} value={branch.id}>
-                                        {branch.name}
+                                        {formatBranchLabel(branch)}
                                     </option>
                                 ))}
                             </select>
@@ -717,14 +694,20 @@ export default function ProcessAdmissions({ admissions, filters, zones = [], are
                             </button>
                         </div>
                     ) : (
-                        <div className="overflow-x-auto">
+                        <AutoFitTableContainer
+                            minWidth={1200}
+                            storageKey="ho_process_admissions_table"
+                            title="সদস্য ভর্তি প্রক্রিয়াকরণ তালিকা"
+                            subtitle={`(মোট ${displayedAdmissions.length} টি)`}
+                        >
                             <table className="w-full text-left border-collapse">
                                 <thead>
                                     <tr className="bg-slate-50 border-b border-slate-200 text-slate-500 text-[11px] font-bold uppercase tracking-wider">
-                                        <th className="py-3 px-4">আবেদন তথ্য</th>
+                                        <th className="py-3 px-3 text-center w-12">ক্রমিক</th>
+                                        <th className="py-3 px-4">আবেদন নং</th>
                                         <th className="py-3 px-4">সদস্য টাইপ / দফা</th>
                                         <th className="py-3 px-4">আবেদনকারীর নাম</th>
-                                        <th className="py-3 px-4">NID / মোবাইল</th>
+                                        <th className="py-3 px-4">NID / স্মার্ট কার্ড ও মোবাইল</th>
                                         <th className="py-3 px-4">শাখা ও সমিতি</th>
                                         <th className="py-3 px-4">জমাদানের তারিখ</th>
                                         <th className="py-3 px-4">যাচাই স্থিতি (Issues)</th>
@@ -788,20 +771,26 @@ export default function ProcessAdmissions({ admissions, filters, zones = [], are
                                                     </div>
                                                 </td>
 
-                                                {/* NID & Mobile */}
+                                                {/* NID / Smart Card & Mobile */}
                                                 <td className="py-3 px-4 align-top">
                                                     <div className="space-y-0.5 text-slate-700 text-xs">
-                                                        {admission.nid_number ? (
-                                                            <div className="flex items-center gap-1 font-mono text-[11px]">
+                                                        {(admission.nid_number || admission.smart_card_number) ? (
+                                                            <div className="flex items-center gap-1 font-mono text-[11px]" title={admission.smart_card_number && !admission.nid_number ? 'স্মার্ট কার্ড' : 'NID'}>
                                                                 <CreditCard className="w-3 h-3 text-slate-400" />
-                                                                <span>{admission.nid_number}</span>
+                                                                <span className="font-semibold text-slate-800">{admission.nid_number || admission.smart_card_number}</span>
+                                                                {admission.smart_card_number && !admission.nid_number && (
+                                                                    <span className="text-[9px] px-1 py-0.2 bg-blue-50 text-blue-700 rounded border border-blue-200 font-sans">Smart</span>
+                                                                )}
                                                             </div>
                                                         ) : (
-                                                            <span className="text-slate-400 italic text-[11px]">NID নেই</span>
+                                                            <span className="text-slate-400 italic text-[11px]">NID / Smart Card নেই</span>
                                                         )}
                                                         <div className="flex items-center gap-1">
-                                                            <Phone className="w-3 h-3 text-slate-400" />
-                                                            <span className="font-medium text-slate-800 text-[11px]">{admission.mobile_number}</span>
+                                                            <PhoneCallLink
+                                                                phone={admission.mobile_number}
+                                                                className="text-slate-800 text-[11px]"
+                                                                iconClassName="w-3 h-3 text-slate-400"
+                                                            />
                                                         </div>
                                                     </div>
                                                 </td>
@@ -884,18 +873,6 @@ export default function ProcessAdmissions({ admissions, filters, zones = [], are
                                                             যাচাই
                                                         </button>
 
-                                                        {/* Mark as legacy / old member */}
-                                                        {!admission.is_legacy && (
-                                                            <button
-                                                                onClick={() => openLegacyModal(admission)}
-                                                                className="px-2.5 py-1 bg-orange-600 hover:bg-orange-700 text-white text-xs font-semibold rounded-lg shadow-sm transition flex items-center gap-1"
-                                                                title="পুরাতন সদস্য হিসেবে চিহ্নিত করুন"
-                                                            >
-                                                                <UserCheck className="w-3 h-3" />
-                                                                পুরাতন
-                                                            </button>
-                                                        )}
-
                                                         {/* Approve */}
                                                         <button
                                                             onClick={() => handleApproveSingle(admission)}
@@ -922,35 +899,14 @@ export default function ProcessAdmissions({ admissions, filters, zones = [], are
                                     })}
                                 </tbody>
                             </table>
-                        </div>
+                        </AutoFitTableContainer>
                     )}
 
-                    {/* Pagination Bar */}
-                    {admissions.last_page > 1 && (
-                        <div className="px-4 py-3 border-t border-slate-200 flex items-center justify-between bg-slate-50/50">
-                            <span className="text-xs font-medium text-slate-600">
-                                পেজ {admissions.current_page} / {admissions.last_page} (মোট {admissions.total} টি রেকর্ড)
-                            </span>
-                            <div className="flex items-center gap-2">
-                                {admissions.current_page > 1 && (
-                                    <button
-                                        onClick={() => router.get(`/head-office/process-admissions?page=${admissions.current_page - 1}&month=${monthFilter}&date=${dateFilter}&search=${searchQuery}&zone_id=${selectedZone}&area_id=${selectedArea}&branch_id=${selectedBranch}`)}
-                                        className="px-3 py-1 bg-white border border-slate-300 hover:bg-slate-100 text-slate-700 text-xs font-semibold rounded-lg transition flex items-center gap-1"
-                                    >
-                                        <ChevronLeft className="w-3.5 h-3.5" /> পূর্ববর্তী
-                                    </button>
-                                )}
-                                {admissions.current_page < admissions.last_page && (
-                                    <button
-                                        onClick={() => router.get(`/head-office/process-admissions?page=${admissions.current_page + 1}&month=${monthFilter}&date=${dateFilter}&search=${searchQuery}&zone_id=${selectedZone}&area_id=${selectedArea}&branch_id=${selectedBranch}`)}
-                                        className="px-3 py-1 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-semibold rounded-lg transition flex items-center gap-1 shadow-sm"
-                                    >
-                                        পরবর্তী <ChevronRight className="w-3.5 h-3.5" />
-                                    </button>
-                                )}
-                            </div>
-                        </div>
-                    )}
+                    <ListPagination
+                        meta={admissions}
+                        onPageChange={(page) => applyFilters(undefined, undefined, undefined, undefined, undefined, undefined, { page })}
+                        onPerPageChange={(size) => applyFilters(undefined, undefined, undefined, undefined, undefined, undefined, { per_page: size, page: 1 })}
+                    />
                 </div>
             </div>
 
@@ -1080,12 +1036,16 @@ export default function ProcessAdmissions({ admissions, filters, zones = [], are
                                     <span className="font-bold text-slate-900 text-xs">{selectedAdmission.applicant_name_bn}</span>
                                 </div>
                                 <div className="p-2.5 bg-slate-50 rounded-lg border border-slate-200">
-                                    <span className="text-[10px] text-slate-500 font-semibold block">জাতীয় পরিচয়পত্র (NID)</span>
-                                    <span className="font-mono font-bold text-slate-900 text-xs">{selectedAdmission.nid_number || 'N/A'}</span>
+                                    <span className="text-[10px] text-slate-500 font-semibold block">জাতীয় পরিচয়পত্র / স্মার্ট কার্ড</span>
+                                    <span className="font-mono font-bold text-slate-900 text-xs">{selectedAdmission.nid_number || selectedAdmission.smart_card_number || 'N/A'}</span>
                                 </div>
                                 <div className="p-2.5 bg-slate-50 rounded-lg border border-slate-200">
                                     <span className="text-[10px] text-slate-500 font-semibold block">মোবাইল নম্বর</span>
-                                    <span className="font-mono font-bold text-slate-900 text-xs">{selectedAdmission.mobile_number}</span>
+                                    <PhoneCallLink
+                                        phone={selectedAdmission.mobile_number}
+                                        className="font-mono font-bold text-blue-700 text-xs"
+                                        iconClassName="w-3.5 h-3.5 text-blue-500"
+                                    />
                                 </div>
                                 <div className="p-2.5 bg-slate-50 rounded-lg border border-slate-200">
                                     <span className="text-[10px] text-slate-500 font-semibold block">শাখা (Branch)</span>
@@ -1189,72 +1149,6 @@ export default function ProcessAdmissions({ admissions, filters, zones = [], are
                 </div>
             )}
 
-            {/* Mark as Legacy / Old Member Modal */}
-            {showLegacyModal && selectedAdmission && (
-                <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center z-50 p-4 animate-in fade-in duration-200">
-                    <div className="bg-white rounded-2xl max-w-md w-full shadow-2xl overflow-hidden border border-slate-200">
-                        <div className="bg-orange-600 text-white p-4 flex items-center justify-between">
-                            <div>
-                                <h3 className="text-base font-bold flex items-center gap-2">
-                                    <UserCheck className="w-5 h-5" />
-                                    পুরাতন সদস্য হিসেবে চিহ্নিত করুন
-                                </h3>
-                                <p className="text-xs text-orange-100 mt-0.5">
-                                    আবেদন নং: {selectedAdmission.application_no} | {selectedAdmission.applicant_name_en}
-                                </p>
-                            </div>
-                            <button
-                                onClick={closeLegacyModal}
-                                className="text-orange-100 hover:text-white p-1 rounded-lg hover:bg-orange-700 transition"
-                            >
-                                <X className="w-5 h-5" />
-                            </button>
-                        </div>
-
-                        <form onSubmit={handleMarkLegacy} className="p-5 space-y-4 text-xs">
-                            <p className="text-slate-600 leading-relaxed">
-                                এই আবেদনটি <strong>পুরাতন সদস্য</strong> হিসেবে চিহ্নিত করা হবে, ঋণের দফা সেট হবে এবং
-                                স্বয়ংক্রিয়ভাবে <strong>অনুমোদিত</strong> হবে।
-                            </p>
-                            <div>
-                                <label className="block text-xs font-semibold text-slate-700 mb-1">
-                                    ঋণের দফা (কত নাম্বার দফা) <span className="text-red-500">*</span>
-                                </label>
-                                <input
-                                    type="number"
-                                    min={1}
-                                    max={999}
-                                    required
-                                    value={legacyData.loan_dofa}
-                                    onChange={(e) => setLegacyData('loan_dofa', e.target.value)}
-                                    className="w-full px-3 py-2 bg-slate-50 border border-slate-300 rounded-xl text-sm text-slate-800 focus:ring-1 focus:ring-orange-500 focus:bg-white transition"
-                                    placeholder="যেমন: ১, ২, ৩..."
-                                />
-                                {legacyErrors.loan_dofa && (
-                                    <p className="text-xs text-red-600 mt-1">{legacyErrors.loan_dofa}</p>
-                                )}
-                            </div>
-
-                            <div className="flex justify-end gap-2.5 pt-3 border-t border-slate-100">
-                                <button
-                                    type="button"
-                                    onClick={closeLegacyModal}
-                                    className="px-4 py-2 bg-slate-100 text-slate-700 hover:bg-slate-200 text-xs font-semibold rounded-xl transition"
-                                >
-                                    বাতিল
-                                </button>
-                                <button
-                                    type="submit"
-                                    disabled={legacyProcessing || !legacyData.loan_dofa}
-                                    className="px-4 py-2 bg-orange-600 hover:bg-orange-700 text-white text-xs font-semibold rounded-xl shadow-sm transition disabled:opacity-50"
-                                >
-                                    {legacyProcessing ? 'সংরক্ষণ হচ্ছে...' : 'পুরাতন করে অনুমোদন করুন'}
-                                </button>
-                            </div>
-                        </form>
-                    </div>
-                </div>
-            )}
         </AdminLayout>
     );
 }
