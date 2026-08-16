@@ -182,11 +182,25 @@ class LoanApplicationController extends Controller
             if (! $this->isBranchUserRole($user) && ! $this->isBranchManager($user)) {
                 abort(403, 'এই ফর্ম শুধু শাখা ব্যবহারকারী পূরণ করতে পারবেন।');
             }
+            if ($request->filled('application_id')) {
+                $application = LoanApplication::find((int) $request->input('application_id'));
+                if ($application) {
+                    $this->ensureApplicationAccessibleToUser($application, $user);
+                    return $application;
+                }
+            }
             $application = $this->findApplicationForMemberProduct($memberId, $legacyKey, $loanProductId, $loanCategoryId, [
                 LoanApplication::STATUS_PENDING_DISBURSEMENT,
+                LoanApplication::STATUS_APPROVED,
+                LoanApplication::STATUS_READY_FOR_HEAD_OFFICE,
+                LoanApplication::STATUS_PENDING_HEAD_OFFICE,
+                LoanApplication::STATUS_DISBURSED,
+                LoanApplication::STATUS_DRAFT,
+                LoanApplication::STATUS_SUBMITTED,
+                LoanApplication::STATUS_UNDER_REVIEW,
             ]);
             if (! $application) {
-                abort(404, 'বিতরণের অপেক্ষায় ঋণ আবেদন পাওয়া যায়নি।');
+                abort(404, 'ঋণ আবেদন পাওয়া যায়নি।');
             }
             $this->ensureApplicationAccessibleToUser($application, $user);
 
@@ -1418,11 +1432,33 @@ class LoanApplicationController extends Controller
         $user = $request->user();
         $user->loadMissing('role');
 
+        $applicationId = (int) $request->input('application_id');
+        if ($applicationId > 0) {
+            $existingApplication = LoanApplication::find($applicationId);
+            if ($existingApplication) {
+                $this->ensureApplicationAccessibleToUser($existingApplication, $user);
+                $member = $existingApplication->memberAdmission;
+                if ($member) {
+                    $member->loadMissing(['samity', 'familyMembers', 'otherAssets', 'branch']);
+                }
+                return [$member, $existingApplication, $existingApplication->legacy_application_key];
+            }
+        }
+
         $applicationStatuses = [LoanApplication::STATUS_DRAFT];
         if ($this->isBranchManager($user) && in_array($formId, [1, 4, 5], true)) {
             $applicationStatuses = [LoanApplication::STATUS_SUBMITTED, LoanApplication::STATUS_UNDER_REVIEW];
-        } elseif (in_array($formId, [2, 3], true) && ($this->isBranchUserRole($user) || $this->isBranchManager($user))) {
-            $applicationStatuses = [LoanApplication::STATUS_PENDING_DISBURSEMENT];
+        } elseif (in_array($formId, [2, 3], true)) {
+            $applicationStatuses = [
+                LoanApplication::STATUS_PENDING_DISBURSEMENT,
+                LoanApplication::STATUS_APPROVED,
+                LoanApplication::STATUS_READY_FOR_HEAD_OFFICE,
+                LoanApplication::STATUS_PENDING_HEAD_OFFICE,
+                LoanApplication::STATUS_DISBURSED,
+                LoanApplication::STATUS_DRAFT,
+                LoanApplication::STATUS_SUBMITTED,
+                LoanApplication::STATUS_UNDER_REVIEW,
+            ];
         }
 
         if ($isLegacy) {
@@ -1589,7 +1625,7 @@ class LoanApplicationController extends Controller
         $loanCategory = LoanCategory::findOrFail($loanCategoryId);
         $user = $request->user();
         $branch = $user->branch;
-        if ($existingApplication && $existingApplication->status === LoanApplication::STATUS_PENDING_DISBURSEMENT && $existingApplication->approved_amount !== null) {
+        if ($existingApplication && $existingApplication->approved_amount !== null && (float) $existingApplication->approved_amount > 0) {
             $requestedAmount = (float) $existingApplication->approved_amount;
         }
 
@@ -1736,7 +1772,7 @@ class LoanApplicationController extends Controller
         $loanCategory = LoanCategory::findOrFail($loanCategoryId);
         $user = $request->user();
         $branch = $user->branch;
-        if ($existingApplication && $existingApplication->status === LoanApplication::STATUS_PENDING_DISBURSEMENT && $existingApplication->approved_amount !== null) {
+        if ($existingApplication && $existingApplication->approved_amount !== null && (float) $existingApplication->approved_amount > 0) {
             $requestedAmount = (float) $existingApplication->approved_amount;
         }
 

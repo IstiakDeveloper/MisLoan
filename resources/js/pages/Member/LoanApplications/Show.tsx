@@ -236,12 +236,12 @@ export default function Show({ application, routes }: Props) {
     const buildFormUrl = (formId: number) => {
         const route = FORM_ROUTES[formId];
         if (!route) return '#';
+        const effectiveAmount =
+            application.approved_amount != null && Number(application.approved_amount) > 0
+                ? application.approved_amount
+                : application.requested_amount;
         const params = new URLSearchParams({
-            amount: String(
-                application.status === 'pending_disbursement' && application.approved_amount != null
-                    ? application.approved_amount
-                    : application.requested_amount,
-            ),
+            amount: String(effectiveAmount),
         });
         const memberId = application.member_admission?.id;
         if (memberId) params.set('member_id', String(memberId));
@@ -305,9 +305,9 @@ export default function Show({ application, routes }: Props) {
     };
 
     const previewAmount =
-        application.status === 'pending_disbursement' && application.approved_amount != null
-            ? application.approved_amount
-            : application.requested_amount;
+        application.approved_amount != null && Number(application.approved_amount) > 0
+            ? Number(application.approved_amount)
+            : Number(application.requested_amount);
 
     const canFillSelected = selectedFormId != null && fillableFormIds.includes(selectedFormId);
     const selectedSaved = selectedFormId != null && isFormSaved(selectedFormId);

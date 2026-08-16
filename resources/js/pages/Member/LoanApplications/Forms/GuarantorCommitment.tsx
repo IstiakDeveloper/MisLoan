@@ -156,8 +156,18 @@ export default function GuarantorCommitment({
     isLegacy = false,
 }: Props) {
     if (onlyPreview) {
+        const baseLoanAmount = Number(requestedAmount) || 0;
         const defaults = buildGuarantorCommitmentDefaults(member, loanProduct, requestedAmount, branch);
-        const previewData = savedData && Object.keys(savedData).length > 0 ? { ...defaults, ...savedData } : defaults;
+        const previewData = savedData && Object.keys(savedData).length > 0
+            ? {
+                ...defaults,
+                ...savedData,
+                ...(baseLoanAmount > 0 ? {
+                    loan_amount: defaults.loan_amount,
+                    loan_amount_words: defaults.loan_amount_words,
+                } : {}),
+            }
+            : defaults;
         return (
             <div className="print-container">
                 <GuarantorCommitmentPrintView data={previewData} />
@@ -169,6 +179,8 @@ export default function GuarantorCommitment({
 
     const baseLoanAmount = Number(requestedAmount) || 0;
     const autoServiceCharge = Math.round(calcServiceCharge(baseLoanAmount, loanProduct));
+    const initialLoanAmount = calcLoanAmountWithServiceCharge(baseLoanAmount, loanProduct);
+    const initialWords = initialLoanAmount > 0 ? numberToWordsBangla(initialLoanAmount) + ' টাকা' : '';
 
     const { data, setData, processing } = useForm<GuarantorCommitmentData>({
         branch_name: branch?.name || '',
@@ -200,8 +212,8 @@ export default function GuarantorCommitment({
         
         // Loan Details — loan_amount = base + service charge (auto from product)
         loan_date: new Date().toISOString().split('T')[0],
-        loan_amount: calcLoanAmountWithServiceCharge(baseLoanAmount, loanProduct),
-        loan_amount_words: '',
+        loan_amount: initialLoanAmount,
+        loan_amount_words: initialWords,
         
         // Witness Signatures
         witness1_signature_image: null,
@@ -211,11 +223,16 @@ export default function GuarantorCommitment({
 
     // Auto-update loan amount with service charge when product/requested amount changes
     useEffect(() => {
-        if (savedData) return;
         if (baseLoanAmount > 0 && loanProduct) {
-            setData('loan_amount', calcLoanAmountWithServiceCharge(baseLoanAmount, loanProduct));
+            const calculated = calcLoanAmountWithServiceCharge(baseLoanAmount, loanProduct);
+            const words = calculated > 0 ? numberToWordsBangla(calculated) + ' টাকা' : '';
+            setData(prev => ({
+                ...prev,
+                loan_amount: calculated,
+                loan_amount_words: words,
+            }));
         }
-    }, [baseLoanAmount, loanProduct, savedData]);
+    }, [baseLoanAmount, loanProduct]);
 
     // Auto-calculate loan amount in words (same as DeathRiskFund / ApprovalForm)
     useEffect(() => {
@@ -228,17 +245,24 @@ export default function GuarantorCommitment({
     // Load saved data if exists
     useEffect(() => {
         if (savedData) {
+            const calculated = baseLoanAmount > 0 ? calcLoanAmountWithServiceCharge(baseLoanAmount, loanProduct) : (savedData.loan_amount || 0);
+            const words = calculated > 0 ? numberToWordsBangla(calculated) + ' টাকা' : (savedData.loan_amount_words || '');
             setData(prev => ({
                 ...prev,
                 ...savedData,
+                ...(baseLoanAmount > 0 ? {
+                    loan_amount: calculated,
+                    loan_amount_words: words,
+                } : {}),
             }));
             setShowPreview(true);
         }
-    }, [savedData]);
+    }, [savedData, baseLoanAmount, loanProduct]);
 
     const handleSaveDraft = () => {
         const payload: any = { loan_product_id: loanProduct.id, loan_category_id: loanCategory.id, requested_amount: requestedAmount, agreement_data: data };
         if (isLegacy) payload.legacy = 1; else payload.member_id = member?.id;
+        if (existingApplication?.id) payload.application_id = existingApplication.id;
         router.post(
             '/member/loan-applications/forms/guarantor-commitment/save-draft',
             payload,

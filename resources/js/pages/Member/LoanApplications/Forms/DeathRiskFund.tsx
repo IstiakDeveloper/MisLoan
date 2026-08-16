@@ -292,8 +292,18 @@ export default function DeathRiskFund({
     isLegacy = false,
 }: Props) {
     if (onlyPreview) {
+        const baseAmount = Number(requestedAmount) || 0;
         const defaults = buildDeathRiskFundDefaults(member, loanProduct, loanCategory, requestedAmount, branch);
-        const previewData = savedData && Object.keys(savedData).length > 0 ? { ...defaults, ...savedData } : defaults;
+        const previewData = savedData && Object.keys(savedData).length > 0
+            ? {
+                ...defaults,
+                ...savedData,
+                ...(baseAmount > 0 ? {
+                    loan_amount_received: defaults.loan_amount_received,
+                    loan_amount_words: defaults.loan_amount_words,
+                } : {}),
+            }
+            : defaults;
         return (
             <div className="print-container">
                 <div className="bg-white rounded-lg shadow-lg p-2 print:shadow-none print:p-1 print:rounded-none print:bg-white">
@@ -318,6 +328,9 @@ export default function DeathRiskFund({
         ? (member.guardian_photo_path.startsWith('http') ? member.guardian_photo_path : `/storage/${member.guardian_photo_path}`)
         : null;
 
+    const baseAmount = Number(requestedAmount) || 0;
+    const initialWords = baseAmount > 0 ? numberToWordsBangla(baseAmount) + ' টাকা' : '';
+
     const { data, setData, processing } = useForm<DeathRiskFundData>({
         branch_name: branch?.name || '',
         date: new Date().toISOString().split('T')[0],
@@ -340,8 +353,8 @@ export default function DeathRiskFund({
         mobile_number: member?.mobile_number || '',
         component_name: loanCategory?.category_name_bn || loanCategory?.category_name || '', // External
         loan_sanction_date: new Date().toISOString().split('T')[0], // External
-        loan_amount_received: requestedAmount || 0, // External
-        loan_amount_words: '', // Will be auto-calculated
+        loan_amount_received: baseAmount, // External
+        loan_amount_words: initialWords, // Will be auto-calculated
         loan_term: loanProduct?.duration_months ? `${loanProduct.duration_months} মাস` : '', // External
         
         // Guardian Info
@@ -372,15 +385,33 @@ export default function DeathRiskFund({
         }
     }, [data.loan_amount_received]);
 
+    // Auto-update loan amount when requestedAmount prop updates
+    useEffect(() => {
+        if (baseAmount > 0) {
+            const words = numberToWordsBangla(baseAmount);
+            setData(prev => ({
+                ...prev,
+                loan_amount_received: baseAmount,
+                loan_amount_words: words ? words + ' টাকা' : '',
+            }));
+        }
+    }, [baseAmount]);
+
     // Load saved data if exists, but preserve photos from MemberAdmission if not in savedData
     useEffect(() => {
         if (savedData) {
+            const effectiveAmount = baseAmount > 0 ? baseAmount : (Number(savedData.loan_amount_received) || 0);
+            const effectiveWords = effectiveAmount > 0 ? numberToWordsBangla(effectiveAmount) + ' টাকা' : (savedData.loan_amount_words || '');
             setData(prev => ({
                 ...prev,
                 ...savedData,
                 // Keep photos from MemberAdmission if not in savedData
                 loan_recipient_photo: savedData.loan_recipient_photo || memberPhotoUrl || prev.loan_recipient_photo,
                 guardian_photo: savedData.guardian_photo || guardianPhotoUrl || prev.guardian_photo,
+                ...(baseAmount > 0 ? {
+                    loan_amount_received: effectiveAmount,
+                    loan_amount_words: effectiveWords,
+                } : {}),
             }));
         } else if (memberPhotoUrl || guardianPhotoUrl) {
             // If no saved data but photos exist in MemberAdmission, load them
@@ -390,7 +421,7 @@ export default function DeathRiskFund({
                 guardian_photo: guardianPhotoUrl || prev.guardian_photo,
             }));
         }
-    }, [savedData, memberPhotoUrl, guardianPhotoUrl]);
+    }, [savedData, baseAmount, memberPhotoUrl, guardianPhotoUrl]);
 
     const handleImageUpload = (field: string, file: File | null) => {
         if (!file) return;
@@ -484,9 +515,11 @@ export default function DeathRiskFund({
         
         const payload: any = { loan_product_id: loanProduct.id, loan_category_id: loanCategory.id, requested_amount: requestedAmount, form_data: data, draft: 1 };
         if (isLegacy) payload.legacy = 1; else payload.member_id = member?.id;
+        if (existingApplication?.id) {
+            payload.application_id = existingApplication.id;
+        }
         if (autoDisburse && existingApplication?.id) {
             payload.auto_disburse = 1;
-            payload.application_id = existingApplication.id;
         }
         router.post(
             '/member/loan-applications/forms/death-risk-fund/save-draft',

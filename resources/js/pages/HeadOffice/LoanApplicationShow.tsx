@@ -732,7 +732,7 @@ export default function LoanApplicationShow({ loan, flash }: Props) {
                                                 member: loan.member_admission,
                                                 loanProduct: loan.loan_product,
                                                 loanCategory: loan.loan_category,
-                                                requestedAmount: loan.requested_amount,
+                                                requestedAmount: loan.approved_amount != null && Number(loan.approved_amount) > 0 ? Number(loan.approved_amount) : Number(loan.requested_amount),
                                                 branch: loan.branch,
                                             };
                                             if (selectedFormId === 1) return <LoanAgreement {...common} />;
