@@ -107,6 +107,8 @@ interface Props {
     filters: {
         month?: string;
         date?: string;
+        date_from?: string;
+        date_to?: string;
         search?: string;
         zone_id?: number | string;
         area_id?: number | string;
@@ -138,7 +140,8 @@ export default function ProcessLoans({ loans, filters, zones = [], areas = [], b
 
     const currentMonthDefault = filters.month || getCurrentMonth();
     const [monthFilter, setMonthFilter] = useState(currentMonthDefault);
-    const [dateFilter, setDateFilter] = useState(filters.date || '');
+    const [dateFrom, setDateFrom] = useState(filters.date_from || filters.date || '');
+    const [dateTo, setDateTo] = useState(filters.date_to || filters.date || '');
     const [searchQuery, setSearchQuery] = useState(filters.search || '');
     const [selectedZone, setSelectedZone] = useState(filters.zone_id ? String(filters.zone_id) : '');
     const [selectedArea, setSelectedArea] = useState(filters.area_id ? String(filters.area_id) : '');
@@ -173,25 +176,29 @@ export default function ProcessLoans({ loans, filters, zones = [], areas = [], b
     }, [branches, selectedArea, selectedZone, filteredAreas]);
 
     // Apply Filter Changes
-    const applyFilters = (
-        newMonth?: string,
-        newDate?: string,
-        newSearch?: string,
-        newZone?: string,
-        newArea?: string,
-        newBranch?: string,
-        extra: { page?: number; per_page?: number } = {},
-    ) => {
+    const applyFilters = (overrides: {
+        month?: string;
+        date_from?: string;
+        date_to?: string;
+        search?: string;
+        zone_id?: string;
+        area_id?: string;
+        branch_id?: string;
+        page?: number;
+        per_page?: number;
+    } = {}) => {
         const queryParams: Record<string, string> = {};
-        const targetMonth = newMonth !== undefined ? newMonth : monthFilter;
-        const targetDate = newDate !== undefined ? newDate : dateFilter;
-        const targetSearch = newSearch !== undefined ? newSearch : searchQuery;
-        const targetZone = newZone !== undefined ? newZone : selectedZone;
-        const targetArea = newArea !== undefined ? newArea : selectedArea;
-        const targetBranch = newBranch !== undefined ? newBranch : selectedBranch;
+        const targetMonth = overrides.month !== undefined ? overrides.month : monthFilter;
+        const targetDateFrom = overrides.date_from !== undefined ? overrides.date_from : dateFrom;
+        const targetDateTo = overrides.date_to !== undefined ? overrides.date_to : dateTo;
+        const targetSearch = overrides.search !== undefined ? overrides.search : searchQuery;
+        const targetZone = overrides.zone_id !== undefined ? overrides.zone_id : selectedZone;
+        const targetArea = overrides.area_id !== undefined ? overrides.area_id : selectedArea;
+        const targetBranch = overrides.branch_id !== undefined ? overrides.branch_id : selectedBranch;
 
-        if (targetDate) {
-            queryParams.date = targetDate;
+        if (targetDateFrom || targetDateTo) {
+            if (targetDateFrom) queryParams.date_from = targetDateFrom;
+            if (targetDateTo) queryParams.date_to = targetDateTo;
         } else if (targetMonth) {
             queryParams.month = targetMonth;
         }
@@ -204,10 +211,10 @@ export default function ProcessLoans({ loans, filters, zones = [], areas = [], b
         if (targetArea) queryParams.area_id = targetArea;
         if (targetBranch) queryParams.branch_id = targetBranch;
 
-        const perPage = extra.per_page ?? Number(filters.per_page || loans.per_page || 20);
+        const perPage = overrides.per_page ?? Number(filters.per_page || loans.per_page || 20);
         queryParams.per_page = String(perPage);
-        if (extra.page) {
-            queryParams.page = String(extra.page);
+        if (overrides.page) {
+            queryParams.page = String(overrides.page);
         }
 
         router.get('/head-office/process-loans', queryParams, {
@@ -219,14 +226,21 @@ export default function ProcessLoans({ loans, filters, zones = [], areas = [], b
     const handleMonthChange = (e: React.ChangeEvent<HTMLInputElement>) => {
         const val = e.target.value;
         setMonthFilter(val);
-        setDateFilter('');
-        applyFilters(val, '', searchQuery, selectedZone, selectedArea, selectedBranch);
+        setDateFrom('');
+        setDateTo('');
+        applyFilters({ month: val, date_from: '', date_to: '' });
     };
 
-    const handleDateChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const handleDateFromChange = (e: React.ChangeEvent<HTMLInputElement>) => {
         const val = e.target.value;
-        setDateFilter(val);
-        applyFilters(monthFilter, val, searchQuery, selectedZone, selectedArea, selectedBranch);
+        setDateFrom(val);
+        applyFilters({ date_from: val });
+    };
+
+    const handleDateToChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+        const val = e.target.value;
+        setDateTo(val);
+        applyFilters({ date_to: val });
     };
 
     const handleZoneChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
@@ -234,31 +248,32 @@ export default function ProcessLoans({ loans, filters, zones = [], areas = [], b
         setSelectedZone(val);
         setSelectedArea('');
         setSelectedBranch('');
-        applyFilters(monthFilter, dateFilter, searchQuery, val, '', '');
+        applyFilters({ zone_id: val, area_id: '', branch_id: '' });
     };
 
     const handleAreaChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
         const val = e.target.value;
         setSelectedArea(val);
         setSelectedBranch('');
-        applyFilters(monthFilter, dateFilter, searchQuery, selectedZone, val, '');
+        applyFilters({ area_id: val, branch_id: '' });
     };
 
     const handleBranchChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
         const val = e.target.value;
         setSelectedBranch(val);
-        applyFilters(monthFilter, dateFilter, searchQuery, selectedZone, selectedArea, val);
+        applyFilters({ branch_id: val });
     };
 
     const handleSearchSubmit = (e: React.FormEvent<HTMLFormElement>) => {
         e.preventDefault();
-        applyFilters(monthFilter, dateFilter, searchQuery, selectedZone, selectedArea, selectedBranch);
+        applyFilters();
     };
 
     const handleResetFilters = () => {
         const curMonth = getCurrentMonth();
         setMonthFilter(curMonth);
-        setDateFilter('');
+        setDateFrom('');
+        setDateTo('');
         setSearchQuery('');
         setSelectedZone('');
         setSelectedArea('');
@@ -314,14 +329,16 @@ export default function ProcessLoans({ loans, filters, zones = [], areas = [], b
     };
 
     const handleApproveAll = () => {
-        const scopeText = dateFilter
-            ? `তারিখ: ${dateFilter}`
+        const hasDateRange = !!(dateFrom || dateTo);
+        const scopeText = hasDateRange
+            ? `তারিখ: ${dateFrom ? formatDate(dateFrom) : '...'} – ${dateTo ? formatDate(dateTo) : '...'}`
             : `মাস: ${monthFilter}`;
 
         if (confirm(`আপনি কি নিশ্চিত যে (${scopeText}) এর ফিল্টারকৃত সমস্ত সমস্যামুক্ত ঋণ আবেদন অনুমোদন করতে চান?`)) {
             router.post('/head-office/loans/approve-all', {
-                date: dateFilter || undefined,
-                month: dateFilter ? undefined : monthFilter,
+                date_from: dateFrom || undefined,
+                date_to: dateTo || undefined,
+                month: hasDateRange ? undefined : monthFilter,
                 zone_id: selectedZone || undefined,
                 area_id: selectedArea || undefined,
                 branch_id: selectedBranch || undefined,
@@ -439,12 +456,17 @@ export default function ProcessLoans({ loans, filters, zones = [], areas = [], b
                                 <h1 className="text-lg font-bold text-white tracking-tight">
                                     Loan Process (ঋণ আবেদন প্রক্রিয়াকরণ)
                                 </h1>
-                                {monthFilter && (
+                                {dateFrom || dateTo ? (
+                                    <span className="px-2.5 py-0.5 bg-emerald-500/20 text-emerald-300 text-[11px] font-medium rounded-full border border-emerald-500/30 flex items-center gap-1">
+                                        <Calendar className="w-3 h-3" />
+                                        {dateFrom ? formatDate(dateFrom) : '...'} – {dateTo ? formatDate(dateTo) : '...'}
+                                    </span>
+                                ) : monthFilter ? (
                                     <span className="px-2.5 py-0.5 bg-emerald-500/20 text-emerald-300 text-[11px] font-medium rounded-full border border-emerald-500/30 flex items-center gap-1">
                                         <Calendar className="w-3 h-3" />
                                         {formatMonthLabel(monthFilter)}
                                     </span>
-                                )}
+                                ) : null}
                             </div>
                             <p className="text-xs text-slate-400">
                                 শাখা হতে জমাকৃত ঋণ আবেদনপত্রসমূহ দ্রুত যাচাই ও হেড অফিস অনুমোদন সম্পন্ন করুন
@@ -534,11 +556,11 @@ export default function ProcessLoans({ loans, filters, zones = [], areas = [], b
                 {/* Compact Filter Controls Bar */}
                 <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-3 space-y-2.5">
                     {/* Integrated Multi-column Filter Row */}
-                    <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2">
+                    <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-7 gap-2">
                         {/* Month Picker */}
                         <div>
                             <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">
-                                মাস (Month) *
+                                মাস (Month)
                             </label>
                             <input
                                 type="month"
@@ -548,15 +570,28 @@ export default function ProcessLoans({ loans, filters, zones = [], areas = [], b
                             />
                         </div>
 
-                        {/* Date Picker (Optional) */}
+                        {/* Date From */}
                         <div>
                             <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">
-                                তারিখ (ঐচ্ছিক)
+                                হতে (Date From)
                             </label>
                             <input
                                 type="date"
-                                value={dateFilter}
-                                onChange={handleDateChange}
+                                value={dateFrom}
+                                onChange={handleDateFromChange}
+                                className="w-full px-2.5 py-1.5 bg-slate-50 border border-slate-300 rounded-lg text-xs text-slate-800 focus:ring-1 focus:ring-indigo-500 focus:bg-white"
+                            />
+                        </div>
+
+                        {/* Date To */}
+                        <div>
+                            <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">
+                                পর্যন্ত (Date To)
+                            </label>
+                            <input
+                                type="date"
+                                value={dateTo}
+                                onChange={handleDateToChange}
                                 className="w-full px-2.5 py-1.5 bg-slate-50 border border-slate-300 rounded-lg text-xs text-slate-800 focus:ring-1 focus:ring-indigo-500 focus:bg-white"
                             />
                         </div>
@@ -639,7 +674,7 @@ export default function ProcessLoans({ loans, filters, zones = [], areas = [], b
                                         type="button"
                                         onClick={() => {
                                             setSearchQuery('');
-                                            applyFilters(monthFilter, dateFilter, '', selectedZone, selectedArea, selectedBranch);
+                                            applyFilters({ search: '' });
                                         }}
                                         className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
                                     >
@@ -753,7 +788,7 @@ export default function ProcessLoans({ loans, filters, zones = [], areas = [], b
                             </div>
                             <h3 className="text-base font-bold text-slate-800">কোনো ঋণ আবেদন পাওয়া যায়নি</h3>
                             <p className="text-slate-500 text-xs mt-1 max-w-xs mx-auto">
-                                নির্বাচিত মাস ({monthFilter}) অথবা ফিল্টার অনুযায়ী কোনো পেন্ডিং আবেদন নেই।
+                                নির্বাচিত মাস বা তারিখ অনুযায়ী কোনো পেন্ডিং আবেদন নেই।
                             </p>
                             <button
                                 onClick={handleResetFilters}
@@ -986,8 +1021,8 @@ export default function ProcessLoans({ loans, filters, zones = [], areas = [], b
 
                     <ListPagination
                         meta={loans}
-                        onPageChange={(page) => applyFilters(undefined, undefined, undefined, undefined, undefined, undefined, { page })}
-                        onPerPageChange={(size) => applyFilters(undefined, undefined, undefined, undefined, undefined, undefined, { per_page: size, page: 1 })}
+                        onPageChange={(page) => applyFilters({ page })}
+                        onPerPageChange={(size) => applyFilters({ per_page: size, page: 1 })}
                     />
                 </div>
             </div>

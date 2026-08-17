@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers\Member;
 
+use App\Http\Controllers\Concerns\AppliesRoleDefaultListFilter;
 use App\Http\Controllers\Concerns\ResolvesListPerPage;
 use App\Http\Controllers\Controller;
 use App\Models\LoanApplication;
@@ -17,6 +18,7 @@ use App\Models\User;
 use App\Services\ApprovalService;
 use App\Services\NotificationService;
 use App\Support\LoanFormVisibility;
+use App\Support\RoleListWorkQueue;
 use Carbon\Carbon;
 use Illuminate\Http\Request;
 use Inertia\Inertia;
@@ -31,6 +33,7 @@ use PhpOffice\PhpSpreadsheet\Writer\Xlsx;
 
 class LoanApplicationController extends Controller
 {
+    use AppliesRoleDefaultListFilter;
     use ResolvesListPerPage;
 
     private function isFieldOfficer($user): bool
@@ -365,9 +368,10 @@ class LoanApplicationController extends Controller
     public function index(Request $request)
     {
         $user = $request->user();
-        $dateFrom = $request->input('date_from', now()->startOfMonth()->toDateString());
-        $dateTo = $request->input('date_to', now()->toDateString());
-        $statusFilter = $request->input('status', ''); // Empty means all statuses
+        $workQueue = RoleListWorkQueue::resolveWithDates($request, true, $user);
+        $dateFrom = $workQueue['date_from'];
+        $dateTo = $workQueue['date_to'];
+        $statusFilter = $workQueue['status'];
         $searchFilter = $request->input('search', '');
         $perPage = $this->resolvePerPage($request);
         $isFieldOfficer = $this->isFieldOfficer($user);
@@ -387,11 +391,10 @@ class LoanApplicationController extends Controller
         });
 
         // Get user's loan applications for date range
-        $startOfDay = Carbon::parse($dateFrom)->startOfDay();
-        $endOfDay = Carbon::parse($dateTo)->endOfDay();
-        
+        $dateExpression = 'COALESCE(disbursed_at, reviewed_at, submitted_at, created_at)';
+
         // Main query: only small columns (no LOBs) so ORDER BY uses minimal sort buffer.
-        $applications = LoanApplication::with([
+        $applicationsQuery = LoanApplication::with([
                 'loanProduct:id,product_name,product_name_bn,product_code,installment_type',
                 'loanCategory:id,category_name,category_name_bn',
                 'memberAdmission:id,applicant_name_en,applicant_name_bn,application_no,nid_number,mobile_number,status,is_legacy,loan_dofa',
@@ -415,13 +418,12 @@ class LoanApplicationController extends Controller
             })
             ->when($isFieldOfficer, function ($query) use ($user) {
                 $query->where('submitted_by', $user->id);
-            })
-            ->where(function ($q) use ($startOfDay, $endOfDay) {
-                $q->whereBetween(DB::raw('COALESCE(disbursed_at, reviewed_at, submitted_at, created_at)'), [$startOfDay, $endOfDay]);
-            })
-            ->when($statusFilter, function ($query) use ($statusFilter) {
-                $query->where('status', $statusFilter);
-            })
+            });
+
+        $this->applyCoalesceDateRange($applicationsQuery, $dateFrom, $dateTo, $dateExpression);
+        $this->applyResolvedStatusFilter($applicationsQuery, $statusFilter, $user, 'loan');
+
+        $applications = $applicationsQuery
             ->when($searchFilter, function ($query) use ($searchFilter) {
                 $query->where(function ($q) use ($searchFilter) {
                     $q->where('application_no', 'like', "%{$searchFilter}%")
@@ -486,10 +488,9 @@ class LoanApplicationController extends Controller
             })
             ->when($isFieldOfficer, function ($query) use ($user) {
                 $query->where('submitted_by', $user->id);
-            })
-            ->where(function ($q) use ($startOfDay, $endOfDay) {
-                $q->whereBetween(DB::raw('COALESCE(disbursed_at, reviewed_at, submitted_at, created_at)'), [$startOfDay, $endOfDay]);
             });
+
+        $this->applyCoalesceDateRange($statsBaseQuery, $dateFrom, $dateTo, $dateExpression);
 
         $stats = [
             'total' => (clone $statsBaseQuery)->where('status', '!=', 'draft')->count(),
@@ -498,9 +499,11 @@ class LoanApplicationController extends Controller
             'approved' => (clone $statsBaseQuery)->where('status', LoanApplication::STATUS_APPROVED)->count(),
             'pending_disbursement' => (clone $statsBaseQuery)->where('status', LoanApplication::STATUS_PENDING_DISBURSEMENT)->count(),
             'rejected' => (clone $statsBaseQuery)->where('status', LoanApplication::STATUS_REJECTED)->count(),
-            'pending_head_office' => (clone $statsBaseQuery)->where('status', 'pending_head_office')->count(),
-            'under_review' => (clone $statsBaseQuery)->where('status', 'under_review')->count(),
-            'disbursed' => (clone $statsBaseQuery)->where('status', 'disbursed')->count(),
+            'ready_for_head_office' => (clone $statsBaseQuery)->where('status', LoanApplication::STATUS_READY_FOR_HEAD_OFFICE)->count(),
+            'pending_head_office' => (clone $statsBaseQuery)->where('status', LoanApplication::STATUS_PENDING_HEAD_OFFICE)->count(),
+            'under_review' => (clone $statsBaseQuery)->where('status', LoanApplication::STATUS_UNDER_REVIEW)->count(),
+            'disbursed' => (clone $statsBaseQuery)->where('status', LoanApplication::STATUS_DISBURSED)->count(),
+            'pending_my_approval' => $this->countPendingMyApproval($statsBaseQuery, $user, 'loan'),
         ];
 
         return Inertia::render('Member/LoanApplications/Index', [
@@ -510,10 +513,11 @@ class LoanApplicationController extends Controller
             'selectedDate' => $dateFrom, // Keep for backward compatibility
             'dateFrom' => $dateFrom,
             'dateTo' => $dateTo,
-            'statusFilter' => $statusFilter,
+            'statusFilter' => $workQueue['status_param'],
             'searchFilter' => $searchFilter,
             'perPage' => $perPage,
             'preselectedMember' => $this->resolvePreselectedMember($request),
+            'workQueue' => $this->listWorkQueueProps($workQueue),
         ]);
     }
 
@@ -523,14 +527,12 @@ class LoanApplicationController extends Controller
     public function exportExcel(Request $request)
     {
         $user = $request->user();
-        $dateFrom = $request->input('date_from', $request->input('from_date', now()->startOfMonth()->toDateString()));
-        $dateTo = $request->input('date_to', $request->input('to_date', now()->toDateString()));
-        $statusFilter = $request->input('status', '');
+        $workQueue = RoleListWorkQueue::resolveWithDates($request, true, $user);
+        $dateFrom = $workQueue['date_from'];
+        $dateTo = $workQueue['date_to'];
+        $statusFilter = $workQueue['status'];
         $searchFilter = $request->input('search', '');
         $isFieldOfficer = $this->isFieldOfficer($user);
-
-        $startOfDay = Carbon::parse($dateFrom)->startOfDay();
-        $endOfDay = Carbon::parse($dateTo)->endOfDay();
 
         $query = LoanApplication::with([
                 'loanProduct',
@@ -549,13 +551,12 @@ class LoanApplicationController extends Controller
             })
             ->when($isFieldOfficer, function ($query) use ($user) {
                 $query->where('submitted_by', $user->id);
-            })
-            ->where(function ($q) use ($startOfDay, $endOfDay) {
-                $q->whereBetween(DB::raw('COALESCE(disbursed_at, reviewed_at, submitted_at, created_at)'), [$startOfDay, $endOfDay]);
-            })
-            ->when($statusFilter, function ($query) use ($statusFilter) {
-                $query->where('status', $statusFilter);
-            })
+            });
+
+        $this->applyCoalesceDateRange($query, $dateFrom, $dateTo, 'COALESCE(disbursed_at, reviewed_at, submitted_at, created_at)');
+        $this->applyResolvedStatusFilter($query, $statusFilter, $user, 'loan');
+
+        $query
             ->when($searchFilter, function ($query) use ($searchFilter) {
                 $query->where(function ($q) use ($searchFilter) {
                     $q->where('application_no', 'like', "%{$searchFilter}%")

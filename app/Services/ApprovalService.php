@@ -315,6 +315,19 @@ class ApprovalService
     }
 
     /**
+     * @return list<int>
+     */
+    public function pendingAdmissionIdsForUser(User $user): array
+    {
+        return $this->getPendingApprovalsForUser($user)
+            ->pluck('member_admission_id')
+            ->filter()
+            ->unique()
+            ->values()
+            ->all();
+    }
+
+    /**
      * Return admission to branch for revision (Head Office only)
      */
     public function returnToBranch(MemberAdmissionApproval $approval, string $comments): bool
@@ -1326,6 +1339,19 @@ class ApprovalService
 
             return false;
         })->values();
+    }
+
+    /**
+     * @return list<int>
+     */
+    public function pendingLoanApplicationIdsForUser(User $user): array
+    {
+        return $this->getPendingLoanApprovalsForUser($user)
+            ->pluck('loan_application_id')
+            ->filter()
+            ->unique()
+            ->values()
+            ->all();
     }
 
     /**

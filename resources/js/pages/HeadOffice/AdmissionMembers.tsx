@@ -91,11 +91,17 @@ interface Props {
         approved: number;
         rejected: number;
         needs_revision: number;
+        pending_my_approval?: number;
     };
     zones: Zone[];
     areas: Area[];
     branches: Branch[];
     viewAllAdmissions?: boolean;
+    workQueue?: {
+        default_status?: string | null;
+        label?: string;
+        hint?: string | null;
+    };
 }
 
 function creatorName(admission: MemberAdmission): string {
@@ -117,7 +123,7 @@ function branchLabel(admission: MemberAdmission): { name: string; meta?: string 
     return { name: branch.name, meta };
 }
 
-export default function AdmissionMembers({ admissions, filters, stats, zones, areas, branches, viewAllAdmissions = false }: Props) {
+export default function AdmissionMembers({ admissions, filters, stats, zones, areas, branches, viewAllAdmissions = false, workQueue }: Props) {
     const { auth } = usePage().props as any;
     const roleName = auth?.user?.role?.name || (typeof auth?.user?.role === 'string' ? auth?.user?.role : '');
     const isSuperAdmin = roleName === 'super_admin' || roleName === 'superadmin' || roleName === 'Super Admin';
@@ -125,7 +131,7 @@ export default function AdmissionMembers({ admissions, filters, stats, zones, ar
     const canViewAllAdmissions = isSuperAdmin || !!auth?.user?.has_all_access || viewAllAdmissions;
 
     const [searchQuery, setSearchQuery] = useState(filters.search || '');
-    const [statusFilter, setStatusFilter] = useState(filters.status || '');
+    const [statusFilter, setStatusFilter] = useState(filters.status || 'all');
     const [showHistoryModal, setShowHistoryModal] = useState(false);
     const [selectedAdmission, setSelectedAdmission] = useState<MemberAdmission | null>(null);
     const [showPrintModal, setShowPrintModal] = useState(false);
@@ -137,8 +143,8 @@ export default function AdmissionMembers({ admissions, filters, stats, zones, ar
 
     const today = new Date().toISOString().split('T')[0];
     const monthStart = `${today.slice(0, 7)}-01`;
-    const [dateFrom, setDateFrom] = useState(filters.date_from || monthStart);
-    const [dateTo, setDateTo] = useState(filters.date_to || today);
+    const [dateFrom, setDateFrom] = useState(filters.date_from || '');
+    const [dateTo, setDateTo] = useState(filters.date_to || '');
     const isTodayFilter = dateFrom === today && dateTo === today;
 
     const [selectedZone, setSelectedZone] = useState(filters.zone_id?.toString() || '');
@@ -149,6 +155,12 @@ export default function AdmissionMembers({ admissions, filters, stats, zones, ar
 
     const [filteredAreas, setFilteredAreas] = useState<Area[]>(areas);
     const [filteredBranches, setFilteredBranches] = useState<Branch[]>(branches);
+
+    useEffect(() => {
+        setDateFrom(filters.date_from || '');
+        setDateTo(filters.date_to || '');
+        setStatusFilter(filters.status || 'all');
+    }, [filters.date_from, filters.date_to, filters.status]);
 
     useEffect(() => {
         if (selectedZone) {
@@ -204,7 +216,7 @@ export default function AdmissionMembers({ admissions, filters, stats, zones, ar
 
     const filterPayload = (overrides: Record<string, string> = {}) => ({
         search: searchQuery,
-        status: statusFilter,
+        status: statusFilter || 'all',
         zone_id: selectedZone,
         area_id: selectedArea,
         branch_id: selectedBranch,
@@ -222,8 +234,9 @@ export default function AdmissionMembers({ admissions, filters, stats, zones, ar
     };
 
     const handleFilterChange = (status: string) => {
-        setStatusFilter(status);
-        router.get('/head-office/admission-members', filterPayload({ status }), { preserveState: true });
+        const next = status || 'all';
+        setStatusFilter(next);
+        router.get('/head-office/admission-members', filterPayload({ status: next }), { preserveState: true });
     };
 
     const handleTodayFilter = () => {
@@ -238,17 +251,17 @@ export default function AdmissionMembers({ admissions, filters, stats, zones, ar
 
     const clearFilters = () => {
         setSearchQuery('');
-        setStatusFilter('');
+        setStatusFilter(workQueue?.default_status || 'all');
         setSelectedZone('');
         setSelectedArea('');
         setSelectedBranch('');
-        setDateFrom(monthStart);
-        setDateTo(today);
+        setDateFrom('');
+        setDateTo('');
         setHadIssues('');
         setPrintedFilter('');
         router.get(
             '/head-office/admission-members',
-            { date_from: monthStart, date_to: today },
+            {},
             { preserveState: true }
         );
     };
@@ -256,7 +269,8 @@ export default function AdmissionMembers({ admissions, filters, stats, zones, ar
     const getPrintParams = () => {
         const params: Record<string, string> = {};
         if (searchQuery) params.search = searchQuery;
-        if (statusFilter) params.status = statusFilter;
+        if (statusFilter && statusFilter !== 'all') params.status = statusFilter;
+        else params.status = 'all';
         if (selectedZone) params.zone_id = selectedZone;
         if (selectedArea) params.area_id = selectedArea;
         if (selectedBranch) params.branch_id = selectedBranch;
@@ -358,17 +372,22 @@ export default function AdmissionMembers({ admissions, filters, stats, zones, ar
 
     const hasActiveFilters =
         searchQuery ||
-        statusFilter ||
+        (statusFilter && statusFilter !== 'all' && statusFilter !== (workQueue?.default_status || '')) ||
         selectedZone ||
         selectedArea ||
         selectedBranch ||
         hadIssues ||
         printedFilter ||
-        dateFrom !== monthStart ||
-        dateTo !== today;
+        dateFrom ||
+        dateTo;
 
+    const defaultStatus = workQueue?.default_status || '';
+    const isAllStatus = statusFilter === 'all' || statusFilter === '';
     const statCards = [
-        { label: 'সর্বমোট', count: stats.total, filter: '' },
+        ...(defaultStatus
+            ? [{ label: workQueue?.label || 'আমার কাজ', count: (stats as Record<string, number>)[defaultStatus] || 0, filter: defaultStatus }]
+            : []),
+        { label: 'সর্বমোট', count: stats.total, filter: 'all' },
         ...(canViewAllAdmissions
             ? [
                   { label: 'খসড়া', count: stats.draft, filter: 'draft' },
@@ -380,7 +399,7 @@ export default function AdmissionMembers({ admissions, filters, stats, zones, ar
         { label: 'সংশোধন', count: stats.needs_revision || 0, filter: 'needs_revision' },
         { label: 'অনুমোদিত', count: stats.approved, filter: 'approved' },
         { label: 'প্রত্যাখ্যাত', count: stats.rejected, filter: 'rejected' },
-    ];
+    ].filter((stat, index, all) => all.findIndex((s) => s.filter === stat.filter) === index);
 
     const ActionButtons = ({ admission }: { admission: MemberAdmission }) => (
         <div className="flex items-center justify-end gap-1">
@@ -501,18 +520,24 @@ export default function AdmissionMembers({ admissions, filters, stats, zones, ar
                             type="button"
                             onClick={() => handleFilterChange(stat.filter)}
                             className={`rounded-xl px-3 py-2.5 text-left border transition shadow-sm ${
-                                statusFilter === stat.filter
+                                statusFilter === stat.filter || (stat.filter === 'all' && isAllStatus)
                                     ? 'border-blue-600 bg-blue-600 text-white shadow-blue-200'
                                     : 'border-blue-100 bg-white text-slate-800 hover:border-blue-300 hover:bg-blue-50/60'
                             }`}
                         >
                             <div className="text-xl font-bold tabular-nums leading-none">{stat.count}</div>
-                            <div className={`text-[11px] font-medium mt-1 ${statusFilter === stat.filter ? 'text-blue-100' : 'text-slate-500'}`}>
+                            <div className={`text-[11px] font-medium mt-1 ${statusFilter === stat.filter || (stat.filter === 'all' && isAllStatus) ? 'text-blue-100' : 'text-slate-500'}`}>
                                 {stat.label}
                             </div>
                         </button>
                     ))}
                 </div>
+
+                {workQueue?.hint && !isAllStatus && (
+                    <p className="text-xs text-blue-800 bg-blue-50 border border-blue-100 rounded-xl px-3 py-2">
+                        {workQueue.hint}
+                    </p>
+                )}
 
                 {/* Filters */}
                 <div className="bg-white rounded-xl border border-blue-100 p-3.5 shadow-sm">
@@ -594,11 +619,14 @@ export default function AdmissionMembers({ admissions, filters, stats, zones, ar
                                 ))}
                             </select>
                             <select
-                                value={statusFilter}
+                                value={statusFilter === 'all' ? 'all' : statusFilter}
                                 onChange={(e) => setStatusFilter(e.target.value)}
                                 className="px-2.5 py-2 text-sm border border-blue-200 rounded-lg bg-white"
                             >
-                                <option value="">সব স্ট্যাটাস</option>
+                                {defaultStatus === 'pending_my_approval' && (
+                                    <option value="pending_my_approval">আমার অনুমোদন</option>
+                                )}
+                                <option value="all">সব স্ট্যাটাস</option>
                                 {canViewAllAdmissions && (
                                     <>
                                         <option value="draft">খসড়া</option>
@@ -677,7 +705,11 @@ export default function AdmissionMembers({ admissions, filters, stats, zones, ar
                     {/* Mobile cards */}
                     <div className="md:hidden divide-y divide-blue-100">
                         {admissions.data.length === 0 ? (
-                            <div className="p-12 text-center text-slate-400 text-sm">কোনো ভর্তি আবেদন পাওয়া যায়নি</div>
+                            <div className="p-12 text-center text-slate-400 text-sm">
+                                {workQueue?.hint && !isAllStatus
+                                    ? 'এখন কোনো পেন্ডিং কাজ নেই। সব আবেদন দেখতে “সর্বমোট” চাপুন।'
+                                    : 'কোনো ভর্তি আবেদন পাওয়া যায়নি'}
+                            </div>
                         ) : (
                             admissions.data.map((admission) => {
                                 const branch = branchLabel(admission);
@@ -796,7 +828,9 @@ export default function AdmissionMembers({ admissions, filters, stats, zones, ar
                                     {admissions.data.length === 0 ? (
                                         <tr>
                                             <td colSpan={isSuperAdmin ? 10 : 9} className="py-12 text-center text-slate-400 border-b border-blue-100">
-                                                কোনো ভর্তি আবেদন পাওয়া যায়নি
+                                                {workQueue?.hint && !isAllStatus
+                                                    ? 'এখন কোনো পেন্ডিং কাজ নেই। সব আবেদন দেখতে “সর্বমোট” চাপুন।'
+                                                    : 'কোনো ভর্তি আবেদন পাওয়া যায়নি'}
                                             </td>
                                         </tr>
                                     ) : (

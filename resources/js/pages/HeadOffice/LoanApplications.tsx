@@ -143,14 +143,20 @@ interface Props {
         pending_disbursement?: number;
         rejected: number;
         disbursed: number;
+        pending_my_approval?: number;
     };
     zones: Zone[];
     areas: Area[];
     branches: Branch[];
     viewAllLoans?: boolean;
+    workQueue?: {
+        default_status?: string | null;
+        label?: string;
+        hint?: string | null;
+    };
 }
 
-export default function LoanApplications({ loans, filters, stats, zones, areas, branches, viewAllLoans = false }: Props) {
+export default function LoanApplications({ loans, filters, stats, zones, areas, branches, viewAllLoans = false, workQueue }: Props) {
     const { auth } = usePage().props as any;
     const roleName = auth?.user?.role?.name || (typeof auth?.user?.role === 'string' ? auth?.user?.role : '');
     const isSuperAdmin = roleName === 'super_admin' || roleName === 'superadmin' || roleName === 'Super Admin';
@@ -158,7 +164,7 @@ export default function LoanApplications({ loans, filters, stats, zones, areas, 
     const canViewAllLoans = isSuperAdmin || !!auth?.user?.has_all_access || viewAllLoans;
 
     const [searchQuery, setSearchQuery] = useState(filters.search || '');
-    const [statusFilter, setStatusFilter] = useState(filters.status || '');
+    const [statusFilter, setStatusFilter] = useState(filters.status || 'all');
     const [printedFilter, setPrintedFilter] = useState(filters.printed || '');
 
     // Modals
@@ -172,8 +178,8 @@ export default function LoanApplications({ loans, filters, stats, zones, areas, 
     // Date filters - default to current month (1st .. today)
     const today = new Date().toISOString().split('T')[0];
     const monthStart = `${today.slice(0, 7)}-01`;
-    const [dateFrom, setDateFrom] = useState(filters.date_from || monthStart);
-    const [dateTo, setDateTo] = useState(filters.date_to || today);
+    const [dateFrom, setDateFrom] = useState(filters.date_from || '');
+    const [dateTo, setDateTo] = useState(filters.date_to || '');
 
     // Organizational filters
     const [selectedZone, setSelectedZone] = useState(filters.zone_id?.toString() || '');
@@ -186,6 +192,12 @@ export default function LoanApplications({ loans, filters, stats, zones, areas, 
     const [filteredBranches, setFilteredBranches] = useState<Branch[]>(branches);
 
     // Cascading logic for Zone -> Area -> Branch
+    useEffect(() => {
+        setDateFrom(filters.date_from || '');
+        setDateTo(filters.date_to || '');
+        setStatusFilter(filters.status || 'all');
+    }, [filters.date_from, filters.date_to, filters.status]);
+
     useEffect(() => {
         if (selectedZone) {
             const filtered = areas.filter(area => area.zone_id.toString() === selectedZone);
@@ -229,8 +241,11 @@ export default function LoanApplications({ loans, filters, stats, zones, areas, 
             ...overrides,
         };
 
-        // Clean empty values
+        queryParams.status = queryParams.status || 'all';
+
+        // Clean empty values except status (all must be sent)
         Object.keys(queryParams).forEach(key => {
+            if (key === 'status') return;
             if (!queryParams[key]) delete queryParams[key];
         });
 
@@ -254,15 +269,15 @@ export default function LoanApplications({ loans, filters, stats, zones, areas, 
 
     const handleResetFilters = () => {
         setSearchQuery('');
-        setStatusFilter('');
+        setStatusFilter(workQueue?.default_status || 'all');
         setSelectedZone('');
         setSelectedArea('');
         setSelectedBranch('');
-        setDateFrom(monthStart);
-        setDateTo(today);
+        setDateFrom('');
+        setDateTo('');
         setHadIssues('');
         setPrintedFilter('');
-        router.get('/head-office/loan-applications', { date_from: monthStart, date_to: today }, { preserveState: true });
+        router.get('/head-office/loan-applications', {}, { preserveState: true });
     };
 
     const handleDelete = (loan: LoanApplication) => {
@@ -356,6 +371,40 @@ export default function LoanApplications({ loans, filters, stats, zones, areas, 
         );
     };
 
+    const defaultStatus = workQueue?.default_status || '';
+    const isAllStatus = statusFilter === 'all' || statusFilter === '';
+    const selectStatus = (status: string) => {
+        const next = status || 'all';
+        setStatusFilter(next);
+        applyFilters({ status: next });
+    };
+    const hoLoanStatCards = [
+        ...(defaultStatus
+            ? [{
+                key: defaultStatus,
+                label: workQueue?.label || 'আমার কাজ',
+                count: (stats as Record<string, number>)[defaultStatus] || 0,
+                active: 'border-indigo-500 bg-indigo-50',
+                idle: 'border-indigo-100 hover:border-indigo-300',
+                labelClass: 'text-indigo-600',
+                countClass: 'text-indigo-700',
+            }]
+            : []),
+        { key: 'all', label: 'সর্বমোট', count: stats.total, active: 'border-slate-500 bg-slate-50', idle: 'border-slate-100 hover:border-slate-300', labelClass: 'text-slate-600', countClass: 'text-slate-800' },
+        { key: 'pending_head_office', label: 'হেড অফিস পেন্ডিং', count: stats.pending_head_office, active: 'border-indigo-500 bg-indigo-50', idle: 'border-indigo-100 hover:border-indigo-300', labelClass: 'text-indigo-600', countClass: 'text-indigo-700' },
+        { key: 'approved', label: 'অনুমোদিত', count: stats.approved, active: 'border-emerald-500 bg-emerald-50', idle: 'border-emerald-100 hover:border-emerald-300', labelClass: 'text-emerald-600', countClass: 'text-emerald-700' },
+        { key: 'pending_disbursement', label: 'বিতরণ অপেক্ষা', count: stats.pending_disbursement ?? 0, active: 'border-amber-500 bg-amber-50', idle: 'border-amber-100 hover:border-amber-300', labelClass: 'text-amber-700', countClass: 'text-amber-800' },
+        { key: 'disbursed', label: 'বিতরণকৃত', count: stats.disbursed, active: 'border-teal-500 bg-teal-50', idle: 'border-teal-100 hover:border-teal-300', labelClass: 'text-teal-600', countClass: 'text-teal-700' },
+        ...(canViewAllLoans
+            ? [
+                  { key: 'ready_for_head_office', label: 'শাখা অনুমোদিত', count: stats.ready_for_head_office ?? 0, active: 'border-violet-500 bg-violet-50', idle: 'border-violet-100 hover:border-violet-300', labelClass: 'text-violet-600', countClass: 'text-violet-700' },
+                  { key: 'under_review', label: 'যাচাইাধীন', count: stats.under_review, active: 'border-amber-500 bg-amber-50', idle: 'border-amber-100 hover:border-amber-300', labelClass: 'text-amber-600', countClass: 'text-amber-700' },
+                  { key: 'submitted', label: 'জমাকৃত', count: stats.submitted, active: 'border-blue-500 bg-blue-50', idle: 'border-blue-100 hover:border-blue-300', labelClass: 'text-blue-600', countClass: 'text-blue-700' },
+              ]
+            : []),
+        { key: 'rejected', label: 'প্রত্যাখ্যাত', count: stats.rejected, active: 'border-red-500 bg-red-50', idle: 'border-red-100 hover:border-red-300', labelClass: 'text-red-600', countClass: 'text-red-700' },
+    ].filter((stat, index, all) => all.findIndex((s) => s.key === stat.key) === index);
+
     return (
         <AdminLayout>
             <Head title="Head Office - Loan Applications (ঋণ আবেদনসমূহ)" />
@@ -431,73 +480,28 @@ export default function LoanApplications({ loans, filters, stats, zones, areas, 
 
                 {/* Stats Bar */}
                 <div className="grid grid-cols-2 sm:grid-cols-4 xl:grid-cols-7 gap-2">
-                    <div
-                        onClick={() => { setStatusFilter('pending_head_office'); applyFilters({ status: 'pending_head_office' }); }}
-                        className={`bg-white rounded-xl p-2.5 border shadow-sm cursor-pointer transition ${statusFilter === 'pending_head_office' ? 'border-indigo-500 bg-indigo-50' : 'border-indigo-100 hover:border-indigo-300'}`}
-                    >
-                        <span className="text-[10px] font-bold uppercase text-indigo-600 block">হেড অফিস পেন্ডিং</span>
-                        <span className="text-lg font-black text-indigo-700">{stats.pending_head_office}</span>
-                    </div>
-
-                    <div
-                        onClick={() => { setStatusFilter('approved'); applyFilters({ status: 'approved' }); }}
-                        className={`bg-white rounded-xl p-2.5 border shadow-sm cursor-pointer transition ${statusFilter === 'approved' ? 'border-emerald-500 bg-emerald-50' : 'border-emerald-100 hover:border-emerald-300'}`}
-                    >
-                        <span className="text-[10px] font-bold uppercase text-emerald-600 block">অনুমোদিত</span>
-                        <span className="text-lg font-black text-emerald-700">{stats.approved}</span>
-                    </div>
-
-                    <div
-                        onClick={() => { setStatusFilter('pending_disbursement'); applyFilters({ status: 'pending_disbursement' }); }}
-                        className={`bg-white rounded-xl p-2.5 border shadow-sm cursor-pointer transition ${statusFilter === 'pending_disbursement' ? 'border-amber-500 bg-amber-50' : 'border-amber-100 hover:border-amber-300'}`}
-                    >
-                        <span className="text-[10px] font-bold uppercase text-amber-700 block">বিতরণ অপেক্ষা</span>
-                        <span className="text-lg font-black text-amber-800">{stats.pending_disbursement ?? 0}</span>
-                    </div>
-
-                    <div
-                        onClick={() => { setStatusFilter('disbursed'); applyFilters({ status: 'disbursed' }); }}
-                        className={`bg-white rounded-xl p-2.5 border shadow-sm cursor-pointer transition ${statusFilter === 'disbursed' ? 'border-teal-500 bg-teal-50' : 'border-teal-100 hover:border-teal-300'}`}
-                    >
-                        <span className="text-[10px] font-bold uppercase text-teal-600 block">বিতরণকৃত</span>
-                        <span className="text-lg font-black text-teal-700">{stats.disbursed}</span>
-                    </div>
-
-                    {canViewAllLoans && (
-                        <>
-                    <div
-                        onClick={() => { setStatusFilter('ready_for_head_office'); applyFilters({ status: 'ready_for_head_office' }); }}
-                        className={`bg-white rounded-xl p-2.5 border shadow-sm cursor-pointer transition ${statusFilter === 'ready_for_head_office' ? 'border-violet-500 bg-violet-50' : 'border-violet-100 hover:border-violet-300'}`}
-                    >
-                        <span className="text-[10px] font-bold uppercase text-violet-600 block">শাখা অনুমোদিত</span>
-                        <span className="text-lg font-black text-violet-700">{stats.ready_for_head_office ?? 0}</span>
-                    </div>
-                    <div
-                        onClick={() => { setStatusFilter('under_review'); applyFilters({ status: 'under_review' }); }}
-                        className={`bg-white rounded-xl p-2.5 border shadow-sm cursor-pointer transition ${statusFilter === 'under_review' ? 'border-amber-500 bg-amber-50' : 'border-amber-100 hover:border-amber-300'}`}
-                    >
-                        <span className="text-[10px] font-bold uppercase text-amber-600 block">যাচাইাধীন</span>
-                        <span className="text-lg font-black text-amber-700">{stats.under_review}</span>
-                    </div>
-
-                    <div
-                        onClick={() => { setStatusFilter('submitted'); applyFilters({ status: 'submitted' }); }}
-                        className={`bg-white rounded-xl p-2.5 border shadow-sm cursor-pointer transition ${statusFilter === 'submitted' ? 'border-blue-500 bg-blue-50' : 'border-blue-100 hover:border-blue-300'}`}
-                    >
-                        <span className="text-[10px] font-bold uppercase text-blue-600 block">জমাকৃত</span>
-                        <span className="text-lg font-black text-blue-700">{stats.submitted}</span>
-                    </div>
-                        </>
-                    )}
-
-                    <div
-                        onClick={() => { setStatusFilter('rejected'); applyFilters({ status: 'rejected' }); }}
-                        className={`bg-white rounded-xl p-2.5 border shadow-sm cursor-pointer transition ${statusFilter === 'rejected' ? 'border-red-500 bg-red-50' : 'border-red-100 hover:border-red-300'}`}
-                    >
-                        <span className="text-[10px] font-bold uppercase text-red-600 block">প্রত্যাখ্যাত</span>
-                        <span className="text-lg font-black text-red-700">{stats.rejected}</span>
-                    </div>
+                    {hoLoanStatCards.map((stat) => {
+                        const active = stat.key === 'all' ? isAllStatus : statusFilter === stat.key;
+                        return (
+                            <div
+                                key={stat.key}
+                                onClick={() => selectStatus(stat.key)}
+                                className={`bg-white rounded-xl p-2.5 border shadow-sm cursor-pointer transition ${
+                                    active ? stat.active : stat.idle
+                                }`}
+                            >
+                                <span className={`text-[10px] font-bold uppercase ${stat.labelClass} block`}>{stat.label}</span>
+                                <span className={`text-lg font-black ${stat.countClass}`}>{stat.count}</span>
+                            </div>
+                        );
+                    })}
                 </div>
+
+                {workQueue?.hint && !isAllStatus && (
+                    <p className="text-xs text-indigo-800 bg-indigo-50 border border-indigo-100 rounded-xl px-3 py-2">
+                        {workQueue.hint}
+                    </p>
+                )}
 
                 {/* Filter Control Bar */}
                 <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-3 space-y-2 text-xs">
@@ -575,11 +579,14 @@ export default function LoanApplications({ loans, filters, stats, zones, areas, 
                         <div>
                             <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">স্ট্যাটাস (Status)</label>
                             <select
-                                value={statusFilter}
-                                onChange={(e) => { setStatusFilter(e.target.value); applyFilters({ status: e.target.value }); }}
+                                value={statusFilter === 'all' ? 'all' : statusFilter}
+                                onChange={(e) => selectStatus(e.target.value)}
                                 className="w-full px-2.5 py-1.5 bg-slate-50 border border-slate-300 rounded-lg text-xs font-medium"
                             >
-                                <option value="">সকল স্ট্যাটাস</option>
+                                {defaultStatus === 'pending_my_approval' && (
+                                    <option value="pending_my_approval">আমার অনুমোদন</option>
+                                )}
+                                <option value="all">সকল স্ট্যাটাস</option>
                                 <option value="pending_head_office">হেড অফিস পেন্ডিং</option>
                                 <option value="approved">অনুমোদিত</option>
                                 <option value="pending_disbursement">বিতরণ অপেক্ষা</option>
@@ -675,7 +682,11 @@ export default function LoanApplications({ loans, filters, stats, zones, areas, 
                 {loans.data.length === 0 ? (
                     <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-12 text-center text-slate-500">
                         <FileText className="w-12 h-12 mx-auto mb-3 text-slate-400" />
-                        <h3 className="text-base font-bold text-slate-800">কোনো ঋণ আবেদন পাওয়া যায়নি</h3>
+                        <h3 className="text-base font-bold text-slate-800">
+                            {workQueue?.hint && !isAllStatus
+                                ? 'এখন কোনো পেন্ডিং কাজ নেই। সব আবেদন দেখতে “সর্বমোট” চাপুন।'
+                                : 'কোনো ঋণ আবেদন পাওয়া যায়নি'}
+                        </h3>
                         <p className="text-xs mt-1 text-slate-500">নির্বাচিত ফিল্টার অনুযায়ী কোনো রেকর্ড নেই।</p>
                     </div>
                 ) : (

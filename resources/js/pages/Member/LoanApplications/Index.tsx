@@ -110,6 +110,11 @@ interface Stats {
     approved: number;
     pending_disbursement?: number;
     rejected: number;
+    ready_for_head_office?: number;
+    pending_head_office?: number;
+    under_review?: number;
+    disbursed?: number;
+    pending_my_approval?: number;
 }
 
 interface Props {
@@ -131,6 +136,11 @@ interface Props {
     searchFilter?: string;
     perPage?: number;
     preselectedMember?: Member | null;
+    workQueue?: {
+        default_status?: string | null;
+        label?: string;
+        hint?: string | null;
+    };
     flash?: {
         success?: string;
         error?: string;
@@ -182,7 +192,7 @@ interface Member {
     active_loans?: ActiveLoan[];
 }
 
-export default function Index({ categories, applications, stats, selectedDate, dateFrom, dateTo, statusFilter = '', searchFilter = '', perPage = 20, preselectedMember = null, flash }: Props) {
+export default function Index({ categories, applications, stats, selectedDate, dateFrom, dateTo, statusFilter = 'all', searchFilter = '', perPage = 20, preselectedMember = null, workQueue, flash }: Props) {
     const pageAuth = usePage().props.auth as { user?: { role?: { name: string } } } | undefined;
     const roleName = pageAuth?.user?.role?.name?.toLowerCase() || '';
     const isBranchUser = roleName === 'branch_user';
@@ -200,9 +210,9 @@ export default function Index({ categories, applications, stats, selectedDate, d
     const now = new Date();
     const today = now.toISOString().split('T')[0];
     const firstDayOfMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-01`;
-    const [currentDateFrom, setCurrentDateFrom] = useState(dateFrom || firstDayOfMonth);
-    const [currentDateTo, setCurrentDateTo] = useState(dateTo || today);
-    const [currentStatusFilter, setCurrentStatusFilter] = useState(statusFilter);
+    const [currentDateFrom, setCurrentDateFrom] = useState(dateFrom || '');
+    const [currentDateTo, setCurrentDateTo] = useState(dateTo || '');
+    const [currentStatusFilter, setCurrentStatusFilter] = useState(statusFilter || 'all');
     const [searchQuery, setSearchQuery] = useState(searchFilter);
     const [showNewModal, setShowNewModal] = useState(!!preselectedMember && canCreateLoanApplication);
     const [selectedCategory, setSelectedCategory] = useState<number | null>(null);
@@ -221,6 +231,12 @@ export default function Index({ categories, applications, stats, selectedDate, d
     const rejectForm = useForm({
         response_message: '',
     });
+
+    useEffect(() => {
+        setCurrentDateFrom(dateFrom || '');
+        setCurrentDateTo(dateTo || '');
+        setCurrentStatusFilter(statusFilter || 'all');
+    }, [dateFrom, dateTo, statusFilter]);
 
     useEffect(() => {
         if (flash?.success) {
@@ -259,11 +275,7 @@ export default function Index({ categories, applications, stats, selectedDate, d
         const status = Object.prototype.hasOwnProperty.call(overrides, 'status')
             ? overrides.status
             : currentStatusFilter;
-        if (status) {
-            params.status = status as string;
-        } else {
-            delete params.status;
-        }
+        params.status = (status as string) || 'all';
         const search = Object.prototype.hasOwnProperty.call(overrides, 'search')
             ? overrides.search
             : searchQuery;
@@ -273,6 +285,7 @@ export default function Index({ categories, applications, stats, selectedDate, d
             delete params.search;
         }
         Object.keys(params).forEach((key) => {
+            if (key === 'status') return;
             if (params[key] === '' || params[key] === undefined || params[key] === null) {
                 delete params[key];
             }
@@ -298,13 +311,11 @@ export default function Index({ categories, applications, stats, selectedDate, d
     };
 
     const resetFilters = () => {
-        setCurrentDateFrom(firstDayOfMonth);
-        setCurrentDateTo(today);
-        setCurrentStatusFilter('');
+        setCurrentDateFrom('');
+        setCurrentDateTo('');
+        setCurrentStatusFilter(workQueue?.default_status || 'all');
         setSearchQuery('');
         router.get('/member/loan-applications', {
-            date_from: firstDayOfMonth,
-            date_to: today,
             per_page: applications.per_page || perPage || 20,
         }, { preserveState: true });
     };
@@ -433,8 +444,6 @@ export default function Index({ categories, applications, stats, selectedDate, d
         }
     };
 
-    const applicationRows = applications.data ?? [];
-
     const filteredStats = useMemo(() => {
         return {
             total: stats.total || 0,
@@ -447,8 +456,55 @@ export default function Index({ categories, applications, stats, selectedDate, d
             ready_for_head_office: (stats as any).ready_for_head_office || 0,
             under_review: (stats as any).under_review || 0,
             disbursed: (stats as any).disbursed || 0,
+            pending_my_approval: (stats as any).pending_my_approval || 0,
         };
     }, [stats]);
+
+    const applicationRows = applications.data ?? [];
+    const defaultStatus = workQueue?.default_status || '';
+    const isAllStatus = currentStatusFilter === 'all' || currentStatusFilter === '';
+    const loanStatCards = [
+        ...(defaultStatus
+            ? [{
+                key: defaultStatus,
+                label: workQueue?.label || 'আমার কাজ',
+                count: (filteredStats as Record<string, number>)[defaultStatus] || 0,
+                active: 'bg-indigo-600 border-indigo-600 text-white',
+                idle: 'bg-white border-indigo-200 hover:border-indigo-300',
+                labelActive: 'text-indigo-100',
+                labelIdle: 'text-indigo-700',
+                countActive: 'text-white',
+                countIdle: 'text-indigo-700',
+            }]
+            : []),
+        {
+            key: 'all',
+            label: 'সর্বমোট',
+            count: filteredStats.total,
+            active: 'bg-slate-900 border-slate-900 text-white',
+            idle: 'bg-white border-slate-200 hover:border-slate-300',
+            labelActive: 'text-slate-300',
+            labelIdle: 'text-slate-500',
+            countActive: 'text-white',
+            countIdle: 'text-slate-900',
+        },
+        { key: 'draft', label: 'খসড়া', count: filteredStats.draft, active: 'bg-slate-800 border-slate-800 text-white', idle: 'bg-white border-slate-200 hover:border-slate-300', labelActive: 'text-slate-300', labelIdle: 'text-slate-500', countActive: 'text-white', countIdle: 'text-slate-700' },
+        { key: 'submitted', label: 'জমাকৃত', count: filteredStats.submitted, active: 'bg-blue-600 border-blue-600 text-white', idle: 'bg-white border-blue-100 hover:border-blue-300', labelActive: 'text-blue-100', labelIdle: 'text-blue-600', countActive: 'text-white', countIdle: 'text-blue-600' },
+        { key: 'under_review', label: 'পর্যালোচনা', count: filteredStats.under_review, active: 'bg-amber-500 border-amber-500 text-white', idle: 'bg-white border-amber-100 hover:border-amber-300', labelActive: 'text-amber-100', labelIdle: 'text-amber-700', countActive: 'text-white', countIdle: 'text-amber-700' },
+        { key: 'ready_for_head_office', label: 'হেড অফিসে পাঠান', count: filteredStats.ready_for_head_office, active: 'bg-emerald-600 border-emerald-600 text-white', idle: 'bg-white border-emerald-100 hover:border-emerald-300', labelActive: 'text-emerald-100', labelIdle: 'text-emerald-700', countActive: 'text-white', countIdle: 'text-emerald-700' },
+        { key: 'pending_head_office', label: 'হেড অফিসে', count: filteredStats.pending_head_office, active: 'bg-indigo-600 border-indigo-600 text-white', idle: 'bg-white border-indigo-100 hover:border-indigo-300', labelActive: 'text-indigo-100', labelIdle: 'text-indigo-700', countActive: 'text-white', countIdle: 'text-indigo-700' },
+        { key: 'approved', label: 'অনুমোদিত', count: filteredStats.approved, active: 'bg-emerald-600 border-emerald-600 text-white', idle: 'bg-white border-emerald-100 hover:border-emerald-300', labelActive: 'text-emerald-100', labelIdle: 'text-emerald-600', countActive: 'text-white', countIdle: 'text-emerald-600' },
+        { key: 'pending_disbursement', label: 'বিতরণ অপেক্ষা', count: filteredStats.pending_disbursement, active: 'bg-amber-600 border-amber-600 text-white', idle: 'bg-white border-amber-100 hover:border-amber-300', labelActive: 'text-amber-100', labelIdle: 'text-amber-700', countActive: 'text-white', countIdle: 'text-amber-700' },
+        { key: 'rejected', label: 'প্রত্যাখ্যাত', count: filteredStats.rejected, active: 'bg-rose-600 border-rose-600 text-white', idle: 'bg-white border-rose-100 hover:border-rose-300', labelActive: 'text-rose-100', labelIdle: 'text-rose-600', countActive: 'text-white', countIdle: 'text-rose-600' },
+    ].filter((stat, index, all) => all.findIndex((s) => s.key === stat.key) === index);
+
+    const selectStatus = (status: string) => {
+        const next = status || 'all';
+        setCurrentStatusFilter(next);
+        applyListFilters({ status: next, page: 1 });
+    };
+
+    const isStatActive = (key: string) => (key === 'all' ? isAllStatus : currentStatusFilter === key);
 
     const readyForHoIds = useMemo(
         () => applicationRows.filter((a) => a.status === 'ready_for_head_office').map((a) => a.id),
@@ -558,116 +614,30 @@ export default function Index({ categories, applications, stats, selectedDate, d
 
                 {/* COMPACT METRIC STATS PILLS */}
                 <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2">
-                    <div
-                        onClick={() => {
-                            setCurrentStatusFilter('');
-                            applyListFilters({ status: '', page: 1 });
-                        }}
-                        className={`rounded-xl p-2.5 border shadow-sm cursor-pointer transition ${
-                            !currentStatusFilter
-                                ? 'bg-slate-900 border-slate-900 text-white'
-                                : 'bg-white border-slate-200 hover:border-slate-300'
-                        }`}
-                    >
-                        <span className={`text-[10px] font-bold uppercase block ${!currentStatusFilter ? 'text-slate-300' : 'text-slate-500'}`}>
-                            সর্বমোট
-                        </span>
-                        <span className={`text-lg font-black ${!currentStatusFilter ? 'text-white' : 'text-slate-900'}`}>
-                            {filteredStats.total}
-                        </span>
-                    </div>
-
-                    <div
-                        onClick={() => {
-                            setCurrentStatusFilter('draft');
-                            applyListFilters({ status: 'draft', page: 1 });
-                        }}
-                        className={`rounded-xl p-2.5 border shadow-sm cursor-pointer transition ${
-                            currentStatusFilter === 'draft'
-                                ? 'bg-slate-800 border-slate-800 text-white'
-                                : 'bg-white border-slate-200 hover:border-slate-300'
-                        }`}
-                    >
-                        <span className="text-[10px] font-bold uppercase text-slate-500 block">খসড়া (Draft)</span>
-                        <span className="text-lg font-black text-slate-700">{filteredStats.draft}</span>
-                    </div>
-
-                    <div
-                        onClick={() => {
-                            setCurrentStatusFilter('submitted');
-                            applyListFilters({ status: 'submitted', page: 1 });
-                        }}
-                        className={`rounded-xl p-2.5 border shadow-sm cursor-pointer transition ${
-                            currentStatusFilter === 'submitted'
-                                ? 'bg-blue-600 border-blue-600 text-white'
-                                : 'bg-white border-blue-100 hover:border-blue-300'
-                        }`}
-                    >
-                        <span className={`text-[10px] font-bold uppercase block ${currentStatusFilter === 'submitted' ? 'text-blue-100' : 'text-blue-600'}`}>
-                            জমাকৃত
-                        </span>
-                        <span className={`text-lg font-black ${currentStatusFilter === 'submitted' ? 'text-white' : 'text-blue-600'}`}>
-                            {filteredStats.submitted}
-                        </span>
-                    </div>
-
-                    <div
-                        onClick={() => {
-                            setCurrentStatusFilter('approved');
-                            applyListFilters({ status: 'approved', page: 1 });
-                        }}
-                        className={`rounded-xl p-2.5 border shadow-sm cursor-pointer transition ${
-                            currentStatusFilter === 'approved'
-                                ? 'bg-emerald-600 border-emerald-600 text-white'
-                                : 'bg-white border-emerald-100 hover:border-emerald-300'
-                        }`}
-                    >
-                        <span className={`text-[10px] font-bold uppercase block ${currentStatusFilter === 'approved' ? 'text-emerald-100' : 'text-emerald-600'}`}>
-                            অনুমোদিত
-                        </span>
-                        <span className={`text-lg font-black ${currentStatusFilter === 'approved' ? 'text-white' : 'text-emerald-600'}`}>
-                            {filteredStats.approved}
-                        </span>
-                    </div>
-
-                    <div
-                        onClick={() => {
-                            setCurrentStatusFilter('pending_disbursement');
-                            applyListFilters({ status: 'pending_disbursement', page: 1 });
-                        }}
-                        className={`rounded-xl p-2.5 border shadow-sm cursor-pointer transition ${
-                            currentStatusFilter === 'pending_disbursement'
-                                ? 'bg-amber-600 border-amber-600 text-white'
-                                : 'bg-white border-amber-100 hover:border-amber-300'
-                        }`}
-                    >
-                        <span className={`text-[10px] font-bold uppercase block ${currentStatusFilter === 'pending_disbursement' ? 'text-amber-100' : 'text-amber-700'}`}>
-                            বিতরণ অপেক্ষা
-                        </span>
-                        <span className={`text-lg font-black ${currentStatusFilter === 'pending_disbursement' ? 'text-white' : 'text-amber-700'}`}>
-                            {filteredStats.pending_disbursement}
-                        </span>
-                    </div>
-
-                    <div
-                        onClick={() => {
-                            setCurrentStatusFilter('rejected');
-                            applyListFilters({ status: 'rejected', page: 1 });
-                        }}
-                        className={`rounded-xl p-2.5 border shadow-sm cursor-pointer transition ${
-                            currentStatusFilter === 'rejected'
-                                ? 'bg-rose-600 border-rose-600 text-white'
-                                : 'bg-white border-rose-100 hover:border-rose-300'
-                        }`}
-                    >
-                        <span className={`text-[10px] font-bold uppercase block ${currentStatusFilter === 'rejected' ? 'text-rose-100' : 'text-rose-600'}`}>
-                            প্রত্যাখ্যাত
-                        </span>
-                        <span className={`text-lg font-black ${currentStatusFilter === 'rejected' ? 'text-white' : 'text-rose-600'}`}>
-                            {filteredStats.rejected}
-                        </span>
-                    </div>
+                    {loanStatCards.map((stat) => {
+                        const active = isStatActive(stat.key);
+                        return (
+                            <div
+                                key={stat.key}
+                                onClick={() => selectStatus(stat.key)}
+                                className={`rounded-xl p-2.5 border shadow-sm cursor-pointer transition ${active ? stat.active : stat.idle}`}
+                            >
+                                <span className={`text-[10px] font-bold uppercase block ${active ? stat.labelActive : stat.labelIdle}`}>
+                                    {stat.label}
+                                </span>
+                                <span className={`text-lg font-black ${active ? stat.countActive : stat.countIdle}`}>
+                                    {stat.count}
+                                </span>
+                            </div>
+                        );
+                    })}
                 </div>
+
+                {workQueue?.hint && !isAllStatus && (
+                    <p className="text-xs text-indigo-800 bg-indigo-50 border border-indigo-100 rounded-xl px-3 py-2">
+                        {workQueue.hint}
+                    </p>
+                )}
 
                 {/* INTEGRATED SEARCH & FILTER CONTROL BAR */}
                 <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-3 space-y-2 text-xs">
@@ -704,11 +674,14 @@ export default function Index({ categories, applications, stats, selectedDate, d
                                 স্ট্যাটাস (Status)
                             </label>
                             <select
-                                value={currentStatusFilter}
-                                onChange={(e) => setCurrentStatusFilter(e.target.value)}
+                                value={currentStatusFilter === 'all' ? 'all' : currentStatusFilter}
+                                onChange={(e) => selectStatus(e.target.value)}
                                 className="w-full px-2.5 py-1.5 bg-slate-50 border border-slate-300 rounded-lg text-xs font-medium"
                             >
-                                <option value="">সকল স্ট্যাটাস</option>
+                                {defaultStatus === 'pending_my_approval' && (
+                                    <option value="pending_my_approval">আমার অনুমোদন</option>
+                                )}
+                                <option value="all">সকল স্ট্যাটাস</option>
                                 <option value="draft">Draft (খসড়া)</option>
                                 <option value="submitted">Submitted (জমা)</option>
                                 <option value="under_review">Under Review (পর্যালোচনা)</option>
@@ -832,7 +805,9 @@ export default function Index({ categories, applications, stats, selectedDate, d
                     <div className="md:hidden flex flex-col gap-3.5">
                         {applicationRows.length === 0 ? (
                             <div className="p-8 text-center text-slate-400 text-xs font-medium">
-                                কোনো ঋণ আবেদন পাওয়া যায়নি।
+                                {workQueue?.hint && !isAllStatus
+                                    ? 'এখন কোনো পেন্ডিং কাজ নেই। সব আবেদন দেখতে “সর্বমোট” চাপুন।'
+                                    : 'কোনো ঋণ আবেদন পাওয়া যায়নি।'}
                             </div>
                         ) : (
                             applicationRows.map((app) => {
@@ -1043,7 +1018,11 @@ export default function Index({ categories, applications, stats, selectedDate, d
                                         <tr>
                                             <td colSpan={isBranchUser ? 10 : 9} className="text-center py-12 text-slate-400">
                                                 <FileText className="w-10 h-10 mx-auto mb-2 text-slate-300" />
-                                                <p className="text-sm font-semibold">কোনো ঋণ আবেদন পাওয়া যায়নি।</p>
+                                                <p className="text-sm font-semibold">
+                                                    {workQueue?.hint && !isAllStatus
+                                                        ? 'এখন কোনো পেন্ডিং কাজ নেই। সব আবেদন দেখতে “সর্বমোট” চাপুন।'
+                                                        : 'কোনো ঋণ আবেদন পাওয়া যায়নি।'}
+                                                </p>
                                             </td>
                                         </tr>
                                     ) : (

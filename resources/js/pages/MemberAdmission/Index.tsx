@@ -55,10 +55,18 @@ interface Props {
         approved: number;
         rejected: number;
         needs_revision?: number;
+        ready_for_head_office?: number;
+        pending_head_office?: number;
+        pending_my_approval?: number;
+    };
+    workQueue?: {
+        default_status?: string | null;
+        label?: string;
+        hint?: string | null;
     };
 }
 
-export default function Index({ admissions, filters, stats }: Props) {
+export default function Index({ admissions, filters, stats, workQueue }: Props) {
     const pageAuth = usePage().props.auth as { user?: { id?: number; role?: { name: string } } } | undefined;
     const roleName = pageAuth?.user?.role?.name?.toLowerCase() || '';
     // Only Branch User can send ready admissions to Head Office (not Branch Manager)
@@ -83,14 +91,15 @@ export default function Index({ admissions, filters, stats }: Props) {
     };
 
     const [searchQuery, setSearchQuery] = useState(filters.search || '');
-    const [statusFilter, setStatusFilter] = useState(filters.status || '');
+    const [statusFilter, setStatusFilter] = useState(filters.status || 'all');
     const [fromDate, setFromDate] = useState(filters.from_date || '');
     const [toDate, setToDate] = useState(filters.to_date || '');
 
     useEffect(() => {
         setFromDate(filters.from_date || '');
         setToDate(filters.to_date || '');
-    }, [filters.from_date, filters.to_date]);
+        setStatusFilter(filters.status || 'all');
+    }, [filters.from_date, filters.to_date, filters.status]);
 
     const [showRejectModal, setShowRejectModal] = useState(false);
     const [showResubmitModal, setShowResubmitModal] = useState(false);
@@ -185,7 +194,7 @@ export default function Index({ admissions, filters, stats }: Props) {
     const buildParams = () => {
         const params: Record<string, string> = {};
         if (searchQuery) params.search = searchQuery;
-        if (statusFilter) params.status = statusFilter;
+        params.status = statusFilter || 'all';
         if (fromDate) params.from_date = fromDate;
         if (toDate) params.to_date = toDate;
         params.per_page = String(admissions.per_page || filters.per_page || 20);
@@ -204,8 +213,9 @@ export default function Index({ admissions, filters, stats }: Props) {
     };
 
     const handleFilterChange = (status: string) => {
-        setStatusFilter(status);
-        router.get('/member-admissions', { ...buildParams(), status }, { preserveState: true });
+        const next = status || 'all';
+        setStatusFilter(next);
+        router.get('/member-admissions', { ...buildParams(), status: next }, { preserveState: true });
     };
 
     const getEffectiveDate = (admission: MemberAdmission) => {
@@ -290,15 +300,27 @@ export default function Index({ admissions, filters, stats }: Props) {
         );
     };
 
+    const defaultStatus = workQueue?.default_status || '';
+    const isAllStatus = statusFilter === 'all' || statusFilter === '';
     const statCards = [
-        { label: 'সর্বমোট', count: stats.total, color: 'bg-slate-800 text-white', filter: '' },
+        ...(defaultStatus
+            ? [{
+                label: workQueue?.label || 'আমার কাজ',
+                count: (stats as Record<string, number>)[defaultStatus] || 0,
+                color: 'bg-indigo-600 text-white',
+                filter: defaultStatus,
+            }]
+            : []),
+        { label: 'সর্বমোট', count: stats.total, color: 'bg-slate-800 text-white', filter: 'all' },
         { label: 'খসড়া', count: stats.draft, color: 'bg-slate-200 text-slate-800', filter: 'draft' },
         { label: 'জমা', count: stats.submitted, color: 'bg-blue-600 text-white', filter: 'submitted' },
         { label: 'পর্যালোচনা', count: stats.under_review, color: 'bg-amber-500 text-white', filter: 'under_review' },
+        { label: 'হেড অফিসে পাঠান', count: stats.ready_for_head_office || 0, color: 'bg-emerald-600 text-white', filter: 'ready_for_head_office' },
+        { label: 'হেড অফিসে', count: stats.pending_head_office || 0, color: 'bg-purple-600 text-white', filter: 'pending_head_office' },
         { label: 'সংশোধন', count: stats.needs_revision || 0, color: 'bg-orange-500 text-white', filter: 'needs_revision' },
         { label: 'অনুমোদিত', count: stats.approved, color: 'bg-emerald-600 text-white', filter: 'approved' },
         { label: 'প্রত্যাখ্যাত', count: stats.rejected, color: 'bg-rose-600 text-white', filter: 'rejected' },
-    ];
+    ].filter((stat, index, all) => all.findIndex((s) => s.filter === stat.filter) === index);
 
     return (
         <AdminLayout>
@@ -467,6 +489,12 @@ export default function Index({ admissions, filters, stats }: Props) {
                         </div>
                     </form>
 
+                    {workQueue?.hint && !isAllStatus && (
+                        <p className="text-xs text-indigo-800 bg-indigo-50 border border-indigo-100 rounded-xl px-3 py-2">
+                            {workQueue.hint}
+                        </p>
+                    )}
+
                     {/* Summary Filter Chips */}
                     <div className="flex overflow-x-auto pb-1 gap-2 hide-scrollbar items-center border-t border-slate-100 pt-3">
                         {statCards.map((stat) => (
@@ -475,7 +503,7 @@ export default function Index({ admissions, filters, stats }: Props) {
                                 type="button"
                                 onClick={() => handleFilterChange(stat.filter)}
                                 className={`inline-flex items-center gap-2 px-3 py-1.5 rounded-xl text-xs font-bold transition-all shrink-0 ${
-                                    statusFilter === stat.filter
+                                    statusFilter === stat.filter || (stat.filter === 'all' && isAllStatus)
                                         ? 'ring-2 ring-blue-500/30 bg-blue-50 text-blue-800 border border-blue-200'
                                         : 'bg-slate-50 border border-slate-200/80 text-slate-600 hover:bg-slate-100'
                                 }`}
@@ -504,7 +532,9 @@ export default function Index({ admissions, filters, stats }: Props) {
                     <div className="md:hidden divide-y divide-slate-100 print:hidden">
                         {admissions.data.length === 0 ? (
                             <div className="p-12 text-center text-slate-400 text-sm">
-                                কোনো ভর্তি আবেদন পাওয়া যায়নি
+                                {workQueue?.hint && !isAllStatus
+                                    ? 'এখন কোনো পেন্ডিং কাজ নেই। সব আবেদন দেখতে “সর্বমোট” চাপুন।'
+                                    : 'কোনো ভর্তি আবেদন পাওয়া যায়নি'}
                             </div>
                         ) : (
                             admissions.data.map((admission) => (
@@ -701,7 +731,9 @@ export default function Index({ admissions, filters, stats }: Props) {
                                     {admissions.data.length === 0 ? (
                                         <tr>
                                             <td colSpan={isBranchUser ? 12 : 11} className="py-12 text-center text-slate-400">
-                                                কোনো ভর্তি আবেদন পাওয়া যায়নি
+                                                {workQueue?.hint && !isAllStatus
+                                                    ? 'এখন কোনো পেন্ডিং কাজ নেই। সব আবেদন দেখতে “সর্বমোট” চাপুন।'
+                                                    : 'কোনো ভর্তি আবেদন পাওয়া যায়নি'}
                                             </td>
                                         </tr>
                                     ) : (

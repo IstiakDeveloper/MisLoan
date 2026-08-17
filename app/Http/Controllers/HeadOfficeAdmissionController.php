@@ -11,6 +11,7 @@ use App\Models\User;
 use App\Models\Role;
 use App\Services\ApprovalService;
 use App\Services\NotificationService;
+use App\Support\RoleListWorkQueue;
 use Illuminate\Http\Request;
 use Inertia\Inertia;
 use Illuminate\Support\Facades\DB;
@@ -24,6 +25,7 @@ use PhpOffice\PhpSpreadsheet\Cell\Coordinate;
 
 class HeadOfficeAdmissionController extends Controller
 {
+    use Concerns\AppliesRoleDefaultListFilter;
     use Concerns\ScopesToAccessibleBranches;
     use Concerns\RequiresSuperAdminDeletePin;
     use Concerns\ResolvesListPerPage;
@@ -33,6 +35,12 @@ class HeadOfficeAdmissionController extends Controller
      */
     public function index(Request $request)
     {
+        $user = $request->user();
+        $workQueue = RoleListWorkQueue::resolveWithDates($request, true, $user);
+        $statusFilter = $workQueue['status'];
+        $dateFrom = $workQueue['date_from'];
+        $dateTo = $workQueue['date_to'];
+
         $query = MemberAdmission::with([
             'branch' => fn ($q) => $q->withTrashed()->with(['area.zone']),
             'samity',
@@ -44,37 +52,7 @@ class HeadOfficeAdmissionController extends Controller
 
         $this->applyAccessibleBranchScope($query);
         $this->applyHeadOfficeStageVisibility($query);
-
-        // Default date filter - current month (1st of month .. today)
-        $dateFrom = $request->date_from ?? now()->startOfMonth()->toDateString();
-        $dateTo = $request->date_to ?? now()->toDateString();
-
-        $startOfDay = Carbon::parse($dateFrom)->startOfDay();
-        $endOfDay = Carbon::parse($dateTo)->endOfDay();
-
-        // Date range filter based on submission date (submitted_at, falling back to created_at if null)
-        if ($dateFrom && $dateTo) {
-            $query->where(function ($q) use ($startOfDay, $endOfDay) {
-                $q->whereBetween('submitted_at', [$startOfDay, $endOfDay])
-                  ->orWhere(function ($sq) use ($startOfDay, $endOfDay) {
-                      $sq->whereNull('submitted_at')->whereBetween('created_at', [$startOfDay, $endOfDay]);
-                  });
-            });
-        } elseif ($dateFrom) {
-            $query->where(function ($q) use ($startOfDay) {
-                $q->where('submitted_at', '>=', $startOfDay)
-                  ->orWhere(function ($sq) use ($startOfDay) {
-                      $sq->whereNull('submitted_at')->where('created_at', '>=', $startOfDay);
-                  });
-            });
-        } elseif ($dateTo) {
-            $query->where(function ($q) use ($endOfDay) {
-                $q->where('submitted_at', '<=', $endOfDay)
-                  ->orWhere(function ($sq) use ($endOfDay) {
-                      $sq->whereNull('submitted_at')->where('created_at', '<=', $endOfDay);
-                  });
-            });
-        }
+        $this->applySubmittedAtDateRange($query, $dateFrom, $dateTo);
 
         // Zone filter
         if ($request->has('zone_id') && $request->zone_id) {
@@ -97,11 +75,7 @@ class HeadOfficeAdmissionController extends Controller
 
         // Status filter. Drafts are hidden from the default "All" list, but a Head
         // Office user can view every draft by explicitly selecting the draft filter.
-        if ($request->filled('status')) {
-            $query->where('status', $request->status);
-        } else {
-            $query->where('status', '!=', 'draft');
-        }
+        $this->applyResolvedStatusFilter($query, $statusFilter, $user, 'admission', true);
 
         // Search filter
         if ($request->has('search') && $request->search) {
@@ -139,30 +113,7 @@ class HeadOfficeAdmissionController extends Controller
         $statsQuery = MemberAdmission::query();
         $this->applyAccessibleBranchScope($statsQuery);
         $this->applyHeadOfficeStageVisibility($statsQuery);
-
-        // Apply same date filter to stats
-        if ($dateFrom && $dateTo) {
-            $statsQuery->where(function ($q) use ($startOfDay, $endOfDay) {
-                $q->whereBetween('submitted_at', [$startOfDay, $endOfDay])
-                  ->orWhere(function ($sq) use ($startOfDay, $endOfDay) {
-                      $sq->whereNull('submitted_at')->whereBetween('created_at', [$startOfDay, $endOfDay]);
-                  });
-            });
-        } elseif ($dateFrom) {
-            $statsQuery->where(function ($q) use ($startOfDay) {
-                $q->where('submitted_at', '>=', $startOfDay)
-                  ->orWhere(function ($sq) use ($startOfDay) {
-                      $sq->whereNull('submitted_at')->where('created_at', '>=', $startOfDay);
-                  });
-            });
-        } elseif ($dateTo) {
-            $statsQuery->where(function ($q) use ($endOfDay) {
-                $q->where('submitted_at', '<=', $endOfDay)
-                  ->orWhere(function ($sq) use ($endOfDay) {
-                      $sq->whereNull('submitted_at')->where('created_at', '<=', $endOfDay);
-                  });
-            });
-        }
+        $this->applySubmittedAtDateRange($statsQuery, $dateFrom, $dateTo);
 
         // Apply zone/area/branch filters to stats
         if ($request->has('zone_id') && $request->zone_id) {
@@ -220,6 +171,7 @@ class HeadOfficeAdmissionController extends Controller
             'approved' => (clone $statsQuery)->where('status', 'approved')->count(),
             'rejected' => (clone $statsQuery)->where('status', 'rejected')->count(),
             'needs_revision' => (clone $statsQuery)->where('status', 'needs_revision')->count(),
+            'pending_my_approval' => $this->countPendingMyApproval($statsQuery, $user, 'admission'),
         ];
 
         $perPage = $this->resolvePerPage($request);
@@ -236,8 +188,9 @@ class HeadOfficeAdmissionController extends Controller
         return Inertia::render('HeadOffice/AdmissionMembers', [
             'admissions' => $admissions,
             'filters' => array_merge(
-                $request->only(['status', 'search', 'zone_id', 'area_id', 'branch_id', 'date_from', 'date_to', 'had_issues', 'printed']),
+                $request->only(['search', 'zone_id', 'area_id', 'branch_id', 'had_issues', 'printed']),
                 [
+                    'status' => $workQueue['status_param'],
                     'date_from' => $dateFrom,
                     'date_to' => $dateTo,
                     'per_page' => $perPage,
@@ -248,6 +201,7 @@ class HeadOfficeAdmissionController extends Controller
             'areas' => $orgFilters['areas'],
             'branches' => $orgFilters['branches'],
             'viewAllAdmissions' => ! $this->shouldRestrictToHeadOfficeStage(),
+            'workQueue' => $this->listWorkQueueProps($workQueue),
         ]);
     }
 
@@ -268,21 +222,8 @@ class HeadOfficeAdmissionController extends Controller
         $this->applyAccessibleBranchScope($query);
         $this->applyHeadOfficeStageVisibility($query);
 
-        // Apply same filters as index
-        $dateFrom = $request->date_from ?? now()->startOfMonth()->toDateString();
-        $dateTo = $request->date_to ?? now()->toDateString();
-
-        $startOfDay = Carbon::parse($dateFrom)->startOfDay();
-        $endOfDay = Carbon::parse($dateTo)->endOfDay();
-
-        if ($dateFrom && $dateTo) {
-            $query->where(function ($q) use ($startOfDay, $endOfDay) {
-                $q->whereBetween('submitted_at', [$startOfDay, $endOfDay])
-                  ->orWhere(function ($sq) use ($startOfDay, $endOfDay) {
-                      $sq->whereNull('submitted_at')->whereBetween('created_at', [$startOfDay, $endOfDay]);
-                  });
-            });
-        }
+        $workQueue = RoleListWorkQueue::resolveWithDates($request, true);
+        $this->applySubmittedAtDateRange($query, $workQueue['date_from'], $workQueue['date_to']);
 
         if ($request->zone_id) {
             $query->whereHas('branch.area', function($q) use ($request) {
@@ -300,11 +241,7 @@ class HeadOfficeAdmissionController extends Controller
             $query->where('branch_id', $request->branch_id);
         }
 
-        if ($request->filled('status')) {
-            $query->where('status', $request->status);
-        } else {
-            $query->where('status', '!=', 'draft');
-        }
+        $this->applyResolvedStatusFilter($query, $workQueue['status'], $request->user(), 'admission', true);
 
         if ($request->search) {
             $search = $request->search;
@@ -360,20 +297,8 @@ class HeadOfficeAdmissionController extends Controller
         $this->applyAccessibleBranchScope($query);
         $this->applyHeadOfficeStageVisibility($query);
 
-        $dateFrom = $request->date_from ?? now()->startOfMonth()->toDateString();
-        $dateTo = $request->date_to ?? now()->toDateString();
-
-        $startOfDay = Carbon::parse($dateFrom)->startOfDay();
-        $endOfDay = Carbon::parse($dateTo)->endOfDay();
-
-        if ($dateFrom && $dateTo) {
-            $query->where(function ($q) use ($startOfDay, $endOfDay) {
-                $q->whereBetween('submitted_at', [$startOfDay, $endOfDay])
-                  ->orWhere(function ($sq) use ($startOfDay, $endOfDay) {
-                      $sq->whereNull('submitted_at')->whereBetween('created_at', [$startOfDay, $endOfDay]);
-                  });
-            });
-        }
+        $workQueue = RoleListWorkQueue::resolveWithDates($request, true);
+        $this->applySubmittedAtDateRange($query, $workQueue['date_from'], $workQueue['date_to']);
 
         if ($request->zone_id) {
             $query->whereHas('branch.area', fn ($q) => $q->where('zone_id', $request->zone_id));
@@ -385,11 +310,7 @@ class HeadOfficeAdmissionController extends Controller
             $query->where('branch_id', $request->branch_id);
         }
 
-        if ($request->filled('status')) {
-            $query->where('status', $request->status);
-        } else {
-            $query->where('status', '!=', 'draft');
-        }
+        $this->applyResolvedStatusFilter($query, $workQueue['status'], $request->user(), 'admission', true);
 
         if ($request->search) {
             $search = $request->search;
@@ -531,20 +452,9 @@ class HeadOfficeAdmissionController extends Controller
         $this->applyAccessibleBranchScope($query);
         $this->applyHeadOfficeStageVisibility($query);
 
-        $dateFrom = $request->date_from ?? now()->startOfMonth()->toDateString();
-        $dateTo = $request->date_to ?? now()->toDateString();
+        $workQueue = RoleListWorkQueue::resolveWithDates($request, true);
+        $this->applySubmittedAtDateRange($query, $workQueue['date_from'], $workQueue['date_to']);
 
-        $startOfDay = Carbon::parse($dateFrom)->startOfDay();
-        $endOfDay = Carbon::parse($dateTo)->endOfDay();
-
-        if ($dateFrom && $dateTo) {
-            $query->where(function ($q) use ($startOfDay, $endOfDay) {
-                $q->whereBetween('submitted_at', [$startOfDay, $endOfDay])
-                  ->orWhere(function ($sq) use ($startOfDay, $endOfDay) {
-                      $sq->whereNull('submitted_at')->whereBetween('created_at', [$startOfDay, $endOfDay]);
-                  });
-            });
-        }
         if ($request->zone_id) {
             $query->whereHas('branch.area', fn ($q) => $q->where('zone_id', $request->zone_id));
         }
@@ -554,11 +464,7 @@ class HeadOfficeAdmissionController extends Controller
         if ($request->branch_id) {
             $query->where('branch_id', $request->branch_id);
         }
-        if ($request->filled('status')) {
-            $query->where('status', $request->status);
-        } else {
-            $query->where('status', '!=', 'draft');
-        }
+        $this->applyResolvedStatusFilter($query, $workQueue['status'], $request->user(), 'admission', true);
         if ($request->search) {
             $search = $request->search;
             $query->where(function ($q) use ($search) {
@@ -601,15 +507,24 @@ class HeadOfficeAdmissionController extends Controller
 
         $this->applyAccessibleBranchScope($query);
 
+        $dateFrom = $request->input('date_from');
+        $dateTo = $request->input('date_to');
         $date = $request->input('date');
         $month = $request->input('month');
 
-        // Default to current month if neither date nor month is passed
-        if (!$date && !$month) {
+        // Default to current month when no date range / date / month is passed
+        if (!$dateFrom && !$dateTo && !$date && !$month) {
             $month = now()->format('Y-m');
         }
 
-        if ($date) {
+        if ($dateFrom || $dateTo) {
+            if ($dateFrom) {
+                $query->where('submitted_at', '>=', Carbon::parse($dateFrom)->startOfDay());
+            }
+            if ($dateTo) {
+                $query->where('submitted_at', '<=', Carbon::parse($dateTo)->endOfDay());
+            }
+        } elseif ($date) {
             $query->whereDate('submitted_at', $date);
         } elseif ($month) {
             $parts = explode('-', $month);
@@ -661,6 +576,8 @@ class HeadOfficeAdmissionController extends Controller
             'filters' => [
                 'month' => $month,
                 'date' => $date,
+                'date_from' => $dateFrom,
+                'date_to' => $dateTo,
                 'search' => $search,
                 'zone_id' => $request->input('zone_id'),
                 'area_id' => $request->input('area_id'),
@@ -1057,15 +974,24 @@ class HeadOfficeAdmissionController extends Controller
      */
     public function approveAll(Request $request)
     {
+        $dateFrom = $request->input('date_from');
+        $dateTo = $request->input('date_to');
         $date = $request->input('date');
         $month = $request->input('month');
 
         DB::beginTransaction();
         try {
-            // Get all pending_head_office admissions for the date or month
+            // Get all pending_head_office admissions for the date range, date, or month
             $query = MemberAdmission::where('status', 'pending_head_office');
 
-            if ($date) {
+            if ($dateFrom || $dateTo) {
+                if ($dateFrom) {
+                    $query->where('submitted_at', '>=', Carbon::parse($dateFrom)->startOfDay());
+                }
+                if ($dateTo) {
+                    $query->where('submitted_at', '<=', Carbon::parse($dateTo)->endOfDay());
+                }
+            } elseif ($date) {
                 $query->whereDate('submitted_at', $date);
             } elseif ($month) {
                 $parts = explode('-', $month);

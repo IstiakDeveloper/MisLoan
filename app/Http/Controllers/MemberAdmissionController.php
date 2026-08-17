@@ -11,6 +11,7 @@ use App\Models\User;
 use App\Services\ApprovalService;
 use App\Services\ImageCompressionService;
 use App\Services\NotificationService;
+use App\Support\RoleListWorkQueue;
 use Carbon\Carbon;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -24,6 +25,7 @@ use PhpOffice\PhpSpreadsheet\Writer\Xlsx;
 
 class MemberAdmissionController extends Controller
 {
+    use Concerns\AppliesRoleDefaultListFilter;
     use Concerns\ResolvesListPerPage;
 
     /**
@@ -203,6 +205,10 @@ class MemberAdmissionController extends Controller
         $user = auth()->user();
         $user->loadMissing('role');
         $isFieldOfficer = $user->role?->name === Role::FIELD_OFFICER;
+        $workQueue = RoleListWorkQueue::resolveWithDates($request, false, $user);
+        $statusFilter = $workQueue['status'];
+        $fromDate = $workQueue['date_from'];
+        $toDate = $workQueue['date_to'];
 
         $query = MemberAdmission::with([
             'branch.area.zone',
@@ -275,22 +281,7 @@ class MemberAdmissionController extends Controller
             });
         }
 
-        $fromDate = $request->from_date ?: $request->date_from;
-        $toDate = $request->to_date ?: $request->date_to;
-
-        if ($fromDate && $toDate) {
-            $startOfDay = Carbon::parse($fromDate)->startOfDay();
-            $endOfDay = Carbon::parse($toDate)->endOfDay();
-            $statsQuery->where(function ($q) use ($startOfDay, $endOfDay) {
-                $q->whereBetween(DB::raw('COALESCE(reviewed_at, submitted_at, created_at)'), [$startOfDay, $endOfDay]);
-            });
-        } elseif ($fromDate) {
-            $startOfDay = Carbon::parse($fromDate)->startOfDay();
-            $statsQuery->where(DB::raw('COALESCE(reviewed_at, submitted_at, created_at)'), '>=', $startOfDay);
-        } elseif ($toDate) {
-            $endOfDay = Carbon::parse($toDate)->endOfDay();
-            $statsQuery->where(DB::raw('COALESCE(reviewed_at, submitted_at, created_at)'), '<=', $endOfDay);
-        }
+        $this->applyCoalesceDateRange($statsQuery, $fromDate, $toDate, 'COALESCE(reviewed_at, submitted_at, created_at)');
 
         // Calculate stats
         $stats = [
@@ -298,15 +289,15 @@ class MemberAdmissionController extends Controller
             'draft' => (clone $statsQuery)->where('status', 'draft')->count(),
             'submitted' => (clone $statsQuery)->where('status', 'submitted')->count(),
             'under_review' => (clone $statsQuery)->where('status', 'under_review')->count(),
+            'ready_for_head_office' => (clone $statsQuery)->where('status', 'ready_for_head_office')->count(),
+            'pending_head_office' => (clone $statsQuery)->where('status', 'pending_head_office')->count(),
             'needs_revision' => (clone $statsQuery)->where('status', 'needs_revision')->count(),
             'approved' => (clone $statsQuery)->where('status', 'approved')->count(),
             'rejected' => (clone $statsQuery)->where('status', 'rejected')->count(),
+            'pending_my_approval' => $this->countPendingMyApproval($statsQuery, $user, 'admission'),
         ];
 
-        // Filters (সর্বমোট ক্লিক করলে status খালি পাঠালে কোনো স্ট্যাটাস ফিল্টার নাই)
-        if ($request->filled('status')) {
-            $query->where('status', $request->status);
-        }
+        $this->applyResolvedStatusFilter($query, $statusFilter, $user, 'admission');
 
         if ($request->has('branch_id')) {
             $query->where('branch_id', $request->branch_id);
@@ -323,19 +314,7 @@ class MemberAdmissionController extends Controller
             });
         }
 
-        if ($fromDate && $toDate) {
-            $startOfDay = Carbon::parse($fromDate)->startOfDay();
-            $endOfDay = Carbon::parse($toDate)->endOfDay();
-            $query->where(function ($q) use ($startOfDay, $endOfDay) {
-                $q->whereBetween(DB::raw('COALESCE(reviewed_at, submitted_at, created_at)'), [$startOfDay, $endOfDay]);
-            });
-        } elseif ($fromDate) {
-            $startOfDay = Carbon::parse($fromDate)->startOfDay();
-            $query->where(DB::raw('COALESCE(reviewed_at, submitted_at, created_at)'), '>=', $startOfDay);
-        } elseif ($toDate) {
-            $endOfDay = Carbon::parse($toDate)->endOfDay();
-            $query->where(DB::raw('COALESCE(reviewed_at, submitted_at, created_at)'), '<=', $endOfDay);
-        }
+        $this->applyCoalesceDateRange($query, $fromDate, $toDate, 'COALESCE(reviewed_at, submitted_at, created_at)');
 
         $perPage = $this->resolvePerPage($request);
         $admissions = $query->orderByRaw('COALESCE(reviewed_at, submitted_at, created_at) desc')->paginate($perPage)->withQueryString();
@@ -362,14 +341,16 @@ class MemberAdmissionController extends Controller
         return Inertia::render('MemberAdmission/Index', [
             'admissions' => $admissions,
             'filters' => array_merge(
-                $request->only(['status', 'branch_id', 'search', 'from_date', 'to_date', 'date_from', 'date_to']),
+                $request->only(['branch_id', 'search']),
                 [
+                    'status' => $workQueue['status_param'],
                     'per_page' => $perPage,
                     'from_date' => $fromDate,
                     'to_date' => $toDate,
                 ]
             ),
             'stats' => $stats,
+            'workQueue' => $this->listWorkQueueProps($workQueue),
         ]);
     }
 
@@ -416,9 +397,8 @@ class MemberAdmissionController extends Controller
             $query->where('branch_id', $request->branch_id);
         }
 
-        if ($request->filled('status')) {
-            $query->where('status', $request->status);
-        }
+        $workQueue = RoleListWorkQueue::resolveWithDates($request, false, $user);
+        $this->applyResolvedStatusFilter($query, $workQueue['status'], $user, 'admission');
 
         if ($request->filled('search')) {
             $search = $request->search;
@@ -431,22 +411,10 @@ class MemberAdmissionController extends Controller
             });
         }
 
-        $fromDate = $request->from_date ?: $request->date_from;
-        $toDate = $request->to_date ?: $request->date_to;
+        $fromDate = $workQueue['date_from'];
+        $toDate = $workQueue['date_to'];
 
-        if ($fromDate && $toDate) {
-            $startOfDay = Carbon::parse($fromDate)->startOfDay();
-            $endOfDay = Carbon::parse($toDate)->endOfDay();
-            $query->where(function ($q) use ($startOfDay, $endOfDay) {
-                $q->whereBetween(DB::raw('COALESCE(reviewed_at, submitted_at, created_at)'), [$startOfDay, $endOfDay]);
-            });
-        } elseif ($fromDate) {
-            $startOfDay = Carbon::parse($fromDate)->startOfDay();
-            $query->where(DB::raw('COALESCE(reviewed_at, submitted_at, created_at)'), '>=', $startOfDay);
-        } elseif ($toDate) {
-            $endOfDay = Carbon::parse($toDate)->endOfDay();
-            $query->where(DB::raw('COALESCE(reviewed_at, submitted_at, created_at)'), '<=', $endOfDay);
-        }
+        $this->applyCoalesceDateRange($query, $fromDate, $toDate, 'COALESCE(reviewed_at, submitted_at, created_at)');
 
         $admissions = $query->orderByRaw('COALESCE(reviewed_at, submitted_at, created_at) desc')->get();
 

@@ -12,6 +12,7 @@ use App\Models\Role;
 use App\Models\User;
 use App\Services\ApprovalService;
 use App\Services\NotificationService;
+use App\Support\RoleListWorkQueue;
 use Illuminate\Http\Request;
 use Inertia\Inertia;
 use Illuminate\Support\Facades\DB;
@@ -19,6 +20,7 @@ use Carbon\Carbon;
 
 class HeadOfficeLoanController extends Controller
 {
+    use Concerns\AppliesRoleDefaultListFilter;
     use Concerns\ScopesToAccessibleBranches;
     use Concerns\RequiresSuperAdminDeletePin;
     use Concerns\ResolvesListPerPage;
@@ -28,13 +30,11 @@ class HeadOfficeLoanController extends Controller
      */
     public function index(Request $request)
     {
-        // Default date filter - current month (1st of month .. today)
-        $dateFrom = $request->date_from ?? now()->startOfMonth()->toDateString();
-        $dateTo = $request->date_to ?? now()->toDateString();
-
-        // Use date range instead of whereDate() to allow index usage and prevent memory issues
-        $startOfDay = Carbon::parse($dateFrom)->startOfDay();
-        $endOfDay = Carbon::parse($dateTo)->endOfDay();
+        $user = $request->user();
+        $workQueue = RoleListWorkQueue::resolveWithDates($request, true, $user);
+        $dateFrom = $workQueue['date_from'];
+        $dateTo = $workQueue['date_to'];
+        $statusFilter = $workQueue['status'];
 
         // Main query: only small columns (no LOBs) so ORDER BY uses minimal sort buffer.
         $query = LoanApplication::with([
@@ -65,30 +65,7 @@ class HeadOfficeLoanController extends Controller
 
         $this->applyAccessibleBranchScope($query);
         $this->applyHeadOfficeStageVisibility($query);
-
-        // Date range filter based on submission date (submitted_at, falling back to created_at if null)
-        if ($dateFrom && $dateTo) {
-            $query->where(function ($q) use ($startOfDay, $endOfDay) {
-                $q->whereBetween('submitted_at', [$startOfDay, $endOfDay])
-                  ->orWhere(function ($sq) use ($startOfDay, $endOfDay) {
-                      $sq->whereNull('submitted_at')->whereBetween('created_at', [$startOfDay, $endOfDay]);
-                  });
-            });
-        } elseif ($dateFrom) {
-            $query->where(function ($q) use ($startOfDay) {
-                $q->where('submitted_at', '>=', $startOfDay)
-                  ->orWhere(function ($sq) use ($startOfDay) {
-                      $sq->whereNull('submitted_at')->where('created_at', '>=', $startOfDay);
-                  });
-            });
-        } elseif ($dateTo) {
-            $query->where(function ($q) use ($endOfDay) {
-                $q->where('submitted_at', '<=', $endOfDay)
-                  ->orWhere(function ($sq) use ($endOfDay) {
-                      $sq->whereNull('submitted_at')->where('created_at', '<=', $endOfDay);
-                  });
-            });
-        }
+        $this->applySubmittedAtDateRange($query, $dateFrom, $dateTo);
 
         // Zone filter
         if ($request->has('zone_id') && $request->zone_id) {
@@ -109,13 +86,7 @@ class HeadOfficeLoanController extends Controller
             $query->where('branch_id', $request->branch_id);
         }
 
-        // Status filter. Drafts are hidden from the default "All" list, but a Head
-        // Office user can view every draft by explicitly selecting the draft filter.
-        if ($request->filled('status')) {
-            $query->where('status', $request->status);
-        } else {
-            $query->where('status', '!=', 'draft');
-        }
+        $this->applyResolvedStatusFilter($query, $statusFilter, $user, 'loan', true);
 
         // Search filter
         if ($request->has('search') && $request->search) {
@@ -157,30 +128,7 @@ class HeadOfficeLoanController extends Controller
         $statsQuery = LoanApplication::select('id', 'status', 'created_at', 'submitted_at', 'branch_id');
         $this->applyAccessibleBranchScope($statsQuery);
         $this->applyHeadOfficeStageVisibility($statsQuery);
-
-        // Apply same date filter to stats
-        if ($dateFrom && $dateTo) {
-            $statsQuery->where(function ($q) use ($startOfDay, $endOfDay) {
-                $q->whereBetween('submitted_at', [$startOfDay, $endOfDay])
-                  ->orWhere(function ($sq) use ($startOfDay, $endOfDay) {
-                      $sq->whereNull('submitted_at')->whereBetween('created_at', [$startOfDay, $endOfDay]);
-                  });
-            });
-        } elseif ($dateFrom) {
-            $statsQuery->where(function ($q) use ($startOfDay) {
-                $q->where('submitted_at', '>=', $startOfDay)
-                  ->orWhere(function ($sq) use ($startOfDay) {
-                      $sq->whereNull('submitted_at')->where('created_at', '>=', $startOfDay);
-                  });
-            });
-        } elseif ($dateTo) {
-            $statsQuery->where(function ($q) use ($endOfDay) {
-                $q->where('submitted_at', '<=', $endOfDay)
-                  ->orWhere(function ($sq) use ($endOfDay) {
-                      $sq->whereNull('submitted_at')->where('created_at', '<=', $endOfDay);
-                  });
-            });
-        }
+        $this->applySubmittedAtDateRange($statsQuery, $dateFrom, $dateTo);
 
         // Apply zone/area/branch filters to stats
         if ($request->has('zone_id') && $request->zone_id) {
@@ -243,6 +191,7 @@ class HeadOfficeLoanController extends Controller
             'rejected' => (clone $statsQuery)->where('status', 'rejected')->count(),
             'pending_disbursement' => (clone $statsQuery)->where('status', 'pending_disbursement')->count(),
             'disbursed' => (clone $statsQuery)->where('status', 'disbursed')->count(),
+            'pending_my_approval' => $this->countPendingMyApproval($statsQuery, $user, 'loan'),
         ];
 
         $perPage = $this->resolvePerPage($request);
@@ -253,8 +202,9 @@ class HeadOfficeLoanController extends Controller
         return Inertia::render('HeadOffice/LoanApplications', [
             'loans' => $loans,
             'filters' => array_merge(
-                $request->only(['status', 'search', 'zone_id', 'area_id', 'branch_id', 'date_from', 'date_to', 'had_issues', 'printed']),
+                $request->only(['search', 'zone_id', 'area_id', 'branch_id', 'had_issues', 'printed']),
                 [
+                    'status' => $workQueue['status_param'],
                     'date_from' => $dateFrom,
                     'date_to' => $dateTo,
                     'per_page' => $perPage,
@@ -265,6 +215,7 @@ class HeadOfficeLoanController extends Controller
             'areas' => $orgFilters['areas'],
             'branches' => $orgFilters['branches'],
             'viewAllLoans' => ! $this->shouldRestrictToHeadOfficeStage(),
+            'workQueue' => $this->listWorkQueueProps($workQueue),
         ]);
     }
 
@@ -273,12 +224,9 @@ class HeadOfficeLoanController extends Controller
      */
     public function print(Request $request)
     {
-        // Apply same filters as index
-        $dateFrom = $request->date_from ?? now()->startOfMonth()->toDateString();
-        $dateTo = $request->date_to ?? now()->toDateString();
-
-        $startOfDay = Carbon::parse($dateFrom)->startOfDay();
-        $endOfDay = Carbon::parse($dateTo)->endOfDay();
+        $workQueue = RoleListWorkQueue::resolveWithDates($request, true);
+        $dateFrom = $workQueue['date_from'];
+        $dateTo = $workQueue['date_to'];
 
         $query = LoanApplication::with([
             'branch:id,name,area_id',
@@ -322,29 +270,7 @@ class HeadOfficeLoanController extends Controller
 
         $this->applyAccessibleBranchScope($query);
         $this->applyHeadOfficeStageVisibility($query);
-
-        if ($dateFrom && $dateTo) {
-            $query->where(function ($q) use ($startOfDay, $endOfDay) {
-                $q->whereBetween('submitted_at', [$startOfDay, $endOfDay])
-                  ->orWhere(function ($sq) use ($startOfDay, $endOfDay) {
-                      $sq->whereNull('submitted_at')->whereBetween('created_at', [$startOfDay, $endOfDay]);
-                  });
-            });
-        } elseif ($dateFrom) {
-            $query->where(function ($q) use ($startOfDay) {
-                $q->where('submitted_at', '>=', $startOfDay)
-                  ->orWhere(function ($sq) use ($startOfDay) {
-                      $sq->whereNull('submitted_at')->where('created_at', '>=', $startOfDay);
-                  });
-            });
-        } elseif ($dateTo) {
-            $query->where(function ($q) use ($endOfDay) {
-                $q->where('submitted_at', '<=', $endOfDay)
-                  ->orWhere(function ($sq) use ($endOfDay) {
-                      $sq->whereNull('submitted_at')->where('created_at', '<=', $endOfDay);
-                  });
-            });
-        }
+        $this->applySubmittedAtDateRange($query, $dateFrom, $dateTo);
 
         if ($request->zone_id) {
             $query->whereHas('branch.area', function($q) use ($request) {
@@ -362,11 +288,7 @@ class HeadOfficeLoanController extends Controller
             $query->where('branch_id', $request->branch_id);
         }
 
-        if ($request->filled('status')) {
-            $query->where('status', $request->status);
-        } else {
-            $query->where('status', '!=', 'draft');
-        }
+        $this->applyResolvedStatusFilter($query, $workQueue['status'], $request->user(), 'loan', true);
 
         if ($request->search) {
             $search = $request->search;
@@ -455,33 +377,8 @@ class HeadOfficeLoanController extends Controller
         $this->applyAccessibleBranchScope($query);
         $this->applyHeadOfficeStageVisibility($query);
 
-        $dateFrom = $request->date_from ?? now()->startOfMonth()->toDateString();
-        $dateTo = $request->date_to ?? now()->toDateString();
-        $startOfDay = Carbon::parse($dateFrom)->startOfDay();
-        $endOfDay = Carbon::parse($dateTo)->endOfDay();
-
-        if ($dateFrom && $dateTo) {
-            $query->where(function ($q) use ($startOfDay, $endOfDay) {
-                $q->whereBetween('submitted_at', [$startOfDay, $endOfDay])
-                  ->orWhere(function ($sq) use ($startOfDay, $endOfDay) {
-                      $sq->whereNull('submitted_at')->whereBetween('created_at', [$startOfDay, $endOfDay]);
-                  });
-            });
-        } elseif ($dateFrom) {
-            $query->where(function ($q) use ($startOfDay) {
-                $q->where('submitted_at', '>=', $startOfDay)
-                  ->orWhere(function ($sq) use ($startOfDay) {
-                      $sq->whereNull('submitted_at')->where('created_at', '>=', $startOfDay);
-                  });
-            });
-        } elseif ($dateTo) {
-            $query->where(function ($q) use ($endOfDay) {
-                $q->where('submitted_at', '<=', $endOfDay)
-                  ->orWhere(function ($sq) use ($endOfDay) {
-                      $sq->whereNull('submitted_at')->where('created_at', '<=', $endOfDay);
-                  });
-            });
-        }
+        $workQueue = RoleListWorkQueue::resolveWithDates($request, true);
+        $this->applySubmittedAtDateRange($query, $workQueue['date_from'], $workQueue['date_to']);
 
         if ($request->zone_id) {
             $query->whereHas('branch.area', fn ($q) => $q->where('zone_id', $request->zone_id));
@@ -492,11 +389,7 @@ class HeadOfficeLoanController extends Controller
         if ($request->branch_id) {
             $query->where('branch_id', $request->branch_id);
         }
-        if ($request->filled('status')) {
-            $query->where('status', $request->status);
-        } else {
-            $query->where('status', '!=', 'draft');
-        }
+        $this->applyResolvedStatusFilter($query, $workQueue['status'], $request->user(), 'loan', true);
         if ($request->search) {
             $search = $request->search;
             $query->where(function ($q) use ($search) {
@@ -543,33 +436,8 @@ class HeadOfficeLoanController extends Controller
         $this->applyAccessibleBranchScope($query);
         $this->applyHeadOfficeStageVisibility($query);
 
-        $dateFrom = $request->date_from ?? now()->startOfMonth()->toDateString();
-        $dateTo = $request->date_to ?? now()->toDateString();
-        $startOfDay = Carbon::parse($dateFrom)->startOfDay();
-        $endOfDay = Carbon::parse($dateTo)->endOfDay();
-
-        if ($dateFrom && $dateTo) {
-            $query->where(function ($q) use ($startOfDay, $endOfDay) {
-                $q->whereBetween('submitted_at', [$startOfDay, $endOfDay])
-                  ->orWhere(function ($sq) use ($startOfDay, $endOfDay) {
-                      $sq->whereNull('submitted_at')->whereBetween('created_at', [$startOfDay, $endOfDay]);
-                  });
-            });
-        } elseif ($dateFrom) {
-            $query->where(function ($q) use ($startOfDay) {
-                $q->where('submitted_at', '>=', $startOfDay)
-                  ->orWhere(function ($sq) use ($startOfDay) {
-                      $sq->whereNull('submitted_at')->where('created_at', '>=', $startOfDay);
-                  });
-            });
-        } elseif ($dateTo) {
-            $query->where(function ($q) use ($endOfDay) {
-                $q->where('submitted_at', '<=', $endOfDay)
-                  ->orWhere(function ($sq) use ($endOfDay) {
-                      $sq->whereNull('submitted_at')->where('created_at', '<=', $endOfDay);
-                  });
-            });
-        }
+        $workQueue = RoleListWorkQueue::resolveWithDates($request, true);
+        $this->applySubmittedAtDateRange($query, $workQueue['date_from'], $workQueue['date_to']);
 
         if ($request->zone_id) {
             $query->whereHas('branch.area', fn ($q) => $q->where('zone_id', $request->zone_id));
@@ -581,11 +449,7 @@ class HeadOfficeLoanController extends Controller
             $query->where('branch_id', $request->branch_id);
         }
 
-        if ($request->filled('status')) {
-            $query->where('status', $request->status);
-        } else {
-            $query->where('status', '!=', 'draft');
-        }
+        $this->applyResolvedStatusFilter($query, $workQueue['status'], $request->user(), 'loan', true);
 
         if ($request->search) {
             $search = $request->search;
@@ -681,10 +545,12 @@ class HeadOfficeLoanController extends Controller
      */
     public function process(Request $request)
     {
+        $dateFrom = $request->input('date_from');
+        $dateTo = $request->input('date_to');
         $date = $request->input('date');
         $month = $request->input('month');
 
-        if (!$date && !$month) {
+        if (!$dateFrom && !$dateTo && !$date && !$month) {
             $month = now()->format('Y-m');
         }
 
@@ -693,7 +559,14 @@ class HeadOfficeLoanController extends Controller
 
         $this->applyAccessibleBranchScope($query);
 
-        if ($date) {
+        if ($dateFrom || $dateTo) {
+            if ($dateFrom) {
+                $query->where('submitted_at', '>=', Carbon::parse($dateFrom)->startOfDay());
+            }
+            if ($dateTo) {
+                $query->where('submitted_at', '<=', Carbon::parse($dateTo)->endOfDay());
+            }
+        } elseif ($date) {
             $query->whereDate('submitted_at', $date);
         } elseif ($month) {
             $parts = explode('-', $month);
@@ -761,6 +634,8 @@ class HeadOfficeLoanController extends Controller
             'filters' => [
                 'month' => $month,
                 'date' => $date,
+                'date_from' => $dateFrom,
+                'date_to' => $dateTo,
                 'search' => $search,
                 'zone_id' => $request->input('zone_id'),
                 'area_id' => $request->input('area_id'),
@@ -953,6 +828,8 @@ class HeadOfficeLoanController extends Controller
      */
     public function approveAll(Request $request)
     {
+        $dateFrom = $request->input('date_from');
+        $dateTo = $request->input('date_to');
         $date = $request->input('date');
         $month = $request->input('month');
 
@@ -960,7 +837,14 @@ class HeadOfficeLoanController extends Controller
         try {
             $query = LoanApplication::where('status', LoanApplication::STATUS_PENDING_HEAD_OFFICE);
 
-            if ($date) {
+            if ($dateFrom || $dateTo) {
+                if ($dateFrom) {
+                    $query->where('submitted_at', '>=', Carbon::parse($dateFrom)->startOfDay());
+                }
+                if ($dateTo) {
+                    $query->where('submitted_at', '<=', Carbon::parse($dateTo)->endOfDay());
+                }
+            } elseif ($date) {
                 $query->whereDate('submitted_at', $date);
             } elseif ($month) {
                 $parts = explode('-', $month);
