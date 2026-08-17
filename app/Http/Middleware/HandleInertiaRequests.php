@@ -251,6 +251,56 @@ class HandleInertiaRequests extends Middleware
                 ->count();
 
             $badgeCounts['pendingApprovals'] = $pendingLoanApprovals + $pendingMemberApprovals;
+
+        }
+
+        // Verification Badge Count:
+        // - Head Office/Super Admin/ED: Count items where branch has replied and waiting for HO approval.
+        // - Branch users/Approvers: Count items where HO raised issues and branch reply is pending.
+        if ($userData && $request->user()) {
+            $authUser = $request->user();
+            $isHoApprover = ($userData['has_all_access'] ?? false)
+                || in_array($roleNameForBadges, ['super_admin', 'head_office', 'ed'], true);
+
+            if ($isHoApprover) {
+                $repliedAdmissionCount = MemberAdmission::whereNotIn('status', ['approved', 'rejected', 'cancelled'])
+                    ->where(function ($q) {
+                        $q->whereHas('issues', fn ($iq) => $iq->whereNotNull('resolution_note')->where('resolution_note', '!=', ''))
+                          ->orWhere(fn ($sq) => $sq->whereNotNull('revision_comments')->where('revision_comments', '!=', '')->where('status', 'pending_head_office'));
+                    })
+                    ->count();
+
+                $repliedLoanCount = LoanApplication::whereNotIn('status', ['approved', 'rejected', 'cancelled', 'pending_disbursement', 'disbursed'])
+                    ->whereHas('issues', fn ($iq) => $iq->whereNotNull('response_message')->where('response_message', '!=', ''))
+                    ->count();
+
+                $badgeCounts['pendingVerifications'] = $repliedAdmissionCount + $repliedLoanCount;
+            } else {
+                $accessibleBranchIds = $authUser->getAccessibleBranches()->pluck('id')->all();
+
+                $pendingAdmissionQuery = MemberAdmission::whereNotIn('status', ['approved', 'rejected', 'cancelled'])
+                    ->whereIn('branch_id', $accessibleBranchIds ?: [0])
+                    ->where(function ($q) {
+                        $q->whereHas('issues', fn ($iq) => $iq->where('status', 'pending')->where(function ($sq) {
+                            $sq->whereNull('resolution_note')->orWhere('resolution_note', '');
+                        }))->orWhere('status', 'needs_revision');
+                    });
+
+                $pendingLoanQuery = LoanApplication::whereNotIn('status', ['approved', 'rejected', 'cancelled', 'pending_disbursement', 'disbursed'])
+                    ->whereIn('branch_id', $accessibleBranchIds ?: [0])
+                    ->where(function ($q) {
+                        $q->whereHas('issues', fn ($iq) => $iq->where('status', 'pending')->where(function ($sq) {
+                            $sq->whereNull('response_message')->orWhere('response_message', '');
+                        }))->orWhere('status', 'needs_revision');
+                    });
+
+                if ($roleNameForBadges === 'field_officer') {
+                    $pendingAdmissionQuery->where(fn ($q) => $q->where('created_by', $authUser->id)->orWhere('submitted_by', $authUser->id));
+                    $pendingLoanQuery->where('submitted_by', $authUser->id);
+                }
+
+                $badgeCounts['pendingVerifications'] = $pendingAdmissionQuery->count() + $pendingLoanQuery->count();
+            }
         }
 
         // যার কাছে পেন্ডিং আছে শুধু তারই ব্যাজ: every authenticated user gets their own pending count (branch_manager, area, zone, admf, dmf, ed)

@@ -5,16 +5,17 @@ import { Save, Printer, Eye, Upload, X, ArrowLeft } from 'lucide-react';
 import { formatDateBangla } from '@/utils/dateUtils';
 import { numberToWordsBangla } from './ApprovalForm/PrintPreview';
 import { afterLoanFormSaveUrl } from '@/utils/loanFormNavigation';
+import { useAutoFitPrint } from '@/hooks/useAutoFitPrint';
 
 interface DeathRiskFundData {
     // Branch & Date
     branch_name: string;
     date: string;
-    
+
     // Photos
     loan_recipient_photo: string | null;
     guardian_photo: string | null;
-    
+
     // Section 1: Loan Recipient Information (from MemberAdmission)
     loan_recipient_name: string;
     loan_recipient_code1: string; // Member code
@@ -32,7 +33,7 @@ interface DeathRiskFundData {
     loan_amount_received: number; // External
     loan_amount_words: string; // External
     loan_term: string; // External
-    
+
     // Section 2: Guardian/Family Primary Earner Information
     guardian_name: string; // From MemberAdmission
     guardian_age: number;
@@ -44,7 +45,7 @@ interface DeathRiskFundData {
     guardian_nid: string;
     guardian_mobile: string;
     guardian_profession: string;
-    
+
     // Signatures — print/preview blank lines only (no digital upload)
     loan_recipient_signature: string | null;
     guardian_signature: string | null;
@@ -73,107 +74,207 @@ function renderDeathRiskFundPreviewPart(partNumber: 1 | 2, formData: any) {
     const isPart1 = partNumber === 1;
     const showDeclaration = isPart1;
     const d = formData || {};
-    
+
     // Helper to get image URL (data URL, absolute, or /storage/ path)
     const getImageUrl = (url: string | null | undefined) => {
         if (!url) return null;
         if (url.startsWith('data:') || url.startsWith('http') || url.startsWith('/')) return url;
         return `/storage/${url}`;
     };
-    
+
     return (
-        <div className={`half-page-form bg-white border border-gray-300 p-1.5 sm:p-2 ${isPart1 ? 'mb-0.5' : ''}`} style={{ fontSize: '11px', lineHeight: 1.3 }}>
-            <div className="mb-0.5 border-b border-gray-400 pb-0.5">
-                <div className="flex flex-col items-center justify-center mb-0.5">
-                    <div className="flex items-center gap-1.5">
-                        <img src="/logo.png" alt="Logo" style={{ height: '30px', width: '30px', objectFit: 'contain' }} onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }} />
-                        <div className="text-center">
-                            <h1 className="font-bold leading-tight" style={{ fontSize: '13.5px', marginBottom: 0 }}>মৌসুমী</h1>
-                            <p className="leading-tight" style={{ fontSize: '9px', marginBottom: '1px' }}>মৃত্যুজনিত ঋণঝুঁকি তহবিলে অন্তর্ভুক্তির আবেদনপত্র</p>
-                            <p className="font-semibold text-gray-700" style={{ fontSize: '9px', marginTop: '1px' }}>{isPart1 ? 'প্রথম অংশ (প্রোফাইলে সংযুক্ত করতে হবে)' : 'দ্বিতীয় অংশ (পাশবইয়ে সংযুক্ত করতে হবে)'}</p>
-                        </div>
-                    </div>
-                </div>
+        <div className={`half-page-form bg-white border border-gray-400 p-3 ${isPart1 ? 'mb-2' : ''}`} style={{ fontSize: '12px', lineHeight: 1.35, fontFamily: 'Kalpurush, "Noto Sans Bengali", Arial, sans-serif' }}>
+            {/* Header */}
+            <div className="mb-2 border-b-2 border-gray-600 pb-1.5">
                 <div className="flex items-center justify-between">
-                    {isPart1 && (
-                        <div className="flex gap-0.5 items-end">
-                            <div className="border border-gray-400 p-0.5 text-center">
-                                {getImageUrl(d.loan_recipient_photo) ? <img src={getImageUrl(d.loan_recipient_photo)!} alt="Loan Recipient" style={{ width: '35px', height: '44px', objectFit: 'cover', display: 'block' }} onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }} /> : <div style={{ width: '35px', height: '44px', backgroundColor: '#f3f4f6', border: '1px dashed #9ca3af' }} />}
-                                <p className="text-[7px] text-gray-600 mt-0.5 leading-tight" style={{ marginTop: '2px', fontSize: '7px' }}>আবেদনকারীর ছবি</p>
+                    {/* Left: Photos for Part 1 or empty placeholder for Part 2 */}
+                    {isPart1 ? (
+                        <div className="flex gap-2 items-end">
+                            <div className="border border-gray-600 p-0.5 text-center bg-white">
+                                {getImageUrl(d.loan_recipient_photo) ? (
+                                    <img src={getImageUrl(d.loan_recipient_photo)!} alt="Loan Recipient" style={{ width: '42px', height: '52px', objectFit: 'cover', display: 'block' }} onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }} />
+                                ) : (
+                                    <div style={{ width: '42px', height: '52px', backgroundColor: '#f3f4f6', border: '1px dashed #9ca3af' }} />
+                                )}
+                                <p className="text-[8.5px] font-bold text-gray-700 mt-0.5 leading-none">আবেদনকারী</p>
                             </div>
-                            <div className="border border-gray-400 p-0.5 text-center">
-                                {getImageUrl(d.guardian_photo) ? <img src={getImageUrl(d.guardian_photo)!} alt="Guardian" style={{ width: '35px', height: '44px', objectFit: 'cover', display: 'block' }} onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }} /> : <div style={{ width: '35px', height: '44px', backgroundColor: '#f3f4f6', border: '1px dashed #9ca3af' }} />}
-                                <p className="text-[7px] text-gray-600 mt-0.5 leading-tight" style={{ marginTop: '2px', fontSize: '7px' }}>জামিনদার/অভিভাবকের ছবি</p>
+                            <div className="border border-gray-600 p-0.5 text-center bg-white">
+                                {getImageUrl(d.guardian_photo) ? (
+                                    <img src={getImageUrl(d.guardian_photo)!} alt="Guardian" style={{ width: '42px', height: '52px', objectFit: 'cover', display: 'block' }} onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }} />
+                                ) : (
+                                    <div style={{ width: '42px', height: '52px', backgroundColor: '#f3f4f6', border: '1px dashed #9ca3af' }} />
+                                )}
+                                <p className="text-[8.5px] font-bold text-gray-700 mt-0.5 leading-none">জামিনদার</p>
                             </div>
                         </div>
-                    )}
-                    {!isPart1 && <div />}
-                    <div className="text-right" style={{ fontSize: '8px' }}>
-                        <p className="mb-0" style={{ marginBottom: '1px' }}>শাখা: <span className="border-b border-dotted border-gray-600 inline-block min-w-[55px]">{d.branch_name}</span></p>
-                        <p style={{ marginBottom: 0 }}>তারিখ: <span className="border-b border-dotted border-gray-600 inline-block min-w-[50px]">{formatDateBangla(d.date)}</span></p>
+                    ) : <div className="w-24" />}
+
+                    {/* Center: Org & Title */}
+                    <div className="text-center flex-1 px-3">
+                        <div className="flex items-center justify-center gap-2">
+                            <img src="/logo.png" alt="Logo" style={{ height: '36px', width: '36px', objectFit: 'contain' }} onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }} />
+                            <h1 className="font-black text-[18px] text-gray-900 leading-none">মৌসুমী</h1>
+                        </div>
+                        <p className="font-bold text-[13px] text-gray-900 leading-tight mt-1">মৃত্যুজনিত ঋণঝুঁকি তহবিলে অন্তর্ভুক্তির আবেদনপত্র</p>
+                        <p className="font-bold text-gray-700 text-[11px] mt-0.5">
+                            {isPart1 ? 'প্রথম অংশ (প্রোফাইলে সংযুক্ত করতে হবে)' : 'দ্বিতীয় অংশ (পাশবইয়ে সংযুক্ত করতে হবে)'}
+                        </p>
+                    </div>
+
+                    {/* Right: Branch & Date */}
+                    <div className="text-right text-[11.5px] font-bold text-gray-900 shrink-0">
+                        <p className="mb-1">শাখা: <span className="border-b border-dotted border-gray-700 inline-block min-w-[75px] text-center">{d.branch_name || ''}</span></p>
+                        <p>তারিখ: <span className="border-b border-dotted border-gray-700 inline-block min-w-[70px] text-center">{formatDateBangla(d.date) || ''}</span></p>
                     </div>
                 </div>
             </div>
-            <div className="mb-0.5" style={{ fontSize: '9px' }}>
-                <h3 className="font-bold mb-0.5" style={{ fontSize: '10px', marginBottom: '2px' }}>১। ঋণ গ্রহীতার তথ্য:</h3>
-                <div className="space-y-0" style={{ fontSize: '9px' }}>
-                    <div className="flex gap-0.5 items-baseline" style={{ marginBottom: '1px' }}><span className="w-24 flex-shrink-0">ঋণ গ্রহীতার নাম:</span><span className="border-b border-dotted border-gray-600 flex-1 min-h-[10px]">{d.loan_recipient_name || ''}</span></div>
-                    <div className="flex gap-0.5 items-baseline" style={{ marginBottom: '1px' }}><span className="w-24 flex-shrink-0">কোড নম্বর:</span><span className="border-b border-dotted border-gray-600 flex-1 min-h-[10px]">{d.loan_recipient_code1 || ''}</span><span className="w-24 flex-shrink-0 ml-1">কোড নম্বর:</span><span className="border-b border-dotted border-gray-600 flex-1 min-h-[10px]">{d.loan_recipient_code2 || ''}</span></div>
-                    <div className="flex gap-0.5 items-baseline" style={{ marginBottom: '1px' }}><span className="w-24 flex-shrink-0">সমিতির নাম:</span><span className="border-b border-dotted border-gray-600 flex-1 min-h-[10px]">{d.samity_name || ''}</span></div>
-                    <div className="flex gap-0.5 items-baseline" style={{ marginBottom: '1px' }}><span className="w-24 flex-shrink-0">গ্রাম:</span><span className="border-b border-dotted border-gray-600 flex-1 min-h-[10px]">{d.village || ''}</span><span className="w-16 flex-shrink-0 ml-1">পোস্ট কোড:</span><span className="border-b border-dotted border-gray-600 flex-1 min-h-[10px]">{d.post_office || ''}</span></div>
-                    <div className="flex gap-0.5 items-baseline" style={{ marginBottom: '1px' }}><span className="w-16 flex-shrink-0">উপজেলা:</span><span className="border-b border-dotted border-gray-600 flex-1 min-h-[10px]">{d.upazila || ''}</span><span className="w-16 flex-shrink-0 ml-1">জেলা:</span><span className="border-b border-dotted border-gray-600 flex-1 min-h-[10px]">{d.district || ''}</span></div>
-                    <div className="flex gap-0.5 items-baseline" style={{ marginBottom: '1px' }}><span className="w-24 flex-shrink-0">বয়স:</span><span className="border-b border-dotted border-gray-600 flex-1 min-h-[10px]">{d.age ?? ''}</span><span className="w-28 flex-shrink-0 ml-1">জাতীয় পরিচয়পত্র নম্বর:</span><span className="border-b border-dotted border-gray-600 flex-1 min-h-[10px]">{d.nid_number || ''}</span></div>
-                    <div className="flex gap-0.5 items-baseline" style={{ marginBottom: '1px' }}><span className="w-24 flex-shrink-0">মোবাইল নম্বর:</span><span className="border-b border-dotted border-gray-600 flex-1 min-h-[10px]">{d.mobile_number || ''}</span></div>
-                    <div className="flex gap-0.5 items-baseline" style={{ marginBottom: '1px' }}><span className="w-24 flex-shrink-0">কম্পোনেন্টের নাম:</span><span className="border-b border-dotted border-gray-600 flex-1 min-h-[10px]">{d.component_name || ''}</span></div>
-                    <div className="flex gap-0.5 items-baseline" style={{ marginBottom: '1px' }}><span className="w-24 flex-shrink-0">ঋণ গ্রহণের তারিখ:</span><span className="border-b border-dotted border-gray-600 flex-1 min-h-[10px]">{formatDateBangla(d.loan_sanction_date) || ''}</span></div>
-                    <div className="flex gap-0.5 items-baseline" style={{ marginBottom: '1px' }}><span className="w-28 flex-shrink-0">গ্রহণকৃত ঋণের পরিমাণ:</span><span className="border-b border-dotted border-gray-600 flex-1 min-h-[10px]">{d.loan_amount_received ?? ''}</span><span className="w-12 flex-shrink-0 ml-1">কথায়:</span><span className="border-b border-dotted border-gray-600 flex-1 min-h-[10px]">{d.loan_amount_words || ''}</span></div>
-                    <div className="flex gap-0.5 items-baseline" style={{ marginBottom: '1px' }}><span className="w-24 flex-shrink-0">ঋণের মেয়াদ:</span><span className="border-b border-dotted border-gray-600 flex-1 min-h-[10px]">{d.loan_term || ''}</span></div>
+
+            {/* Section 1: Loan Recipient Information (Multi-column) */}
+            <div className="mb-2">
+                <h3 className="font-bold mb-1 text-[12.5px] text-gray-900 border-b border-gray-400 pb-0.5">১। ঋণ গ্রহীতার তথ্য:</h3>
+                <div className="space-y-1 text-[12px] print:text-[11.8px]">
+                    {/* Row 1: নাম + সদস্য কোড */}
+                    <div className="flex gap-2 items-baseline">
+                        <span className="shrink-0 font-bold">ঋণ গ্রহীতার নাম:</span>
+                        <span className="border-b border-dotted border-gray-700 flex-1 min-h-[17px] font-medium">{d.loan_recipient_name || ''}</span>
+                        <span className="shrink-0 font-bold ml-2">কোড নং:</span>
+                        <span className="border-b border-dotted border-gray-700 w-36 shrink-0 min-h-[17px] font-medium text-center">{d.loan_recipient_code1 || d.loan_recipient_code2 || ''}</span>
+                    </div>
+                    {/* Row 2: সমিতির নাম + গ্রাম + পোস্ট */}
+                    <div className="flex gap-2 items-baseline">
+                        <span className="shrink-0 font-bold">সমিতির নাম:</span>
+                        <span className="border-b border-dotted border-gray-700 flex-1 min-h-[17px] font-medium">{d.samity_name || ''}</span>
+                        <span className="shrink-0 font-bold ml-2">গ্রাম:</span>
+                        <span className="border-b border-dotted border-gray-700 w-36 shrink-0 min-h-[17px] font-medium">{d.village || ''}</span>
+                        <span className="shrink-0 font-bold ml-2">পোস্ট:</span>
+                        <span className="border-b border-dotted border-gray-700 w-24 shrink-0 min-h-[17px] font-medium">{d.post_office || ''}</span>
+                    </div>
+                    {/* Row 3: উপজেলা + জেলা + বয়স */}
+                    <div className="flex gap-2 items-baseline">
+                        <span className="shrink-0 font-bold">উপজেলা:</span>
+                        <span className="border-b border-dotted border-gray-700 flex-1 min-h-[17px] font-medium">{d.upazila || ''}</span>
+                        <span className="shrink-0 font-bold ml-2">জেলা:</span>
+                        <span className="border-b border-dotted border-gray-700 w-36 shrink-0 min-h-[17px] font-medium">{d.district || ''}</span>
+                        <span className="shrink-0 font-bold ml-2">বয়স:</span>
+                        <span className="border-b border-dotted border-gray-700 w-24 shrink-0 min-h-[17px] font-medium text-center">{d.age != null && d.age !== '' ? `${d.age} বছর` : ''}</span>
+                    </div>
+                    {/* Row 4: জাতীয় পরিচয়পত্র + মোবাইল */}
+                    <div className="flex gap-2 items-baseline">
+                        <span className="shrink-0 font-bold">জাতীয় পরিচয়পত্র নং:</span>
+                        <span className="border-b border-dotted border-gray-700 flex-1 min-h-[17px] font-medium">{d.nid_number || ''}</span>
+                        <span className="shrink-0 font-bold ml-2">মোবাইল নং:</span>
+                        <span className="border-b border-dotted border-gray-700 w-48 shrink-0 min-h-[17px] font-medium">{d.mobile_number || ''}</span>
+                    </div>
+                    {/* Row 5: কম্পোনেন্ট + ঋণ গ্রহণের তারিখ + মেয়াদ */}
+                    <div className="flex gap-2 items-baseline">
+                        <span className="shrink-0 font-bold">কম্পোনেন্ট:</span>
+                        <span className="border-b border-dotted border-gray-700 flex-1 min-h-[17px] font-medium">{d.component_name || ''}</span>
+                        <span className="shrink-0 font-bold ml-2">ঋণ গ্রহণের তারিখ:</span>
+                        <span className="border-b border-dotted border-gray-700 w-32 shrink-0 min-h-[17px] font-medium text-center">{formatDateBangla(d.loan_sanction_date) || ''}</span>
+                        <span className="shrink-0 font-bold ml-2">মেয়াদ:</span>
+                        <span className="border-b border-dotted border-gray-700 w-24 shrink-0 min-h-[17px] font-medium text-center">{d.loan_term || ''}</span>
+                    </div>
+                    {/* Row 6: গ্রহণকৃত ঋণের পরিমাণ + কথায় */}
+                    <div className="flex gap-2 items-baseline">
+                        <span className="shrink-0 font-bold">ঋণের পরিমাণ:</span>
+                        <span className="border-b border-dotted border-gray-700 w-36 shrink-0 min-h-[17px] font-medium text-center">{d.loan_amount_received ?? ''}</span>
+                        <span className="shrink-0 font-bold ml-2">কথায়:</span>
+                        <span className="border-b border-dotted border-gray-700 flex-1 min-h-[17px] font-medium">{d.loan_amount_words || ''}</span>
+                    </div>
                 </div>
             </div>
-            <div className="mb-0.5" style={{ fontSize: '9px' }}>
-                <h3 className="font-bold mb-0.5" style={{ fontSize: '10px', marginBottom: '2px' }}>২। অভিভাবক/পরিবারের প্রধান উপার্জনকারী ব্যক্তির তথ্য:</h3>
-                <div className="space-y-0" style={{ fontSize: '9px' }}>
-                    <div className="flex gap-0.5 items-baseline" style={{ marginBottom: '1px' }}><span className="w-36 flex-shrink-0">অভিভাবক/পরিবারের প্রধান উপার্জনকারী ব্যক্তির নাম:</span><span className="border-b border-dotted border-gray-600 flex-1 min-h-[10px]">{d.guardian_name || ''}</span></div>
-                    <div className="flex gap-0.5 items-baseline" style={{ marginBottom: '1px' }}><span className="w-16 flex-shrink-0">বয়স:</span><span className="border-b border-dotted border-gray-600 flex-1 min-h-[10px]">{d.guardian_age ?? ''}</span><span className="w-28 flex-shrink-0 ml-1">ঋণ গ্রহীতার সাথে সম্পর্ক:</span><span className="border-b border-dotted border-gray-600 flex-1 min-h-[10px]">{d.relationship_with_recipient || ''}</span></div>
-                    <div className="flex gap-0.5 items-baseline" style={{ marginBottom: '1px' }}><span className="w-16 flex-shrink-0">গ্রাম:</span><span className="border-b border-dotted border-gray-600 flex-1 min-h-[10px]">{d.guardian_village || ''}</span><span className="w-16 flex-shrink-0 ml-1">পোস্ট কোড:</span><span className="border-b border-dotted border-gray-600 flex-1 min-h-[10px]">{d.guardian_post_office || ''}</span></div>
-                    <div className="flex gap-0.5 items-baseline" style={{ marginBottom: '1px' }}><span className="w-16 flex-shrink-0">উপজেলা:</span><span className="border-b border-dotted border-gray-600 flex-1 min-h-[10px]">{d.guardian_upazila || ''}</span><span className="w-16 flex-shrink-0 ml-1">জেলা:</span><span className="border-b border-dotted border-gray-600 flex-1 min-h-[10px]">{d.guardian_district || ''}</span></div>
-                    <div className="flex gap-0.5 items-baseline" style={{ marginBottom: '1px' }}><span className="w-28 flex-shrink-0">জাতীয় পরিচয়পত্র নম্বর:</span><span className="border-b border-dotted border-gray-600 flex-1 min-h-[10px]">{d.guardian_nid || ''}</span></div>
-                    <div className="flex gap-0.5 items-baseline" style={{ marginBottom: '1px' }}><span className="w-24 flex-shrink-0">মোবাইল নম্বর:</span><span className="border-b border-dotted border-gray-600 flex-1 min-h-[10px]">{d.guardian_mobile || ''}</span></div>
-                    <div className="flex gap-0.5 items-baseline" style={{ marginBottom: '1px' }}><span className="w-24 flex-shrink-0">প্রধান পেশা:</span><span className="border-b border-dotted border-gray-600 flex-1 min-h-[10px]">{d.guardian_profession || ''}</span></div>
+
+            {/* Section 2: Guardian Information (Multi-column) */}
+            <div className="mb-2">
+                <h3 className="font-bold mb-1 text-[12.5px] text-gray-900 border-b border-gray-400 pb-0.5">২। অভিভাবক/পরিবারের প্রধান উপার্জনকারী ব্যক্তির তথ্য:</h3>
+                <div className="space-y-1 text-[12px] print:text-[11.8px]">
+                    {/* Row 1: নাম + বয়স + সম্পর্ক */}
+                    <div className="flex gap-2 items-baseline">
+                        <span className="shrink-0 font-bold">অভিভাবক/প্রধান উপার্জনকারী:</span>
+                        <span className="border-b border-dotted border-gray-700 flex-1 min-h-[17px] font-medium">{d.guardian_name || ''}</span>
+                        <span className="shrink-0 font-bold ml-2">বয়স:</span>
+                        <span className="border-b border-dotted border-gray-700 w-24 shrink-0 min-h-[17px] font-medium text-center">{d.guardian_age ? `${d.guardian_age} বছর` : ''}</span>
+                        <span className="shrink-0 font-bold ml-2">সম্পর্ক:</span>
+                        <span className="border-b border-dotted border-gray-700 w-32 shrink-0 min-h-[17px] font-medium text-center">{d.relationship_with_recipient || ''}</span>
+                    </div>
+                    {/* Row 2: গ্রাম + পোস্ট + উপজেলা + জেলা */}
+                    <div className="flex gap-2 items-baseline">
+                        <span className="shrink-0 font-bold">গ্রাম:</span>
+                        <span className="border-b border-dotted border-gray-700 flex-1 min-h-[17px] font-medium">{d.guardian_village || ''}</span>
+                        <span className="shrink-0 font-bold ml-2">পোস্ট:</span>
+                        <span className="border-b border-dotted border-gray-700 w-24 shrink-0 min-h-[17px] font-medium">{d.guardian_post_office || ''}</span>
+                        <span className="shrink-0 font-bold ml-2">উপজেলা:</span>
+                        <span className="border-b border-dotted border-gray-700 w-32 shrink-0 min-h-[17px] font-medium">{d.guardian_upazila || ''}</span>
+                        <span className="shrink-0 font-bold ml-2">জেলা:</span>
+                        <span className="border-b border-dotted border-gray-700 w-32 shrink-0 min-h-[17px] font-medium">{d.guardian_district || ''}</span>
+                    </div>
+                    {/* Row 3: জাতীয় পরিচয়পত্র + মোবাইল + পেশা */}
+                    <div className="flex gap-2 items-baseline">
+                        <span className="shrink-0 font-bold">জাতীয় পরিচয়পত্র নং:</span>
+                        <span className="border-b border-dotted border-gray-700 flex-1 min-h-[17px] font-medium">{d.guardian_nid || ''}</span>
+                        <span className="shrink-0 font-bold ml-2">মোবাইল:</span>
+                        <span className="border-b border-dotted border-gray-700 w-36 shrink-0 min-h-[17px] font-medium">{d.guardian_mobile || ''}</span>
+                        <span className="shrink-0 font-bold ml-2">পেশা:</span>
+                        <span className="border-b border-dotted border-gray-700 w-32 shrink-0 min-h-[17px] font-medium">{d.guardian_profession || ''}</span>
+                    </div>
                 </div>
             </div>
+
+            {/* Declaration (only Part 1) */}
             {showDeclaration && (
-                <div className="mb-0.5 leading-tight p-0.5 bg-gray-50 border border-gray-300" style={{ fontSize: '8px', padding: '2px' }}>
-                    <p className="font-semibold mb-0.5" style={{ fontSize: '9px', marginBottom: '2px' }}>ঘোষণা:</p>
-                    <p style={{ marginBottom: 0, lineHeight: 1.2 }}>আমরা এই মর্মে ঘোষণা করছি যে, উপরিল্লিখিত সকল তথ্য সঠিক ও সত্য। আমরা ঋণঝুঁকি তহবিলের সকল নিয়মাবলি ও শর্তাবলি মেনে এবং বুঝে স্বাক্ষর করছি। অনুগ্রহপূর্বক আমাদেরকে ঋণঝুঁকি তহবিলের সদস্য হিসেবে অর্ন্তভুক্ত করলে বাধিত হব।</p>
+                <div className="mb-2 leading-relaxed p-1.5 bg-gray-50 border border-gray-300 rounded text-[11px]">
+                    <p className="font-bold mb-0.5 text-[11.5px] text-gray-900">ঘোষণা:</p>
+                    <p style={{ marginBottom: 0, lineHeight: 1.25 }} className="text-gray-800">আমরা এই মর্মে ঘোষণা করছি যে, উপরিল্লিখিত সকল তথ্য সঠিক ও সত্য। আমরা ঋণঝুঁকি তহবিলের সকল নিয়মাবলি ও শর্তাবলি মেনে এবং বুঝে স্বাক্ষর করছি। অনুগ্রহপূর্বক আমাদেরকে ঋণঝুঁকি তহবিলের সদস্য হিসেবে অর্ন্তভুক্ত করলে বাধিত হব।</p>
                 </div>
             )}
-            <div className="mt-0.5 space-y-0" style={{ fontSize: '8px', marginTop: '2px' }}>
-                <div className="flex gap-1" style={{ marginBottom: '2px' }}>
+
+            {/* Signatures */}
+            <div className="mt-2 pt-1 border-t border-gray-300 space-y-1.5 text-[11px]">
+                <div className="flex gap-6">
                     <div className="flex-1">
-                        <p className="mb-0" style={{ marginBottom: '1px' }}>ঋণ গ্রহীতার স্বাক্ষর:</p>
-                        <div className="border-b border-dotted border-gray-600" style={{ height: '20px', minHeight: '20px' }}>{getImageUrl(d.loan_recipient_signature) && <img src={getImageUrl(d.loan_recipient_signature)!} alt="Signature" style={{ height: '18px', objectFit: 'contain', display: 'block' }} onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }} />}</div>
-                    </div>
-                    {isPart1 && (
-                        <div className="flex-1">
-                            <p className="mb-0" style={{ marginBottom: '1px' }}>অভিভাবক/পরিবারের প্রধান উপার্জনকারীর স্বাক্ষর:</p>
-                            <div className="border-b border-dotted border-gray-600" style={{ height: '20px', minHeight: '20px' }}>{getImageUrl(d.guardian_signature) && <img src={getImageUrl(d.guardian_signature)!} alt="Signature" style={{ height: '18px', objectFit: 'contain', display: 'block' }} onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }} />}</div>
+                        <p className="mb-0.5 font-bold text-gray-900">ঋণ গ্রহীতার স্বাক্ষর:</p>
+                        <div className="border-b border-dotted border-gray-700" style={{ height: '24px', minHeight: '24px' }}>
+                            {getImageUrl(d.loan_recipient_signature) && (
+                                <img src={getImageUrl(d.loan_recipient_signature)!} alt="Signature" style={{ height: '22px', objectFit: 'contain', display: 'block' }} onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }} />
+                            )}
                         </div>
-                    )}
+                    </div>
+                    {isPart1 ? (
+                        <div className="flex-1">
+                            <p className="mb-0.5 font-bold text-gray-900">অভিভাবক/জামিনদারের স্বাক্ষর:</p>
+                            <div className="border-b border-dotted border-gray-700" style={{ height: '24px', minHeight: '24px' }}>
+                                {getImageUrl(d.guardian_signature) && (
+                                    <img src={getImageUrl(d.guardian_signature)!} alt="Signature" style={{ height: '22px', objectFit: 'contain', display: 'block' }} onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }} />
+                                )}
+                            </div>
+                        </div>
+                    ) : <div className="flex-1" />}
                 </div>
-                <div className="flex gap-1" style={{ marginBottom: '2px' }}>
+                <div className="flex gap-6 pt-1">
                     <div className="flex-1">
-                        <p className="mb-0" style={{ marginBottom: '1px' }}>অফিসারের স্বাক্ষর ও সিল:</p>
-                        <div className="border-b border-dotted border-gray-600" style={{ height: '20px', minHeight: '20px' }}>{getImageUrl(d.officer_signature) && <img src={getImageUrl(d.officer_signature)!} alt="Signature" style={{ height: '18px', objectFit: 'contain', display: 'block' }} onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }} />}</div>
+                        <p className="mb-0.5 font-bold text-gray-900">অফিসারের স্বাক্ষর ও সিল:</p>
+                        <div className="border-b border-dotted border-gray-700" style={{ height: '24px', minHeight: '24px' }}>
+                            {getImageUrl(d.officer_signature) && (
+                                <img src={getImageUrl(d.officer_signature)!} alt="Signature" style={{ height: '22px', objectFit: 'contain', display: 'block' }} onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }} />
+                            )}
+                        </div>
                     </div>
                     <div className="flex-1">
-                        <p className="mb-0" style={{ marginBottom: '1px' }}>হিসাবরক্ষকের স্বাক্ষর ও সিল:</p>
-                        <div className="border-b border-dotted border-gray-600" style={{ height: '20px', minHeight: '20px' }}>{getImageUrl(d.accountant_signature) && <img src={getImageUrl(d.accountant_signature)!} alt="Signature" style={{ height: '18px', objectFit: 'contain', display: 'block' }} onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }} />}</div>
+                        <p className="mb-0.5 font-bold text-gray-900">হিসাবরক্ষকের স্বাক্ষর ও সিল:</p>
+                        <div className="border-b border-dotted border-gray-700" style={{ height: '24px', minHeight: '24px' }}>
+                            {getImageUrl(d.accountant_signature) && (
+                                <img src={getImageUrl(d.accountant_signature)!} alt="Signature" style={{ height: '22px', objectFit: 'contain', display: 'block' }} onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }} />
+                            )}
+                        </div>
                     </div>
-                </div>
-                <div>
-                    <p className="mb-0" style={{ marginBottom: '1px' }}>অনুমোদনকারী শাখাব্যবস্থাপকের স্বাক্ষর ও সিল:</p>
-                    <div className="border-b border-dotted border-gray-600" style={{ height: '20px', minHeight: '20px', width: '50%' }}>{getImageUrl(d.branch_manager_signature) && <img src={getImageUrl(d.branch_manager_signature)!} alt="Signature" style={{ height: '18px', objectFit: 'contain', display: 'block' }} onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }} />}</div>
+                    <div className="flex-1">
+                        <p className="mb-0.5 font-bold text-gray-900">শাখা ব্যবস্থাপকের স্বাক্ষর ও সিল:</p>
+                        <div className="border-b border-dotted border-gray-700" style={{ height: '24px', minHeight: '24px' }}>
+                            {getImageUrl(d.branch_manager_signature) && (
+                                <img src={getImageUrl(d.branch_manager_signature)!} alt="Signature" style={{ height: '22px', objectFit: 'contain', display: 'block' }} onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }} />
+                            )}
+                        </div>
+                    </div>
                 </div>
             </div>
         </div>
@@ -277,6 +378,35 @@ function resolveBackUrl(
     });
 }
 
+function DeathRiskFundOnlyPreview({ member, loanProduct, loanCategory, requestedAmount, branch, savedData }: any) {
+    const baseAmount = Number(requestedAmount) || 0;
+    const defaults = buildDeathRiskFundDefaults(member, loanProduct, loanCategory, requestedAmount, branch);
+    const previewData = savedData && Object.keys(savedData).length > 0
+        ? {
+            ...defaults,
+            ...savedData,
+            ...(baseAmount > 0 ? {
+                loan_amount_received: defaults.loan_amount_received,
+                loan_amount_words: defaults.loan_amount_words,
+            } : {}),
+        }
+        : defaults;
+
+    useAutoFitPrint([previewData], '.death-risk-print');
+
+    return (
+        <div className="print-container death-risk-print max-w-[210mm] mx-auto bg-white">
+            <div className="bg-white rounded-lg shadow-lg p-2 print:shadow-none print:p-0 print:rounded-none print:bg-white">
+                <div className="space-y-1 print:space-y-0.5">
+                    {renderDeathRiskFundPreviewPart(1, previewData)}
+                    <div className="border-t border-dashed border-gray-400 my-1 print:my-0.5" />
+                    {renderDeathRiskFundPreviewPart(2, previewData)}
+                </div>
+            </div>
+        </div>
+    );
+}
+
 export default function DeathRiskFund({
     member,
     loanProduct,
@@ -292,39 +422,28 @@ export default function DeathRiskFund({
     isLegacy = false,
 }: Props) {
     if (onlyPreview) {
-        const baseAmount = Number(requestedAmount) || 0;
-        const defaults = buildDeathRiskFundDefaults(member, loanProduct, loanCategory, requestedAmount, branch);
-        const previewData = savedData && Object.keys(savedData).length > 0
-            ? {
-                ...defaults,
-                ...savedData,
-                ...(baseAmount > 0 ? {
-                    loan_amount_received: defaults.loan_amount_received,
-                    loan_amount_words: defaults.loan_amount_words,
-                } : {}),
-            }
-            : defaults;
         return (
-            <div className="print-container">
-                <div className="bg-white rounded-lg shadow-lg p-2 print:shadow-none print:p-1 print:rounded-none print:bg-white">
-                    <div className="space-y-0 print:space-y-0">
-                        {renderDeathRiskFundPreviewPart(1, previewData)}
-                        <div className="border-t border-dotted border-gray-400 my-0.5 print:my-0" style={{ marginTop: '2px', marginBottom: '2px' }} />
-                        {renderDeathRiskFundPreviewPart(2, previewData)}
-                    </div>
-                </div>
-            </div>
+            <DeathRiskFundOnlyPreview
+                member={member}
+                loanProduct={loanProduct}
+                loanCategory={loanCategory}
+                requestedAmount={requestedAmount}
+                branch={branch}
+                savedData={savedData}
+            />
         );
     }
     const [errors, setErrors] = useState<Record<string, string>>({});
 
+    useAutoFitPrint([member, loanProduct, loanCategory, requestedAmount, branch], '.death-risk-print');
+
     const memberAge = calculateAge(member?.date_of_birth);
 
     // Load photos from MemberAdmission if available
-    const memberPhotoUrl = member?.customer_photo_path 
+    const memberPhotoUrl = member?.customer_photo_path
         ? (member.customer_photo_path.startsWith('http') ? member.customer_photo_path : `/storage/${member.customer_photo_path}`)
         : null;
-    const guardianPhotoUrl = member?.guardian_photo_path 
+    const guardianPhotoUrl = member?.guardian_photo_path
         ? (member.guardian_photo_path.startsWith('http') ? member.guardian_photo_path : `/storage/${member.guardian_photo_path}`)
         : null;
 
@@ -334,11 +453,11 @@ export default function DeathRiskFund({
     const { data, setData, processing } = useForm<DeathRiskFundData>({
         branch_name: branch?.name || '',
         date: new Date().toISOString().split('T')[0],
-        
+
         // Photos - prioritize savedData, then MemberAdmission, then null
         loan_recipient_photo: savedData?.loan_recipient_photo || memberPhotoUrl || null,
         guardian_photo: savedData?.guardian_photo || guardianPhotoUrl || null,
-        
+
         // Loan Recipient Info (auto-filled from MemberAdmission)
         loan_recipient_name: member?.applicant_name_bn || '',
         loan_recipient_code1: member?.application_no || '',
@@ -356,7 +475,7 @@ export default function DeathRiskFund({
         loan_amount_received: baseAmount, // External
         loan_amount_words: initialWords, // Will be auto-calculated
         loan_term: loanProduct?.duration_months ? `${loanProduct.duration_months} মাস` : '', // External
-        
+
         // Guardian Info
         guardian_name: member?.guardian_name || '',
         guardian_age: 0,
@@ -368,7 +487,7 @@ export default function DeathRiskFund({
         guardian_nid: '',
         guardian_mobile: member?.guarantor_mobile || '',
         guardian_profession: '',
-        
+
         // Signatures — blank lines only on print/preview (no digital upload)
         loan_recipient_signature: null,
         guardian_signature: null,
@@ -444,7 +563,7 @@ export default function DeathRiskFund({
 
     const validateForm = (): boolean => {
         const newErrors: Record<string, string> = {};
-        
+
         // Required fields validation
         if (!data.loan_recipient_code2?.trim()) {
             newErrors.loan_recipient_code2 = 'ঋণ কোড নম্বর আবশ্যক';
@@ -494,7 +613,7 @@ export default function DeathRiskFund({
         if (!data.guardian_profession?.trim()) {
             newErrors.guardian_profession = 'প্রধান পেশা আবশ্যক';
         }
-        
+
         setErrors(newErrors);
         return Object.keys(newErrors).length === 0;
     };
@@ -512,7 +631,7 @@ export default function DeathRiskFund({
             alert('বিতরণের আগে অনুগ্রহ করে সকল আবশ্যক ক্ষেত্র পূরণ করুন');
             return;
         }
-        
+
         const payload: any = { loan_product_id: loanProduct.id, loan_category_id: loanCategory.id, requested_amount: requestedAmount, form_data: data, draft: 1 };
         if (isLegacy) payload.legacy = 1; else payload.member_id = member?.id;
         if (existingApplication?.id) {
@@ -613,9 +732,9 @@ export default function DeathRiskFund({
                     {/* Centered Logo and Title */}
                     <div className="flex flex-col items-center justify-center mb-1">
                         <div className="flex items-center gap-2">
-                            <img 
-                                src="/logo.png" 
-                                alt="Logo" 
+                            <img
+                                src="/logo.png"
+                                alt="Logo"
                                 className="h-12 w-12 object-contain print:h-10 print:w-10"
                                 onError={(e) => {
                                     (e.target as HTMLImageElement).style.display = 'none';
@@ -630,7 +749,7 @@ export default function DeathRiskFund({
                             </div>
                         </div>
                     </div>
-                    
+
                     {/* Bottom: Photos (only Part 1), Branch, Date */}
                     <div className="flex items-center justify-between">
                         {isPart1 && (
@@ -836,9 +955,9 @@ export default function DeathRiskFund({
                 <div className="mb-4 border-b pb-3">
                     <div className="flex flex-col items-center justify-center mb-3">
                         <div className="flex items-center gap-3">
-                            <img 
-                                src="/logo.png" 
-                                alt="Logo" 
+                            <img
+                                src="/logo.png"
+                                alt="Logo"
                                 className="h-16 w-16 object-contain"
                                 onError={(e) => {
                                     (e.target as HTMLImageElement).style.display = 'none';
@@ -1429,27 +1548,18 @@ export default function DeathRiskFund({
                             width: 100% !important;
                             margin: 0 !important;
                             padding: 0 !important;
+                            page-break-after: avoid !important;
+                            break-after: avoid !important;
                         }
-                        /* Two copies in one A4 page (top & bottom) - each using half height */
+                        /* Two copies on one A4 page (top & bottom) */
                         .half-page-form {
-                            height: 48vh;
-                            max-height: 48vh;
-                            overflow: hidden;
-                            page-break-inside: avoid;
-                            break-inside: avoid;
-                            margin-bottom: 2mm;
+                            page-break-inside: avoid !important;
+                            break-inside: avoid !important;
+                            border: 1px solid #4b5563 !important;
+                            padding: 6px 10px !important;
                         }
-                        .half-page-form + .half-page-form {
-                            margin-top: 2mm;
-                        }
-                        /* Dotted separator between two copies */
                         .border-dotted {
                             border-style: dotted !important;
-                        }
-                        /* Ensure proper spacing for print */
-                        .print-container {
-                            display: flex;
-                            flex-direction: column;
                         }
                         .page-break {
                             page-break-before: auto !important;
@@ -1520,15 +1630,15 @@ export default function DeathRiskFund({
                     </div>
 
                     {/* RIGHT SIDE: PREVIEW */}
-                    <div className="lg:sticky lg:top-4 lg:h-fit print:block print-container">
-                        <div className="bg-white rounded-lg shadow-lg p-4 print:shadow-none print:p-2 print:rounded-none print:bg-white">
-                            <h3 className="text-sm font-bold mb-3 print:hidden">Preview (2 Copies on A4)</h3>
-                        <div className="space-y-0.5 print:space-y-0">
-                            {/* Same A4 page e 2 copy (top & bottom) - Preview mode with dotted lines */}
-                            {renderPreviewPart(1)}
-                            <div className="border-t-2 border-dotted border-gray-400 my-1 print:my-0.5"></div>
-                            {renderPreviewPart(2)}
-                        </div>
+                    <div className="lg:sticky lg:top-4 lg:h-fit print:block print-container death-risk-print">
+                        <div className="bg-white rounded-lg shadow-lg p-3 print:shadow-none print:p-0 print:rounded-none print:bg-white">
+                            <h3 className="text-sm font-bold mb-2 print:hidden">Preview (2 Copies on A4)</h3>
+                            <div className="space-y-1 print:space-y-0.5">
+                                {/* Same A4 page e 2 copy (top & bottom) - Preview mode with dotted lines */}
+                                {renderPreviewPart(1)}
+                                <div className="border-t border-dashed border-gray-400 my-1 print:my-0.5"></div>
+                                {renderPreviewPart(2)}
+                            </div>
                         </div>
                     </div>
                 </div>

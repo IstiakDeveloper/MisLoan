@@ -135,11 +135,11 @@ export default function OrganizationSection({
                                                     type="button"
                                                     onMouseDown={(e) => e.preventDefault()}
                                                     onClick={() => {
-                                                        setData('samity_id', samity.id);
+                                                        setData('samity_id', Number(samity.id));
                                                         setSamitySearchQuery(label);
                                                         setSamityDropdownOpen(false);
                                                     }}
-                                                    className={`w-full px-3 py-2 text-left text-xs md:text-sm hover:bg-indigo-50 ${data.samity_id === samity.id ? 'bg-indigo-50 font-bold text-indigo-700' : 'text-gray-700'}`}
+                                                    className={`w-full px-3 py-2 text-left text-xs md:text-sm hover:bg-indigo-50 ${Number(data.samity_id) === Number(samity.id) ? 'bg-indigo-50 font-bold text-indigo-700' : 'text-gray-700'}`}
                                                 >
                                                     {label}
                                                 </button>

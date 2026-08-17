@@ -1240,7 +1240,7 @@ export default function Show({ application, routes }: Props) {
                                                     savedData={application.nominee_info}
                                                 />
                                             ) : (
-                                                <div ref={formPrintRef} className="form-print-area print-container printable-area space-y-3 text-sm min-w-full">
+                                                <div ref={formPrintRef} className="form-print-area print-container printable-area space-y-3 text-sm min-w-full overflow-x-auto p-1 sm:p-0">
                                                     {renderFormPreview(selectedFormId, useBlankPreview)}
                                                 </div>
                                             )}

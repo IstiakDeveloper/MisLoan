@@ -385,6 +385,35 @@ export default function ProcessLoans({ loans, filters, zones = [], areas = [], b
         });
     };
 
+    // Selection & Bulk Approval
+    const [selectedIds, setSelectedIds] = useState<number[]>([]);
+
+    const pageItemIds = useMemo(() => displayedLoans.map((l) => l.id), [displayedLoans]);
+    const allPageSelected = pageItemIds.length > 0 && pageItemIds.every((id) => selectedIds.includes(id));
+
+    const handleSelectAll = () => {
+        if (allPageSelected) {
+            setSelectedIds((prev) => prev.filter((id) => !pageItemIds.includes(id)));
+        } else {
+            setSelectedIds((prev) => [...new Set([...prev, ...pageItemIds])]);
+        }
+    };
+
+    const handleSelectOne = (id: number) => {
+        setSelectedIds((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]));
+    };
+
+    const handleApproveSelected = () => {
+        if (selectedIds.length === 0) return;
+        if (!confirm(`আপনি কি নিশ্চিত যে নির্বাচিত ${selectedIds.length} টি ঋণ আবেদন অনুমোদন করতে চান?`)) return;
+
+        router.post('/head-office/loans/approve-bulk', { ids: selectedIds }, {
+            preserveState: true,
+            preserveScroll: true,
+            onSuccess: () => setSelectedIds([]),
+        });
+    };
+
     // Month Label Formatter
     const formatMonthLabel = (mString: string) => {
         if (!mString) return '';
@@ -684,6 +713,37 @@ export default function ProcessLoans({ loans, filters, zones = [], areas = [], b
                     </div>
                 </div>
 
+                {/* Floating/Sticky Bulk Actions Banner */}
+                {selectedIds.length > 0 && (
+                    <div className="bg-gradient-to-r from-slate-900 via-indigo-950 to-blue-900 text-white rounded-xl p-3 px-4 shadow-lg border border-indigo-500/30 flex flex-wrap items-center justify-between gap-3 animate-in fade-in slide-in-from-top-2">
+                        <div className="flex items-center gap-2.5">
+                            <span className="w-7 h-7 rounded-full bg-indigo-500 text-white flex items-center justify-center font-bold text-xs shadow-xs">
+                                {selectedIds.length}
+                            </span>
+                            <span className="text-xs font-semibold text-indigo-100">
+                                {selectedIds.length} টি ঋণ আবেদন নির্বাচিত করা হয়েছে
+                            </span>
+                        </div>
+                        <div className="flex items-center gap-2">
+                            <button
+                                type="button"
+                                onClick={() => setSelectedIds([])}
+                                className="px-3 py-1.5 bg-white/10 hover:bg-white/20 text-white text-xs font-medium rounded-lg transition"
+                            >
+                                নির্বাচন বাতিল
+                            </button>
+                            <button
+                                type="button"
+                                onClick={handleApproveSelected}
+                                className="px-4 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold rounded-lg shadow transition flex items-center gap-1.5 border border-emerald-400/40"
+                            >
+                                <CheckCheck className="w-4 h-4" />
+                                নির্বাচিত ({selectedIds.length}) অনুমোদন করুন
+                            </button>
+                        </div>
+                    </div>
+                )}
+
                 {/* Main Data Table */}
                 <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
                     {displayedLoans.length === 0 ? (
@@ -704,7 +764,7 @@ export default function ProcessLoans({ loans, filters, zones = [], areas = [], b
                         </div>
                     ) : (
                         <AutoFitTableContainer
-                            minWidth={1200}
+                            minWidth={1250}
                             storageKey="ho_process_loans_table"
                             title="ঋণ আবেদন প্রক্রিয়াকরণ তালিকা"
                             subtitle={`(মোট ${displayedLoans.length} টি)`}
@@ -712,6 +772,15 @@ export default function ProcessLoans({ loans, filters, zones = [], areas = [], b
                             <table className="w-full text-left border-collapse">
                                 <thead>
                                     <tr className="bg-slate-50 border-b border-slate-200 text-slate-500 text-[11px] font-bold uppercase tracking-wider">
+                                        <th className="py-3 px-3 text-center w-10">
+                                            <input
+                                                type="checkbox"
+                                                checked={allPageSelected}
+                                                onChange={handleSelectAll}
+                                                className="w-4 h-4 rounded text-indigo-600 focus:ring-indigo-500 border-slate-300 cursor-pointer"
+                                                title="পৃষ্ঠার সব ঋণ আবেদন নির্বাচন করুন"
+                                            />
+                                        </th>
                                         <th className="py-3 px-4">সদস্য নং</th>
                                         <th className="py-3 px-4">সদস্য টাইপ / দফা</th>
                                         <th className="py-3 px-4">সদস্য তথ্য</th>
@@ -727,9 +796,18 @@ export default function ProcessLoans({ loans, filters, zones = [], areas = [], b
                                     {displayedLoans.map((loan) => {
                                         const hasIssues = loan.issues.length > 0;
                                         const isRevised = (loan.revision_count || 0) > 0;
+                                        const isSelected = selectedIds.includes(loan.id);
 
                                         return (
-                                            <tr key={loan.id} className="hover:bg-slate-50/80 transition-colors">
+                                            <tr key={loan.id} className={`hover:bg-slate-50/80 transition-colors ${isSelected ? 'bg-indigo-50/60' : ''}`}>
+                                                <td className="py-3 px-3 text-center align-top">
+                                                    <input
+                                                        type="checkbox"
+                                                        checked={isSelected}
+                                                        onChange={() => handleSelectOne(loan.id)}
+                                                        className="w-4 h-4 rounded text-indigo-600 focus:ring-indigo-500 border-slate-300 cursor-pointer"
+                                                    />
+                                                </td>
                                                 {/* Member No */}
                                                 <td className="py-3 px-4 align-top font-mono font-bold text-slate-900">
                                                     <div className="space-y-1">

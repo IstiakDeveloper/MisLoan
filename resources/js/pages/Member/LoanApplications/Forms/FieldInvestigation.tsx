@@ -5,6 +5,7 @@ import { formatDateBangla } from '@/utils/dateUtils';
 import { Save, Printer, Eye, ArrowLeft, ClipboardList } from 'lucide-react';
 import GeneralSavingsSection, { getRequiredSavingsPercent } from '@/components/LoanApplications/GeneralSavingsSection';
 import { afterLoanFormSaveUrl } from '@/utils/loanFormNavigation';
+import { useAutoFitPrint, triggerPrintWithAutoFit } from '@/hooks/useAutoFitPrint';
 
 interface FieldInvestigationData {
     branch_name: string;
@@ -100,240 +101,261 @@ function resolveMemberIdentityNumber(member: any): string {
 }
 
 /** Module-level: full preview with given data (for onlyPreview on Show page) */
+export function FieldInvestigationPrintView({ formData }: { formData: any }) {
+    useAutoFitPrint([formData], '.print-container');
+    return renderFieldInvestigationPreviewContent(formData);
+}
+
 function renderFieldInvestigationPreviewContent(formData: any) {
     const d = formData || {};
     return (
-        <div className="bg-white border border-gray-300 p-5 sm:p-7 print:p-3" style={{ fontSize: '13.5px', lineHeight: '1.6' }}>
-            <div className="flex flex-col items-center justify-center mb-3 border-b-2 border-gray-400 pb-2">
-                <div className="flex items-center justify-center gap-3 mb-1">
-                    <img src="/logo.png" alt="Logo" className="h-16 w-16 object-contain print:h-14 print:w-14" onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }} />
-                    <div className="text-center">
-                        <h1 className="text-lg font-bold leading-tight print:text-base">মৌসুমী</h1>
-                        <p className="text-xs leading-tight print:text-[10px]">{d.branch_address}</p>
-                        <p className="text-xs leading-tight print:text-[10px]">ঋণ কর্মসূচি</p>
+        <div
+            className="print-page-sheet bg-white border border-gray-300 p-6 print:p-0 print:border-none text-[13px] print:text-[12.5px] leading-snug"
+            style={{ fontFamily: 'Kalpurush, Arial, sans-serif', color: '#000' }}
+        >
+            <div className="print-page-content flex flex-col justify-between h-full">
+                <div>
+                    {/* Header */}
+                    <div className="flex flex-col items-center justify-center mb-2 border-b-2 border-gray-400 pb-1.5">
+                        <div className="flex items-center justify-center gap-3 mb-0.5">
+                            <img src="/logo.png" alt="Logo" className="h-14 w-14 object-contain print:h-14 print:w-14" onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }} />
+                            <div className="text-center">
+                                <h1 className="text-lg font-bold leading-tight print:text-lg">মৌসুমী</h1>
+                                <p className="text-xs leading-tight print:text-[11px]">{d.branch_address}</p>
+                                <p className="text-xs leading-tight print:text-[11px]">ঋণ কর্মসূচি</p>
+                            </div>
+                        </div>
+                    </div>
+                    <h2 className="text-center font-bold mb-2 print:mb-1.5 text-[13.5px] print:text-[13px]">
+                        <span>সমিতিতে ঋণ আবেদন অনুযায়ী শাখা ব্যবস্থাপক কর্তৃক সদস্যের বাড়ি সরেজমিনে তদন্ত প্রতিবেদন</span>
+                    </h2>
+                    
+                    {/* Member and Informant Info */}
+                    <div className="mb-2 text-[13px] print:text-[12.5px] space-y-1">
+                        <div className="flex gap-1 items-baseline">
+                            <span className="w-32 flex-shrink-0">সদস্যের নাম:</span>
+                            <span className="border-b border-dotted border-gray-600 flex-1 min-h-[14px] font-semibold">{d.member_name || ''}</span>
+                            <span className="w-24 flex-shrink-0 ml-2">সদস্য নং:</span>
+                            <span className="border-b border-dotted border-gray-600 flex-1 min-h-[14px] font-semibold">{d.member_no || ''}</span>
+                        </div>
+                        <div className="flex gap-1 items-baseline">
+                            <span className="w-32 flex-shrink-0">সমিতির নাম:</span>
+                            <span className="border-b border-dotted border-gray-600 flex-1 min-h-[14px]">{d.samity_name || ''}</span>
+                            <span className="w-28 flex-shrink-0 ml-2">সমিতি কোড নং:</span>
+                            <span className="border-b border-dotted border-gray-600 flex-1 min-h-[14px]">{d.samity_code || ''}</span>
+                        </div>
+                        <div className="flex gap-1 items-baseline">
+                            <span className="w-40 flex-shrink-0">NID / স্মার্ট কার্ড নং:</span>
+                            <span className="border-b border-dotted border-gray-600 flex-1 min-h-[14px] font-mono text-[12px]">{d.nid_number || ''}</span>
+                            <span className="w-32 flex-shrink-0 ml-2">মোবাইল নং:</span>
+                            <span className="border-b border-dotted border-gray-600 flex-1 min-h-[14px] font-mono text-[12px]">{d.member_mobile || ''}</span>
+                        </div>
+                        <div className="flex gap-1 items-baseline">
+                            <span className="w-40 flex-shrink-0">তথ্য প্রদানকারীর নাম:</span>
+                            <span className="border-b border-dotted border-gray-600 flex-1 min-h-[14px]">{d.information_provider_name || ''}</span>
+                            <span className="w-24 flex-shrink-0 ml-2">মোবাইল নং:</span>
+                            <span className="border-b border-dotted border-gray-600 flex-1 min-h-[14px] font-mono text-[12px]">{d.information_provider_mobile || ''}</span>
+                        </div>
+                        <div className="flex gap-1 items-baseline">
+                            <span className="w-40 flex-shrink-0">সদস্যের সাথে সম্পর্ক:</span>
+                            <span className="border-b border-dotted border-gray-600 flex-1 min-h-[14px]">{d.relationship_with_member || ''}</span>
+                        </div>
+                    </div>
+
+                    {/* 13-row Investigation Table */}
+                    <div className="mb-2">
+                        <table className="w-full border-collapse border border-gray-600 text-[12px] print:text-[11.5px]">
+                            <thead>
+                                <tr className="bg-gray-50 font-semibold">
+                                    <th className="border border-gray-600 px-1.5 py-1 w-8 text-center">ক্রঃ</th>
+                                    <th className="border border-gray-600 px-1.5 py-1 text-left">বিবরণ</th>
+                                    <th className="border border-gray-600 px-1.5 py-1 w-64">পরিমাণ/সংখ্যা</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <tr>
+                                    <td className="border border-gray-600 px-1.5 py-0.5 text-center font-bold">১</td>
+                                    <td className="border border-gray-600 px-1.5 py-0.5">মূল পেশা, পরিবারের লোক সংখ্যা ও উপার্জনকারী সংখ্যা</td>
+                                    <td className="border border-gray-600 px-1.5 py-0.5">
+                                        <div className="space-y-0.5">
+                                            <div className="flex gap-1"><span className="w-16">পেশা:</span><span className="border-b border-dotted border-gray-600 flex-1 min-h-[12px]">{d.main_profession || ''}</span></div>
+                                            <div className="flex gap-1"><span className="w-16">লোক সংখ্যা:</span><span className="border-b border-dotted border-gray-600 flex-1 min-h-[12px]">{d.family_members_count ?? ''}</span><span className="w-20 ml-1">উপার্জনকারী:</span><span className="border-b border-dotted border-gray-600 flex-1 min-h-[12px]">{d.earning_members_count ?? ''}</span></div>
+                                        </div>
+                                    </td>
+                                </tr>
+                                <tr>
+                                    <td className="border border-gray-600 px-1.5 py-0.5 text-center font-bold">২</td>
+                                    <td className="border border-gray-600 px-1.5 py-0.5">বিগত দফায় পরিশোধিত ঋণের পরিমাণ ও বর্তমান ঋণের চাহিদা</td>
+                                    <td className="border border-gray-600 px-1.5 py-0.5">
+                                        <div className="space-y-0.5">
+                                            <div className="flex gap-1"><span className="w-16">পরিশোধিত:</span><span className="border-b border-dotted border-gray-600 flex-1 min-h-[12px]">{d.previous_loan_amount ?? ''}</span></div>
+                                            <div className="flex gap-1"><span className="w-16">বর্তমান চাহিদা:</span><span className="border-b border-dotted border-gray-600 flex-1 min-h-[12px] font-semibold">{d.current_loan_demand ?? ''}</span></div>
+                                        </div>
+                                    </td>
+                                </tr>
+                                <tr>
+                                    <td className="border border-gray-600 px-1.5 py-0.5 text-center font-bold">৩</td>
+                                    <td className="border border-gray-600 px-1.5 py-0.5">নিজস্ব জমির পরিমাণ ও বন্ধকী জমির পরিমান এবং মূল্য</td>
+                                    <td className="border border-gray-600 px-1.5 py-0.5">
+                                        <div className="space-y-0.5">
+                                            <div className="flex gap-1"><span className="w-14">নিজস্ব:</span><span className="border-b border-dotted border-gray-600 flex-1 min-h-[12px]">{d.own_land_amount || ''}</span></div>
+                                            <div className="flex gap-1"><span className="w-14">বন্ধকী:</span><span className="border-b border-dotted border-gray-600 flex-1 min-h-[12px]">{d.mortgaged_land_amount || ''}</span></div>
+                                            <div className="flex gap-1"><span className="w-14">মূল্য:</span><span className="border-b border-dotted border-gray-600 flex-1 min-h-[12px]">{d.land_value ?? ''}</span></div>
+                                        </div>
+                                    </td>
+                                </tr>
+                                <tr>
+                                    <td className="border border-gray-600 px-1.5 py-0.5 text-center font-bold">৪</td>
+                                    <td className="border border-gray-600 px-1.5 py-0.5">বাড়ীর ধরণ ও ঘরের সংখ্যা (টিক চিহ্ন দিন)</td>
+                                    <td className="border border-gray-600 px-1.5 py-0.5">
+                                        <div className="space-y-0.5">
+                                            <div className="flex gap-1"><span className="w-28">ধরণ:</span><span className="border-b border-dotted border-gray-600 flex-1 min-h-[12px]">{d.house_type || ''}</span></div>
+                                            <div className="flex gap-1"><span className="w-28">ঘরের সংখ্যা:</span><span className="border-b border-dotted border-gray-600 flex-1 min-h-[12px]">{d.room_count ?? ''}</span></div>
+                                        </div>
+                                    </td>
+                                </tr>
+                                <tr>
+                                    <td className="border border-gray-600 px-1.5 py-0.5 text-center font-bold">৫</td>
+                                    <td className="border border-gray-600 px-1.5 py-0.5">টিউবওয়েল ও স্বাস্থ্যসম্মত পায়খানা আছে কি-না</td>
+                                    <td className="border border-gray-600 px-1.5 py-0.5">
+                                        <div className="space-y-0.5">
+                                            <div className="flex gap-2 items-center">
+                                                <span>টিউবওয়েল:</span>
+                                                <span className="border border-gray-600 w-3.5 h-3.5 inline-flex items-center justify-center text-[11px]">{d.has_tubewell ? '✓' : ''}</span><span>হ্যাঁ</span>
+                                                <span className="border border-gray-600 w-3.5 h-3.5 inline-flex items-center justify-center text-[11px] ml-1">{!d.has_tubewell ? '✓' : ''}</span><span>না</span>
+                                            </div>
+                                            <div className="flex gap-2 items-center">
+                                                <span>স্বাস্থ্যসম্মত পায়খানা:</span>
+                                                <span className="border border-gray-600 w-3.5 h-3.5 inline-flex items-center justify-center text-[11px]">{d.has_latrine ? '✓' : ''}</span><span>হ্যাঁ</span>
+                                                <span className="border border-gray-600 w-3.5 h-3.5 inline-flex items-center justify-center text-[11px] ml-1">{!d.has_latrine ? '✓' : ''}</span><span>না</span>
+                                            </div>
+                                        </div>
+                                    </td>
+                                </tr>
+                                <tr>
+                                    <td className="border border-gray-600 px-1.5 py-0.5 text-center font-bold">৬</td>
+                                    <td className="border border-gray-600 px-1.5 py-0.5">গবাদি পশুর সংখ্যা (গরু, মহিষ, ছাগল, হাঁস-মুরগী)</td>
+                                    <td className="border border-gray-600 px-1.5 py-0.5">
+                                        <div className="grid grid-cols-3 gap-1">
+                                            <div className="flex gap-1"><span className="w-10">গরু-</span><span className="border-b border-dotted border-gray-600 flex-1 min-h-[12px]">{d.cow_count ?? ''}</span></div>
+                                            <div className="flex gap-1"><span className="w-10">মহিষ-</span><span className="border-b border-dotted border-gray-600 flex-1 min-h-[12px]">{d.buffalo_count ?? ''}</span></div>
+                                            <div className="flex gap-1"><span className="w-10">ছাগল-</span><span className="border-b border-dotted border-gray-600 flex-1 min-h-[12px]">{d.goat_count ?? ''}</span></div>
+                                            <div className="flex gap-1"><span className="w-10">ভেড়া-</span><span className="border-b border-dotted border-gray-600 flex-1 min-h-[12px]">{d.sheep_count ?? ''}</span></div>
+                                            <div className="flex gap-1 col-span-2"><span className="w-16">হাঁস-মুরগী-</span><span className="border-b border-dotted border-gray-600 flex-1 min-h-[12px]">{d.duck_chicken_count ?? ''}</span></div>
+                                        </div>
+                                    </td>
+                                </tr>
+                                <tr>
+                                    <td className="border border-gray-600 px-1.5 py-0.5 text-center font-bold">৭</td>
+                                    <td className="border border-gray-600 px-1.5 py-0.5">স্কুলে/কলেজে পড়ে এমন ছেলে-মেয়ের সংখ্যা</td>
+                                    <td className="border border-gray-600 px-1.5 py-0.5">
+                                        <div className="grid grid-cols-3 gap-1">
+                                            <div className="flex gap-1"><span className="w-14">প্রাথমিক-</span><span className="border-b border-dotted border-gray-600 flex-1 min-h-[12px]">{d.primary_school_count ?? ''}</span></div>
+                                            <div className="flex gap-1"><span className="w-14">মাধ্যমিক-</span><span className="border-b border-dotted border-gray-600 flex-1 min-h-[12px]">{d.secondary_school_count ?? ''}</span></div>
+                                            <div className="flex gap-1"><span className="w-12">কলেজ-</span><span className="border-b border-dotted border-gray-600 flex-1 min-h-[12px]">{d.college_count ?? ''}</span></div>
+                                            <div className="flex gap-1"><span className="w-12">মাদ্রাসা-</span><span className="border-b border-dotted border-gray-600 flex-1 min-h-[12px]">{d.madrasah_count ?? ''}</span></div>
+                                            <div className="flex gap-1 col-span-2"><span className="w-16">বিশ্ববিদ্যালয়-</span><span className="border-b border-dotted border-gray-600 flex-1 min-h-[12px]">{d.university_count ?? ''}</span></div>
+                                        </div>
+                                    </td>
+                                </tr>
+                                <tr>
+                                    <td className="border border-gray-600 px-1.5 py-0.5 text-center font-bold">৮</td>
+                                    <td className="border border-gray-600 px-1.5 py-0.5">সাধারণ সঞ্চয় (দফা ও পরিমাণ)</td>
+                                    <td className="border border-gray-600 px-1.5 py-0.5">
+                                        <div className="space-y-0.5">
+                                            <div className="flex gap-1"><span className="w-28">ঋণের দফা:</span><span className="border-b border-dotted border-gray-600 flex-1 min-h-[12px]">{dofaLabel(d.loan_round)}</span></div>
+                                            <div className="flex gap-1"><span className="w-28">মোট সঞ্চয়:</span><span className="border-b border-dotted border-gray-600 flex-1 min-h-[12px]">{d.savings_amount ?? ''}</span></div>
+                                            <div className="flex gap-1"><span className="w-28">সাধারণ সঞ্চয়:</span><span className="border-b border-dotted border-gray-600 flex-1 min-h-[12px]">{d.general_savings_amount ?? ''}</span></div>
+                                            <div className="flex gap-1"><span className="w-28">সঞ্চয়ের বিপরীতে:</span><span className="border-b border-dotted border-gray-600 flex-1 min-h-[12px]">{d.is_against_savings ? 'হ্যাঁ' : 'না'}</span></div>
+                                            {d.is_against_savings && (
+                                                <div className="flex gap-1"><span className="w-28">বিপরীতে সঞ্চয়:</span><span className="border-b border-dotted border-gray-600 flex-1 min-h-[12px]">{d.against_savings_amount ?? ''}</span></div>
+                                            )}
+                                        </div>
+                                    </td>
+                                </tr>
+                                <tr>
+                                    <td className="border border-gray-600 px-1.5 py-0.5 text-center font-bold">৯</td>
+                                    <td className="border border-gray-600 px-1.5 py-0.5">সদস্যের বাড়ী চেনার নির্দেশনা</td>
+                                    <td className="border border-gray-600 px-1.5 py-0.5"><div className="border-b border-dotted border-gray-600 min-h-[26px] break-words">{d.house_identification || ''}</div></td>
+                                </tr>
+                                <tr>
+                                    <td className="border border-gray-600 px-1.5 py-0.5 text-center font-bold">১০</td>
+                                    <td className="border border-gray-600 px-1.5 py-0.5">অন্যান্য সংস্থা হতে ঋণ গ্রহণের তথ্য</td>
+                                    <td className="border border-gray-600 px-1.5 py-0.5"><div className="border-b border-dotted border-gray-600 min-h-[26px] break-words">{d.other_organization_loans || ''}</div></td>
+                                </tr>
+                                <tr>
+                                    <td className="border border-gray-600 px-1.5 py-0.5 text-center font-bold">১১</td>
+                                    <td className="border border-gray-600 px-1.5 py-0.5">বিগত দফার পরিশোধের ধরণ (টিক চিহ্ন দিন)</td>
+                                    <td className="border border-gray-600 px-1.5 py-0.5">
+                                        <div className="space-y-0.5">
+                                            <div className="flex gap-2 items-center"><span className="border border-gray-600 w-3.5 h-3.5 inline-flex items-center justify-center text-[11px]">{d.previous_repayment_type === 'installment' ? '✓' : ''}</span><span>কিস্তিতে পরিশোধ করেছেন</span></div>
+                                            <div className="flex gap-2 items-center"><span className="border border-gray-600 w-3.5 h-3.5 inline-flex items-center justify-center text-[11px]">{d.previous_repayment_type === 'savings_adjustment' ? '✓' : ''}</span><span>সঞ্চয়ের সাথে সমন্বয় করেছেন</span></div>
+                                        </div>
+                                    </td>
+                                </tr>
+                                <tr>
+                                    <td className="border border-gray-600 px-1.5 py-0.5 text-center font-bold">১২</td>
+                                    <td className="border border-gray-600 px-1.5 py-0.5">গত ৬ মাসে/১ বছরে কতবার সঞ্চয় খেলাপী করেছেন</td>
+                                    <td className="border border-gray-600 px-1.5 py-0.5">
+                                        <div className="space-y-0.5">
+                                            <div className="flex gap-1"><span className="w-18">সাধারণ:</span><span className="border-b border-dotted border-gray-600 flex-1 min-h-[12px]">{d.general_savings_default_count ?? ''}</span></div>
+                                            <div className="flex gap-1"><span className="w-18">আপদকালীন:</span><span className="border-b border-dotted border-gray-600 flex-1 min-h-[12px]">{d.emergency_savings_default_count ?? ''}</span></div>
+                                            <div className="flex gap-1"><span className="w-18">মেয়াদী:</span><span className="border-b border-dotted border-gray-600 flex-1 min-h-[12px]">{d.term_savings_default_count ?? ''}</span></div>
+                                        </div>
+                                    </td>
+                                </tr>
+                                <tr>
+                                    <td className="border border-gray-600 px-1.5 py-0.5 text-center font-bold">১৩</td>
+                                    <td className="border border-gray-600 px-1.5 py-0.5">বর্তমানে সদস্যের মেয়াদী সঞ্চয়ের কয়টি কিস্তি বাকী আছে</td>
+                                    <td className="border border-gray-600 px-1.5 py-0.5">
+                                        <div className="space-y-0.5">
+                                            <div className="flex gap-1"><span className="w-22">কিস্তি সংখ্যা:</span><span className="border-b border-dotted border-gray-600 flex-1 min-h-[12px]">{d.term_savings_due_installments ?? ''}</span></div>
+                                            <div className="flex gap-1"><span className="w-22">টাকার পরিমাণ:</span><span className="border-b border-dotted border-gray-600 flex-1 min-h-[12px]">{d.term_savings_due_amount ?? ''}</span></div>
+                                        </div>
+                                    </td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+
+                    {/* Investigation and Disbursement Dates */}
+                    <div className="mb-2 flex gap-6 text-[13px] print:text-[12.5px]">
+                        <div className="flex gap-1 items-baseline">
+                            <span className="w-40 font-medium">পরিদর্শনের তারিখ:</span>
+                            <span className="border-b border-dotted border-gray-600 flex-1 min-w-[90px] font-semibold">{formatDateBangla(d.field_visit_date) || ''}</span>
+                        </div>
+                        <div className="flex gap-1 items-baseline">
+                            <span className="w-36 font-medium">ঋণ প্রদানের তারিখ:</span>
+                            <span className="border-b border-dotted border-gray-600 flex-1 min-w-[90px] font-semibold">{formatDateBangla(d.loan_disbursement_date) || ''}</span>
+                        </div>
+                    </div>
+
+                    {/* Comments Box */}
+                    <div className="mb-2 text-[13px] print:text-[12.5px]">
+                        <p className="font-bold mb-0.5">মন্তব্য:</p>
+                        <div className="border border-gray-600 min-h-[42px] p-2 break-words leading-relaxed text-[12px]">{d.comments || ''}</div>
+                    </div>
+
+                    {/* Signatures */}
+                    <div className="flex gap-6 mt-3 text-[13px] print:text-[12.5px]">
+                        <div className="flex-1 text-center">
+                            <div className="border-b border-dotted border-gray-600 h-8 flex items-end justify-center mb-1">
+                                {d.member_signature && <img src={d.member_signature} alt="Signature" className="h-7 object-contain" />}
+                            </div>
+                            <p className="font-semibold">সদস্য/তথ্য প্রদানকারীর স্বাক্ষর</p>
+                        </div>
+                        <div className="flex-1 text-center">
+                            <div className="border-b border-dotted border-gray-600 h-8 flex items-end justify-center mb-1">
+                                {d.branch_manager_signature && <img src={d.branch_manager_signature} alt="Signature" className="h-7 object-contain" />}
+                            </div>
+                            <p className="font-semibold">শাখা ব্যবস্থাপকের স্বাক্ষর ও সিল</p>
+                        </div>
                     </div>
                 </div>
+
+                {/* Footer Note */}
+                <p className="text-center mt-2 text-[11px] text-gray-600 italic">নোট: প্রতিবেদনটি ঋণ আবেদনের সাথে সংযুক্ত করে সংরক্ষণ করতে হবে।</p>
             </div>
-            <h2 className="text-center font-bold mb-3 print:mb-2" style={{ fontSize: '14px' }}>
-                <span className="print:text-[12px]">সমিতিতে ঋণ আবেদন অনুযায়ী শাখা ব্যবস্থাপক কর্তৃক সদস্যের বাড়ি সরেজমিনে তদন্ত প্রতিবেদন</span>
-            </h2>
-            <div className="mb-2" style={{ fontSize: '10px' }}>
-                <div className="space-y-0.5">
-                    <div className="flex gap-1 items-baseline">
-                        <span className="w-32 flex-shrink-0">সদস্য নাম:</span>
-                        <span className="border-b border-dotted border-gray-600 flex-1 min-h-[12px]">{d.member_name || ''}</span>
-                        <span className="w-24 flex-shrink-0 ml-2">সদস্য নং:</span>
-                        <span className="border-b border-dotted border-gray-600 flex-1 min-h-[12px]">{d.member_no || ''}</span>
-                    </div>
-                    <div className="flex gap-1 items-baseline">
-                        <span className="w-32 flex-shrink-0">সমিতির নাম:</span>
-                        <span className="border-b border-dotted border-gray-600 flex-1 min-h-[12px]">{d.samity_name || ''}</span>
-                        <span className="w-28 flex-shrink-0 ml-2">সমিতি কোড নং:</span>
-                        <span className="border-b border-dotted border-gray-600 flex-1 min-h-[12px]">{d.samity_code || ''}</span>
-                    </div>
-                    <div className="flex gap-1 items-baseline">
-                        <span className="w-36 flex-shrink-0">জাতীয় পরিচয়পত্র / স্মার্ট কার্ড নং:</span>
-                        <span className="border-b border-dotted border-gray-600 flex-1 min-h-[12px]">{d.nid_number || ''}</span>
-                        <span className="w-32 flex-shrink-0 ml-2">সদস্যের মোবাইল নং:</span>
-                        <span className="border-b border-dotted border-gray-600 flex-1 min-h-[12px]">{d.member_mobile || ''}</span>
-                    </div>
-                    <div className="flex gap-1 items-baseline">
-                        <span className="w-40 flex-shrink-0">তথ্য প্রদানকারীর নাম:</span>
-                        <span className="border-b border-dotted border-gray-600 flex-1 min-h-[12px]">{d.information_provider_name || ''}</span>
-                        <span className="w-24 flex-shrink-0 ml-2">মোবাইল নং:</span>
-                        <span className="border-b border-dotted border-gray-600 flex-1 min-h-[12px]">{d.information_provider_mobile || ''}</span>
-                    </div>
-                    <div className="flex gap-1 items-baseline">
-                        <span className="w-40 flex-shrink-0">সদস্যের সাথে সম্পর্ক:</span>
-                        <span className="border-b border-dotted border-gray-600 flex-1 min-h-[12px]">{d.relationship_with_member || ''}</span>
-                    </div>
-                </div>
-            </div>
-            <div className="mb-2">
-                <table className="w-full border-collapse border border-gray-600" style={{ fontSize: '9px' }}>
-                    <thead>
-                        <tr>
-                            <th className="border border-gray-600 px-1 py-0.5 w-8">ক্রঃ নং</th>
-                            <th className="border border-gray-600 px-1 py-0.5">বিবরণ</th>
-                            <th className="border border-gray-600 px-1 py-0.5 w-48">পরিমাণ/সংখ্যা</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        <tr>
-                            <td className="border border-gray-600 px-1 py-0.5 text-center">১</td>
-                            <td className="border border-gray-600 px-1 py-0.5">মূল পেশা, পরিবারের লোক সংখ্যা ও উপার্জনকারী সংখ্যা</td>
-                            <td className="border border-gray-600 px-1 py-0.5">
-                                <div className="space-y-0.5">
-                                    <div className="flex gap-1"><span className="w-20">পেশা:</span><span className="border-b border-dotted border-gray-600 flex-1 min-h-[10px]">{d.main_profession || ''}</span></div>
-                                    <div className="flex gap-1"><span className="w-20">লোক সংখ্যা:</span><span className="border-b border-dotted border-gray-600 flex-1 min-h-[10px]">{d.family_members_count ?? ''}</span><span className="w-24 ml-1">উপার্জনকারী:</span><span className="border-b border-dotted border-gray-600 flex-1 min-h-[10px]">{d.earning_members_count ?? ''}</span></div>
-                                </div>
-                            </td>
-                        </tr>
-                        <tr>
-                            <td className="border border-gray-600 px-1 py-0.5 text-center">২</td>
-                            <td className="border border-gray-600 px-1 py-0.5">বিগত দফায় পরিশোধিত ঋণের পরিমাণ ও বর্তমান ঋণের চাহিদা</td>
-                            <td className="border border-gray-600 px-1 py-0.5">
-                                <div className="space-y-0.5">
-                                    <div className="flex gap-1"><span className="w-20">পরিশোধিত:</span><span className="border-b border-dotted border-gray-600 flex-1 min-h-[10px]">{d.previous_loan_amount ?? ''}</span></div>
-                                    <div className="flex gap-1"><span className="w-20">বর্তমান চাহিদা:</span><span className="border-b border-dotted border-gray-600 flex-1 min-h-[10px]">{d.current_loan_demand ?? ''}</span></div>
-                                </div>
-                            </td>
-                        </tr>
-                        <tr>
-                            <td className="border border-gray-600 px-1 py-0.5 text-center">৩</td>
-                            <td className="border border-gray-600 px-1 py-0.5">নিজস্ব জমির পরিমাণ ও বন্ধকী জমির পরিমান এবং মূল্য</td>
-                            <td className="border border-gray-600 px-1 py-0.5">
-                                <div className="space-y-0.5">
-                                    <div className="flex gap-1"><span className="w-16">নিজস্ব:</span><span className="border-b border-dotted border-gray-600 flex-1 min-h-[10px]">{d.own_land_amount || ''}</span></div>
-                                    <div className="flex gap-1"><span className="w-16">বন্ধকী:</span><span className="border-b border-dotted border-gray-600 flex-1 min-h-[10px]">{d.mortgaged_land_amount || ''}</span></div>
-                                    <div className="flex gap-1"><span className="w-16">মূল্য:</span><span className="border-b border-dotted border-gray-600 flex-1 min-h-[10px]">{d.land_value ?? ''}</span></div>
-                                </div>
-                            </td>
-                        </tr>
-                        <tr>
-                            <td className="border border-gray-600 px-1 py-0.5 text-center">৪</td>
-                            <td className="border border-gray-600 px-1 py-0.5">বাড়ীর ধরণ ও ঘরের সংখ্যা (টিক চিহ্ন দিন)</td>
-                            <td className="border border-gray-600 px-1 py-0.5">
-                                <div className="space-y-0.5">
-                                    <div className="flex gap-1"><span className="w-32">ধরণ:</span><span className="border-b border-dotted border-gray-600 flex-1 min-h-[10px]">{d.house_type || ''}</span></div>
-                                    <div className="flex gap-1"><span className="w-32">ছাপড়া/টিন/মাটি/পাকা-ঘরের সংখ্যা:</span><span className="border-b border-dotted border-gray-600 flex-1 min-h-[10px]">{d.room_count ?? ''}</span></div>
-                                </div>
-                            </td>
-                        </tr>
-                        <tr>
-                            <td className="border border-gray-600 px-1 py-0.5 text-center">৫</td>
-                            <td className="border border-gray-600 px-1 py-0.5">নিজস্ব টিউবওয়েল ও স্বাস্থ্যসম্মত পায়খানা আছে কি-না (টিক চিহ্ন দিন)</td>
-                            <td className="border border-gray-600 px-1 py-0.5">
-                                <div className="space-y-0.5">
-                                    <div className="flex gap-2 items-center">
-                                        <span>টিউবওয়েল-</span>
-                                        <span className="border border-gray-600 w-3 h-3 inline-block">{d.has_tubewell ? '✓' : ''}</span><span>হ্যাঁ</span>
-                                        <span className="border border-gray-600 w-3 h-3 inline-block ml-2">{!d.has_tubewell ? '✓' : ''}</span><span>না</span>
-                                    </div>
-                                    <div className="flex gap-2 items-center">
-                                        <span>স্বাস্থ্যসম্মত পায়খানা-</span>
-                                        <span className="border border-gray-600 w-3 h-3 inline-block">{d.has_latrine ? '✓' : ''}</span><span>হ্যাঁ</span>
-                                        <span className="border border-gray-600 w-3 h-3 inline-block ml-2">{!d.has_latrine ? '✓' : ''}</span><span>না</span>
-                                    </div>
-                                </div>
-                            </td>
-                        </tr>
-                        <tr>
-                            <td className="border border-gray-600 px-1 py-0.5 text-center">৬</td>
-                            <td className="border border-gray-600 px-1 py-0.5">গবাদি পশুর সংখ্যা (গরু, মহিষ, ছাগল, ভেড়া ইত্যাদি)</td>
-                            <td className="border border-gray-600 px-1 py-0.5">
-                                <div className="grid grid-cols-3 gap-1">
-                                    <div className="flex gap-1"><span className="w-12">গরু-</span><span className="border-b border-dotted border-gray-600 flex-1 min-h-[10px]">{d.cow_count ?? ''}</span></div>
-                                    <div className="flex gap-1"><span className="w-12">মহিষ-</span><span className="border-b border-dotted border-gray-600 flex-1 min-h-[10px]">{d.buffalo_count ?? ''}</span></div>
-                                    <div className="flex gap-1"><span className="w-12">ছাগল-</span><span className="border-b border-dotted border-gray-600 flex-1 min-h-[10px]">{d.goat_count ?? ''}</span></div>
-                                    <div className="flex gap-1"><span className="w-12">ভেড়া-</span><span className="border-b border-dotted border-gray-600 flex-1 min-h-[10px]">{d.sheep_count ?? ''}</span></div>
-                                    <div className="flex gap-1"><span className="w-16">হাঁস-মুরগী-</span><span className="border-b border-dotted border-gray-600 flex-1 min-h-[10px]">{d.duck_chicken_count ?? ''}</span></div>
-                                </div>
-                            </td>
-                        </tr>
-                        <tr>
-                            <td className="border border-gray-600 px-1 py-0.5 text-center">৭</td>
-                            <td className="border border-gray-600 px-1 py-0.5">স্কুলে/কলেজে পড়ে এমন ছেলে-মেয়ের সংখ্যা</td>
-                            <td className="border border-gray-600 px-1 py-0.5">
-                                <div className="grid grid-cols-3 gap-1">
-                                    <div className="flex gap-1"><span className="w-20">প্রাথমিক স্কুল-</span><span className="border-b border-dotted border-gray-600 flex-1 min-h-[10px]">{d.primary_school_count ?? ''}</span></div>
-                                    <div className="flex gap-1"><span className="w-20">মাধ্যমিক স্কুল-</span><span className="border-b border-dotted border-gray-600 flex-1 min-h-[10px]">{d.secondary_school_count ?? ''}</span></div>
-                                    <div className="flex gap-1"><span className="w-16">কলেজ-</span><span className="border-b border-dotted border-gray-600 flex-1 min-h-[10px]">{d.college_count ?? ''}</span></div>
-                                    <div className="flex gap-1"><span className="w-16">মাদ্রাসা-</span><span className="border-b border-dotted border-gray-600 flex-1 min-h-[10px]">{d.madrasah_count ?? ''}</span></div>
-                                    <div className="flex gap-1"><span className="w-20">বিশ্ববিদ্যালয়-</span><span className="border-b border-dotted border-gray-600 flex-1 min-h-[10px]">{d.university_count ?? ''}</span></div>
-                                </div>
-                            </td>
-                        </tr>
-                        <tr>
-                            <td className="border border-gray-600 px-1 py-0.5 text-center">৮</td>
-                            <td className="border border-gray-600 px-1 py-0.5">সাধারণ সঞ্চয় (দফা ও পরিমাণ)</td>
-                            <td className="border border-gray-600 px-1 py-0.5">
-                                <div className="space-y-0.5">
-                                    <div className="flex gap-1"><span className="w-28">ঋণের দফা:</span><span className="border-b border-dotted border-gray-600 flex-1 min-h-[10px]">{dofaLabel(d.loan_round)}</span></div>
-                                    <div className="flex gap-1"><span className="w-28">মোট সঞ্চয় (৳):</span><span className="border-b border-dotted border-gray-600 flex-1 min-h-[10px]">{d.savings_amount ?? ''}</span></div>
-                                    <div className="flex gap-1"><span className="w-28">সাধারণ সঞ্চয় পরিমাণ (৳):</span><span className="border-b border-dotted border-gray-600 flex-1 min-h-[10px]">{d.general_savings_amount ?? ''}</span></div>
-                                    <div className="flex gap-1"><span className="w-28">সঞ্চয়ের বিপরিতে:</span><span className="border-b border-dotted border-gray-600 flex-1 min-h-[10px]">{d.is_against_savings ? 'হ্যাঁ' : 'না'}</span></div>
-                                    {d.is_against_savings && (
-                                        <>
-                                            <div className="flex gap-1"><span className="w-28">বিপরিতে সঞ্চয় পরিমাণ (৳):</span><span className="border-b border-dotted border-gray-600 flex-1 min-h-[10px]">{d.against_savings_amount ?? ''}</span></div>
-                                        </>
-                                    )}
-                                </div>
-                            </td>
-                        </tr>
-                        <tr>
-                            <td className="border border-gray-600 px-1 py-0.5 text-center">৯</td>
-                            <td className="border border-gray-600 px-1 py-0.5">সদস্যের বাড়ী চেনার নির্দেশনা</td>
-                            <td className="border border-gray-600 px-1 py-0.5"><div className="border-b border-dotted border-gray-600 min-h-[30px]">{d.house_identification || ''}</div></td>
-                        </tr>
-                        <tr>
-                            <td className="border border-gray-600 px-1 py-0.5 text-center">১০</td>
-                            <td className="border border-gray-600 px-1 py-0.5">অন্যান্য সংস্থা হতে ঋণ গ্রহণের তথ্য</td>
-                            <td className="border border-gray-600 px-1 py-0.5"><div className="border-b border-dotted border-gray-600 min-h-[30px]">{d.other_organization_loans || ''}</div></td>
-                        </tr>
-                        <tr>
-                            <td className="border border-gray-600 px-1 py-0.5 text-center">১১</td>
-                            <td className="border border-gray-600 px-1 py-0.5">বিগত দফার পরিশোধের ধরণ (টিক চিহ্ন দিন)</td>
-                            <td className="border border-gray-600 px-1 py-0.5">
-                                <div className="space-y-0.5">
-                                    <div className="flex gap-2 items-center"><span className="border border-gray-600 w-3 h-3 inline-block">{d.previous_repayment_type === 'installment' ? '✓' : ''}</span><span>কিস্তিতে পরিশোধ করেছেন</span></div>
-                                    <div className="flex gap-2 items-center"><span className="border border-gray-600 w-3 h-3 inline-block">{d.previous_repayment_type === 'savings_adjustment' ? '✓' : ''}</span><span>সঞ্চয়ের সাথে সমন্বয় করেছেন</span></div>
-                                </div>
-                            </td>
-                        </tr>
-                        <tr>
-                            <td className="border border-gray-600 px-1 py-0.5 text-center">১২</td>
-                            <td className="border border-gray-600 px-1 py-0.5">গত ৬ মাসে/১ বছরে কতবার সঞ্চয় খেলাপী করেছেন</td>
-                            <td className="border border-gray-600 px-1 py-0.5">
-                                <div className="space-y-0.5">
-                                    <div className="flex gap-1"><span className="w-20">সাধারণ:</span><span className="border-b border-dotted border-gray-600 flex-1 min-h-[10px]">{d.general_savings_default_count ?? ''}</span></div>
-                                    <div className="flex gap-1"><span className="w-20">আপদকালীন:</span><span className="border-b border-dotted border-gray-600 flex-1 min-h-[10px]">{d.emergency_savings_default_count ?? ''}</span></div>
-                                    <div className="flex gap-1"><span className="w-20">মেয়াদী:</span><span className="border-b border-dotted border-gray-600 flex-1 min-h-[10px]">{d.term_savings_default_count ?? ''}</span></div>
-                                </div>
-                            </td>
-                        </tr>
-                        <tr>
-                            <td className="border border-gray-600 px-1 py-0.5 text-center">১৩</td>
-                            <td className="border border-gray-600 px-1 py-0.5">বর্তমানে সদস্যের মেয়াদী সঞ্চয়ের কয়টি কিস্তি বাঁকী আছে</td>
-                            <td className="border border-gray-600 px-1 py-0.5">
-                                <div className="space-y-0.5">
-                                    <div className="flex gap-1"><span className="w-24">কিস্তি সংখ্যা:</span><span className="border-b border-dotted border-gray-600 flex-1 min-h-[10px]">{d.term_savings_due_installments ?? ''}</span></div>
-                                    <div className="flex gap-1"><span className="w-24">টাকার পরিমাণ:</span><span className="border-b border-dotted border-gray-600 flex-1 min-h-[10px]">{d.term_savings_due_amount ?? ''}</span></div>
-                                </div>
-                            </td>
-                        </tr>
-                    </tbody>
-                </table>
-            </div>
-            <div className="mb-2 flex gap-4" style={{ fontSize: '10px' }}>
-                <div className="flex gap-1 items-baseline">
-                    <span className="w-40">সরেজমিনে পরিদর্শনের তারিখ:</span>
-                    <span className="border-b border-dotted border-gray-600 flex-1 min-w-[100px]">{formatDateBangla(d.field_visit_date) || ''}</span>
-                </div>
-                <div className="flex gap-1 items-baseline">
-                    <span className="w-32">ঋণ প্রদানের তারিখ:</span>
-                    <span className="border-b border-dotted border-gray-600 flex-1 min-w-[100px]">{formatDateBangla(d.loan_disbursement_date) || ''}</span>
-                </div>
-            </div>
-            <div className="mb-2" style={{ fontSize: '10px' }}>
-                <p className="font-bold mb-0.5">মন্তব্য:</p>
-                <div className="border border-gray-600 min-h-[40px] p-1">{d.comments || ''}</div>
-            </div>
-            <div className="flex gap-4 mt-2" style={{ fontSize: '10px' }}>
-                <div className="flex-1">
-                    <p className="mb-0.5">সদস্য/তথ্য প্রদানকারীর স্বাক্ষর:</p>
-                    <div className="border-b border-dotted border-gray-600 h-6">
-                        {d.member_signature && <img src={d.member_signature} alt="Signature" className="h-5 object-contain" />}
-                    </div>
-                </div>
-                <div className="flex-1">
-                    <p className="mb-0.5">শাখা ব্যবস্থাপকের স্বাক্ষর ও সিল:</p>
-                    <div className="border-b border-dotted border-gray-600 h-6">
-                        {d.branch_manager_signature && <img src={d.branch_manager_signature} alt="Signature" className="h-5 object-contain" />}
-                    </div>
-                </div>
-            </div>
-            <p className="text-center mt-2 text-[9px] italic">নোট: প্রতিবেদনটি ঋণ আবেদনের সাথে সংযুক্ত করে সংরক্ষণ করতে হবে।</p>
         </div>
     );
 }
@@ -460,7 +482,7 @@ export default function FieldInvestigation({
         }
         return (
             <div className="print-container">
-                {renderFieldInvestigationPreviewContent(previewData)}
+                <FieldInvestigationPrintView formData={previewData} />
             </div>
         );
     }
@@ -604,7 +626,7 @@ export default function FieldInvestigation({
     };
 
     const handlePrint = () => {
-        window.print();
+        triggerPrintWithAutoFit('.print-container');
     };
 
     return (
@@ -612,7 +634,7 @@ export default function FieldInvestigation({
             <Head title="সরেজমিনে তদন্ত প্রতিবেদন">
                 <style>{`
                     @media print {
-                        @page { size: A4 portrait; margin: 12mm 15mm; }
+                        @page { size: A4 portrait; margin: 8mm 10mm; }
                         body * { visibility: hidden !important; }
                         .print-container, .print-container * { visibility: visible !important; }
                         .print-container {
@@ -620,6 +642,42 @@ export default function FieldInvestigation({
                             left: 0 !important;
                             top: 0 !important;
                             width: 100% !important;
+                            max-width: 100% !important;
+                            margin: 0 !important;
+                            padding: 0 !important;
+                            background: #ffffff !important;
+                        }
+                        .print-page-sheet {
+                            width: 100% !important;
+                            max-width: 100% !important;
+                            min-height: 278mm !important;
+                            max-height: 278mm !important;
+                            box-sizing: border-box !important;
+                            page-break-after: avoid !important;
+                            break-after: avoid !important;
+                            page-break-inside: avoid !important;
+                            break-inside: avoid !important;
+                            overflow: hidden !important;
+                            position: relative !important;
+                            margin: 0 !important;
+                            padding: 0 !important;
+                            display: flex !important;
+                            flex-direction: column !important;
+                            justify-content: space-between !important;
+                            background: #ffffff !important;
+                        }
+                        .print-page-content {
+                            width: 100% !important;
+                            box-sizing: border-box !important;
+                        }
+                    }
+                    @media screen {
+                        .print-page-sheet {
+                            min-height: 297mm;
+                            box-sizing: border-box;
+                            display: flex;
+                            flex-direction: column;
+                            justify-content: space-between;
                         }
                     }
                 `}</style>
@@ -1061,8 +1119,8 @@ export default function FieldInvestigation({
                                             প্রিন্ট
                                         </button>
                                     </div>
-                                    <div className="p-4 md:p-6 print:p-2">
-                                        {renderFieldInvestigationPreviewContent(data)}
+                                    <div className="p-4 md:p-6 print:p-0">
+                                        <FieldInvestigationPrintView formData={data} />
                                     </div>
                                 </div>
                             </div>

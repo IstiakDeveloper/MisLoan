@@ -17,10 +17,17 @@ use App\Models\User;
 use App\Services\ApprovalService;
 use App\Services\NotificationService;
 use App\Support\LoanFormVisibility;
+use Carbon\Carbon;
 use Illuminate\Http\Request;
 use Inertia\Inertia;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
+use PhpOffice\PhpSpreadsheet\Cell\Coordinate;
+use PhpOffice\PhpSpreadsheet\Spreadsheet;
+use PhpOffice\PhpSpreadsheet\Style\Alignment;
+use PhpOffice\PhpSpreadsheet\Style\Border;
+use PhpOffice\PhpSpreadsheet\Style\Fill;
+use PhpOffice\PhpSpreadsheet\Writer\Xlsx;
 
 class LoanApplicationController extends Controller
 {
@@ -380,9 +387,8 @@ class LoanApplicationController extends Controller
         });
 
         // Get user's loan applications for date range
-        // Use date range instead of whereDate() to allow index usage and prevent memory issues
-        $startOfDay = \Carbon\Carbon::parse($dateFrom)->startOfDay();
-        $endOfDay = \Carbon\Carbon::parse($dateTo)->endOfDay();
+        $startOfDay = Carbon::parse($dateFrom)->startOfDay();
+        $endOfDay = Carbon::parse($dateTo)->endOfDay();
         
         // Main query: only small columns (no LOBs) so ORDER BY uses minimal sort buffer.
         $applications = LoanApplication::with([
@@ -410,7 +416,9 @@ class LoanApplicationController extends Controller
             ->when($isFieldOfficer, function ($query) use ($user) {
                 $query->where('submitted_by', $user->id);
             })
-            ->whereBetween('created_at', [$startOfDay, $endOfDay])
+            ->where(function ($q) use ($startOfDay, $endOfDay) {
+                $q->whereBetween(DB::raw('COALESCE(disbursed_at, reviewed_at, submitted_at, created_at)'), [$startOfDay, $endOfDay]);
+            })
             ->when($statusFilter, function ($query) use ($statusFilter) {
                 $query->where('status', $statusFilter);
             })
@@ -426,13 +434,13 @@ class LoanApplicationController extends Controller
                       });
                 });
             })
-            ->orderBy('created_at', 'desc')
+            ->orderByRaw('COALESCE(disbursed_at, reviewed_at, submitted_at, created_at) desc')
             ->with('samity:id,samity_name,samity_name_bn,samity_code')
             ->select([
                 'id', 'application_no', 'member_admission_id', 'loan_product_id',
                 'loan_category_id', 'branch_id', 'samity_id', 'form_type', 'status',
                 'requested_amount', 'approved_amount', 'created_at', 'updated_at',
-                'submitted_at', 'reviewed_at', 'purpose_of_loan', 'legacy_member_snapshot',
+                'submitted_at', 'reviewed_at', 'disbursed_at', 'purpose_of_loan', 'legacy_member_snapshot',
             ])
             ->paginate($perPage)
             ->withQueryString();
@@ -479,7 +487,9 @@ class LoanApplicationController extends Controller
             ->when($isFieldOfficer, function ($query) use ($user) {
                 $query->where('submitted_by', $user->id);
             })
-            ->whereBetween('created_at', [$startOfDay, $endOfDay]);
+            ->where(function ($q) use ($startOfDay, $endOfDay) {
+                $q->whereBetween(DB::raw('COALESCE(disbursed_at, reviewed_at, submitted_at, created_at)'), [$startOfDay, $endOfDay]);
+            });
 
         $stats = [
             'total' => (clone $statsBaseQuery)->where('status', '!=', 'draft')->count(),
@@ -504,6 +514,174 @@ class LoanApplicationController extends Controller
             'searchFilter' => $searchFilter,
             'perPage' => $perPage,
             'preselectedMember' => $this->resolvePreselectedMember($request),
+        ]);
+    }
+
+    /**
+     * Export branch loan applications to XLSX (same filters as index).
+     */
+    public function exportExcel(Request $request)
+    {
+        $user = $request->user();
+        $dateFrom = $request->input('date_from', $request->input('from_date', now()->startOfMonth()->toDateString()));
+        $dateTo = $request->input('date_to', $request->input('to_date', now()->toDateString()));
+        $statusFilter = $request->input('status', '');
+        $searchFilter = $request->input('search', '');
+        $isFieldOfficer = $this->isFieldOfficer($user);
+
+        $startOfDay = Carbon::parse($dateFrom)->startOfDay();
+        $endOfDay = Carbon::parse($dateTo)->endOfDay();
+
+        $query = LoanApplication::with([
+                'loanProduct',
+                'loanCategory',
+                'memberAdmission',
+                'branch',
+                'samity',
+                'submittedBy',
+            ])
+            ->when(!$user->has_all_access, function ($query) use ($user) {
+                $query->whereIn('branch_id', $user->getAccessibleBranches()->pluck('id'));
+            })
+            ->where(function ($q) use ($user) {
+                $q->where('status', '!=', 'draft')
+                  ->orWhere('submitted_by', $user->id);
+            })
+            ->when($isFieldOfficer, function ($query) use ($user) {
+                $query->where('submitted_by', $user->id);
+            })
+            ->where(function ($q) use ($startOfDay, $endOfDay) {
+                $q->whereBetween(DB::raw('COALESCE(disbursed_at, reviewed_at, submitted_at, created_at)'), [$startOfDay, $endOfDay]);
+            })
+            ->when($statusFilter, function ($query) use ($statusFilter) {
+                $query->where('status', $statusFilter);
+            })
+            ->when($searchFilter, function ($query) use ($searchFilter) {
+                $query->where(function ($q) use ($searchFilter) {
+                    $q->where('application_no', 'like', "%{$searchFilter}%")
+                      ->orWhereHas('memberAdmission', function ($mq) use ($searchFilter) {
+                          $mq->where('applicant_name_en', 'like', "%{$searchFilter}%")
+                            ->orWhere('applicant_name_bn', 'like', "%{$searchFilter}%")
+                            ->orWhere('mobile_number', 'like', "%{$searchFilter}%")
+                            ->orWhere('nid_number', 'like', "%{$searchFilter}%")
+                            ->orWhere('application_no', 'like', "%{$searchFilter}%");
+                      });
+                });
+            })
+            ->orderByRaw('COALESCE(disbursed_at, reviewed_at, submitted_at, created_at) desc');
+
+        $loans = $query->get();
+
+        $statusLabels = [
+            'draft' => 'খসড়া (Draft)',
+            'submitted' => 'জমা (Submitted)',
+            'under_review' => 'পর্যালোচনায় (Under Review)',
+            'ready_for_head_office' => 'শাখা অনুমোদিত (Branch Approved)',
+            'pending_head_office' => 'হেড অফিসে (Pending HO)',
+            'approved' => 'অনুমোদিত (Approved)',
+            'pending_disbursement' => 'বিতরণ অপেক্ষা (Pending Disburse)',
+            'rejected' => 'প্রত্যাখ্যাত (Rejected)',
+            'disbursed' => 'বিতরণকৃত (Disbursed)',
+        ];
+
+        $spreadsheet = new Spreadsheet();
+        $sheet = $spreadsheet->getActiveSheet();
+        $sheet->setTitle('ঋণ আবেদন');
+
+        $headers = [
+            'ক্রমিক',
+            'সদস্য কোড / আবেদন নং',
+            'আবেদনকারীর নাম (বাংলা)',
+            'আবেদনকারীর নাম (ইংরেজি)',
+            'মোবাইল নম্বর',
+            'NID নম্বর',
+            'ঋণ পণ্য',
+            'ক্যাটাগরি',
+            'চাহিদাকৃত পরিমাণ',
+            'অনুমোদিত পরিমাণ',
+            'শাখা',
+            'সমিতি',
+            'স্ট্যাটাস',
+            'পেন্ডিং অবস্থান',
+            'জমাদানের তারিখ',
+            'অনুমোদন/পর্যালোচনা তারিখ',
+            'বিতরণের তারিখ',
+            'তৈরির তারিখ',
+        ];
+
+        $sheet->fromArray($headers, null, 'A1');
+        $lastColumn = Coordinate::stringFromColumnIndex(count($headers));
+        $sheet->getStyle("A1:{$lastColumn}1")->applyFromArray([
+            'font' => ['bold' => true, 'size' => 11, 'color' => ['rgb' => 'FFFFFF']],
+            'fill' => [
+                'fillType' => Fill::FILL_SOLID,
+                'startColor' => ['rgb' => '1E293B'],
+            ],
+            'alignment' => [
+                'horizontal' => Alignment::HORIZONTAL_CENTER,
+                'vertical' => Alignment::VERTICAL_CENTER,
+                'wrapText' => true,
+            ],
+            'borders' => [
+                'allBorders' => [
+                    'borderStyle' => Border::BORDER_THIN,
+                    'color' => ['rgb' => '334155'],
+                ],
+            ],
+        ]);
+        $sheet->getRowDimension(1)->setRowHeight(28);
+
+        $row = 2;
+        foreach ($loans as $index => $loan) {
+            $member = $loan->memberAdmission;
+            $tracking = $loan->getTrackingState();
+            $memberCode = $member?->application_no ?? $loan->application_no ?? '';
+            $sheet->fromArray([
+                $index + 1,
+                $memberCode,
+                $member?->applicant_name_bn ?? '',
+                $member?->applicant_name_en ?? '',
+                $member?->mobile_number ?? '',
+                $member?->nid_number ?? '',
+                $loan->loanProduct?->product_name ?? '',
+                $loan->loanCategory?->category_name ?? '',
+                $loan->requested_amount ?? 0,
+                $loan->approved_amount ?? 0,
+                $loan->branch?->name ?? '',
+                $loan->samity?->samity_name ?? '',
+                $statusLabels[$loan->status] ?? $loan->status,
+                $tracking['label'] ?? '',
+                $loan->submitted_at ? $loan->submitted_at->format('Y-m-d') : '',
+                $loan->reviewed_at ? $loan->reviewed_at->format('Y-m-d') : '',
+                $loan->disbursed_at ? $loan->disbursed_at->format('Y-m-d') : '',
+                $loan->created_at ? $loan->created_at->format('Y-m-d H:i') : '',
+            ], null, "A{$row}");
+
+            $sheet->getStyle("A{$row}:{$lastColumn}{$row}")->applyFromArray([
+                'borders' => [
+                    'allBorders' => [
+                        'borderStyle' => Border::BORDER_THIN,
+                        'color' => ['rgb' => 'CBD5E1'],
+                    ],
+                ],
+                'alignment' => [
+                    'vertical' => Alignment::VERTICAL_CENTER,
+                ],
+            ]);
+            $row++;
+        }
+
+        foreach (range(1, count($headers)) as $col) {
+            $sheet->getColumnDimension(Coordinate::stringFromColumnIndex($col))->setAutoSize(true);
+        }
+
+        $filename = 'loan_applications_' . date('Y_m_d_His') . '.xlsx';
+        $writer = new Xlsx($spreadsheet);
+
+        return response()->streamDownload(function () use ($writer) {
+            $writer->save('php://output');
+        }, $filename, [
+            'Content-Type' => 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
         ]);
     }
 

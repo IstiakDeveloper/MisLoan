@@ -5,7 +5,8 @@ import { formatDate } from '@/utils/dateUtils';
 import {
     Plus, Calendar, FileText, CheckCircle, XCircle, Clock,
     Search, Eye, Edit, Trash2, X, AlertTriangle, MessageSquare, Send,
-    Filter, RefreshCw, UserCheck, Layers, CreditCard, ChevronRight, AlertCircle, ArrowUpRight, Sparkles
+    Filter, RefreshCw, UserCheck, Layers, CreditCard, ChevronRight, AlertCircle, ArrowUpRight, Sparkles,
+    Download
 } from 'lucide-react';
 import ListPagination from '@/components/ListPagination';
 import AutoFitTableContainer from '@/components/AutoFitTableContainer';
@@ -62,21 +63,31 @@ interface LoanApplication {
     loan_product: LoanProduct & { installment_type?: string };
     loan_category: LoanCategory;
     created_at: string;
+    submitted_at?: string;
+    reviewed_at?: string;
+    disbursed_at?: string;
+    member_code?: string;
     member_admission?: {
         id: number;
         applicant_name_en?: string;
         applicant_name_bn?: string;
         application_no?: string;
+        member_code?: string;
         nid_number?: string;
         mobile_number?: string;
+        is_legacy?: boolean;
+        loan_dofa?: number;
     };
     /** For display when member_admission is null (legacy/old member) */
     member_display?: {
         applicant_name_bn?: string;
         applicant_name_en?: string;
         application_no?: string;
+        member_code?: string;
         nid_number?: string;
         mobile_number?: string;
+        is_legacy?: boolean;
+        loan_dofa?: number;
     };
     visible_form_ids?: number[];
     editable_form_ids?: number[];
@@ -298,6 +309,21 @@ export default function Index({ categories, applications, stats, selectedDate, d
         }, { preserveState: true });
     };
 
+    const getEffectiveDate = (app: LoanApplication) => {
+        return (app as any).disbursed_at || (app as any).reviewed_at || (app as any).submitted_at || app.created_at;
+    };
+
+    const handleExportExcel = () => {
+        const params = new URLSearchParams();
+        const p = buildListParams();
+        Object.entries(p).forEach(([key, val]) => {
+            if (val !== undefined && val !== null && val !== '') {
+                params.set(key, String(val));
+            }
+        });
+        window.location.href = `/member/loan-applications/export/excel?${params.toString()}`;
+    };
+
     const handleNewApplication = () => {
         setShowNewModal(true);
         setSelectedCategory(null);
@@ -506,6 +532,16 @@ export default function Index({ categories, applications, stats, selectedDate, d
                             title="আজকের আবেদনসমূহ (Today)"
                         >
                             <Calendar className="w-4 h-4" /> Today (আজ)
+                        </button>
+
+                        <button
+                            type="button"
+                            onClick={handleExportExcel}
+                            className="px-3.5 py-2 rounded-lg text-xs font-extrabold shadow transition flex items-center gap-1.5 border bg-emerald-600 hover:bg-emerald-500 text-white border-emerald-500"
+                            title="XLSX এক্সেল ডাউনলোড"
+                        >
+                            <Download className="w-4 h-4" />
+                            <span>XLSX Download</span>
                         </button>
 
                         {canCreateLoanApplication && (
@@ -731,6 +767,14 @@ export default function Index({ categories, applications, stats, selectedDate, d
                                 <Calendar className="w-3.5 h-3.5" /> আজ
                             </button>
                             <button
+                                type="button"
+                                onClick={handleExportExcel}
+                                className="px-2.5 py-1.5 text-xs font-semibold rounded-lg shadow transition flex items-center justify-center gap-1 border bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border-emerald-200"
+                                title="XLSX এক্সেল ডাউনলোড"
+                            >
+                                <Download className="w-3.5 h-3.5" /> XLSX
+                            </button>
+                            <button
                                 onClick={handleDateFilterChange}
                                 className="flex-1 px-3 py-1.5 bg-slate-900 hover:bg-slate-800 text-white text-xs font-semibold rounded-lg shadow transition flex items-center justify-center gap-1"
                             >
@@ -851,7 +895,7 @@ export default function Index({ categories, applications, stats, selectedDate, d
                                             </div>
                                             <div>
                                                 <span className="text-[10px] font-bold uppercase text-slate-400 block">তারিখ</span>
-                                                <p className="font-semibold text-slate-600">{formatDate(app.created_at)}</p>
+                                                <p className="font-semibold text-slate-600">{formatDate(getEffectiveDate(app))}</p>
                                             </div>
                                             <div className="col-span-2 flex items-center justify-between pt-1 border-t border-slate-200/50">
                                                 <span className="text-[10px] font-bold uppercase text-slate-400">স্ট্যাটাস:</span>
@@ -1073,7 +1117,7 @@ export default function Index({ categories, applications, stats, selectedDate, d
                                                     </td>
 
                                                     <td className="px-4 py-3.5 text-slate-600 font-medium">
-                                                        {formatDate(app.created_at)}
+                                                        {formatDate(getEffectiveDate(app))}
                                                     </td>
 
                                                     <td className="px-4 py-3.5">

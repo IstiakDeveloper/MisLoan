@@ -5,8 +5,27 @@ import {
     MemberAdmissionFormData,
     OtherAsset,
 } from '@/types/memberAdmission';
+import {
+    clearMemberAdmissionDraftLocal,
+    hasMeaningfulDraftData,
+    loadMemberAdmissionDraftLocal,
+    memberAdmissionDraftKey,
+    saveMemberAdmissionDraftLocal,
+} from '@/utils/memberAdmissionDraftStorage';
 import { Head, router, useForm, usePage } from '@inertiajs/react';
-import { AlertCircle, ChevronRight, History, Save, Send, Sparkles, UserPlus, X } from 'lucide-react';
+import {
+    AlertCircle,
+    Check,
+    ChevronRight,
+    History,
+    RefreshCw,
+    RotateCcw,
+    Save,
+    Send,
+    Sparkles,
+    UserPlus,
+    X,
+} from 'lucide-react';
 import React, { useEffect, useState } from 'react';
 
 import AddressSection from './sections/AddressSection';
@@ -102,6 +121,137 @@ function getFieldNameBn(key: string): string {
     return key;
 }
 
+function getDefaultFormData(
+    suggested_application_no: string,
+    initialBranchId: number,
+    currentUser: any
+): MemberAdmissionFormData {
+    return {
+        application_no: suggested_application_no || '',
+        branch_id: initialBranchId,
+        samity_id: 0,
+        member_category_id: 0,
+        survey_date: '',
+        admission_date: '',
+
+        // Personal Information
+        applicant_name_en: '',
+        father_name_en: '',
+        mother_name_en: '',
+        spouse_name_en: '',
+        applicant_name_bn: '',
+        father_name_bn: '',
+        mother_name_bn: '',
+        spouse_name_bn: '',
+
+        marital_status: 'single',
+        mobile_number: '',
+        alternative_mobile: '',
+
+        // Present Address
+        present_division: '',
+        present_district: '',
+        present_upazila: '',
+        present_union: '',
+        present_village_road: '',
+        present_post_code: '',
+
+        // Permanent Address
+        permanent_address_same: false,
+        permanent_division: '',
+        permanent_district: '',
+        permanent_upazila: '',
+        permanent_union: '',
+        permanent_village_road: '',
+        permanent_post_code: '',
+
+        // Identity
+        nid_number: '',
+        smart_card_number: '',
+        birth_certificate_number: '',
+        date_of_birth: '',
+        gender: 'male',
+        family_member_mobile: '',
+
+        // Guarantor
+        guarantor_name: '',
+        guarantor_mobile: '',
+        tin_number: '',
+        want_sms_service: false,
+
+        // Economic
+        business_details: '',
+        job_details: '',
+        other_income_details: '',
+        total_asset_value: 0,
+        house_type: '',
+
+        // Property
+        mud_house_count: 0,
+        tin_house_count: 0,
+        brick_house_count: 0,
+        semi_brick_house_count: 0,
+
+        // Livestock
+        cow_buffalo_count: 0,
+        goat_sheep_count: 0,
+        duck_chicken_count: 0,
+        other_livestock: '',
+        other_livestock_count: 0,
+
+        // Land
+        cultivable_land_amount: 0,
+        cultivable_land_value: 0,
+        non_cultivable_land_amount: 0,
+        non_cultivable_land_value: 0,
+
+        // Financial
+        monthly_income: 0,
+        monthly_expense: 0,
+        monthly_savings: 0,
+
+        // Additional
+        interviewer_name: currentUser?.name || '',
+        employee_name: currentUser?.pin || currentUser?.username || '',
+        other_loan_info: '',
+        requested_loan_amount: '',
+        project_name: '',
+        estimated_annual_project_income: '',
+        collector_comment: '',
+        guardian_name: '',
+
+        // Documents
+        customer_photo: null,
+        customer_nid_photo: null,
+        customer_nid_back_photo: null,
+        nid_both_sides: false,
+        guardian_photo: null,
+        guardian_nid_photo: null,
+        applicant_signature: null,
+
+        family_members: [
+            {
+                member_name: '',
+                relation_with_head: 'নিজ',
+                gender: 'male',
+                age_years: 0,
+                age_months: 0,
+                marital_status: '',
+                education_level: '',
+                occupation: '',
+                monthly_income: 0,
+                business_details: '',
+                job_details: '',
+                other_income_details: '',
+            },
+        ],
+        other_assets: [],
+        selected_approvers: [],
+        is_legacy: false,
+        loan_dofa: '',
+    };
+}
+
 export default function Create({
     branches,
     samities,
@@ -112,6 +262,7 @@ export default function Create({
     const page = usePage<{
         auth: {
             user?: {
+                id?: number;
                 name?: string;
                 pin?: string;
                 username?: string;
@@ -134,6 +285,16 @@ export default function Create({
     const [samityDropdownOpen, setSamityDropdownOpen] = useState(false);
     const [memberTypeChosen, setMemberTypeChosen] = useState(false);
 
+    // Auto-save & draft states
+    const [isInitialized, setIsInitialized] = useState(false);
+    const [lastSavedTime, setLastSavedTime] = useState<string | null>(null);
+    const [isAutoSaving, setIsAutoSaving] = useState(false);
+    const [isDraftRestored, setIsDraftRestored] = useState(false);
+
+    const draftKey = memberAdmissionDraftKey(
+        currentUser?.id || currentUser?.pin || currentUser?.username || currentUser?.name || 'officer'
+    );
+
     // Address dropdown states
     const [presentDistricts, setPresentDistricts] = useState<string[]>([]);
     const [presentUpazilas, setPresentUpazilas] = useState<string[]>([]);
@@ -148,130 +309,9 @@ export default function Create({
             : 0;
 
     const { data, setData, post, processing, errors, transform } =
-        useForm<MemberAdmissionFormData>({
-            application_no: suggested_application_no || '',
-            branch_id: initialBranchId,
-            samity_id: 0,
-            member_category_id: 0,
-            survey_date: '',
-            admission_date: '',
-
-            // Personal Information
-            applicant_name_en: '',
-            father_name_en: '',
-            mother_name_en: '',
-            spouse_name_en: '',
-            applicant_name_bn: '',
-            father_name_bn: '',
-            mother_name_bn: '',
-            spouse_name_bn: '',
-
-            marital_status: 'single',
-            mobile_number: '',
-            alternative_mobile: '',
-
-            // Present Address
-            present_division: '',
-            present_district: '',
-            present_upazila: '',
-            present_union: '',
-            present_village_road: '',
-            present_post_code: '',
-
-            // Permanent Address
-            permanent_address_same: false,
-            permanent_division: '',
-            permanent_district: '',
-            permanent_upazila: '',
-            permanent_union: '',
-            permanent_village_road: '',
-            permanent_post_code: '',
-
-            // Identity
-            nid_number: '',
-            smart_card_number: '',
-            birth_certificate_number: '',
-            date_of_birth: '',
-            gender: 'male',
-            family_member_mobile: '',
-
-            // Guarantor
-            guarantor_name: '',
-            guarantor_mobile: '',
-            tin_number: '',
-            want_sms_service: false,
-
-            // Economic
-            business_details: '',
-            job_details: '',
-            other_income_details: '',
-            total_asset_value: 0,
-            house_type: '',
-
-            // Property
-            mud_house_count: 0,
-            tin_house_count: 0,
-            brick_house_count: 0,
-            semi_brick_house_count: 0,
-
-            // Livestock
-            cow_buffalo_count: 0,
-            goat_sheep_count: 0,
-            duck_chicken_count: 0,
-            other_livestock: '',
-            other_livestock_count: 0,
-
-            // Land
-            cultivable_land_amount: 0,
-            cultivable_land_value: 0,
-            non_cultivable_land_amount: 0,
-            non_cultivable_land_value: 0,
-
-            // Financial
-            monthly_income: 0,
-            monthly_expense: 0,
-            monthly_savings: 0,
-
-            // Additional
-            interviewer_name: currentUser?.name || '',
-            employee_name: currentUser?.pin || currentUser?.username || '',
-            other_loan_info: '',
-            requested_loan_amount: '',
-            project_name: '',
-            estimated_annual_project_income: '',
-            collector_comment: '',
-            guardian_name: '',
-
-            // Documents
-            customer_photo: null,
-            customer_nid_photo: null,
-            customer_nid_back_photo: null,
-            nid_both_sides: false,
-            guardian_photo: null,
-            guardian_nid_photo: null,
-            applicant_signature: null,
-
-            family_members: [
-                {
-                    member_name: '',
-                    relation_with_head: 'নিজ',
-                    gender: 'male',
-                    age_years: 0,
-                    age_months: 0,
-                    marital_status: '',
-                    education_level: '',
-                    occupation: '',
-                    monthly_income: 0,
-                    business_details: '',
-                    job_details: '',
-                    other_income_details: '',
-                },
-            ],
-            other_assets: [],
-            selected_approvers: [],
-            is_legacy: false,
-            loan_dofa: '',
-        });
+        useForm<MemberAdmissionFormData>(
+            getDefaultFormData(suggested_application_no, initialBranchId, currentUser)
+        );
 
     const isLegacyMember = !!data.is_legacy;
 
@@ -282,6 +322,120 @@ export default function Create({
             loan_dofa: legacy ? prev.loan_dofa || '' : '',
         }));
         setMemberTypeChosen(true);
+    };
+
+    // Load local draft on mount if available
+    useEffect(() => {
+        const draft = loadMemberAdmissionDraftLocal(draftKey);
+        if (draft && draft.data) {
+            if (draft.memberTypeChosen) {
+                setMemberTypeChosen(true);
+            }
+            if (draft.presentDistricts && draft.presentDistricts.length > 0) {
+                setPresentDistricts(draft.presentDistricts);
+            }
+            if (draft.presentUpazilas && draft.presentUpazilas.length > 0) {
+                setPresentUpazilas(draft.presentUpazilas);
+            }
+            if (draft.permanentDistricts && draft.permanentDistricts.length > 0) {
+                setPermanentDistricts(draft.permanentDistricts);
+            }
+            if (draft.permanentUpazilas && draft.permanentUpazilas.length > 0) {
+                setPermanentUpazilas(draft.permanentUpazilas);
+            }
+
+            const targetBranchId = Number(draft.data.branch_id) || initialBranchId;
+            const targetSamityId = Number(draft.data.samity_id) || 0;
+
+            if (targetSamityId > 0) {
+                const sam = samities.find((s) => Number(s.id) === targetSamityId);
+                if (sam) {
+                    const disp = getSamityDisplayCode(sam);
+                    setSamitySearchQuery(disp ? `${disp} - ${sam.samity_name}` : sam.samity_name);
+                } else if (draft.samitySearchQuery) {
+                    setSamitySearchQuery(draft.samitySearchQuery);
+                }
+            } else if (draft.samitySearchQuery) {
+                setSamitySearchQuery(draft.samitySearchQuery);
+            }
+
+            setData((prev) => ({
+                ...prev,
+                ...draft.data,
+                branch_id: targetBranchId,
+                samity_id: targetSamityId,
+                application_no: draft.data.application_no || prev.application_no || suggested_application_no,
+            }));
+
+            if (draft.savedAt) {
+                const d = new Date(draft.savedAt);
+                setLastSavedTime(
+                    d.toLocaleTimeString('bn-BD', { hour: '2-digit', minute: '2-digit', second: '2-digit' })
+                );
+            }
+
+            if (hasMeaningfulDraftData(draft.data) || draft.memberTypeChosen) {
+                setIsDraftRestored(true);
+            }
+        }
+        setIsInitialized(true);
+    }, [draftKey]);
+
+    // Debounced automatic draft save whenever user enters or changes data
+    useEffect(() => {
+        if (!isInitialized) return;
+
+        const hasData = hasMeaningfulDraftData(data) || memberTypeChosen;
+        if (!hasData) return;
+
+        setIsAutoSaving(true);
+        const timer = setTimeout(() => {
+            saveMemberAdmissionDraftLocal(draftKey, {
+                memberTypeChosen,
+                samitySearchQuery,
+                presentDistricts,
+                presentUpazilas,
+                permanentDistricts,
+                permanentUpazilas,
+                data,
+            });
+            setIsAutoSaving(false);
+            const now = new Date();
+            setLastSavedTime(
+                now.toLocaleTimeString('bn-BD', { hour: '2-digit', minute: '2-digit', second: '2-digit' })
+            );
+        }, 500);
+
+        return () => clearTimeout(timer);
+    }, [
+        data,
+        memberTypeChosen,
+        samitySearchQuery,
+        presentDistricts,
+        presentUpazilas,
+        permanentDistricts,
+        permanentUpazilas,
+        isInitialized,
+        draftKey,
+    ]);
+
+    const handleResetForm = () => {
+        const isConfirmed = window.confirm(
+            'আপনি কি নিশ্চিত যে খসড়া মুছে দিয়ে ভর্তি ফর্ম সম্পূর্ণ রিসেট করতে চান?\nআপনার লেখা সব তথ্য মুছে যাবে।'
+        );
+        if (!isConfirmed) return;
+
+        clearMemberAdmissionDraftLocal(draftKey);
+        setMemberTypeChosen(false);
+        setSamitySearchQuery('');
+        setPresentDistricts([]);
+        setPresentUpazilas([]);
+        setPermanentDistricts([]);
+        setPermanentUpazilas([]);
+        setLastSavedTime(null);
+        setIsDraftRestored(false);
+
+        setData(getDefaultFormData(suggested_application_no, initialBranchId, currentUser));
     };
 
     useEffect(() => {
@@ -355,26 +509,29 @@ export default function Create({
         });
     }, [data.applicant_name_bn, data.applicant_name_en, data.gender, data.marital_status]);
 
+    // Sync available samities when branch changes
     useEffect(() => {
-        if (data.branch_id) {
-            const filtered = samities.filter((s) => s.branch_id === data.branch_id);
+        const bId = Number(data.branch_id);
+        if (bId > 0) {
+            const filtered = samities.filter((s) => Number(s.branch_id) === bId);
             setAvailableSamities(filtered);
-            if (!filtered.find((s) => s.id === data.samity_id)) {
-                setData('samity_id', 0);
-                setSamitySearchQuery('');
-            } else {
-                const selected = filtered.find((s) => s.id === data.samity_id);
-                if (selected) {
-                    const disp = getSamityDisplayCode(selected);
-                    setSamitySearchQuery(
-                        disp ? `${disp} - ${selected.samity_name}` : selected.samity_name
-                    );
-                }
-            }
         } else {
-            setSamitySearchQuery('');
+            setAvailableSamities(samities);
         }
-    }, [data.branch_id, data.samity_id]);
+    }, [data.branch_id, samities]);
+
+    // Sync samity search query when samity_id is set
+    useEffect(() => {
+        const sId = Number(data.samity_id);
+        if (sId > 0) {
+            const selected = samities.find((s) => Number(s.id) === sId);
+            if (selected) {
+                const disp = getSamityDisplayCode(selected);
+                const label = disp ? `${disp} - ${selected.samity_name}` : selected.samity_name;
+                setSamitySearchQuery(label);
+            }
+        }
+    }, [data.samity_id, samities]);
 
     const filteredSamities = availableSamities.filter((s) => {
         const q = samitySearchQuery.trim().toLowerCase();
@@ -385,12 +542,15 @@ export default function Create({
         return nameMatch || codeMatch || displayCodeMatch;
     });
 
-    const selectedSamity = samities.find((s) => s.id === data.samity_id);
+    const selectedSamity = samities.find((s) => Number(s.id) === Number(data.samity_id));
 
     const handleBranchChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
         const newBranchId = Number(e.target.value);
-        setData('branch_id', newBranchId);
-        setData('samity_id', 0);
+        setData((prev) => ({
+            ...prev,
+            branch_id: newBranchId,
+            samity_id: 0,
+        }));
         setSamitySearchQuery('');
     };
 
@@ -516,6 +676,8 @@ export default function Create({
                 const flash = (page.props as { flash?: { error?: string | null } })?.flash;
                 if (flash?.error) {
                     window.scrollTo({ top: 0, behavior: 'smooth' });
+                } else {
+                    clearMemberAdmissionDraftLocal(draftKey);
                 }
             },
             onError: () => {
@@ -688,13 +850,31 @@ export default function Create({
                     <div className="absolute -right-12 -bottom-12 w-64 h-64 rounded-full bg-gradient-to-tr from-blue-600/30 to-teal-500/20 blur-3xl pointer-events-none" />
                     <div className="relative z-10 flex flex-col md:flex-row md:items-center justify-between gap-6">
                         <div className="space-y-2 max-w-2xl">
-                            <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-blue-500/15 border border-blue-400/20 text-blue-300 text-xs font-semibold backdrop-blur-md">
-                                <Save className="w-4 h-4 text-blue-400" />
-                                <span>
-                                    {isLegacyMember
-                                        ? 'পুরাতন সদস্য — ডাটা উঠানো (অটো অনুমোদন)'
-                                        : 'Member Admission Registration Form'}
-                                </span>
+                            <div className="flex flex-wrap items-center gap-2">
+                                <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-blue-500/15 border border-blue-400/20 text-blue-300 text-xs font-semibold backdrop-blur-md">
+                                    <Save className="w-4 h-4 text-blue-400" />
+                                    <span>
+                                        {isLegacyMember
+                                            ? 'পুরাতন সদস্য — ডাটা উঠানো (অটো অনুমোদন)'
+                                            : 'Member Admission Registration Form'}
+                                    </span>
+                                </div>
+                                {isAutoSaving ? (
+                                    <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-amber-500/20 border border-amber-400/30 text-amber-300 text-xs font-semibold backdrop-blur-md animate-pulse">
+                                        <RefreshCw className="w-3.5 h-3.5 animate-spin text-amber-400" />
+                                        <span>অটো সেভ হচ্ছে...</span>
+                                    </div>
+                                ) : lastSavedTime ? (
+                                    <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-emerald-500/20 border border-emerald-400/30 text-emerald-300 text-xs font-semibold backdrop-blur-md">
+                                        <Check className="w-3.5 h-3.5 text-emerald-400" />
+                                        <span>খসড়া অটো সেভ হয়েছে ({lastSavedTime})</span>
+                                    </div>
+                                ) : (
+                                    <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-slate-800/80 border border-slate-700 text-slate-300 text-xs font-medium backdrop-blur-md">
+                                        <Save className="w-3.5 h-3.5 text-blue-400" />
+                                        <span>টাইপ করলেই অটো সেভ হবে</span>
+                                    </div>
+                                )}
                             </div>
                             <h1 className="text-2xl sm:text-3xl font-extrabold tracking-tight text-white leading-tight">
                                 {isLegacyMember ? 'পুরাতন সদস্য ভর্তি ফর্ম' : 'নতুন সদস্য ভর্তি ফর্ম'}
@@ -707,6 +887,16 @@ export default function Create({
                         </div>
 
                         <div className="hidden md:flex items-center gap-3 shrink-0">
+                            <button
+                                type="button"
+                                onClick={handleResetForm}
+                                disabled={processing}
+                                className="inline-flex items-center justify-center gap-2 px-4 py-3 rounded-2xl bg-rose-500/10 hover:bg-rose-500/20 text-rose-300 border border-rose-500/30 text-xs sm:text-sm font-bold transition-all active:scale-95 shadow-sm"
+                                title="বর্তমান খসড়া মুছে নতুন ফর্ম শুরু করুন"
+                            >
+                                <RotateCcw className="w-4 h-4 text-rose-400" />
+                                <span>রিসেট ফর্ম</span>
+                            </button>
                             <button
                                 type="button"
                                 onClick={() => handleSubmit(true)}
@@ -730,6 +920,42 @@ export default function Create({
                         </div>
                     </div>
                 </div>
+
+                {/* RESTORED DRAFT BANNER */}
+                {isDraftRestored && (
+                    <div className="rounded-2xl border border-emerald-500/40 bg-emerald-50 p-4 shadow-md flex items-center justify-between gap-3 text-emerald-950">
+                        <div className="flex items-center gap-3">
+                            <div className="rounded-xl bg-emerald-600 p-2 text-white shrink-0 shadow-sm">
+                                <Check className="w-5 h-5" />
+                            </div>
+                            <div>
+                                <p className="text-sm font-bold text-emerald-950">
+                                    পূর্বে পূরণ করা অটো-সংরক্ষিত খসড়া লোড করা হয়েছে {lastSavedTime ? `(${lastSavedTime})` : ''}
+                                </p>
+                                <p className="text-xs text-emerald-800 mt-0.5">
+                                    আপনার পূর্বের তথ্য সুরক্ষিত রয়েছে। আপনি সরাসরি এন্ট্রি চালিয়ে যেতে পারেন অথবা নতুন সদস্যের জন্য ফর্ম রিসেট করতে পারেন।
+                                </p>
+                            </div>
+                        </div>
+                        <div className="flex items-center gap-2 shrink-0">
+                            <button
+                                type="button"
+                                onClick={handleResetForm}
+                                className="px-3 py-1.5 rounded-lg bg-white border border-emerald-300 text-xs font-bold text-emerald-900 hover:bg-emerald-100 transition shadow-xs"
+                            >
+                                ফর্ম রিসেট
+                            </button>
+                            <button
+                                type="button"
+                                onClick={() => setIsDraftRestored(false)}
+                                className="p-1 rounded-lg text-emerald-700 hover:text-emerald-900 hover:bg-emerald-200/50 transition"
+                                title="নোটিশ বন্ধ করুন"
+                            >
+                                <X className="w-4 h-4" />
+                            </button>
+                        </div>
+                    </div>
+                )}
 
                 {flashError && (
                     <div className="rounded-2xl border-2 border-amber-500 bg-amber-50 p-4 sm:p-5 shadow-xl">
@@ -878,6 +1104,15 @@ export default function Create({
                         </button>
                         <button
                             type="button"
+                            onClick={handleResetForm}
+                            disabled={processing}
+                            className="w-full sm:w-auto inline-flex items-center justify-center gap-2 px-5 py-2.5 rounded-xl bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 text-xs sm:text-sm font-bold transition-all active:scale-95"
+                        >
+                            <RotateCcw className="w-4 h-4 text-rose-600" />
+                            <span>ফর্ম রিসেট</span>
+                        </button>
+                        <button
+                            type="button"
                             onClick={() => handleSubmit(true)}
                             disabled={processing}
                             className="w-full sm:w-auto inline-flex items-center justify-center gap-2 px-5 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-900 text-amber-400 text-xs sm:text-sm font-bold shadow-md transition-all active:scale-95 disabled:opacity-50"
@@ -901,6 +1136,15 @@ export default function Create({
 
                 {/* MOBILE FLOATING ACTION BAR */}
                 <div className="md:hidden fixed bottom-0 left-0 right-0 p-3 bg-white/95 backdrop-blur-md border-t border-slate-200 z-50 flex items-center justify-between gap-2 shadow-2xl">
+                    <button
+                        type="button"
+                        onClick={handleResetForm}
+                        disabled={processing}
+                        className="p-2.5 rounded-xl bg-rose-50 text-rose-700 border border-rose-200 text-xs font-bold shadow-sm active:scale-95 transition"
+                        title="ফর্ম রিসেট"
+                    >
+                        <RotateCcw className="w-4 h-4" />
+                    </button>
                     <button
                         type="button"
                         onClick={() => handleSubmit(true)}

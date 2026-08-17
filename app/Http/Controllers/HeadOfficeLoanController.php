@@ -66,13 +66,28 @@ class HeadOfficeLoanController extends Controller
         $this->applyAccessibleBranchScope($query);
         $this->applyHeadOfficeStageVisibility($query);
 
-        // Date range filter
+        // Date range filter based on submission date (submitted_at, falling back to created_at if null)
         if ($dateFrom && $dateTo) {
-            $query->whereBetween('created_at', [$startOfDay, $endOfDay]);
+            $query->where(function ($q) use ($startOfDay, $endOfDay) {
+                $q->whereBetween('submitted_at', [$startOfDay, $endOfDay])
+                  ->orWhere(function ($sq) use ($startOfDay, $endOfDay) {
+                      $sq->whereNull('submitted_at')->whereBetween('created_at', [$startOfDay, $endOfDay]);
+                  });
+            });
         } elseif ($dateFrom) {
-            $query->where('created_at', '>=', $startOfDay);
+            $query->where(function ($q) use ($startOfDay) {
+                $q->where('submitted_at', '>=', $startOfDay)
+                  ->orWhere(function ($sq) use ($startOfDay) {
+                      $sq->whereNull('submitted_at')->where('created_at', '>=', $startOfDay);
+                  });
+            });
         } elseif ($dateTo) {
-            $query->where('created_at', '<=', $endOfDay);
+            $query->where(function ($q) use ($endOfDay) {
+                $q->where('submitted_at', '<=', $endOfDay)
+                  ->orWhere(function ($sq) use ($endOfDay) {
+                      $sq->whereNull('submitted_at')->where('created_at', '<=', $endOfDay);
+                  });
+            });
         }
 
         // Zone filter
@@ -139,17 +154,32 @@ class HeadOfficeLoanController extends Controller
 
         // Calculate stats based on current filters (excluding status filter for stats)
         // Use select to avoid loading large columns
-        $statsQuery = LoanApplication::select('id', 'status', 'created_at', 'branch_id');
+        $statsQuery = LoanApplication::select('id', 'status', 'created_at', 'submitted_at', 'branch_id');
         $this->applyAccessibleBranchScope($statsQuery);
         $this->applyHeadOfficeStageVisibility($statsQuery);
 
         // Apply same date filter to stats
         if ($dateFrom && $dateTo) {
-            $statsQuery->whereBetween('created_at', [$startOfDay, $endOfDay]);
+            $statsQuery->where(function ($q) use ($startOfDay, $endOfDay) {
+                $q->whereBetween('submitted_at', [$startOfDay, $endOfDay])
+                  ->orWhere(function ($sq) use ($startOfDay, $endOfDay) {
+                      $sq->whereNull('submitted_at')->whereBetween('created_at', [$startOfDay, $endOfDay]);
+                  });
+            });
         } elseif ($dateFrom) {
-            $statsQuery->where('created_at', '>=', $startOfDay);
+            $statsQuery->where(function ($q) use ($startOfDay) {
+                $q->where('submitted_at', '>=', $startOfDay)
+                  ->orWhere(function ($sq) use ($startOfDay) {
+                      $sq->whereNull('submitted_at')->where('created_at', '>=', $startOfDay);
+                  });
+            });
         } elseif ($dateTo) {
-            $statsQuery->where('created_at', '<=', $endOfDay);
+            $statsQuery->where(function ($q) use ($endOfDay) {
+                $q->where('submitted_at', '<=', $endOfDay)
+                  ->orWhere(function ($sq) use ($endOfDay) {
+                      $sq->whereNull('submitted_at')->where('created_at', '<=', $endOfDay);
+                  });
+            });
         }
 
         // Apply zone/area/branch filters to stats
@@ -216,7 +246,7 @@ class HeadOfficeLoanController extends Controller
         ];
 
         $perPage = $this->resolvePerPage($request);
-        $loans = $query->orderBy('created_at', 'desc')->paginate($perPage)->withQueryString();
+        $loans = $query->orderByRaw('COALESCE(submitted_at, created_at) desc')->paginate($perPage)->withQueryString();
 
         $orgFilters = $this->organizationFilterOptions();
 
@@ -254,11 +284,13 @@ class HeadOfficeLoanController extends Controller
             'branch:id,name,area_id',
             'branch.area:id,name,zone_id',
             'branch.area.zone:id,name',
-            'loanProduct:id,product_name,product_name_bn,product_code',
+            'loanProduct:id,product_name,product_name_bn,product_code,duration_months',
             'loanCategory:id,category_name,category_name_bn',
-            'memberAdmission:id,applicant_name_en,applicant_name_bn,nid_number,mobile_number,application_no,is_legacy,loan_dofa',
-            'samity:id,samity_name,samity_name_bn',
-            'submittedBy:id,name'
+            'memberAdmission:id,applicant_name_en,applicant_name_bn,nid_number,mobile_number,application_no,is_legacy,loan_dofa,project_name',
+            'samity:id,samity_name,samity_name_bn,samity_code',
+            'submittedBy:id,name',
+            'reviewedBy:id,name',
+            'approvals.user:id,name',
         ])
         ->select([
             'id',
@@ -276,18 +308,42 @@ class HeadOfficeLoanController extends Controller
             'asset_info',
             'created_at',
             'submitted_at',
+            'reviewed_at',
+            'disbursed_at',
+            'reviewed_by',
+            'disbursed_by',
+            'loan_term_months',
+            'repayment_frequency',
+            'number_of_installments',
+            'purpose_of_loan',
             'printed_at',
+            'legacy_member_snapshot',
         ]);
 
         $this->applyAccessibleBranchScope($query);
         $this->applyHeadOfficeStageVisibility($query);
 
         if ($dateFrom && $dateTo) {
-            $query->whereBetween('created_at', [$startOfDay, $endOfDay]);
+            $query->where(function ($q) use ($startOfDay, $endOfDay) {
+                $q->whereBetween('submitted_at', [$startOfDay, $endOfDay])
+                  ->orWhere(function ($sq) use ($startOfDay, $endOfDay) {
+                      $sq->whereNull('submitted_at')->whereBetween('created_at', [$startOfDay, $endOfDay]);
+                  });
+            });
         } elseif ($dateFrom) {
-            $query->where('created_at', '>=', $startOfDay);
+            $query->where(function ($q) use ($startOfDay) {
+                $q->where('submitted_at', '>=', $startOfDay)
+                  ->orWhere(function ($sq) use ($startOfDay) {
+                      $sq->whereNull('submitted_at')->where('created_at', '>=', $startOfDay);
+                  });
+            });
         } elseif ($dateTo) {
-            $query->where('created_at', '<=', $endOfDay);
+            $query->where(function ($q) use ($endOfDay) {
+                $q->where('submitted_at', '<=', $endOfDay)
+                  ->orWhere(function ($sq) use ($endOfDay) {
+                      $sq->whereNull('submitted_at')->where('created_at', '<=', $endOfDay);
+                  });
+            });
         }
 
         if ($request->zone_id) {
@@ -348,7 +404,7 @@ class HeadOfficeLoanController extends Controller
         $loans = $query->orderBy(
             \App\Models\Branch::select('code')->whereColumn('branches.id', 'loan_applications.branch_id'),
             'asc'
-        )->orderBy('created_at', 'desc')->get();
+        )->orderByRaw('COALESCE(submitted_at, created_at) desc')->get();
 
         // Calculate and attach accurate savings details from business_plan, asset_info, and loan attributes
         $loans->transform(function ($loan) {
@@ -401,12 +457,32 @@ class HeadOfficeLoanController extends Controller
 
         $dateFrom = $request->date_from ?? now()->startOfMonth()->toDateString();
         $dateTo = $request->date_to ?? now()->toDateString();
+        $startOfDay = Carbon::parse($dateFrom)->startOfDay();
+        $endOfDay = Carbon::parse($dateTo)->endOfDay();
+
         if ($dateFrom && $dateTo) {
-            $query->whereBetween('created_at', [
-                Carbon::parse($dateFrom)->startOfDay(),
-                Carbon::parse($dateTo)->endOfDay(),
-            ]);
+            $query->where(function ($q) use ($startOfDay, $endOfDay) {
+                $q->whereBetween('submitted_at', [$startOfDay, $endOfDay])
+                  ->orWhere(function ($sq) use ($startOfDay, $endOfDay) {
+                      $sq->whereNull('submitted_at')->whereBetween('created_at', [$startOfDay, $endOfDay]);
+                  });
+            });
+        } elseif ($dateFrom) {
+            $query->where(function ($q) use ($startOfDay) {
+                $q->where('submitted_at', '>=', $startOfDay)
+                  ->orWhere(function ($sq) use ($startOfDay) {
+                      $sq->whereNull('submitted_at')->where('created_at', '>=', $startOfDay);
+                  });
+            });
+        } elseif ($dateTo) {
+            $query->where(function ($q) use ($endOfDay) {
+                $q->where('submitted_at', '<=', $endOfDay)
+                  ->orWhere(function ($sq) use ($endOfDay) {
+                      $sq->whereNull('submitted_at')->where('created_at', '<=', $endOfDay);
+                  });
+            });
         }
+
         if ($request->zone_id) {
             $query->whereHas('branch.area', fn ($q) => $q->where('zone_id', $request->zone_id));
         }
@@ -469,12 +545,30 @@ class HeadOfficeLoanController extends Controller
 
         $dateFrom = $request->date_from ?? now()->startOfMonth()->toDateString();
         $dateTo = $request->date_to ?? now()->toDateString();
+        $startOfDay = Carbon::parse($dateFrom)->startOfDay();
+        $endOfDay = Carbon::parse($dateTo)->endOfDay();
 
         if ($dateFrom && $dateTo) {
-            $query->whereBetween('created_at', [
-                Carbon::parse($dateFrom)->startOfDay(),
-                Carbon::parse($dateTo)->endOfDay(),
-            ]);
+            $query->where(function ($q) use ($startOfDay, $endOfDay) {
+                $q->whereBetween('submitted_at', [$startOfDay, $endOfDay])
+                  ->orWhere(function ($sq) use ($startOfDay, $endOfDay) {
+                      $sq->whereNull('submitted_at')->whereBetween('created_at', [$startOfDay, $endOfDay]);
+                  });
+            });
+        } elseif ($dateFrom) {
+            $query->where(function ($q) use ($startOfDay) {
+                $q->where('submitted_at', '>=', $startOfDay)
+                  ->orWhere(function ($sq) use ($startOfDay) {
+                      $sq->whereNull('submitted_at')->where('created_at', '>=', $startOfDay);
+                  });
+            });
+        } elseif ($dateTo) {
+            $query->where(function ($q) use ($endOfDay) {
+                $q->where('submitted_at', '<=', $endOfDay)
+                  ->orWhere(function ($sq) use ($endOfDay) {
+                      $sq->whereNull('submitted_at')->where('created_at', '<=', $endOfDay);
+                  });
+            });
         }
 
         if ($request->zone_id) {
@@ -523,7 +617,7 @@ class HeadOfficeLoanController extends Controller
             }
         }
 
-        $loans = $query->orderBy('created_at', 'desc')->get();
+        $loans = $query->orderByRaw('COALESCE(submitted_at, created_at) desc')->get();
 
         $spreadsheet = new Spreadsheet();
         $sheet = $spreadsheet->getActiveSheet();
@@ -782,6 +876,76 @@ class HeadOfficeLoanController extends Controller
         }
 
         return back()->with('success', 'ঋণ আবেদন অনুমোদিত হয়েছে। বিতরণের জন্য শাখায় ফেরত পাঠানো হয়েছে।');
+    }
+
+    /**
+     * Bulk approve selected loan applications
+     */
+    public function approveBulk(Request $request)
+    {
+        $validated = $request->validate([
+            'ids' => 'required|array|min:1',
+            'ids.*' => 'integer|exists:loan_applications,id',
+        ]);
+
+        $ids = $validated['ids'];
+        $loans = LoanApplication::whereIn('id', $ids)->get();
+
+        $approvedCount = 0;
+        $skippedCount = 0;
+
+        DB::beginTransaction();
+        try {
+            foreach ($loans as $loan) {
+                if ($loan->issues()->where('status', 'pending')->whereNull('response_message')->exists()) {
+                    $skippedCount++;
+                    continue;
+                }
+
+                $loan->update([
+                    'status' => LoanApplication::STATUS_PENDING_DISBURSEMENT,
+                    'reviewed_at' => now(),
+                    'reviewed_by' => auth()->id(),
+                ]);
+                $approvedCount++;
+
+                // Notify submitter and Branch Managers
+                $loan->loadMissing(['submittedBy', 'memberAdmission', 'branch']);
+                $branchManagers = User::where('branch_id', $loan->branch_id)
+                    ->where('is_active', 1)
+                    ->whereHas('role', fn ($q) => $q->where('name', Role::BRANCH_MANAGER))
+                    ->get();
+                $recipients = collect([$loan->submittedBy])->concat($branchManagers)->filter()->unique('id');
+
+                if ($recipients->isNotEmpty()) {
+                    app(NotificationService::class)->send(
+                        users: $recipients,
+                        type: 'loan_application',
+                        title: 'ঋণ আবেদন অনুমোদিত (হেড অফিস)',
+                        message: "ঋণ আবেদন নং {$loan->application_no} ({$loan->memberAdmission?->applicant_name_bn}) হেড অফিস কর্তৃক অনুমোদিত হয়েছে। বিতরণের জন্য শাখায় পাঠানো হয়েছে।",
+                        notifiable: $loan,
+                        actionUrl: "/member/loan-applications/{$loan->id}",
+                        details: [
+                            'আবেদন নং' => $loan->application_no,
+                            'সদস্যের নাম' => $loan->memberAdmission?->applicant_name_bn ?: ($loan->memberAdmission?->applicant_name_en ?? 'N/A'),
+                            'শাখা' => $loan->branch?->name ?? 'N/A',
+                            'অনুমোদিত পরিমাণ' => '৳ ' . number_format($loan->approved_amount ?: $loan->requested_amount, 2),
+                        ]
+                    );
+                }
+            }
+            DB::commit();
+
+            $msg = "{$approvedCount} টি ঋণ আবেদন সফলভাবে অনুমোদিত হয়েছে।";
+            if ($skippedCount > 0) {
+                $msg .= " ({$skippedCount} টি আবেদনে অমীমাংসিত আপত্তি থাকায় স্কিপ করা হয়েছে)";
+            }
+
+            return back()->with('success', $msg);
+        } catch (\Exception $e) {
+            DB::rollBack();
+            return back()->with('error', 'অনুমোদন ব্যর্থ হয়েছে: ' . $e->getMessage());
+        }
     }
 
     /**

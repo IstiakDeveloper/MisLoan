@@ -23,6 +23,7 @@ import {
     X,
     Filter,
     Sparkles,
+    Download,
 } from 'lucide-react';
 import { MemberAdmission } from '@/types/memberAdmission';
 import ListPagination from '@/components/ListPagination';
@@ -207,6 +208,15 @@ export default function Index({ admissions, filters, stats }: Props) {
         router.get('/member-admissions', { ...buildParams(), status }, { preserveState: true });
     };
 
+    const getEffectiveDate = (admission: MemberAdmission) => {
+        return (admission as any).reviewed_at || admission.submitted_at || admission.created_at;
+    };
+
+    const handleExportExcel = () => {
+        const params = new URLSearchParams(buildParams());
+        window.location.href = `/member-admissions/export/excel?${params.toString()}`;
+    };
+
     const handlePrint = () => {
         window.print();
     };
@@ -337,6 +347,15 @@ export default function Index({ admissions, filters, stats }: Props) {
                                     <span>নতুন ভর্তি আবেদন</span>
                                 </Link>
                             )}
+                            <button
+                                type="button"
+                                onClick={handleExportExcel}
+                                className="inline-flex items-center justify-center gap-2 px-4 py-3 rounded-2xl bg-emerald-600 hover:bg-emerald-500 text-white border border-emerald-500 text-xs sm:text-sm font-semibold transition-all active:scale-95 shadow-lg shadow-emerald-600/20"
+                                title="XLSX এক্সেল ডাউনলোড"
+                            >
+                                <Download className="w-4 h-4" />
+                                <span>XLSX Download</span>
+                            </button>
                             <button
                                 type="button"
                                 onClick={handlePrint}
@@ -543,7 +562,7 @@ export default function Index({ admissions, filters, stats }: Props) {
                                         </div>
                                         <div>
                                             <span className="text-[10px] font-bold uppercase text-slate-400 block">তারিখ</span>
-                                            <p className="font-semibold text-slate-600 mt-0.5">{formatDate(admission.created_at)}</p>
+                                            <p className="font-semibold text-slate-600 mt-0.5">{formatDate(getEffectiveDate(admission))}</p>
                                         </div>
                                         <div className="col-span-2 border-t border-slate-200/60 pt-1.5 mt-0.5 flex items-center justify-between">
                                             <span className="text-[10px] font-bold uppercase text-slate-400">কার কাছে পেন্ডিং:</span>
@@ -731,7 +750,7 @@ export default function Index({ admissions, filters, stats }: Props) {
                                                     </span>
                                                 </td>
                                                 <td className="py-4 px-4 text-xs font-medium text-slate-500 whitespace-nowrap">
-                                                    {formatDate(admission.created_at)}
+                                                    {formatDate(getEffectiveDate(admission))}
                                                 </td>
                                                 <td className="py-4 px-4 text-right print:hidden">
                                                     <div className="flex items-center justify-end gap-1">

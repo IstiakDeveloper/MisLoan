@@ -32,7 +32,8 @@ import {
     CircleUser,
     Coins,
     FileCheck,
-    Mail
+    Mail,
+    SearchCheck,
 } from 'lucide-react';
 import { useIsMobile } from '@/hooks/use-mobile';
 import { usePwaInstallPrompt } from '@/hooks/usePwaInstallPrompt';
@@ -67,6 +68,7 @@ interface PageProps extends Record<string, unknown> {
         pendingAdmissions?: number;
         pendingApprovals?: number;
         pendingTeamBasedApprovals?: number;
+        pendingVerifications?: number;
     };
 }
 
@@ -204,16 +206,17 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
         { name: 'Dashboard', href: '/dashboard', icon: LayoutDashboard },
         { name: 'Member Admissions', href: '/member-admissions', icon: UserPlus },
         { name: 'Loan Applications', href: '/member/loan-applications', icon: Banknote },
+        { name: 'Verification', href: '/verifications', icon: SearchCheck, badge: badgeCounts.pendingVerifications || 0 },
         { name: 'Savings Applications', href: '/member/savings-applications', icon: PiggyBank }, // Changed Landmark -> PiggyBank
-       { name: 'Team Based Approval', href: '/team-based-approvals', icon: FileCheck }, // Changed FileText -> FileCheck
+        { name: 'Team Based Approval', href: '/team-based-approvals', icon: FileCheck }, // Changed FileText -> FileCheck
         { name: 'Pending Approvals', href: '/approvals', icon: ClipboardCheck, badge: badgeCounts.pendingApprovals || 0 },
     ];
 
-    // Field officer: admissions plus loan applications for their approved members
+    // Field officer: admissions plus loan applications for their approved members + verifications
     const branchMenuItems = isFieldOfficer
-        ? branchMenuItemsFull.filter((m) => m.name === 'Dashboard' || m.name === 'Member Admissions' || m.name === 'Loan Applications')
+        ? branchMenuItemsFull.filter((m) => m.name === 'Dashboard' || m.name === 'Member Admissions' || m.name === 'Loan Applications' || m.name === 'Verification')
         : roleName === 'branch_user'
-        ? branchMenuItemsFull.slice(0, 5)
+        ? branchMenuItemsFull.slice(0, 6)
         : branchMenuItemsFull;
 
     const approverMenuItems = [
@@ -232,10 +235,11 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
         },
     ];
 
-    // Admission / Loan / Savings for approvers & managers (scoped by assigned zone/area on backend)
+    // Admission / Loan / Verification / Savings for approvers & managers (scoped by assigned zone/area on backend)
     const approverOperationsItems = [
         { name: 'Member Admissions', href: '/member-admissions', icon: UserPlus, badge: badgeCounts.pendingAdmissions || 0 },
         { name: 'Loan Applications', href: '/member/loan-applications', icon: Banknote, badge: badgeCounts.pendingLoanApplications || 0 },
+        { name: 'Verification', href: '/verifications', icon: SearchCheck, badge: badgeCounts.pendingVerifications || 0 },
         { name: 'Savings Applications', href: '/member/savings-applications', icon: PiggyBank },
     ];
 
@@ -243,6 +247,7 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
         { name: 'Dashboard', href: '/dashboard', icon: LayoutDashboard },
         { name: 'Admission Members', href: '/head-office/admission-members', icon: UserPlus, badge: badgeCounts.pendingAdmissions || 0 },
         { name: 'Loan Applications', href: '/head-office/loan-applications', icon: Banknote, badge: badgeCounts.pendingLoanApplications || 0 }, // Changed FileText -> Banknote
+        { name: 'Verification', href: '/verifications', icon: SearchCheck, badge: badgeCounts.pendingVerifications || 0 },
         { name: 'Team Based Approvals', href: '/head-office/team-based-approvals', icon: FileCheck }, // Changed FileText -> FileCheck
         { name: 'Savings Applications', href: '/head-office/savings-applications', icon: PiggyBank }, // Changed Landmark -> PiggyBank
     ];
@@ -290,7 +295,7 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
     const menuGroups = useMemo(() => {
         if (isBranchRole) {
             const dashboardItem = branchMenuItems.find(m => m.href === '/dashboard');
-            const operationsItems = branchMenuItems.filter(m => ['/member-admissions', '/member/loan-applications', '/member/savings-applications'].includes(m.href));
+            const operationsItems = branchMenuItems.filter(m => ['/member-admissions', '/member/loan-applications', '/verifications', '/member/savings-applications'].includes(m.href));
             const approvalsItems = branchMenuItems.filter(m => ['/team-based-approvals', '/approvals'].includes(m.href));
 
             const groups = [];
@@ -304,7 +309,7 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
         if (isEdRole) {
             const dashboardItem = headOfficeMainItems.find(m => m.href === '/dashboard');
             const operationsItems = headOfficeMainItems.filter(m =>
-                ['/head-office/admission-members', '/head-office/loan-applications', '/head-office/savings-applications'].includes(m.href)
+                ['/head-office/admission-members', '/head-office/loan-applications', '/verifications', '/head-office/savings-applications'].includes(m.href)
             );
             const approvalsItems = [
                 ...approverMenuItems.filter(m => m.href !== '/dashboard'),
@@ -331,7 +336,7 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
 
         // Head office / default roles
         const dashboardItem = headOfficeMainItems.find(m => m.href === '/dashboard');
-        const operationsItems = headOfficeMainItems.filter(m => ['/head-office/admission-members', '/head-office/loan-applications', '/head-office/savings-applications'].includes(m.href));
+        const operationsItems = headOfficeMainItems.filter(m => ['/head-office/admission-members', '/head-office/loan-applications', '/verifications', '/head-office/savings-applications'].includes(m.href));
         const approvalsItems = headOfficeMainItems.filter(m => ['/head-office/team-based-approvals'].includes(m.href));
 
         const groups = [];

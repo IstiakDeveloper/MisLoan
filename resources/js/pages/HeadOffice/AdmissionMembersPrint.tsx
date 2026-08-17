@@ -3,28 +3,32 @@ import { useEffect } from 'react';
 import { formatDate } from '@/utils/dateUtils';
 
 interface Zone {
-    id: number;
+    id: number | string;
     name: string;
 }
 
 interface Area {
-    id: number;
+    id: number | string;
     name: string;
+    zone_id?: number | string;
     zone?: Zone;
 }
 
 interface Branch {
-    id: number;
+    id: number | string;
     name: string;
     branch_code?: string;
     code?: string;
+    area_id?: number | string;
     area?: Area;
-    area_id?: number;
 }
 
 interface Samity {
     id: number;
     samity_name: string;
+    samity_name_bn?: string;
+    samity_code?: string;
+    code?: string;
 }
 
 interface MemberCategory {
@@ -53,6 +57,9 @@ interface MemberAdmissionPrint {
     branch: Branch;
     samity?: Samity;
     member_category?: MemberCategory;
+    memberCategory?: MemberCategory;
+    is_legacy?: boolean | number;
+    loan_dofa?: number | string | null;
     submitted_by?: User;
     createdBy?: User;
     revision_count: number;
@@ -80,9 +87,9 @@ interface MemberAdmissionPrint {
 interface Filters {
     search?: string;
     status?: string;
-    zone_id?: number;
-    area_id?: number;
-    branch_id?: number;
+    zone_id?: number | string;
+    area_id?: number | string;
+    branch_id?: number | string;
     date_from?: string;
     date_to?: string;
     had_issues?: string;
@@ -114,25 +121,31 @@ export default function AdmissionMembersPrint({ admissions, filters, zones, area
         return () => clearTimeout(timer);
     }, []);
 
-    const selectedZone = filters.zone_id ? zones.find(z => z.id === filters.zone_id) : null;
-    const selectedArea = filters.area_id ? areas.find(a => a.id === filters.area_id) : null;
-    const selectedBranch = filters.branch_id ? branches.find(b => b.id === filters.branch_id) : null;
+    const filterZoneId = filters.zone_id ? String(filters.zone_id) : '';
+    const filterAreaId = filters.area_id ? String(filters.area_id) : '';
+    const filterBranchId = filters.branch_id ? String(filters.branch_id) : '';
 
-    // হেডারে ফিল্টার অনুযায়ী দেখান: ব্রাঞ্চ সিলেক্ট থাকলে সেই শাখা (ও তার অঞ্চল/জোন), অন্যথায় অঞ্চল/জোন ফিল্টার বা "সকল"
-    const branchName = selectedBranch
-        ? selectedBranch.name
-        : selectedArea
-        ? 'সকল শাখা (অঞ্চল)'
-        : selectedZone
-        ? 'সকল শাখা (জোন)'
-        : 'সকল শাখা';
-    const areaName = selectedBranch?.area?.name ?? (selectedArea ? selectedArea.name : selectedZone ? 'সকল অঞ্চল' : 'সকল অঞ্চল');
-    const zoneName = selectedBranch?.area?.zone?.name ?? (selectedZone ? selectedZone.name : 'সকল জোন');
-    const reportDate = filters.date_from && filters.date_to
-        ? `${formatDate(filters.date_from)} - ${formatDate(filters.date_to)}`
-        : filters.date_to
-        ? formatDate(filters.date_to)
-        : formatDate(new Date());
+    const selectedBranch = filterBranchId
+        ? branches.find((b) => String(b.id) === filterBranchId) || (admissions.length > 0 && String(admissions[0]?.branch?.id) === filterBranchId ? admissions[0].branch : null)
+        : null;
+
+    const selectedArea = filterAreaId
+        ? areas.find((a) => String(a.id) === filterAreaId) || (selectedBranch?.area ?? null)
+        : (selectedBranch?.area ?? (selectedBranch?.area_id ? areas.find((a) => String(a.id) === String(selectedBranch.area_id)) : null));
+
+    const selectedZone = filterZoneId
+        ? zones.find((z) => String(z.id) === filterZoneId) || (selectedArea?.zone ?? selectedBranch?.area?.zone ?? null)
+        : (selectedBranch?.area?.zone ?? selectedArea?.zone ?? (selectedArea?.zone_id ? zones.find((z) => String(z.id) === String(selectedArea.zone_id)) : null));
+
+    const branchName = selectedBranch ? selectedBranch.name : 'সকল শাখা';
+    const areaName = selectedArea ? selectedArea.name : 'সকল অঞ্চল';
+    const zoneName = selectedZone ? selectedZone.name : 'সকল জোন';
+    const fromDateStr = filters.date_from ? formatDate(filters.date_from) : '';
+    const toDateStr = filters.date_to ? formatDate(filters.date_to) : '';
+    const reportDate =
+        fromDateStr && toDateStr
+            ? (fromDateStr === toDateStr ? fromDateStr : `${fromDateStr} - ${toDateStr}`)
+            : toDateStr || fromDateStr || formatDate(new Date());
 
     const statusLabels: Record<string, string> = {
         draft: 'খসড়া',
@@ -145,8 +158,21 @@ export default function AdmissionMembersPrint({ admissions, filters, zones, area
     };
     const filterStatusLabel = filters.status ? statusLabels[filters.status] || filters.status : 'সব';
 
+    const formatSamityNameWithCode = (samity?: Samity | null) => {
+        if (!samity) return '—';
+        const name = samity.samity_name_bn || samity.samity_name || '';
+        const fullCode = String(samity.samity_code || samity.code || '').trim();
+        const shortCode = fullCode.length > 4 ? fullCode.slice(-4) : fullCode;
+        if (name && shortCode) {
+            return `${name} (${shortCode})`;
+        }
+        return name || shortCode || '—';
+    };
+
     const officerName = (a: MemberAdmissionPrint) =>
         str(a.createdBy?.name ?? a.interviewer_name ?? a.employee_name);
+    const categoryName = (a: MemberAdmissionPrint) =>
+        str(a.member_category?.category_name || (a as any).memberCategory?.category_name);
     const memberName = (a: MemberAdmissionPrint) =>
         str(a.applicant_name_bn || a.applicant_name_en);
     const houseCount = (a: MemberAdmissionPrint) => {
@@ -161,8 +187,14 @@ export default function AdmissionMembersPrint({ admissions, filters, zones, area
         a.cultivable_land_amount != null ? String(a.cultivable_land_amount) : '—';
     const totalAsset = (a: MemberAdmissionPrint) =>
         a.total_asset_value != null ? String(a.total_asset_value) : '—';
-    const occupation = (a: MemberAdmissionPrint) =>
-        str(a.job_details || a.business_details);
+    const occupation = (a: MemberAdmissionPrint) => {
+        const family = (a as any).family_members || (a as any).familyMembers || [];
+        if (Array.isArray(family) && family.length > 0) {
+            const selfMember = family.find((m: any) => m.relation_with_head === 'নিজ' || m.relation_with_head === 'self') || family[0];
+            if (selfMember?.occupation) return selfMember.occupation;
+        }
+        return str(a.job_details || a.business_details || (a as any).other_income_details);
+    };
 
     return (
         <>
@@ -187,61 +219,74 @@ export default function AdmissionMembersPrint({ admissions, filters, zones, area
                         font-size: 10px;
                         margin-top: 4px;
                     }
-                    .header-filter-table {
-                        width: auto;
-                        margin: 6px auto 0;
+                    .header-meta-table {
+                        width: 100%;
+                        margin: 6px auto 2px;
                         border: none;
-                        font-size: 9px;
+                        font-size: 10px;
+                        border-collapse: collapse;
                     }
-                    .header-filter-table td {
+                    .header-meta-table td {
                         border: none;
-                        padding: 1px 6px 1px 2px;
+                        padding: 2px 4px;
                         vertical-align: middle;
+                    }
+                    .meta-left {
+                        text-align: left;
+                        width: 33.33%;
+                    }
+                    .meta-center {
+                        text-align: center;
+                        width: 33.34%;
+                    }
+                    .meta-right {
+                        text-align: right;
+                        width: 33.33%;
                     }
                     .header-filter-label {
                         font-weight: 600;
                         color: #374151;
-                        white-space: nowrap;
                     }
                     .header-filter-value {
-                        max-width: 120px;
-                        overflow: hidden;
-                        text-overflow: ellipsis;
-                        white-space: nowrap;
+                        color: #111827;
+                        font-weight: bold;
                     }
                     table { width: 100%; border-collapse: collapse; margin-top: 4px; }
                     thead { display: table-header-group; }
                     tbody { display: table-row-group; }
                     th, td {
                         border: 0.5px solid #333;
-                        padding: 4px 5px;
+                        padding: 3.5px 3px;
                         text-align: center;
                         vertical-align: middle;
                         word-wrap: break-word;
                         overflow-wrap: break-word;
+                        line-height: 1.25;
                     }
                     th {
                         background-color: #e5e7eb;
                         font-weight: bold;
-                        font-size: 9px;
-                        text-align: center;
+                        font-size: 8.5px;
+                        text-align: center !important;
+                        vertical-align: middle;
                     }
-                    td { font-size: 9px; text-align: center; }
-                    .col-sl { width: 3%; text-align: center; }
-                    .col-branch { width: 8%; }
-                    .col-officer { width: 9%; }
-                    .col-component { width: 8%; }
-                    .col-member { width: 10%; }
-                    .col-samity { width: 9%; }
-                    .col-mobile { width: 7%; text-align: center; }
-                    .col-num { width: 4%; text-align: center; }
-                    .col-asset { width: 6%; text-align: center; }
-                    .col-livestock { width: 4%; text-align: center; }
-                    .col-value { width: 6%; text-align: center; }
-                    .col-occupation { width: 8%; text-align: center; }
-                    .col-income { width: 5%; text-align: center; }
-                    .col-guarantor { width: 8%; text-align: center; }
-                    .col-loan { width: 8%; text-align: center; }
+                    td { font-size: 8.5px; text-align: center; }
+                    .col-sl { width: 2.5%; text-align: center; }
+                    .col-branch { width: 6%; }
+                    .col-officer { width: 6%; }
+                    .col-samity { width: 7%; line-height: 1.2; word-break: break-word; }
+                    .col-component { width: 5%; }
+                    .col-member { width: 7.5%; line-height: 1.2; }
+                    .col-mobile { width: 6%; text-align: center; font-size: 8px; }
+                    .col-num { width: 3%; text-align: center; }
+                    .col-asset { width: 5%; text-align: center; }
+                    .col-livestock { width: 3%; text-align: center; }
+                    .col-value { width: 5.5%; text-align: center; }
+                    .col-occupation { width: 4.5%; text-align: center; line-height: 1.2; }
+                    .col-income { width: 4.5%; text-align: center; }
+                    .col-guarantor { width: 6.5%; text-align: center; line-height: 1.2; }
+                    .col-loan { width: 7%; text-align: center; }
+                    .col-remarks { width: 13%; text-align: center; }
                     @media print {
                         body { print-color-adjust: exact; }
                         table { page-break-inside: auto; }
@@ -252,22 +297,38 @@ export default function AdmissionMembersPrint({ admissions, filters, zones, area
             </Head>
 
             <div className="print-container">
-                {/* হেডার - ফিল্টার অনুযায়ী শাখা/অঞ্চল/জোন, ছোট কলামে */}
+                {/* হেডার - উপরে বামে লোগো, মাঝে টাইটেল ও তথ্য */}
                 <div className="print-header">
-                    <p className="org">মৌসুমী</p>
-                    <p className="address">উকিলপাড়া, নওগাঁ।</p>
-                    <p className="title">সদস্য ভর্তি যাচাই ও অনুমোদন সংক্রান্ত তথ্য।</p>
-                    <table className="header-filter-table">
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', position: 'relative', minHeight: '48px', marginBottom: '2px' }}>
+                        <div style={{ position: 'absolute', left: '0', top: '50%', transform: 'translateY(-50%)' }}>
+                            <img
+                                src="/logo.png"
+                                alt="মৌসুমী"
+                                style={{ height: '42px', width: 'auto', objectFit: 'contain' }}
+                                onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}
+                            />
+                        </div>
+                        <div style={{ textAlign: 'center' }}>
+                            <p className="org">মৌসুমী</p>
+                            <p className="address">উকিলপাড়া, নওগাঁ।</p>
+                            <p className="title">সদস্য ভর্তি যাচাই ও অনুমোদন সংক্রান্ত তথ্য।</p>
+                        </div>
+                    </div>
+                    <table className="header-meta-table">
                         <tbody>
                             <tr>
-                                <td className="header-filter-label">শাখার নাম:</td>
-                                <td className="header-filter-value">{branchName}</td>
-                                <td className="header-filter-label">অঞ্চলের নাম:</td>
-                                <td className="header-filter-value">{areaName}</td>
-                                <td className="header-filter-label">জোনের নাম:</td>
-                                <td className="header-filter-value">{zoneName}</td>
-                                <td className="header-filter-label">তারিখ:</td>
-                                <td className="header-filter-value">{reportDate}</td>
+                                <td className="meta-left">
+                                    <span className="header-filter-label">অঞ্চলের নাম: </span>
+                                    <span className="header-filter-value">{areaName}</span>
+                                </td>
+                                <td className="meta-center">
+                                    <span className="header-filter-label">তারিখ: </span>
+                                    <span className="header-filter-value">{reportDate}</span>
+                                </td>
+                                <td className="meta-right">
+                                    <span className="header-filter-label">জোনের নাম: </span>
+                                    <span className="header-filter-value">{zoneName}</span>
+                                </td>
                             </tr>
                         </tbody>
                     </table>
@@ -280,9 +341,9 @@ export default function AdmissionMembersPrint({ admissions, filters, zones, area
                             <th className="col-sl">ক্র. নং</th>
                             <th className="col-branch">শাখার নাম</th>
                             <th className="col-officer">অফিসারের নাম</th>
+                            <th className="col-samity">সমিতির নাম (কোড)</th>
                             <th className="col-component">কম্পোনেন্টের নাম</th>
                             <th className="col-member">সদস্যের নাম</th>
-                            <th className="col-samity">সমিতির নাম</th>
                             <th className="col-mobile">মোবাইল নম্বর</th>
                             <th colSpan={3}>সম্পদের পরিমাণ</th>
                             <th colSpan={3}>গবাদী পশুর সংখ্যা</th>
@@ -291,16 +352,17 @@ export default function AdmissionMembersPrint({ admissions, filters, zones, area
                             <th className="col-income">পরিবারের মাসিক আয়</th>
                             <th className="col-guarantor">জামিনদারের নাম</th>
                             <th className="col-loan">অন্যান্য সংস্থায় গ্রহণকৃত ঋণের পরিমাণ</th>
+                            <th className="col-remarks">মন্তব্য</th>
                         </tr>
                         <tr>
                             <th className="col-sl"></th>
                             <th className="col-branch"></th>
                             <th className="col-officer"></th>
+                            <th className="col-samity"></th>
                             <th className="col-component"></th>
                             <th className="col-member"></th>
-                            <th className="col-samity"></th>
                             <th className="col-mobile"></th>
-                            <th className="col-num">বসতবাড়ি</th>
+                            <th className="col-num">বসত</th>
                             <th className="col-num">আবাদী</th>
                             <th className="col-num">মোট</th>
                             <th className="col-num">গরু</th>
@@ -311,12 +373,13 @@ export default function AdmissionMembersPrint({ admissions, filters, zones, area
                             <th className="col-income"></th>
                             <th className="col-guarantor"></th>
                             <th className="col-loan"></th>
+                            <th className="col-remarks"></th>
                         </tr>
                     </thead>
                     <tbody>
                         {admissions.length === 0 ? (
                             <tr>
-                                <td colSpan={18} style={{ textAlign: 'center', padding: '12px' }}>
+                                <td colSpan={19} style={{ textAlign: 'center', padding: '12px' }}>
                                     কোনো রেকর্ড নেই
                                 </td>
                             </tr>
@@ -326,6 +389,8 @@ export default function AdmissionMembersPrint({ admissions, filters, zones, area
                                     <td className="col-sl">{index + 1}</td>
                                     <td className="col-branch">{admission.branch?.name ?? '—'}</td>
                                     <td className="col-officer">{officerName(admission)}</td>
+                                    <td className="col-samity">{formatSamityNameWithCode(admission.samity)}</td>
+                                    <td className="col-component">{categoryName(admission)}</td>
                                     <td className="col-member">
                                         <div style={{ fontWeight: 'bold' }}>
                                             <span>{memberName(admission)}</span>
@@ -340,7 +405,6 @@ export default function AdmissionMembersPrint({ admissions, filters, zones, area
                                             )}
                                         </div>
                                     </td>
-                                    <td className="col-samity">{str(admission.samity?.samity_name)}</td>
                                     <td className="col-mobile">{str(admission.mobile_number)}</td>
                                     <td className="col-num">{houseCount(admission)}</td>
                                     <td className="col-num">{cultivable(admission)}</td>
@@ -353,6 +417,7 @@ export default function AdmissionMembersPrint({ admissions, filters, zones, area
                                     <td className="col-income">{num(admission.monthly_income)}</td>
                                     <td className="col-guarantor">{str(admission.guarantor_name)}</td>
                                     <td className="col-loan">{str(admission.other_loan_info)}</td>
+                                    <td className="col-remarks"></td>
                                 </tr>
                             ))
                         )}

@@ -390,7 +390,7 @@ export default function Show({ admission, auth }: Props) {
 
                 {/* ── TAB 1: FORM VIEW ─────────────────────────────────────────────────── */}
                 <div className={activeTab === 'form' ? 'block' : 'hidden print:block'}>
-                    <div className="overflow-x-auto -mx-0 sm:mx-0 rounded-none sm:rounded-xl border-y sm:border border-slate-200 bg-white print:overflow-visible print:border-0 print:rounded-none">
+                    <div className="overflow-x-auto -mx-2 sm:mx-0 rounded-none sm:rounded-2xl border border-slate-200 bg-white p-2 sm:p-6 print:p-0 print:border-0 print:rounded-none shadow-xs">
                         <div className="min-w-0 sm:min-w-0 print:min-w-0">
                             <MemberAdmissionFormView admission={admission as any} printMode={false} />
                         </div>
@@ -634,39 +634,14 @@ export default function Show({ admission, auth }: Props) {
 
             <style>{`
                 @media print {
-                    body {
-                        font-size: 14pt;
-                        line-height: 1.7;
-                        -webkit-print-color-adjust: exact;
-                        print-color-adjust: exact;
-                    }
                     @page {
-                        margin: 14mm 8mm 10mm 8mm;
                         size: A4 portrait;
+                        margin: 8mm 10mm;
                     }
-                    .form-print-document {
-                        padding: 0 8mm 8mm 8mm !important;
-                        padding-top: 6mm !important;
-                        font-size: 14pt !important;
-                        line-height: 1.7 !important;
+                    body {
+                        -webkit-print-color-adjust: exact !important;
+                        print-color-adjust: exact !important;
                     }
-                    .form-print-section {
-                        padding-top: 4mm !important;
-                        padding-bottom: 4mm !important;
-                    }
-                    .form-print-document > header.form-print-section {
-                        margin-bottom: 6mm !important;
-                    }
-                    .form-print-document > header.form-print-section + .form-print-section {
-                        margin-top: 2mm !important;
-                        margin-bottom: 4mm !important;
-                    }
-                    .print\\:break-inside-avoid,
-                    .form-print-section {
-                        break-inside: avoid;
-                        page-break-inside: avoid;
-                    }
-                    .form-print-page-break-before { page-break-before: always; }
                 }
             `}</style>
 

@@ -11,9 +11,16 @@ use App\Models\User;
 use App\Services\ApprovalService;
 use App\Services\ImageCompressionService;
 use App\Services\NotificationService;
+use Carbon\Carbon;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Inertia\Inertia;
+use PhpOffice\PhpSpreadsheet\Cell\Coordinate;
+use PhpOffice\PhpSpreadsheet\Spreadsheet;
+use PhpOffice\PhpSpreadsheet\Style\Alignment;
+use PhpOffice\PhpSpreadsheet\Style\Border;
+use PhpOffice\PhpSpreadsheet\Style\Fill;
+use PhpOffice\PhpSpreadsheet\Writer\Xlsx;
 
 class MemberAdmissionController extends Controller
 {
@@ -268,11 +275,21 @@ class MemberAdmissionController extends Controller
             });
         }
 
-        if ($request->filled('from_date')) {
-            $statsQuery->whereDate('created_at', '>=', $request->from_date);
-        }
-        if ($request->filled('to_date')) {
-            $statsQuery->whereDate('created_at', '<=', $request->to_date);
+        $fromDate = $request->from_date ?: $request->date_from;
+        $toDate = $request->to_date ?: $request->date_to;
+
+        if ($fromDate && $toDate) {
+            $startOfDay = Carbon::parse($fromDate)->startOfDay();
+            $endOfDay = Carbon::parse($toDate)->endOfDay();
+            $statsQuery->where(function ($q) use ($startOfDay, $endOfDay) {
+                $q->whereBetween(DB::raw('COALESCE(reviewed_at, submitted_at, created_at)'), [$startOfDay, $endOfDay]);
+            });
+        } elseif ($fromDate) {
+            $startOfDay = Carbon::parse($fromDate)->startOfDay();
+            $statsQuery->where(DB::raw('COALESCE(reviewed_at, submitted_at, created_at)'), '>=', $startOfDay);
+        } elseif ($toDate) {
+            $endOfDay = Carbon::parse($toDate)->endOfDay();
+            $statsQuery->where(DB::raw('COALESCE(reviewed_at, submitted_at, created_at)'), '<=', $endOfDay);
         }
 
         // Calculate stats
@@ -306,15 +323,22 @@ class MemberAdmissionController extends Controller
             });
         }
 
-        if ($request->filled('from_date')) {
-            $query->whereDate('created_at', '>=', $request->from_date);
-        }
-        if ($request->filled('to_date')) {
-            $query->whereDate('created_at', '<=', $request->to_date);
+        if ($fromDate && $toDate) {
+            $startOfDay = Carbon::parse($fromDate)->startOfDay();
+            $endOfDay = Carbon::parse($toDate)->endOfDay();
+            $query->where(function ($q) use ($startOfDay, $endOfDay) {
+                $q->whereBetween(DB::raw('COALESCE(reviewed_at, submitted_at, created_at)'), [$startOfDay, $endOfDay]);
+            });
+        } elseif ($fromDate) {
+            $startOfDay = Carbon::parse($fromDate)->startOfDay();
+            $query->where(DB::raw('COALESCE(reviewed_at, submitted_at, created_at)'), '>=', $startOfDay);
+        } elseif ($toDate) {
+            $endOfDay = Carbon::parse($toDate)->endOfDay();
+            $query->where(DB::raw('COALESCE(reviewed_at, submitted_at, created_at)'), '<=', $endOfDay);
         }
 
         $perPage = $this->resolvePerPage($request);
-        $admissions = $query->orderBy('created_at', 'desc')->paginate($perPage)->withQueryString();
+        $admissions = $query->orderByRaw('COALESCE(reviewed_at, submitted_at, created_at) desc')->paginate($perPage)->withQueryString();
 
         $admissions = $admissions->through(function (MemberAdmission $admission) {
             $arr = $admission->toArray();
@@ -338,10 +362,195 @@ class MemberAdmissionController extends Controller
         return Inertia::render('MemberAdmission/Index', [
             'admissions' => $admissions,
             'filters' => array_merge(
-                $request->only(['status', 'branch_id', 'search', 'from_date', 'to_date']),
-                ['per_page' => $perPage]
+                $request->only(['status', 'branch_id', 'search', 'from_date', 'to_date', 'date_from', 'date_to']),
+                [
+                    'per_page' => $perPage,
+                    'from_date' => $fromDate,
+                    'to_date' => $toDate,
+                ]
             ),
             'stats' => $stats,
+        ]);
+    }
+
+    /**
+     * Export branch admissions to XLSX (same filters as index).
+     */
+    public function exportExcel(Request $request)
+    {
+        $user = auth()->user();
+        $user->loadMissing('role');
+        $isFieldOfficer = $user->role?->name === Role::FIELD_OFFICER;
+
+        $query = MemberAdmission::with([
+            'branch.area.zone',
+            'samity',
+            'memberCategory',
+            'submittedBy',
+            'createdBy',
+            'approvals.user',
+        ]);
+
+        if (!$user->has_all_access) {
+            $accessibleBranchIds = $user->getAccessibleBranches()->pluck('id');
+            $query->where(function ($q) use ($accessibleBranchIds, $user) {
+                $q->whereIn('branch_id', $accessibleBranchIds)
+                  ->orWhere(function ($q2) use ($user) {
+                      $q2->assignedToOfficer((int) $user->id);
+                  });
+            });
+        }
+
+        if ($isFieldOfficer) {
+            $query->assignedToOfficer((int) $user->id);
+        }
+
+        $query->where(function ($q) use ($user) {
+            $q->where('status', '!=', 'draft')
+              ->orWhere(function ($q2) use ($user) {
+                  $q2->assignedToOfficer((int) $user->id);
+              });
+        });
+
+        if ($request->has('branch_id') && $request->branch_id) {
+            $query->where('branch_id', $request->branch_id);
+        }
+
+        if ($request->filled('status')) {
+            $query->where('status', $request->status);
+        }
+
+        if ($request->filled('search')) {
+            $search = $request->search;
+            $query->where(function($q) use ($search) {
+                $q->where('application_no', 'like', "%{$search}%")
+                  ->orWhere('applicant_name_en', 'like', "%{$search}%")
+                  ->orWhere('applicant_name_bn', 'like', "%{$search}%")
+                  ->orWhere('mobile_number', 'like', "%{$search}%")
+                  ->orWhere('nid_number', 'like', "%{$search}%");
+            });
+        }
+
+        $fromDate = $request->from_date ?: $request->date_from;
+        $toDate = $request->to_date ?: $request->date_to;
+
+        if ($fromDate && $toDate) {
+            $startOfDay = Carbon::parse($fromDate)->startOfDay();
+            $endOfDay = Carbon::parse($toDate)->endOfDay();
+            $query->where(function ($q) use ($startOfDay, $endOfDay) {
+                $q->whereBetween(DB::raw('COALESCE(reviewed_at, submitted_at, created_at)'), [$startOfDay, $endOfDay]);
+            });
+        } elseif ($fromDate) {
+            $startOfDay = Carbon::parse($fromDate)->startOfDay();
+            $query->where(DB::raw('COALESCE(reviewed_at, submitted_at, created_at)'), '>=', $startOfDay);
+        } elseif ($toDate) {
+            $endOfDay = Carbon::parse($toDate)->endOfDay();
+            $query->where(DB::raw('COALESCE(reviewed_at, submitted_at, created_at)'), '<=', $endOfDay);
+        }
+
+        $admissions = $query->orderByRaw('COALESCE(reviewed_at, submitted_at, created_at) desc')->get();
+
+        $statusLabels = [
+            'draft' => 'খসড়া',
+            'submitted' => 'জমা',
+            'under_review' => 'পর্যালোচনায়',
+            'ready_for_head_office' => 'শাখা অনুমোদিত',
+            'pending_head_office' => 'হেড অফিসে',
+            'approved' => 'অনুমোদিত',
+            'rejected' => 'প্রত্যাখ্যাত',
+            'needs_revision' => 'সংশোধন',
+        ];
+
+        $spreadsheet = new Spreadsheet();
+        $sheet = $spreadsheet->getActiveSheet();
+        $sheet->setTitle('ভর্তি আবেদন');
+
+        $headers = [
+            'ক্রমিক',
+            'সদস্য/আবেদন নং',
+            'আবেদনকারী (বাংলা)',
+            'আবেদনকারী (ইংরেজি)',
+            'মোবাইল নম্বর',
+            'NID নম্বর',
+            'শাখা',
+            'সমিতি',
+            'ক্যাটাগরি',
+            'তৈরি করেছেন',
+            'স্ট্যাটাস',
+            'পেন্ডিং অবস্থান',
+            'জমাদানের তারিখ',
+            'অনুমোদন/পর্যালোচনা তারিখ',
+            'তৈরির তারিখ',
+        ];
+
+        $sheet->fromArray($headers, null, 'A1');
+        $lastColumn = Coordinate::stringFromColumnIndex(count($headers));
+        $sheet->getStyle("A1:{$lastColumn}1")->applyFromArray([
+            'font' => ['bold' => true, 'size' => 11, 'color' => ['rgb' => 'FFFFFF']],
+            'fill' => [
+                'fillType' => Fill::FILL_SOLID,
+                'startColor' => ['rgb' => '1E293B'],
+            ],
+            'alignment' => [
+                'horizontal' => Alignment::HORIZONTAL_CENTER,
+                'vertical' => Alignment::VERTICAL_CENTER,
+                'wrapText' => true,
+            ],
+            'borders' => [
+                'allBorders' => [
+                    'borderStyle' => Border::BORDER_THIN,
+                    'color' => ['rgb' => '334155'],
+                ],
+            ],
+        ]);
+        $sheet->getRowDimension(1)->setRowHeight(28);
+
+        $row = 2;
+        foreach ($admissions as $index => $admission) {
+            $tracking = $admission->getTrackingState();
+            $sheet->fromArray([
+                $index + 1,
+                $admission->application_no,
+                $admission->applicant_name_bn,
+                $admission->applicant_name_en,
+                $admission->mobile_number,
+                $admission->nid_number,
+                $admission->branch?->name ?? '',
+                $admission->samity?->samity_name ?? '',
+                $admission->memberCategory?->category_name ?? '',
+                $admission->createdBy?->name ?? '',
+                $statusLabels[$admission->status] ?? $admission->status,
+                $tracking['label'] ?? '',
+                $admission->submitted_at ? $admission->submitted_at->format('Y-m-d') : '',
+                $admission->reviewed_at ? $admission->reviewed_at->format('Y-m-d') : '',
+                $admission->created_at ? $admission->created_at->format('Y-m-d H:i') : '',
+            ], null, "A{$row}");
+
+            $sheet->getStyle("A{$row}:{$lastColumn}{$row}")->applyFromArray([
+                'borders' => [
+                    'allBorders' => [
+                        'borderStyle' => Border::BORDER_THIN,
+                        'color' => ['rgb' => 'CBD5E1'],
+                    ],
+                ],
+                'alignment' => [
+                    'vertical' => Alignment::VERTICAL_CENTER,
+                ],
+            ]);
+            $row++;
+        }
+
+        foreach (range(1, count($headers)) as $col) {
+            $sheet->getColumnDimension(Coordinate::stringFromColumnIndex($col))->setAutoSize(true);
+        }
+
+        $filename = 'member_admissions_' . date('Y_m_d_His') . '.xlsx';
+        $writer = new Xlsx($spreadsheet);
+
+        return response()->streamDownload(function () use ($writer) {
+            $writer->save('php://output');
+        }, $filename, [
+            'Content-Type' => 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
         ]);
     }
 

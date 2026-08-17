@@ -6,6 +6,7 @@ use App\Http\Controllers\HeadOfficeAdmissionController;
 use App\Http\Controllers\HeadOfficeLoanController;
 use App\Http\Controllers\HeadOfficeSavingsController;
 use App\Http\Controllers\HeadOfficeTeamBasedApprovalController;
+use App\Http\Controllers\HeadOfficeVerificationController;
 use App\Http\Controllers\IssueProcessingController;
 use App\Http\Controllers\LoanApplicationController;
 use App\Http\Controllers\LoanCategoryController;
@@ -183,6 +184,7 @@ Route::middleware(['auth', 'verified'])->group(function () {
     // Member Admission Routes - For Branch Users + Approvers (show/print)
     Route::prefix('member-admissions')->name('member-admissions.')->group(function () {
         Route::get('/', [MemberAdmissionController::class, 'index'])->name('index')->middleware('branch.user');
+        Route::get('export/excel', [MemberAdmissionController::class, 'exportExcel'])->name('export.excel')->middleware('branch.user');
         Route::get('create', [MemberAdmissionController::class, 'create'])->name('create')->middleware('branch.user');
         Route::post('/', [MemberAdmissionController::class, 'store'])->name('store')->middleware('branch.user');
         Route::post('send-to-head-office-bulk', [MemberAdmissionController::class, 'sendToHeadOfficeBulk'])->name('send-to-head-office-bulk')->middleware('branch.user');
@@ -224,6 +226,17 @@ Route::middleware(['auth', 'verified'])->group(function () {
         Route::get('{teamBasedApproval}/print', [TeamBasedApprovalPrintController::class, 'show'])->name('print');
     });
 
+    // Verification & Inquiries - For all authenticated users (branch users, approvers, head office)
+    Route::prefix('verifications')->name('verifications.')->middleware('auth')->group(function () {
+        Route::get('/', [HeadOfficeVerificationController::class, 'index'])->name('index');
+        Route::post('admissions/{admission}/approve', [HeadOfficeVerificationController::class, 'approveAdmission'])->name('admissions.approve');
+        Route::post('loans/{loanApplication}/approve', [HeadOfficeVerificationController::class, 'approveLoan'])->name('loans.approve');
+        Route::post('store-issue', [HeadOfficeVerificationController::class, 'storeIssue'])->name('store-issue');
+        Route::post('resolve-issue', [HeadOfficeVerificationController::class, 'resolveIssue'])->name('resolve-issue');
+        Route::post('reply-issue', [HeadOfficeVerificationController::class, 'replyIssue'])->name('reply-issue');
+        Route::post('reject-application', [HeadOfficeVerificationController::class, 'rejectApplication'])->name('reject-application');
+    });
+
     // Approval Routes - For all authenticated users
     Route::prefix('approvals')->name('approvals.')->middleware('auth')->group(function () {
         Route::get('/', [ApprovalController::class, 'index'])->name('index');
@@ -262,6 +275,7 @@ Route::middleware(['auth', 'verified'])->group(function () {
             });
 
             Route::get('create/{productId?}', [\App\Http\Controllers\Member\LoanApplicationController::class, 'create'])->name('create');
+            Route::get('export/excel', [\App\Http\Controllers\Member\LoanApplicationController::class, 'exportExcel'])->name('export.excel');
             Route::post('/', [\App\Http\Controllers\Member\LoanApplicationController::class, 'store'])->name('store');
             Route::post('send-to-head-office-bulk', [\App\Http\Controllers\Member\LoanApplicationController::class, 'sendToHeadOfficeBulk'])->name('send-to-head-office-bulk');
             Route::get('{id}', [\App\Http\Controllers\Member\LoanApplicationController::class, 'show'])->name('show');
@@ -310,6 +324,7 @@ Route::middleware(['auth', 'verified'])->group(function () {
         Route::patch('admissions/{admission}/mark-legacy', [HeadOfficeAdmissionController::class, 'markAsLegacy'])->name('admissions.mark-legacy');
         Route::patch('admissions/{admission}/reset-approval', [HeadOfficeAdmissionController::class, 'resetApproval'])->name('admissions.reset-approval');
         Route::patch('admissions/{admission}/reject', [HeadOfficeAdmissionController::class, 'rejectSingle'])->name('admissions.reject');
+        Route::post('admissions/approve-bulk', [HeadOfficeAdmissionController::class, 'approveBulk'])->name('admissions.approve-bulk');
         Route::post('admissions/approve-all', [HeadOfficeAdmissionController::class, 'approveAll'])->name('admissions.approve-all');
         Route::delete('issues/{issue}', [HeadOfficeAdmissionController::class, 'deleteIssue'])->name('issues.delete');
 
@@ -322,6 +337,7 @@ Route::middleware(['auth', 'verified'])->group(function () {
         Route::get('loans/{loanApplication}', [HeadOfficeLoanController::class, 'show'])->name('loans.show');
         Route::post('loans/{loanApplication}/issue', [HeadOfficeLoanController::class, 'storeIssue'])->name('loans.issue');
         Route::patch('loans/{loanApplication}/approve', [HeadOfficeLoanController::class, 'approveSingle'])->name('loans.approve');
+        Route::post('loans/approve-bulk', [HeadOfficeLoanController::class, 'approveBulk'])->name('loans.approve-bulk');
         Route::post('loans/approve-all', [HeadOfficeLoanController::class, 'approveAll'])->name('loans.approve-all');
         Route::patch('loans/{loanApplication}/reject', [HeadOfficeLoanController::class, 'rejectSingle'])->name('loans.reject');
         Route::patch('loans/{loanApplication}/reset-approval', [HeadOfficeLoanController::class, 'resetApproval'])->name('loans.reset-approval');
@@ -331,6 +347,15 @@ Route::middleware(['auth', 'verified'])->group(function () {
         // Head Office Savings Applications (view only; no HO approval)
         Route::get('savings-applications', [HeadOfficeSavingsController::class, 'index'])->name('savings-applications');
         Route::get('savings-applications/{id}', [HeadOfficeSavingsController::class, 'show'])->name('savings-applications.show');
+
+        // Head Office Verification & Inquiries
+        Route::get('verifications', [HeadOfficeVerificationController::class, 'index'])->name('verifications');
+        Route::post('verifications/admissions/{admission}/approve', [HeadOfficeVerificationController::class, 'approveAdmission'])->name('verifications.admissions.approve');
+        Route::post('verifications/loans/{loanApplication}/approve', [HeadOfficeVerificationController::class, 'approveLoan'])->name('verifications.loans.approve');
+        Route::post('verifications/store-issue', [HeadOfficeVerificationController::class, 'storeIssue'])->name('verifications.store-issue');
+        Route::post('verifications/resolve-issue', [HeadOfficeVerificationController::class, 'resolveIssue'])->name('verifications.resolve-issue');
+        Route::post('verifications/reply-issue', [HeadOfficeVerificationController::class, 'replyIssue'])->name('verifications.reply-issue');
+        Route::post('verifications/reject-application', [HeadOfficeVerificationController::class, 'rejectApplication'])->name('verifications.reject-application');
 
         // Head Office Team Based Approvals overview + management
         Route::get('team-based-approvals/export', [HeadOfficeTeamBasedApprovalController::class, 'exportItems'])->name('team-based-approvals.export');

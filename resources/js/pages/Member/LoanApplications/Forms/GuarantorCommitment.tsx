@@ -6,6 +6,7 @@ import { calculateTotalServiceCharge } from '@/utils/loanInterest';
 import { Save, Printer, Eye, ArrowLeft, ShieldCheck, UserCheck, CreditCard, FileText } from 'lucide-react';
 import { numberToWordsBangla } from './ApprovalForm/PrintPreview';
 import { afterLoanFormSaveUrl } from '@/utils/loanFormNavigation';
+import { useAutoFitPrint } from '@/hooks/useAutoFitPrint';
 
 interface GuarantorCommitmentData {
     branch_name: string;
@@ -141,6 +142,29 @@ function buildGuarantorCommitmentDefaults(
     };
 }
 
+function GuarantorCommitmentOnlyPreview({ member, loanProduct, requestedAmount, branch, savedData }: any) {
+    const baseLoanAmount = Number(requestedAmount) || 0;
+    const defaults = buildGuarantorCommitmentDefaults(member, loanProduct, requestedAmount, branch);
+    const previewData = savedData && Object.keys(savedData).length > 0
+        ? {
+            ...defaults,
+            ...savedData,
+            ...(baseLoanAmount > 0 ? {
+                loan_amount: defaults.loan_amount,
+                loan_amount_words: defaults.loan_amount_words,
+            } : {}),
+        }
+        : defaults;
+
+    useAutoFitPrint([previewData], '.guarantor-commitment-sheet');
+
+    return (
+        <div className="print-container">
+            <GuarantorCommitmentPrintView data={previewData} />
+        </div>
+    );
+}
+
 export default function GuarantorCommitment({
     member,
     loanProduct,
@@ -156,22 +180,14 @@ export default function GuarantorCommitment({
     isLegacy = false,
 }: Props) {
     if (onlyPreview) {
-        const baseLoanAmount = Number(requestedAmount) || 0;
-        const defaults = buildGuarantorCommitmentDefaults(member, loanProduct, requestedAmount, branch);
-        const previewData = savedData && Object.keys(savedData).length > 0
-            ? {
-                ...defaults,
-                ...savedData,
-                ...(baseLoanAmount > 0 ? {
-                    loan_amount: defaults.loan_amount,
-                    loan_amount_words: defaults.loan_amount_words,
-                } : {}),
-            }
-            : defaults;
         return (
-            <div className="print-container">
-                <GuarantorCommitmentPrintView data={previewData} />
-            </div>
+            <GuarantorCommitmentOnlyPreview
+                member={member}
+                loanProduct={loanProduct}
+                requestedAmount={requestedAmount}
+                branch={branch}
+                savedData={savedData}
+            />
         );
     }
 
@@ -181,6 +197,8 @@ export default function GuarantorCommitment({
     const autoServiceCharge = Math.round(calcServiceCharge(baseLoanAmount, loanProduct));
     const initialLoanAmount = calcLoanAmountWithServiceCharge(baseLoanAmount, loanProduct);
     const initialWords = initialLoanAmount > 0 ? numberToWordsBangla(initialLoanAmount) + ' টাকা' : '';
+
+    useAutoFitPrint([baseLoanAmount, member, loanProduct], '.guarantor-commitment-sheet');
 
     const { data, setData, processing } = useForm<GuarantorCommitmentData>({
         branch_name: branch?.name || '',
@@ -302,7 +320,7 @@ export default function GuarantorCommitment({
                     @media print {
                         @page {
                             size: A4 portrait;
-                            margin: 12mm 15mm;
+                            margin: 15mm 20mm;
                         }
 
                         body * {
@@ -328,6 +346,16 @@ export default function GuarantorCommitment({
                             margin: 0 !important;
                             padding: 0 !important;
                             background: white !important;
+                            page-break-after: avoid !important;
+                            break-after: avoid !important;
+                        }
+
+                        .guarantor-commitment-sheet {
+                            width: 100% !important;
+                            max-height: 265mm !important;
+                            page-break-inside: avoid !important;
+                            break-inside: avoid !important;
+                            box-sizing: border-box !important;
                         }
 
                         p, span, td, th, div {
@@ -690,61 +718,65 @@ export function GuarantorCommitmentPrintView({ data }: { data: any }) {
 
     return (
         <div
-            className="print-container bg-white rounded-lg border border-gray-300 p-6 sm:p-8 text-gray-900 print:border-none print:p-0 print:m-0 w-full overflow-x-auto"
-            style={{ fontFamily: 'Kalpurush, Arial, sans-serif', fontSize: '14.5px', lineHeight: '1.65', color: '#000' }}
+            data-print-page="1"
+            className="guarantor-commitment-sheet bg-white rounded-lg border border-gray-300 px-8 py-6 sm:px-12 sm:py-8 text-gray-950 print:border-none print:px-2 print:py-0 w-full"
+            style={{ fontFamily: 'Kalpurush, "Noto Sans Bengali", Arial, sans-serif', fontSize: '13.5px', lineHeight: '1.75', color: '#000' }}
         >
-            {/* Header Section */}
-            <div className="mb-4 pb-2 border-b border-gray-400">
-                <div className="flex items-center justify-center gap-3">
+            {/* Header Section: Logo on Left Corner */}
+            <div className="mb-4 pb-2 border-b-2 border-gray-600 flex items-center justify-between">
+                {/* Left Corner Logo */}
+                <div className="flex items-center">
                     <img
                         src="/logo.png"
                         alt="Logo"
-                        style={{ height: '44px', width: '44px', objectFit: 'contain' }}
+                        style={{ height: '50px', width: '50px', objectFit: 'contain' }}
                         onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}
                     />
-                    <div className="text-center">
-                        <h1 className="font-bold text-2xl tracking-wide text-black mb-0">মৌসুমী</h1>
-                        <p className="text-xs font-semibold text-gray-800">
-                            শাখা: <span className="border-b border-dotted border-gray-800 inline-block min-w-[180px] font-bold px-1">{str(d.branch_name)}</span>
-                        </p>
-                        <div className="mt-1">
-                            <span className="border border-black px-4 py-0.5 rounded-full font-bold text-xs inline-block">
-                                ঋণের জামিনদার/দায়িত্ব গ্রহণকারীর অঙ্গীকার নামা
-                            </span>
-                        </div>
+                </div>
+
+                {/* Center Title & Branch */}
+                <div className="text-center flex-1 pr-8">
+                    <h1 className="font-black text-[24px] tracking-wide text-black mb-0 leading-tight">মৌসুমী</h1>
+                    <p className="text-[13px] font-bold text-gray-800 mt-0.5">
+                        <span className="border-b border-dotted border-gray-800 inline-block min-w-[140px] text-center font-bold px-1.5">{str(d.branch_name)}</span> শাখা
+                    </p>
+                    <div className="mt-1.5">
+                        <span className="border-2 border-black px-5 py-0.5 rounded-full font-bold text-[13.5px] inline-block tracking-wide">
+                            ঋণের জামিনদার/দায়িত্ব গ্রহণকারীর অঙ্গীকার নামা
+                        </span>
                     </div>
                 </div>
             </div>
 
             {/* Main Statement Text */}
-            <div className="space-y-2 text-xs sm:text-[13px] leading-relaxed">
+            <div className="space-y-2 text-[13.5px] print:text-[13px] leading-[1.8]">
                 <p>
-                    আমি মো./মোছা./শ্রী <span className="border-b border-dotted border-gray-800 inline-block min-w-[200px] font-bold px-1">{str(d.guarantor_name)}</span>, স্বামী/পিতা: <span className="border-b border-dotted border-gray-800 inline-block min-w-[200px] font-semibold px-1">{str(d.guarantor_father_or_spouse)}</span>
+                    আমি মো./মোছা./শ্রী <span className="border-b border-dotted border-gray-800 inline-block min-w-[190px] font-bold px-1.5">{str(d.guarantor_name)}</span>, স্বামী/পিতা: <span className="border-b border-dotted border-gray-800 inline-block min-w-[190px] font-bold px-1.5">{str(d.guarantor_father_or_spouse)}</span>
                 </p>
                 <p>
-                    জাতীয় পরিচয়পত্র নং: <span className="border-b border-dotted border-gray-800 inline-block min-w-[160px] font-semibold px-1">{str(d.guarantor_nid)}</span> গ্রাম: <span className="border-b border-dotted border-gray-800 inline-block min-w-[140px] font-semibold px-1">{str(d.guarantor_village)}</span> ডাকঘর: <span className="border-b border-dotted border-gray-800 inline-block min-w-[120px] font-semibold px-1">{str(d.guarantor_post_office)}</span>
+                    জাতীয় পরিচয়পত্র নং: <span className="border-b border-dotted border-gray-800 inline-block min-w-[150px] font-bold px-1.5">{str(d.guarantor_nid)}</span> গ্রাম: <span className="border-b border-dotted border-gray-800 inline-block min-w-[130px] font-bold px-1.5">{str(d.guarantor_village)}</span> ডাকঘর: <span className="border-b border-dotted border-gray-800 inline-block min-w-[110px] font-bold px-1.5">{str(d.guarantor_post_office)}</span>
                 </p>
                 <p>
-                    উপজেলা: <span className="border-b border-dotted border-gray-800 inline-block min-w-[120px] font-semibold px-1">{str(d.guarantor_upazila)}</span> জেলা: <span className="border-b border-dotted border-gray-800 inline-block min-w-[120px] font-semibold px-1">{str(d.guarantor_district)}</span> মোবাইল: <span className="border-b border-dotted border-gray-800 inline-block min-w-[120px] font-semibold px-1">{str(d.guarantor_mobile)}</span>
+                    উপজেলা: <span className="border-b border-dotted border-gray-800 inline-block min-w-[120px] font-bold px-1.5">{str(d.guarantor_upazila)}</span> জেলা: <span className="border-b border-dotted border-gray-800 inline-block min-w-[120px] font-bold px-1.5">{str(d.guarantor_district)}</span> মোবাইল: <span className="border-b border-dotted border-gray-800 inline-block min-w-[130px] font-bold px-1.5">{str(d.guarantor_mobile)}</span>
                 </p>
                 
                 <p className="pt-1.5">
-                    এই মর্মে অঙ্গীকার করছি যে, মৌসুমী সংস্থার <span className="border-b border-dotted border-gray-800 inline-block min-w-[140px] font-semibold px-1">{str(d.branch_name)}</span> শাখার সদস্য মো./মোছা./শ্রী <span className="border-b border-dotted border-gray-800 inline-block min-w-[200px] font-bold px-1">{str(d.member_name)}</span>
+                    এই মর্মে অঙ্গীকার করছি যে, মৌসুমী সংস্থার <span className="border-b border-dotted border-gray-800 inline-block min-w-[140px] font-bold px-1.5">{str(d.branch_name)}</span> শাখা থেকে সদস্য মো./মোছা./শ্রী <span className="border-b border-dotted border-gray-800 inline-block min-w-[190px] font-bold px-1.5">{str(d.member_name)}</span>
                 </p>
                 <p>
-                    স্বামী/পিতা: <span className="border-b border-dotted border-gray-800 inline-block min-w-[180px] font-semibold px-1">{str(d.member_father_or_spouse)}</span> জাতীয় পরিচয়পত্র নং: <span className="border-b border-dotted border-gray-800 inline-block min-w-[150px] font-semibold px-1">{str(d.member_nid)}</span>
+                    স্বামী/পিতা: <span className="border-b border-dotted border-gray-800 inline-block min-w-[180px] font-bold px-1.5">{str(d.member_father_or_spouse)}</span> জাতীয় পরিচয়পত্র নং: <span className="border-b border-dotted border-gray-800 inline-block min-w-[150px] font-bold px-1.5">{str(d.member_nid)}</span>
                 </p>
                 <p>
-                    গ্রাম: <span className="border-b border-dotted border-gray-800 inline-block min-w-[120px] font-semibold px-1">{str(d.member_village)}</span> ডাকঘর: <span className="border-b border-dotted border-gray-800 inline-block min-w-[120px] font-semibold px-1">{str(d.member_post_office)}</span>
+                    গ্রাম: <span className="border-b border-dotted border-gray-800 inline-block min-w-[130px] font-bold px-1.5">{str(d.member_village)}</span> ডাকঘর: <span className="border-b border-dotted border-gray-800 inline-block min-w-[110px] font-bold px-1.5">{str(d.member_post_office)}</span>
                 </p>
                 <p>
-                    উপজেলা: <span className="border-b border-dotted border-gray-800 inline-block min-w-[120px] font-semibold px-1">{str(d.member_upazila)}</span> জেলা: <span className="border-b border-dotted border-gray-800 inline-block min-w-[120px] font-semibold px-1">{str(d.member_district)}</span> মোবাইল: <span className="border-b border-dotted border-gray-800 inline-block min-w-[120px] font-semibold px-1">{str(d.member_mobile)}</span>
+                    উপজেলা: <span className="border-b border-dotted border-gray-800 inline-block min-w-[120px] font-bold px-1.5">{str(d.member_upazila)}</span> জেলা: <span className="border-b border-dotted border-gray-800 inline-block min-w-[120px] font-bold px-1.5">{str(d.member_district)}</span> মোবাইল: <span className="border-b border-dotted border-gray-800 inline-block min-w-[130px] font-bold px-1.5">{str(d.member_mobile)}</span>
                 </p>
                 <p>
-                    অদ্য/গত <span className="border-b border-dotted border-gray-800 inline-block min-w-[110px] font-bold px-1">{d.loan_date ? fmt(d.loan_date) : ''}</span> তারিখে সংস্থার <span className="border-b border-dotted border-gray-800 inline-block min-w-[120px] font-semibold px-1">{str(d.branch_name)}</span> শাখা থেকে সার্ভিস চার্জ সহ <span className="border-b border-dotted border-gray-800 inline-block min-w-[120px] font-bold text-green-800 px-1">{d.loan_amount ? `৳${Number(d.loan_amount).toLocaleString('bn-BD')}` : ''}</span> টাকা, (কথায় <span className="border-b border-dotted border-gray-800 inline-block min-w-[240px] font-semibold px-1">{str(d.loan_amount_words)}</span>) ঋণ গ্রহণ করেছেন।
+                    অদ্য/গত <span className="border-b border-dotted border-gray-800 inline-block min-w-[110px] font-bold px-1.5">{d.loan_date ? fmt(d.loan_date) : ''}</span> তারিখে সংস্থার <span className="border-b border-dotted border-gray-800 inline-block min-w-[120px] font-bold px-1.5">{str(d.branch_name)}</span> শাখা থেকে সার্ভিস চার্জ সহ <span className="border-b border-dotted border-gray-800 inline-block min-w-[120px] font-black text-green-900 px-1.5">{d.loan_amount ? `৳${Number(d.loan_amount).toLocaleString('bn-BD')}` : ''}</span> টাকা, (কথায় <span className="border-b border-dotted border-gray-800 inline-block min-w-[240px] font-bold px-1.5">{str(d.loan_amount_words)}</span>) ঋণ গ্রহণ করেছেন।
                 </p>
                 <p>
-                    উক্ত শাখায় তার সদস্য নং: <span className="border-b border-dotted border-gray-800 inline-block min-w-[90px] font-bold px-1">{str(d.member_code)}</span> এবং সমিতির নাম: <span className="border-b border-dotted border-gray-800 inline-block min-w-[150px] font-semibold px-1">{str(d.samity_name)}</span> সমিতি নং: <span className="border-b border-dotted border-gray-800 inline-block min-w-[90px] font-semibold px-1">{str(d.samity_code)}</span>
+                    উক্ত শাখায় তার সদস্য নং: <span className="border-b border-dotted border-gray-800 inline-block min-w-[90px] font-bold px-1.5">{str(d.member_code)}</span> এবং সমিতির নাম: <span className="border-b border-dotted border-gray-800 inline-block min-w-[150px] font-bold px-1.5">{str(d.samity_name)}</span> সমিতি নং: <span className="border-b border-dotted border-gray-800 inline-block min-w-[90px] font-bold px-1.5">{str(d.samity_code)}</span>
                 </p>
                 
                 <p className="pt-2 text-justify">
@@ -752,9 +784,9 @@ export function GuarantorCommitmentPrintView({ data }: { data: any }) {
                 </p>
 
                 {/* Terms & Conditions */}
-                <div className="pt-2">
-                    <p className="font-bold text-xs sm:text-sm text-black mb-1">শর্তাবলী:</p>
-                    <ol className="list-decimal list-inside space-y-1.5 pl-2 text-xs sm:text-[12.5px] leading-relaxed">
+                <div className="pt-1.5">
+                    <p className="font-bold text-[13.5px] text-black mb-1">শর্তাবলী:</p>
+                    <ol className="list-decimal list-inside space-y-1.5 pl-1.5 text-[12.5px] print:text-[12px] leading-[1.7]">
                         <li>
                             ঋণ গ্রহীতা নিয়মিত ঋণের কিস্তি প্রদানের মাধ্যমে ঋণ পরিশোধ করিবেন। যদি ঋণ গ্রহীতা ঋণ ও সেবামূল্য সময় মতো ও নিয়ম অনুযায়ী পরিশোধ করতে ব্যর্থ হন সেক্ষেত্রে আমি ঋণ গ্রহীতার পক্ষে জামিনদার হিসেবে ঋণের টাকা পরিশোধ করতে বাধ্য থাকবো। যদি আমি পরিশোধ না করি সেক্ষেত্রে ঋণ দাতা আমার বিরুদ্ধে আইনানুগ ব্যবস্থা গ্রহণের অধিকার সংরক্ষণ করেন।
                         </li>
@@ -768,22 +800,22 @@ export function GuarantorCommitmentPrintView({ data }: { data: any }) {
                 </div>
 
                 {/* Final Declaration */}
-                <p className="pt-2 text-justify text-xs sm:text-[12.5px]">
+                <p className="pt-1.5 text-justify text-[12.5px] print:text-[12px] leading-[1.7]">
                     উক্ত ব্যাপারে আমাকে কেহ বা কাহারা প্রলোভন, কোন প্রকার ভয়ভীতি দেখায় নাই বা চাপ সৃষ্টি করে নাই। এতদার্থে স্বেচ্ছায়, সজ্ঞানে অন্যের বিনা প্ররোচনায় অত্র অঙ্গীকারনামা পড়ে, শুনে, বুঝে স্বাক্ষীগণের সম্মুখে সহি স্বাক্ষর সম্পাদন করলাম।
                 </p>
 
-                {/* Signatures Section */}
-                <div className="pt-8 flex justify-between items-start gap-6">
+                {/* Signatures Section with Generous Gap */}
+                <div className="mt-8 pt-4 border-t-2 border-gray-500 flex justify-between items-start gap-8">
                     {/* Witness Signatures */}
                     <div className="flex-1 space-y-3">
-                        <p className="font-bold text-xs sm:text-sm text-black">স্বাক্ষীর স্বাক্ষর:</p>
-                        <div className="space-y-2">
+                        <p className="font-bold text-[13px] text-black">স্বাক্ষীর স্বাক্ষর:</p>
+                        <div className="space-y-4 pt-1">
                             {[1, 2, 3].map((num) => (
                                 <div key={num} className="flex items-center gap-2">
-                                    <span className="text-xs sm:text-sm font-semibold">{num}.</span>
-                                    <span className="border-b border-dotted border-gray-800 inline-block min-w-[160px]">
+                                    <span className="text-[12.5px] font-bold">{num}.</span>
+                                    <span className="border-b border-dotted border-gray-800 inline-block min-w-[180px] h-[30px]">
                                         {d[`witness${num}_signature_image`] && (
-                                            <img src={d[`witness${num}_signature_image`]} alt={`Witness ${num}`} style={{ height: '22px', width: '60px', objectFit: 'contain' }} className="inline-block" />
+                                            <img src={d[`witness${num}_signature_image`]} alt={`Witness ${num}`} style={{ height: '24px', width: '70px', objectFit: 'contain' }} className="inline-block" />
                                         )}
                                     </span>
                                 </div>
@@ -793,11 +825,11 @@ export function GuarantorCommitmentPrintView({ data }: { data: any }) {
 
                     {/* Guarantor Signature */}
                     <div className="flex-1 text-right space-y-2">
-                        <p className="font-bold text-xs sm:text-sm text-black">ঋণের জামিনদার/দায়িত্ব গ্রহণকারীর স্বাক্ষর</p>
-                        <div className="pt-4">
-                            <span className="border-b border-dotted border-gray-800 inline-block min-w-[200px]">
+                        <p className="font-bold text-[13px] text-black">ঋণের জামিনদার/দায়িত্ব গ্রহণকারীর স্বাক্ষর</p>
+                        <div className="pt-8 pb-1">
+                            <span className="border-b border-dotted border-gray-800 inline-block min-w-[220px] h-[36px]">
                                 {d.guarantor_signature_image && (
-                                    <img src={d.guarantor_signature_image} alt="Guarantor" style={{ height: '28px', width: '75px', objectFit: 'contain', marginLeft: 'auto' }} className="block" />
+                                    <img src={d.guarantor_signature_image} alt="Guarantor" style={{ height: '30px', width: '90px', objectFit: 'contain', marginLeft: 'auto' }} className="block" />
                                 )}
                             </span>
                         </div>

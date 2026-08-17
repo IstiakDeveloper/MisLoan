@@ -49,16 +49,31 @@ class HeadOfficeAdmissionController extends Controller
         $dateFrom = $request->date_from ?? now()->startOfMonth()->toDateString();
         $dateTo = $request->date_to ?? now()->toDateString();
 
-        // Date range filter
+        $startOfDay = Carbon::parse($dateFrom)->startOfDay();
+        $endOfDay = Carbon::parse($dateTo)->endOfDay();
+
+        // Date range filter based on submission date (submitted_at, falling back to created_at if null)
         if ($dateFrom && $dateTo) {
-            $query->whereBetween('created_at', [
-                Carbon::parse($dateFrom)->startOfDay(),
-                Carbon::parse($dateTo)->endOfDay()
-            ]);
+            $query->where(function ($q) use ($startOfDay, $endOfDay) {
+                $q->whereBetween('submitted_at', [$startOfDay, $endOfDay])
+                  ->orWhere(function ($sq) use ($startOfDay, $endOfDay) {
+                      $sq->whereNull('submitted_at')->whereBetween('created_at', [$startOfDay, $endOfDay]);
+                  });
+            });
         } elseif ($dateFrom) {
-            $query->whereDate('created_at', '>=', $dateFrom);
+            $query->where(function ($q) use ($startOfDay) {
+                $q->where('submitted_at', '>=', $startOfDay)
+                  ->orWhere(function ($sq) use ($startOfDay) {
+                      $sq->whereNull('submitted_at')->where('created_at', '>=', $startOfDay);
+                  });
+            });
         } elseif ($dateTo) {
-            $query->whereDate('created_at', '<=', $dateTo);
+            $query->where(function ($q) use ($endOfDay) {
+                $q->where('submitted_at', '<=', $endOfDay)
+                  ->orWhere(function ($sq) use ($endOfDay) {
+                      $sq->whereNull('submitted_at')->where('created_at', '<=', $endOfDay);
+                  });
+            });
         }
 
         // Zone filter
@@ -127,10 +142,26 @@ class HeadOfficeAdmissionController extends Controller
 
         // Apply same date filter to stats
         if ($dateFrom && $dateTo) {
-            $statsQuery->whereBetween('created_at', [
-                Carbon::parse($dateFrom)->startOfDay(),
-                Carbon::parse($dateTo)->endOfDay()
-            ]);
+            $statsQuery->where(function ($q) use ($startOfDay, $endOfDay) {
+                $q->whereBetween('submitted_at', [$startOfDay, $endOfDay])
+                  ->orWhere(function ($sq) use ($startOfDay, $endOfDay) {
+                      $sq->whereNull('submitted_at')->whereBetween('created_at', [$startOfDay, $endOfDay]);
+                  });
+            });
+        } elseif ($dateFrom) {
+            $statsQuery->where(function ($q) use ($startOfDay) {
+                $q->where('submitted_at', '>=', $startOfDay)
+                  ->orWhere(function ($sq) use ($startOfDay) {
+                      $sq->whereNull('submitted_at')->where('created_at', '>=', $startOfDay);
+                  });
+            });
+        } elseif ($dateTo) {
+            $statsQuery->where(function ($q) use ($endOfDay) {
+                $q->where('submitted_at', '<=', $endOfDay)
+                  ->orWhere(function ($sq) use ($endOfDay) {
+                      $sq->whereNull('submitted_at')->where('created_at', '<=', $endOfDay);
+                  });
+            });
         }
 
         // Apply zone/area/branch filters to stats
@@ -192,7 +223,7 @@ class HeadOfficeAdmissionController extends Controller
         ];
 
         $perPage = $this->resolvePerPage($request);
-        $admissions = $query->orderBy('created_at', 'desc')->paginate($perPage)->withQueryString();
+        $admissions = $query->orderByRaw('COALESCE(submitted_at, created_at) desc')->paginate($perPage)->withQueryString();
 
         $admissions = $admissions->through(function (MemberAdmission $admission) {
             $arr = $admission->toArray();
@@ -231,6 +262,7 @@ class HeadOfficeAdmissionController extends Controller
             'memberCategory',
             'submittedBy',
             'createdBy',
+            'familyMembers',
         ]);
 
         $this->applyAccessibleBranchScope($query);
@@ -240,11 +272,16 @@ class HeadOfficeAdmissionController extends Controller
         $dateFrom = $request->date_from ?? now()->startOfMonth()->toDateString();
         $dateTo = $request->date_to ?? now()->toDateString();
 
+        $startOfDay = Carbon::parse($dateFrom)->startOfDay();
+        $endOfDay = Carbon::parse($dateTo)->endOfDay();
+
         if ($dateFrom && $dateTo) {
-            $query->whereBetween('created_at', [
-                Carbon::parse($dateFrom)->startOfDay(),
-                Carbon::parse($dateTo)->endOfDay()
-            ]);
+            $query->where(function ($q) use ($startOfDay, $endOfDay) {
+                $q->whereBetween('submitted_at', [$startOfDay, $endOfDay])
+                  ->orWhere(function ($sq) use ($startOfDay, $endOfDay) {
+                      $sq->whereNull('submitted_at')->whereBetween('created_at', [$startOfDay, $endOfDay]);
+                  });
+            });
         }
 
         if ($request->zone_id) {
@@ -294,7 +331,7 @@ class HeadOfficeAdmissionController extends Controller
         $admissions = $query->orderBy(
             \App\Models\Branch::select('code')->whereColumn('branches.id', 'member_admissions.branch_id'),
             'asc'
-        )->orderBy('created_at', 'desc')->get();
+        )->orderByRaw('COALESCE(submitted_at, created_at) desc')->get();
 
         $orgFilters = $this->organizationFilterOptions();
 
@@ -326,11 +363,16 @@ class HeadOfficeAdmissionController extends Controller
         $dateFrom = $request->date_from ?? now()->startOfMonth()->toDateString();
         $dateTo = $request->date_to ?? now()->toDateString();
 
+        $startOfDay = Carbon::parse($dateFrom)->startOfDay();
+        $endOfDay = Carbon::parse($dateTo)->endOfDay();
+
         if ($dateFrom && $dateTo) {
-            $query->whereBetween('created_at', [
-                Carbon::parse($dateFrom)->startOfDay(),
-                Carbon::parse($dateTo)->endOfDay(),
-            ]);
+            $query->where(function ($q) use ($startOfDay, $endOfDay) {
+                $q->whereBetween('submitted_at', [$startOfDay, $endOfDay])
+                  ->orWhere(function ($sq) use ($startOfDay, $endOfDay) {
+                      $sq->whereNull('submitted_at')->whereBetween('created_at', [$startOfDay, $endOfDay]);
+                  });
+            });
         }
 
         if ($request->zone_id) {
@@ -374,7 +416,7 @@ class HeadOfficeAdmissionController extends Controller
             $query->whereNull('printed_at');
         }
 
-        $admissions = $query->orderBy('created_at', 'desc')->get();
+        $admissions = $query->orderByRaw('COALESCE(submitted_at, created_at) desc')->get();
 
         $statusLabels = [
             'draft' => 'খসড়া',
@@ -491,11 +533,17 @@ class HeadOfficeAdmissionController extends Controller
 
         $dateFrom = $request->date_from ?? now()->startOfMonth()->toDateString();
         $dateTo = $request->date_to ?? now()->toDateString();
+
+        $startOfDay = Carbon::parse($dateFrom)->startOfDay();
+        $endOfDay = Carbon::parse($dateTo)->endOfDay();
+
         if ($dateFrom && $dateTo) {
-            $query->whereBetween('created_at', [
-                Carbon::parse($dateFrom)->startOfDay(),
-                Carbon::parse($dateTo)->endOfDay(),
-            ]);
+            $query->where(function ($q) use ($startOfDay, $endOfDay) {
+                $q->whereBetween('submitted_at', [$startOfDay, $endOfDay])
+                  ->orWhere(function ($sq) use ($startOfDay, $endOfDay) {
+                      $sq->whereNull('submitted_at')->whereBetween('created_at', [$startOfDay, $endOfDay]);
+                  });
+            });
         }
         if ($request->zone_id) {
             $query->whereHas('branch.area', fn ($q) => $q->where('zone_id', $request->zone_id));
@@ -930,6 +978,78 @@ class HeadOfficeAdmissionController extends Controller
         );
 
         return back()->with('success', 'Admission rejected successfully!');
+    }
+
+    /**
+     * Bulk approve selected admissions
+     */
+    public function approveBulk(Request $request)
+    {
+        $validated = $request->validate([
+            'ids' => 'required|array|min:1',
+            'ids.*' => 'integer|exists:member_admissions,id',
+        ]);
+
+        $ids = $validated['ids'];
+        $admissions = MemberAdmission::whereIn('id', $ids)->get();
+
+        $approvedCount = 0;
+        $skippedCount = 0;
+
+        DB::beginTransaction();
+        try {
+            foreach ($admissions as $admission) {
+                // If has unreplied pending issues, skip
+                if ($admission->issues()->where('status', 'pending')->whereNull('resolution_note')->exists()) {
+                    $skippedCount++;
+                    continue;
+                }
+
+                $admission->update([
+                    'status' => 'approved',
+                    'reviewed_at' => now(),
+                    'reviewed_by' => auth()->id(),
+                ]);
+                $approvedCount++;
+
+                // Send notifications
+                $admission->loadMissing(['createdBy', 'submittedBy', 'branch']);
+                $recipients = collect([$admission->createdBy, $admission->submittedBy])->filter();
+                $branchManagers = User::where('branch_id', $admission->branch_id)
+                    ->where('is_active', 1)
+                    ->whereHas('role', fn ($q) => $q->where('name', Role::BRANCH_MANAGER))
+                    ->get();
+                $recipients = $recipients->concat($branchManagers);
+
+                if ($recipients->isNotEmpty()) {
+                    app(NotificationService::class)->send(
+                        users: $recipients,
+                        type: 'member_admission',
+                        title: 'সদস্য আবেদন হেড অফিস কর্তৃক চূড়ান্ত অনুমোদিত',
+                        message: "সদস্য আবেদন নং {$admission->application_no} ({$admission->applicant_name_bn}) হেড অফিস থেকে চূড়ান্তভাবে অনুমোদিত হয়েছে।",
+                        notifiable: $admission,
+                        actionUrl: "/member-admissions/{$admission->id}",
+                        details: [
+                            'আবেদন নং' => $admission->application_no,
+                            'আবেদনকারীর নাম' => $admission->applicant_name_bn ?: $admission->applicant_name_en,
+                            'শাখা' => $admission->branch?->name ?? 'N/A',
+                            'অনুমোদন তারিখ' => now()->format('Y-m-d H:i'),
+                        ]
+                    );
+                }
+            }
+            DB::commit();
+
+            $msg = "{$approvedCount} টি সদস্য ভর্তি আবেদন সফলভাবে অনুমোদিত হয়েছে।";
+            if ($skippedCount > 0) {
+                $msg .= " ({$skippedCount} টি আবেদনে অমীমাংসিত আপত্তি থাকায় স্কিপ করা হয়েছে)";
+            }
+
+            return back()->with('success', $msg);
+        } catch (\Exception $e) {
+            DB::rollBack();
+            return back()->with('error', 'অনুমোদন ব্যর্থ হয়েছে: ' . $e->getMessage());
+        }
     }
 
     /**

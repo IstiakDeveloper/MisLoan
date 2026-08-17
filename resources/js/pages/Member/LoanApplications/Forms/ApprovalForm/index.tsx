@@ -17,6 +17,7 @@ import FormPage2 from './FormPage2';
 import FormPage3 from './FormPage3';
 import FormPage4 from './FormPage4';
 import PrintPreview from './PrintPreview';
+import { triggerPrintWithAutoFit } from '@/hooks/useAutoFitPrint';
 import { getRequiredSavingsPercent } from '@/components/LoanApplications/GeneralSavingsSection';
 import { afterLoanFormSaveUrl } from '@/utils/loanFormNavigation';
 
@@ -576,7 +577,7 @@ export default function ApprovalForm({
                     @media print {
                         @page {
                             size: A4 portrait;
-                            margin: 12mm 15mm;
+                            margin: 8mm 10mm;
                         }
 
                         body * {
@@ -674,7 +675,7 @@ export default function ApprovalForm({
                         <div className="flex items-center gap-2">
                             <button
                                 type="button"
-                                onClick={() => window.print()}
+                                onClick={() => triggerPrintWithAutoFit('.loan-approval-print')}
                                 className="flex items-center gap-1.5 px-3.5 py-2 bg-emerald-600 text-white rounded-lg text-xs md:text-sm hover:bg-emerald-700 transition-all font-medium whitespace-nowrap"
                             >
                                 <Printer className="w-4 h-4" /> <span className="hidden sm:inline">প্রিন্ট</span>
@@ -779,7 +780,7 @@ export default function ApprovalForm({
                 <div className="md:hidden print:hidden fixed bottom-0 left-0 right-0 z-40 bg-white/95 backdrop-blur-md border-t border-gray-200 p-2.5 shadow-[0_-4px_16px_rgba(0,0,0,0.08)] flex items-center justify-between gap-2">
                     <button
                         type="button"
-                        onClick={() => window.print()}
+                        onClick={() => triggerPrintWithAutoFit('.loan-approval-print')}
                         className="px-3.5 py-2 bg-emerald-600 text-white rounded-lg text-xs font-bold active:scale-95 transition-all flex items-center gap-1 shadow-sm"
                     >
                         <Printer className="w-4 h-4" /> প্রিন্ট
