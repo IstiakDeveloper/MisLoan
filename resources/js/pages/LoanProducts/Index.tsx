@@ -17,7 +17,6 @@ import {
     Edit,
     FileSpreadsheet,
     Filter,
-    MoreVertical,
     Package,
     Plus,
     ToggleLeft,
@@ -25,6 +24,10 @@ import {
     Trash2,
     Upload,
     X,
+    Coins,
+    Calendar,
+    Layers,
+    Percent,
 } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import ProductModal from './Components/ProductModal';
@@ -42,15 +45,22 @@ interface LoanProduct {
     product_name: string;
     product_name_bn: string;
     product_code: string;
+    main_product_code?: string | null;
     description: string | null;
     description_bn: string | null;
     installment_type: string;
     duration_months: number;
     number_of_installments: number;
+    installment_amount_per_thousand?: number;
+    last_installment_per_thousand?: number;
+    loan_installment_factor?: number;
+    interest_installment_factor?: number;
+    savings_installment?: number;
     min_amount: number;
     max_amount: number;
     interest_rate: number;
     service_charge: number;
+    service_charge_per_thousand?: number;
     interest_calculation_type: string;
     gender_restriction: string;
     min_age: number;
@@ -75,22 +85,19 @@ interface Props {
     };
 }
 
-const installmentTypeLabels: Record<string, { label: string; color: string }> =
-    {
-        weekly: {
-            label: 'Weekly',
-            color: 'bg-teal-50 text-teal-700 border border-teal-200',
-        },
-        monthly: {
-            label: 'Monthly',
-            color: 'bg-orange-50 text-orange-700 border border-orange-200',
-        },
-    };
-
-const genderLabels: Record<string, string> = {
-    both: 'Both',
-    female: 'Female',
-    male: 'Male',
+const installmentTypeLabels: Record<string, { label: string; color: string }> = {
+    weekly: {
+        label: 'Weekly',
+        color: 'bg-teal-50 text-teal-700 border border-teal-200',
+    },
+    monthly: {
+        label: 'Monthly',
+        color: 'bg-orange-50 text-orange-700 border border-orange-200',
+    },
+    lump_sum: {
+        label: 'Lump Sum',
+        color: 'bg-purple-50 text-purple-700 border border-purple-200',
+    },
 };
 
 const formatAmount = (amount: number) => {
@@ -108,7 +115,6 @@ export default function Index({ products, categories, filters }: Props) {
     const [filterType, setFilterType] = useState(
         filters.installment_type || '',
     );
-    const [openDropdown, setOpenDropdown] = useState<number | null>(null);
     const [modalOpen, setModalOpen] = useState(false);
     const [selectedProduct, setSelectedProduct] = useState<LoanProduct | null>(
         null,
@@ -171,7 +177,6 @@ export default function Index({ products, categories, filters }: Props) {
     const handleEdit = (product: LoanProduct) => {
         setSelectedProduct(product);
         setModalOpen(true);
-        setOpenDropdown(null);
     };
 
     const handleDelete = (id: number, name: string) => {
@@ -182,33 +187,42 @@ export default function Index({ products, categories, filters }: Props) {
         ) {
             router.delete(`/loan-products/${id}`);
         }
-        setOpenDropdown(null);
     };
 
     const handleToggleStatus = (id: number) => {
         router.patch(`/loan-products/${id}/toggle-status`);
-        setOpenDropdown(null);
     };
 
-    const filteredProducts = productsList.filter((product) => {
-        const matchesSearch =
-            !searchQuery ||
-            product.product_name
-                .toLowerCase()
-                .includes(searchQuery.toLowerCase()) ||
-            product.product_name_bn.includes(searchQuery) ||
-            product.product_code
-                .toLowerCase()
-                .includes(searchQuery.toLowerCase());
+    // Category product count mapping
+    const categoryCountMap = useMemo(() => {
+        const counts: Record<number, number> = {};
+        for (const p of productsList) {
+            counts[p.loan_category_id] = (counts[p.loan_category_id] || 0) + 1;
+        }
+        return counts;
+    }, [productsList]);
 
-        const matchesCategory =
-            !filterCategory ||
-            String(product.loan_category_id) === filterCategory;
-        const matchesType =
-            !filterType || product.installment_type === filterType;
+    const filteredProducts = useMemo(() => {
+        return productsList.filter((product) => {
+            const query = searchQuery.toLowerCase().trim();
+            const matchesSearch =
+                !query ||
+                product.product_name.toLowerCase().includes(query) ||
+                (product.product_name_bn && product.product_name_bn.includes(query)) ||
+                product.product_code.toLowerCase().includes(query) ||
+                (product.main_product_code && product.main_product_code.toLowerCase().includes(query)) ||
+                (product.loan_category?.category_name && product.loan_category.category_name.toLowerCase().includes(query)) ||
+                (product.loan_category?.category_code && product.loan_category.category_code.toLowerCase().includes(query));
 
-        return matchesSearch && matchesCategory && matchesType;
-    });
+            const matchesCategory =
+                !filterCategory ||
+                String(product.loan_category_id) === filterCategory;
+            const matchesType =
+                !filterType || product.installment_type === filterType;
+
+            return matchesSearch && matchesCategory && matchesType;
+        });
+    }, [productsList, searchQuery, filterCategory, filterType]);
 
     const totalPages = Math.ceil(filteredProducts.length / itemsPerPage);
     const paginatedProducts = useMemo(() => {
@@ -228,7 +242,7 @@ export default function Index({ products, categories, filters }: Props) {
             <ConfigurationPage>
                 <ConfigurationHeader
                     title="Loan Products"
-                    description="Configure lending terms, limits, schedules, and eligibility in one place."
+                    description="Configure lending terms, limits, installment factors, and eligibility in one place."
                     icon={Package}
                     actions={
                         <div className="flex flex-wrap items-center gap-2">
@@ -282,7 +296,7 @@ export default function Index({ products, categories, filters }: Props) {
                                 <p className="text-2xl font-bold text-gray-900">
                                     {productsList.length}
                                 </p>
-                                <p className="text-sm text-gray-600">
+                                <p className="text-xs text-gray-500 font-medium">
                                     Total Products (মোট পণ্য)
                                 </p>
                             </div>
@@ -295,13 +309,10 @@ export default function Index({ products, categories, filters }: Props) {
                             </div>
                             <div>
                                 <p className="text-2xl font-bold text-gray-900">
-                                    {
-                                        productsList.filter((p) => p.is_active)
-                                            .length
-                                    }
+                                    {productsList.filter((p) => p.is_active).length}
                                 </p>
-                                <p className="text-sm text-gray-600">
-                                    Active (সক্রিয়)
+                                <p className="text-xs text-gray-500 font-medium">
+                                    Active (সক্রিয় পণ্য)
                                 </p>
                             </div>
                         </div>
@@ -309,18 +320,13 @@ export default function Index({ products, categories, filters }: Props) {
                     <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
                         <div className="flex items-center gap-3">
                             <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-teal-100">
-                                <Package className="h-5 w-5 text-teal-600" />
+                                <Calendar className="h-5 w-5 text-teal-600" />
                             </div>
                             <div>
                                 <p className="text-2xl font-bold text-gray-900">
-                                    {
-                                        productsList.filter(
-                                            (p) =>
-                                                p.installment_type === 'weekly',
-                                        ).length
-                                    }
+                                    {productsList.filter((p) => p.installment_type === 'weekly').length}
                                 </p>
-                                <p className="text-sm text-gray-600">
+                                <p className="text-xs text-gray-500 font-medium">
                                     Weekly (সাপ্তাহিক)
                                 </p>
                             </div>
@@ -329,19 +335,13 @@ export default function Index({ products, categories, filters }: Props) {
                     <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
                         <div className="flex items-center gap-3">
                             <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-orange-100">
-                                <Package className="h-5 w-5 text-orange-600" />
+                                <Coins className="h-5 w-5 text-orange-600" />
                             </div>
                             <div>
                                 <p className="text-2xl font-bold text-gray-900">
-                                    {
-                                        productsList.filter(
-                                            (p) =>
-                                                p.installment_type ===
-                                                'monthly',
-                                        ).length
-                                    }
+                                    {productsList.filter((p) => p.installment_type === 'monthly').length}
                                 </p>
-                                <p className="text-sm text-gray-600">
+                                <p className="text-xs text-gray-500 font-medium">
                                     Monthly (মাসিক)
                                 </p>
                             </div>
@@ -354,7 +354,7 @@ export default function Index({ products, categories, filters }: Props) {
                     {/* Search & Filters */}
                     <ConfigurationToolbar>
                         <SearchField
-                            placeholder="Search products..."
+                            placeholder="Search by code, main code, product or category name..."
                             value={searchQuery}
                             onChange={(value) => {
                                 setSearchQuery(value);
@@ -362,23 +362,23 @@ export default function Index({ products, categories, filters }: Props) {
                             }}
                         />
                         <div className="grid w-full grid-cols-1 gap-2 sm:ml-auto sm:w-auto sm:grid-cols-2">
-                            <Filter className="h-3.5 w-3.5 text-gray-400" />
-                            <select
-                                value={filterCategory}
-                                onChange={(e) => {
-                                    setFilterCategory(e.target.value);
-                                    setCurrentPage(1);
-                                }}
-                                className="h-10 min-w-44 rounded-lg border border-slate-300 bg-white px-3 text-sm focus:border-blue-500 focus:ring-4 focus:ring-blue-100 focus:outline-none"
-                            >
-                                <option value="">All Categories</option>
-                                {categories.map((cat) => (
-                                    <option key={cat.id} value={cat.id}>
-                                        {cat.category_name} ({cat.category_code}
-                                        )
-                                    </option>
-                                ))}
-                            </select>
+                            <div className="relative">
+                                <select
+                                    value={filterCategory}
+                                    onChange={(e) => {
+                                        setFilterCategory(e.target.value);
+                                        setCurrentPage(1);
+                                    }}
+                                    className="h-10 w-full min-w-52 rounded-lg border border-slate-300 bg-white px-3 text-sm focus:border-blue-500 focus:ring-4 focus:ring-blue-100 focus:outline-none"
+                                >
+                                    <option value="">All Categories ({categories.length})</option>
+                                    {categories.map((cat) => (
+                                        <option key={cat.id} value={cat.id}>
+                                            {cat.category_name} ({categoryCountMap[cat.id] || 0})
+                                        </option>
+                                    ))}
+                                </select>
+                            </div>
                             <select
                                 value={filterType}
                                 onChange={(e) => {
@@ -387,48 +387,49 @@ export default function Index({ products, categories, filters }: Props) {
                                 }}
                                 className="h-10 rounded-lg border border-slate-300 bg-white px-3 text-sm focus:border-blue-500 focus:ring-4 focus:ring-blue-100 focus:outline-none"
                             >
-                                <option value="">All Types</option>
-                                <option value="weekly">Weekly</option>
-                                <option value="monthly">Monthly</option>
+                                <option value="">All Installment Types</option>
+                                <option value="weekly">Weekly (সাপ্তাহিক)</option>
+                                <option value="monthly">Monthly (মাসিক)</option>
+                                <option value="lump_sum">Lump Sum (এককালীন)</option>
                             </select>
                         </div>
                     </ConfigurationToolbar>
 
                     {/* Table */}
                     <TableScroll>
-                        <table className="w-full min-w-[980px] text-sm">
+                        <table className="w-full min-w-[1100px] text-sm">
                             <thead className="border-b border-slate-200 bg-slate-50/90">
                                 <tr>
-                                    <th className="px-2 py-2 text-left text-[10px] font-semibold text-gray-600 uppercase">
+                                    <th className="px-3 py-2.5 text-left text-[11px] font-semibold text-gray-600 uppercase">
                                         SL
                                     </th>
-                                    <th className="px-2 py-2 text-left text-[10px] font-semibold text-gray-600 uppercase">
-                                        Product
+                                    <th className="px-3 py-2.5 text-left text-[11px] font-semibold text-gray-600 uppercase">
+                                        Product & Codes
                                     </th>
-                                    <th className="px-2 py-2 text-left text-[10px] font-semibold text-gray-600 uppercase">
+                                    <th className="px-3 py-2.5 text-left text-[11px] font-semibold text-gray-600 uppercase">
                                         Category
                                     </th>
-                                    <th className="px-2 py-2 text-left text-[10px] font-semibold text-gray-600 uppercase">
-                                        Type
+                                    <th className="px-3 py-2.5 text-left text-[11px] font-semibold text-gray-600 uppercase">
+                                        Schedule
                                     </th>
-                                    <th className="px-2 py-2 text-left text-[10px] font-semibold text-gray-600 uppercase">
-                                        Duration
+                                    <th className="px-3 py-2.5 text-left text-[11px] font-semibold text-gray-600 uppercase">
+                                        Amount Limits
                                     </th>
-                                    <th className="px-2 py-2 text-left text-[10px] font-semibold text-gray-600 uppercase">
-                                        Amount Range
+                                    <th className="px-3 py-2.5 text-left text-[11px] font-semibold text-gray-600 uppercase">
+                                        Interest / Charge
                                     </th>
-                                    <th className="px-2 py-2 text-left text-[10px] font-semibold text-gray-600 uppercase">
-                                        Interest
+                                    <th className="px-3 py-2.5 text-left text-[11px] font-semibold text-gray-600 uppercase">
+                                        Factors & Savings
                                     </th>
-                                    <th className="px-2 py-2 text-left text-[10px] font-semibold text-gray-600 uppercase">
+                                    <th className="px-3 py-2.5 text-left text-[11px] font-semibold text-gray-600 uppercase">
                                         Status
                                     </th>
-                                    <th className="px-2 py-2 text-right text-[10px] font-semibold text-gray-600 uppercase">
-                                        
+                                    <th className="px-3 py-2.5 text-right text-[11px] font-semibold text-gray-600 uppercase">
+                                        Actions
                                     </th>
                                 </tr>
                             </thead>
-                            <tbody className="divide-y">
+                            <tbody className="divide-y divide-slate-100">
                                 {paginatedProducts.map((product, index) => {
                                     const typeInfo =
                                         installmentTypeLabels[
@@ -441,108 +442,130 @@ export default function Index({ products, categories, filters }: Props) {
                                     return (
                                         <tr
                                             key={product.id}
-                                            className="border-b border-slate-100 transition-colors last:border-0 hover:bg-blue-50/40"
+                                            className="transition-colors hover:bg-blue-50/40"
                                         >
-                                            <td className="px-2 py-2 font-medium text-gray-500">
+                                            <td className="px-3 py-2.5 font-medium text-gray-500">
                                                 {slNo}
                                             </td>
-                                            <td className="px-2 py-2">
-                                                <div className="leading-tight font-medium text-gray-900">
+                                            <td className="px-3 py-2.5">
+                                                <div className="font-semibold text-gray-900 leading-snug">
                                                     {product.product_name}
                                                 </div>
-                                                <span className="mt-0.5 inline-block rounded bg-gray-100 px-1 py-0.5 font-mono text-[10px] text-gray-600">
-                                                    {product.product_code}
-                                                </span>
-                                            </td>
-                                            <td className="px-2 py-2">
-                                                <span className="text-gray-700">
-                                                    {
-                                                        product.loan_category
-                                                            ?.category_name
-                                                    }
-                                                </span>
-                                            </td>
-                                            <td className="px-2 py-2">
-                                                <span
-                                                    className={`inline-block rounded px-1.5 py-0.5 text-[10px] font-medium ${typeInfo.color}`}
-                                                >
-                                                    {typeInfo.label}
-                                                </span>
-                                            </td>
-                                            <td className="px-2 py-2 text-gray-600">
-                                                <div>
-                                                    {product.duration_months}m
-                                                </div>
-                                                <div className="text-[10px] text-gray-500">
-                                                    {
-                                                        product.number_of_installments
-                                                    }{' '}
-                                                    inst
-                                                </div>
-                                            </td>
-                                            <td className="px-2 py-2">
-                                                <div className="text-gray-600">
-                                                    ৳
-                                                    {formatAmount(
-                                                        product.min_amount,
-                                                    )}
-                                                </div>
-                                                <div className="font-medium text-gray-900">
-                                                    ৳
-                                                    {formatAmount(
-                                                        product.max_amount,
+                                                {product.product_name_bn && product.product_name_bn !== product.product_name && (
+                                                    <div className="text-[11px] text-gray-500">
+                                                        {product.product_name_bn}
+                                                    </div>
+                                                )}
+                                                <div className="mt-1 flex flex-wrap items-center gap-1.5">
+                                                    <span className="inline-block rounded bg-slate-100 px-1.5 py-0.5 font-mono text-[10px] font-semibold text-slate-700 border border-slate-200">
+                                                        {product.product_code}
+                                                    </span>
+                                                    {product.main_product_code && (
+                                                        <span className="inline-block rounded bg-blue-50 px-1.5 py-0.5 font-mono text-[10px] font-semibold text-blue-700 border border-blue-200" title="Main Category Code">
+                                                            Main: {product.main_product_code}
+                                                        </span>
                                                     )}
                                                 </div>
                                             </td>
-                                            <td className="px-2 py-2">
-                                                <div className="font-medium text-gray-900">
-                                                    {product.interest_rate}%
-                                                </div>
-                                                {parseFloat(
-                                                    String(
-                                                        product.service_charge,
-                                                    ),
-                                                ) > 0 && (
-                                                    <div className="text-[10px] text-gray-500">
-                                                        +
-                                                        {product.service_charge}
-                                                        %
+                                            <td className="px-3 py-2.5">
+                                                <span className="inline-flex items-center gap-1 font-medium text-slate-800">
+                                                    {product.loan_category?.category_name || 'N/A'}
+                                                </span>
+                                                {product.loan_category?.category_code && (
+                                                    <div className="text-[10px] font-mono text-slate-500">
+                                                        {product.loan_category.category_code}
                                                     </div>
                                                 )}
                                             </td>
-                                            <td className="px-2 py-2">
-                                                <StatusBadge
-                                                    active={product.is_active}
-                                                />
+                                            <td className="px-3 py-2.5">
+                                                <span
+                                                    className={`inline-block rounded px-2 py-0.5 text-[10px] font-semibold ${typeInfo.color}`}
+                                                >
+                                                    {typeInfo.label}
+                                                </span>
+                                                <div className="text-xs text-gray-700 mt-1 font-medium">
+                                                    {product.duration_months} Months
+                                                </div>
+                                                <div className="text-[11px] text-gray-500">
+                                                    {product.number_of_installments} Installments
+                                                </div>
                                             </td>
-                                            <td className="px-2 py-2 text-right">
+                                            <td className="px-3 py-2.5">
+                                                <div className="text-xs text-gray-600">
+                                                    Min: <span className="font-semibold text-gray-800">৳{formatAmount(product.min_amount)}</span>
+                                                </div>
+                                                <div className="text-xs text-gray-600 mt-0.5">
+                                                    Max: <span className="font-semibold text-blue-700">৳{formatAmount(product.max_amount)}</span>
+                                                </div>
+                                            </td>
+                                            <td className="px-3 py-2.5">
+                                                <div className="font-bold text-slate-900">
+                                                    {product.interest_rate}%
+                                                    <span className="ml-1 text-[10px] font-normal text-slate-500 uppercase">
+                                                        ({product.interest_calculation_type})
+                                                    </span>
+                                                </div>
+                                                {Number(product.service_charge_per_thousand) > 0 && (
+                                                    <div className="text-[11px] text-gray-600 mt-0.5">
+                                                        Charge/1k: <span className="font-semibold">৳{product.service_charge_per_thousand}</span>
+                                                    </div>
+                                                )}
+                                                {Number(product.installment_amount_per_thousand) > 0 && (
+                                                    <div className="text-[11px] text-gray-500">
+                                                        Inst/1k: ৳{product.installment_amount_per_thousand}
+                                                    </div>
+                                                )}
+                                            </td>
+                                            <td className="px-3 py-2.5">
+                                                {Number(product.savings_installment) > 0 ? (
+                                                    <div className="text-xs font-semibold text-emerald-700">
+                                                        Sav: ৳{product.savings_installment}
+                                                    </div>
+                                                ) : (
+                                                    <div className="text-[11px] text-gray-400">Sav: ৳0</div>
+                                                )}
+                                                {Number(product.loan_installment_factor) > 0 && (
+                                                    <div className="text-[10px] font-mono text-gray-600 mt-0.5" title="Loan Installment Factor">
+                                                        L.Factor: {product.loan_installment_factor}
+                                                    </div>
+                                                )}
+                                                {Number(product.interest_installment_factor) > 0 && (
+                                                    <div className="text-[10px] font-mono text-gray-600" title="Interest Installment Factor">
+                                                        I.Factor: {product.interest_installment_factor}
+                                                    </div>
+                                                )}
+                                            </td>
+                                            <td className="px-3 py-2.5">
+                                                <StatusBadge active={product.is_active} />
+                                            </td>
+                                            <td className="px-3 py-2.5 text-right">
                                                 <div className="flex items-center justify-end gap-1">
                                                     {canMutate ? (
-                                                    <>
-                                                    <button
-                                                        onClick={() => handleToggleStatus(product.id)}
-                                                        className={`flex h-7 w-7 items-center justify-center rounded-md transition-colors ${
-                                                            product.is_active ? 'text-emerald-600 hover:bg-emerald-50' : 'text-slate-400 hover:bg-slate-100'
-                                                        }`}
-                                                        title={product.is_active ? "Deactivate" : "Activate"}
-                                                    >
-                                                        {product.is_active ? <ToggleRight className="size-4" /> : <ToggleLeft className="size-4" />}
-                                                    </button>
-                                                    <button
-                                                        onClick={() => handleEdit(product)}
-                                                        className="flex h-7 w-7 items-center justify-center rounded-md text-blue-600 transition-colors hover:bg-blue-50"
-                                                        title="Edit"
-                                                    >
-                                                        <Edit className="size-4" />
-                                                    </button>
-                                                    <button
-                                                        onClick={() => handleDelete(product.id, product.product_name)}
-                                                        className="flex h-7 w-7 items-center justify-center rounded-md text-red-600 transition-colors hover:bg-red-50"
-                                                        title="Delete"
-                                                    >
-                                                        <Trash2 className="size-4" />
-                                                    </button>
-                                                    </>
+                                                        <>
+                                                            <button
+                                                                onClick={() => handleToggleStatus(product.id)}
+                                                                className={`flex h-7 w-7 items-center justify-center rounded-md transition-colors ${
+                                                                    product.is_active ? 'text-emerald-600 hover:bg-emerald-50' : 'text-slate-400 hover:bg-slate-100'
+                                                                }`}
+                                                                title={product.is_active ? "Deactivate" : "Activate"}
+                                                            >
+                                                                {product.is_active ? <ToggleRight className="size-4" /> : <ToggleLeft className="size-4" />}
+                                                            </button>
+                                                            <button
+                                                                onClick={() => handleEdit(product)}
+                                                                className="flex h-7 w-7 items-center justify-center rounded-md text-blue-600 transition-colors hover:bg-blue-50"
+                                                                title="Edit"
+                                                            >
+                                                                <Edit className="size-4" />
+                                                            </button>
+                                                            <button
+                                                                onClick={() => handleDelete(product.id, product.product_name)}
+                                                                className="flex h-7 w-7 items-center justify-center rounded-md text-red-600 transition-colors hover:bg-red-50"
+                                                                title="Delete"
+                                                            >
+                                                                <Trash2 className="size-4" />
+                                                            </button>
+                                                        </>
                                                     ) : (
                                                         <span className="text-xs text-slate-400">View only</span>
                                                     )}

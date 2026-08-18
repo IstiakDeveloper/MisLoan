@@ -95,8 +95,8 @@ export default function NotificationBell() {
             </button>
 
             {isOpen && (
-                <div className="absolute right-0 mt-2 w-80 sm:w-96 rounded-2xl bg-white shadow-2xl border border-slate-100 z-50 overflow-hidden animate-in fade-in slide-in-from-top-2 duration-150">
-                    <div className="flex items-center justify-between px-4 py-3 bg-slate-50/80 border-b border-slate-100">
+                <div className="absolute right-0 sm:right-0 mt-2 w-[calc(100vw-2rem)] max-w-sm sm:w-96 rounded-2xl bg-white shadow-2xl border border-slate-100/90 z-50 overflow-hidden animate-in fade-in slide-in-from-top-2 duration-150">
+                    <div className="flex items-center justify-between px-3.5 py-2.5 bg-slate-50/90 border-b border-slate-100">
                         <div className="flex items-center gap-2">
                             <Bell className="w-4 h-4 text-blue-600" />
                             <h3 className="text-xs font-bold text-slate-800">নোটিফিকেশন</h3>

@@ -1,4 +1,4 @@
-import { useState, useEffect, ReactNode, useMemo } from 'react';
+import { useState, useEffect, useRef, ReactNode, useMemo } from 'react';
 import { Link, usePage, router } from '@inertiajs/react';
 import {
     LayoutDashboard,
@@ -9,9 +9,9 @@ import {
     Menu,
     X,
     ChevronDown,
+    ChevronRight,
     LogOut,
     User,
-    Bell,
     CheckCircle,
     XCircle,
     AlertCircle,
@@ -26,7 +26,6 @@ import {
     Download,
     Wrench,
     BarChart3,
-    // Newly imported icons:
     PiggyBank,
     PieChart,
     CircleUser,
@@ -34,6 +33,8 @@ import {
     FileCheck,
     Mail,
     SearchCheck,
+    ExternalLink,
+    Sparkles,
 } from 'lucide-react';
 import { useIsMobile } from '@/hooks/use-mobile';
 import { usePwaInstallPrompt } from '@/hooks/usePwaInstallPrompt';
@@ -95,6 +96,27 @@ function isGmailAddress(email?: string | null): boolean {
     return email.trim().toLowerCase().endsWith('@gmail.com');
 }
 
+function getPageTitle(currentPath: string): string {
+    if (currentPath === '/dashboard') return 'Dashboard';
+    if (currentPath.includes('/member-admissions') || currentPath.includes('/admission-members')) return 'Member Admissions';
+    if (currentPath.includes('/loan-applications')) return 'Loan Applications';
+    if (currentPath.includes('/savings-applications')) return 'Savings Applications';
+    if (currentPath.includes('/team-based-approvals')) return 'Team Based Approvals';
+    if (currentPath.includes('/approvals')) return 'Pending Approvals';
+    if (currentPath.includes('/verifications')) return 'Verifications';
+    if (currentPath.includes('/loan-categories')) return 'Loan Categories';
+    if (currentPath.includes('/loan-products')) return 'Loan Products';
+    if (currentPath.includes('/savings-products')) return 'Savings Products';
+    if (currentPath.includes('/organizations')) return 'Organizations';
+    if (currentPath.includes('/samities')) return 'Samities';
+    if (currentPath.includes('/member-categories')) return 'Member Categories';
+    if (currentPath.includes('/users')) return 'User Management';
+    if (currentPath.includes('/roles')) return 'Roles & Permissions';
+    if (currentPath.includes('/profile')) return 'Profile & Settings';
+    if (currentPath.includes('/notifications')) return 'Notifications';
+    return 'Dashboard';
+}
+
 export default function AdminLayout({ children }: AdminLayoutProps) {
     const page = usePage<PageProps>();
     const { auth, flash, siteMaintenance = false, badgeCounts = {} } = page.props;
@@ -110,12 +132,24 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
     const isOnProfilePage = path === '/profile' || path.startsWith('/profile/');
     const isMobile = useIsMobile();
     const [sidebarOpen, setSidebarOpen] = useState(!isMobile);
-    const [profileDropdownOpen, setProfileDropdownOpen] = useState(false);
+    const [userDropdownOpen, setUserDropdownOpen] = useState(false);
+    const userDropdownRef = useRef<HTMLDivElement>(null);
     const [flashMessage, setFlashMessage] = useState<{ type: string; message: string } | null>(null);
     const setupOpenDefault = useMemo(() => SETUP_PATHS.some(p => path.startsWith(p)), [path]);
     const reportOpenDefault = useMemo(() => REPORT_PATHS.some(p => path.startsWith(p)), [path]);
     const [setupExpanded, setSetupExpanded] = useState(setupOpenDefault);
     const [reportExpanded, setReportExpanded] = useState(reportOpenDefault);
+
+    // Close user dropdown on outside click
+    useEffect(() => {
+        function handleClickOutside(event: MouseEvent) {
+            if (userDropdownRef.current && !userDropdownRef.current.contains(event.target as Node)) {
+                setUserDropdownOpen(false);
+            }
+        }
+        document.addEventListener('mousedown', handleClickOutside);
+        return () => document.removeEventListener('mousedown', handleClickOutside);
+    }, []);
 
     useEffect(() => {
         if (flash.success) {
@@ -207,8 +241,8 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
         { name: 'Member Admissions', href: '/member-admissions', icon: UserPlus },
         { name: 'Loan Applications', href: '/member/loan-applications', icon: Banknote },
         { name: 'Verification', href: '/verifications', icon: SearchCheck, badge: badgeCounts.pendingVerifications || 0 },
-        { name: 'Savings Applications', href: '/member/savings-applications', icon: PiggyBank }, // Changed Landmark -> PiggyBank
-        { name: 'Team Based Approval', href: '/team-based-approvals', icon: FileCheck }, // Changed FileText -> FileCheck
+        { name: 'Savings Applications', href: '/member/savings-applications', icon: PiggyBank },
+        { name: 'Team Based Approval', href: '/team-based-approvals', icon: FileCheck },
         { name: 'Pending Approvals', href: '/approvals', icon: ClipboardCheck, badge: badgeCounts.pendingApprovals || 0 },
     ];
 
@@ -224,7 +258,7 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
         {
             name: 'Team Based Approval',
             href: '/team-based-approvals/for-approver',
-            icon: FileCheck, // Changed FileText -> FileCheck
+            icon: FileCheck,
             badge: badgeCounts.pendingTeamBasedApprovals || 0,
         },
         {
@@ -246,24 +280,24 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
     const headOfficeMainItems = [
         { name: 'Dashboard', href: '/dashboard', icon: LayoutDashboard },
         { name: 'Admission Members', href: '/head-office/admission-members', icon: UserPlus, badge: badgeCounts.pendingAdmissions || 0 },
-        { name: 'Loan Applications', href: '/head-office/loan-applications', icon: Banknote, badge: badgeCounts.pendingLoanApplications || 0 }, // Changed FileText -> Banknote
+        { name: 'Loan Applications', href: '/head-office/loan-applications', icon: Banknote, badge: badgeCounts.pendingLoanApplications || 0 },
         { name: 'Verification', href: '/verifications', icon: SearchCheck, badge: badgeCounts.pendingVerifications || 0 },
-        { name: 'Team Based Approvals', href: '/head-office/team-based-approvals', icon: FileCheck }, // Changed FileText -> FileCheck
-        { name: 'Savings Applications', href: '/head-office/savings-applications', icon: PiggyBank }, // Changed Landmark -> PiggyBank
+        { name: 'Team Based Approvals', href: '/head-office/team-based-approvals', icon: FileCheck },
+        { name: 'Savings Applications', href: '/head-office/savings-applications', icon: PiggyBank },
     ];
 
     const headOfficeReportItems = [
-        { name: 'Team Based Report', href: TEAM_BASED_REPORT_HREF, icon: PieChart }, // Changed BarChart3 -> PieChart
+        { name: 'Team Based Report', href: TEAM_BASED_REPORT_HREF, icon: PieChart },
     ];
 
     const headOfficeSetupItems = [
         { name: 'Loan Categories', href: '/loan-categories', icon: ListTree },
-        { name: 'Loan Products', href: '/loan-products', icon: Coins }, // Changed Package -> Coins
+        { name: 'Loan Products', href: '/loan-products', icon: Coins },
         { name: 'Savings Products', href: '/savings-products', icon: Wallet },
         { name: 'Organizations', href: '/organizations', icon: Landmark },
         { name: 'Samities', href: '/samities', icon: Building2 },
         { name: 'Member Categories', href: '/member-categories', icon: Users },
-        { name: 'Users', href: '/users', icon: CircleUser }, // Changed Users -> CircleUser
+        { name: 'Users', href: '/users', icon: CircleUser },
         { name: 'Roles', href: '/roles', icon: Shield },
     ];
 
@@ -273,25 +307,25 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
 
     const getFlashIcon = (type: string) => {
         switch (type) {
-            case 'success': return <CheckCircle className="w-5 h-5 stroke-[1.75]" />;
-            case 'error': return <XCircle className="w-5 h-5 stroke-[1.75]" />;
-            case 'warning': return <AlertCircle className="w-5 h-5 stroke-[1.75]" />;
-            case 'info': return <Info className="w-5 h-5 stroke-[1.75]" />;
+            case 'success': return <CheckCircle className="w-4.5 h-4.5 stroke-[1.75]" />;
+            case 'error': return <XCircle className="w-4.5 h-4.5 stroke-[1.75]" />;
+            case 'warning': return <AlertCircle className="w-4.5 h-4.5 stroke-[1.75]" />;
+            case 'info': return <Info className="w-4.5 h-4.5 stroke-[1.75]" />;
             default: return null;
         }
     };
 
     const getFlashColor = (type: string) => {
         switch (type) {
-            case 'success': return 'border-l-4 border-l-emerald-500 border-slate-100 bg-white/95 text-emerald-800 shadow-xl shadow-slate-900/5';
-            case 'error': return 'border-l-4 border-l-rose-500 border-slate-100 bg-white/95 text-rose-800 shadow-xl shadow-slate-900/5';
-            case 'warning': return 'border-l-4 border-l-amber-500 border-slate-100 bg-white/95 text-amber-800 shadow-xl shadow-slate-900/5';
-            case 'info': return 'border-l-4 border-l-blue-500 border-slate-100 bg-white/95 text-blue-800 shadow-xl shadow-slate-900/5';
-            default: return 'border-l-4 border-l-slate-500 border-slate-100 bg-white/95 text-slate-800 shadow-xl shadow-slate-900/5';
+            case 'success': return 'border-l-4 border-l-emerald-500 border-slate-200 bg-white/95 text-emerald-800 shadow-xl shadow-emerald-500/10';
+            case 'error': return 'border-l-4 border-l-rose-500 border-slate-200 bg-white/95 text-rose-800 shadow-xl shadow-rose-500/10';
+            case 'warning': return 'border-l-4 border-l-amber-500 border-slate-200 bg-white/95 text-amber-800 shadow-xl shadow-amber-500/10';
+            case 'info': return 'border-l-4 border-l-blue-500 border-slate-200 bg-white/95 text-blue-800 shadow-xl shadow-blue-500/10';
+            default: return 'border-l-4 border-l-slate-500 border-slate-200 bg-white/95 text-slate-800 shadow-xl shadow-slate-500/10';
         }
     };
 
-    // Grouping layout menus for ultra-minimal spacing
+    // Grouping layout menus for ultra-sleek spacing
     const menuGroups = useMemo(() => {
         if (isBranchRole) {
             const dashboardItem = branchMenuItems.find(m => m.href === '/dashboard');
@@ -349,7 +383,7 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
     // Compute items for mobile bottom nav (Pending Approvals prioritized for roles that approve)
     const mobileBottomNavItems = useMemo(() => {
         const pendingApprovalItem = {
-            name: 'Pending Approvals',
+            name: 'Approvals',
             href: '/approvals',
             icon: ClipboardCheck,
             badge: badgeCounts.pendingApprovals || 0,
@@ -389,67 +423,68 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
     }, [isFieldOfficer, isBranchRole, isTeamApproverRole, isEdRole, branchMenuItems, approverMenuItems, approverOperationsItems, headOfficeMainItems, badgeCounts.pendingApprovals]);
 
     const showReportSection = isEdRole || canViewTeamBasedReport;
+    const currentTitle = getPageTitle(path);
 
     return (
-        <div className="min-h-screen bg-[#f8fafc] print:bg-white text-slate-800 antialiased font-sans">
+        <div className="min-h-screen bg-[#f8fafc] print:bg-white text-slate-800 antialiased font-sans flex flex-col selection:bg-blue-600 selection:text-white">
             {/* Flash Messages (Toasts) */}
             {flashMessage && (
                 <div
-                    className={`print:hidden fixed top-5 right-5 z-50 flex items-center gap-3.5 px-4.5 py-4 rounded-xl border border-slate-100 backdrop-blur-md transition-all duration-300 animate-in fade-in slide-in-from-top-4 ${getFlashColor(flashMessage.type)}`}
+                    className={`print:hidden fixed top-4 right-4 z-50 flex items-center gap-3 px-4 py-3 rounded-2xl border border-slate-200/80 backdrop-blur-md transition-all duration-300 animate-in fade-in slide-in-from-top-4 ${getFlashColor(flashMessage.type)}`}
                 >
-                    <div className={`p-2 rounded-xl flex items-center justify-center flex-shrink-0 ${
-                        flashMessage.type === 'success' ? 'bg-emerald-50 text-emerald-600' :
-                        flashMessage.type === 'error' ? 'bg-rose-50 text-rose-600' :
-                        flashMessage.type === 'warning' ? 'bg-amber-50 text-amber-600' :
-                        'bg-blue-50 text-blue-600'
+                    <div className={`p-2 rounded-xl flex items-center justify-center shrink-0 shadow-xs ${
+                        flashMessage.type === 'success' ? 'bg-emerald-100 text-emerald-700' :
+                        flashMessage.type === 'error' ? 'bg-rose-100 text-rose-700' :
+                        flashMessage.type === 'warning' ? 'bg-amber-100 text-amber-700' :
+                        'bg-blue-100 text-blue-700'
                     }`}>
                         {getFlashIcon(flashMessage.type)}
                     </div>
-                    <div className="flex-1 min-w-0 pr-4">
-                        <p className="text-[13px] font-bold text-slate-800 leading-none">
-                            {flashMessage.type === 'success' ? 'Success' :
-                             flashMessage.type === 'error' ? 'Error' :
-                             flashMessage.type === 'warning' ? 'Warning' :
-                             'Notification'}
+                    <div className="flex-1 min-w-0 pr-2">
+                        <p className="text-[12px] font-extrabold text-slate-800 leading-tight">
+                            {flashMessage.type === 'success' ? 'সফল' :
+                             flashMessage.type === 'error' ? 'সমস্যা' :
+                             flashMessage.type === 'warning' ? 'সতর্কতা' :
+                             'নোটিফিকেশন'}
                         </p>
-                        <p className="text-[11px] text-slate-500 mt-1 font-medium leading-relaxed">{flashMessage.message}</p>
+                        <p className="text-[11px] text-slate-600 mt-0.5 font-medium leading-normal">{flashMessage.message}</p>
                     </div>
                     <button
                         onClick={() => setFlashMessage(null)}
-                        className="text-slate-400 hover:text-slate-600 transition-colors p-1 rounded-lg hover:bg-slate-100 flex-shrink-0"
+                        className="text-slate-400 hover:text-slate-700 transition-colors p-1 rounded-lg hover:bg-slate-100 shrink-0"
                         aria-label="Close notification"
                     >
-                        <X className="w-4.5 h-4.5" />
+                        <X className="w-3.5 h-3.5" />
                     </button>
                 </div>
             )}
 
-            {/* Sidebar */}
+            {/* Premium Light Theme Sidebar */}
             <aside
-                className={`fixed left-0 top-0 h-full bg-white border-r border-slate-100 z-40 print:hidden transition-all duration-300 ease-in-out flex flex-col
-                    ${sidebarOpen ? 'w-64' : 'w-16'}
+                className={`fixed left-0 top-0 h-full bg-white text-slate-700 border-r border-slate-200/80 z-45 print:hidden transition-all duration-300 ease-in-out flex flex-col shadow-xs
+                    ${sidebarOpen ? 'w-60' : 'w-16'}
                     ${isMobile 
-                        ? `${sidebarOpen ? 'translate-x-0 shadow-2xl' : '-translate-x-full'} w-64` 
+                        ? `${sidebarOpen ? 'translate-x-0 shadow-2xl z-50' : '-translate-x-full'} w-64` 
                         : 'translate-x-0'
                     }`}
             >
-                {/* Logo and Control Bar */}
+                {/* Logo and Brand Header */}
                 {sidebarOpen ? (
-                    <div className="bg-gradient-to-r from-blue-600 to-indigo-600 text-white rounded-xl p-3.5 m-3 flex items-center justify-between shadow-md shadow-blue-600/10 relative overflow-hidden">
-                        <div className="absolute -right-3 -top-3 w-12 h-12 bg-white/10 rounded-full blur-md" />
+                    <div className="bg-gradient-to-r from-blue-600 via-indigo-600 to-blue-700 text-white rounded-2xl p-3 m-2.5 flex items-center justify-between shadow-md shadow-blue-600/20 border border-blue-500/30 relative overflow-hidden">
+                        <div className="absolute -right-3 -top-3 w-14 h-14 bg-white/15 rounded-full blur-md" />
                         <Link
-                            href="/"
-                            className="flex items-center gap-2.5 min-w-0 z-10 rounded-lg outline-none focus:outline-none focus-visible:outline-none"
-                            aria-label="Go to home"
+                            href="/dashboard"
+                            className="flex items-center gap-2.5 min-w-0 z-10 rounded-lg outline-none focus:outline-none group"
+                            aria-label="Go to dashboard"
                         >
-                            <div className="w-8 h-8 rounded-lg bg-white/15 flex items-center justify-center text-white flex-shrink-0 shadow-inner">
-                                <Building2 className="w-4.5 h-4.5 stroke-[1.75]" />
+                            <div className="w-8 h-8 rounded-xl bg-white/20 backdrop-blur-xs flex items-center justify-center text-white shrink-0 shadow-inner group-hover:scale-105 transition-transform duration-200">
+                                <Building2 className="w-4 h-4 stroke-[2.2]" />
                             </div>
                             <div className="min-w-0">
-                                <span className="text-[13px] font-bold tracking-wide block leading-none">
+                                <span className="text-[13px] font-black tracking-tight block leading-tight text-white drop-shadow-xs">
                                     MIS Loan
                                 </span>
-                                <span className="text-[9px] text-blue-100 font-medium block mt-1.5 leading-none">
+                                <span className="text-[9.5px] text-blue-100 font-semibold block leading-tight opacity-90">
                                     Management Panel
                                 </span>
                             </div>
@@ -457,32 +492,32 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
                         <button
                             type="button"
                             onClick={() => setSidebarOpen(false)}
-                            className="p-1 rounded-lg hover:bg-white/15 text-blue-100 hover:text-white transition-colors z-10"
+                            className="p-1 rounded-lg hover:bg-white/20 text-blue-100 hover:text-white transition-colors z-10"
                             aria-label="Collapse sidebar"
                         >
                             <Menu className="w-4 h-4" />
                         </button>
                     </div>
                 ) : (
-                    <div className="flex justify-center py-4">
+                    <div className="flex justify-center py-3.5">
                         <button
                             type="button"
                             onClick={() => setSidebarOpen(true)}
-                            className="w-10 h-10 rounded-xl bg-gradient-to-r from-blue-600 to-indigo-600 text-white flex items-center justify-center shadow-md shadow-blue-600/15 hover:scale-105 transition-all duration-200"
+                            className="w-9 h-9 rounded-xl bg-gradient-to-r from-blue-600 to-indigo-600 text-white flex items-center justify-center shadow-md shadow-blue-600/20 hover:scale-105 transition-all duration-200 border border-blue-500/30"
                             aria-label="Expand sidebar"
                         >
-                            <Building2 className="w-5 h-5 stroke-[1.75]" />
+                            <Building2 className="w-4.5 h-4.5 stroke-[2.2]" />
                         </button>
                     </div>
                 )}
 
                 {/* Navigation Menu */}
-                <nav className="flex-1 overflow-y-auto overflow-x-hidden py-3 px-3 space-y-4">
+                <nav className="flex-1 overflow-y-auto overflow-x-hidden py-2 px-2.5 space-y-3.5">
                     {/* Render Grouped Menu Items */}
                     {menuGroups.map((group) => (
                         <div key={group.title} className="space-y-1">
                             {sidebarOpen && (
-                                <span className="px-3 text-[10px] font-bold text-blue-500/80 tracking-wider uppercase block select-none">
+                                <span className="px-2.5 text-[9.5px] font-bold text-slate-400 uppercase tracking-wider block select-none mb-1">
                                     {group.title}
                                 </span>
                             )}
@@ -495,27 +530,27 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
                                             <Link
                                                 href={item.href}
                                                 onClick={() => isMobile && setSidebarOpen(false)}
-                                                className={`group flex items-center justify-between gap-2 px-3 py-2.5 rounded-xl text-[13px] font-medium transition-all duration-200 relative ${
+                                                className={`group relative flex items-center justify-between gap-2 px-2.5 py-2 rounded-xl text-[12.5px] font-medium transition-all duration-200 ${
                                                     isActive
-                                                        ? 'bg-gradient-to-r from-blue-600 to-indigo-600 text-white shadow-md shadow-blue-600/15'
-                                                        : 'text-slate-600 hover:bg-blue-50/50 hover:text-blue-600'
+                                                        ? 'bg-gradient-to-r from-blue-600 to-indigo-600 text-white shadow-sm shadow-blue-600/20 font-bold'
+                                                        : 'text-slate-600 hover:text-blue-600 hover:bg-blue-50/80 hover:translate-x-0.5'
                                                 }`}
                                             >
                                                 <div className="flex items-center gap-2.5 min-w-0">
-                                                    <item.icon className={`w-4.5 h-4.5 flex-shrink-0 stroke-[1.75] transition-transform duration-200 ${
+                                                    <item.icon className={`w-4 h-4 shrink-0 stroke-[1.75] transition-transform duration-200 ${
                                                         isActive ? 'text-white' : 'text-slate-400 group-hover:text-blue-600 group-hover:scale-105'
                                                     }`} />
                                                     {sidebarOpen && <span className="truncate">{item.name}</span>}
                                                 </div>
                                                 {sidebarOpen && badge !== undefined && badge > 0 && (
-                                                    <span className={`flex-shrink-0 text-[10px] font-semibold px-2 py-0.5 rounded-full ${
-                                                        isActive ? 'bg-white/20 text-white' : 'bg-rose-50 text-rose-600 border border-rose-100'
+                                                    <span className={`shrink-0 text-[9.5px] font-bold px-1.5 py-0.5 rounded-full ${
+                                                        isActive ? 'bg-white/25 text-white backdrop-blur-xs' : 'bg-rose-50 text-rose-600 border border-rose-200'
                                                     }`}>
                                                         {badge}
                                                     </span>
                                                 )}
                                                 {!sidebarOpen && badge !== undefined && badge > 0 && (
-                                                    <span className="absolute top-1 right-2.5 flex h-2 w-2">
+                                                    <span className="absolute top-1 right-2 flex h-2 w-2">
                                                         <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-rose-400 opacity-75"></span>
                                                         <span className="relative inline-flex rounded-full h-2 w-2 bg-rose-500"></span>
                                                     </span>
@@ -532,7 +567,7 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
                     {showReportSection && (
                         <div className="space-y-1">
                             {sidebarOpen && (
-                                <span className="px-3 text-[10px] font-bold text-blue-500/80 tracking-wider uppercase block select-none">
+                                <span className="px-2.5 text-[9.5px] font-bold text-slate-400 uppercase tracking-wider block select-none mb-1">
                                     Reports
                                 </span>
                             )}
@@ -540,22 +575,22 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
                                 <button
                                     type="button"
                                     onClick={() => setReportExpanded(!reportExpanded)}
-                                    className={`group flex w-full items-center justify-between gap-2 px-3 py-2.5 rounded-xl text-[13px] font-medium transition-all duration-200 ${
+                                    className={`group flex w-full items-center justify-between gap-2 px-2.5 py-2 rounded-xl text-[12.5px] font-medium transition-all duration-200 ${
                                         REPORT_PATHS.some(p => path.startsWith(p))
-                                            ? 'bg-blue-50/70 text-blue-700 border border-blue-100/50'
-                                            : 'text-slate-600 hover:bg-blue-50/50 hover:text-blue-600'
+                                            ? 'bg-blue-50 text-blue-700 font-bold border border-blue-200/60'
+                                            : 'text-slate-600 hover:text-blue-600 hover:bg-blue-50/60'
                                     }`}
                                 >
                                     <div className="flex items-center gap-2.5 min-w-0">
-                                        <BarChart3 className="w-4.5 h-4.5 flex-shrink-0 stroke-[1.75] text-slate-400 group-hover:text-blue-600" />
+                                        <BarChart3 className="w-4 h-4 shrink-0 stroke-[1.75] text-slate-400 group-hover:text-blue-600" />
                                         {sidebarOpen && <span className="truncate">Reports</span>}
                                     </div>
                                     {sidebarOpen && (
-                                        <ChevronDown className={`w-3.5 h-3.5 flex-shrink-0 text-slate-450 transition-transform duration-200 ${reportExpanded ? 'rotate-180' : ''}`} />
+                                        <ChevronDown className={`w-3.5 h-3.5 shrink-0 text-slate-400 transition-transform duration-200 ${reportExpanded ? 'rotate-180 text-blue-600' : ''}`} />
                                     )}
                                 </button>
                                 {reportExpanded && sidebarOpen && (
-                                    <ul className="mt-1 ml-4 pl-3.5 border-l border-blue-50 space-y-0.5 animate-in fade-in slide-in-from-top-1 duration-150 relative">
+                                    <ul className="mt-1 ml-3.5 pl-2.5 border-l-2 border-blue-100 space-y-0.5 animate-in fade-in slide-in-from-top-1 duration-150 relative">
                                         {headOfficeReportItems.map((item) => {
                                             const isActive = path === item.href;
                                             return (
@@ -563,13 +598,13 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
                                                     <Link
                                                         href={item.href}
                                                         onClick={() => isMobile && setSidebarOpen(false)}
-                                                        className={`group flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-[12px] font-semibold transition-colors ${
+                                                        className={`group flex items-center gap-2 px-2 py-1.5 rounded-lg text-[11.5px] font-medium transition-all ${
                                                             isActive
-                                                                ? 'bg-blue-50 text-blue-750 shadow-xs border border-blue-100/30'
-                                                                : 'text-slate-500 hover:bg-blue-50/30 hover:text-blue-600'
+                                                                ? 'bg-blue-100/70 text-blue-700 font-bold'
+                                                                : 'text-slate-500 hover:text-blue-600 hover:bg-blue-50/50'
                                                         }`}
                                                     >
-                                                        <item.icon className="w-3.5 h-3.5 flex-shrink-0 stroke-[1.75]" />
+                                                        <item.icon className="w-3.5 h-3.5 shrink-0 stroke-[1.75] text-slate-400 group-hover:text-blue-600" />
                                                         <span className="truncate">{item.name}</span>
                                                     </Link>
                                                 </li>
@@ -585,7 +620,7 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
                     {showConfigurationSection && (
                         <div className="space-y-1">
                             {sidebarOpen && (
-                                <span className="px-3 text-[10px] font-bold text-blue-500/80 tracking-wider uppercase block select-none">
+                                <span className="px-2.5 text-[9.5px] font-bold text-slate-400 uppercase tracking-wider block select-none mb-1">
                                     Settings
                                 </span>
                             )}
@@ -593,22 +628,22 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
                                 <button
                                     type="button"
                                     onClick={() => setSetupExpanded(!setupExpanded)}
-                                    className={`group flex w-full items-center justify-between gap-2 px-3 py-2.5 rounded-xl text-[13px] font-medium transition-all duration-200 ${
+                                    className={`group flex w-full items-center justify-between gap-2 px-2.5 py-2 rounded-xl text-[12.5px] font-medium transition-all duration-200 ${
                                         SETUP_PATHS.some(p => path.startsWith(p))
-                                            ? 'bg-blue-50/70 text-blue-700 border border-blue-100/50'
-                                            : 'text-slate-600 hover:bg-blue-50/50 hover:text-blue-650'
+                                            ? 'bg-blue-50 text-blue-700 font-bold border border-blue-200/60'
+                                            : 'text-slate-600 hover:text-blue-600 hover:bg-blue-50/60'
                                     }`}
                                 >
                                     <div className="flex items-center gap-2.5 min-w-0">
-                                        <Settings className="w-4.5 h-4.5 flex-shrink-0 stroke-[1.75] text-slate-400 group-hover:text-blue-600" />
+                                        <Settings className="w-4 h-4 shrink-0 stroke-[1.75] text-slate-400 group-hover:text-blue-600" />
                                         {sidebarOpen && <span className="truncate">Configuration</span>}
                                     </div>
                                     {sidebarOpen && (
-                                        <ChevronDown className={`w-3.5 h-3.5 flex-shrink-0 text-slate-450 transition-transform duration-200 ${setupExpanded ? 'rotate-180' : ''}`} />
+                                        <ChevronDown className={`w-3.5 h-3.5 shrink-0 text-slate-400 transition-transform duration-200 ${setupExpanded ? 'rotate-180 text-blue-600' : ''}`} />
                                     )}
                                 </button>
                                 {setupExpanded && sidebarOpen && (
-                                    <ul className="mt-1 ml-4 pl-3.5 border-l border-blue-50 space-y-0.5 animate-in fade-in slide-in-from-top-1 duration-150 relative font-medium">
+                                    <ul className="mt-1 ml-3.5 pl-2.5 border-l-2 border-blue-100 space-y-0.5 animate-in fade-in slide-in-from-top-1 duration-150 relative font-medium">
                                         {headOfficeSetupItems.map((item) => {
                                             const isActive = path === item.href;
                                             return (
@@ -616,13 +651,13 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
                                                     <Link
                                                         href={item.href}
                                                         onClick={() => isMobile && setSidebarOpen(false)}
-                                                        className={`group flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-[12px] font-semibold transition-colors ${
+                                                        className={`group flex items-center gap-2 px-2 py-1.5 rounded-lg text-[11.5px] font-medium transition-all ${
                                                             isActive
-                                                                ? 'bg-blue-50 text-blue-750 shadow-xs border border-blue-100/30'
-                                                                : 'text-slate-500 hover:bg-blue-50/30 hover:text-blue-600'
+                                                                ? 'bg-blue-100/70 text-blue-700 font-bold'
+                                                                : 'text-slate-500 hover:text-blue-600 hover:bg-blue-50/50'
                                                         }`}
                                                     >
-                                                        <item.icon className="w-3.5 h-3.5 flex-shrink-0 stroke-[1.75]" />
+                                                        <item.icon className="w-3.5 h-3.5 shrink-0 stroke-[1.75] text-slate-400 group-hover:text-blue-600" />
                                                         <span className="truncate">{item.name}</span>
                                                     </Link>
                                                 </li>
@@ -637,35 +672,35 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
 
                 {/* Super Admin Maintenance Controls */}
                 {isSuperAdmin && (
-                    <div className="border-t border-slate-100 px-3 py-3">
+                    <div className="border-t border-slate-100 px-2.5 py-2">
                         <button
                             type="button"
                             onClick={handleMaintenanceToggle}
                             title={siteMaintenance ? 'মেইনটেন্যান্স বন্ধ করুন' : 'মেইনটেন্যান্স চালু করুন'}
-                            className={`flex w-full items-center justify-between rounded-lg p-2 text-left transition-all duration-200 ${
+                            className={`flex w-full items-center justify-between rounded-xl p-2 text-left transition-all duration-200 ${
                                 siteMaintenance
-                                    ? 'bg-amber-50/70 border border-amber-100 text-amber-900'
-                                    : 'bg-slate-50/70 border border-slate-100 text-slate-600 hover:bg-slate-100/50'
+                                    ? 'bg-amber-50 border border-amber-200 text-amber-900'
+                                    : 'bg-slate-50 border border-slate-200/60 text-slate-600 hover:bg-slate-100'
                             }`}
                         >
-                            <div className="flex items-center gap-2.5 min-w-0">
-                                <Wrench className={`w-4 h-4 flex-shrink-0 ${siteMaintenance ? 'text-amber-600' : 'text-slate-400'}`} />
+                            <div className="flex items-center gap-2 min-w-0">
+                                <Wrench className={`w-3.5 h-3.5 shrink-0 ${siteMaintenance ? 'text-amber-600' : 'text-slate-400'}`} />
                                 {sidebarOpen && (
                                     <span className="text-[11px] font-semibold truncate">
-                                        {siteMaintenance ? 'Maintenance Active' : 'Maintenance'}
+                                        {siteMaintenance ? 'Maintenance On' : 'Maintenance'}
                                     </span>
                                 )}
                             </div>
                             {sidebarOpen && (
                                 <span
-                                    className={`flex h-4 w-7 flex-shrink-0 items-center rounded-full transition-colors duration-200 ease-in-out p-0.5 ${
-                                        siteMaintenance ? 'bg-amber-500' : 'bg-slate-200'
+                                    className={`flex h-3.5 w-6 shrink-0 items-center rounded-full transition-colors duration-200 p-0.5 ${
+                                        siteMaintenance ? 'bg-amber-500' : 'bg-slate-300'
                                     }`}
                                     aria-hidden
                                 >
                                     <span
-                                        className={`block h-3 w-3 rounded-full bg-white shadow-xs transition-transform duration-200 ease-in-out ${
-                                            siteMaintenance ? 'translate-x-3' : 'translate-x-0'
+                                        className={`block h-2.5 w-2.5 rounded-full bg-white shadow-xs transition-transform duration-200 ${
+                                            siteMaintenance ? 'translate-x-2.5' : 'translate-x-0'
                                         }`}
                                     />
                                 </span>
@@ -675,11 +710,11 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
                 )}
 
                 {/* Sidebar User Footer */}
-                <div className="border-t border-slate-100 p-3 bg-gradient-to-b from-transparent to-blue-50/10">
+                <div className="border-t border-slate-100 p-2.5 bg-slate-50/60">
                     {sidebarOpen ? (
-                        <div className="flex items-center justify-between gap-2 bg-white border border-slate-100 rounded-xl p-2 shadow-xs">
-                            <Link href="/profile" className="flex items-center gap-2.5 min-w-0 flex-1 hover:opacity-85 transition-opacity" title="View Profile Settings">
-                                <div className="w-8.5 h-8.5 rounded-full bg-gradient-to-tr from-blue-500 to-indigo-600 text-white flex items-center justify-center text-xs font-bold flex-shrink-0 shadow-sm shadow-blue-500/10 overflow-hidden">
+                        <div className="flex items-center justify-between gap-2 bg-white border border-slate-200/80 rounded-xl p-2 shadow-xs">
+                            <Link href="/profile" className="flex items-center gap-2 min-w-0 flex-1 hover:opacity-90 transition-opacity" title="View Profile">
+                                <div className="w-8 h-8 rounded-full bg-gradient-to-tr from-blue-600 to-indigo-600 text-white flex items-center justify-center text-[11px] font-bold shrink-0 shadow-xs overflow-hidden">
                                     {userAvatarSrc ? (
                                         <img src={userAvatarSrc} alt={auth.user?.name} className="w-full h-full object-cover" />
                                     ) : (
@@ -687,22 +722,22 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
                                     )}
                                 </div>
                                 <div className="min-w-0 flex-1">
-                                    <p className="text-[11px] font-bold text-slate-800 truncate">{auth.user?.name || 'User'}</p>
-                                    <p className="text-[9px] text-blue-600 font-semibold capitalize truncate mt-0.5">{auth.user?.role?.name?.replace('_', ' ') || 'Admin'}</p>
+                                    <p className="text-[11.5px] font-bold text-slate-800 truncate leading-tight">{auth.user?.name || 'User'}</p>
+                                    <p className="text-[9.5px] text-blue-600 font-semibold capitalize truncate mt-0.5">{auth.user?.role?.name?.replace('_', ' ') || 'Admin'}</p>
                                 </div>
                             </Link>
                             <button
                                 type="button"
                                 onClick={handleLogout}
                                 className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-colors shrink-0"
-                                title="Sign Out / Logout"
+                                title="Sign Out"
                             >
-                                <LogOut className="w-4 h-4" />
+                                <LogOut className="w-3.5 h-3.5" />
                             </button>
                         </div>
                     ) : (
                         <div className="flex justify-center">
-                            <Link href="/profile" title="View Profile Settings" className="w-9 h-9 rounded-full bg-gradient-to-tr from-blue-500 to-indigo-600 text-white flex items-center justify-center text-xs font-bold shadow-md shadow-blue-500/10 hover:scale-105 transition-transform duration-205 overflow-hidden">
+                            <Link href="/profile" title="View Profile" className="w-8 h-8 rounded-full bg-gradient-to-tr from-blue-600 to-indigo-600 text-white flex items-center justify-center text-xs font-bold shadow-xs hover:scale-105 transition-transform overflow-hidden">
                                 {userAvatarSrc ? (
                                     <img src={userAvatarSrc} alt={auth.user?.name} className="w-full h-full object-cover" />
                                 ) : (
@@ -717,145 +752,227 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
             {/* Main Content Area */}
             <div
                 className={`transition-all duration-300 ease-in-out min-h-screen flex flex-col bg-[#f8fafc] print:ml-0 ${
-                    isMobile ? 'ml-0' : sidebarOpen ? 'md:ml-64' : 'md:ml-16'
+                    isMobile ? 'ml-0' : sidebarOpen ? 'md:ml-60' : 'md:ml-16'
                 }`}
             >
-                {/* Header */}
-                <header className="print:hidden sticky top-0 z-35 bg-white/80 backdrop-blur-md border-b border-slate-100/80">
-                    <div className="flex items-center justify-between h-14 px-4 md:px-6">
-                        <div className="flex items-center gap-3">
-                            <h2 className="text-sm font-bold text-slate-800">
-                                {isMobile ? 'MIS Loan' : 'Dashboard'}
-                            </h2>
+                {/* Modern Crisp Light Topbar */}
+                <header className="print:hidden sticky top-0 z-35 bg-white/90 backdrop-blur-md border-b border-slate-200/80 shadow-xs">
+                    <div className="flex items-center justify-between h-13 px-3.5 md:px-5">
+                        {/* Header Left: Mobile Drawer Trigger + App Logo or Breadcrumb */}
+                        <div className="flex items-center gap-2.5">
+                            {/* Mobile Hamburger Button */}
+                            <button
+                                type="button"
+                                onClick={() => setSidebarOpen(!sidebarOpen)}
+                                className="md:hidden p-1.5 -ml-1 text-slate-700 hover:text-blue-600 hover:bg-slate-100 rounded-lg transition-colors"
+                                aria-label="Toggle Menu"
+                            >
+                                <Menu className="w-5 h-5 stroke-[1.75]" />
+                            </button>
+
+                            {/* Mobile Brand Badge */}
+                            <div className="md:hidden flex items-center gap-2">
+                                <div className="w-6.5 h-6.5 rounded-lg bg-gradient-to-tr from-blue-600 to-indigo-600 flex items-center justify-center text-white shadow-xs shadow-blue-600/20">
+                                    <Building2 className="w-3.5 h-3.5 stroke-[2.2]" />
+                                </div>
+                                <span className="text-xs font-extrabold text-slate-800 tracking-tight">
+                                    MIS Loan
+                                </span>
+                            </div>
+
+                            {/* Desktop Page Title & Breadcrumb */}
+                            <div className="hidden md:flex items-center gap-2 text-xs font-medium text-slate-400">
+                                <div className="w-2 h-2 rounded-full bg-blue-600 animate-pulse" />
+                                <span className="text-slate-900 font-extrabold text-[13.5px] tracking-tight">{currentTitle}</span>
+                                {path !== '/dashboard' && (
+                                    <>
+                                        <span className="text-slate-300">/</span>
+                                        <span className="text-[11.5px] text-slate-500 font-medium">MIS Loan</span>
+                                    </>
+                                )}
+                            </div>
                         </div>
 
-                        <div className="flex items-center gap-2">
+                        {/* Header Right Actions */}
+                        <div className="flex items-center gap-1.5 sm:gap-2">
+                            {/* Mousumi Apps portal link (Icon on mobile, full label on tablet/desktop) */}
                             <a
                                 href="https://app.mousumibd.org"
                                 target="_self"
-                                className="group inline-flex items-center gap-2 px-3 py-1.5 rounded-xl bg-slate-900 text-white hover:bg-emerald-600 dark:bg-emerald-600 dark:hover:bg-emerald-500 font-bold text-xs shadow-md hover:shadow-lg transition-all duration-300 transform hover:scale-105"
-                                title="Return to Mousumi Apps"
+                                className="inline-flex items-center justify-center gap-1.5 px-2.5 sm:px-3 py-1.5 rounded-xl bg-slate-900 text-white hover:bg-emerald-600 font-bold text-[11px] shadow-xs hover:shadow-md transition-all duration-200"
+                                title="Mousumi Apps Portal"
+                                aria-label="Mousumi Apps Portal"
                             >
-                                <div className="flex items-center justify-center w-5 h-5 rounded-lg bg-emerald-500 dark:bg-white/20 text-white p-0.5 shadow-sm group-hover:rotate-12 transition-transform duration-300">
-                                    <LayoutGrid className="w-3.5 h-3.5" />
-                                </div>
-                                <span className="tracking-wide">Mousumi Apps</span>
+                                <LayoutGrid className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
+                                <span className="hidden sm:inline">Mousumi Apps</span>
                             </a>
+
+                            {/* PWA Install Button (Desktop) */}
                             {canInstall && (
                                 <button
                                     type="button"
                                     onClick={() => setShowInstallDialog(true)}
-                                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-slate-200 text-xs font-bold text-slate-700 hover:bg-slate-50 hover:border-slate-300 transition-all duration-200 shadow-xs"
+                                    className="hidden sm:inline-flex items-center gap-1.5 px-2.5 py-1 rounded-xl border border-slate-200 text-[11px] font-bold text-slate-700 hover:bg-slate-50 transition-colors shadow-xs"
                                 >
-                                    <Download className="w-3.5 h-3.5 stroke-[1.75] text-slate-500" />
-                                    <span className="hidden sm:inline">Install App</span>
+                                    <Download className="w-3 h-3 stroke-[1.75] text-slate-500" />
+                                    <span>Install App</span>
                                 </button>
                             )}
 
-                            {/* Pending Approvals Quick Header Shortcut (hidden for Head Office / Super Admin) */}
+                            {/* Pending Approvals Quick Shortcut */}
                             {showPendingApprovalsNav && (
                                 <Link
                                     href="/approvals"
-                                    className={`relative flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl transition-all duration-200 ${
+                                    className={`relative flex items-center gap-1.5 px-2.5 py-1 rounded-xl transition-all text-xs font-bold ${
                                         path === '/approvals'
-                                            ? 'bg-blue-600 text-white shadow-md shadow-blue-600/20'
-                                            : 'bg-slate-100/90 text-slate-700 hover:bg-blue-50 hover:text-blue-600'
+                                            ? 'bg-gradient-to-r from-blue-600 to-indigo-600 text-white shadow-sm shadow-blue-500/20'
+                                            : 'bg-blue-50/80 text-blue-700 hover:bg-blue-600 hover:text-white border border-blue-200/70'
                                     }`}
                                     title="Pending Approvals"
-                                    aria-label="Pending Approvals"
                                 >
-                                    <ClipboardCheck className="w-4.5 h-4.5 stroke-[1.75]" />
-                                    <span className="hidden sm:inline text-xs font-bold">Approvals</span>
+                                    <ClipboardCheck className="w-3.5 h-3.5 stroke-[1.75]" />
+                                    <span className="hidden md:inline text-[11.5px]">Approvals</span>
                                     {badgeCounts.pendingApprovals != null && badgeCounts.pendingApprovals > 0 && (
-                                        <span className="flex h-4 min-w-[16px] items-center justify-center rounded-full bg-rose-500 px-1 text-[9px] font-extrabold text-white shadow-xs animate-pulse">
+                                        <span className="flex h-3.5 min-w-[14px] items-center justify-center rounded-full bg-rose-500 px-1 text-[8.5px] font-black text-white shadow-xs animate-pulse">
                                             {badgeCounts.pendingApprovals}
                                         </span>
                                     )}
                                 </Link>
                             )}
 
-                            {/* Notifications Dropdown Bell */}
+                            {/* Notification Bell */}
                             <NotificationBell />
 
-                            {/* Profile & Always Visible Logout */}
-                            <div className="flex items-center gap-2">
-                                <Link
-                                    href="/profile"
-                                    title="View Profile Settings"
-                                    className="relative p-0.5 rounded-full bg-gradient-to-tr from-blue-500 to-indigo-600 shadow-xs shadow-blue-500/10 hover:scale-105 transition-transform"
+                            {/* Unified User Profile Dropdown */}
+                            <div className="relative" ref={userDropdownRef}>
+                                <button
+                                    type="button"
+                                    onClick={() => setUserDropdownOpen(!userDropdownOpen)}
+                                    className="flex items-center gap-1.5 p-1 rounded-full hover:ring-2 hover:ring-blue-500/30 transition-all focus:outline-none"
+                                    aria-label="User menu"
                                 >
-                                    <div className="w-7.5 h-7.5 rounded-full bg-white flex items-center justify-center text-slate-700 text-xs font-bold overflow-hidden">
+                                    <div className="w-8 h-8 rounded-full bg-gradient-to-tr from-blue-600 to-indigo-600 text-white flex items-center justify-center text-[11px] font-extrabold shadow-sm ring-2 ring-white overflow-hidden">
                                         {userAvatarSrc ? (
                                             <img src={userAvatarSrc} alt={auth.user?.name} className="w-full h-full object-cover" />
                                         ) : (
                                             auth.user?.name?.charAt(0)?.toUpperCase() || 'U'
                                         )}
                                     </div>
-                                </Link>
-
-                                <button
-                                    type="button"
-                                    onClick={handleLogout}
-                                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-rose-200 bg-rose-50 text-rose-600 hover:bg-rose-100 hover:text-rose-700 text-xs font-semibold transition-all shadow-xs"
-                                    title="Sign Out / Logout"
-                                >
-                                    <LogOut className="w-3.5 h-3.5" />
-                                    <span className="hidden sm:inline">Logout</span>
+                                    <ChevronDown className={`w-3 h-3 text-slate-400 transition-transform duration-200 hidden sm:block ${userDropdownOpen ? 'rotate-180' : ''}`} />
                                 </button>
+
+                                {/* Dropdown Menu Content */}
+                                {userDropdownOpen && (
+                                    <div className="absolute right-0 mt-2 w-64 rounded-2xl bg-white shadow-2xl border border-slate-200 z-50 overflow-hidden animate-in fade-in slide-in-from-top-2 duration-150">
+                                        {/* User Header Profile */}
+                                        <div className="p-3.5 bg-gradient-to-br from-blue-50/80 via-indigo-50/50 to-white border-b border-slate-100 relative overflow-hidden">
+                                            <div className="flex items-center gap-2.5 relative z-10">
+                                                <div className="w-9 h-9 rounded-full bg-gradient-to-tr from-blue-600 to-indigo-600 text-white flex items-center justify-center text-xs font-bold shrink-0 shadow-xs overflow-hidden">
+                                                    {userAvatarSrc ? (
+                                                        <img src={userAvatarSrc} alt={auth.user?.name} className="w-full h-full object-cover" />
+                                                    ) : (
+                                                        auth.user?.name?.charAt(0)?.toUpperCase() || 'U'
+                                                    )}
+                                                </div>
+                                                <div className="min-w-0 flex-1">
+                                                    <p className="text-[12px] font-bold text-slate-800 truncate leading-tight">
+                                                        {auth.user?.name || 'User'}
+                                                    </p>
+                                                    <p className="text-[10px] text-slate-500 truncate mt-0.5 font-mono">
+                                                        {auth.user?.email}
+                                                    </p>
+                                                    <span className="inline-block mt-1 px-2 py-0.5 rounded-md bg-blue-100/80 text-blue-700 text-[9px] font-bold capitalize border border-blue-200/50">
+                                                        {auth.user?.role?.name?.replace('_', ' ') || 'Admin'}
+                                                    </span>
+                                                </div>
+                                            </div>
+                                        </div>
+
+                                        {/* Menu Links */}
+                                        <div className="p-1.5 space-y-0.5">
+                                            <Link
+                                                href="/profile"
+                                                onClick={() => setUserDropdownOpen(false)}
+                                                className="flex items-center gap-2.5 px-3 py-2 rounded-xl text-[12px] font-semibold text-slate-700 hover:bg-blue-50 hover:text-blue-600 transition-colors"
+                                            >
+                                                <User className="w-3.5 h-3.5 text-blue-500" />
+                                                <span>Profile & Settings</span>
+                                            </Link>
+
+                                            {/* Mobile specific shortcuts inside user menu */}
+                                            <a
+                                                href="https://app.mousumibd.org"
+                                                target="_self"
+                                                onClick={() => setUserDropdownOpen(false)}
+                                                className="sm:hidden flex items-center justify-between px-3 py-2 rounded-xl text-[12px] font-semibold text-slate-700 hover:bg-emerald-50 hover:text-emerald-700 transition-colors"
+                                            >
+                                                <div className="flex items-center gap-2.5">
+                                                    <LayoutGrid className="w-3.5 h-3.5 text-emerald-500" />
+                                                    <span>Mousumi Apps</span>
+                                                </div>
+                                                <ExternalLink className="w-3 h-3 text-slate-400" />
+                                            </a>
+
+                                            {canInstall && (
+                                                <button
+                                                    type="button"
+                                                    onClick={() => {
+                                                        setUserDropdownOpen(false);
+                                                        setShowInstallDialog(true);
+                                                    }}
+                                                    className="sm:hidden flex w-full items-center gap-2.5 px-3 py-2 rounded-xl text-[12px] font-semibold text-slate-700 hover:bg-slate-50 transition-colors text-left"
+                                                >
+                                                    <Download className="w-3.5 h-3.5 text-indigo-500" />
+                                                    <span>Install Web App</span>
+                                                </button>
+                                            )}
+                                        </div>
+
+                                        {/* Logout Option */}
+                                        <div className="p-1.5 border-t border-slate-100 bg-slate-50/50">
+                                            <button
+                                                type="button"
+                                                onClick={handleLogout}
+                                                className="flex w-full items-center gap-2.5 px-3 py-2 rounded-xl text-[12px] font-bold text-rose-600 hover:bg-rose-50 hover:text-rose-700 transition-colors text-left"
+                                            >
+                                                <LogOut className="w-3.5 h-3.5 text-rose-500" />
+                                                <span>Sign Out / Logout</span>
+                                            </button>
+                                        </div>
+                                    </div>
+                                )}
                             </div>
                         </div>
                     </div>
                 </header>
 
                 {/* Main Content Layout Container */}
-                <main className="flex-1 p-4 md:p-6 lg:p-8 pb-20 md:pb-6 lg:pb-8 print:p-0 print:block relative">
+                <main className="flex-1 p-3.5 md:p-5 lg:p-6 pb-20 md:pb-6 print:p-0 print:block relative">
                     <div className="max-w-[1600px] mx-auto w-full print:max-w-none print:mx-0 print:block">
-                        {/* FLASH MESSAGE ALERT BANNER */}
-                        {flashMessage && (
-                            <div
-                                className={`print:hidden mb-4 p-4 rounded-2xl border flex items-center justify-between gap-3 shadow-lg transition-all animate-in fade-in slide-in-from-top-2 duration-200 ${getFlashColor(
-                                    flashMessage.type
-                                )}`}
-                            >
-                                <div className="flex items-center gap-3">
-                                    <div className="shrink-0">{getFlashIcon(flashMessage.type)}</div>
-                                    <span className="text-xs sm:text-sm font-bold leading-relaxed">{flashMessage.message}</span>
-                                </div>
-                                <button
-                                    type="button"
-                                    onClick={() => setFlashMessage(null)}
-                                    className="p-1.5 rounded-xl hover:bg-black/5 text-current transition-colors shrink-0"
-                                    title="Close message"
-                                >
-                                    <X className="w-4 h-4" />
-                                </button>
-                            </div>
-                        )}
-
+                        {/* EMAIL ISSUE WARNING BANNER */}
                         {hasMailIssue && !isOnProfilePage && (
-                            <div className="print:hidden mb-4 rounded-2xl border border-amber-300 bg-amber-50 px-4 py-3.5 shadow-sm">
-                                <div className="flex flex-col sm:flex-row sm:items-center gap-3">
-                                    <div className="flex items-start gap-3 flex-1 min-w-0">
-                                        <div className="shrink-0 rounded-xl bg-amber-500/15 p-2 text-amber-700">
-                                            <Mail className="w-5 h-5" />
+                            <div className="print:hidden mb-4 rounded-2xl border border-amber-300 bg-gradient-to-r from-amber-50 to-orange-50 px-4 py-3 shadow-xs">
+                                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                                    <div className="flex items-start gap-3 min-w-0">
+                                        <div className="shrink-0 rounded-xl bg-amber-500/20 p-2 text-amber-800 mt-0.5">
+                                            <Mail className="w-4 h-4" />
                                         </div>
                                         <div className="min-w-0">
-                                            <p className="text-sm font-bold text-amber-900">
+                                            <p className="text-[12.5px] font-bold text-amber-950 leading-tight">
                                                 ইমেইল সমস্যা — প্রোফাইল আপডেট করুন
                                             </p>
-                                            <p className="text-xs text-amber-800/90 mt-0.5 leading-relaxed">
-                                                আপনার অ্যাকাউন্টে এখন{' '}
-                                                <span className="font-mono font-semibold break-all">
+                                            <p className="text-[11px] text-amber-900/90 mt-0.5 leading-normal">
+                                                আপনার অ্যাকাউন্টে বর্তমানে{' '}
+                                                <span className="font-mono font-semibold break-all text-amber-950">
                                                     {auth.user?.email || 'কোনো ইমেইল নেই'}
                                                 </span>{' '}
-                                                আছে। এটি কোম্পানি/অস্থায়ী ইমেইল হতে পারে। প্রোফাইল থেকে আপনার আসল{' '}
-                                                <strong>@gmail.com</strong> ইমেইল দিন।
+                                                আছে। প্রোফাইল থেকে আপনার আসল <strong>@gmail.com</strong> ইমেইল দিন।
                                             </p>
                                         </div>
                                     </div>
                                     <Link
                                         href="/profile"
-                                        className="shrink-0 inline-flex items-center justify-center gap-1.5 rounded-xl bg-amber-600 hover:bg-amber-700 text-white px-4 py-2.5 text-xs font-bold shadow-sm transition-colors"
+                                        className="shrink-0 inline-flex items-center justify-center gap-1.5 rounded-xl bg-amber-600 hover:bg-amber-700 text-white px-3.5 py-2 text-[11px] font-bold shadow-sm transition-colors"
                                     >
                                         <User className="w-3.5 h-3.5" />
                                         প্রোফাইল আপডেট
@@ -871,7 +988,7 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
             {/* Mobile Drawer Overlay */}
             {isMobile && sidebarOpen && (
                 <div
-                    className="fixed inset-0 bg-slate-950/45 backdrop-blur-xs z-30 md:hidden transition-opacity duration-300 animate-in fade-in"
+                    className="fixed inset-0 bg-slate-950/40 backdrop-blur-xs z-40 md:hidden transition-opacity duration-300 animate-in fade-in"
                     onClick={() => setSidebarOpen(false)}
                     aria-hidden
                 />
@@ -879,17 +996,17 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
 
             {/* PWA Install Corner Widget */}
             {canInstall && showInstallDialog && (
-                <div className="fixed bottom-4 right-4 z-50 max-w-sm w-[calc(100%-2rem)] sm:w-80 bg-white/95 backdrop-blur-md rounded-2xl shadow-2xl border border-slate-200/80 overflow-hidden animate-in slide-in-from-bottom-5 fade-in duration-300">
-                    <div className="bg-gradient-to-r from-blue-600 to-indigo-600 text-white p-3.5 relative overflow-hidden">
+                <div className="fixed bottom-4 right-4 z-50 max-w-sm w-[calc(100%-2rem)] sm:w-80 bg-white/95 backdrop-blur-md rounded-2xl shadow-2xl border border-slate-200 overflow-hidden animate-in slide-in-from-bottom-5 fade-in duration-300">
+                    <div className="bg-gradient-to-r from-blue-600 via-indigo-600 to-blue-700 text-white p-3 relative overflow-hidden">
                         <div className="absolute -right-4 -top-4 w-14 h-14 bg-white/10 rounded-full blur-md" />
                         <div className="flex items-center justify-between gap-3 relative z-10">
-                            <div className="flex items-center gap-2.5">
-                                <div className="w-8 h-8 rounded-xl bg-white/15 flex items-center justify-center text-white shadow-inner flex-shrink-0">
-                                    <Building2 className="w-4 h-4 stroke-[2]" />
+                            <div className="flex items-center gap-2">
+                                <div className="w-7.5 h-7.5 rounded-xl bg-white/20 flex items-center justify-center text-white shadow-inner shrink-0">
+                                    <Building2 className="w-3.5 h-3.5 stroke-[2.2]" />
                                 </div>
                                 <div className="leading-tight">
-                                    <h3 className="text-xs font-bold tracking-wide">MIS Loan Web App</h3>
-                                    <p className="text-[10px] text-blue-100 font-medium">Install on your device</p>
+                                    <h3 className="text-xs font-bold tracking-tight text-white">MIS Loan Web App</h3>
+                                    <p className="text-[9.5px] text-blue-100 font-medium">Install on your device</p>
                                 </div>
                             </div>
                             <button
@@ -898,13 +1015,13 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
                                 className="p-1 rounded-lg hover:bg-white/15 text-blue-100 hover:text-white transition-colors"
                                 aria-label="Close"
                             >
-                                <X className="w-4 h-4" />
+                                <X className="w-3.5 h-3.5" />
                             </button>
                         </div>
                     </div>
 
-                    <div className="p-3.5 bg-slate-50/50">
-                        <p className="text-[11px] text-slate-600 leading-relaxed mb-3">
+                    <div className="p-3 bg-slate-50/50">
+                        <p className="text-[11px] text-slate-600 leading-normal mb-2.5">
                             Install MIS Loan to your home screen or desktop for a fast, app-like experience.
                         </p>
 
@@ -912,21 +1029,20 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
                             <button
                                 type="button"
                                 onClick={handleDismissInstall}
-                                className="px-3 py-1.5 rounded-xl text-xs font-semibold text-slate-500 hover:bg-slate-200/60 transition-colors"
+                                className="px-2.5 py-1 rounded-lg text-[11px] font-semibold text-slate-500 hover:bg-slate-200/60 transition-colors"
                             >
                                 Later
                             </button>
                             <button
                                 type="button"
                                 onClick={async () => {
-                                    console.log('[PWA] Install now clicked, canInstall:', canInstall, 'platform:', platform);
                                     await promptInstall();
                                     handleDismissInstall();
                                 }}
                                 disabled={isInstalled || isStandalone}
-                                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-gradient-to-r from-blue-600 to-indigo-600 text-white text-xs font-bold hover:opacity-95 disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-200 shadow-md shadow-blue-500/10"
+                                className="inline-flex items-center gap-1.5 px-3 py-1 rounded-lg bg-gradient-to-r from-blue-600 to-indigo-600 text-white text-[11px] font-bold hover:opacity-95 disabled:opacity-50 disabled:cursor-not-allowed transition-all shadow-xs"
                             >
-                                <Download className="w-3.5 h-3.5 stroke-[2]" />
+                                <Download className="w-3 h-3 stroke-[2]" />
                                 Install Now
                             </button>
                         </div>
@@ -936,29 +1052,29 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
 
             {/* Mobile Floating Pending Approvals pill (hidden for Head Office / Super Admin) */}
             {showPendingApprovalsNav && isMobile && path !== '/approvals' && (badgeCounts.pendingApprovals || 0) > 0 && (
-                <div className="fixed bottom-20 right-4 z-40 md:hidden animate-in fade-in slide-in-from-bottom-3 duration-300">
+                <div className="fixed bottom-18 right-3.5 z-40 md:hidden animate-in fade-in slide-in-from-bottom-3 duration-300">
                     <Link
                         href="/approvals"
-                        className="group flex items-center gap-2 px-3.5 py-2.5 rounded-full bg-gradient-to-r from-blue-600 to-indigo-600 text-white shadow-xl shadow-blue-600/35 border border-white/20 active:scale-95 transition-all duration-200"
+                        className="group flex items-center gap-2 px-3.5 py-2 rounded-full bg-gradient-to-r from-blue-600 to-indigo-600 text-white shadow-xl shadow-blue-600/30 border border-white/20 active:scale-95 transition-all"
                         aria-label="Pending Approvals"
                     >
                         <div className="relative flex items-center justify-center">
-                            <ClipboardCheck className="w-5 h-5 stroke-[2] text-white" />
-                            <span className="absolute -top-2 -right-2 flex h-4.5 min-w-[18px] items-center justify-center rounded-full bg-rose-500 px-1 text-[9px] font-black text-white ring-2 ring-white shadow-md animate-pulse">
+                            <ClipboardCheck className="w-4 h-4 stroke-[2.2] text-white" />
+                            <span className="absolute -top-2 -right-2 flex h-4 min-w-[16px] items-center justify-center rounded-full bg-rose-500 px-1 text-[8.5px] font-black text-white ring-2 ring-white shadow-sm animate-pulse">
                                 {badgeCounts.pendingApprovals}
                             </span>
                         </div>
-                        <span className="text-xs font-bold tracking-wide pr-0.5">
-                            Pending Approvals
+                        <span className="text-[11.5px] font-extrabold tracking-tight pr-0.5">
+                            Approvals
                         </span>
                     </Link>
                 </div>
             )}
 
-            {/* Mobile Bottom Navigation */}
+            {/* Mobile Bottom Navigation Bar - Clean Light Theme */}
             {isMobile && (
-                <nav className="md:hidden fixed bottom-0 left-0 right-0 z-40 bg-white border-t border-slate-200 shadow-[0_-4px_10px_rgba(0,0,0,0.05)] pb-safe">
-                    <div className="flex items-center justify-around h-16 px-2">
+                <nav className="md:hidden fixed bottom-0 left-0 right-0 z-40 bg-white/95 backdrop-blur-md border-t border-slate-200/90 shadow-[0_-4px_12px_rgba(0,0,0,0.04)] pb-safe">
+                    <div className="flex items-center justify-around h-13.5 px-1">
                         {mobileBottomNavItems.map((item) => {
                             const isActive = isNavItemActive(path, item.href);
                             const Icon = item.icon;
@@ -966,27 +1082,32 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
                                 <Link
                                     key={item.name}
                                     href={item.href}
-                                    className={`flex flex-col items-center justify-center w-full h-full space-y-1 relative ${isActive ? 'text-blue-600' : 'text-slate-500 hover:text-slate-900'}`}
+                                    className={`flex flex-col items-center justify-center w-full h-full space-y-0.5 relative py-1 transition-all ${
+                                        isActive ? 'text-blue-600 font-bold' : 'text-slate-500 hover:text-slate-800'
+                                    }`}
                                 >
                                     <div className="relative">
-                                        <Icon className={`w-5 h-5 ${isActive ? 'stroke-[2]' : 'stroke-[1.5]'}`} />
+                                        <Icon className={`w-4.5 h-4.5 ${isActive ? 'stroke-[2.2] text-blue-600' : 'stroke-[1.6]'}`} />
                                         {item.badge != null && item.badge > 0 && (
                                             <span className="absolute -top-1 -right-1.5 flex h-3.5 min-w-[14px] items-center justify-center rounded-full bg-rose-500 px-1 text-[8px] font-bold text-white shadow-xs">
                                                 {item.badge}
                                             </span>
                                         )}
                                     </div>
-                                    <span className="text-[9px] font-medium text-center leading-tight max-w-[60px] truncate">{item.name}</span>
+                                    <span className="text-[9.5px] text-center leading-tight max-w-[62px] truncate">{item.name}</span>
+                                    {isActive && (
+                                        <span className="absolute top-0 w-6 h-0.5 bg-blue-600 rounded-full" />
+                                    )}
                                 </Link>
                             );
                         })}
                         <button
                             type="button"
                             onClick={() => setSidebarOpen(true)}
-                            className="flex flex-col items-center justify-center w-full h-full space-y-1 text-slate-500 hover:text-slate-900"
+                            className="flex flex-col items-center justify-center w-full h-full space-y-0.5 text-slate-500 hover:text-slate-800 py-1 transition-colors"
                         >
-                            <Menu className="w-5 h-5 stroke-[1.5]" />
-                            <span className="text-[9px] font-medium">Menu</span>
+                            <Menu className="w-4.5 h-4.5 stroke-[1.6]" />
+                            <span className="text-[9.5px] font-medium leading-tight">Menu</span>
                         </button>
                     </div>
                 </nav>

@@ -18,6 +18,7 @@ use App\Models\User;
 use App\Services\ApprovalService;
 use App\Services\NotificationService;
 use App\Support\LoanFormVisibility;
+use App\Support\NumberToWordsBangla;
 use App\Support\RoleListWorkQueue;
 use Carbon\Carbon;
 use Illuminate\Http\Request;
@@ -63,8 +64,8 @@ class LoanApplicationController extends Controller
     }
 
     /**
-     * Draft/fill loan forms: field officers may prepare applications for their own
-     * members before admission is approved; branch users need an approved member.
+     * Draft/fill loan forms: field officers may prepare applications for any
+     * member of their branch before admission is approved; branch users need an approved member.
      */
     private function ensureMemberAccessibleForLoanDraft(MemberAdmission $member, $user): void
     {
@@ -79,10 +80,6 @@ class LoanApplicationController extends Controller
         }
 
         if ($this->isFieldOfficer($user)) {
-            if (! $member->isAssignedToUser($user)) {
-                abort(403, 'ফিল্ড অফিসার শুধু নিজের দায়িত্বে থাকা সদস্যের জন্য ঋণ আবেদন করতে পারবেন।');
-            }
-
             return;
         }
 
@@ -292,10 +289,6 @@ class LoanApplicationController extends Controller
             && !$user->canAccessBranch((int) $application->branch_id)) {
             abort(403, 'আপনার এই ঋণ আবেদন দেখার অনুমতি নেই।');
         }
-
-        if ($this->isFieldOfficer($user) && (int) $application->submitted_by !== (int) $user->id) {
-            abort(403, 'ফিল্ড অফিসার শুধু নিজের ঋণ আবেদন দেখতে পারবেন।');
-        }
     }
 
     /**
@@ -374,7 +367,6 @@ class LoanApplicationController extends Controller
         $statusFilter = $workQueue['status'];
         $searchFilter = $request->input('search', '');
         $perPage = $this->resolvePerPage($request);
-        $isFieldOfficer = $this->isFieldOfficer($user);
 
         // Get loan categories with active products using the correct relationship name
         $categories = LoanCategory::with(['loanProducts' => function ($query) {
@@ -411,13 +403,6 @@ class LoanApplicationController extends Controller
             ])
             ->when(!$user->has_all_access, function ($query) use ($user) {
                 $query->whereIn('branch_id', $user->getAccessibleBranches()->pluck('id'));
-            })
-            ->where(function ($q) use ($user) {
-                $q->where('status', '!=', 'draft')
-                  ->orWhere('submitted_by', $user->id);
-            })
-            ->when($isFieldOfficer, function ($query) use ($user) {
-                $query->where('submitted_by', $user->id);
             });
 
         $this->applyCoalesceDateRange($applicationsQuery, $dateFrom, $dateTo, $dateExpression);
@@ -441,7 +426,7 @@ class LoanApplicationController extends Controller
             ->select([
                 'id', 'application_no', 'member_admission_id', 'loan_product_id',
                 'loan_category_id', 'branch_id', 'samity_id', 'form_type', 'status',
-                'requested_amount', 'approved_amount', 'created_at', 'updated_at',
+                'requested_amount', 'approved_amount', 'disbursed_amount', 'created_at', 'updated_at',
                 'submitted_at', 'reviewed_at', 'disbursed_at', 'purpose_of_loan', 'legacy_member_snapshot',
             ])
             ->paginate($perPage)
@@ -481,13 +466,6 @@ class LoanApplicationController extends Controller
         $statsBaseQuery = LoanApplication::query()
             ->when(!$user->has_all_access, function ($query) use ($user) {
                 $query->whereIn('branch_id', $user->getAccessibleBranches()->pluck('id'));
-            })
-            ->where(function ($q) use ($user) {
-                $q->where('status', '!=', 'draft')
-                  ->orWhere('submitted_by', $user->id);
-            })
-            ->when($isFieldOfficer, function ($query) use ($user) {
-                $query->where('submitted_by', $user->id);
             });
 
         $this->applyCoalesceDateRange($statsBaseQuery, $dateFrom, $dateTo, $dateExpression);
@@ -532,7 +510,6 @@ class LoanApplicationController extends Controller
         $dateTo = $workQueue['date_to'];
         $statusFilter = $workQueue['status'];
         $searchFilter = $request->input('search', '');
-        $isFieldOfficer = $this->isFieldOfficer($user);
 
         $query = LoanApplication::with([
                 'loanProduct',
@@ -544,13 +521,6 @@ class LoanApplicationController extends Controller
             ])
             ->when(!$user->has_all_access, function ($query) use ($user) {
                 $query->whereIn('branch_id', $user->getAccessibleBranches()->pluck('id'));
-            })
-            ->where(function ($q) use ($user) {
-                $q->where('status', '!=', 'draft')
-                  ->orWhere('submitted_by', $user->id);
-            })
-            ->when($isFieldOfficer, function ($query) use ($user) {
-                $query->where('submitted_by', $user->id);
             });
 
         $this->applyCoalesceDateRange($query, $dateFrom, $dateTo, 'COALESCE(disbursed_at, reviewed_at, submitted_at, created_at)');
@@ -847,9 +817,8 @@ class LoanApplicationController extends Controller
         $branchId = $user->branch_id;
 
         $members = MemberAdmission::where('branch_id', $branchId)
-            ->when($this->isFieldOfficer($user), function ($query) use ($user) {
-                $query->assignedToOfficer((int) $user->id)
-                    ->where('status', '!=', 'rejected');
+            ->when($this->isFieldOfficer($user), function ($query) {
+                $query->where('status', '!=', 'rejected');
             }, function ($query) {
                 $query->where('status', 'approved');
             })
@@ -1384,6 +1353,33 @@ class LoanApplicationController extends Controller
     }
 
     /**
+     * Helper to calculate total service charge for a loan amount and product.
+     */
+    protected function calculateTotalServiceCharge(float $amount, ?LoanProduct $loanProduct): float
+    {
+        if ($amount <= 0 || ! $loanProduct) {
+            return 0;
+        }
+
+        $scPerThousand = (float) ($loanProduct->service_charge_per_thousand ?? 0);
+        if ($scPerThousand > 0) {
+            return ($amount / 1000) * $scPerThousand;
+        }
+
+        $rate = (float) ($loanProduct->interest_rate ?? $loanProduct->service_charge ?? 0);
+        if ($rate <= 0) {
+            return 0;
+        }
+
+        $months = (int) ($loanProduct->duration_months ?? 12);
+        if ($months <= 0) {
+            $months = 12;
+        }
+
+        return $amount * ($rate / 100) * ($months / 12);
+    }
+
+    /**
      * Branch user disburses loan after HO approval and pre-disbursement forms (2 & 3).
      */
     public function disburse(Request $request, $id)
@@ -1405,11 +1401,116 @@ class LoanApplicationController extends Controller
             return back()->withErrors(['error' => 'বিতরণের আগে জামিনদার অঙ্গীকার (ফর্ম ২) ও মৃত্যুঝুঁকি তহবিল (ফর্ম ৩) পূরণ করতে হবে।']);
         }
 
-        LoanApplication::whereKey($application->id)->update([
+        $maxAllowed = (float) ($application->approved_amount ?? $application->requested_amount ?? 0);
+
+        $validated = $request->validate([
+            'disbursed_amount' => [
+                'nullable',
+                'numeric',
+                'min:1',
+                'max:' . ($maxAllowed > 0 ? $maxAllowed : 99999999),
+            ],
+            'disbursement_method' => ['nullable', 'string', 'max:50'],
+            'disbursement_reference' => ['nullable', 'string', 'max:100'],
+        ], [
+            'disbursed_amount.max' => 'বিতরণকৃত ঋণের পরিমাণ অনুমোদিত ঋণের (৳' . number_format($maxAllowed) . ') চেয়ে বেশি হতে পারবে না।',
+            'disbursed_amount.min' => 'বিতরণকৃত ঋণের পরিমাণ অন্তত ১ টাকা হতে হবে।',
+        ]);
+
+        $disbursedAmount = isset($validated['disbursed_amount']) && (float) $validated['disbursed_amount'] > 0
+            ? (float) $validated['disbursed_amount']
+            : $maxAllowed;
+
+        $loanProduct = $application->loanProduct;
+
+        // Re-calculate service charge & installment amount if applicable
+        $newInstallmentAmount = $application->installment_amount;
+        if ($disbursedAmount > 0 && $application->number_of_installments > 0) {
+            $totServiceCharge = $this->calculateTotalServiceCharge($disbursedAmount, $loanProduct);
+            $totalRepayable = $disbursedAmount + $totServiceCharge;
+            $newInstallmentAmount = round($totalRepayable / $application->number_of_installments, 2);
+        }
+
+        // Auto-synchronize all forms with the final disbursed amount
+        $wordsDisbursed = NumberToWordsBangla::convert($disbursedAmount);
+        $totServiceCharge = $this->calculateTotalServiceCharge($disbursedAmount, $loanProduct);
+        $totalRepayable = $disbursedAmount + $totServiceCharge;
+
+        // 1. Form 1 / Agreement: Loan Agreement Data
+        $agreementData = is_array($application->loan_agreement_data) ? $application->loan_agreement_data : [];
+        if (!empty($agreementData)) {
+            $agreementData['loan_amount'] = $disbursedAmount;
+            $agreementData['loan_amount_words'] = $wordsDisbursed ? $wordsDisbursed . ' টাকা' : '';
+            $agreementData['service_charge'] = $totServiceCharge;
+            $agreementData['total_amount'] = $totalRepayable;
+            $agreementData['installment_amount'] = $newInstallmentAmount;
+            $agreementData['last_installment_amount'] = $newInstallmentAmount;
+        }
+
+        // 2. Form 2: Guarantor Commitment (loan_amount with service charge)
+        $guarantorInfo = is_array($application->guarantor_info) ? $application->guarantor_info : [];
+        if (!empty($guarantorInfo)) {
+            $guarantorLoanAmount = (float) round($totalRepayable);
+            $guarantorWords = NumberToWordsBangla::convert($guarantorLoanAmount);
+            $guarantorInfo['loan_amount'] = $guarantorLoanAmount;
+            $guarantorInfo['loan_amount_words'] = $guarantorWords ? $guarantorWords . ' টাকা' : '';
+        }
+
+        // 3. Form 3: Death Risk Fund (loan_amount_received & words)
+        $nomineeInfo = is_array($application->nominee_info) ? $application->nominee_info : [];
+        if (!empty($nomineeInfo)) {
+            $nomineeInfo['loan_amount_received'] = $disbursedAmount;
+            $nomineeInfo['loan_amount_words'] = $wordsDisbursed ? $wordsDisbursed . ' টাকা' : '';
+        }
+
+        // 4. Form 4: Field Investigation (asset_info)
+        $assetInfo = is_array($application->asset_info) ? $application->asset_info : [];
+        if (!empty($assetInfo)) {
+            $assetInfo['current_loan_demand'] = $disbursedAmount;
+            $assetInfo['recommended_loan_amount'] = $disbursedAmount;
+        }
+
+        // 5. Form 5: Agrosor Profile / Approval Form (business_plan)
+        $businessPlan = is_array($application->business_plan) ? $application->business_plan : [];
+        if (!empty($businessPlan)) {
+            $businessPlan['final_approved_loan_amount_digits'] = (string) $disbursedAmount;
+            $businessPlan['final_approved_loan_amount_words'] = $wordsDisbursed ? $wordsDisbursed . ' টাকা' : '';
+            $businessPlan['applied_loan_amount'] = (string) $disbursedAmount;
+            $businessPlan['fund_applied_loan'] = (string) $disbursedAmount;
+        }
+
+        // Update application
+        $updateData = [
             'status' => LoanApplication::STATUS_DISBURSED,
+            'disbursed_amount' => $disbursedAmount,
+            'installment_amount' => $newInstallmentAmount,
             'disbursed_by' => $user->id,
             'disbursed_at' => now(),
-        ]);
+        ];
+
+        if (!empty($validated['disbursement_method'])) {
+            $updateData['disbursement_method'] = $validated['disbursement_method'];
+        }
+        if (!empty($validated['disbursement_reference'])) {
+            $updateData['disbursement_reference'] = $validated['disbursement_reference'];
+        }
+        if (!empty($agreementData)) {
+            $updateData['loan_agreement_data'] = $agreementData;
+        }
+        if (!empty($guarantorInfo)) {
+            $updateData['guarantor_info'] = $guarantorInfo;
+        }
+        if (!empty($nomineeInfo)) {
+            $updateData['nominee_info'] = $nomineeInfo;
+        }
+        if (!empty($assetInfo)) {
+            $updateData['asset_info'] = $assetInfo;
+        }
+        if (!empty($businessPlan)) {
+            $updateData['business_plan'] = $businessPlan;
+        }
+
+        LoanApplication::findOrFail($application->id)->update($updateData);
 
         // Notify submitter / member
         if ($application->submittedBy) {
@@ -1417,20 +1518,21 @@ class LoanApplicationController extends Controller
                 users: $application->submittedBy,
                 type: 'loan_application',
                 title: 'ঋণ বিতরণ সফলভাবে সম্পন্ন হয়েছে',
-                message: "ঋণ আবেদন নং {$application->application_no} ({$application->memberAdmission?->applicant_name_bn}) এর ঋণ বিতরণ করা হয়েছে। পরিমাণ: " . number_format($application->approved_amount ?? $application->requested_amount ?? 0) . " টাকা।",
+                message: "ঋণ আবেদন নং {$application->application_no} ({$application->memberAdmission?->applicant_name_bn}) এর ঋণ বিতরণ করা হয়েছে। পরিমাণ: " . number_format($disbursedAmount) . " টাকা।",
                 notifiable: $application,
                 actionUrl: "/member/loan-applications/{$application->id}",
                 details: [
                     'আবেদন নং' => $application->application_no,
                     'সদস্যের নাম' => $application->memberAdmission?->applicant_name_bn ?: ($application->memberAdmission?->applicant_name_en ?? 'N/A'),
-                    'বিতরণকৃত ঋণ' => number_format($application->approved_amount ?? $application->requested_amount ?? 0) . ' টাকা',
+                    'বিতরণকৃত ঋণ' => number_format($disbursedAmount) . ' টাকা',
+                    'অনুমোদিত ঋণ' => number_format($maxAllowed) . ' টাকা',
                     'বিতরণের তারিখ' => now()->format('Y-m-d H:i'),
                 ]
             );
         }
 
         return redirect()->route('member.loan-applications.show', $application->id)
-            ->with('success', 'ঋণ সফলভাবে বিতরণ করা হয়েছে।');
+            ->with('success', 'ঋণ সফলভাবে বিতরণ করা হয়েছে। বিতরণকৃত পরিমাণ: ৳' . number_format($disbursedAmount));
     }
 
     /**

@@ -472,10 +472,17 @@ export default function FieldInvestigation({
     const resumeParams = typeof window !== 'undefined' ? new URLSearchParams(window.location.search) : null;
     const isResumeApproval = !!resumeParams?.get('resume_approval_id');
     if (onlyPreview) {
+        const reqAmt = Number(requestedAmount) || 0;
         const defaults = buildFieldInvestigationDefaults(member, requestedAmount, branch, loanRound);
         const previewData =
             savedData && Object.keys(savedData).length > 0
-                ? { ...defaults, ...savedData }
+                ? {
+                    ...defaults,
+                    ...savedData,
+                    ...(reqAmt > 0 ? {
+                        current_loan_demand: reqAmt,
+                    } : {}),
+                }
                 : defaults;
         if (!String(previewData.nid_number || '').trim()) {
             previewData.nid_number = resolveMemberIdentityNumber(member);

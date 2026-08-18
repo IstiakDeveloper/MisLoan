@@ -289,6 +289,26 @@ export default function Edit({
             loan_dofa: admission.loan_dofa || '',
         });
 
+    const canChangeMemberType = admission.status === 'draft';
+
+    const handleMemberTypeChange = (legacy: boolean) => {
+        if (!canChangeMemberType) return;
+        if (legacy === !!data.is_legacy) return;
+        if (!legacy) {
+            const ok = window.confirm(
+                'নতুন সদস্যে পরিবর্তন করলে ঋণের দফা মুছে যাবে এবং জমা দিলে হেড অফিসের অনুমোদন লাগবে। চালিয়ে যাবেন?'
+            );
+            if (!ok) return;
+            setData((prev) => ({ ...prev, is_legacy: false, loan_dofa: '' }));
+        } else {
+            const ok = window.confirm(
+                'পুরাতন সদস্যে পরিবর্তন করলে ঋণের দফা দিতে হবে এবং জমা দিলে স্বয়ংক্রিয় অনুমোদন হবে। চালিয়ে যাবেন?'
+            );
+            if (!ok) return;
+            setData((prev) => ({ ...prev, is_legacy: true }));
+        }
+    };
+
     useEffect(() => {
         if (data.branch_id) {
             const filtered = samities.filter((s) => s.branch_id === data.branch_id);
@@ -641,7 +661,7 @@ export default function Edit({
                     <div className="absolute -right-12 -bottom-12 w-64 h-64 rounded-full bg-gradient-to-tr from-indigo-600/30 to-purple-500/20 blur-3xl pointer-events-none" />
                     <div className="relative z-10 flex flex-col md:flex-row md:items-center justify-between gap-6">
                         <div className="space-y-2 max-w-2xl">
-                            <div className="flex items-center gap-2">
+                            <div className="flex flex-wrap items-center gap-2">
                                 <Link
                                     href="/member-admissions"
                                     className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-white/10 hover:bg-white/20 text-white text-xs font-semibold backdrop-blur-md transition-all active:scale-95"
@@ -652,6 +672,42 @@ export default function Edit({
                                 <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-indigo-500/20 border border-indigo-400/30 text-indigo-300 text-xs font-semibold backdrop-blur-md">
                                     আবেদন #{admission.id}
                                 </span>
+                                {canChangeMemberType ? (
+                                    <div className="inline-flex items-center rounded-full border border-white/15 bg-black/25 p-0.5 backdrop-blur-md">
+                                        <button
+                                            type="button"
+                                            onClick={() => handleMemberTypeChange(false)}
+                                            className={`rounded-full px-2.5 py-1 text-[11px] font-bold transition-all ${
+                                                !data.is_legacy
+                                                    ? 'bg-blue-500 text-white shadow-sm'
+                                                    : 'text-slate-300 hover:text-white'
+                                            }`}
+                                        >
+                                            নতুন
+                                        </button>
+                                        <button
+                                            type="button"
+                                            onClick={() => handleMemberTypeChange(true)}
+                                            className={`rounded-full px-2.5 py-1 text-[11px] font-bold transition-all ${
+                                                data.is_legacy
+                                                    ? 'bg-amber-500 text-white shadow-sm'
+                                                    : 'text-slate-300 hover:text-white'
+                                            }`}
+                                        >
+                                            পুরাতন
+                                        </button>
+                                    </div>
+                                ) : (
+                                    <span
+                                        className={`inline-flex items-center px-3 py-1 rounded-full text-xs font-semibold backdrop-blur-md border ${
+                                            data.is_legacy
+                                                ? 'bg-amber-500/20 border-amber-400/30 text-amber-300'
+                                                : 'bg-blue-500/20 border-blue-400/30 text-blue-300'
+                                        }`}
+                                    >
+                                        {data.is_legacy ? 'পুরাতন সদস্য' : 'নতুন সদস্য'}
+                                    </span>
+                                )}
                             </div>
                             <h1 className="text-2xl sm:text-3xl font-extrabold tracking-tight text-white leading-tight">
                                 {for_submit ? 'আবশ্যকীয় তথ্য পূরণ করে জমা দিন' : 'ভর্তি আবেদন সংশোধন ও আপডেট'}
@@ -755,7 +811,7 @@ export default function Edit({
                         getSamityDisplayCode={getSamityDisplayCode}
                         selectedSamity={selectedSamity}
                         categories={categories}
-                        isLegacyMember={data.is_legacy}
+                        isLegacyMember={!!data.is_legacy}
                     />
 
                     <PersonalInfoSection

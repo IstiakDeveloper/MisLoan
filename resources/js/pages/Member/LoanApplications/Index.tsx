@@ -58,6 +58,7 @@ interface LoanApplication {
     status: string;
     requested_amount: number;
     approved_amount?: number;
+    disbursed_amount?: number;
     loan_product_id?: number;
     loan_category_id?: number;
     loan_product: LoanProduct & { installment_type?: string };
@@ -856,10 +857,17 @@ export default function Index({ categories, applications, stats, selectedDate, d
                                                 </div>
                                             </div>
                                             <div className="text-right">
-                                                <span className="text-[10px] font-bold text-slate-400 block uppercase">ঋণ পরিমাণ</span>
-                                                <span className="text-sm font-black text-emerald-600">
-                                                    ৳{formatAmount(app.requested_amount)}
+                                                <span className="text-[10px] font-bold text-slate-400 block uppercase">
+                                                    {app.status === 'disbursed' ? 'বিতরণকৃত ঋণ' : 'ঋণ পরিমাণ'}
                                                 </span>
+                                                <span className="text-sm font-black text-emerald-600">
+                                                    ৳{formatAmount(app.disbursed_amount ?? app.approved_amount ?? app.requested_amount)}
+                                                </span>
+                                                {app.status === 'disbursed' && app.approved_amount && (
+                                                    <span className="text-[9px] text-slate-500 block">
+                                                        অনুমোদিত: ৳{formatAmount(app.approved_amount)}
+                                                    </span>
+                                                )}
                                             </div>
                                         </div>
 
@@ -1106,9 +1114,14 @@ export default function Index({ categories, applications, stats, selectedDate, d
 
                                                     <td className="px-4 py-3.5">
                                                         <div className="font-black text-emerald-600 text-sm">
-                                                            ৳{formatAmount(app.requested_amount)}
+                                                            ৳{formatAmount(app.disbursed_amount ?? app.approved_amount ?? app.requested_amount)}
                                                         </div>
-                                                        {app.approved_amount && (
+                                                        {app.status === 'disbursed' && app.disbursed_amount && app.approved_amount && (
+                                                            <div className="text-[10px] text-emerald-700 font-bold">
+                                                                বিতরণকৃত (অনুমোদিত: ৳{formatAmount(app.approved_amount)})
+                                                            </div>
+                                                        )}
+                                                        {app.status !== 'disbursed' && app.approved_amount && (
                                                             <div className="text-[10px] text-emerald-700 font-bold">
                                                                 অনুমোদিত: ৳{formatAmount(app.approved_amount)}
                                                             </div>

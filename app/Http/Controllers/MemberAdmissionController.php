@@ -204,7 +204,6 @@ class MemberAdmissionController extends Controller
     {
         $user = auth()->user();
         $user->loadMissing('role');
-        $isFieldOfficer = $user->role?->name === Role::FIELD_OFFICER;
         $workQueue = RoleListWorkQueue::resolveWithDates($request, false, $user);
         $statusFilter = $workQueue['status'];
         $fromDate = $workQueue['date_from'];
@@ -219,52 +218,16 @@ class MemberAdmissionController extends Controller
             'approvals.user',
         ]);
 
-        // Filter by branch access (for branch users, regional managers, area/zone managers)
+        // Admissions belong to the branch: anyone with that branch can see them
         if (!$user->has_all_access) {
-            $accessibleBranchIds = $user->getAccessibleBranches()->pluck('id');
-            $query->where(function ($q) use ($accessibleBranchIds, $user) {
-                $q->whereIn('branch_id', $accessibleBranchIds)
-                  ->orWhere(function ($q2) use ($user) {
-                      $q2->assignedToOfficer((int) $user->id);
-                  });
-            });
+            $query->whereIn('branch_id', $user->getAccessibleBranches()->pluck('id'));
         }
-
-        // Field officers only see admissions currently assigned to them
-        if ($isFieldOfficer) {
-            $query->assignedToOfficer((int) $user->id);
-        }
-
-        // Draft privacy constraint: Drafts are only visible to the assigned officer
-        $query->where(function ($q) use ($user) {
-            $q->where('status', '!=', 'draft')
-              ->orWhere(function ($q2) use ($user) {
-                  $q2->assignedToOfficer((int) $user->id);
-              });
-        });
 
         // Build stats query with active date, branch, and search filters (excluding status filter for stats)
         $statsQuery = MemberAdmission::query();
         if (!$user->has_all_access) {
-            $accessibleBranchIds = $user->getAccessibleBranches()->pluck('id');
-            $statsQuery->where(function ($q) use ($accessibleBranchIds, $user) {
-                $q->whereIn('branch_id', $accessibleBranchIds)
-                  ->orWhere(function ($q2) use ($user) {
-                      $q2->assignedToOfficer((int) $user->id);
-                  });
-            });
+            $statsQuery->whereIn('branch_id', $user->getAccessibleBranches()->pluck('id'));
         }
-
-        if ($isFieldOfficer) {
-            $statsQuery->assignedToOfficer((int) $user->id);
-        }
-
-        $statsQuery->where(function ($q) use ($user) {
-            $q->where('status', '!=', 'draft')
-              ->orWhere(function ($q2) use ($user) {
-                  $q2->assignedToOfficer((int) $user->id);
-              });
-        });
 
         if ($request->has('branch_id') && $request->branch_id) {
             $statsQuery->where('branch_id', $request->branch_id);
@@ -361,7 +324,6 @@ class MemberAdmissionController extends Controller
     {
         $user = auth()->user();
         $user->loadMissing('role');
-        $isFieldOfficer = $user->role?->name === Role::FIELD_OFFICER;
 
         $query = MemberAdmission::with([
             'branch.area.zone',
@@ -373,25 +335,8 @@ class MemberAdmissionController extends Controller
         ]);
 
         if (!$user->has_all_access) {
-            $accessibleBranchIds = $user->getAccessibleBranches()->pluck('id');
-            $query->where(function ($q) use ($accessibleBranchIds, $user) {
-                $q->whereIn('branch_id', $accessibleBranchIds)
-                  ->orWhere(function ($q2) use ($user) {
-                      $q2->assignedToOfficer((int) $user->id);
-                  });
-            });
+            $query->whereIn('branch_id', $user->getAccessibleBranches()->pluck('id'));
         }
-
-        if ($isFieldOfficer) {
-            $query->assignedToOfficer((int) $user->id);
-        }
-
-        $query->where(function ($q) use ($user) {
-            $q->where('status', '!=', 'draft')
-              ->orWhere(function ($q2) use ($user) {
-                  $q2->assignedToOfficer((int) $user->id);
-              });
-        });
 
         if ($request->has('branch_id') && $request->branch_id) {
             $query->where('branch_id', $request->branch_id);
@@ -795,7 +740,7 @@ class MemberAdmissionController extends Controller
 
             $authUser = auth()->user();
             $authUser->loadMissing('role');
-            if ($authUser->role?->name === Role::FIELD_OFFICER) {
+            if (in_array($authUser->role?->name, [Role::FIELD_OFFICER, Role::BRANCH_MANAGER], true)) {
                 $admissionData['interviewer_name'] = $admissionData['interviewer_name'] ?: $authUser->name;
                 $admissionData['employee_name'] = $admissionData['employee_name'] ?: ($authUser->pin ?: $authUser->username);
             }
@@ -1060,12 +1005,19 @@ class MemberAdmissionController extends Controller
             'selected_approvers' => 'nullable|array',
             'selected_approvers.*' => 'exists:users,id',
 
-            // Legacy / old member (type locked; dofa editable)
+            // Legacy / old member — type can change while still draft (before submit)
+            'is_legacy' => 'nullable|boolean',
             'loan_dofa' => 'nullable|integer|min:1|max:999',
         ], $this->admissionFileValidationMessages());
 
+        $canChangeMemberType = $memberAdmission->isDraft();
+        $isLegacy = (bool) $memberAdmission->is_legacy;
+        if ($canChangeMemberType && $request->has('is_legacy')) {
+            $isLegacy = $request->boolean('is_legacy');
+        }
+
         // loan_dofa only required on final submit (not draft)
-        if ($memberAdmission->is_legacy && !$saveAsDraft && empty($validated['loan_dofa'])) {
+        if ($isLegacy && !$saveAsDraft && empty($validated['loan_dofa']) && empty($memberAdmission->loan_dofa)) {
             return back()->withInput()->withErrors([
                 'loan_dofa' => 'পুরাতন সদস্যের জন্য ঋণের দফা দেওয়া বাধ্যতামূলক।',
             ]);
@@ -1078,10 +1030,15 @@ class MemberAdmissionController extends Controller
             $oldPathsToDelete = [];
 
             $updateData = $validated;
-            if ($memberAdmission->is_legacy) {
+            if ($canChangeMemberType) {
+                $updateData['is_legacy'] = $isLegacy;
+            } else {
+                unset($updateData['is_legacy']);
+            }
+            if ($isLegacy) {
                 $updateData['loan_dofa'] = $validated['loan_dofa'] ?? $memberAdmission->loan_dofa;
             } else {
-                unset($updateData['loan_dofa']);
+                $updateData['loan_dofa'] = null;
             }
             unset($updateData['selected_approvers'], $updateData['family_members'], $updateData['other_assets'], $updateData['draft']);
             if (empty($updateData['application_no'])) {
@@ -1194,7 +1151,7 @@ class MemberAdmissionController extends Controller
 
             $authUser = auth()->user();
             $authUser->loadMissing('role');
-            if ($authUser->role?->name === Role::FIELD_OFFICER) {
+            if (in_array($authUser->role?->name, [Role::FIELD_OFFICER, Role::BRANCH_MANAGER], true)) {
                 $updateData['interviewer_name'] = $updateData['interviewer_name'] ?: $authUser->name;
                 $updateData['employee_name'] = $updateData['employee_name'] ?: ($authUser->pin ?: $authUser->username);
             }
@@ -1209,7 +1166,7 @@ class MemberAdmissionController extends Controller
 
             // Legacy draft: final save (not draft) → auto-approve
             $legacyAutoApproved = false;
-            if ($memberAdmission->is_legacy && !$saveAsDraft && $memberAdmission->isDraft()) {
+            if ($isLegacy && !$saveAsDraft && $memberAdmission->isDraft()) {
                 $updateData['status'] = 'approved';
                 $updateData['submitted_by'] = auth()->id();
                 $updateData['submitted_at'] = now();

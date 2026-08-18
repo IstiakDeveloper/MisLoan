@@ -198,13 +198,16 @@ class MemberAdmission extends Model
         return $this->belongsTo(User::class, 'created_by');
     }
 
+    /**
+     * Who originally created / last owned the record (audit). Visibility is by branch, not this field.
+     */
     public function assignedOfficer(): BelongsTo
     {
         return $this->belongsTo(User::class, 'assigned_officer_id');
     }
 
     /**
-     * Current responsible officer (assigned), falling back to creator for legacy rows.
+     * Creator or assigned officer id — used for audit and leftover handover tooling.
      */
     public function effectiveOfficerId(): ?int
     {

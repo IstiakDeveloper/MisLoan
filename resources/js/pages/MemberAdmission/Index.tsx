@@ -67,27 +67,19 @@ interface Props {
 }
 
 export default function Index({ admissions, filters, stats, workQueue }: Props) {
-    const pageAuth = usePage().props.auth as { user?: { id?: number; role?: { name: string } } } | undefined;
+    const pageAuth = usePage().props.auth as { user?: { role?: { name: string } } } | undefined;
     const roleName = pageAuth?.user?.role?.name?.toLowerCase() || '';
     // Only Branch User can send ready admissions to Head Office (not Branch Manager)
     const isBranchUser = roleName === 'branch_user';
     const isFieldOfficer = roleName === 'field_officer';
-    const currentUserId = pageAuth?.user?.id;
+    const canCreateAdmission = isFieldOfficer || roleName === 'branch_manager';
 
     const canApplyLoan = (admission: MemberAdmission) => {
         if (admission.status === 'rejected') return false;
         if (admission.has_active_loan) return false;
         if (roleName === 'branch_user') return admission.status === 'approved';
         if (!isFieldOfficer) return false;
-        const assignedId =
-            typeof admission.assigned_officer_id === 'object'
-                ? admission.assigned_officer_id?.id
-                : admission.assigned_officer_id ?? admission.assignedOfficer?.id;
-        const creatorId =
-            typeof admission.created_by === 'object'
-                ? admission.created_by?.id
-                : admission.created_by ?? admission.createdBy?.id;
-        return Number(assignedId ?? creatorId) === Number(currentUserId);
+        return true;
     };
 
     const [searchQuery, setSearchQuery] = useState(filters.search || '');
@@ -360,7 +352,7 @@ export default function Index({ admissions, filters, stats, workQueue }: Props) 
                                 <Calendar className="w-4 h-4" />
                                 <span>Today (আজ)</span>
                             </button>
-                            {isFieldOfficer && (
+                            {canCreateAdmission && (
                                 <Link
                                     href="/member-admissions/create"
                                     className="inline-flex items-center justify-center gap-2 px-5 py-3 rounded-2xl bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white text-xs sm:text-sm font-bold shadow-lg shadow-blue-600/30 transition-all active:scale-95"

@@ -16,7 +16,7 @@ import FormPage1 from './FormPage1';
 import FormPage2 from './FormPage2';
 import FormPage3 from './FormPage3';
 import FormPage4 from './FormPage4';
-import PrintPreview from './PrintPreview';
+import PrintPreview, { numberToWordsBangla } from './PrintPreview';
 import { triggerPrintWithAutoFit } from '@/hooks/useAutoFitPrint';
 import { getRequiredSavingsPercent } from '@/components/LoanApplications/GeneralSavingsSection';
 import { afterLoanFormSaveUrl } from '@/utils/loanFormNavigation';
@@ -383,6 +383,10 @@ export default function ApprovalForm({
         final_approved_loan_amount_words: '',
         
         ...(savedData || {}),
+        ...(Number(requestedAmount) > 0 ? {
+            final_approved_loan_amount_digits: String(requestedAmount),
+            final_approved_loan_amount_words: numberToWordsBangla(Number(requestedAmount)) + ' টাকা',
+        } : {}),
         // Draft-এ খালি থাকলে ভর্তি ফর্মের «নিজ» সারি থেকে নিন
         occupation:
             String((savedData as any)?.occupation || '').trim() ||

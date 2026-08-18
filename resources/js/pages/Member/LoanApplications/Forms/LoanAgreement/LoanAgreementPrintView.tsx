@@ -1,5 +1,5 @@
 import React from 'react';
-import { formatDateBangla } from '@/utils/dateUtils';
+import { formatDateBangla, toBanglaDigits, formatBanglaNumber } from '@/utils/dateUtils';
 import { LoanAgreementData } from './Types';
 
 export function LoanAgreementPrintView({ data }: { data: LoanAgreementData }) {
@@ -7,6 +7,8 @@ export function LoanAgreementPrintView({ data }: { data: LoanAgreementData }) {
     const fmt = formatDateBangla;
     const num = (v: any) => (v != null && v !== '' && !isNaN(Number(v)) ? Number(v) : 0);
     const str = (v: any) => (v != null && v !== '' ? String(v) : '');
+    const bn = (v: any) => toBanglaDigits(v);
+    const bnNum = (v: any) => formatBanglaNumber(v);
 
     // Employment stats extraction (supports both self_emp_* and self_* aliases)
     const selfFullFemale = str(d.self_emp_full_female || d.self_full_female);
@@ -22,19 +24,20 @@ export function LoanAgreementPrintView({ data }: { data: LoanAgreementData }) {
     const partTimeTotal = num(selfPartFemale) + num(selfPartMale) + num(wagePartFemale) + num(wagePartMale);
 
     // Calculate service charge percentage rate for terms clause (4)
-    const serviceChargeRate = d.service_charge_rate != null && d.service_charge_rate !== ''
+    const rawRate = d.service_charge_rate != null && d.service_charge_rate !== ''
         ? String(d.service_charge_rate)
         : (d.interest_rate != null && d.interest_rate !== '' && Number(d.interest_rate) > 0
             ? String(d.interest_rate)
             : (num(d.loan_amount) > 0 && num(d.service_charge) > 0
                 ? ((num(d.service_charge) / num(d.loan_amount)) * 100).toFixed(2).replace(/\.00$/, '')
                 : ''));
+    const serviceChargeRate = bn(rawRate);
 
     // Sufolon loans are 6-month lump-sum repayments (1 installment)
     const totalAmount = num(d.total_amount || (num(d.loan_amount) + num(d.service_charge)));
     const catName = `${d.loan_category_name || ''}`.toLowerCase();
     const prodName = `${d.loan_product_name || ''}`.toLowerCase();
-    const isSufolon = catName.includes('sufolon') || catName.includes('সুফলন') || catName.includes('শুফলন') ||
+    const isSufolon = catName.includes('sufolon') || catName.includes('শুফলন') || catName.includes('সুফলন') ||
                       prodName.includes('sufolon') || prodName.includes('সুফলন') || prodName.includes('শুফলন') ||
                       num(d.number_of_installments) === 1;
 
@@ -43,7 +46,7 @@ export function LoanAgreementPrintView({ data }: { data: LoanAgreementData }) {
     const displayLastInstallmentAmount = isSufolon ? totalAmount : (num(d.last_installment_amount) || displayInstallmentAmount);
 
     // Convert mobile number to array of 11 digits for grid boxes
-    const mobileDigits = (str(d.mobile_number) || '').padEnd(11, ' ').slice(0, 11).split('');
+    const mobileDigits = (str(d.mobile_number) || '').padEnd(11, ' ').slice(0, 11).split('').map(ch => bn(ch));
 
     return (
         <div
@@ -97,12 +100,12 @@ export function LoanAgreementPrintView({ data }: { data: LoanAgreementData }) {
                         <p className="flex flex-wrap gap-x-4 gap-y-1">
                             <span>নাম : <span className="border-b border-dotted border-gray-800 px-2 font-bold text-sm">{str(d.member_name_bn)}</span></span>
                             <span>পিতা/স্বামী : <span className="border-b border-dotted border-gray-800 px-2 font-semibold">{str(d.father_husband_name)}</span></span>
-                            <span>সদস্য নং : <span className="border-b border-dotted border-gray-800 px-2 font-bold">{str(d.member_code)}</span></span>
-                            <span>সমিতির কোড নং : <span className="border-b border-dotted border-gray-800 px-2 font-semibold">{str(d.samity_code)}</span></span>
+                            <span>সদস্য নং : <span className="border-b border-dotted border-gray-800 px-2 font-bold">{bn(d.member_code)}</span></span>
+                            <span>সমিতির কোড নং : <span className="border-b border-dotted border-gray-800 px-2 font-semibold">{bn(d.samity_code)}</span></span>
                         </p>
                         <p className="flex flex-wrap gap-x-4 gap-y-1">
                             <span>সমিতির নাম : <span className="border-b border-dotted border-gray-800 px-2 font-semibold">{str(d.samity_name)}</span></span>
-                            <span>মোবাইল নং : <span className="border-b border-dotted border-gray-800 px-2 font-semibold">{str(d.mobile_number)}</span></span>
+                            <span>মোবাইল নং : <span className="border-b border-dotted border-gray-800 px-2 font-semibold">{bn(d.mobile_number)}</span></span>
                             <span>গ্রাম : <span className="border-b border-dotted border-gray-800 px-2 font-semibold">{str(d.village)}</span></span>
                             <span>ডাকঘর : <span className="border-b border-dotted border-gray-800 px-2 font-semibold">{str(d.union)}</span></span>
                         </p>
@@ -114,7 +117,7 @@ export function LoanAgreementPrintView({ data }: { data: LoanAgreementData }) {
                         </p>
                     </div>
                     <p className="mt-2 text-xs sm:text-sm font-medium leading-relaxed">
-                        (১) ১ম পক্ষ ২য় পক্ষকে ঋণ বাবদ <span className="border-b border-dotted border-gray-800 px-3 font-bold text-sm text-green-800">{num(d.loan_amount).toLocaleString('bn-BD')}</span> টাকা নিম্নে উল্লেখিত মেয়াদে এবং চুক্তিতে প্রদান করলেন।
+                        (১) ১ম পক্ষ ২য় পক্ষকে ঋণ বাবদ <span className="border-b border-dotted border-gray-800 px-3 font-bold text-sm text-green-800">{bnNum(d.loan_amount)}</span> টাকা নিম্নে উল্লেখিত মেয়াদে এবং চুক্তিতে প্রদান করলেন।
                     </p>
                 </div>
 
@@ -142,15 +145,15 @@ export function LoanAgreementPrintView({ data }: { data: LoanAgreementData }) {
                         <tbody>
                             <tr className="text-center font-medium h-8">
                                 <td className="border border-black px-1.5 py-1 text-left">{str(d.loan_purpose)}</td>
-                                <td className="border border-black px-1.5 py-1 whitespace-nowrap">{str(d.loan_duration_months)} মাস</td>
+                                <td className="border border-black px-1.5 py-1 whitespace-nowrap">{bn(d.loan_duration_months)} মাস</td>
                                 <td className="border border-black px-1.5 py-1 text-left font-bold whitespace-nowrap">{str(d.member_name_bn)}</td>
-                                <td className="border border-black px-1.5 py-1 font-bold text-green-800 whitespace-nowrap">{num(d.loan_amount).toLocaleString('bn-BD')}</td>
-                                <td className="border border-black px-1.5 py-1 whitespace-nowrap">{num(d.total_amount || d.loan_amount + d.service_charge).toLocaleString('bn-BD')}</td>
+                                <td className="border border-black px-1.5 py-1 font-bold text-green-800 whitespace-nowrap">{bnNum(d.loan_amount)}</td>
+                                <td className="border border-black px-1.5 py-1 whitespace-nowrap">{bnNum(d.total_amount || d.loan_amount + d.service_charge)}</td>
                                 <td className="border border-black px-1.5 py-1 whitespace-nowrap">{fmt(d.disbursement_date)}</td>
                                 <td className="border border-black px-1.5 py-1 whitespace-nowrap">{fmt(d.last_installment_date)}</td>
-                                <td className="border border-black px-1.5 py-1 whitespace-nowrap">{str(displayInstallments)}</td>
-                                <td className="border border-black px-1.5 py-1 whitespace-nowrap">{num(displayInstallmentAmount).toLocaleString('bn-BD')}</td>
-                                <td className="border border-black px-1.5 py-1 whitespace-nowrap">{num(displayLastInstallmentAmount).toLocaleString('bn-BD')}</td>
+                                <td className="border border-black px-1.5 py-1 whitespace-nowrap">{bn(displayInstallments)}</td>
+                                <td className="border border-black px-1.5 py-1 whitespace-nowrap">{bnNum(displayInstallmentAmount)}</td>
+                                <td className="border border-black px-1.5 py-1 whitespace-nowrap">{bnNum(displayLastInstallmentAmount)}</td>
                             </tr>
                         </tbody>
                     </table>
@@ -247,13 +250,13 @@ export function LoanAgreementPrintView({ data }: { data: LoanAgreementData }) {
                 {/* 2. Member & Samity Summary paragraph */}
                 <div className="text-xs sm:text-sm leading-relaxed space-y-1.5 mb-4">
                     <p>
-                        আবেদনকারী <span className="border-b border-dotted border-gray-800 px-2 font-bold text-sm">{str(d.member_name_bn)}</span> সমিতির একজন সক্রিয় সদস্য। উক্ত সমিতির সদস্য সংখ্যা <span className="border-b border-dotted border-gray-800 px-2 font-semibold">{str(d.samity_member_count) || '........'}</span> জন।
+                        আবেদনকারী <span className="border-b border-dotted border-gray-800 px-2 font-bold text-sm">{str(d.member_name_bn)}</span> সমিতির একজন সক্রিয় সদস্য। উক্ত সমিতির সদস্য সংখ্যা <span className="border-b border-dotted border-gray-800 px-2 font-semibold">{bn(d.samity_member_count) || '........'}</span> জন।
                     </p>
                     <p>
-                        বর্তমান ঋণ সংখ্যা <span className="border-b border-dotted border-gray-800 px-2 font-semibold">{str(d.current_loan_count) || '........'}</span> জন। মোট চলতি ঋণ <span className="border-b border-dotted border-gray-800 px-2 font-semibold">{str(d.total_current_loan) || '........'}</span> টাকা। মেয়াদোত্তীর্ণ ঋণ <span className="border-b border-dotted border-gray-800 px-2 font-semibold">{str(d.expired_loan_amount) || '........'}</span> টাকা।
+                        বর্তমান ঋণ সংখ্যা <span className="border-b border-dotted border-gray-800 px-2 font-semibold">{bn(d.current_loan_count) || '........'}</span> জন। মোট চলতি ঋণ <span className="border-b border-dotted border-gray-800 px-2 font-semibold">{bnNum(d.total_current_loan) || '........'}</span> টাকা। মেয়াদোত্তীর্ণ ঋণ <span className="border-b border-dotted border-gray-800 px-2 font-semibold">{bnNum(d.expired_loan_amount) || '........'}</span> টাকা।
                     </p>
                     <p>
-                        মেয়াদোত্তীর্ণ ঋণ গ্রহী সংখ্যা <span className="border-b border-dotted border-gray-800 px-2 font-semibold">{str(d.expired_loan_members) || '........'}</span> জন। চলতি বকেয়া <span className="border-b border-dotted border-gray-800 px-2 font-semibold">{str(d.current_due_amount) || '........'}</span> টাকা, <span className="border-b border-dotted border-gray-800 px-2 font-semibold">{str(d.due_members) || '........'}</span> জন। আদায়ের হার <span className="border-b border-dotted border-gray-800 px-2 font-semibold">{str(d.realization_rate) || '........'}</span>।
+                        মেয়াদোত্তীর্ণ ঋণ গ্রহী সংখ্যা <span className="border-b border-dotted border-gray-800 px-2 font-semibold">{bn(d.expired_loan_members) || '........'}</span> জন। চলতি বকেয়া <span className="border-b border-dotted border-gray-800 px-2 font-semibold">{bnNum(d.current_due_amount) || '........'}</span> টাকা, <span className="border-b border-dotted border-gray-800 px-2 font-semibold">{bn(d.due_members) || '........'}</span> জন। আদায়ের হার <span className="border-b border-dotted border-gray-800 px-2 font-semibold">{bn(d.realization_rate) || '........'}</span>।
                     </p>
                 </div>
 
@@ -318,7 +321,7 @@ export function LoanAgreementPrintView({ data }: { data: LoanAgreementData }) {
                 <div className="space-y-5 text-xs sm:text-sm mb-5">
                     <div className="flex justify-between items-end pt-1">
                         <p>
-                            আবেদনকারীকে <span className="border-b border-dotted border-gray-800 px-4 font-bold text-sm sm:text-base text-green-800">{num(d.loan_amount).toLocaleString('bn-BD')}</span> টাকা ঋণ মঞ্জুর করা যেতে পারে।
+                            আবেদনকারীকে <span className="border-b border-dotted border-gray-800 px-4 font-bold text-sm sm:text-base text-green-800">{bnNum(d.loan_amount)}</span> টাকা ঋণ মঞ্জুর করা যেতে পারে।
                         </p>
                         <p className="font-semibold text-right border-t border-dotted border-gray-800 pt-1 min-w-[200px]">
                             সংশ্লিষ্ট অফিসারের স্বাক্ষর (সিল সহ)
@@ -326,7 +329,7 @@ export function LoanAgreementPrintView({ data }: { data: LoanAgreementData }) {
                     </div>
                     <div className="flex justify-between items-end pt-2">
                         <p>
-                            আবেদনকারীকে <span className="border-b border-dotted border-gray-800 px-4 font-bold text-sm sm:text-base text-green-800">{num(d.loan_amount).toLocaleString('bn-BD')}</span> টাকা ঋণ মঞ্জুর করা হলো।
+                            আবেদনকারীকে <span className="border-b border-dotted border-gray-800 px-4 font-bold text-sm sm:text-base text-green-800">{bnNum(d.loan_amount)}</span> টাকা ঋণ মঞ্জুর করা হলো।
                         </p>
                         <p className="font-semibold text-right border-t border-dotted border-gray-800 pt-1 min-w-[250px]">
                             শাখা ব্যবস্থাপক/আঞ্চলিক ব্যবস্থাপকের স্বাক্ষর (সিল সহ)
@@ -367,19 +370,19 @@ export function LoanAgreementPrintView({ data }: { data: LoanAgreementData }) {
                         <tbody>
                             <tr className="text-center font-medium h-8">
                                 <td className="border border-black px-1.5 py-1 text-left font-semibold">{str(d.loan_category_name) || str(d.loan_product_name)}</td>
-                                <td className="border border-black px-1 py-1">{selfFullFemale || ''}</td>
-                                <td className="border border-black px-1 py-1">{selfFullMale || ''}</td>
-                                <td className="border border-black px-1 py-1">{selfPartFemale || ''}</td>
-                                <td className="border border-black px-1 py-1">{selfPartMale || ''}</td>
-                                <td className="border border-black px-1 py-1">{wageFullFemale || ''}</td>
-                                <td className="border border-black px-1 py-1">{wageFullMale || ''}</td>
-                                <td className="border border-black px-1 py-1">{wagePartFemale || ''}</td>
-                                <td className="border border-black px-1 py-1">{wagePartMale || ''}</td>
+                                <td className="border border-black px-1 py-1">{bn(selfFullFemale) || ''}</td>
+                                <td className="border border-black px-1 py-1">{bn(selfFullMale) || ''}</td>
+                                <td className="border border-black px-1 py-1">{bn(selfPartFemale) || ''}</td>
+                                <td className="border border-black px-1 py-1">{bn(selfPartMale) || ''}</td>
+                                <td className="border border-black px-1 py-1">{bn(wageFullFemale) || ''}</td>
+                                <td className="border border-black px-1 py-1">{bn(wageFullMale) || ''}</td>
+                                <td className="border border-black px-1 py-1">{bn(wagePartFemale) || ''}</td>
+                                <td className="border border-black px-1 py-1">{bn(wagePartMale) || ''}</td>
                                 <td className="border border-black px-1 py-1 font-bold text-sm">
-                                    {fullTimeTotal || ''}
+                                    {bn(fullTimeTotal) || ''}
                                 </td>
                                 <td className="border border-black px-1 py-1 font-bold text-sm">
-                                    {partTimeTotal || ''}
+                                    {bn(partTimeTotal) || ''}
                                 </td>
                             </tr>
                         </tbody>
@@ -395,21 +398,21 @@ export function LoanAgreementPrintView({ data }: { data: LoanAgreementData }) {
                                 {d.credit_officer_signature && <img src={d.credit_officer_signature} alt="Sig" style={{ height: '22px', width: '60px', objectFit: 'contain' }} className="inline-block" />}
                             </span></p>
                             <p>নাম : <span className="border-b border-dotted border-gray-800 inline-block min-w-[140px] font-semibold">{str(d.credit_officer_name)}</span></p>
-                            <p>পিন : <span className="border-b border-dotted border-gray-800 inline-block min-w-[140px] font-semibold">{str(d.credit_officer_pin)}</span></p>
+                            <p>পিন : <span className="border-b border-dotted border-gray-800 inline-block min-w-[140px] font-semibold">{bn(d.credit_officer_pin)}</span></p>
                         </div>
                         <div className="space-y-1.5">
                             <p>হিসাবরক্ষকের স্বাক্ষর : <span className="border-b border-dotted border-gray-800 inline-block min-w-[120px]">
                                 {d.accountant_signature && <img src={d.accountant_signature} alt="Sig" style={{ height: '22px', width: '60px', objectFit: 'contain' }} className="inline-block" />}
                             </span></p>
                             <p>নাম : <span className="border-b border-dotted border-gray-800 inline-block min-w-[140px] font-semibold">{str(d.accountant_name)}</span></p>
-                            <p>পিন : <span className="border-b border-dotted border-gray-800 inline-block min-w-[140px] font-semibold">{str(d.accountant_pin)}</span></p>
+                            <p>পিন : <span className="border-b border-dotted border-gray-800 inline-block min-w-[140px] font-semibold">{bn(d.accountant_pin)}</span></p>
                         </div>
                         <div className="space-y-1.5">
                             <p>ব্যবস্থাপকের স্বাক্ষর : <span className="border-b border-dotted border-gray-800 inline-block min-w-[120px]">
                                 {d.branch_manager_signature && <img src={d.branch_manager_signature} alt="Sig" style={{ height: '22px', width: '60px', objectFit: 'contain' }} className="inline-block" />}
                             </span></p>
                             <p>নাম : <span className="border-b border-dotted border-gray-800 inline-block min-w-[140px] font-semibold">{str(d.branch_manager_name)}</span></p>
-                            <p>পিন : <span className="border-b border-dotted border-gray-800 inline-block min-w-[140px] font-semibold">{str(d.branch_manager_pin)}</span></p>
+                            <p>পিন : <span className="border-b border-dotted border-gray-800 inline-block min-w-[140px] font-semibold">{bn(d.branch_manager_pin)}</span></p>
                         </div>
                     </div>
                 </div>

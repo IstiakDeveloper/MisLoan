@@ -86,9 +86,28 @@ export function toInputDateValue(value: string | Date | null | undefined): strin
     return `${year}-${month}-${day}`;
 }
 
-export function todayInputValue(): string {
-    return toInputDateValue(new Date());
+const banglaDigitsMap: Record<string, string> = {
+    '0': '০', '1': '১', '2': '২', '3': '৩', '4': '৪',
+    '5': '৫', '6': '৬', '7': '৭', '8': '৮', '9': '৯',
+};
+
+/** Convert English digits to Bengali digits */
+export function toBanglaDigits(value: string | number | null | undefined): string {
+    if (value == null || value === '') return '';
+    return String(value).replace(/[0-9]/g, (d) => banglaDigitsMap[d] ?? d);
 }
 
-/** Alias used in Bengali loan/savings forms */
-export const formatDateBangla = formatDate;
+/** Convert numbers with comma format to Bangla digits e.g. 100000 -> ১,০০,০০০ */
+export function formatBanglaNumber(value: number | string | null | undefined): string {
+    if (value == null || value === '' || isNaN(Number(value))) return '';
+    const num = Number(value);
+    const formattedEn = new Intl.NumberFormat('en-IN').format(num);
+    return toBanglaDigits(formattedEn);
+}
+
+/** Convert date to dd/mm/YYYY with Bengali digits (e.g. ১৮/০৮/২০২৬) */
+export function formatDateBangla(value: string | Date | null | undefined, fallback = '-'): string {
+    const formatted = formatDate(value, fallback);
+    if (!formatted || formatted === fallback) return fallback;
+    return toBanglaDigits(formatted);
+}

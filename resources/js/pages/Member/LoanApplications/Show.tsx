@@ -24,6 +24,12 @@ import {
     Activity,
     Info,
     ShieldCheck,
+    ZoomIn,
+    ZoomOut,
+    Smartphone,
+    Monitor,
+    MoveHorizontal,
+    RotateCcw,
 } from 'lucide-react';
 import GuarantorCommitment from './Forms/GuarantorCommitment';
 import DeathRiskFund from './Forms/DeathRiskFund';
@@ -38,6 +44,10 @@ interface LoanApplication {
     status: string;
     requested_amount: number;
     approved_amount: number | null;
+    disbursed_amount?: number | null;
+    disbursed_at?: string | null;
+    disbursement_method?: string | null;
+    disbursement_reference?: string | null;
     installment_amount: number | null;
     number_of_installments: number;
     repayment_frequency: string;
@@ -212,6 +222,21 @@ export default function Show({ application, routes }: Props) {
     const [newMemberCode, setNewMemberCode] = useState<string>(application.member_admission?.application_no || '');
     const [submittingMemberCode, setSubmittingMemberCode] = useState(false);
 
+    // Disbursement Modal State
+    const maxDisburseAmount =
+        application.approved_amount != null && Number(application.approved_amount) > 0
+            ? Number(application.approved_amount)
+            : Number(application.requested_amount || 0);
+
+    const [disburseModalOpen, setDisburseModalOpen] = useState(false);
+    const [disburseAmount, setDisburseAmount] = useState<string>(
+        String(application.disbursed_amount || maxDisburseAmount || '')
+    );
+    const [disbursementMethod, setDisbursementMethod] = useState<string>(application.disbursement_method || 'cash');
+    const [disbursementReference, setDisbursementReference] = useState<string>(application.disbursement_reference || '');
+    const [submittingDisburse, setSubmittingDisburse] = useState(false);
+    const [disburseError, setDisburseError] = useState<string | null>(null);
+
     const searchParams = new URLSearchParams(typeof window !== 'undefined' ? window.location.search : '');
     const initialForm = Number(searchParams.get('form') || searchParams.get('step') || '');
     const initialTabParam = searchParams.get('tab');
@@ -229,19 +254,30 @@ export default function Show({ application, routes }: Props) {
     const [printBlank, setPrintBlank] = useState(false);
     const formPrintRef = useRef<HTMLDivElement>(null);
 
+    // Responsive Document Viewer Scaling State
+    const previewContainerRef = useRef<HTMLDivElement>(null);
+    const previewDocRef = useRef<HTMLDivElement>(null);
+    const [previewScaleMode, setPreviewScaleMode] = useState<'fit' | '100' | 'custom'>('fit');
+    const [zoomLevel, setZoomLevel] = useState<number>(100);
+    const [computedScale, setComputedScale] = useState<number>(1);
+    const [scaledContainerHeight, setScaledContainerHeight] = useState<number | undefined>(undefined);
+
     const visibleFormIds = application.visible_form_ids || [1, 2, 3, 4, 5];
     const fillableFormIds = application.editable_form_ids ?? [];
     const formSaved = application.form_saved ?? {};
 
+    const effectiveBaseAmount =
+        application.disbursed_amount != null && Number(application.disbursed_amount) > 0
+            ? application.disbursed_amount
+            : (application.approved_amount != null && Number(application.approved_amount) > 0
+                ? application.approved_amount
+                : application.requested_amount);
+
     const buildFormUrl = (formId: number) => {
         const route = FORM_ROUTES[formId];
         if (!route) return '#';
-        const effectiveAmount =
-            application.approved_amount != null && Number(application.approved_amount) > 0
-                ? application.approved_amount
-                : application.requested_amount;
         const params = new URLSearchParams({
-            amount: String(effectiveAmount),
+            amount: String(effectiveBaseAmount),
         });
         const memberId = application.member_admission?.id;
         if (memberId) params.set('member_id', String(memberId));
@@ -304,10 +340,7 @@ export default function Show({ application, routes }: Props) {
         }
     };
 
-    const previewAmount =
-        application.approved_amount != null && Number(application.approved_amount) > 0
-            ? Number(application.approved_amount)
-            : Number(application.requested_amount);
+    const previewAmount = Number(effectiveBaseAmount);
 
     const canFillSelected = selectedFormId != null && fillableFormIds.includes(selectedFormId);
     const selectedSaved = selectedFormId != null && isFormSaved(selectedFormId);
@@ -329,6 +362,61 @@ export default function Show({ application, routes }: Props) {
         setFillMode(false);
         setPrintBlank(false);
     }, [selectedFormId]);
+
+    // Responsive Document Auto-Fitting and Zoom Calculation for Mobile & Tablet screens
+    useEffect(() => {
+        const container = previewContainerRef.current;
+        const doc = previewDocRef.current;
+        if (!container || !doc) return;
+
+        const calculateScale = () => {
+            if (typeof window !== 'undefined' && window.matchMedia('print').matches) {
+                setComputedScale(1);
+                setScaledContainerHeight(undefined);
+                return;
+            }
+
+            const containerWidth = container.clientWidth || window.innerWidth;
+            // Standard A4 width is ~794px
+            const docNaturalWidth = Math.max(doc.scrollWidth, doc.offsetWidth, 794);
+            const docNaturalHeight = Math.max(doc.scrollHeight, doc.offsetHeight, 1);
+
+            // Container width available minus responsive padding
+            const usableWidth = Math.max(containerWidth - 12, 260);
+            const autoFitScale = Math.min(1, usableWidth / docNaturalWidth);
+
+            let finalScale = 1;
+            if (previewScaleMode === 'fit') {
+                finalScale = Math.max(0.28, autoFitScale);
+            } else if (previewScaleMode === '100') {
+                finalScale = 1;
+            } else {
+                finalScale = Math.max(0.3, Math.min(2.0, zoomLevel / 100));
+            }
+
+            setComputedScale(finalScale);
+            if (finalScale < 0.999) {
+                setScaledContainerHeight(docNaturalHeight * finalScale + 24);
+            } else {
+                setScaledContainerHeight(undefined);
+            }
+        };
+
+        const ro = new ResizeObserver(() => calculateScale());
+        ro.observe(container);
+        ro.observe(doc);
+        window.addEventListener('resize', calculateScale);
+        calculateScale();
+        const t1 = setTimeout(calculateScale, 60);
+        const t2 = setTimeout(calculateScale, 250);
+
+        return () => {
+            ro.disconnect();
+            window.removeEventListener('resize', calculateScale);
+            clearTimeout(t1);
+            clearTimeout(t2);
+        };
+    }, [selectedFormId, activeTab, previewScaleMode, zoomLevel, fillMode, printBlank]);
 
     // Top-Level Dedicated Print Portal Setup (Guarantees zero blank print output)
     useEffect(() => {
@@ -434,6 +522,47 @@ export default function Show({ application, routes }: Props) {
                 onFinish: () => {
                     setSubmittingMemberCode(false);
                     setMemberCodeModalOpen(false);
+                },
+            }
+        );
+    };
+
+    const handleDisburseSubmit = (e: React.FormEvent) => {
+        e.preventDefault();
+        const amt = parseFloat(disburseAmount);
+        if (isNaN(amt) || amt <= 0) {
+            setDisburseError('অনুগ্রহ করে সঠিক বিতরণ পরিমাণ লিখুন।');
+            return;
+        }
+        if (amt > maxDisburseAmount) {
+            setDisburseError(
+                `বিতরণকৃত ঋণের পরিমাণ অনুমোদিত ঋণের (৳${maxDisburseAmount.toLocaleString('bn-BD')}) চেয়ে বেশি হতে পারবে না।`
+            );
+            return;
+        }
+        setDisburseError(null);
+        setSubmittingDisburse(true);
+        router.patch(
+            routes.disburse!,
+            {
+                disbursed_amount: amt,
+                disbursement_method: disbursementMethod,
+                disbursement_reference: disbursementReference.trim() || undefined,
+            },
+            {
+                preserveScroll: true,
+                onSuccess: () => {
+                    setDisburseModalOpen(false);
+                },
+                onError: (errs) => {
+                    if (errs.error) {
+                        setDisburseError(errs.error);
+                    } else if (errs.disbursed_amount) {
+                        setDisburseError(errs.disbursed_amount);
+                    }
+                },
+                onFinish: () => {
+                    setSubmittingDisburse(false);
                 },
             }
         );
@@ -653,6 +782,20 @@ export default function Show({ application, routes }: Props) {
         <AdminLayout>
             <Head title={`ঋণ আবেদন - ${application.application_no}`}>
                 <style>{`
+                    @media screen {
+                        .responsive-doc-viewport {
+                            -webkit-overflow-scrolling: touch;
+                        }
+                        .responsive-doc-viewport::-webkit-scrollbar {
+                            height: 6px;
+                            width: 6px;
+                        }
+                        .responsive-doc-viewport::-webkit-scrollbar-thumb {
+                            background: #cbd5e1;
+                            border-radius: 4px;
+                        }
+                    }
+
                     @media print {
                         @page { size: A4 portrait; margin: 12mm 15mm; }
                         html, body {
@@ -708,6 +851,26 @@ export default function Show({ application, routes }: Props) {
 
                         #dedicated-print-portal .agrosor-a4-page + .agrosor-a4-page {
                             page-break-before: always;
+                        }
+
+                        .responsive-doc-viewport {
+                            height: auto !important;
+                            overflow: visible !important;
+                            padding: 0 !important;
+                            margin: 0 !important;
+                            background: white !important;
+                        }
+
+                        .responsive-doc-scaler,
+                        .form-print-area,
+                        .print-container {
+                            transform: none !important;
+                            width: 100% !important;
+                            min-width: 0 !important;
+                            max-width: 100% !important;
+                            margin: 0 !important;
+                            padding: 0 !important;
+                            box-shadow: none !important;
                         }
 
                         body:not(.is-printing-document) body * { 
@@ -820,9 +983,9 @@ export default function Show({ application, routes }: Props) {
                                     <Button
                                         className="w-full sm:w-auto bg-emerald-600 hover:bg-emerald-700 text-white shadow-xs font-semibold rounded-xl text-xs sm:text-sm h-9 sm:h-10"
                                         onClick={() => {
-                                            if (confirm('ঋণ বিতরণ করতে চান?')) {
-                                                router.patch(routes.disburse!);
-                                            }
+                                            setDisburseAmount(String(application.disbursed_amount || maxDisburseAmount));
+                                            setDisburseError(null);
+                                            setDisburseModalOpen(true);
                                         }}
                                     >
                                         <CheckCircle2 className="w-4 h-4 mr-1.5" />
@@ -942,15 +1105,22 @@ export default function Show({ application, routes }: Props) {
                         </div>
 
                         <div className="bg-white p-3 sm:p-3.5 rounded-xl border border-slate-200/80 shadow-xs flex items-center gap-2.5 sm:gap-3">
-                            <div className="p-2 sm:p-2.5 bg-emerald-50 text-emerald-600 rounded-xl shrink-0">
+                            <div className={`p-2 sm:p-2.5 ${application.status === 'disbursed' ? 'bg-emerald-100 text-emerald-700' : 'bg-emerald-50 text-emerald-600'} rounded-xl shrink-0`}>
                                 <Banknote className="w-4 h-4 sm:w-5 sm:h-5" />
                             </div>
                             <div className="min-w-0">
-                                <p className="text-[10px] sm:text-[11px] font-semibold uppercase tracking-wider text-slate-400">আবেদিত / অনুমোদিত</p>
-                                <p className="text-xs sm:text-sm font-bold text-emerald-700 truncate">
-                                    ৳{Number(application.requested_amount || 0).toLocaleString('bn-BD')}
+                                <p className="text-[10px] sm:text-[11px] font-semibold uppercase tracking-wider text-slate-400">
+                                    {application.status === 'disbursed' ? 'বিতরণকৃত ঋণ' : 'আবেদিত / অনুমোদিত'}
                                 </p>
-                                {application.approved_amount != null && (
+                                <p className="text-xs sm:text-sm font-bold text-emerald-700 truncate">
+                                    ৳{Number(application.disbursed_amount ?? application.approved_amount ?? application.requested_amount ?? 0).toLocaleString('bn-BD')}
+                                </p>
+                                {application.status === 'disbursed' && application.approved_amount != null && (
+                                    <p className="text-[10px] sm:text-xs text-slate-500 truncate">
+                                        অনুমোদিত ছিল: ৳{Number(application.approved_amount).toLocaleString('bn-BD')}
+                                    </p>
+                                )}
+                                {application.status !== 'disbursed' && application.approved_amount != null && (
                                     <p className="text-[10px] sm:text-xs text-slate-500 truncate">
                                         অনুমোদিত: ৳{Number(application.approved_amount).toLocaleString('bn-BD')}
                                     </p>
@@ -1212,8 +1382,8 @@ export default function Show({ application, routes }: Props) {
                                         </div>
 
                                         {/* Embedded Editor or Form Document Preview */}
-                                        <div className="p-3 sm:p-6 bg-slate-100/30 overflow-x-auto">
-                                            {showEmbeddedFill && selectedFormId === 2 ? (
+                                        {showEmbeddedFill && selectedFormId === 2 ? (
+                                            <div className="p-3 sm:p-6 bg-slate-50/50">
                                                 <GuarantorCommitment
                                                     embedded
                                                     saveButtonLabel="সংরক্ষণ করুন"
@@ -1226,7 +1396,9 @@ export default function Show({ application, routes }: Props) {
                                                     existingApplication={application}
                                                     savedData={application.guarantor_info}
                                                 />
-                                            ) : showEmbeddedFill && selectedFormId === 3 ? (
+                                            </div>
+                                        ) : showEmbeddedFill && selectedFormId === 3 ? (
+                                            <div className="p-3 sm:p-6 bg-slate-50/50">
                                                 <DeathRiskFund
                                                     embedded
                                                     saveButtonLabel="সংরক্ষণ করুন"
@@ -1239,12 +1411,108 @@ export default function Show({ application, routes }: Props) {
                                                     existingApplication={application}
                                                     savedData={application.nominee_info}
                                                 />
-                                            ) : (
-                                                <div ref={formPrintRef} className="form-print-area print-container printable-area space-y-3 text-sm min-w-full overflow-x-auto p-1 sm:p-0">
-                                                    {renderFormPreview(selectedFormId, useBlankPreview)}
+                                            </div>
+                                        ) : (
+                                            <div>
+                                                {/* Mobile / Screen Document Viewer Controller Bar */}
+                                                <div className="bg-slate-100/90 border-b border-slate-200 px-3 sm:px-6 py-2 flex flex-wrap items-center justify-between gap-2 text-xs print:hidden">
+                                                    <div className="flex items-center gap-1.5 sm:gap-2">
+                                                        <span className="font-bold text-slate-700 text-[11px] sm:text-xs">ভিউ মোড:</span>
+                                                        <div className="inline-flex rounded-lg bg-white p-0.5 border border-slate-200 shadow-2xs">
+                                                            <button
+                                                                type="button"
+                                                                onClick={() => {
+                                                                    setPreviewScaleMode('fit');
+                                                                }}
+                                                                className={`px-2.5 py-1 rounded-md text-xs font-semibold flex items-center gap-1 transition ${
+                                                                    previewScaleMode === 'fit'
+                                                                        ? 'bg-indigo-600 text-white shadow-2xs'
+                                                                        : 'text-slate-600 hover:text-slate-900 hover:bg-slate-50'
+                                                                }`}
+                                                                title="স্ক্রিনের প্রস্থ অনুযায়ী সম্পূর্ণ ফর্ম ফিট করুন"
+                                                            >
+                                                                <Smartphone className="w-3.5 h-3.5" />
+                                                                <span>মোবাইল ফিট</span>
+                                                            </button>
+                                                            <button
+                                                                type="button"
+                                                                onClick={() => {
+                                                                    setPreviewScaleMode('100');
+                                                                    setZoomLevel(100);
+                                                                }}
+                                                                className={`px-2.5 py-1 rounded-md text-xs font-semibold flex items-center gap-1 transition ${
+                                                                    previewScaleMode === '100'
+                                                                        ? 'bg-indigo-600 text-white shadow-2xs'
+                                                                        : 'text-slate-600 hover:text-slate-900 hover:bg-slate-50'
+                                                                }`}
+                                                                title="প্রকৃত ১০০% প্রিন্ট সাইজে দেখুন"
+                                                            >
+                                                                <Monitor className="w-3.5 h-3.5" />
+                                                                <span>১০০% সাইজ</span>
+                                                            </button>
+                                                        </div>
+                                                    </div>
+
+                                                    {/* Zoom Controls & Touch Hint */}
+                                                    <div className="flex items-center gap-1.5 ml-auto sm:ml-0">
+                                                        {computedScale > 0.99 && (
+                                                            <span className="text-[10px] sm:text-[11px] text-slate-500 hidden md:inline-flex items-center gap-1 mr-1">
+                                                                <MoveHorizontal className="w-3 h-3 text-slate-400" /> ডানে-বামে স্ক্রল করা যাবে
+                                                            </span>
+                                                        )}
+                                                        <button
+                                                            type="button"
+                                                            onClick={() => {
+                                                                setPreviewScaleMode('custom');
+                                                                setZoomLevel((z) => Math.max(35, Math.round((computedScale * 100) - 10)));
+                                                            }}
+                                                            className="p-1 rounded-md bg-white border border-slate-200 text-slate-700 hover:bg-slate-50 transition shadow-2xs"
+                                                            title="জুম আউট"
+                                                        >
+                                                            <ZoomOut className="w-3.5 h-3.5" />
+                                                        </button>
+                                                        <span className="font-mono text-[11px] font-bold text-slate-700 min-w-[44px] text-center bg-white px-1.5 py-0.5 rounded border border-slate-200 shadow-2xs">
+                                                            {Math.round(computedScale * 100)}%
+                                                        </span>
+                                                        <button
+                                                            type="button"
+                                                            onClick={() => {
+                                                                setPreviewScaleMode('custom');
+                                                                setZoomLevel((z) => Math.min(160, Math.round((computedScale * 100) + 10)));
+                                                            }}
+                                                            className="p-1 rounded-md bg-white border border-slate-200 text-slate-700 hover:bg-slate-50 transition shadow-2xs"
+                                                            title="জুম ইন"
+                                                        >
+                                                            <ZoomIn className="w-3.5 h-3.5" />
+                                                        </button>
+                                                    </div>
                                                 </div>
-                                            )}
-                                        </div>
+
+                                                {/* Scaled Responsive Document Preview Area */}
+                                                <div
+                                                    ref={previewContainerRef}
+                                                    className="responsive-doc-viewport p-2 sm:p-5 bg-slate-100/50 overflow-x-auto overflow-y-hidden relative flex justify-center print:p-0 print:m-0 print:bg-white print:overflow-visible print:h-auto print:block"
+                                                    style={{
+                                                        height: scaledContainerHeight ? `${scaledContainerHeight}px` : 'auto',
+                                                    }}
+                                                >
+                                                    <div
+                                                        ref={previewDocRef}
+                                                        style={{
+                                                            width: '794px',
+                                                            minWidth: '794px',
+                                                            transform: computedScale < 0.999 || previewScaleMode === 'custom' ? `scale(${computedScale})` : 'none',
+                                                            transformOrigin: 'top center',
+                                                        }}
+                                                        className="responsive-doc-scaler form-print-area print-container printable-area shadow-xs rounded-lg overflow-visible bg-white print:shadow-none print:rounded-none print:transform-none print:w-full print:min-w-0 print:m-0 print:p-0"
+                                                    >
+                                                        <div ref={formPrintRef}>
+                                                            {renderFormPreview(selectedFormId, useBlankPreview)}
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        )}
                                     </div>
                                 )}
                             </div>
@@ -1335,6 +1603,24 @@ export default function Show({ application, routes }: Props) {
                                             <div className="flex justify-between py-1.5 border-b border-slate-100">
                                                 <span className="text-slate-500">অনুমোদিত পরিমাণ:</span>
                                                 <span className="font-bold text-emerald-700">৳{Number(application.approved_amount).toLocaleString('bn-BD')}</span>
+                                            </div>
+                                        )}
+                                        {application.disbursed_amount != null && (
+                                            <div className="flex justify-between py-1.5 border-b border-slate-100 bg-emerald-50/70 px-2 rounded-lg -mx-2">
+                                                <span className="font-semibold text-emerald-900">প্রকৃত বিতরণ পরিমাণ:</span>
+                                                <span className="font-black text-emerald-700">৳{Number(application.disbursed_amount).toLocaleString('bn-BD')}</span>
+                                            </div>
+                                        )}
+                                        {application.disbursement_method && (
+                                            <div className="flex justify-between py-1.5 border-b border-slate-100">
+                                                <span className="text-slate-500">বিতরণ মাধ্যম:</span>
+                                                <span className="font-semibold text-slate-800 uppercase">{application.disbursement_method}</span>
+                                            </div>
+                                        )}
+                                        {application.disbursement_reference && (
+                                            <div className="flex justify-between py-1.5 border-b border-slate-100">
+                                                <span className="text-slate-500">রেফারেন্স / ভাউচার নং:</span>
+                                                <span className="font-mono text-slate-800">{application.disbursement_reference}</span>
                                             </div>
                                         )}
                                         <div className="flex justify-between py-1.5 border-b border-slate-100">
@@ -1587,6 +1873,130 @@ export default function Show({ application, routes }: Props) {
                                     disabled={issueAction === 'resolve' ? resolveForm.processing : rejectForm.processing}
                                 >
                                     {issueAction === 'resolve' ? 'সমাধান সংরক্ষণ' : 'অস্বীকার সংরক্ষণ'}
+                                </Button>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+            )}
+            {/* Disbursement Confirmation Modal */}
+            {disburseModalOpen && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-xs p-4 print:hidden">
+                    <div className="w-full max-w-lg rounded-2xl bg-white shadow-2xl overflow-hidden border border-slate-200 animate-in fade-in zoom-in-95 duration-150">
+                        <div className="border-b px-5 py-4 bg-gradient-to-r from-emerald-600 to-teal-700 text-white flex items-center justify-between">
+                            <div>
+                                <h3 className="text-base font-bold flex items-center gap-2">
+                                    <CheckCircle2 className="w-5 h-5 text-emerald-200" /> ঋণ বিতরণ নিশ্চিতকরণ
+                                </h3>
+                                <p className="text-xs text-emerald-100 mt-0.5">আবেদন নং: {application.application_no}</p>
+                            </div>
+                            <button
+                                type="button"
+                                onClick={() => setDisburseModalOpen(false)}
+                                className="text-white/80 hover:text-white p-1 rounded-lg hover:bg-white/10 transition"
+                            >
+                                <XCircle className="w-5 h-5" />
+                            </button>
+                        </div>
+                        <form onSubmit={handleDisburseSubmit} className="p-5 space-y-4">
+                            {/* Member & Approved Info summary box */}
+                            <div className="bg-slate-50 border border-slate-200/80 rounded-xl p-3.5 space-y-2 text-xs">
+                                <div className="flex justify-between items-center">
+                                    <span className="text-slate-500 font-medium">সদস্যের নাম:</span>
+                                    <span className="font-bold text-slate-800">{memberName}</span>
+                                </div>
+                                <div className="flex justify-between items-center">
+                                    <span className="text-slate-500 font-medium">অনুমোদিত ঋণ পরিমাণ:</span>
+                                    <span className="font-bold text-emerald-700 text-sm">
+                                        ৳{maxDisburseAmount.toLocaleString('bn-BD')}
+                                    </span>
+                                </div>
+                            </div>
+
+                            {/* Disbursed Amount Input */}
+                            <div>
+                                <label className="block text-xs font-bold text-slate-700 mb-1">
+                                    প্রকৃত বিতরণকৃত ঋণের পরিমাণ (টাকা): <span className="text-rose-500">*</span>
+                                </label>
+                                <div className="relative">
+                                    <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400 font-bold">৳</span>
+                                    <input
+                                        type="number"
+                                        min="1"
+                                        max={maxDisburseAmount}
+                                        step="any"
+                                        value={disburseAmount}
+                                        onChange={(e) => {
+                                            const val = e.target.value;
+                                            setDisburseAmount(val);
+                                            const num = parseFloat(val);
+                                            if (!isNaN(num) && num > maxDisburseAmount) {
+                                                setDisburseError(`অনুমোদিত ঋণের চেয়ে বেশি (সর্বোচ্চ ৳${maxDisburseAmount.toLocaleString('bn-BD')}) দেওয়া যাবে না`);
+                                            } else {
+                                                setDisburseError(null);
+                                            }
+                                        }}
+                                        className="w-full rounded-xl border border-slate-300 pl-8 pr-3.5 py-2.5 text-base focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20 font-black text-emerald-700 shadow-xs"
+                                        placeholder="টাকার পরিমাণ লিখুন"
+                                        required
+                                    />
+                                </div>
+                                {disburseError ? (
+                                    <p className="text-xs text-rose-600 font-semibold mt-1.5 flex items-center gap-1">
+                                        <AlertCircle className="w-3.5 h-3.5 shrink-0" />
+                                        {disburseError}
+                                    </p>
+                                ) : (
+                                    <p className="text-[11px] text-slate-500 mt-1.5 leading-relaxed">
+                                        💡 সদস্য কম টাকা নিতে চাইলে এখানে পরিমাণ কমিয়ে দিন। এটি সেভ হলে সংশ্লিষ্ট সকল ফর্ম ও কিস্তির হিসাব স্বয়ংক্রিয়ভাবে আপডেট হবে।
+                                    </p>
+                                )}
+                            </div>
+
+                            {/* Disbursement Method & Reference */}
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
+                                <div>
+                                    <label className="block text-xs font-bold text-slate-700 mb-1">বিতরণ মাধ্যম:</label>
+                                    <select
+                                        value={disbursementMethod}
+                                        onChange={(e) => setDisbursementMethod(e.target.value)}
+                                        className="w-full rounded-xl border border-slate-300 px-3 py-2 text-xs sm:text-sm focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20 bg-white"
+                                    >
+                                        <option value="cash">নগদ (Cash)</option>
+                                        <option value="bank">ব্যাংক একাউন্ট (Bank)</option>
+                                        <option value="bkash">বিকাশ (bKash)</option>
+                                        <option value="nagad">নগদ (Nagad)</option>
+                                        <option value="other">অন্যান্য (Other)</option>
+                                    </select>
+                                </div>
+                                <div>
+                                    <label className="block text-xs font-bold text-slate-700 mb-1">ভাউচার / চেক / রেফারেন্স নং:</label>
+                                    <input
+                                        type="text"
+                                        value={disbursementReference}
+                                        onChange={(e) => setDisbursementReference(e.target.value)}
+                                        className="w-full rounded-xl border border-slate-300 px-3 py-2 text-xs sm:text-sm focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20"
+                                        placeholder="ঐচ্ছিক রেফারেন্স"
+                                    />
+                                </div>
+                            </div>
+
+                            <div className="flex justify-end gap-2 pt-3 border-t">
+                                <Button
+                                    type="button"
+                                    variant="outline"
+                                    className="rounded-xl text-xs"
+                                    onClick={() => setDisburseModalOpen(false)}
+                                    disabled={submittingDisburse}
+                                >
+                                    বাতিল
+                                </Button>
+                                <Button
+                                    type="submit"
+                                    className="bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold shadow-xs px-4"
+                                    disabled={submittingDisburse || !!disburseError || !disburseAmount || parseFloat(disburseAmount) <= 0 || parseFloat(disburseAmount) > maxDisburseAmount}
+                                >
+                                    {submittingDisburse ? 'বিতরণ হচ্ছে...' : 'বিতরণ নিশ্চিত করুন'}
                                 </Button>
                             </div>
                         </form>

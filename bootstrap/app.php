@@ -1,7 +1,6 @@
 <?php
 
 use App\Http\Middleware\EnsureProfileComplete;
-use App\Http\Middleware\EnsurePortfolioHandoverComplete;
 use App\Http\Middleware\HandleAppearance;
 use App\Http\Middleware\HandleInertiaRequests;
 use App\Http\Middleware\NormalizeInertiaAmounts;
@@ -33,12 +32,10 @@ return Application::configure(basePath: dirname(__DIR__))
             NormalizeInertiaAmounts::class,
             AddLinkHeadersForPreloadedAssets::class,
             CheckMaintenanceMode::class,
-            EnsurePortfolioHandoverComplete::class,
         ]);
 
         $middleware->alias([
             'ensure.profile.complete' => EnsureProfileComplete::class,
-            'ensure.portfolio.handover' => EnsurePortfolioHandoverComplete::class,
             'role' => CheckRole::class,
             'permission' => CheckPermission::class,
             'branch.user' => CheckBranchUser::class,

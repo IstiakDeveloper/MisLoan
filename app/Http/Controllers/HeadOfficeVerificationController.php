@@ -62,14 +62,6 @@ class HeadOfficeVerificationController extends Controller
 
         $this->applyAccessibleBranchScope($admissionQuery);
 
-        // Field Officer: only own applications
-        if ($roleName === 'field_officer') {
-            $admissionQuery->where(function ($q) use ($authUser) {
-                $q->where('created_by', $authUser->id)
-                  ->orWhere('submitted_by', $authUser->id);
-            });
-        }
-
         // Date filter - checks latest action / submission / issue / reply / returned dates
         if ($dateFrom && $dateTo) {
             $admissionQuery->where(function ($q) use ($startOfDay, $endOfDay) {
@@ -158,11 +150,6 @@ class HeadOfficeVerificationController extends Controller
         });
 
         $this->applyAccessibleBranchScope($loanQuery);
-
-        // Field Officer: only own applications
-        if ($roleName === 'field_officer') {
-            $loanQuery->where('submitted_by', $authUser->id);
-        }
 
         // Date filter - checks latest action / submission / issue / reply dates
         if ($dateFrom && $dateTo) {

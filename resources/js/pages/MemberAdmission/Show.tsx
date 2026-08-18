@@ -65,19 +65,9 @@ export default function Show({ admission, auth }: Props) {
     // Only Branch User can send ready admissions to Head Office (not Branch Manager)
     const isBranchUser = roleName === 'branch_user';
     const isFieldOfficer = roleName === 'field_officer';
-    const assignedOfficerId =
-        typeof admission.assigned_officer_id === 'object'
-            ? admission.assigned_officer_id?.id
-            : admission.assigned_officer_id ?? (admission as { assignedOfficer?: { id?: number } }).assignedOfficer?.id;
-    const creatorId =
-        typeof admission.created_by === 'object'
-            ? admission.created_by?.id
-            : admission.created_by ?? admission.createdBy?.id;
     const canApplyLoan =
         admission.status === 'approved' &&
-        (roleName === 'branch_user' ||
-            (isFieldOfficer &&
-                Number(assignedOfficerId ?? creatorId) === Number(pageAuth?.user?.id)));
+        (roleName === 'branch_user' || isFieldOfficer);
     const backUrl = isHeadOffice ? '/head-office/admission-members' : '/member-admissions';
 
     const [activeTab, setActiveTab] = useState<'form' | 'attachments' | 'approvals'>('form');

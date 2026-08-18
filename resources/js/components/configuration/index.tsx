@@ -263,6 +263,35 @@ export function LocalPagination({
     const from = (currentPage - 1) * perPage + 1;
     const to = Math.min(currentPage * perPage, totalItems);
 
+    // Compute visible numbered page buttons
+    const getPageNumbers = () => {
+        const pages: (number | string)[] = [];
+        if (totalPages <= 7) {
+            for (let i = 1; i <= totalPages; i++) pages.push(i);
+        } else {
+            if (currentPage <= 4) {
+                for (let i = 1; i <= 5; i++) pages.push(i);
+                pages.push('...');
+                pages.push(totalPages);
+            } else if (currentPage >= totalPages - 3) {
+                pages.push(1);
+                pages.push('...');
+                for (let i = totalPages - 4; i <= totalPages; i++) pages.push(i);
+            } else {
+                pages.push(1);
+                pages.push('...');
+                pages.push(currentPage - 1);
+                pages.push(currentPage);
+                pages.push(currentPage + 1);
+                pages.push('...');
+                pages.push(totalPages);
+            }
+        }
+        return pages;
+    };
+
+    const pages = getPageNumbers();
+
     return (
         <div className="flex flex-col gap-3 border-t border-slate-200 bg-slate-50/70 px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
             <div className="flex flex-col items-center gap-4 sm:flex-row sm:gap-6">
@@ -286,29 +315,51 @@ export function LocalPagination({
                     </div>
                 )}
             </div>
-            <div className="flex items-center gap-1">
+            <nav className="flex max-w-full items-center gap-1 overflow-x-auto" aria-label="Pagination">
                 <button
                     type="button"
                     aria-label="Previous page"
                     onClick={() => onPageChange(currentPage - 1)}
                     disabled={currentPage === 1}
-                    className="flex size-9 items-center justify-center rounded-lg border border-slate-300 bg-white text-slate-600 hover:bg-slate-100 focus:ring-4 focus:ring-blue-100 focus:outline-none disabled:pointer-events-none disabled:opacity-40"
+                    className="inline-flex size-9 items-center justify-center rounded-lg border border-slate-300 bg-white text-slate-600 hover:bg-slate-100 focus:ring-4 focus:ring-blue-100 focus:outline-none disabled:pointer-events-none disabled:opacity-40"
                 >
                     <ChevronLeft className="size-4" />
                 </button>
-                <span className="px-3 text-xs font-medium text-slate-600">
-                    Page {currentPage} of {totalPages}
-                </span>
+                {pages.map((p, idx) => {
+                    if (p === '...') {
+                        return (
+                            <span key={`dots-${idx}`} className="inline-flex size-9 items-center justify-center text-xs text-slate-400">
+                                ...
+                            </span>
+                        );
+                    }
+                    const isCurrent = p === currentPage;
+                    return (
+                        <button
+                            key={`page-${p}`}
+                            type="button"
+                            onClick={() => onPageChange(p as number)}
+                            className={cn(
+                                'inline-flex min-h-9 min-w-9 items-center justify-center rounded-lg border px-3 text-xs font-semibold transition focus:ring-4 focus:ring-blue-100 focus:outline-none',
+                                isCurrent
+                                    ? 'border-blue-600 bg-blue-600 text-white shadow-sm'
+                                    : 'border-slate-300 bg-white text-slate-700 hover:bg-slate-100',
+                            )}
+                        >
+                            {p}
+                        </button>
+                    );
+                })}
                 <button
                     type="button"
                     aria-label="Next page"
                     onClick={() => onPageChange(currentPage + 1)}
                     disabled={currentPage === totalPages}
-                    className="flex size-9 items-center justify-center rounded-lg border border-slate-300 bg-white text-slate-600 hover:bg-slate-100 focus:ring-4 focus:ring-blue-100 focus:outline-none disabled:pointer-events-none disabled:opacity-40"
+                    className="inline-flex size-9 items-center justify-center rounded-lg border border-slate-300 bg-white text-slate-600 hover:bg-slate-100 focus:ring-4 focus:ring-blue-100 focus:outline-none disabled:pointer-events-none disabled:opacity-40"
                 >
                     <ChevronRight className="size-4" />
                 </button>
-            </div>
+            </nav>
         </div>
     );
 }

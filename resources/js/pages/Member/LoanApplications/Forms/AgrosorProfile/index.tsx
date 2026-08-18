@@ -17,6 +17,7 @@ import { AgrosorProfileData, AgrosorProfileProps } from './Types';
 import FormPage1 from './FormPage1';
 import FormPage2 from './FormPage2';
 import PrintPreview from './PrintPreview';
+import { numberToWordsBangla } from '../ApprovalForm/PrintPreview';
 import { afterLoanFormSaveUrl } from '@/utils/loanFormNavigation';
 
 function resolveBackUrl(
@@ -398,8 +399,8 @@ function buildInitialData(
             str(savedData?.rm_comments) || str(savedData?.regional_manager_comments) || '',
         zonal_manager_comments: str(savedData?.zonal_manager_comments) || '',
         final_approver_comments: str(savedData?.final_approver_comments) || '',
-        final_approved_loan_amount_digits: str(savedData?.final_approved_loan_amount_digits) || '',
-        final_approved_loan_amount_words: str(savedData?.final_approved_loan_amount_words) || '',
+        final_approved_loan_amount_digits: Number(requestedAmount) > 0 ? String(requestedAmount) : (str(savedData?.final_approved_loan_amount_digits) || ''),
+        final_approved_loan_amount_words: Number(requestedAmount) > 0 ? numberToWordsBangla(Number(requestedAmount)) + ' টাকা' : (str(savedData?.final_approved_loan_amount_words) || ''),
         // Never keep stale "মাসিক কিস্তি" from older drafts — always recompute lump-sum schedule
         loan_duration_label: `${months} মাস`,
         service_charge_rate:

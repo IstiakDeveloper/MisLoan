@@ -63,7 +63,7 @@ class User extends Authenticatable
 
     /**
      * Members still assigned to this FO whose branch differs from the FO's current branch
-     * (typical after HRM transfer). These must be handed over before other work.
+     * (typical after HRM transfer). Kept for the optional handover screen; login is not locked.
      */
     public function pendingPortfolioHandoverMembers()
     {
@@ -74,17 +74,11 @@ class User extends Authenticatable
     }
 
     /**
-     * Field officer must finish portfolio handover after transfer before using the app.
+     * Members belong to the branch, not the officer, so transfer no longer blocks the app.
      */
     public function needsPortfolioHandover(): bool
     {
-        $this->loadMissing('role');
-
-        if ($this->role?->name !== Role::FIELD_OFFICER || ! $this->branch_id) {
-            return false;
-        }
-
-        return $this->pendingPortfolioHandoverMembers()->exists();
+        return false;
     }
 
     /**

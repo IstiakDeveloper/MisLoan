@@ -1,6 +1,6 @@
 import React from 'react';
 import { LoanAgreementData } from './Types';
-import { formatDateBangla } from '@/utils/dateUtils';
+import { formatDateBangla, formatBanglaNumber, toBanglaDigits } from '@/utils/dateUtils';
 import { Upload, X, Home, User, Building2, Calculator, ShieldCheck, MapPin, Users } from 'lucide-react';
 
 interface LoanAgreementFormProps {
@@ -197,23 +197,23 @@ export function LoanAgreementForm({
                         <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 text-xs">
                             <div>
                                 <span className="text-gray-500 block">সার্ভিস চার্জ:</span>
-                                <p className="font-bold text-amber-600 text-sm">৳{data.service_charge.toLocaleString('bn-BD')}</p>
+                                <p className="font-bold text-amber-600 text-sm">৳{formatBanglaNumber(data.service_charge)}</p>
                             </div>
                             <div>
                                 <span className="text-gray-500 block">মোট পরিশোধযোগ্য:</span>
-                                <p className="font-bold text-blue-600 text-sm">৳{data.total_amount.toLocaleString('bn-BD')}</p>
+                                <p className="font-bold text-blue-600 text-sm">৳{formatBanglaNumber(data.total_amount)}</p>
                             </div>
                             <div>
                                 <span className="text-gray-500 block">মোট কিস্তি সংখ্যা:</span>
-                                <p className="font-bold text-purple-600 text-sm">{data.number_of_installments} টি</p>
+                                <p className="font-bold text-purple-600 text-sm">{toBanglaDigits(data.number_of_installments)} টি</p>
                             </div>
                             <div>
                                 <span className="text-gray-500 block">প্রতি কিস্তির পরিমাণ:</span>
-                                <p className="font-bold text-emerald-600 text-sm">৳{data.installment_amount.toLocaleString('bn-BD')}</p>
+                                <p className="font-bold text-emerald-600 text-sm">৳{formatBanglaNumber(data.installment_amount)}</p>
                             </div>
                             <div>
                                 <span className="text-gray-500 block">শেষ কিস্তির পরিমাণ:</span>
-                                <p className="font-bold text-rose-600 text-sm">৳{data.last_installment_amount.toLocaleString('bn-BD')}</p>
+                                <p className="font-bold text-rose-600 text-sm">৳{formatBanglaNumber(data.last_installment_amount)}</p>
                             </div>
                             <div>
                                 <span className="text-gray-500 block">পরিশোধের শেষ তারিখ:</span>

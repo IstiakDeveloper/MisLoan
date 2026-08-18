@@ -20,6 +20,7 @@ class LoanApplication extends Model
         'form_type',
         'requested_amount',
         'approved_amount',
+        'disbursed_amount',
         'installment_amount',
         'number_of_installments',
         'proposed_start_date',
@@ -94,6 +95,7 @@ class LoanApplication extends Model
     protected $casts = [
         'requested_amount' => 'decimal:2',
         'approved_amount' => 'decimal:2',
+        'disbursed_amount' => 'decimal:2',
         'installment_amount' => 'decimal:2',
         'number_of_installments' => 'integer',
         'loan_term_months' => 'integer',

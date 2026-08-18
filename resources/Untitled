@@ -1,0 +1,3 @@
+index.tsx:44 Uncaught ReferenceError: calculateLoanSchedule is not defined
+    at buildLoanAgreementDefaults (index.tsx:44:22
+    at LoanAgreement (index.tsx:154:13
