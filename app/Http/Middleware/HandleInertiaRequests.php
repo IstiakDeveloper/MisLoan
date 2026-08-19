@@ -294,6 +294,11 @@ class HandleInertiaRequests extends Middleware
                         }))->orWhere('status', 'needs_revision');
                     });
 
+                if ($roleNameForBadges === 'field_officer') {
+                    $pendingAdmissionQuery->assignedToOfficer((int) $authUser->id);
+                    $pendingLoanQuery->where('submitted_by', $authUser->id);
+                }
+
                 $badgeCounts['pendingVerifications'] = $pendingAdmissionQuery->count() + $pendingLoanQuery->count();
             }
         }

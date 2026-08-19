@@ -33,7 +33,7 @@ class BlockListService
     }
 
     /**
-     * Push a rejected person (loan / admission / team-based) to the block_list Customer API.
+     * Push a rejected person (admission / team-based) to the block_list Customer API.
      *
      * @param  array<string, mixed>  $blockListData
      */

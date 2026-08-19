@@ -30,12 +30,17 @@ import {
     Monitor,
     MoveHorizontal,
     RotateCcw,
+    Lock,
+    X,
 } from 'lucide-react';
+import SuperAdminDeletePinModal from '@/components/SuperAdminDeletePinModal';
+import { toEnglishDigits, formatBranchCode, parseMemberCode } from '@/utils/memberCodeUtils';
 import GuarantorCommitment from './Forms/GuarantorCommitment';
 import DeathRiskFund from './Forms/DeathRiskFund';
 import LoanAgreement from './Forms/LoanAgreement';
 import FieldInvestigation from './Forms/FieldInvestigation';
 import LoanApplicationApproval from './Forms/LoanApplicationApproval';
+import SendLoanToHoModal from '@/components/LoanApplications/SendLoanToHoModal';
 
 interface LoanApplication {
     id: number;
@@ -95,6 +100,8 @@ interface LoanApplication {
     submittedBy?: { id: number; name: string } | null;
     visible_form_ids?: number[];
     editable_form_ids?: number[];
+    superadmin_can_pin_edit?: boolean;
+    superadmin_edit_unlocked?: boolean;
     form_saved?: Record<number, boolean>;
     all_forms_complete?: boolean;
     disburse_forms_complete?: boolean;
@@ -217,10 +224,19 @@ export default function Show({ application, routes }: Props) {
     const [approvalComments, setApprovalComments] = useState<string>('');
     const [submittingApproval, setSubmittingApproval] = useState(false);
 
-    // Member Code Update Modal State
+    // Member Code Update Modal State (10-digit policy: 4-digit branch code + 6-digit serial)
+    const branchPrefix = formatBranchCode(
+        application.branch?.code || '0001'
+    );
+    const parsedCode = parseMemberCode(application.member_admission?.application_no, branchPrefix);
     const [memberCodeModalOpen, setMemberCodeModalOpen] = useState(false);
-    const [newMemberCode, setNewMemberCode] = useState<string>(application.member_admission?.application_no || '');
+    const [serialInput, setSerialInput] = useState<string>(parsedCode.serial);
     const [submittingMemberCode, setSubmittingMemberCode] = useState(false);
+
+    useEffect(() => {
+        const p = parseMemberCode(application.member_admission?.application_no, branchPrefix);
+        setSerialInput(p.serial);
+    }, [application.member_admission?.application_no, branchPrefix]);
 
     // Disbursement Modal State
     const maxDisburseAmount =
@@ -236,6 +252,21 @@ export default function Show({ application, routes }: Props) {
     const [disbursementReference, setDisbursementReference] = useState<string>(application.disbursement_reference || '');
     const [submittingDisburse, setSubmittingDisburse] = useState(false);
     const [disburseError, setDisburseError] = useState<string | null>(null);
+    const [pinModalOpen, setPinModalOpen] = useState(false);
+    const [pinProcessing, setPinProcessing] = useState(false);
+
+    const confirmSuperAdminUnlock = (pin: string) => {
+        setPinProcessing(true);
+        router.post(
+            `/member/loan-applications/${application.id}/unlock-edit`,
+            { pin },
+            {
+                preserveScroll: true,
+                onFinish: () => setPinProcessing(false),
+                onSuccess: () => setPinModalOpen(false),
+            },
+        );
+    };
 
     const searchParams = new URLSearchParams(typeof window !== 'undefined' ? window.location.search : '');
     const initialForm = Number(searchParams.get('form') || searchParams.get('step') || '');
@@ -512,16 +543,36 @@ export default function Show({ application, routes }: Props) {
 
     const handleMemberCodeSubmit = (e: React.FormEvent) => {
         e.preventDefault();
-        if (!newMemberCode.trim()) return;
+        const cleanSerial = toEnglishDigits(serialInput).replace(/\D/g, '');
+        if (!cleanSerial) return;
+        const fullCode = `${branchPrefix}${cleanSerial.padStart(6, '0')}`;
         setSubmittingMemberCode(true);
         router.patch(
             `/member/loan-applications/${application.id}/update-member-code`,
-            { member_code: newMemberCode.trim() },
+            { member_code: fullCode },
             {
                 preserveScroll: true,
                 onFinish: () => {
                     setSubmittingMemberCode(false);
                     setMemberCodeModalOpen(false);
+                },
+            }
+        );
+    };
+
+    const [showLoanHoModal, setShowLoanHoModal] = useState(false);
+    const [isSendingLoanToHo, setIsSendingLoanToHo] = useState(false);
+
+    const handleConfirmSendLoanToHo = () => {
+        setIsSendingLoanToHo(true);
+        router.patch(
+            `/member/loan-applications/${application.id}/send-to-head-office`,
+            {},
+            {
+                preserveScroll: true,
+                onFinish: () => {
+                    setIsSendingLoanToHo(false);
+                    setShowLoanHoModal(false);
                 },
             }
         );
@@ -751,6 +802,7 @@ export default function Show({ application, routes }: Props) {
             onlyPreview: true as const,
             embedded: true as const,
             savedData: saved || undefined,
+            existingApplication: application,
             member: application.member_admission,
             loanProduct: application.loan_product,
             loanCategory: application.loan_category,
@@ -922,10 +974,31 @@ export default function Show({ application, routes }: Props) {
                                         {statusInfo?.label || application.status}
                                     </Badge>
                                 </div>
-                                <p className="text-[11px] sm:text-xs text-slate-500 mt-0.5 truncate">
-                                    আবেদন: <span className="font-medium text-slate-700">{formatDate(application.created_at)}</span>
+                                <p className="text-[11px] sm:text-xs text-slate-500 mt-1 font-medium break-words flex items-center gap-1.5 flex-wrap">
+                                    <span>মেম্বার কোড: <span className="font-mono font-bold text-blue-700">{application.member_admission?.application_no || '-'}</span></span>
+                                    {application.status !== 'disbursed' && (
+                                        <button
+                                            type="button"
+                                            onClick={() => {
+                                                const p = parseMemberCode(application.member_admission?.application_no, branchPrefix);
+                                                setSerialInput(p.serial);
+                                                setMemberCodeModalOpen(true);
+                                            }}
+                                            className="inline-flex items-center gap-1 text-[10px] bg-indigo-50 hover:bg-indigo-100 text-indigo-700 px-1.5 py-0.5 rounded border border-indigo-200 font-semibold cursor-pointer transition shadow-2xs"
+                                            title="ঋণ বিতরণের পূর্বে মেম্বার কোড পরিবর্তন করুন"
+                                        >
+                                            <Edit className="w-3 h-3 text-indigo-600" /> কোড পরিবর্তন
+                                        </button>
+                                    )}
+                                    <span className="text-slate-300 mx-1">|</span>
+                                    <span>সদস্য: <span className="font-bold text-slate-800">{application.member_admission?.applicant_name_bn || application.member_admission?.applicant_name_en || application.member_admission?.member_name_bn || application.member_admission?.member_name_en || '-'}</span></span>
+                                    <span className="text-slate-300 mx-1">|</span>
+                                    <span>আবেদন: <span className="font-medium text-slate-700">{formatDate(application.created_at)}</span></span>
                                     {application.submitted_at && (
-                                        <> • জমা: <span className="font-medium text-slate-700">{formatDate(application.submitted_at)}</span></>
+                                        <>
+                                            <span className="text-slate-300 mx-1">|</span>
+                                            <span>জমা: <span className="font-medium text-slate-700">{formatDate(application.submitted_at)}</span></span>
+                                        </>
                                     )}
                                 </p>
                             </div>
@@ -934,6 +1007,22 @@ export default function Show({ application, routes }: Props) {
                         {/* Primary Action Buttons Bar */}
                         <div className="flex flex-wrap items-center gap-2 w-full sm:w-auto pt-2 sm:pt-0 border-t sm:border-t-0 border-slate-100">
                             
+                            {application.superadmin_can_pin_edit && !application.superadmin_edit_unlocked && (
+                                <Button
+                                    className="w-full sm:w-auto bg-indigo-600 hover:bg-indigo-700 text-white shadow-xs font-semibold rounded-xl text-xs sm:text-sm h-9 sm:h-10"
+                                    onClick={() => setPinModalOpen(true)}
+                                >
+                                    <Lock className="w-4 h-4 mr-1.5" />
+                                    PIN দিয়ে ফর্ম এডিট
+                                </Button>
+                            )}
+                            {application.superadmin_can_pin_edit && application.superadmin_edit_unlocked && (
+                                <Badge className="bg-indigo-100 text-indigo-800 border-indigo-200 text-[11px] sm:text-xs font-medium">
+                                    <Lock className="w-3 h-3 mr-1 inline" />
+                                    এডিট আনলক
+                                </Badge>
+                            )}
+
                             {/* Branch Manager Approval Action Button */}
                             {showBranchApproveButton && (
                                 <Button
@@ -968,11 +1057,7 @@ export default function Show({ application, routes }: Props) {
                             {application.status === 'ready_for_head_office' && isBranchUser && (
                                 <Button
                                     className="w-full sm:w-auto bg-indigo-600 hover:bg-indigo-700 text-white shadow-xs font-semibold rounded-xl text-xs sm:text-sm h-9 sm:h-10"
-                                    onClick={() => {
-                                        if (confirm('শাখা অনুমোদিত ঋণ আবেদনটি Head Office এ পাঠাতে চান?')) {
-                                            router.patch(`/member/loan-applications/${application.id}/send-to-head-office`);
-                                        }
-                                    }}
+                                    onClick={() => setShowLoanHoModal(true)}
                                 >
                                     <Send className="w-4 h-4 mr-1.5" />
                                     Head Office এ পাঠান
@@ -1226,6 +1311,21 @@ export default function Show({ application, routes }: Props) {
                         {/* TAB 1: FORMS WORKSPACE */}
                         {activeTab === 'forms' && (
                             <div className="p-3.5 sm:p-6 space-y-4">
+                                {application.superadmin_can_pin_edit && !application.superadmin_edit_unlocked && (
+                                    <div className="rounded-xl border border-indigo-200 bg-indigo-50 px-3.5 py-3 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                                        <p className="text-xs sm:text-sm text-indigo-900">
+                                            সুপার অ্যাডমিন হিসেবে যেকোনো অবস্থায় ঋণের ফর্ম এডিট করতে <strong>SUPERADMIN_DELETE_PIN</strong> দিন।
+                                        </p>
+                                        <Button
+                                            size="sm"
+                                            className="bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-xs shrink-0"
+                                            onClick={() => setPinModalOpen(true)}
+                                        >
+                                            <Lock className="w-3.5 h-3.5 mr-1.5" />
+                                            PIN দিন
+                                        </Button>
+                                    </div>
+                                )}
                                 
                                 {/* Form Selector Pills */}
                                 <div className="space-y-2">
@@ -2003,6 +2103,104 @@ export default function Show({ application, routes }: Props) {
                     </div>
                 </div>
             )}
+            <SuperAdminDeletePinModal
+                open={pinModalOpen}
+                title="ফর্ম এডিট আনলক করুন"
+                description="যেকোনো অবস্থার ঋণ আবেদন সম্পাদনা করতে SuperAdmin PIN দিন। এই PIN .env এর SUPERADMIN_DELETE_PIN।"
+                processing={pinProcessing}
+                onClose={() => setPinModalOpen(false)}
+                onConfirm={confirmSuperAdminUnlock}
+                confirmLabel="এডিট আনলক"
+                processingLabel="যাচাই হচ্ছে..."
+                pinLabel="SuperAdmin PIN"
+                accent="indigo"
+            />
+
+            {/* Member Code Update Modal */}
+            {memberCodeModalOpen && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-xs p-4 print:hidden">
+                    <div className="w-full max-w-md rounded-2xl bg-white shadow-2xl overflow-hidden border border-slate-200 animate-in fade-in zoom-in-95 duration-150">
+                        <div className="border-b px-5 py-4 bg-slate-50 flex items-center justify-between">
+                            <div>
+                                <h3 className="text-base font-bold text-slate-900 flex items-center gap-2">
+                                    <Edit className="w-5 h-5 text-indigo-600" /> মেম্বার কোড আপডেট (১০ ডিজিট)
+                                </h3>
+                                <p className="text-xs text-slate-500 mt-0.5">প্রথম ৪ ডিজিট শাখা কোড অপরিবর্তনীয়, শেষের ৬ ডিজিট মেম্বার সিরিয়াল।</p>
+                            </div>
+                            <button type="button" onClick={() => setMemberCodeModalOpen(false)} className="text-slate-400 hover:text-slate-600 p-1 cursor-pointer">
+                                <X className="w-5 h-5" />
+                            </button>
+                        </div>
+                        <form onSubmit={handleMemberCodeSubmit} className="p-5 space-y-4">
+                            <div>
+                                <label className="block text-xs font-bold text-slate-700 mb-1">মেম্বার কোড / সিরিয়াল (Member Serial):</label>
+                                <div className="flex items-stretch rounded-xl border border-slate-300 overflow-hidden focus-within:border-indigo-500 focus-within:ring-2 focus-within:ring-indigo-500/20 bg-white shadow-xs">
+                                    <div className="flex items-center gap-1 bg-slate-100 px-3.5 py-2 border-r border-slate-300 text-xs font-mono font-bold text-slate-600 select-none shrink-0" title="শাখা কোড (অপরিবর্তনীয়)">
+                                        <Lock className="w-3.5 h-3.5 text-slate-400" />
+                                        <span>{branchPrefix}</span>
+                                    </div>
+                                    <input
+                                        type="text"
+                                        value={serialInput}
+                                        onChange={(e) => setSerialInput(toEnglishDigits(e.target.value).replace(/\D/g, '').slice(0, 6))}
+                                        onBlur={() => {
+                                            if (serialInput) setSerialInput(serialInput.padStart(6, '0'));
+                                        }}
+                                        maxLength={6}
+                                        className="w-full border-0 px-3.5 py-2 text-sm font-mono font-bold text-indigo-700 focus:outline-hidden focus:ring-0"
+                                        placeholder="000065"
+                                        required
+                                        autoFocus
+                                    />
+                                </div>
+                                <div className="mt-1.5 flex items-center justify-between text-[11px] text-slate-500 flex-wrap gap-1">
+                                    <span>পূর্ণাঙ্গ কোড: <span className="font-mono font-bold text-blue-700">{branchPrefix}{serialInput ? serialInput.padStart(6, '0') : '000001'}</span></span>
+                                    <span className="text-[10px] text-slate-400">(যেমন: 65 লিখলে হবে {branchPrefix}000065)</span>
+                                </div>
+                            </div>
+
+                            <div className="flex justify-end gap-2 pt-2 border-t">
+                                <button type="button" className="px-4 py-2 rounded-xl text-xs border border-slate-300 font-semibold text-slate-700 hover:bg-slate-50 cursor-pointer" onClick={() => setMemberCodeModalOpen(false)}>
+                                    বাতিল
+                                </button>
+                                <button
+                                    type="submit"
+                                    className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-bold shadow-xs cursor-pointer"
+                                    disabled={submittingMemberCode || !serialInput}
+                                >
+                                    {submittingMemberCode ? 'আপডেট হচ্ছে...' : 'কোড আপডেট করুন'}
+                                </button>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+            )}
+
+            {/* Head Office Dispatch Confirmation / Warning Modal */}
+            <SendLoanToHoModal
+                isOpen={showLoanHoModal}
+                onClose={() => {
+                    if (!isSendingLoanToHo) {
+                        setShowLoanHoModal(false);
+                    }
+                }}
+                onConfirm={handleConfirmSendLoanToHo}
+                isLoading={isSendingLoanToHo}
+                items={[
+                    {
+                        id: application.id,
+                        application_no: application.application_no,
+                        applicant_name:
+                            application.member_admission?.applicant_name_bn ||
+                            application.member_admission?.applicant_name_en ||
+                            application.member_admission?.member_name_bn ||
+                            application.member_admission?.member_name_en ||
+                            'সদস্য',
+                        branch_name: application.branch?.name,
+                        amount: application.requested_amount || application.approved_amount,
+                    },
+                ]}
+            />
         </AdminLayout>
     );
 }

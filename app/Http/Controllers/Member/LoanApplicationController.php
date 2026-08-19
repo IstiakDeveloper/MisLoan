@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Member;
 
 use App\Http\Controllers\Concerns\AppliesRoleDefaultListFilter;
+use App\Http\Controllers\Concerns\RequiresSuperAdminDeletePin;
 use App\Http\Controllers\Concerns\ResolvesListPerPage;
 use App\Http\Controllers\Controller;
 use App\Models\LoanApplication;
@@ -21,6 +22,7 @@ use App\Support\LoanFormVisibility;
 use App\Support\NumberToWordsBangla;
 use App\Support\RoleListWorkQueue;
 use Carbon\Carbon;
+use Illuminate\Http\Exceptions\HttpResponseException;
 use Illuminate\Http\Request;
 use Inertia\Inertia;
 use Illuminate\Support\Facades\DB;
@@ -35,6 +37,7 @@ use PhpOffice\PhpSpreadsheet\Writer\Xlsx;
 class LoanApplicationController extends Controller
 {
     use AppliesRoleDefaultListFilter;
+    use RequiresSuperAdminDeletePin;
     use ResolvesListPerPage;
 
     private function isFieldOfficer($user): bool
@@ -64,8 +67,9 @@ class LoanApplicationController extends Controller
     }
 
     /**
-     * Draft/fill loan forms: field officers may prepare applications for any
-     * member of their branch before admission is approved; branch users need an approved member.
+     * Draft/fill loan forms: field officers may prepare applications for members
+     * they created in their current branch (before admission is approved);
+     * branch users need an approved member of the branch.
      */
     private function ensureMemberAccessibleForLoanDraft(MemberAdmission $member, $user): void
     {
@@ -80,6 +84,10 @@ class LoanApplicationController extends Controller
         }
 
         if ($this->isFieldOfficer($user)) {
+            if (! $member->isAssignedToUser($user)) {
+                abort(403, 'ফিল্ড অফিসার শুধু নিজের করা সদস্যের জন্য ঋণ আবেদন করতে পারবেন।');
+            }
+
             return;
         }
 
@@ -110,10 +118,18 @@ class LoanApplicationController extends Controller
         $editableFormIds = LoanFormVisibility::editableFormIdsForUser($roleName, $status, $product, $amount, $category);
         $visibleFormIds = LoanFormVisibility::visibleFormIdsForShow($roleName, $status, $product, $amount, $category);
 
+        $isSuperAdmin = $user->isSuperAdmin();
+        $superadminEditUnlocked = $isSuperAdmin && $this->isLoanEditUnlocked((int) $application->id);
+        if ($superadminEditUnlocked) {
+            $editableFormIds = $visibleFormIds;
+        }
+
         $memberAdmission = $application->memberAdmission;
         $application->member_admission_status = $memberAdmission?->status;
         $application->visible_form_ids = $visibleFormIds;
         $application->editable_form_ids = $editableFormIds;
+        $application->superadmin_can_pin_edit = $isSuperAdmin;
+        $application->superadmin_edit_unlocked = $superadminEditUnlocked;
         $application->form_saved = $formSaved;
         $application->all_forms_complete = LoanFormVisibility::allRequiredFormsSaved($submitRequired, $formSaved);
         $application->disburse_forms_complete = LoanFormVisibility::allRequiredFormsSaved($disburseRequired, $formSaved);
@@ -168,6 +184,16 @@ class LoanApplicationController extends Controller
     ): LoanApplication {
         $user = $request->user();
         $user->loadMissing('role');
+
+        if ($user->isSuperAdmin()) {
+            return $this->resolveApplicationForSuperAdminFormSave(
+                $request,
+                $loanProductId,
+                $loanCategoryId,
+                $memberId,
+                $legacyKey
+            );
+        }
 
         if ($formId === 4) {
             if (! $this->isBranchManager($user)) {
@@ -275,6 +301,7 @@ class LoanApplicationController extends Controller
 
     /**
      * Head Office / SuperAdmin / full-access users may edit loans in any status.
+     * Super Admin form/loan edits still require SUPERADMIN_DELETE_PIN session unlock.
      */
     private function canManageAnyStatus(): bool
     {
@@ -283,11 +310,119 @@ class LoanApplicationController extends Controller
         return $user && ($user->has_all_access || $user->isSuperAdmin() || $user->isHeadOffice());
     }
 
+    private function allLoanStatuses(): array
+    {
+        return [
+            LoanApplication::STATUS_DRAFT,
+            LoanApplication::STATUS_PENDING,
+            LoanApplication::STATUS_SUBMITTED,
+            LoanApplication::STATUS_UNDER_REVIEW,
+            LoanApplication::STATUS_READY_FOR_HEAD_OFFICE,
+            LoanApplication::STATUS_PENDING_HEAD_OFFICE,
+            LoanApplication::STATUS_APPROVED,
+            LoanApplication::STATUS_PENDING_DISBURSEMENT,
+            LoanApplication::STATUS_REJECTED,
+            LoanApplication::STATUS_DISBURSED,
+            LoanApplication::STATUS_CANCELLED,
+            LoanApplication::STATUS_NEEDS_CORRECTION,
+        ];
+    }
+
+    private function resolveApplicationForSuperAdminFormSave(
+        Request $request,
+        int $loanProductId,
+        int $loanCategoryId,
+        ?int $memberId,
+        ?string $legacyKey
+    ): LoanApplication {
+        $application = null;
+        if ($request->filled('application_id')) {
+            $application = LoanApplication::find((int) $request->input('application_id'));
+        }
+        if (! $application) {
+            $application = $this->findApplicationForMemberProduct(
+                $memberId,
+                $legacyKey,
+                $loanProductId,
+                $loanCategoryId,
+                $this->allLoanStatuses()
+            );
+        }
+        if (! $application) {
+            abort(404, 'ঋণ আবেদন পাওয়া যায়নি।');
+        }
+
+        $this->ensureApplicationAccessibleToUser($application, $request->user());
+        $this->assertSuperAdminLoanEditUnlocked($request, $application);
+
+        return $application;
+    }
+
+    private function assertSuperAdminLoanEditUnlocked(Request $request, LoanApplication $application): void
+    {
+        if ($this->isLoanEditUnlocked((int) $application->id)) {
+            return;
+        }
+
+        if ($this->superAdminPinIsValid($request)) {
+            $this->markLoanEditUnlocked((int) $application->id);
+
+            return;
+        }
+
+        throw new HttpResponseException(
+            back()->with('error', 'সুপার অ্যাডমিন এডিট করতে PIN প্রয়োজন।')
+        );
+    }
+
+    private function ensureSuperAdminLoanFormsUnlocked(Request $request, ?LoanApplication $application): void
+    {
+        $user = $request->user();
+        if (! $user?->isSuperAdmin() || ! $application) {
+            return;
+        }
+
+        if ($this->isLoanEditUnlocked((int) $application->id)) {
+            return;
+        }
+
+        throw new HttpResponseException(
+            redirect()
+                ->route('member.loan-applications.show', $application->id)
+                ->with('error', 'ফর্ম এডিট করতে আগে SuperAdmin PIN দিন।')
+        );
+    }
+
+    public function unlockEdit(Request $request, $id)
+    {
+        $application = LoanApplication::findOrFail($id);
+        $user = $request->user();
+        if (! $user || ! $user->isSuperAdmin()) {
+            abort(403, 'শুধুমাত্র সুপার অ্যাডমিন এডিট আনলক করতে পারবেন।');
+        }
+
+        $this->ensureApplicationAccessibleToUser($application, $user);
+
+        if ($denied = $this->denyUnlessSuperAdminPin($request, 'এডিট PIN সঠিক নয়।')) {
+            return $denied;
+        }
+
+        $this->markLoanEditUnlocked((int) $application->id);
+
+        return redirect()
+            ->route('member.loan-applications.show', $application->id)
+            ->with('success', 'ফর্ম এডিট আনলক হয়েছে। এখন যেকোনো ফর্ম সম্পাদনা করতে পারবেন।');
+    }
+
     private function ensureApplicationAccessibleToUser(LoanApplication $application, $user): void
     {
         if (!$user->has_all_access && !$user->isSuperAdmin() && !$user->isHeadOffice()
             && !$user->canAccessBranch((int) $application->branch_id)) {
             abort(403, 'আপনার এই ঋণ আবেদন দেখার অনুমতি নেই।');
+        }
+
+        if ($this->isFieldOfficer($user) && (int) $application->submitted_by !== (int) $user->id) {
+            abort(403, 'ফিল্ড অফিসার শুধু নিজের করা ঋণ আবেদন দেখতে পারবেন।');
         }
     }
 
@@ -367,6 +502,7 @@ class LoanApplicationController extends Controller
         $statusFilter = $workQueue['status'];
         $searchFilter = $request->input('search', '');
         $perPage = $this->resolvePerPage($request);
+        $isFieldOfficer = $this->isFieldOfficer($user);
 
         // Get loan categories with active products using the correct relationship name
         $categories = LoanCategory::with(['loanProducts' => function ($query) {
@@ -403,6 +539,9 @@ class LoanApplicationController extends Controller
             ])
             ->when(!$user->has_all_access, function ($query) use ($user) {
                 $query->whereIn('branch_id', $user->getAccessibleBranches()->pluck('id'));
+            })
+            ->when($isFieldOfficer, function ($query) use ($user) {
+                $query->where('submitted_by', $user->id);
             });
 
         $this->applyCoalesceDateRange($applicationsQuery, $dateFrom, $dateTo, $dateExpression);
@@ -410,16 +549,7 @@ class LoanApplicationController extends Controller
 
         $applications = $applicationsQuery
             ->when($searchFilter, function ($query) use ($searchFilter) {
-                $query->where(function ($q) use ($searchFilter) {
-                    $q->where('application_no', 'like', "%{$searchFilter}%")
-                      ->orWhereHas('memberAdmission', function ($mq) use ($searchFilter) {
-                          $mq->where('applicant_name_en', 'like', "%{$searchFilter}%")
-                            ->orWhere('applicant_name_bn', 'like', "%{$searchFilter}%")
-                            ->orWhere('mobile_number', 'like', "%{$searchFilter}%")
-                            ->orWhere('nid_number', 'like', "%{$searchFilter}%")
-                            ->orWhere('application_no', 'like', "%{$searchFilter}%");
-                      });
-                });
+                \App\Services\MemberCodeService::applyLoanSearch($query, $searchFilter);
             })
             ->orderByRaw('COALESCE(disbursed_at, reviewed_at, submitted_at, created_at) desc')
             ->with('samity:id,samity_name,samity_name_bn,samity_code')
@@ -466,6 +596,9 @@ class LoanApplicationController extends Controller
         $statsBaseQuery = LoanApplication::query()
             ->when(!$user->has_all_access, function ($query) use ($user) {
                 $query->whereIn('branch_id', $user->getAccessibleBranches()->pluck('id'));
+            })
+            ->when($isFieldOfficer, function ($query) use ($user) {
+                $query->where('submitted_by', $user->id);
             });
 
         $this->applyCoalesceDateRange($statsBaseQuery, $dateFrom, $dateTo, $dateExpression);
@@ -510,6 +643,7 @@ class LoanApplicationController extends Controller
         $dateTo = $workQueue['date_to'];
         $statusFilter = $workQueue['status'];
         $searchFilter = $request->input('search', '');
+        $isFieldOfficer = $this->isFieldOfficer($user);
 
         $query = LoanApplication::with([
                 'loanProduct',
@@ -521,6 +655,9 @@ class LoanApplicationController extends Controller
             ])
             ->when(!$user->has_all_access, function ($query) use ($user) {
                 $query->whereIn('branch_id', $user->getAccessibleBranches()->pluck('id'));
+            })
+            ->when($isFieldOfficer, function ($query) use ($user) {
+                $query->where('submitted_by', $user->id);
             });
 
         $this->applyCoalesceDateRange($query, $dateFrom, $dateTo, 'COALESCE(disbursed_at, reviewed_at, submitted_at, created_at)');
@@ -817,17 +954,14 @@ class LoanApplicationController extends Controller
         $branchId = $user->branch_id;
 
         $members = MemberAdmission::where('branch_id', $branchId)
-            ->when($this->isFieldOfficer($user), function ($query) {
-                $query->where('status', '!=', 'rejected');
+            ->when($this->isFieldOfficer($user), function ($query) use ($user) {
+                $query->assignedToOfficer((int) $user->id)
+                    ->where('status', '!=', 'rejected');
             }, function ($query) {
                 $query->where('status', 'approved');
             })
             ->where(function ($query) use ($search) {
-                $query->where('applicant_name_en', 'like', "%{$search}%")
-                    ->orWhere('applicant_name_bn', 'like', "%{$search}%")
-                    ->orWhere('nid_number', 'like', "%{$search}%")
-                    ->orWhere('mobile_number', 'like', "%{$search}%")
-                    ->orWhere('application_no', 'like', "%{$search}%");
+                \App\Services\MemberCodeService::applyAdmissionSearch($query, $search);
             })
             ->select('id', 'application_no', 'applicant_name_en', 'applicant_name_bn', 'nid_number', 'mobile_number', 'father_name_en', 'mother_name_en', 'samity_id', 'status', 'requested_loan_amount')
             ->with('samity:id,samity_name,samity_name_bn')
@@ -1477,6 +1611,19 @@ class LoanApplicationController extends Controller
             $businessPlan['final_approved_loan_amount_words'] = $wordsDisbursed ? $wordsDisbursed . ' টাকা' : '';
             $businessPlan['applied_loan_amount'] = (string) $disbursedAmount;
             $businessPlan['fund_applied_loan'] = (string) $disbursedAmount;
+            $approvalDate = $application->reviewed_at?->format('Y-m-d')
+                ?: $application->approvals()
+                    ->where('status', 'approved')
+                    ->orderByDesc('approved_at')
+                    ->value('approved_at');
+            $approvalDate = $approvalDate instanceof \DateTimeInterface
+                ? $approvalDate->format('Y-m-d')
+                : ($approvalDate ? \Carbon\Carbon::parse($approvalDate)->toDateString() : now()->toDateString());
+            $businessPlan = $application->mergeOfficialDatesIntoBusinessPlan(
+                $businessPlan,
+                $approvalDate,
+                now()->toDateString(),
+            );
         }
 
         // Update application
@@ -1555,7 +1702,9 @@ class LoanApplicationController extends Controller
         $application = LoanApplication::findOrFail($id);
         $this->ensureApplicationAccessibleToUser($application, $request->user());
 
-        if (!$this->canManageAnyStatus() && !$application->canBeEdited()) {
+        if ($request->user()?->isSuperAdmin()) {
+            $this->assertSuperAdminLoanEditUnlocked($request, $application);
+        } elseif (!$this->canManageAnyStatus() && !$application->canBeEdited()) {
             return back()->withErrors(['error' => 'This application cannot be edited']);
         }
 
@@ -1718,6 +1867,7 @@ class LoanApplicationController extends Controller
             $existingApplication = LoanApplication::find($applicationId);
             if ($existingApplication) {
                 $this->ensureApplicationAccessibleToUser($existingApplication, $user);
+                $this->ensureSuperAdminLoanFormsUnlocked($request, $existingApplication);
                 $member = $existingApplication->memberAdmission;
                 if ($member) {
                     $member->loadMissing(['samity', 'familyMembers', 'otherAssets', 'branch']);
@@ -1727,7 +1877,9 @@ class LoanApplicationController extends Controller
         }
 
         $applicationStatuses = [LoanApplication::STATUS_DRAFT];
-        if ($this->isBranchManager($user) && in_array($formId, [1, 4, 5], true)) {
+        if ($user->isSuperAdmin()) {
+            $applicationStatuses = $this->allLoanStatuses();
+        } elseif ($this->isBranchManager($user) && in_array($formId, [1, 4, 5], true)) {
             $applicationStatuses = [LoanApplication::STATUS_SUBMITTED, LoanApplication::STATUS_UNDER_REVIEW];
         } elseif (in_array($formId, [2, 3], true)) {
             $applicationStatuses = [
@@ -1763,6 +1915,7 @@ class LoanApplicationController extends Controller
                 ->first();
             if ($existingApplication) {
                 $this->ensureApplicationAccessibleToUser($existingApplication, $user);
+                $this->ensureSuperAdminLoanFormsUnlocked($request, $existingApplication);
             }
 
             return [$member, $existingApplication, $legacyKey];
@@ -1770,7 +1923,9 @@ class LoanApplicationController extends Controller
         $memberId = $request->input('member_id');
         $member = MemberAdmission::with(['samity', 'familyMembers', 'otherAssets', 'branch'])->find($memberId);
         if ($member) {
-            if (($this->isBranchManager($user) && in_array($formId, [1, 4, 5], true)) || $formId === 4 || in_array($formId, [2, 3], true)) {
+            if ($user->isSuperAdmin()) {
+                // Super admin may open any member's forms after PIN unlock.
+            } elseif (($this->isBranchManager($user) && in_array($formId, [1, 4, 5], true)) || $formId === 4 || in_array($formId, [2, 3], true)) {
                 if (!$user->has_all_access && !$user->canAccessBranch((int) $member->branch_id)) {
                     abort(403, 'এই সদস্য আপনার এলাকার/শাখার নয়।');
                 }
@@ -1786,6 +1941,7 @@ class LoanApplicationController extends Controller
             ->first() : null;
         if ($existingApplication) {
             $this->ensureApplicationAccessibleToUser($existingApplication, $user);
+            $this->ensureSuperAdminLoanFormsUnlocked($request, $existingApplication);
         }
 
         return [$member, $existingApplication, null];
@@ -2155,6 +2311,7 @@ class LoanApplicationController extends Controller
             $existingApplication = LoanApplication::with(['memberAdmission.samity', 'loanProduct', 'loanCategory'])
                 ->findOrFail($applicationId);
             $this->ensureApplicationAccessibleToUser($existingApplication, $request->user());
+            $this->ensureSuperAdminLoanFormsUnlocked($request, $existingApplication);
             $member = $existingApplication->memberAdmission;
             if (! $member) {
                 return redirect()->route('member.loan-applications.index')->with('error', 'সদস্য তথ্য পাওয়া যাচ্ছে না।');
@@ -2493,7 +2650,7 @@ class LoanApplicationController extends Controller
      */
     public function updateMemberCode(Request $request, $id)
     {
-        $application = LoanApplication::with('memberAdmission')->findOrFail($id);
+        $application = LoanApplication::with('memberAdmission.branch')->findOrFail($id);
 
         if ($application->status === LoanApplication::STATUS_DISBURSED) {
             return back()->withErrors(['error' => 'ঋণ বিতরণ সম্পন্ন হওয়ার পর মেম্বার কোড পরিবর্তন করা যাবে না।']);
@@ -2504,19 +2661,50 @@ class LoanApplicationController extends Controller
             return back()->withErrors(['error' => 'সদস্য ভর্তি তথ্য পাওয়া যায়নি।']);
         }
 
-        $validated = $request->validate([
-            'member_code' => [
-                'required',
-                'string',
-                'max:50',
-                'unique:member_admissions,application_no,' . $member->id,
-            ],
-        ]);
+        $normalizedCode = \App\Services\MemberCodeService::normalizeMemberCode(
+            $request->input('member_code'),
+            $member->branch_id,
+            $member->branch?->code
+        );
+
+        $exists = MemberAdmission::where('application_no', $normalizedCode)
+            ->where('id', '!=', $member->id)
+            ->exists();
+
+        if ($exists) {
+            return back()->withErrors(['member_code' => "মেম্বার কোড {$normalizedCode} ইতিমধ্যে অন্য সদস্যের জন্য ব্যবহার করা হয়েছে।"]);
+        }
 
         $member->update([
-            'application_no' => $validated['member_code'],
+            'application_no' => $normalizedCode,
         ]);
 
-        return back()->with('success', 'মেম্বার কোড সফলভাবে আপডেট করা হয়েছে।');
+        $needsSave = false;
+        if (is_array($application->loan_agreement_data) && isset($application->loan_agreement_data['member_code'])) {
+            $agreementData = $application->loan_agreement_data;
+            $agreementData['member_code'] = $normalizedCode;
+            $application->loan_agreement_data = $agreementData;
+            $needsSave = true;
+        }
+
+        if (is_array($application->guarantor_info) && isset($application->guarantor_info['member_code'])) {
+            $guarantorData = $application->guarantor_info;
+            $guarantorData['member_code'] = $normalizedCode;
+            $application->guarantor_info = $guarantorData;
+            $needsSave = true;
+        }
+
+        if (is_array($application->business_plan) && isset($application->business_plan['member_code'])) {
+            $businessData = $application->business_plan;
+            $businessData['member_code'] = $normalizedCode;
+            $application->business_plan = $businessData;
+            $needsSave = true;
+        }
+
+        if ($needsSave) {
+            $application->save();
+        }
+
+        return back()->with('success', 'মেম্বার কোড সফলভাবে আপডেট করা হয়েছে: ' . $normalizedCode);
     }
 }

@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Models\LoanApplicationApproval;
+use App\Models\MemberAdmission;
 use App\Models\MemberAdmissionApproval;
 use App\Services\ApprovalService;
 use Illuminate\Http\Request;
@@ -68,18 +69,6 @@ class ApprovalController extends Controller
             $member = $loan->memberAdmission;
             $branch = $loan->branch;
 
-            $addressParts = array_filter([
-                $member?->present_village_road,
-                $member?->present_union,
-                $member?->present_upazila,
-                $member?->present_district,
-            ]);
-
-            $dob = $member?->date_of_birth;
-            if ($dob instanceof \DateTimeInterface) {
-                $dob = $dob->format('Y-m-d');
-            }
-
             $data = [
                 'id' => $approval->id,
                 'loan_application_id' => $loan->id,
@@ -88,21 +77,10 @@ class ApprovalController extends Controller
                 'applicant_name_bn' => $member ? ($member->applicant_name_bn ?? '') : '',
                 'branch_name' => $branch ? $branch->name : '',
                 'branch_id' => $loan->branch_id,
-                'branch_code' => $branch ? ($branch->code ?? '') : '',
                 'requested_amount' => $loan->requested_amount,
                 'submitted_at' => $loan->submitted_at,
                 'level' => $approval->level,
                 'sequence' => $approval->sequence,
-                'block_list' => [
-                    'name_bn' => $member?->applicant_name_bn ?? '',
-                    'father_name' => $member?->father_name_bn ?: ($member?->father_name_en ?? ''),
-                    'mother_name' => $member?->mother_name_bn ?: ($member?->mother_name_en ?? ''),
-                    'spouse_name' => $member?->spouse_name_bn ?: ($member?->spouse_name_en ?? ''),
-                    'dob' => $dob ?? '',
-                    'nid_number' => $member?->nid_number ?: ($member?->smart_card_number ?? ''),
-                    'phone_number' => $member?->mobile_number ?? '',
-                    'address' => $addressParts ? implode(', ', $addressParts) : '',
-                ],
             ];
             if ($approval->level === 'branch') {
                 $data['escalation_approvers'] = $this->approvalService->getEscalationApprovers($loan->branch_id)
@@ -115,22 +93,27 @@ class ApprovalController extends Controller
         });
 
         $approvalsData = $pendingApprovals->map(function ($approval) {
+            $member = $approval->memberAdmission;
+            $branch = $member->branch;
+
             $data = [
                 'id' => $approval->id,
                 'member_admission_id' => $approval->member_admission_id,
-                'application_no' => $approval->memberAdmission->application_no,
-                'applicant_name' => $approval->memberAdmission->full_name,
-                'applicant_name_bn' => $approval->memberAdmission->full_name_bn,
-                'branch_name' => $approval->memberAdmission->branch->name,
-                'branch_id' => $approval->memberAdmission->branch_id,
-                'samity_name' => $approval->memberAdmission->samity->samity_name,
-                'submitted_at' => $approval->memberAdmission->submitted_at,
+                'application_no' => $member->application_no,
+                'applicant_name' => $member->full_name,
+                'applicant_name_bn' => $member->full_name_bn,
+                'branch_name' => $branch->name,
+                'branch_id' => $member->branch_id,
+                'branch_code' => $branch->code ?? '',
+                'samity_name' => $member->samity->samity_name,
+                'submitted_at' => $member->submitted_at,
                 'level' => $approval->level,
                 'sequence' => $approval->sequence,
-                'revision_count' => $approval->memberAdmission->revision_count,
-                'revision_comments' => $approval->memberAdmission->revision_comments,
-                'status' => $approval->memberAdmission->status,
-                'requested_loan_amount' => $approval->memberAdmission->requested_loan_amount ? (float) $approval->memberAdmission->requested_loan_amount : 0,
+                'revision_count' => $member->revision_count,
+                'revision_comments' => $member->revision_comments,
+                'status' => $member->status,
+                'requested_loan_amount' => $member->requested_loan_amount ? (float) $member->requested_loan_amount : 0,
+                'block_list' => $this->blockListFieldsFromMember($member),
             ];
             if ($approval->level === 'branch') {
                 $data['escalation_approvers'] = $this->approvalService->getEscalationApprovers($approval->memberAdmission->branch_id)
@@ -174,18 +157,43 @@ class ApprovalController extends Controller
     }
 
     /**
-     * Reject an admission
+     * Reject an admission and optionally push the applicant to the block list.
      */
     public function reject(Request $request, MemberAdmissionApproval $approval)
     {
-        $request->validate([
-            'comments' => 'required|string|max:1000',
-        ]);
+        abort_unless((int) $approval->user_id === (int) $request->user()->id, 403);
 
-        $success = $this->approvalService->reject($approval, $request->comments);
+        $rules = [
+            'comments' => 'required|string|max:1000',
+            'push_to_block_list' => ['sometimes', 'boolean'],
+        ];
+
+        $pushToBlockList = $request->boolean('push_to_block_list', true);
+
+        if ($pushToBlockList) {
+            $rules = array_merge($rules, $this->blockListValidationRules());
+        }
+
+        $data = $request->validate($rules, $this->blockListValidationMessages());
+
+        try {
+            $success = $this->approvalService->reject(
+                $approval,
+                $data['comments'],
+                $pushToBlockList,
+                $pushToBlockList ? ($data['block_list'] ?? null) : null,
+            );
+        } catch (\RuntimeException $e) {
+            return back()->with('error', $e->getMessage());
+        }
 
         if ($success) {
-            return $this->redirectToListPreservingFilters('approvals.index', 'Application rejected successfully!');
+            $message = 'সদস্য আবেদন প্রত্যাখ্যান হয়েছে।';
+            if ($pushToBlockList) {
+                $message .= ' Block List-এ যোগ করা হয়েছে।';
+            }
+
+            return $this->redirectToListPreservingFilters('approvals.index', $message);
         }
 
         return back()->with('error', 'Unable to reject this application.');
@@ -274,36 +282,14 @@ class ApprovalController extends Controller
     /**
      * Reject a loan application.
      * Rejects the loan; higher approvers also sync-reject Team Based.
-     * Branch Manager: loan + block list only (no Team Based).
      */
     public function rejectLoan(Request $request, LoanApplicationApproval $loanApproval)
     {
         abort_unless((int) $loanApproval->user_id === (int) $request->user()->id, 403);
 
-        $rules = [
+        $data = $request->validate([
             'comments' => 'required|string|max:1000',
-            'push_to_block_list' => ['sometimes', 'boolean'],
-        ];
-
-        $pushToBlockList = $request->boolean('push_to_block_list', true);
-
-        if ($pushToBlockList) {
-            $rules = array_merge($rules, [
-                'block_list.nid_number' => ['required', 'string', 'max:50'],
-                'block_list.phone_number' => ['required', 'string', 'regex:/^[0-9]{10,14}$/'],
-                'block_list.name_bn' => ['nullable', 'string', 'max:255'],
-                'block_list.father_name' => ['nullable', 'string', 'max:255'],
-                'block_list.mother_name' => ['nullable', 'string', 'max:255'],
-                'block_list.spouse_name' => ['nullable', 'string', 'max:255'],
-                'block_list.dob' => ['nullable', 'date', 'before:today'],
-                'block_list.address' => ['nullable', 'string', 'max:500'],
-            ]);
-        }
-
-        $data = $request->validate($rules, [
-            'block_list.nid_number.required' => 'Block list-এ যোগ করতে NID নম্বর প্রয়োজন।',
-            'block_list.phone_number.required' => 'Block list-এ যোগ করতে ফোন নম্বর প্রয়োজন।',
-            'block_list.phone_number.regex' => 'ফোন নম্বর ১০–১৪ অঙ্কের হতে হবে।',
+        ], [
             'comments.required' => 'মন্তব্য লিখতে হবে।',
         ]);
 
@@ -311,8 +297,6 @@ class ApprovalController extends Controller
             $success = $this->approvalService->rejectLoan(
                 $loanApproval,
                 $data['comments'],
-                $pushToBlockList,
-                $pushToBlockList ? ($data['block_list'] ?? null) : null,
             );
         } catch (\RuntimeException $e) {
             return back()->with('error', $e->getMessage());
@@ -320,9 +304,6 @@ class ApprovalController extends Controller
 
         if ($success) {
             $message = 'ঋণ আবেদন প্রত্যাখ্যান হয়েছে।';
-            if ($pushToBlockList) {
-                $message .= ' Block List-এ যোগ করা হয়েছে।';
-            }
             if (in_array($loanApproval->level, ['area', 'zone', 'escalation'], true)) {
                 $message .= ' টিম ভিত্তিক অনুমোদনও প্রত্যাখ্যান হয়েছে (থাকলে)।';
             }
@@ -345,7 +326,7 @@ class ApprovalController extends Controller
         ]);
 
         $loan = $loanApproval->loanApplication;
-        $aboveCeiling = (float) ($loan?->requested_amount ?? 0) > \App\Services\ApprovalService::BRANCH_MANAGER_LOAN_CEILING;
+        $aboveCeiling = (float) ($loan?->requested_amount ?? 0) >= \App\Services\ApprovalService::BRANCH_MANAGER_LOAN_CEILING;
 
         $success = $this->approvalService->forwardLoanToApprover(
             $loanApproval,
@@ -363,5 +344,64 @@ class ApprovalController extends Controller
         }
 
         return back()->with('error', 'ফরওয়ার্ড করা যাচ্ছে না।');
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function blockListFieldsFromMember(MemberAdmission $member): array
+    {
+        $dob = $member->date_of_birth;
+        if ($dob instanceof \DateTimeInterface) {
+            $dob = $dob->format('Y-m-d');
+        }
+
+        $addressParts = array_filter([
+            $member->present_village_road,
+            $member->present_union,
+            $member->present_upazila,
+            $member->present_district,
+        ]);
+
+        return [
+            'name_bn' => $member->applicant_name_bn ?? '',
+            'father_name' => $member->father_name_bn ?: ($member->father_name_en ?? ''),
+            'mother_name' => $member->mother_name_bn ?: ($member->mother_name_en ?? ''),
+            'spouse_name' => $member->spouse_name_bn ?: ($member->spouse_name_en ?? ''),
+            'dob' => $dob ?? '',
+            'nid_number' => $member->nid_number ?: ($member->smart_card_number ?? ''),
+            'phone_number' => $member->mobile_number ?? '',
+            'address' => $addressParts ? implode(', ', $addressParts) : '',
+        ];
+    }
+
+    /**
+     * @return array<string, list<string>>
+     */
+    private function blockListValidationRules(): array
+    {
+        return [
+            'block_list.nid_number' => ['required', 'string', 'max:50'],
+            'block_list.phone_number' => ['required', 'string', 'regex:/^[0-9]{10,14}$/'],
+            'block_list.name_bn' => ['nullable', 'string', 'max:255'],
+            'block_list.father_name' => ['nullable', 'string', 'max:255'],
+            'block_list.mother_name' => ['nullable', 'string', 'max:255'],
+            'block_list.spouse_name' => ['nullable', 'string', 'max:255'],
+            'block_list.dob' => ['nullable', 'date', 'before:today'],
+            'block_list.address' => ['nullable', 'string', 'max:500'],
+        ];
+    }
+
+    /**
+     * @return array<string, string>
+     */
+    private function blockListValidationMessages(): array
+    {
+        return [
+            'block_list.nid_number.required' => 'Block list-এ যোগ করতে NID নম্বর প্রয়োজন।',
+            'block_list.phone_number.required' => 'Block list-এ যোগ করতে ফোন নম্বর প্রয়োজন।',
+            'block_list.phone_number.regex' => 'ফোন নম্বর ১০–১৪ অঙ্কের হতে হবে।',
+            'comments.required' => 'মন্তব্য লিখতে হবে।',
+        ];
     }
 }

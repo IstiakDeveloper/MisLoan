@@ -9,8 +9,8 @@ use Symfony\Component\HttpFoundation\Response;
 class EnsureCanViewMemberAdmission
 {
     /**
-     * Allow: users with has_all_access, or anyone whose accessible branches include the admission's branch,
-     * or an assigned approver for this admission.
+     * Allow: users with has_all_access, branch staff of the admission's branch
+     * (field officers only their own records), or an assigned approver.
      *
      * @param  \Illuminate\Http\Request  $request
      * @param  \Closure(\Illuminate\Http\Request): (\Symfony\Component\HttpFoundation\Response)  $next
@@ -38,11 +38,15 @@ class EnsureCanViewMemberAdmission
             return $next($request);
         }
 
-        // Branch staff (including field officers) see all admissions of their branch
-        if ($user->canAccessBranch((int) $admission->branch_id)) {
-            return $next($request);
+        if (! $user->canAccessBranch((int) $admission->branch_id)) {
+            abort(403, 'This section is only accessible to authorized users.');
         }
 
-        abort(403, 'This section is only accessible to authorized users.');
+        $user->loadMissing('role');
+        if ($user->role?->name === \App\Models\Role::FIELD_OFFICER && ! $admission->isAssignedToUser($user)) {
+            abort(403, 'ফিল্ড অফিসার শুধু নিজের করা ভর্তি আবেদন দেখতে পারবেন।');
+        }
+
+        return $next($request);
     }
 }

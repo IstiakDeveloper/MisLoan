@@ -90,17 +90,7 @@ class HeadOfficeLoanController extends Controller
 
         // Search filter
         if ($request->has('search') && $request->search) {
-            $search = $request->search;
-            $query->where(function($q) use ($search) {
-                $q->where('application_no', 'like', "%{$search}%")
-                  ->orWhereHas('memberAdmission', function($mq) use ($search) {
-                      $mq->where('applicant_name_en', 'like', "%{$search}%")
-                        ->orWhere('applicant_name_bn', 'like', "%{$search}%")
-                        ->orWhere('mobile_number', 'like', "%{$search}%")
-                        ->orWhere('nid_number', 'like', "%{$search}%")
-                        ->orWhere('application_no', 'like', "%{$search}%");
-                  });
-            });
+            \App\Services\MemberCodeService::applyLoanSearch($query, $request->search);
         }
 
         // Had issues filter (for loans that went through revision)
@@ -681,6 +671,10 @@ class HeadOfficeLoanController extends Controller
         $loanApplication->visible_form_ids = $visibleFormIds;
         $loanApplication->form_saved = $formSaved;
 
+        $isSuperAdmin = auth()->user()?->isSuperAdmin() ?? false;
+        $loanApplication->superadmin_can_pin_edit = $isSuperAdmin;
+        $loanApplication->superadmin_edit_unlocked = $isSuperAdmin && $this->isLoanEditUnlocked((int) $loanApplication->id);
+
         return Inertia::render('HeadOffice/LoanApplicationShow', [
             'loan' => $loanApplication,
         ]);
@@ -718,11 +712,21 @@ class HeadOfficeLoanController extends Controller
             return back()->with('error', 'পেন্ডিং সমস্যা থাকলে অনুমোদন করা যাবে না।');
         }
 
-        $loanApplication->update([
+        $loanApplication->loadMissing('loanProduct');
+        $businessPlan = $loanApplication->mergeOfficialDatesIntoBusinessPlan(
+            is_array($loanApplication->business_plan) ? $loanApplication->business_plan : [],
+            now()->toDateString(),
+        );
+
+        $update = [
             'status' => LoanApplication::STATUS_PENDING_DISBURSEMENT,
             'reviewed_at' => now(),
             'reviewed_by' => auth()->id(),
-        ]);
+        ];
+        if ($businessPlan !== []) {
+            $update['business_plan'] = $businessPlan;
+        }
+        $loanApplication->update($update);
 
         // Notify submitter and Branch Managers
         $loanApplication->loadMissing(['submittedBy', 'memberAdmission', 'branch']);
@@ -777,11 +781,20 @@ class HeadOfficeLoanController extends Controller
                     continue;
                 }
 
-                $loan->update([
+                $loan->loadMissing('loanProduct');
+                $businessPlan = $loan->mergeOfficialDatesIntoBusinessPlan(
+                    is_array($loan->business_plan) ? $loan->business_plan : [],
+                    now()->toDateString(),
+                );
+                $update = [
                     'status' => LoanApplication::STATUS_PENDING_DISBURSEMENT,
                     'reviewed_at' => now(),
                     'reviewed_by' => auth()->id(),
-                ]);
+                ];
+                if ($businessPlan !== []) {
+                    $update['business_plan'] = $businessPlan;
+                }
+                $loan->update($update);
                 $approvedCount++;
 
                 // Notify submitter and Branch Managers
@@ -885,11 +898,20 @@ class HeadOfficeLoanController extends Controller
                     $skippedCount++;
                     continue;
                 }
-                $loan->update([
+                $loan->loadMissing('loanProduct');
+                $businessPlan = $loan->mergeOfficialDatesIntoBusinessPlan(
+                    is_array($loan->business_plan) ? $loan->business_plan : [],
+                    now()->toDateString(),
+                );
+                $update = [
                     'status' => LoanApplication::STATUS_PENDING_DISBURSEMENT,
                     'reviewed_at' => now(),
                     'reviewed_by' => auth()->id(),
-                ]);
+                ];
+                if ($businessPlan !== []) {
+                    $update['business_plan'] = $businessPlan;
+                }
+                $loan->update($update);
                 $approvedCount++;
 
                 // Notify submitter and Branch Managers

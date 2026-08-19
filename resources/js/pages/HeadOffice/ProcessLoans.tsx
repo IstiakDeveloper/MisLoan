@@ -1,7 +1,7 @@
 import React, { useState, useMemo } from 'react';
 import { Head, router, useForm } from '@inertiajs/react';
 import AdminLayout from '@/layouts/admin-layout';
-import { formatDate, formatDateTime } from '@/utils/dateUtils';
+import { formatDate, formatDateTime, formatTime } from '@/utils/dateUtils';
 import ListPagination from '@/components/ListPagination';
 import AutoFitTableContainer from '@/components/AutoFitTableContainer';
 import { formatBranchLabel, keepListFilters, sortBranchesByCode } from '@/utils/branchLabel';
@@ -926,9 +926,14 @@ export default function ProcessLoans({ loans, filters, zones = [], areas = [], b
                                                     </div>
                                                 </td>
 
-                                                {/* Submitted Date */}
-                                                <td className="py-3 px-4 align-top text-slate-600">
-                                                    {formatDate(loan.submitted_at)}
+                                                {/* Submitted Date + time (AM/PM) */}
+                                                <td className="py-3 px-4 align-top text-slate-600 whitespace-nowrap">
+                                                    <div>{formatDate(loan.submitted_at)}</div>
+                                                    {formatTime(loan.submitted_at) && (
+                                                        <div className="text-[10px] text-slate-500 font-medium mt-0.5">
+                                                            {formatTime(loan.submitted_at)}
+                                                        </div>
+                                                    )}
                                                 </td>
 
                                                 {/* Issues Status */}

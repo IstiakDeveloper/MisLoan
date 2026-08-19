@@ -1,7 +1,8 @@
-import React from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import FormSection from '@/components/MemberAdmission/FormSection';
 import { SmartDateInput } from '@/components/ui/SmartDateInput';
-import { Building2, ChevronDown, Search } from 'lucide-react';
+import { Building2, ChevronDown, Search, Lock } from 'lucide-react';
+import { toEnglishDigits, formatBranchCode, parseMemberCode } from '@/utils/memberCodeUtils';
 
 interface SamityItem {
     id: number;
@@ -15,7 +16,7 @@ interface OrganizationSectionProps {
     data: any;
     setData: (field: string, value: any) => void;
     errors: Record<string, string>;
-    branches: Array<{ id: number; name: string }>;
+    branches: Array<{ id: number; name: string; code?: string }>;
     hasAllAccess: boolean;
     handleBranchChange: (e: React.ChangeEvent<HTMLSelectElement>) => void;
     samitySearchQuery: string;
@@ -46,6 +47,49 @@ export default function OrganizationSection({
     categories,
     isLegacyMember,
 }: OrganizationSectionProps) {
+    const currentBranch = branches.find((b) => Number(b.id) === Number(data.branch_id));
+    const branchPrefix = formatBranchCode(currentBranch?.code || (data.branch_id ? String(data.branch_id) : '0001'));
+
+    // Extract initial serial if application_no already has a value
+    const getInitialSerial = () => {
+        if (!data.application_no) return '';
+        const clean = toEnglishDigits(data.application_no).replace(/\D/g, '');
+        if (clean.length === 10 && clean.startsWith(branchPrefix)) {
+            return clean.slice(4);
+        }
+        if (clean.startsWith(branchPrefix) && clean.length > 4) {
+            return clean.slice(branchPrefix.length);
+        }
+        return clean;
+    };
+
+    const [serialInput, setSerialInput] = useState<string>(getInitialSerial);
+
+    // Sync serial input if branch or application_no changes externally (e.g. initial form fill / branch switch)
+    const prevBranchRef = useRef(branchPrefix);
+    useEffect(() => {
+        if (prevBranchRef.current !== branchPrefix) {
+            prevBranchRef.current = branchPrefix;
+            if (serialInput) {
+                setData('application_no', `${branchPrefix}${serialInput.padStart(6, '0')}`);
+            }
+        }
+    }, [branchPrefix]);
+
+    const handleSerialChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+        const clean = toEnglishDigits(e.target.value).replace(/\D/g, '').slice(0, 6);
+        setSerialInput(clean);
+        if (!clean) {
+            setData('application_no', '');
+        } else {
+            setData('application_no', `${branchPrefix}${clean.padStart(6, '0')}`);
+        }
+    };
+
+    const previewCode = serialInput
+        ? `${branchPrefix}${serialInput.padStart(6, '0')}`
+        : `${branchPrefix}000001`;
+
     return (
         <FormSection
             title="১. সংস্থা, শাখা ও সমিতি পরিচিতি"
@@ -56,17 +100,29 @@ export default function OrganizationSection({
                 <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 sm:gap-3">
                     <div>
                         <label className="mb-0.5 block text-xs font-semibold text-gray-700">
-                            Member Code / সদস্য নং
+                            Member Code / মেম্বার কোড (১০ ডিজিট)
                         </label>
-                        <input
-                            type="text"
-                            value={data.application_no || ''}
-                            onChange={(e) => setData('application_no', e.target.value)}
-                            className="w-full rounded-xl border border-gray-300 px-3 py-2 text-xs md:text-sm focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 font-mono font-medium"
-                        />
-                        <p className="mt-1 text-[11px] text-gray-500">
-                            Generated member code — চাইলে পরিবর্তন করতে পারবেন।
-                        </p>
+                        <div className="flex items-stretch rounded-xl border border-gray-300 overflow-hidden focus-within:border-indigo-500 focus-within:ring-2 focus-within:ring-indigo-500/20 bg-white shadow-2xs">
+                            <div
+                                className="flex items-center gap-1.5 bg-slate-100 px-3 py-2 border-r border-gray-300 text-xs font-mono font-bold text-slate-700 select-none shrink-0"
+                                title="শাখা কোড (অপরিবর্তনীয় ও ফিক্সড)"
+                            >
+                                <Lock className="w-3.5 h-3.5 text-slate-400" />
+                                <span>{branchPrefix}</span>
+                            </div>
+                            <input
+                                type="text"
+                                value={serialInput}
+                                onChange={handleSerialChange}
+                                maxLength={6}
+                                placeholder="যেমন: 590 বা 000590"
+                                className="w-full border-0 px-3 py-2 text-xs md:text-sm font-mono font-bold text-indigo-700 focus:outline-hidden focus:ring-0"
+                            />
+                        </div>
+                        <div className="mt-1 flex items-center justify-between text-[11px] text-gray-500 flex-wrap gap-1">
+                            <span>১০ ডিজিট কোড: <span className="font-mono font-bold text-blue-700">{previewCode}</span></span>
+                            <span className="text-[10px] text-slate-400">শাখা কোড {branchPrefix} ফিক্সড, বাকি ৬ ডিজিট মেম্বার কোড</span>
+                        </div>
                         {errors.application_no && (
                             <p className="mt-1 text-xs text-red-600 font-medium">{errors.application_no}</p>
                         )}

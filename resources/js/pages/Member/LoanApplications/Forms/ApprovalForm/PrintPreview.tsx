@@ -1,13 +1,15 @@
 import React from 'react';
 import { formatDateBangla } from '@/utils/dateUtils';
 import { useAutoFitPrint } from '@/hooks/useAutoFitPrint';
+import { formatLoanYearsLabel } from './FormPage3';
 
 const PRINT_FONT = 'Kalpurush, Arial, sans-serif';
 const pageFontStyle = { fontFamily: PRINT_FONT, color: '#000' } as const;
 
 const DATE_BOX_COUNT = 8;
 const DateDigitBoxes = ({ dateStr }: { dateStr: string }) => {
-    const digits = (dateStr || '').replace(/\D/g, '').split('');
+    // Keep Bangla digits (০-৯); \D would strip them and leave the boxes empty.
+    const digits = (dateStr || '').replace(/[^\d০-৯]/g, '').split('');
     const boxes = Array.from({ length: DATE_BOX_COUNT }, (_, i) => digits[i] ?? '');
     return (
         <span className="inline-flex gap-0.5 flex-wrap items-center text-[12px] print:text-[12px]">
@@ -82,6 +84,7 @@ function renderPage1(d: any, branch?: any, categoryName?: string) {
     const cat = categoryName || d.category_name || 'ঋণ';
     const fmt = formatDateBangla;
     const nidDigits = (d.nid_smart_card || '').replace(/\D/g, '').slice(0, 17).split('');
+    const durationLabel = `${formatLoanYearsLabel(d.loan_duration_months)} বছর`;
     return (
         <div
             id="preview-page-1"
@@ -114,7 +117,7 @@ function renderPage1(d: any, branch?: any, categoryName?: string) {
                                 <span className="inline-flex items-center"><DateDigitBoxes dateStr={fmt(d.application_date)} /></span>
                             </div>
                             <div><span>বরাবর,</span></div>
-                            <div><span className="border-b border-dotted border-gray-600 inline-block min-w-[140px] mx-1 align-bottom font-medium">{d.recipient_to || ''}</span></div>
+                            <div><span className="border-b border-dotted border-gray-600 inline-block min-w-[140px] mx-1 align-bottom font-medium">{d.recipient_to === 'প্রধান নির্বাহী' ? 'নির্বাহী পরিচালক' : (d.recipient_to || '')}</span></div>
                             <div><span className="border-b border-dotted border-gray-600 inline-block min-w-[140px] mx-1 align-bottom font-medium">{d.authority_medium || ''}</span></div>
                             <div><span>মাধ্যম যথাযথ কর্তৃপক্ষ।</span></div>
                         </div>
@@ -208,9 +211,9 @@ function renderPage1(d: any, branch?: any, categoryName?: string) {
                             <span>১৬. জনবল: <span className="border-b border-dotted border-gray-600 inline-block min-w-[40px] text-center font-medium">{d.project_manpower || ''}</span> জন</span>
                         </div>
                         <div className="flex flex-wrap items-baseline gap-x-3">
-                            <span>১৭. সম্ভাব্য আয়: <span className="border-b border-dotted border-gray-600 inline-block min-w-[70px] font-medium">{noDecimal(d.project_income_1_2_yr)}</span> ৳</span>
-                            <span>১৮. সম্ভাব্য ব্যয়: <span className="border-b border-dotted border-gray-600 inline-block min-w-[70px] font-medium">{noDecimal(d.project_expense_1_2_yr)}</span> ৳</span>
-                            <span>১৯. বার্ষিক নিট লাভ: <strong className="border-b border-dotted border-gray-600 inline-block min-w-[75px]">{noDecimal(d.annual_net_profit)}</strong> ৳</span>
+                            <span>১৭. সম্ভাব্য আয় ({durationLabel}): <span className="border-b border-dotted border-gray-600 inline-block min-w-[70px] font-medium">{noDecimal(d.project_income_1_2_yr)}</span> ৳</span>
+                            <span>১৮. সম্ভাব্য ব্যয় ({durationLabel}): <span className="border-b border-dotted border-gray-600 inline-block min-w-[70px] font-medium">{noDecimal(d.project_expense_1_2_yr)}</span> ৳</span>
+                            <span>১৯. নিট লাভ ({durationLabel}): <strong className="border-b border-dotted border-gray-600 inline-block min-w-[75px]">{noDecimal(d.annual_net_profit)}</strong> ৳</span>
                         </div>
                         <div className="flex flex-wrap items-baseline gap-x-3">
                             <span>২০. মোট মূলধন: <strong className="border-b border-dotted border-gray-600 inline-block min-w-[80px]">{noDecimal(d.capital_total || (Number(d.capital_own || 0) + Number(d.capital_applied_loan || 0)))}</strong> ৳</span>
@@ -646,10 +649,23 @@ function renderPage3(d: any) {
 
     const inst_prin = Number(d.installment_principal) || 0;
     const inst_sc = Number(d.installment_service_charge) || 0;
-    const inst_total = inst_prin + inst_sc;
+    const inst_total = Number(d.installment_total) || (inst_prin + inst_sc);
     const loan_dur = Number(d.loan_duration_months) || 0;
     const installment_count = Number(d.number_of_installments) || loan_dur;
-    const total_payable = inst_total * installment_count;
+    const last_inst = Number(d.last_installment_amount) || inst_total;
+    const total_principal = Number(d.total_principal)
+        || Number(d.invest_plan_applied_amount)
+        || Number(d.capital_applied_loan)
+        || Number(d.approval_amount_digits)
+        || 0;
+    const total_sc = Number(d.total_service_charge)
+        || Math.max(0, (Number(d.total_payable) || 0) - total_principal)
+        || (inst_sc * installment_count);
+    const total_payable = Number(d.total_payable)
+        || (total_principal + total_sc)
+        || (installment_count > 1
+            ? inst_total * (installment_count - 1) + last_inst
+            : inst_total);
 
     return (
         <div
@@ -761,7 +777,9 @@ function renderPage3(d: any) {
                                     <td className="border border-gray-600 p-1.5 font-semibold">{inst_total || ''}</td>
                                 </tr>
                                 <tr>
-                                    <td className="border border-gray-600 p-1.5 text-left font-bold pl-3" colSpan={3}>মোট পরিশোধের পরিমাণ</td>
+                                    <td className="border border-gray-600 p-1.5 text-left font-bold pl-3">মোট পরিশোধের পরিমাণ</td>
+                                    <td className="border border-gray-600 p-1.5 font-bold">{total_principal || ''}</td>
+                                    <td className="border border-gray-600 p-1.5 font-bold">{total_sc || ''}</td>
                                     <td className="border border-gray-600 p-1.5 font-bold">{total_payable || ''}</td>
                                 </tr>
                             </tbody>
@@ -916,8 +934,9 @@ function renderPage4(d: any) {
                     </div>
 
                     {/* সদস্য ও প্রোফাইল পূরণকারী স্বাক্ষর */}
-                    <div className="flex justify-between items-end mt-2 mb-3 px-3 text-[12.5px]">
+                    <div className="flex justify-between items-end mt-8 mb-3 px-3 text-[12.5px]">
                         <div className="text-center relative">
+                            <div className="h-16 print:h-[72px]" aria-hidden="true" />
                             <div className="border-t border-dotted border-gray-600 min-w-[200px] pt-1 font-medium">সদস্যের স্বাক্ষর:</div>
                             <div className="mt-1 flex items-center justify-center gap-1">
                                 <span>মোবাইল নং</span>
@@ -929,6 +948,7 @@ function renderPage4(d: any) {
                             </div>
                         </div>
                         <div className="text-center relative">
+                            <div className="h-16 print:h-[72px]" aria-hidden="true" />
                             <div className="border-t border-dotted border-gray-600 min-w-[220px] pt-1 font-medium">প্রোফাইল পূরণকারীর স্বাক্ষর ও সিল:</div>
                         </div>
                     </div>

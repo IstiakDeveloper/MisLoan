@@ -607,6 +607,7 @@ export default function FieldInvestigation({
         setErrors({});
         const payload: any = { loan_product_id: loanProduct.id, loan_category_id: loanCategory.id, requested_amount: requestedAmount, form_data: { ...data } as any, draft: 1 };
         if (isLegacy) payload.legacy = 1; else payload.member_id = member?.id;
+        if (existingApplication?.id) payload.application_id = existingApplication.id;
         if (resumeApprovalId) {
             payload.resume_approval_id = resumeApprovalId;
             payload.resume_approved_amount = resumeParams?.get('resume_approved_amount') || '';

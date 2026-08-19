@@ -81,22 +81,7 @@ class HeadOfficeSavingsController extends Controller
         }
 
         if ($request->filled('search')) {
-            $search = $request->search;
-            $query->where(function ($q) use ($search) {
-                $q->where('application_no', 'like', "%{$search}%")
-                    ->orWhereHas('memberAdmission', function ($mq) use ($search) {
-                        $mq->where('applicant_name_en', 'like', "%{$search}%")
-                            ->orWhere('applicant_name_bn', 'like', "%{$search}%")
-                            ->orWhere('mobile_number', 'like', "%{$search}%")
-                            ->orWhere('nid_number', 'like', "%{$search}%")
-                            ->orWhere('application_no', 'like', "%{$search}%");
-                    })
-                    ->orWhereHas('savingsProduct', function ($pq) use ($search) {
-                        $pq->where('product_name', 'like', "%{$search}%")
-                            ->orWhere('product_name_bn', 'like', "%{$search}%")
-                            ->orWhere('product_code', 'like', "%{$search}%");
-                    });
-            });
+            \App\Services\MemberCodeService::applySavingsSearch($query, $request->search);
         }
 
         $statsQuery = SavingsApplication::select('id', 'status', 'created_at', 'branch_id');

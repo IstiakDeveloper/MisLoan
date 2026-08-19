@@ -27,25 +27,32 @@ function getPageNumbers(current: number, totalPages: number): (number | 'ellipsi
 
 export default function ListPagination({
     meta,
+    pagination,
     onPageChange,
     onPerPageChange,
     itemLabel = 'টি রেকর্ড',
 }: {
-    meta: PaginatedMeta;
-    onPageChange: (page: number) => void;
-    onPerPageChange: (perPage: number) => void;
+    meta?: PaginatedMeta;
+    pagination?: PaginatedMeta;
+    onPageChange?: (page: number) => void;
+    onPerPageChange?: (perPage: number) => void;
     itemLabel?: string;
 }) {
-    const total = meta.total ?? 0;
+    const data = meta || pagination;
+    if (!data) {
+        return null;
+    }
+
+    const total = data.total ?? 0;
     if (total === 0) {
         return null;
     }
 
-    const current = meta.current_page || 1;
-    const lastPage = Math.max(1, meta.last_page || 1);
-    const perPage = meta.per_page || 20;
-    const from = meta.from ?? (current - 1) * perPage + 1;
-    const to = meta.to ?? Math.min(current * perPage, total);
+    const current = data.current_page || 1;
+    const lastPage = Math.max(1, data.last_page || 1);
+    const perPage = data.per_page || 20;
+    const from = data.from ?? (current - 1) * perPage + 1;
+    const to = data.to ?? Math.min(current * perPage, total);
 
     return (
         <div className="print:hidden flex flex-col gap-3 rounded-xl border border-slate-200 bg-gradient-to-r from-slate-50 via-white to-blue-50/50 px-4 py-3 shadow-sm sm:flex-row sm:items-center sm:justify-between">
@@ -61,7 +68,7 @@ export default function ListPagination({
                     <span className="whitespace-nowrap">প্রতি পৃষ্ঠায়</span>
                     <select
                         value={perPage}
-                        onChange={(e) => onPerPageChange(Number(e.target.value))}
+                        onChange={(e) => onPerPageChange?.(Number(e.target.value))}
                         className="h-8 cursor-pointer rounded-lg border border-slate-300 bg-white py-1 pr-8 pl-2.5 text-xs font-semibold text-slate-700 shadow-sm transition-colors hover:border-blue-400 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-100"
                     >
                         {LIST_PER_PAGE_OPTIONS.map((size) => (
@@ -76,7 +83,7 @@ export default function ListPagination({
             <nav className="flex items-center justify-center gap-1.5" aria-label="পেজিনেশন">
                 <button
                     type="button"
-                    onClick={() => onPageChange(current - 1)}
+                    onClick={() => onPageChange?.(current - 1)}
                     disabled={current <= 1}
                     className="inline-flex h-8 items-center gap-1 rounded-lg border border-slate-300 bg-white px-2.5 text-xs font-semibold text-slate-700 shadow-sm transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40"
                 >
@@ -94,7 +101,7 @@ export default function ListPagination({
                             <button
                                 key={page}
                                 type="button"
-                                onClick={() => onPageChange(page)}
+                                onClick={() => onPageChange?.(page)}
                                 className={`flex size-8 items-center justify-center rounded-lg border text-xs font-semibold transition ${
                                     current === page
                                         ? 'border-blue-600 bg-blue-600 text-white shadow-sm shadow-blue-500/20'
@@ -109,7 +116,7 @@ export default function ListPagination({
 
                 <button
                     type="button"
-                    onClick={() => onPageChange(current + 1)}
+                    onClick={() => onPageChange?.(current + 1)}
                     disabled={current >= lastPage}
                     className="inline-flex h-8 items-center gap-1 rounded-lg border border-slate-300 bg-white px-2.5 text-xs font-semibold text-slate-700 shadow-sm transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40"
                 >

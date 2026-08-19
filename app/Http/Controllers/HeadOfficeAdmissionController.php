@@ -10,6 +10,7 @@ use App\Models\Branch;
 use App\Models\User;
 use App\Models\Role;
 use App\Services\ApprovalService;
+use App\Services\BlockListService;
 use App\Services\NotificationService;
 use App\Support\RoleListWorkQueue;
 use Illuminate\Http\Request;
@@ -79,14 +80,7 @@ class HeadOfficeAdmissionController extends Controller
 
         // Search filter
         if ($request->has('search') && $request->search) {
-            $search = $request->search;
-            $query->where(function($q) use ($search) {
-                $q->where('application_no', 'like', "%{$search}%")
-                  ->orWhere('applicant_name_en', 'like', "%{$search}%")
-                  ->orWhere('applicant_name_bn', 'like', "%{$search}%")
-                  ->orWhere('mobile_number', 'like', "%{$search}%")
-                  ->orWhere('nid_number', 'like', "%{$search}%");
-            });
+            \App\Services\MemberCodeService::applyAdmissionSearch($query, $request->search);
         }
 
         // Had issues filter (for admissions that went through revision)
@@ -860,22 +854,76 @@ class HeadOfficeAdmissionController extends Controller
     }
 
     /**
-     * Reject single admission
+     * Reject single admission and push the applicant to the block list.
      */
     public function rejectSingle(Request $request, MemberAdmission $admission)
     {
-        $validated = $request->validate([
+        $rules = [
             'rejection_reason' => 'required|string|max:2000',
+            'push_to_block_list' => ['sometimes', 'boolean'],
+        ];
+
+        $pushToBlockList = $request->boolean('push_to_block_list', true);
+
+        if ($pushToBlockList) {
+            $fromAdmission = $this->blockListFromAdmission($admission);
+            $incoming = $request->input('block_list', []);
+            $incoming = is_array($incoming) ? array_filter($incoming, fn ($value) => $value !== null && $value !== '') : [];
+            $merged = array_merge($fromAdmission, $incoming);
+            $merged['phone_number'] = preg_replace('/\D+/', '', (string) ($merged['phone_number'] ?? '')) ?: '';
+            $request->merge(['block_list' => $merged]);
+            $rules = array_merge($rules, [
+                'block_list.nid_number' => ['required', 'string', 'max:50'],
+                'block_list.phone_number' => ['required', 'string', 'regex:/^[0-9]{10,14}$/'],
+                'block_list.name_bn' => ['nullable', 'string', 'max:255'],
+                'block_list.father_name' => ['nullable', 'string', 'max:255'],
+                'block_list.mother_name' => ['nullable', 'string', 'max:255'],
+                'block_list.spouse_name' => ['nullable', 'string', 'max:255'],
+                'block_list.dob' => ['nullable', 'date', 'before:today'],
+                'block_list.address' => ['nullable', 'string', 'max:500'],
+            ]);
+        }
+
+        $validated = $request->validate($rules, [
+            'block_list.nid_number.required' => 'Block list-এ যোগ করতে NID নম্বর প্রয়োজন।',
+            'block_list.phone_number.required' => 'Block list-এ যোগ করতে ফোন নম্বর প্রয়োজন।',
+            'block_list.phone_number.regex' => 'ফোন নম্বর ১০–১৪ অঙ্কের হতে হবে।',
+            'rejection_reason.required' => 'প্রত্যাখ্যানের কারণ লিখতে হবে।',
         ]);
 
-        $admission->update([
-            'status' => 'rejected',
-            'rejection_reason' => $validated['rejection_reason'],
-            'reviewed_at' => now(),
-            'reviewed_by' => auth()->id(),
-        ]);
+        $user = $request->user();
 
-        // Send notifications
+        try {
+            DB::transaction(function () use ($admission, $validated, $pushToBlockList, $user) {
+                $admission->loadMissing('branch');
+
+                $admission->update([
+                    'status' => 'rejected',
+                    'rejection_reason' => $validated['rejection_reason'],
+                    'reviewed_at' => now(),
+                    'reviewed_by' => $user->id,
+                ]);
+
+                if ($pushToBlockList) {
+                    $branch = $admission->branch;
+                    if (! $branch) {
+                        throw new \RuntimeException('শাখার তথ্য পাওয়া যায়নি। Block list-এ পাঠানো যায়নি।');
+                    }
+
+                    $memberName = (string) ($admission->applicant_name_bn ?: $admission->applicant_name_en ?: 'N/A');
+                    app(BlockListService::class)->pushRejectedPerson(
+                        $user,
+                        $memberName,
+                        $branch,
+                        $validated['block_list'],
+                        $validated['rejection_reason'],
+                    );
+                }
+            });
+        } catch (\RuntimeException $e) {
+            return back()->with('error', $e->getMessage());
+        }
+
         $admission->loadMissing(['createdBy', 'submittedBy', 'branch']);
         $recipients = collect([$admission->createdBy, $admission->submittedBy])->filter();
 
@@ -894,7 +942,12 @@ class HeadOfficeAdmissionController extends Controller
             ]
         );
 
-        return back()->with('success', 'Admission rejected successfully!');
+        $message = 'Admission rejected successfully!';
+        if ($pushToBlockList) {
+            $message .= ' Block List-এ যোগ করা হয়েছে।';
+        }
+
+        return back()->with('success', $message);
     }
 
     /**
@@ -1217,5 +1270,36 @@ class HeadOfficeAdmissionController extends Controller
         ) {
             abort(403, 'এই আবেদনটি এখনও হেড অফিসে আসেনি।');
         }
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function blockListFromAdmission(MemberAdmission $admission): array
+    {
+        $dob = $admission->date_of_birth;
+        if ($dob instanceof \DateTimeInterface) {
+            $dob = $dob->format('Y-m-d');
+        }
+
+        $addressParts = array_filter([
+            $admission->present_village_road,
+            $admission->present_union,
+            $admission->present_upazila,
+            $admission->present_district,
+        ]);
+
+        $phone = preg_replace('/\D+/', '', (string) ($admission->mobile_number ?? '')) ?: '';
+
+        return [
+            'name_bn' => $admission->applicant_name_bn ?? '',
+            'father_name' => $admission->father_name_bn ?: ($admission->father_name_en ?? ''),
+            'mother_name' => $admission->mother_name_bn ?: ($admission->mother_name_en ?? ''),
+            'spouse_name' => $admission->spouse_name_bn ?: ($admission->spouse_name_en ?? ''),
+            'dob' => $dob ?: null,
+            'nid_number' => $admission->nid_number ?: ($admission->smart_card_number ?? ''),
+            'phone_number' => $phone,
+            'address' => $addressParts ? implode(', ', $addressParts) : '',
+        ];
     }
 }

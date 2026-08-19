@@ -157,9 +157,9 @@ class ApprovalService
             return false;
         }
 
-        // If requested loan amount > 70,000 TK, branch level cannot directly approve without higher approver selection
-        if ($approval->level === 'branch' && (float) ($approval->memberAdmission->requested_loan_amount ?? 0) > 70000) {
-            throw new \Exception('ঋণ চাহিদা ৭০,০০০ টাকার বেশি হওয়ায় সরাসরি অনুমোদন করা সম্ভব নয়। উচ্চতর অনুমোদনকারী নির্বাচন করে Forward করুন।');
+        // If requested loan amount >= 70,000 TK, branch level cannot directly approve without higher approver selection
+        if ($approval->level === 'branch' && (float) ($approval->memberAdmission->requested_loan_amount ?? 0) >= 70000) {
+            throw new \Exception('ঋণ চাহিদা ৭০,০০০ টাকা বা তার বেশি হওয়ায় সরাসরি অনুমোদন করা সম্ভব নয়। উচ্চতর অনুমোদনকারী নির্বাচন করে Forward করুন।');
         }
 
         DB::transaction(function () use ($approval, $comments) {
@@ -241,10 +241,17 @@ class ApprovalService
     }
 
     /**
-     * Reject a member admission
+     * Reject a member admission.
+     * When $pushToBlockList is true, the applicant is pushed to the external block list.
+     *
+     * @param  array<string, mixed>|null  $blockListData
      */
-    public function reject(MemberAdmissionApproval $approval, string $comments): bool
-    {
+    public function reject(
+        MemberAdmissionApproval $approval,
+        string $comments,
+        bool $pushToBlockList = true,
+        ?array $blockListData = null,
+    ): bool {
         if ($approval->status !== 'pending') {
             return false;
         }
@@ -253,7 +260,7 @@ class ApprovalService
             return false;
         }
 
-        DB::transaction(function () use ($approval, $comments) {
+        DB::transaction(function () use ($approval, $comments, $pushToBlockList, $blockListData) {
             $approval->update([
                 'status' => 'rejected',
                 'comments' => $comments,
@@ -262,7 +269,26 @@ class ApprovalService
                 'approver_pin' => $approval->user->pin ?? null,
             ]);
 
-            $approval->memberAdmission->update(['status' => 'rejected']);
+            $admission = $approval->memberAdmission;
+            $admission->loadMissing('branch');
+            $admission->update(['status' => 'rejected']);
+
+            if ($pushToBlockList && is_array($blockListData)) {
+                $branch = $admission->branch;
+                if (! $branch) {
+                    throw new \RuntimeException('শাখার তথ্য পাওয়া যায়নি। Block list-এ পাঠানো যায়নি।');
+                }
+
+                $memberName = (string) ($admission->applicant_name_bn ?: $admission->applicant_name_en ?: 'N/A');
+
+                app(BlockListService::class)->pushRejectedPerson(
+                    $approval->user,
+                    $memberName,
+                    $branch,
+                    $blockListData,
+                    $comments,
+                );
+            }
         });
 
         // Send notifications
@@ -663,8 +689,8 @@ class ApprovalService
             return false;
         }
 
-        if ($approval->level === 'branch' && (float) ($approval->loanApplication->requested_amount ?? 0) > self::BRANCH_MANAGER_LOAN_CEILING) {
-            throw new \Exception('ঋণের পরিমাণ ৭০,০০০ টাকার বেশি হওয়ায় সরাসরি অনুমোদন করা সম্ভব নয়। উচ্চতর অনুমোদনকারী নির্বাচন করে Forward করুন।');
+        if ($approval->level === 'branch' && (float) ($approval->loanApplication->requested_amount ?? 0) >= self::BRANCH_MANAGER_LOAN_CEILING) {
+            throw new \Exception('ঋণের পরিমাণ ৭০,০০০ টাকা বা তার বেশি হওয়ায় সরাসরি অনুমোদন করা সম্ভব নয়। উচ্চতর অনুমোদনকারী নির্বাচন করে Forward করুন।');
         }
 
         if ($approvedAmount === null || $approvedAmount < 0) {
@@ -722,6 +748,10 @@ class ApprovalService
                 if ($comments !== null && trim($comments) !== '') {
                     $businessPlan['final_approver_comments'] = $comments;
                 }
+                $businessPlan = $loan->mergeOfficialDatesIntoBusinessPlan(
+                    $businessPlan,
+                    now()->toDateString(),
+                );
 
                 $loan->update([
                     'status' => LoanApplication::STATUS_READY_FOR_HEAD_OFFICE,
@@ -773,27 +803,19 @@ class ApprovalService
     }
 
     /**
-     * Reject a loan application approval step
-     */
-    /**
      * Reject a loan application.
      * Always rejects the loan. Higher-level approvers (area/zone/escalation) also
      * sync-reject any linked Team Based sheet. Branch Manager reject skips Team Based.
-     * When $pushToBlockList is true, member is pushed to the external block list.
-     *
-     * @param  array<string, mixed>|null  $blockListData
      */
     public function rejectLoan(
         LoanApplicationApproval $approval,
         string $comments,
-        bool $pushToBlockList = true,
-        ?array $blockListData = null,
     ): bool {
         if ($approval->status !== 'pending' || ! $approval->isCurrentPending()) {
             return false;
         }
 
-        DB::transaction(function () use ($approval, $comments, $pushToBlockList, $blockListData) {
+        DB::transaction(function () use ($approval, $comments) {
             $approval->update([
                 'status' => 'rejected',
                 'comments' => $comments,
@@ -809,33 +831,10 @@ class ApprovalService
                     $loan,
                     $approval->user,
                     $comments,
-                    $pushToBlockList ? $blockListData : null,
                 );
             }
 
             $loan->update(['status' => LoanApplication::STATUS_REJECTED]);
-
-            if ($pushToBlockList && is_array($blockListData)) {
-                $branch = $loan->branch;
-                if (! $branch) {
-                    throw new \RuntimeException('শাখার তথ্য পাওয়া যায়নি। Block list-এ পাঠানো যায়নি।');
-                }
-
-                $member = $loan->memberAdmission;
-                $memberName = $member
-                    ? (string) ($member->applicant_name_bn ?: $member->applicant_name_en ?: 'N/A')
-                    : (string) ($loan->member_display->applicant_name_bn
-                        ?? $loan->member_display->applicant_name_en
-                        ?? 'N/A');
-
-                app(BlockListService::class)->pushRejectedPerson(
-                    $approval->user,
-                    $memberName,
-                    $branch,
-                    $blockListData,
-                    $comments,
-                );
-            }
         });
 
         // Send notifications
@@ -930,7 +929,7 @@ class ApprovalService
                 null,
             );
 
-            if ((float) ($loan->requested_amount ?? 0) > self::BRANCH_MANAGER_LOAN_CEILING) {
+            if ((float) ($loan->requested_amount ?? 0) >= self::BRANCH_MANAGER_LOAN_CEILING) {
                 $loan->loadMissing([
                     'memberAdmission.samity',
                     'loanProduct',
@@ -1225,14 +1224,11 @@ class ApprovalService
     /**
      * When a higher approver rejects a loan, also reject the linked Team Based review.
      * Branch Manager rejects never call this (no Team Based for BM path).
-     *
-     * @param  array<string, mixed>|null  $blockListData
      */
     private function syncTeamBasedApprovalOnLoanReject(
         LoanApplication $loan,
         User $approver,
         string $comments,
-        ?array $blockListData = null,
     ): void {
         $teamBased = $this->findTeamBasedApprovalForLoan($loan, $approver);
         if (! $teamBased) {
@@ -1247,19 +1243,6 @@ class ApprovalService
 
         if (! $review) {
             return;
-        }
-
-        if (is_array($blockListData) && $review->item) {
-            $review->item->update([
-                'name_bn' => $blockListData['name_bn'] ?? $review->item->name_bn,
-                'father_name' => $blockListData['father_name'] ?? $review->item->father_name,
-                'mother_name' => $blockListData['mother_name'] ?? $review->item->mother_name,
-                'spouse_name' => $blockListData['spouse_name'] ?? $review->item->spouse_name,
-                'dob' => $blockListData['dob'] ?? $review->item->dob,
-                'nid_number' => $blockListData['nid_number'] ?? $review->item->nid_number,
-                'address' => $blockListData['address'] ?? $review->item->address,
-                'member_phone' => $blockListData['phone_number'] ?? $review->item->member_phone,
-            ]);
         }
 
         $review->update([

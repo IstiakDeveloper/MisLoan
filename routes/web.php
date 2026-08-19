@@ -285,6 +285,7 @@ Route::middleware(['auth', 'verified'])->group(function () {
             Route::patch('{id}/send-to-head-office', [\App\Http\Controllers\Member\LoanApplicationController::class, 'sendToHeadOffice'])->name('send-to-head-office');
             Route::patch('{id}/disburse', [\App\Http\Controllers\Member\LoanApplicationController::class, 'disburse'])->name('disburse');
             Route::patch('{id}/update-member-code', [\App\Http\Controllers\Member\LoanApplicationController::class, 'updateMemberCode'])->name('update-member-code');
+            Route::post('{id}/unlock-edit', [\App\Http\Controllers\Member\LoanApplicationController::class, 'unlockEdit'])->name('unlock-edit');
             Route::get('{id}/print', [\App\Http\Controllers\Member\LoanApplicationController::class, 'print'])->name('print');
             Route::delete('{id}', [\App\Http\Controllers\Member\LoanApplicationController::class, 'destroy'])->name('destroy');
 

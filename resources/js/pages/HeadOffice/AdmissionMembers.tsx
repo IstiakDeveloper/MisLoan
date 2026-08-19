@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Head, router, Link, usePage } from '@inertiajs/react';
 import AdminLayout from '@/layouts/admin-layout';
-import { formatDate } from '@/utils/dateUtils';
+import { formatDate, formatTime } from '@/utils/dateUtils';
 import {
     Search,
     Eye,
@@ -22,6 +22,13 @@ import {
     Download,
     Sparkles,
     Wrench,
+    Layers,
+    Send,
+    Clock,
+    UserCheck,
+    RotateCcw,
+    CheckCircle2,
+    Ban,
 } from 'lucide-react';
 import { MemberAdmission } from '@/types/memberAdmission';
 import AutoFitTableContainer from '@/components/AutoFitTableContainer';
@@ -385,20 +392,103 @@ export default function AdmissionMembers({ admissions, filters, stats, zones, ar
     const isAllStatus = statusFilter === 'all' || statusFilter === '';
     const statCards = [
         ...(defaultStatus
-            ? [{ label: workQueue?.label || 'আমার কাজ', count: (stats as Record<string, number>)[defaultStatus] || 0, filter: defaultStatus }]
+            ? [{
+                label: workQueue?.label || 'আমার কাজ',
+                count: (stats as Record<string, number>)[defaultStatus] || 0,
+                filter: defaultStatus,
+                icon: UserCheck,
+                iconColor: 'text-indigo-600',
+                iconBg: 'bg-indigo-50',
+                barColor: 'from-indigo-500 to-indigo-600',
+                activeBg: 'bg-indigo-600 border-indigo-600 text-white',
+                highlight: true,
+            }]
             : []),
-        { label: 'সর্বমোট', count: stats.total, filter: 'all' },
+        {
+            label: 'সর্বমোট',
+            count: stats.total,
+            filter: 'all',
+            icon: Layers,
+            iconColor: 'text-slate-700',
+            iconBg: 'bg-slate-100',
+            barColor: 'from-slate-600 to-slate-800',
+            activeBg: 'bg-slate-900 border-slate-900 text-white',
+        },
         ...(canViewAllAdmissions
             ? [
-                  { label: 'খসড়া', count: stats.draft, filter: 'draft' },
-                  { label: 'জমা', count: stats.submitted, filter: 'submitted' },
-                  { label: 'পর্যালোচনা', count: stats.under_review, filter: 'under_review' },
+                  {
+                      label: 'খসড়া',
+                      count: stats.draft,
+                      filter: 'draft',
+                      icon: FileText,
+                      iconColor: 'text-slate-600',
+                      iconBg: 'bg-slate-100',
+                      barColor: 'from-slate-400 to-slate-500',
+                      activeBg: 'bg-slate-800 border-slate-800 text-white',
+                  },
+                  {
+                      label: 'জমাকৃত',
+                      count: stats.submitted,
+                      filter: 'submitted',
+                      icon: Send,
+                      iconColor: 'text-blue-600',
+                      iconBg: 'bg-blue-50',
+                      barColor: 'from-blue-500 to-blue-600',
+                      activeBg: 'bg-blue-600 border-blue-600 text-white',
+                  },
+                  {
+                      label: 'পর্যালোচনা',
+                      count: stats.under_review,
+                      filter: 'under_review',
+                      icon: Clock,
+                      iconColor: 'text-amber-600',
+                      iconBg: 'bg-amber-50',
+                      barColor: 'from-amber-400 to-amber-500',
+                      activeBg: 'bg-amber-500 border-amber-500 text-white',
+                  },
               ]
             : []),
-        { label: 'হেড অফিস', count: stats.pending_head_office, filter: 'pending_head_office' },
-        { label: 'সংশোধন', count: stats.needs_revision || 0, filter: 'needs_revision' },
-        { label: 'অনুমোদিত', count: stats.approved, filter: 'approved' },
-        { label: 'প্রত্যাখ্যাত', count: stats.rejected, filter: 'rejected' },
+        {
+            label: 'হেড অফিসে',
+            count: stats.pending_head_office,
+            filter: 'pending_head_office',
+            icon: Building2,
+            iconColor: 'text-purple-600',
+            iconBg: 'bg-purple-50',
+            barColor: 'from-purple-500 to-purple-600',
+            activeBg: 'bg-purple-600 border-purple-600 text-white',
+            highlight: stats.pending_head_office > 0,
+        },
+        {
+            label: 'সংশোধন',
+            count: stats.needs_revision || 0,
+            filter: 'needs_revision',
+            icon: RotateCcw,
+            iconColor: 'text-orange-600',
+            iconBg: 'bg-orange-50',
+            barColor: 'from-orange-500 to-orange-600',
+            activeBg: 'bg-orange-500 border-orange-500 text-white',
+        },
+        {
+            label: 'অনুমোদিত',
+            count: stats.approved,
+            filter: 'approved',
+            icon: CheckCircle2,
+            iconColor: 'text-teal-600',
+            iconBg: 'bg-teal-50',
+            barColor: 'from-teal-500 to-teal-600',
+            activeBg: 'bg-teal-600 border-teal-600 text-white',
+        },
+        {
+            label: 'প্রত্যাখ্যাত',
+            count: stats.rejected,
+            filter: 'rejected',
+            icon: Ban,
+            iconColor: 'text-rose-600',
+            iconBg: 'bg-rose-50',
+            barColor: 'from-rose-500 to-rose-600',
+            activeBg: 'bg-rose-600 border-rose-600 text-white',
+        },
     ].filter((stat, index, all) => all.findIndex((s) => s.filter === stat.filter) === index);
 
     const ActionButtons = ({ admission }: { admission: MemberAdmission }) => (
@@ -453,228 +543,235 @@ export default function AdmissionMembers({ admissions, filters, stats, zones, ar
         <AdminLayout>
             <Head title="Admission Members" />
 
-            <div className="w-full space-y-5 py-4 px-3 sm:px-6 pb-16">
-                {/* Header */}
-                <div className="relative overflow-hidden flex flex-col sm:flex-row sm:items-center justify-between gap-4 rounded-2xl border border-blue-200 bg-gradient-to-r from-blue-700 via-blue-600 to-sky-600 px-5 py-5 shadow-md shadow-blue-900/10">
-                    <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_top_right,_rgba(255,255,255,0.15),_transparent_50%)] pointer-events-none" />
-                    <div className="relative z-10">
-                        <div className="inline-flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wider text-blue-100 mb-1">
-                            <Users className="w-3.5 h-3.5" />
-                            Head Office
+            <div className="p-3 md:p-4 space-y-3 max-w-[1600px] mx-auto pb-16 print:block">
+                {/* ── 1. SLIM PROFESSIONAL HEADER ───────────────────────────────────── */}
+                <div className="bg-white px-4 py-3 rounded-2xl border border-slate-200/90 shadow-2xs flex flex-wrap items-center justify-between gap-3 print:hidden">
+                    <div className="flex items-center gap-2.5 min-w-0">
+                        <div className="w-8 h-8 rounded-xl bg-slate-800 text-white flex items-center justify-center shadow-xs shrink-0">
+                            <Building2 size={16} />
                         </div>
-                        <h1 className="text-xl sm:text-2xl font-bold text-white tracking-tight">
-                            সদস্য ভর্তি তালিকা
-                        </h1>
-                        <p className="text-sm text-blue-100 mt-0.5">
-                            {canViewAllAdmissions
-                                ? 'সব শাখার ভর্তি আবেদন · পেন্ডিং অবস্থান ট্র্যাকিং'
-                                : 'হেড অফিসে আসা ভর্তি আবেদন'}
-                        </p>
+                        <div>
+                            <div className="flex items-center gap-2">
+                                <h1 className="text-sm sm:text-base font-bold text-slate-800 tracking-tight">
+                                    সদস্য ভর্তি তালিকা (Head Office)
+                                </h1>
+                                <span className="text-[10px] font-bold px-2 py-0.5 bg-slate-100 text-slate-700 rounded-md border border-slate-200">
+                                    মোট {stats.total || 0} টি
+                                </span>
+                            </div>
+                        </div>
                     </div>
-                    <div className="relative z-10 flex flex-wrap items-center gap-2 shrink-0">
+
+                    {/* Action Buttons */}
+                    <div className="flex items-center gap-2 flex-wrap">
                         <button
                             type="button"
                             onClick={handleTodayFilter}
-                            className={`inline-flex items-center gap-1.5 px-3.5 py-2 rounded-lg text-sm font-semibold transition border ${
+                            className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl border text-xs font-semibold transition-all active:scale-95 shadow-2xs ${
                                 isTodayFilter
-                                    ? 'bg-blue-600 text-white border-blue-400 shadow-sm'
-                                    : 'bg-blue-500/20 hover:bg-blue-500/40 text-white border-white/20'
+                                    ? 'bg-blue-600 text-white border-blue-600 font-bold'
+                                    : 'bg-slate-50 text-slate-700 border-slate-200 hover:bg-slate-100'
                             }`}
-                            title="আজকের আবেদনসমূহ"
+                            title="আজকের ভর্তি আবেদনসমূহ (Today)"
                         >
-                            <CalendarDays className="w-4 h-4" />
-                            Today (আজ)
+                            <CalendarDays size={13} />
+                            <span>Today (আজ)</span>
                         </button>
+
+                        <Link
+                            href="/head-office/process-admissions"
+                            className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold shadow-2xs transition-all active:scale-95"
+                        >
+                            <PlayCircle size={14} />
+                            <span>Process Admissions</span>
+                        </Link>
+
                         <button
                             type="button"
                             onClick={handleExportExcel}
-                            className="inline-flex items-center gap-2 px-3.5 py-2 rounded-lg bg-white text-emerald-700 hover:bg-emerald-50 text-sm font-semibold shadow-sm transition"
-                            title="Excel ডাউনলোড"
+                            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-emerald-50 text-emerald-700 hover:bg-emerald-100 border border-emerald-200 text-xs font-semibold transition-all active:scale-95 shadow-2xs"
+                            title="XLSX এক্সেল ডাউনলোড"
                         >
-                            <Download className="w-4 h-4" />
-                            XLSX Download
+                            <Download size={13} />
+                            <span>Excel</span>
                         </button>
+
                         <button
                             type="button"
                             onClick={() => setShowPrintModal(true)}
-                            className="inline-flex items-center gap-2 px-3.5 py-2 rounded-lg bg-blue-500/40 hover:bg-blue-500/60 text-white border border-white/30 text-sm font-semibold transition"
+                            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-200 text-xs font-semibold transition-all active:scale-95 shadow-2xs"
                         >
-                            <Printer className="w-4 h-4" />
-                            প্রিন্ট
+                            <Printer size={13} />
+                            <span>প্রিন্ট</span>
                         </button>
-                        <Link
-                            href="/head-office/process-admissions"
-                            className="inline-flex items-center gap-2 px-3.5 py-2 rounded-lg bg-white text-blue-700 hover:bg-blue-50 text-sm font-semibold shadow-sm transition"
-                        >
-                            <PlayCircle className="w-4 h-4" />
-                            Process
-                        </Link>
                     </div>
                 </div>
 
-                {/* Stats */}
-                <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-8 gap-2">
-                    {statCards.map((stat) => (
-                        <button
-                            key={stat.label}
-                            type="button"
-                            onClick={() => handleFilterChange(stat.filter)}
-                            className={`rounded-xl px-3 py-2.5 text-left border transition shadow-sm ${
-                                statusFilter === stat.filter || (stat.filter === 'all' && isAllStatus)
-                                    ? 'border-blue-600 bg-blue-600 text-white shadow-blue-200'
-                                    : 'border-blue-100 bg-white text-slate-800 hover:border-blue-300 hover:bg-blue-50/60'
-                            }`}
-                        >
-                            <div className="text-xl font-bold tabular-nums leading-none">{stat.count}</div>
-                            <div className={`text-[11px] font-medium mt-1 ${statusFilter === stat.filter || (stat.filter === 'all' && isAllStatus) ? 'text-blue-100' : 'text-slate-500'}`}>
-                                {stat.label}
-                            </div>
-                        </button>
-                    ))}
-                </div>
+                {/* ── 2. UNIFIED FILTER & STATUS CONTROL CARD ─────────────────────────── */}
+                <div className="bg-white rounded-3xl border border-slate-200/90 shadow-2xs p-3.5 space-y-3.5 print:hidden">
+                    {/* Status Filter Cards in 1 Row with Micro Visual Progress & Icons */}
+                    <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 lg:grid-cols-8 gap-2">
+                        {statCards.map((stat) => {
+                            const isActive = statusFilter === stat.filter || (stat.filter === 'all' && isAllStatus);
+                            const IconComponent = stat.icon;
+                            const percentage = Math.min(100, Math.round((stat.count / (stats.total || 1)) * 100));
 
-                {workQueue?.hint && !isAllStatus && (
-                    <p className="text-xs text-blue-800 bg-blue-50 border border-blue-100 rounded-xl px-3 py-2">
-                        {workQueue.hint}
-                    </p>
-                )}
+                            return (
+                                <button
+                                    key={stat.label}
+                                    type="button"
+                                    onClick={() => handleFilterChange(stat.filter)}
+                                    className={`relative p-2.5 rounded-2xl border text-left transition-all duration-150 active:scale-95 group overflow-hidden ${
+                                        isActive
+                                            ? `${stat.activeBg} shadow-md ring-2 ring-offset-1 ring-blue-500/40`
+                                            : stat.highlight
+                                            ? 'bg-gradient-to-b from-purple-50/90 to-white border-purple-300 hover:border-purple-400 hover:shadow-xs'
+                                            : 'bg-white hover:bg-slate-50/90 border-slate-200/90 hover:border-slate-300 shadow-2xs'
+                                    }`}
+                                >
+                                    {/* Top Row: Icon & Count */}
+                                    <div className="flex items-center justify-between gap-1 mb-1.5">
+                                        <div className={`w-7 h-7 rounded-xl flex items-center justify-center shrink-0 transition-transform group-hover:scale-105 ${
+                                            isActive ? 'bg-white/20 text-white' : `${stat.iconBg} ${stat.iconColor}`
+                                        }`}>
+                                            <IconComponent size={14} className="stroke-[2.2]" />
+                                        </div>
+                                        <span className={`text-base font-black tracking-tight ${
+                                            isActive ? 'text-white' : 'text-slate-900'
+                                        }`}>
+                                            {stat.count}
+                                        </span>
+                                    </div>
 
-                {/* Filters */}
-                <div className="bg-white rounded-xl border border-blue-100 p-3.5 shadow-sm">
-                    <form onSubmit={handleSearch} className="space-y-3">
-                        <div className="flex flex-wrap gap-2 items-end">
-                            <div className="flex-1 min-w-[200px]">
-                                <div className="relative">
-                                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-blue-400 w-4 h-4" />
-                                    <input
-                                        type="text"
-                                        value={searchQuery}
-                                        onChange={(e) => setSearchQuery(e.target.value)}
-                                        placeholder="সদস্য নাম্বার, নাম, মোবাইল, এনআইডি..."
-                                        className="w-full pl-9 pr-3 py-2 text-sm border border-blue-200 rounded-lg bg-blue-50/30 focus:ring-2 focus:ring-blue-500/20 focus:border-blue-400"
-                                    />
-                                </div>
-                            </div>
+                                    {/* Middle: Label */}
+                                    <span className={`text-[11px] font-bold truncate block ${
+                                        isActive ? 'text-white/90' : 'text-slate-600'
+                                    }`}>
+                                        {stat.label}
+                                    </span>
+
+                                    {/* Visual Micro Progress Bar */}
+                                    <div className="mt-1.5 w-full bg-slate-100 rounded-full h-1 overflow-hidden">
+                                        <div
+                                            className={`h-full rounded-full transition-all duration-300 ${
+                                                isActive ? 'bg-white' : `bg-gradient-to-r ${stat.barColor}`
+                                            }`}
+                                            style={{ width: `${stat.filter === 'all' ? 100 : Math.max(8, percentage)}%` }}
+                                        />
+                                    </div>
+                                </button>
+                            );
+                        })}
+                    </div>
+
+                    {/* Integrated Search & Filter Controls Toolbar */}
+                    <form onSubmit={handleSearch} className="pt-2 border-t border-slate-100 flex flex-wrap items-center gap-2 text-xs">
+                        <div className="relative flex-grow min-w-[200px] max-w-sm">
+                            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 pointer-events-none" />
+                            <input
+                                type="text"
+                                value={searchQuery}
+                                onChange={(e) => setSearchQuery(e.target.value)}
+                                placeholder="সদস্য নাম্বার, নাম, মোবাইল, এনআইডি..."
+                                className="w-full pl-9 pr-4 py-2 text-xs border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 bg-slate-50/50 transition-all font-medium"
+                            />
+                        </div>
+
+                        <div className="flex items-center gap-1.5 bg-slate-50 border border-slate-200 p-1 rounded-xl">
                             <input
                                 type="date"
                                 value={dateFrom}
                                 onChange={(e) => setDateFrom(e.target.value)}
-                                className="px-2.5 py-2 text-sm border border-blue-200 rounded-lg bg-white focus:ring-2 focus:ring-blue-500/20 focus:border-blue-400"
+                                className="px-2 py-1 text-xs border border-slate-300 rounded-lg bg-white focus:outline-none"
+                                title="তারিখ হতে"
                             />
+                            <span className="text-slate-400 text-xs font-bold">–</span>
                             <input
                                 type="date"
                                 value={dateTo}
                                 onChange={(e) => setDateTo(e.target.value)}
-                                className="px-2.5 py-2 text-sm border border-blue-200 rounded-lg bg-white focus:ring-2 focus:ring-blue-500/20 focus:border-blue-400"
+                                className="px-2 py-1 text-xs border border-slate-300 rounded-lg bg-white focus:outline-none"
+                                title="তারিখ পর্যন্ত"
                             />
+                        </div>
+
+                        <select
+                            value={selectedZone}
+                            onChange={(e) => setSelectedZone(e.target.value)}
+                            className="px-2.5 py-2 text-xs border border-slate-200 rounded-xl bg-slate-50/50 font-medium"
+                        >
+                            <option value="">সব জোন</option>
+                            {zones.map((zone) => (
+                                <option key={zone.id} value={zone.id.toString()}>
+                                    {zone.name}
+                                </option>
+                            ))}
+                        </select>
+
+                        <select
+                            value={selectedArea}
+                            onChange={(e) => setSelectedArea(e.target.value)}
+                            disabled={!selectedZone && filteredAreas.length === 0}
+                            className="px-2.5 py-2 text-xs border border-slate-200 rounded-xl bg-slate-50/50 font-medium disabled:opacity-50"
+                        >
+                            <option value="">সব এলাকা</option>
+                            {filteredAreas.map((area) => (
+                                <option key={area.id} value={area.id.toString()}>
+                                    {area.name}
+                                </option>
+                            ))}
+                        </select>
+
+                        <select
+                            value={selectedBranch}
+                            onChange={(e) => setSelectedBranch(e.target.value)}
+                            disabled={!selectedZone && !selectedArea && filteredBranches.length === 0}
+                            className="px-2.5 py-2 text-xs border border-slate-200 rounded-xl bg-slate-50/50 font-medium disabled:opacity-50"
+                        >
+                            <option value="">সব শাখা</option>
+                            {filteredBranches.map((branch) => (
+                                <option key={branch.id} value={branch.id.toString()}>
+                                    {formatBranchLabel(branch)}
+                                </option>
+                            ))}
+                        </select>
+
+                        <select
+                            value={hadIssues}
+                            onChange={(e) => setHadIssues(e.target.value)}
+                            className="px-2.5 py-2 text-xs border border-slate-200 rounded-xl bg-slate-50/50 font-medium"
+                        >
+                            <option value="">ইস্যু: সব</option>
+                            <option value="yes">ইস্যু ছিল</option>
+                            <option value="no">সরাসরি অনুমোদিত</option>
+                        </select>
+
+                        <select
+                            value={printedFilter}
+                            onChange={(e) => setPrintedFilter(e.target.value)}
+                            className="px-2.5 py-2 text-xs border border-slate-200 rounded-xl bg-slate-50/50 font-medium"
+                        >
+                            <option value="">প্রিন্ট: সব</option>
+                            <option value="yes">প্রিন্ট সম্পন্ন</option>
+                            <option value="no">প্রিন্ট হয়নি</option>
+                        </select>
+
+                        <button
+                            type="submit"
+                            className="px-4 py-2 text-xs font-bold bg-slate-800 hover:bg-slate-900 text-white rounded-xl transition shadow-2xs active:scale-95"
+                        >
+                            খুঁজুন
+                        </button>
+
+                        {hasActiveFilters && (
                             <button
                                 type="button"
-                                onClick={handleTodayFilter}
-                                title="শুধু আজকের ডেটা"
-                                className={`px-3 py-2 text-sm rounded-lg border font-medium transition flex items-center gap-1.5 ${
-                                    isTodayFilter
-                                        ? 'bg-blue-600 text-white border-blue-600'
-                                        : 'bg-white text-blue-700 border-blue-200 hover:bg-blue-50'
-                                }`}
+                                onClick={clearFilters}
+                                className="px-3 py-2 text-xs font-bold text-slate-600 bg-slate-100 hover:bg-slate-200 rounded-xl transition"
                             >
-                                <CalendarDays className="w-3.5 h-3.5" />
-                                Today
+                                রিসেট
                             </button>
-                            <select
-                                value={selectedZone}
-                                onChange={(e) => setSelectedZone(e.target.value)}
-                                className="px-2.5 py-2 text-sm border border-blue-200 rounded-lg bg-white"
-                            >
-                                <option value="">সব জোন</option>
-                                {zones.map((zone) => (
-                                    <option key={zone.id} value={zone.id.toString()}>
-                                        {zone.name}
-                                    </option>
-                                ))}
-                            </select>
-                            <select
-                                value={selectedArea}
-                                onChange={(e) => setSelectedArea(e.target.value)}
-                                disabled={!selectedZone && filteredAreas.length === 0}
-                                className="px-2.5 py-2 text-sm border border-blue-200 rounded-lg bg-white disabled:bg-slate-100"
-                            >
-                                <option value="">সব এলাকা</option>
-                                {filteredAreas.map((area) => (
-                                    <option key={area.id} value={area.id.toString()}>
-                                        {area.name}
-                                    </option>
-                                ))}
-                            </select>
-                            <select
-                                value={selectedBranch}
-                                onChange={(e) => setSelectedBranch(e.target.value)}
-                                disabled={!selectedZone && !selectedArea && filteredBranches.length === 0}
-                                className="px-2.5 py-2 text-sm border border-blue-200 rounded-lg bg-white disabled:bg-slate-100"
-                            >
-                                <option value="">সব শাখা</option>
-                                {filteredBranches.map((branch) => (
-                                    <option key={branch.id} value={branch.id.toString()}>
-                                        {formatBranchLabel(branch)}
-                                    </option>
-                                ))}
-                            </select>
-                            <select
-                                value={statusFilter === 'all' ? 'all' : statusFilter}
-                                onChange={(e) => setStatusFilter(e.target.value)}
-                                className="px-2.5 py-2 text-sm border border-blue-200 rounded-lg bg-white"
-                            >
-                                {defaultStatus === 'pending_my_approval' && (
-                                    <option value="pending_my_approval">আমার অনুমোদন</option>
-                                )}
-                                <option value="all">সব স্ট্যাটাস</option>
-                                {canViewAllAdmissions && (
-                                    <>
-                                        <option value="draft">খসড়া</option>
-                                        <option value="submitted">জমা</option>
-                                        <option value="under_review">পর্যালোচনায়</option>
-                                    </>
-                                )}
-                                <option value="pending_head_office">হেড অফিসে</option>
-                                <option value="approved">অনুমোদিত</option>
-                                <option value="rejected">প্রত্যাখ্যাত</option>
-                                <option value="needs_revision">সংশোধন</option>
-                            </select>
-                            <select
-                                value={hadIssues}
-                                onChange={(e) => setHadIssues(e.target.value)}
-                                className="px-2.5 py-2 text-sm border border-blue-200 rounded-lg bg-white"
-                            >
-                                <option value="">ইস্যু: সব</option>
-                                <option value="yes">ইস্যু ছিল</option>
-                                <option value="no">সরাসরি অনুমোদিত</option>
-                            </select>
-                            <select
-                                value={printedFilter}
-                                onChange={(e) => setPrintedFilter(e.target.value)}
-                                className="px-2.5 py-2 text-sm border border-blue-200 rounded-lg bg-white"
-                            >
-                                <option value="">প্রিন্ট: সব</option>
-                                <option value="yes">প্রিন্ট সম্পন্ন</option>
-                                <option value="no">প্রিন্ট হয়নি</option>
-                            </select>
-                            <button
-                                type="submit"
-                                className="px-3.5 py-2 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700 font-semibold flex items-center gap-1.5 shadow-sm shadow-blue-200"
-                            >
-                                <Filter className="w-3.5 h-3.5" />
-                                Apply
-                            </button>
-                            {hasActiveFilters && (
-                                <button
-                                    type="button"
-                                    onClick={clearFilters}
-                                    className="px-3 py-2 text-sm bg-white text-slate-600 border border-blue-200 rounded-lg hover:bg-blue-50 font-medium flex items-center gap-1.5"
-                                >
-                                    <X className="w-3.5 h-3.5" />
-                                    Clear
-                                </button>
-                            )}
-                        </div>
+                        )}
                     </form>
                 </div>
 
@@ -768,9 +865,14 @@ export default function AdmissionMembers({ admissions, filters, stats, zones, ar
                                             </div>
                                             <div>
                                                 <span className="text-[10px] font-semibold uppercase text-blue-400 block">জমাদানের তারিখ</span>
-                                                <p className="font-bold text-slate-800 truncate mt-0.5">
+                                                <p className="font-bold text-slate-800 mt-0.5">
                                                     {formatDate(admission.submitted_at || admission.created_at)}
                                                 </p>
+                                                {formatTime(admission.submitted_at || admission.created_at) && (
+                                                    <p className="text-[10px] text-slate-500 font-medium">
+                                                        {formatTime(admission.submitted_at || admission.created_at)}
+                                                    </p>
+                                                )}
                                             </div>
                                             <div>
                                                 <span className="text-[10px] font-semibold uppercase text-blue-400 block">তৈরি করেছেন</span>
@@ -909,11 +1011,16 @@ export default function AdmissionMembers({ admissions, filters, stats, zones, ar
                                                         )}
                                                     </td>
 
-                                                    {/* Submission Date */}
+                                                    {/* Submission Date + time (AM/PM) */}
                                                     <td className="py-2 px-2.5 whitespace-nowrap">
                                                         <div className="font-bold text-slate-800 text-xs">
                                                             {formatDate(admission.submitted_at || admission.created_at)}
                                                         </div>
+                                                        {formatTime(admission.submitted_at || admission.created_at) && (
+                                                            <div className="text-slate-500 text-[10px] font-medium mt-0.5">
+                                                                {formatTime(admission.submitted_at || admission.created_at)}
+                                                            </div>
+                                                        )}
                                                         {creatorName(admission) !== '—' && (
                                                             <div className="text-slate-400 text-[10px] mt-0.5" title="তৈরি করেছেন">
                                                                 এন্ট্রি: {creatorName(admission)}

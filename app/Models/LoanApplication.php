@@ -384,4 +384,45 @@ class LoanApplication extends Model
         return null;
     }
 
+    /**
+     * Copy approval / disbursement / repayment dates into the 4-page form JSON
+     * (and Agrosor Profile aliases) when that form already has saved data.
+     *
+     * @param  array<string, mixed>  $businessPlan
+     * @return array<string, mixed>
+     */
+    public function mergeOfficialDatesIntoBusinessPlan(
+        array $businessPlan,
+        ?string $approvalDate = null,
+        ?string $disbursementDate = null,
+    ): array {
+        if ($businessPlan === []) {
+            return $businessPlan;
+        }
+
+        if ($approvalDate) {
+            $businessPlan['loan_approval_date'] = $approvalDate;
+        }
+
+        if ($disbursementDate) {
+            $this->loadMissing('loanProduct');
+            $businessPlan['loan_disbursement_date'] = $disbursementDate;
+            $businessPlan['disbursement_date'] = $disbursementDate;
+
+            $duration = (int) ($this->loan_term_months ?: $this->loanProduct?->duration_months ?: 0);
+            if ($duration > 0) {
+                $end = \Carbon\Carbon::parse($disbursementDate)->addMonths($duration);
+                $type = strtolower((string) ($this->loanProduct?->installment_type ?? ''));
+                if (str_contains($type, 'lump')) {
+                    $end->subDay();
+                }
+                $repay = $end->toDateString();
+                $businessPlan['loan_repayment_date'] = $repay;
+                $businessPlan['repayment_date'] = $repay;
+            }
+        }
+
+        return $businessPlan;
+    }
+
 }

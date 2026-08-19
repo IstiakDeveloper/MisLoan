@@ -129,21 +129,7 @@ class SavingsApplicationController extends Controller
             $query->where('created_at', '<=', $dateTo . ' 23:59:59');
         }
         if ($search !== '') {
-            $pattern = '%' . strtolower($search) . '%';
-            $query->where(function ($q) use ($pattern) {
-                $q->whereRaw('LOWER(application_no) LIKE ?', [$pattern])
-                    ->orWhereHas('memberAdmission', function ($mq) use ($pattern) {
-                        $mq->whereRaw('LOWER(applicant_name_en) LIKE ?', [$pattern])
-                            ->orWhereRaw('LOWER(applicant_name_bn) LIKE ?', [$pattern])
-                            ->orWhereRaw('LOWER(nid_number) LIKE ?', [$pattern])
-                            ->orWhereRaw('LOWER(mobile_number) LIKE ?', [$pattern])
-                            ->orWhereRaw('LOWER(application_no) LIKE ?', [$pattern]);
-                    })
-                    ->orWhereHas('savingsProduct', function ($pq) use ($pattern) {
-                        $pq->whereRaw('LOWER(product_name) LIKE ?', [$pattern])
-                            ->orWhereRaw('LOWER(product_name_bn) LIKE ?', [$pattern]);
-                    });
-            });
+            \App\Services\MemberCodeService::applySavingsSearch($query, $search);
         }
 
         $applications = $query->orderBy('created_at', 'desc')->paginate(20);
@@ -169,15 +155,10 @@ class SavingsApplicationController extends Controller
             return response()->json(['members' => []]);
         }
 
-        $pattern = '%' . strtolower($query) . '%';
         $members = MemberAdmission::where('branch_id', $user->branch_id)
             ->where('status', 'approved')
-            ->where(function ($q) use ($pattern) {
-                $q->whereRaw('LOWER(applicant_name_en) LIKE ?', [$pattern])
-                    ->orWhereRaw('LOWER(applicant_name_bn) LIKE ?', [$pattern])
-                    ->orWhereRaw('LOWER(nid_number) LIKE ?', [$pattern])
-                    ->orWhereRaw('LOWER(mobile_number) LIKE ?', [$pattern])
-                    ->orWhereRaw('LOWER(application_no) LIKE ?', [$pattern]);
+            ->where(function ($q) use ($query) {
+                \App\Services\MemberCodeService::applyAdmissionSearch($q, $query);
             })
             ->select([
                 'id', 'application_no', 'applicant_name_en', 'applicant_name_bn',

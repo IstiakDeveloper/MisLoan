@@ -1,4 +1,4 @@
-import React, { useEffect } from 'react';
+import React, { useEffect, useMemo } from 'react';
 import { FormPageProps } from './Types';
 import { Calculator, Calendar, ShieldCheck, UserCheck, DollarSign } from 'lucide-react';
 import { calcInstallmentSchedule } from '@/utils/loanInterest';
@@ -24,14 +24,23 @@ export function getLoanYears(months: number | string | null | undefined): number
     return Math.round((m / 12) * 100) / 100;
 }
 
-export default function FormPage3({ data, setData, member, loanProduct, requestedAmount }: FormPageProps) {
+/** বার্ষিক পরিমাণ × ঋণের মেয়াদ (বছর) */
+export function scaleAnnualToLoanYears(
+    annualAmount: number | string | null | undefined,
+    months: number | string | null | undefined,
+): string {
+    const annual = Number(annualAmount) || 0;
+    if (annual <= 0) return '';
+    return String(Math.round(annual * getLoanYears(months)));
+}
+
+export default function FormPage3({ data, setData, member, loanProduct, loanCategory, requestedAmount }: FormPageProps) {
     const durationMonths =
         data.loan_duration_months ||
         loanProduct?.duration_months ||
         loanProduct?.loan_duration_months ||
         '';
     const yearsLabel = formatLoanYearsLabel(durationMonths);
-    const years = getLoanYears(durationMonths);
 
     const projectName =
         data.project_name ||
@@ -39,15 +48,17 @@ export default function FormPage3({ data, setData, member, loanProduct, requeste
         member?.project_name ||
         '';
 
-    const annualIncome =
-        data.annual_net_profit ||
-        (member?.estimated_annual_project_income != null
-            ? String(Math.round(Number(member.estimated_annual_project_income)))
-            : '');
-
+    const page1IncomeRaw = data.project_income_1_2_yr;
+    const page1ExpenseRaw = data.project_expense_1_2_yr;
+    const page1Income = Number(page1IncomeRaw) || 0;
+    const page1Expense = Number(page1ExpenseRaw) || 0;
+    const page1Net = Number(data.annual_net_profit) || 0;
+    const hasPage1Income = page1IncomeRaw !== '' && page1IncomeRaw != null;
+    const hasPage1Expense = page1ExpenseRaw !== '' && page1ExpenseRaw != null;
+    const otherIncome = Number(data.est_other_income_amount) || 0;
     const computedMainIncome =
-        annualIncome !== '' && annualIncome != null
-            ? String(Math.round(Number(annualIncome) * years))
+        hasPage1Income
+            ? String(Math.max(0, Math.round(page1Income - otherIncome)))
             : '';
 
     const loanAmount =
@@ -57,6 +68,58 @@ export default function FormPage3({ data, setData, member, loanProduct, requeste
         Number(requestedAmount) ||
         0;
 
+    const liveSchedule = useMemo(
+        () => calcInstallmentSchedule(loanAmount, loanProduct, durationMonths, loanCategory),
+        [
+            loanAmount,
+            durationMonths,
+            loanCategory,
+            loanProduct?.duration_months,
+            loanProduct?.loan_duration_months,
+            loanProduct?.interest_rate,
+            loanProduct?.service_charge,
+            loanProduct?.service_charge_rate,
+            loanProduct?.service_charge_per_thousand,
+            loanProduct?.installment_amount_per_thousand,
+            loanProduct?.last_installment_per_thousand,
+            loanProduct?.loan_installment_factor,
+            loanProduct?.interest_installment_factor,
+            loanProduct?.number_of_installments,
+            loanProduct?.installment_type,
+            loanProduct?.product_code,
+        ],
+    );
+
+    const scheduleType = liveSchedule?.typeLabel || data.installment_type || 'মাসিক কিস্তি';
+    const schedulePrincipal = liveSchedule ? String(liveSchedule.principal) : (data.installment_principal || '');
+    const scheduleSc = liveSchedule ? String(liveSchedule.serviceCharge) : (data.installment_service_charge || '');
+    const scheduleTotal = liveSchedule
+        ? String(liveSchedule.installmentAmount)
+        : (data.installment_total || '');
+    const totalPrincipal = liveSchedule ? String(loanAmount) : (data.total_principal || '');
+    const totalServiceCharge = liveSchedule
+        ? String(liveSchedule.totalServiceCharge)
+        : (data.total_service_charge || '');
+    const totalPayable = liveSchedule ? String(liveSchedule.totalAmount) : (data.total_payable || '');
+
+    const page3ExpenseTotal =
+        (Number(data.est_emp_salary) || 0) +
+        (Number(data.est_transport) || 0) +
+        (Number(data.est_bills) || 0) +
+        (Number(data.est_rent) || 0) +
+        (Number(data.est_loan_charge) || 0) +
+        (Number(data.est_other_exp_1_amount) || 0) +
+        (Number(data.est_other_exp_2_amount) || 0) +
+        (Number(data.est_other_exp_3_amount) || 0);
+    const page3IncomeTotal =
+        (Number(computedMainIncome || data.est_main_income_amount) || 0) + otherIncome;
+    const page3Net = page3IncomeTotal - page3ExpenseTotal;
+    const missingPage1Income = !hasPage1Income;
+    const missingPage1Expense = !hasPage1Expense;
+    const incomeMismatch = hasPage1Income && page3IncomeTotal !== page1Income;
+    const expenseMismatch = hasPage1Expense && page3ExpenseTotal !== page1Expense;
+    const netMismatch = hasPage1Income && hasPage1Expense && page1Net > 0 && page3Net !== page1Net;
+
     // প্রধান আয়ের খাত = প্রকল্পের নাম
     useEffect(() => {
         if (projectName && String(data.est_main_income_desc || '') !== String(projectName)) {
@@ -65,14 +128,14 @@ export default function FormPage3({ data, setData, member, loanProduct, requeste
         }
     }, [projectName]);
 
-    // সম্ভাব্য আয় = বার্ষিক নিট লাভ × মেয়াদ (বছর)
+    // সম্ভাব্য আয় = পৃষ্ঠা ১-এর সম্ভাব্য আয় (অন্যান্য আয় বাদ)
     useEffect(() => {
         if (computedMainIncome !== '' && String(data.est_main_income_amount || '') !== computedMainIncome) {
             setData('est_main_income_amount', computedMainIncome);
         }
     }, [computedMainIncome]);
 
-    // মেয়াদ + সার্ভিস চার্জ হার + কিস্তি তফসিল (আসল / সার্ভিস চার্জ)
+    // মেয়াদ + সার্ভিস চার্জ হার + কিস্তি তফসিল (আসল / সার্ভিস চার্জ / মোট)
     useEffect(() => {
         const months = loanProduct?.duration_months ?? loanProduct?.loan_duration_months;
         if (months && String(data.loan_duration_months || '') !== String(months)) {
@@ -83,22 +146,40 @@ export default function FormPage3({ data, setData, member, loanProduct, requeste
             setData('applied_service_charge_rate', String(sc));
         }
 
-        const schedule = calcInstallmentSchedule(loanAmount, loanProduct, months || durationMonths);
-        if (!schedule) return;
+        if (!liveSchedule) return;
 
-        if (String(data.installment_type || '') !== schedule.typeLabel) {
-            setData('installment_type', schedule.typeLabel);
+        if (String(data.installment_type || '') !== liveSchedule.typeLabel) {
+            setData('installment_type', liveSchedule.typeLabel);
         }
-        if (String(data.installment_principal || '') !== String(schedule.principal)) {
-            setData('installment_principal', String(schedule.principal));
+        if (String(data.installment_principal || '') !== String(liveSchedule.principal)) {
+            setData('installment_principal', String(liveSchedule.principal));
         }
-        if (String(data.installment_service_charge || '') !== String(schedule.serviceCharge)) {
-            setData('installment_service_charge', String(schedule.serviceCharge));
+        if (String(data.installment_service_charge || '') !== String(liveSchedule.serviceCharge)) {
+            setData('installment_service_charge', String(liveSchedule.serviceCharge));
         }
-        if (String(data.number_of_installments || '') !== String(schedule.installments)) {
-            setData('number_of_installments', String(schedule.installments));
+        if (String(data.installment_total || '') !== String(liveSchedule.installmentAmount)) {
+            setData('installment_total', String(liveSchedule.installmentAmount));
+        }
+        if (String(data.number_of_installments || '') !== String(liveSchedule.installments)) {
+            setData('number_of_installments', String(liveSchedule.installments));
+        }
+        if (String(data.last_installment_amount || '') !== String(liveSchedule.lastInstallmentAmount)) {
+            setData('last_installment_amount', String(liveSchedule.lastInstallmentAmount));
+        }
+        if (String(data.total_principal || '') !== String(loanAmount)) {
+            setData('total_principal', String(loanAmount));
+        }
+        if (String(data.total_service_charge || '') !== String(liveSchedule.totalServiceCharge)) {
+            setData('total_service_charge', String(liveSchedule.totalServiceCharge));
+        }
+        if (String(data.total_payable || '') !== String(liveSchedule.totalAmount)) {
+            setData('total_payable', String(liveSchedule.totalAmount));
+        }
+        if (String(data.est_loan_charge || '') !== String(liveSchedule.totalServiceCharge)) {
+            setData('est_loan_charge', String(liveSchedule.totalServiceCharge));
         }
     }, [
+        liveSchedule,
         loanAmount,
         durationMonths,
         loanProduct?.duration_months,
@@ -107,6 +188,9 @@ export default function FormPage3({ data, setData, member, loanProduct, requeste
         loanProduct?.service_charge,
         loanProduct?.service_charge_rate,
         loanProduct?.service_charge_per_thousand,
+        loanProduct?.installment_amount_per_thousand,
+        loanProduct?.loan_installment_factor,
+        loanProduct?.interest_installment_factor,
         loanProduct?.number_of_installments,
         loanProduct?.installment_type,
     ]);
@@ -156,7 +240,7 @@ export default function FormPage3({ data, setData, member, loanProduct, requeste
                             </div>
                             <div className="flex justify-between items-center gap-2">
                                 <span className="text-xs font-medium text-gray-700 w-1/2">সার্ভিস চার্জ</span>
-                                <input type="number" placeholder="টাকা" value={data.est_loan_charge || ''} onChange={(e) => setData('est_loan_charge', e.target.value)} className={inputClass} />
+                                <input type="number" placeholder="টাকা" value={data.est_loan_charge || ''} className={readOnlyClass} readOnly />
                             </div>
                             <div className="flex justify-between items-center gap-2">
                                 <input type="text" placeholder="অন্যান্য খাত ১" value={data.est_other_exp_1_desc || ''} onChange={(e) => setData('est_other_exp_1_desc', e.target.value)} className={inputClass} />
@@ -169,6 +253,15 @@ export default function FormPage3({ data, setData, member, loanProduct, requeste
                             <div className="flex justify-between items-center gap-2">
                                 <input type="text" placeholder="অন্যান্য খাত ৩" value={data.est_other_exp_3_desc || ''} onChange={(e) => setData('est_other_exp_3_desc', e.target.value)} className={inputClass} />
                                 <input type="number" placeholder="টাকা" value={data.est_other_exp_3_amount || ''} onChange={(e) => setData('est_other_exp_3_amount', e.target.value)} className={inputClass} />
+                            </div>
+                            <div className="flex justify-between items-center gap-2 pt-1 border-t border-rose-200">
+                                <span className="text-xs font-bold text-rose-900">মোট ব্যয়</span>
+                                <span className={`text-xs font-bold ${expenseMismatch || missingPage1Expense ? 'text-red-700' : 'text-rose-900'}`}>
+                                    {page3ExpenseTotal || 0}
+                                </span>
+                            </div>
+                            <div className="text-[10px] text-rose-800">
+                                পৃষ্ঠা ১-এর সম্ভাব্য ব্যয়: <strong>{hasPage1Expense ? page1Expense : '—'}</strong>
                             </div>
                         </div>
                     </div>
@@ -188,18 +281,43 @@ export default function FormPage3({ data, setData, member, loanProduct, requeste
                                 <input
                                     type="number"
                                     placeholder="টাকা"
-                                    value={data.est_main_income_amount || ''}
-                                    onChange={(e) => setData('est_main_income_amount', e.target.value)}
-                                    className={warningClass}
+                                    value={computedMainIncome || data.est_main_income_amount || ''}
+                                    className={readOnlyClass}
+                                    readOnly
                                 />
                             </div>
                             <div className="flex justify-between items-center gap-2">
                                 <input type="text" placeholder="অন্যান্য আয়ের খাত" value={data.est_other_income_desc || ''} onChange={(e) => setData('est_other_income_desc', e.target.value)} className={inputClass} />
                                 <input type="number" placeholder="টাকা" value={data.est_other_income_amount || ''} onChange={(e) => setData('est_other_income_amount', e.target.value)} className={inputClass} />
                             </div>
+                            <div className="flex justify-between items-center gap-2 pt-1 border-t border-emerald-200">
+                                <span className="text-xs font-bold text-emerald-900">মোট আয়</span>
+                                <span className={`text-xs font-bold ${incomeMismatch || missingPage1Income ? 'text-red-700' : 'text-emerald-900'}`}>
+                                    {page3IncomeTotal || 0}
+                                </span>
+                            </div>
+                            <div className="text-[10px] text-emerald-800">
+                                পৃষ্ঠা ১-এর সম্ভাব্য আয়: <strong>{hasPage1Income ? page1Income : '—'}</strong>
+                            </div>
                         </div>
                     </div>
                 </div>
+
+                {(missingPage1Income || missingPage1Expense || incomeMismatch || expenseMismatch || netMismatch) && (
+                    <div className="p-3 bg-red-50 border border-red-200 rounded-lg text-xs text-red-700 font-medium space-y-1">
+                        {missingPage1Income && <p>পৃষ্ঠা ১-এ সম্ভাব্য আয় লিখুন। এই হিসাবের আয় সেখান থেকে আসবে।</p>}
+                        {missingPage1Expense && <p>পৃষ্ঠা ১-এ সম্ভাব্য ব্যয় লিখুন। এই হিসাবের মোট ব্যয় তার সমান হতে হবে।</p>}
+                        {incomeMismatch && (
+                            <p>মোট আয় ({page3IncomeTotal}) পৃষ্ঠা ১-এর সম্ভাব্য আয় ({page1Income})-এর সমান নয়।</p>
+                        )}
+                        {expenseMismatch && (
+                            <p>মোট ব্যয় ({page3ExpenseTotal}) পৃষ্ঠা ১-এর সম্ভাব্য ব্যয় ({page1Expense})-এর সমান হতে হবে। খাতগুলো ঠিক করুন।</p>
+                        )}
+                        {!expenseMismatch && !incomeMismatch && netMismatch && (
+                            <p>নিট লাভ ({page3Net}) পৃষ্ঠা ১-এর নিট লাভ ({page1Net})-এর সমান নয়।</p>
+                        )}
+                    </div>
+                )}
             </div>
 
             {/* Other Details & Installment Schedule */}
@@ -228,19 +346,48 @@ export default function FormPage3({ data, setData, member, loanProduct, requeste
 
                 <div className="bg-indigo-50/40 p-3.5 rounded-xl border border-indigo-100 space-y-2">
                     <label className="block text-xs font-bold text-indigo-900">(গ) ঋণ পরিশোধের তফসিল</label>
-                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
-                        <div>
-                            <label className="block text-[11px] font-medium text-gray-600 mb-1">কিস্তির ধরণ</label>
-                            <input type="text" value={data.installment_type || 'মাসিক কিস্তি'} onChange={(e) => setData('installment_type', e.target.value)} className={readOnlyClass} readOnly />
-                        </div>
-                        <div>
-                            <label className="block text-[11px] font-medium text-gray-600 mb-1">আসল (টাকা)</label>
-                            <input type="number" value={data.installment_principal || ''} onChange={(e) => setData('installment_principal', e.target.value)} className={readOnlyClass} readOnly />
-                        </div>
-                        <div>
-                            <label className="block text-[11px] font-medium text-gray-600 mb-1">সার্ভিস চার্জ (টাকা)</label>
-                            <input type="number" value={data.installment_service_charge || ''} onChange={(e) => setData('installment_service_charge', e.target.value)} className={readOnlyClass} readOnly />
-                        </div>
+                    <div className="overflow-x-auto">
+                        <table className="w-full min-w-[520px] border-collapse text-xs">
+                            <thead>
+                                <tr className="bg-indigo-100/70">
+                                    {['কিস্তির ধরণ', 'আসল (টাকা)', 'সার্ভিস চার্জ (টাকা)', 'মোট (টাকা)'].map((h) => (
+                                        <th key={h} className="border border-indigo-200 px-2 py-1.5 text-[11px] font-semibold text-center text-indigo-900">
+                                            {h}
+                                        </th>
+                                    ))}
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <tr>
+                                    <td className="border border-indigo-200 p-1">
+                                        <input type="text" value={scheduleType} className={readOnlyClass} readOnly />
+                                    </td>
+                                    <td className="border border-indigo-200 p-1">
+                                        <input type="number" value={schedulePrincipal} className={readOnlyClass} readOnly />
+                                    </td>
+                                    <td className="border border-indigo-200 p-1">
+                                        <input type="number" value={scheduleSc} className={readOnlyClass} readOnly />
+                                    </td>
+                                    <td className="border border-indigo-200 p-1">
+                                        <input type="number" value={scheduleTotal} className={readOnlyClass} readOnly />
+                                    </td>
+                                </tr>
+                                <tr className="bg-white">
+                                    <td className="border border-indigo-200 px-2 py-1.5 text-[11px] font-bold text-gray-800">
+                                        মোট পরিশোধের পরিমাণ
+                                    </td>
+                                    <td className="border border-indigo-200 p-1">
+                                        <input type="number" value={totalPrincipal} className={readOnlyClass} readOnly />
+                                    </td>
+                                    <td className="border border-indigo-200 p-1">
+                                        <input type="number" value={totalServiceCharge} className={readOnlyClass} readOnly />
+                                    </td>
+                                    <td className="border border-indigo-200 p-1">
+                                        <input type="number" value={totalPayable} className={`${readOnlyClass} font-bold`} readOnly />
+                                    </td>
+                                </tr>
+                            </tbody>
+                        </table>
                     </div>
                 </div>
             </div>

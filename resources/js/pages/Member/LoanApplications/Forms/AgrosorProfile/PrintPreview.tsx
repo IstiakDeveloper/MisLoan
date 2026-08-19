@@ -623,7 +623,7 @@ export default function PrintPreview({ formData }: { formData: AgrosorProfileDat
                                 <p>
                                     সদস্য/সদস্যার স্বাক্ষর:{' '}
                                     <span className="border-b border-dotted border-black px-8 inline-block min-w-[160px]">
-                                        {str(d.member_signature)}
+                                        {' '}
                                     </span>
                                 </p>
                             </div>

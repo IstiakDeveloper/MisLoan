@@ -428,58 +428,37 @@ class MemberAdmission extends Model
         return $this->currentPendingApproval();
     }
 
-    // Boot method to generate application number
+    // Boot method to generate and normalize 10-digit application/member number
     protected static function boot()
     {
         parent::boot();
 
         static::creating(function ($admission) {
             if (empty($admission->application_no)) {
-                $admission->application_no = self::generateApplicationNumber($admission->branch_id);
+                $admission->application_no = \App\Services\MemberCodeService::generateNextMemberCode($admission->branch_id);
+            } else {
+                $admission->application_no = \App\Services\MemberCodeService::normalizeMemberCode(
+                    $admission->application_no,
+                    $admission->branch_id
+                );
+            }
+        });
+
+        static::updating(function ($admission) {
+            if ($admission->isDirty('application_no') && !empty($admission->application_no)) {
+                $admission->application_no = \App\Services\MemberCodeService::normalizeMemberCode(
+                    $admission->application_no,
+                    $admission->branch_id
+                );
             }
         });
     }
 
     /**
-     * Generate branch code prefix based application number (e.g. branch code 0042 -> 42001, 42002...)
+     * Generate 10-digit application/member number (e.g. 0001000001).
      */
     public static function generateApplicationNumber(?int $branchId = null): string
     {
-        $prefix = '';
-        if (!$branchId && auth()->check() && auth()->user()->branch_id) {
-            $branchId = auth()->user()->branch_id;
-        }
-
-        if ($branchId) {
-            $branch = Branch::find($branchId);
-            if ($branch && $branch->code) {
-                $num = preg_replace('/\D/', '', $branch->code);
-                if ($num !== '') {
-                    $prefix = (string) (int) $num;
-                }
-            }
-        }
-
-        if (empty($prefix)) {
-            $lastAdmission = self::whereRaw("application_no REGEXP '^[0-9]+$'")
-                ->orderByRaw('CAST(application_no AS UNSIGNED) DESC')
-                ->first();
-            $next = $lastAdmission ? (int) $lastAdmission->application_no + 1 : 1;
-            return str_pad((string) $next, 5, '0', STR_PAD_LEFT);
-        }
-
-        // Branch-based code: e.g. prefix 42 -> 42001, 42002, ...
-        $pattern = "^{$prefix}[0-9]{3,}$";
-        $lastAdmission = self::whereRaw("application_no REGEXP '{$pattern}'")
-            ->orderByRaw('CAST(application_no AS UNSIGNED) DESC')
-            ->first();
-
-        if ($lastAdmission && is_numeric($lastAdmission->application_no)) {
-            $lastVal = (int) $lastAdmission->application_no;
-            $nextVal = $lastVal + 1;
-            return (string) $nextVal;
-        }
-
-        return $prefix . '001';
+        return \App\Services\MemberCodeService::generateNextMemberCode($branchId);
     }
 }

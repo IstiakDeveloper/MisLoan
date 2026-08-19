@@ -204,6 +204,7 @@ class MemberAdmissionController extends Controller
     {
         $user = auth()->user();
         $user->loadMissing('role');
+        $isFieldOfficer = $user->role?->name === Role::FIELD_OFFICER;
         $workQueue = RoleListWorkQueue::resolveWithDates($request, false, $user);
         $statusFilter = $workQueue['status'];
         $fromDate = $workQueue['date_from'];
@@ -218,9 +219,12 @@ class MemberAdmissionController extends Controller
             'approvals.user',
         ]);
 
-        // Admissions belong to the branch: anyone with that branch can see them
+        // Records stay on the branch; field officers only see their own in that branch.
         if (!$user->has_all_access) {
             $query->whereIn('branch_id', $user->getAccessibleBranches()->pluck('id'));
+        }
+        if ($isFieldOfficer) {
+            $query->assignedToOfficer((int) $user->id);
         }
 
         // Build stats query with active date, branch, and search filters (excluding status filter for stats)
@@ -228,20 +232,16 @@ class MemberAdmissionController extends Controller
         if (!$user->has_all_access) {
             $statsQuery->whereIn('branch_id', $user->getAccessibleBranches()->pluck('id'));
         }
+        if ($isFieldOfficer) {
+            $statsQuery->assignedToOfficer((int) $user->id);
+        }
 
         if ($request->has('branch_id') && $request->branch_id) {
             $statsQuery->where('branch_id', $request->branch_id);
         }
 
         if ($request->filled('search')) {
-            $search = $request->search;
-            $statsQuery->where(function($q) use ($search) {
-                $q->where('application_no', 'like', "%{$search}%")
-                  ->orWhere('applicant_name_en', 'like', "%{$search}%")
-                  ->orWhere('applicant_name_bn', 'like', "%{$search}%")
-                  ->orWhere('mobile_number', 'like', "%{$search}%")
-                  ->orWhere('nid_number', 'like', "%{$search}%");
-            });
+            \App\Services\MemberCodeService::applyAdmissionSearch($statsQuery, $request->search);
         }
 
         $this->applyCoalesceDateRange($statsQuery, $fromDate, $toDate, 'COALESCE(reviewed_at, submitted_at, created_at)');
@@ -267,14 +267,7 @@ class MemberAdmissionController extends Controller
         }
 
         if ($request->filled('search')) {
-            $search = $request->search;
-            $query->where(function($q) use ($search) {
-                $q->where('application_no', 'like', "%{$search}%")
-                  ->orWhere('applicant_name_en', 'like', "%{$search}%")
-                  ->orWhere('applicant_name_bn', 'like', "%{$search}%")
-                  ->orWhere('mobile_number', 'like', "%{$search}%")
-                  ->orWhere('nid_number', 'like', "%{$search}%");
-            });
+            \App\Services\MemberCodeService::applyAdmissionSearch($query, $request->search);
         }
 
         $this->applyCoalesceDateRange($query, $fromDate, $toDate, 'COALESCE(reviewed_at, submitted_at, created_at)');
@@ -324,6 +317,7 @@ class MemberAdmissionController extends Controller
     {
         $user = auth()->user();
         $user->loadMissing('role');
+        $isFieldOfficer = $user->role?->name === Role::FIELD_OFFICER;
 
         $query = MemberAdmission::with([
             'branch.area.zone',
@@ -336,6 +330,9 @@ class MemberAdmissionController extends Controller
 
         if (!$user->has_all_access) {
             $query->whereIn('branch_id', $user->getAccessibleBranches()->pluck('id'));
+        }
+        if ($isFieldOfficer) {
+            $query->assignedToOfficer((int) $user->id);
         }
 
         if ($request->has('branch_id') && $request->branch_id) {
@@ -1646,19 +1643,25 @@ class MemberAdmissionController extends Controller
             return back()->withErrors(['error' => 'ঋণ বিতরণ সম্পন্ন হওয়ার পর মেম্বার কোড পরিবর্তন করা যাবে না।']);
         }
 
-        $validated = $request->validate([
-            'member_code' => [
-                'required',
-                'string',
-                'max:50',
-                'unique:member_admissions,application_no,' . $memberAdmission->id,
-            ],
-        ]);
+        $memberAdmission->loadMissing('branch');
+        $normalizedCode = \App\Services\MemberCodeService::normalizeMemberCode(
+            $request->input('member_code'),
+            $memberAdmission->branch_id,
+            $memberAdmission->branch?->code
+        );
+
+        $exists = MemberAdmission::where('application_no', $normalizedCode)
+            ->where('id', '!=', $memberAdmission->id)
+            ->exists();
+
+        if ($exists) {
+            return back()->withErrors(['member_code' => "মেম্বার কোড {$normalizedCode} ইতিমধ্যে অন্য সদস্যের জন্য ব্যবহার করা হয়েছে।"]);
+        }
 
         $memberAdmission->update([
-            'application_no' => $validated['member_code'],
+            'application_no' => $normalizedCode,
         ]);
 
-        return back()->with('success', 'মেম্বার কোড সফলভাবে আপডেট করা হয়েছে।');
+        return back()->with('success', 'মেম্বার কোড সফলভাবে আপডেট করা হয়েছে: ' . $normalizedCode);
     }
 }

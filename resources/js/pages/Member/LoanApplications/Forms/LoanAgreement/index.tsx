@@ -294,6 +294,7 @@ export default function LoanAgreement({
         };
         if (isLegacy) payload.legacy = 1;
         else payload.member_id = member?.id;
+        if (existingApplication?.id) payload.application_id = existingApplication.id;
 
         // Keep a local copy until server confirms
         saveLoanDraftLocal(draftKey, data);

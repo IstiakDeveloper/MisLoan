@@ -24,11 +24,16 @@ import {
     Filter,
     Sparkles,
     Download,
+    Layers,
+    FileText,
+    CheckCircle2,
+    AlertTriangle,
 } from 'lucide-react';
 import { MemberAdmission } from '@/types/memberAdmission';
 import ListPagination from '@/components/ListPagination';
 import AutoFitTableContainer from '@/components/AutoFitTableContainer';
 import { keepListFilters } from '@/utils/branchLabel';
+import SendAdmissionToHoModal, { HoAdmissionItem } from '@/components/MemberAdmission/SendAdmissionToHoModal';
 
 interface Props {
     admissions: {
@@ -67,19 +72,28 @@ interface Props {
 }
 
 export default function Index({ admissions, filters, stats, workQueue }: Props) {
-    const pageAuth = usePage().props.auth as { user?: { role?: { name: string } } } | undefined;
+    const pageAuth = usePage().props.auth as { user?: { id?: number; role?: { name: string } } } | undefined;
     const roleName = pageAuth?.user?.role?.name?.toLowerCase() || '';
     // Only Branch User can send ready admissions to Head Office (not Branch Manager)
     const isBranchUser = roleName === 'branch_user';
     const isFieldOfficer = roleName === 'field_officer';
     const canCreateAdmission = isFieldOfficer || roleName === 'branch_manager';
+    const currentUserId = pageAuth?.user?.id;
 
     const canApplyLoan = (admission: MemberAdmission) => {
         if (admission.status === 'rejected') return false;
         if (admission.has_active_loan) return false;
         if (roleName === 'branch_user') return admission.status === 'approved';
         if (!isFieldOfficer) return false;
-        return true;
+        const assignedId =
+            typeof admission.assigned_officer_id === 'object'
+                ? admission.assigned_officer_id?.id
+                : admission.assigned_officer_id ?? admission.assignedOfficer?.id;
+        const creatorId =
+            typeof admission.created_by === 'object'
+                ? admission.created_by?.id
+                : admission.created_by ?? admission.createdBy?.id;
+        return Number(assignedId ?? creatorId) === Number(currentUserId);
     };
 
     const [searchQuery, setSearchQuery] = useState(filters.search || '');
@@ -95,11 +109,13 @@ export default function Index({ admissions, filters, stats, workQueue }: Props) 
 
     const [showRejectModal, setShowRejectModal] = useState(false);
     const [showResubmitModal, setShowResubmitModal] = useState(false);
+    const [showHoModal, setShowHoModal] = useState(false);
+    const [hoModalItems, setHoModalItems] = useState<HoAdmissionItem[]>([]);
+    const [isSendingToHo, setIsSendingToHo] = useState(false);
     const [selectedAdmission, setSelectedAdmission] = useState<MemberAdmission | null>(null);
     const [rejectionReason, setRejectionReason] = useState('');
     const [revisionNote, setRevisionNote] = useState('');
     const [selectedHoIds, setSelectedHoIds] = useState<number[]>([]);
-    const [bulkSending, setBulkSending] = useState(false);
 
     const readyForHoIds = admissions.data
         .filter((a) => a.status === 'ready_for_head_office')
@@ -115,22 +131,66 @@ export default function Index({ admissions, filters, stats, workQueue }: Props) 
         setSelectedHoIds(allReadySelected ? [] : readyForHoIds);
     };
 
-    const sendSelectedToHeadOffice = () => {
-        if (selectedHoIds.length === 0 || bulkSending) return;
-        if (!confirm(`${selectedHoIds.length}টি আবেদন Head Office এ পাঠাতে চান?`)) return;
-
-        setBulkSending(true);
-        router.post(
-            '/member-admissions/send-to-head-office-bulk',
-            { ids: selectedHoIds },
+    const openSendSingleToHo = (admission: MemberAdmission) => {
+        setHoModalItems([
             {
-                ...keepListFilters,
-                onFinish: () => {
-                    setBulkSending(false);
-                    setSelectedHoIds([]);
-                },
+                id: admission.id,
+                application_no: admission.application_no,
+                applicant_name: admission.applicant_name_bn || admission.applicant_name_en,
+                branch_name: admission.branch?.name,
             },
-        );
+        ]);
+        setShowHoModal(true);
+    };
+
+    const openSendBulkToHo = () => {
+        if (selectedHoIds.length === 0) return;
+        const selectedAdmissions = admissions.data
+            .filter((a) => selectedHoIds.includes(a.id))
+            .map((a) => ({
+                id: a.id,
+                application_no: a.application_no,
+                applicant_name: a.applicant_name_bn || a.applicant_name_en,
+                branch_name: a.branch?.name,
+            }));
+        setHoModalItems(selectedAdmissions);
+        setShowHoModal(true);
+    };
+
+    const handleConfirmSendToHo = () => {
+        if (hoModalItems.length === 0 || isSendingToHo) return;
+        setIsSendingToHo(true);
+
+        if (hoModalItems.length === 1) {
+            router.patch(
+                `/member-admissions/${hoModalItems[0].id}/send-to-head-office`,
+                {},
+                {
+                    ...keepListFilters,
+                    onFinish: () => {
+                        setIsSendingToHo(false);
+                        setShowHoModal(false);
+                        setHoModalItems([]);
+                        setSelectedHoIds((prev) => prev.filter((id) => id !== hoModalItems[0].id));
+                    },
+                }
+            );
+        } else {
+            const ids = hoModalItems.map((i) => i.id);
+            router.post(
+                '/member-admissions/send-to-head-office-bulk',
+                { ids },
+                {
+                    ...keepListFilters,
+                    onFinish: () => {
+                        setIsSendingToHo(false);
+                        setShowHoModal(false);
+                        setHoModalItems([]);
+                        setSelectedHoIds([]);
+                    },
+                }
+            );
+        }
     };
 
     const getStatusBadge = (status: string) => {
@@ -294,24 +354,112 @@ export default function Index({ admissions, filters, stats, workQueue }: Props) 
 
     const defaultStatus = workQueue?.default_status || '';
     const isAllStatus = statusFilter === 'all' || statusFilter === '';
+
     const statCards = [
         ...(defaultStatus
             ? [{
                 label: workQueue?.label || 'আমার কাজ',
                 count: (stats as Record<string, number>)[defaultStatus] || 0,
-                color: 'bg-indigo-600 text-white',
                 filter: defaultStatus,
+                icon: UserCheck,
+                iconColor: 'text-indigo-600',
+                iconBg: 'bg-indigo-50',
+                barColor: 'from-indigo-500 to-indigo-600',
+                activeBg: 'bg-indigo-600 border-indigo-600 text-white',
+                highlight: true,
             }]
             : []),
-        { label: 'সর্বমোট', count: stats.total, color: 'bg-slate-800 text-white', filter: 'all' },
-        { label: 'খসড়া', count: stats.draft, color: 'bg-slate-200 text-slate-800', filter: 'draft' },
-        { label: 'জমা', count: stats.submitted, color: 'bg-blue-600 text-white', filter: 'submitted' },
-        { label: 'পর্যালোচনা', count: stats.under_review, color: 'bg-amber-500 text-white', filter: 'under_review' },
-        { label: 'হেড অফিসে পাঠান', count: stats.ready_for_head_office || 0, color: 'bg-emerald-600 text-white', filter: 'ready_for_head_office' },
-        { label: 'হেড অফিসে', count: stats.pending_head_office || 0, color: 'bg-purple-600 text-white', filter: 'pending_head_office' },
-        { label: 'সংশোধন', count: stats.needs_revision || 0, color: 'bg-orange-500 text-white', filter: 'needs_revision' },
-        { label: 'অনুমোদিত', count: stats.approved, color: 'bg-emerald-600 text-white', filter: 'approved' },
-        { label: 'প্রত্যাখ্যাত', count: stats.rejected, color: 'bg-rose-600 text-white', filter: 'rejected' },
+        {
+            label: 'সর্বমোট',
+            count: stats.total,
+            filter: 'all',
+            icon: Layers,
+            iconColor: 'text-slate-700',
+            iconBg: 'bg-slate-100',
+            barColor: 'from-slate-600 to-slate-800',
+            activeBg: 'bg-slate-900 border-slate-900 text-white',
+        },
+        {
+            label: 'খসড়া',
+            count: stats.draft,
+            filter: 'draft',
+            icon: FileText,
+            iconColor: 'text-slate-600',
+            iconBg: 'bg-slate-100',
+            barColor: 'from-slate-400 to-slate-500',
+            activeBg: 'bg-slate-800 border-slate-800 text-white',
+        },
+        {
+            label: 'জমাকৃত',
+            count: stats.submitted,
+            filter: 'submitted',
+            icon: Send,
+            iconColor: 'text-blue-600',
+            iconBg: 'bg-blue-50',
+            barColor: 'from-blue-500 to-blue-600',
+            activeBg: 'bg-blue-600 border-blue-600 text-white',
+        },
+        {
+            label: 'পর্যালোচনা',
+            count: stats.under_review,
+            filter: 'under_review',
+            icon: Clock,
+            iconColor: 'text-amber-600',
+            iconBg: 'bg-amber-50',
+            barColor: 'from-amber-400 to-amber-500',
+            activeBg: 'bg-amber-500 border-amber-500 text-white',
+        },
+        {
+            label: 'HO তে পাঠান',
+            count: stats.ready_for_head_office || 0,
+            filter: 'ready_for_head_office',
+            icon: Sparkles,
+            iconColor: 'text-emerald-700',
+            iconBg: 'bg-emerald-100',
+            barColor: 'from-emerald-500 to-emerald-600',
+            activeBg: 'bg-emerald-600 border-emerald-600 text-white',
+            highlight: (stats.ready_for_head_office || 0) > 0,
+        },
+        {
+            label: 'হেড অফিসে',
+            count: stats.pending_head_office || 0,
+            filter: 'pending_head_office',
+            icon: Building2,
+            iconColor: 'text-purple-600',
+            iconBg: 'bg-purple-50',
+            barColor: 'from-purple-500 to-purple-600',
+            activeBg: 'bg-purple-600 border-purple-600 text-white',
+        },
+        {
+            label: 'সংশোধন',
+            count: stats.needs_revision || 0,
+            filter: 'needs_revision',
+            icon: RotateCcw,
+            iconColor: 'text-orange-600',
+            iconBg: 'bg-orange-50',
+            barColor: 'from-orange-500 to-orange-600',
+            activeBg: 'bg-orange-500 border-orange-500 text-white',
+        },
+        {
+            label: 'অনুমোদিত',
+            count: stats.approved,
+            filter: 'approved',
+            icon: CheckCircle2,
+            iconColor: 'text-teal-600',
+            iconBg: 'bg-teal-50',
+            barColor: 'from-teal-500 to-teal-600',
+            activeBg: 'bg-teal-600 border-teal-600 text-white',
+        },
+        {
+            label: 'প্রত্যাখ্যাত',
+            count: stats.rejected,
+            filter: 'rejected',
+            icon: Ban,
+            iconColor: 'text-rose-600',
+            iconBg: 'bg-rose-50',
+            barColor: 'from-rose-500 to-rose-600',
+            activeBg: 'bg-rose-600 border-rose-600 text-white',
+        },
     ].filter((stat, index, all) => all.findIndex((s) => s.filter === stat.filter) === index);
 
     return (
@@ -319,98 +467,150 @@ export default function Index({ admissions, filters, stats, workQueue }: Props) 
             <Head title="সদস্য ভর্তি প্যানেল" />
 
             <div className="p-3 md:p-4 space-y-3 max-w-[1600px] mx-auto pb-16 print:block">
-                {/* ── 1. HERO BANNER HEADER ─────────────────────────────────────────────── */}
-                <div className="relative overflow-hidden rounded-3xl bg-slate-900 text-white p-6 sm:p-8 shadow-xl border border-slate-800 print:hidden">
-                    <div className="absolute -right-12 -bottom-12 w-64 h-64 rounded-full bg-gradient-to-tr from-blue-600/30 to-teal-500/20 blur-3xl pointer-events-none" />
-                    <div className="absolute left-1/3 -top-12 w-48 h-48 rounded-full bg-emerald-500/10 blur-2xl pointer-events-none" />
-
-                    <div className="relative z-10 flex flex-col md:flex-row md:items-center justify-between gap-6">
-                        <div className="space-y-2 max-w-2xl">
-                            <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-blue-500/15 border border-blue-400/20 text-blue-300 text-xs font-semibold backdrop-blur-md">
-                                <Users className="w-4 h-4 text-blue-400" />
-                                <span>Member Admission Command Center</span>
+                {/* ── 1. SLIM PROFESSIONAL HEADER & TIMING WARNING ───────────────────── */}
+                <div className="space-y-2.5 print:hidden">
+                    {/* Compact Top Action Bar */}
+                    <div className="bg-white px-4 py-3 rounded-2xl border border-slate-200/90 shadow-2xs flex flex-wrap items-center justify-between gap-3">
+                        <div className="flex items-center gap-2.5 min-w-0">
+                            <div className="w-8 h-8 rounded-xl bg-slate-800 text-white flex items-center justify-center shadow-xs shrink-0">
+                                <Users size={16} />
                             </div>
-                            <h1 className="text-2xl sm:text-3xl font-extrabold tracking-tight text-white leading-tight">
-                                সদস্য ভর্তি আবেদন প্যানেল
-                            </h1>
-                            <p className="text-slate-300 text-xs sm:text-sm leading-relaxed">
-                                নতুন সদস্য ভর্তির আবেদন তৈরি করুন, ফিল্ড সার্ভে ডেটা যাচাই করুন এবং হেড অফিস প্রসেসিং ট্র্যাক করুন।
-                            </p>
+                            <div>
+                                <div className="flex items-center gap-2">
+                                    <h1 className="text-sm sm:text-base font-bold text-slate-800 tracking-tight">
+                                        সদস্য ভর্তি আবেদন তালিকা
+                                    </h1>
+                                    <span className="text-[10px] font-bold px-2 py-0.5 bg-slate-100 text-slate-700 rounded-md border border-slate-200">
+                                        মোট {stats.total || 0} টি
+                                    </span>
+                                </div>
+                            </div>
                         </div>
 
-                        <div className="flex flex-wrap items-center gap-3 shrink-0">
+                        {/* Action Buttons */}
+                        <div className="flex items-center gap-2 flex-wrap">
                             <button
                                 type="button"
                                 onClick={handleTodayFilter}
-                                className={`inline-flex items-center justify-center gap-2 px-4 py-3 rounded-2xl border text-xs sm:text-sm font-semibold transition-all active:scale-95 ${
+                                className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl border text-xs font-semibold transition-all active:scale-95 shadow-2xs ${
                                     isTodayFilter
-                                        ? 'bg-blue-600 text-white border-blue-500 shadow-md'
-                                        : 'bg-slate-800 hover:bg-slate-700 text-slate-200 border-slate-700'
+                                        ? 'bg-blue-600 text-white border-blue-600 font-bold'
+                                        : 'bg-slate-50 text-slate-700 border-slate-200 hover:bg-slate-100'
                                 }`}
                                 title="আজকের ভর্তি আবেদনসমূহ (Today)"
                             >
-                                <Calendar className="w-4 h-4" />
+                                <Calendar size={13} />
                                 <span>Today (আজ)</span>
                             </button>
+
                             {canCreateAdmission && (
                                 <Link
                                     href="/member-admissions/create"
-                                    className="inline-flex items-center justify-center gap-2 px-5 py-3 rounded-2xl bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white text-xs sm:text-sm font-bold shadow-lg shadow-blue-600/30 transition-all active:scale-95"
+                                    className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold shadow-2xs transition-all active:scale-95"
                                 >
-                                    <Plus className="w-4 h-4" />
+                                    <Plus size={14} />
                                     <span>নতুন ভর্তি আবেদন</span>
                                 </Link>
                             )}
+
                             <button
                                 type="button"
                                 onClick={handleExportExcel}
-                                className="inline-flex items-center justify-center gap-2 px-4 py-3 rounded-2xl bg-emerald-600 hover:bg-emerald-500 text-white border border-emerald-500 text-xs sm:text-sm font-semibold transition-all active:scale-95 shadow-lg shadow-emerald-600/20"
+                                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-emerald-50 text-emerald-700 hover:bg-emerald-100 border border-emerald-200 text-xs font-semibold transition-all active:scale-95 shadow-2xs"
                                 title="XLSX এক্সেল ডাউনলোড"
                             >
-                                <Download className="w-4 h-4" />
-                                <span>XLSX Download</span>
+                                <Download size={13} />
+                                <span>Excel</span>
                             </button>
+
                             <button
                                 type="button"
                                 onClick={handlePrint}
-                                className="inline-flex items-center justify-center gap-2 px-4 py-3 rounded-2xl bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 text-xs sm:text-sm font-semibold transition-all active:scale-95"
+                                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-200 text-xs font-semibold transition-all active:scale-95 shadow-2xs"
                             >
-                                <Printer className="w-4 h-4" />
+                                <Printer size={13} />
                                 <span>প্রিন্ট</span>
                             </button>
                         </div>
                     </div>
-                </div>
 
-                {/* ── 2. SEARCH & FILTER TOOLBAR ─────────────────────────────────────── */}
-                <div className="bg-white rounded-2xl border border-slate-200/80 p-4 shadow-sm space-y-4 print:hidden">
-                    {isBranchUser && readyForHoIds.length > 0 && (
-                        <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-purple-200 bg-purple-50 px-3 py-2.5">
-                            <p className="text-sm text-purple-900">
-                                শাখা অনুমোদিত: <span className="font-semibold">{readyForHoIds.length}</span> · সিলেক্টেড:{' '}
-                                <span className="font-semibold">{selectedHoIds.length}</span>
-                            </p>
-                            <div className="flex flex-wrap items-center gap-2">
-                                <button
-                                    type="button"
-                                    onClick={toggleSelectAllReady}
-                                    className="rounded-lg border border-purple-300 bg-white px-3 py-1.5 text-xs font-semibold text-purple-800 hover:bg-purple-100"
-                                >
-                                    {allReadySelected ? 'সব আনসিলেক্ট' : 'একবারে সব সিলেক্ট'}
-                                </button>
-                                <button
-                                    type="button"
-                                    onClick={sendSelectedToHeadOffice}
-                                    disabled={selectedHoIds.length === 0 || bulkSending}
-                                    className="inline-flex items-center gap-1.5 rounded-lg bg-purple-600 hover:bg-purple-700 disabled:opacity-40 px-3 py-1.5 text-xs font-bold text-white"
-                                >
-                                    <Send className="w-3.5 h-3.5" />
-                                    {bulkSending ? 'পাঠানো হচ্ছে...' : `HO তে পাঠান (${selectedHoIds.length})`}
-                                </button>
+                    {/* Prominent & Professional 2:00 PM Deadline Warning Notice for Branch Users */}
+                    {isBranchUser && (
+                        <div className="bg-amber-50/90 border border-amber-200/90 px-3.5 py-2.5 rounded-xl text-xs text-amber-950 flex items-center justify-between gap-3 shadow-2xs">
+                            <div className="flex items-center gap-2.5 min-w-0">
+                                <div className="w-6 h-6 rounded-lg bg-amber-200/80 text-amber-900 flex items-center justify-center shrink-0">
+                                    <Clock size={14} className="stroke-[2.5]" />
+                                </div>
+                                <p className="font-medium text-amber-900 leading-snug">
+                                    <strong className="font-bold text-amber-950">জরুরি সময়সীমা:</strong> সদস্য ভর্তির আবেদনসমূহ <span className="underline decoration-amber-500 font-bold">অবশ্যই দুপুর ২:০০ টার মধ্যে</span> হেড অফিসে পাঠাতে হবে, যাতে আগামী কার্যদিবসে যথাসময়ে ঋণ অনুমোদন ও কার্যক্রম সম্পন্ন করা যায়।
+                                </p>
                             </div>
+                            <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-amber-200/70 text-amber-900 border border-amber-300 shrink-0 hidden sm:inline-block">
+                                সময়সীমা: ২:০০ PM
+                            </span>
                         </div>
                     )}
-                    <form onSubmit={handleSearch} className="flex flex-col lg:flex-row items-stretch lg:items-center justify-between gap-4">
+                </div>
+
+                {/* ── 2. UNIFIED FILTER & STATUS CONTROL CARD ─────────────────────────── */}
+                <div className="bg-white rounded-3xl border border-slate-200/90 shadow-2xs p-3.5 space-y-3.5 print:hidden">
+                    {/* Status Filter Cards in 1 Row with Micro Visual Progress & Icons */}
+                    <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 lg:grid-cols-9 gap-2">
+                        {statCards.map((stat) => {
+                            const isActive = statusFilter === stat.filter || (stat.filter === 'all' && isAllStatus);
+                            const IconComponent = stat.icon;
+                            const percentage = Math.min(100, Math.round((stat.count / (stats.total || 1)) * 100));
+
+                            return (
+                                <button
+                                    key={stat.label}
+                                    type="button"
+                                    onClick={() => handleFilterChange(stat.filter)}
+                                    className={`relative p-2.5 rounded-2xl border text-left transition-all duration-150 active:scale-95 group overflow-hidden ${
+                                        isActive
+                                            ? `${stat.activeBg} shadow-md ring-2 ring-offset-1 ring-blue-500/40`
+                                            : stat.highlight
+                                            ? 'bg-gradient-to-b from-emerald-50/90 to-white border-emerald-300 hover:border-emerald-400 hover:shadow-xs'
+                                            : 'bg-white hover:bg-slate-50/90 border-slate-200/90 hover:border-slate-300 shadow-2xs'
+                                    }`}
+                                >
+                                    {/* Top Row: Icon & Count */}
+                                    <div className="flex items-center justify-between gap-1 mb-1.5">
+                                        <div className={`w-7 h-7 rounded-xl flex items-center justify-center shrink-0 transition-transform group-hover:scale-105 ${
+                                            isActive ? 'bg-white/20 text-white' : `${stat.iconBg} ${stat.iconColor}`
+                                        }`}>
+                                            <IconComponent size={14} className="stroke-[2.2]" />
+                                        </div>
+                                        <span className={`text-base font-black tracking-tight ${
+                                            isActive ? 'text-white' : 'text-slate-900'
+                                        }`}>
+                                            {stat.count}
+                                        </span>
+                                    </div>
+
+                                    {/* Middle: Label */}
+                                    <span className={`text-[11px] font-bold truncate block ${
+                                        isActive ? 'text-white/90' : 'text-slate-600'
+                                    }`}>
+                                        {stat.label}
+                                    </span>
+
+                                    {/* Visual Micro Progress Bar */}
+                                    <div className="mt-1.5 w-full bg-slate-100 rounded-full h-1 overflow-hidden">
+                                        <div
+                                            className={`h-full rounded-full transition-all duration-300 ${
+                                                isActive ? 'bg-white' : `bg-gradient-to-r ${stat.barColor}`
+                                            }`}
+                                            style={{ width: `${stat.filter === 'all' ? 100 : Math.max(8, percentage)}%` }}
+                                        />
+                                    </div>
+                                </button>
+                            );
+                        })}
+                    </div>
+
+                    {/* Integrated Search & Date Toolbar */}
+                    <form onSubmit={handleSearch} className="pt-2 border-t border-slate-100 flex flex-col lg:flex-row items-stretch lg:items-center justify-between gap-2.5">
                         {/* Search Input Box */}
                         <div className="relative flex-grow max-w-lg">
                             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 pointer-events-none" />
@@ -419,25 +619,12 @@ export default function Index({ admissions, filters, stats, workQueue }: Props) 
                                 value={searchQuery}
                                 onChange={(e) => setSearchQuery(e.target.value)}
                                 placeholder="সদস্য নাম্বার, নাম, মোবাইল, এনআইডি খুঁজুন..."
-                                className="w-full pl-9 pr-4 py-2.5 text-xs sm:text-sm border border-slate-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 bg-slate-50/50 transition-all"
+                                className="w-full pl-9 pr-4 py-2 text-xs border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 bg-slate-50/50 transition-all font-medium"
                             />
                         </div>
 
-                        {/* Date Range & Buttons */}
+                        {/* Date Range & Controls */}
                         <div className="flex flex-wrap items-center gap-2">
-                            <button
-                                type="button"
-                                onClick={handleTodayFilter}
-                                className={`px-3 py-2 text-xs font-bold rounded-xl border transition ${
-                                    isTodayFilter
-                                        ? 'bg-blue-600 text-white border-blue-600 shadow-sm'
-                                        : 'bg-slate-100 text-slate-700 border-slate-200 hover:bg-slate-200'
-                                }`}
-                                title="আজকের আবেদনসমূহ (Today)"
-                            >
-                                Today (আজ)
-                            </button>
-
                             <div className="flex items-center gap-1.5 bg-slate-50 border border-slate-200 p-1 rounded-xl">
                                 <input
                                     type="date"
@@ -458,7 +645,7 @@ export default function Index({ admissions, filters, stats, workQueue }: Props) 
 
                             <button
                                 type="submit"
-                                className="px-4 py-2 text-xs font-bold bg-slate-800 text-white rounded-xl hover:bg-slate-900 transition-all shadow-sm"
+                                className="px-4 py-2 text-xs font-bold bg-slate-800 hover:bg-slate-900 text-white rounded-xl transition shadow-2xs active:scale-95"
                             >
                                 খুঁজুন
                             </button>
@@ -473,7 +660,7 @@ export default function Index({ admissions, filters, stats, workQueue }: Props) 
                                         setToDate('');
                                         router.get('/member-admissions');
                                     }}
-                                    className="px-3 py-2 text-xs font-semibold text-slate-600 bg-slate-100 hover:bg-slate-200 rounded-xl transition"
+                                    className="px-3 py-2 text-xs font-bold text-slate-600 bg-slate-100 hover:bg-slate-200 rounded-xl transition"
                                 >
                                     রিসেট
                                 </button>
@@ -481,32 +668,33 @@ export default function Index({ admissions, filters, stats, workQueue }: Props) 
                         </div>
                     </form>
 
-                    {workQueue?.hint && !isAllStatus && (
-                        <p className="text-xs text-indigo-800 bg-indigo-50 border border-indigo-100 rounded-xl px-3 py-2">
-                            {workQueue.hint}
-                        </p>
+                    {/* Bulk Selection Notification Bar */}
+                    {isBranchUser && readyForHoIds.length > 0 && (
+                        <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-purple-200 bg-purple-50/80 px-3 py-2 text-xs">
+                            <p className="text-purple-950 font-medium">
+                                শাখা অনুমোদিত: <strong className="font-bold text-purple-900">{readyForHoIds.length}</strong> টি · নির্বাচিত:{' '}
+                                <strong className="font-bold text-purple-900">{selectedHoIds.length}</strong> টি
+                            </p>
+                            <div className="flex items-center gap-2">
+                                <button
+                                    type="button"
+                                    onClick={toggleSelectAllReady}
+                                    className="rounded-lg border border-purple-300 bg-white px-2.5 py-1 text-xs font-bold text-purple-800 hover:bg-purple-100 shadow-2xs"
+                                >
+                                    {allReadySelected ? 'সব আনসিলেক্ট' : 'একবারে সব সিলেক্ট'}
+                                </button>
+                                <button
+                                    type="button"
+                                    onClick={openSendBulkToHo}
+                                    disabled={selectedHoIds.length === 0 || isSendingToHo}
+                                    className="inline-flex items-center gap-1.5 rounded-lg bg-purple-600 hover:bg-purple-700 disabled:opacity-40 px-3 py-1 text-xs font-bold text-white shadow-2xs transition active:scale-95"
+                                >
+                                    <Send className="w-3.5 h-3.5" />
+                                    <span>{isSendingToHo ? 'পাঠানো হচ্ছে...' : `HO তে পাঠান (${selectedHoIds.length})`}</span>
+                                </button>
+                            </div>
+                        </div>
                     )}
-
-                    {/* Summary Filter Chips */}
-                    <div className="flex overflow-x-auto pb-1 gap-2 hide-scrollbar items-center border-t border-slate-100 pt-3">
-                        {statCards.map((stat) => (
-                            <button
-                                key={stat.label}
-                                type="button"
-                                onClick={() => handleFilterChange(stat.filter)}
-                                className={`inline-flex items-center gap-2 px-3 py-1.5 rounded-xl text-xs font-bold transition-all shrink-0 ${
-                                    statusFilter === stat.filter || (stat.filter === 'all' && isAllStatus)
-                                        ? 'ring-2 ring-blue-500/30 bg-blue-50 text-blue-800 border border-blue-200'
-                                        : 'bg-slate-50 border border-slate-200/80 text-slate-600 hover:bg-slate-100'
-                                }`}
-                            >
-                                <span className={`w-5 h-5 rounded-lg flex items-center justify-center text-[10px] font-black ${stat.color}`}>
-                                    {stat.count}
-                                </span>
-                                <span>{stat.label}</span>
-                            </button>
-                        ))}
-                    </div>
                 </div>
 
                 {/* ── 3. MAIN CONTENT CONTAINER ──────────────────────────────────────── */}
@@ -655,12 +843,8 @@ export default function Index({ admissions, filters, stats, workQueue }: Props) 
 
                                         {admission.status === 'ready_for_head_office' && isBranchUser && (
                                             <button
-                                                onClick={() => {
-                                                    if (confirm(`এই আবেদনটি Head Office এ পাঠাতে চান? (${admission.application_no})`)) {
-                                                        router.patch(`/member-admissions/${admission.id}/send-to-head-office`, {}, keepListFilters);
-                                                    }
-                                                }}
-                                                className="p-2 text-white bg-purple-600 hover:bg-purple-700 rounded-xl transition"
+                                                onClick={() => openSendSingleToHo(admission)}
+                                                className="p-2 text-white bg-purple-600 hover:bg-purple-700 rounded-xl transition shadow-2xs"
                                                 title="Head Office এ পাঠান"
                                             >
                                                 <Send className="w-4 h-4" />
@@ -838,11 +1022,7 @@ export default function Index({ admissions, filters, stats, workQueue }: Props) 
 
                                                         {admission.status === 'ready_for_head_office' && isBranchUser && (
                                                             <button
-                                                                onClick={() => {
-                                                                    if (confirm(`এই আবেদনটি Head Office এ পাঠাতে চান? (${admission.application_no})`)) {
-                                                                        router.patch(`/member-admissions/${admission.id}/send-to-head-office`, {}, keepListFilters);
-                                                                    }
-                                                                }}
+                                                                onClick={() => openSendSingleToHo(admission)}
                                                                 className="p-2 text-purple-600 hover:bg-purple-50 rounded-lg transition-colors"
                                                                 title="Head Office এ পাঠান"
                                                             >
@@ -965,6 +1145,20 @@ export default function Index({ admissions, filters, stats, workQueue }: Props) 
                         </div>
                     </div>
                 )}
+
+                {/* Head Office Dispatch Confirmation / Warning Modal */}
+                <SendAdmissionToHoModal
+                    isOpen={showHoModal}
+                    onClose={() => {
+                        if (!isSendingToHo) {
+                            setShowHoModal(false);
+                            setHoModalItems([]);
+                        }
+                    }}
+                    onConfirm={handleConfirmSendToHo}
+                    isLoading={isSendingToHo}
+                    items={hoModalItems}
+                />
             </div>
         </AdminLayout>
     );

@@ -62,6 +62,10 @@ class HeadOfficeVerificationController extends Controller
 
         $this->applyAccessibleBranchScope($admissionQuery);
 
+        if ($roleName === 'field_officer') {
+            $admissionQuery->assignedToOfficer((int) $authUser->id);
+        }
+
         // Date filter - checks latest action / submission / issue / reply / returned dates
         if ($dateFrom && $dateTo) {
             $admissionQuery->where(function ($q) use ($startOfDay, $endOfDay) {
@@ -150,6 +154,10 @@ class HeadOfficeVerificationController extends Controller
         });
 
         $this->applyAccessibleBranchScope($loanQuery);
+
+        if ($roleName === 'field_officer') {
+            $loanQuery->where('submitted_by', $authUser->id);
+        }
 
         // Date filter - checks latest action / submission / issue / reply dates
         if ($dateFrom && $dateTo) {
@@ -289,8 +297,8 @@ class HeadOfficeVerificationController extends Controller
                 'latest_action_at' => $latestActionAt ? Carbon::parse($latestActionAt)->toIso8601String() : $admission->created_at->toIso8601String(),
                 'has_pending_issue' => $hasPendingIssue,
                 'has_replied' => $hasReplied || !empty($parsed['branch_reply']),
-                'issues' => $admission->issues->map(function ($i) {
-                    $itemParsed = $this->parseObjectionAndReply($i->issue_description, $i->resolution_note, null);
+                'issues' => $admission->issues->map(function ($i) use ($admission) {
+                    $itemParsed = $this->parseObjectionAndReply($i->issue_description, $i->resolution_note, $admission->revision_comments);
                     return [
                         'id' => $i->id,
                         'issue_description' => $itemParsed['ho_objection'],
@@ -359,8 +367,8 @@ class HeadOfficeVerificationController extends Controller
                 'latest_action_at' => $latestActionAt ? Carbon::parse($latestActionAt)->toIso8601String() : $loan->created_at->toIso8601String(),
                 'has_pending_issue' => $hasPendingIssue,
                 'has_replied' => $hasReplied || !empty($parsed['branch_reply']),
-                'issues' => $loan->issues->map(function ($i) {
-                    $itemParsed = $this->parseObjectionAndReply($i->issue_description, $i->response_message, null);
+                'issues' => $loan->issues->map(function ($i) use ($loan) {
+                    $itemParsed = $this->parseObjectionAndReply($i->issue_description, $i->response_message, $loan->revision_comments ?? null);
                     return [
                         'id' => $i->id,
                         'issue_description' => $itemParsed['ho_objection'],
@@ -598,13 +606,7 @@ class HeadOfficeVerificationController extends Controller
                     'reviewed_at' => now(),
                 ]);
 
-                // Close pending issues
-                $admission->issues()->where('status', 'pending')->update([
-                    'status' => 'rejected',
-                    'resolved_at' => now(),
-                    'resolved_by' => $authUser->id,
-                    'resolution_note' => 'আবেদন বাতিল: ' . $validated['rejection_reason'],
-                ]);
+                $this->closePendingAdmissionIssues($admission, $authUser->id);
             });
 
             return back()->with('success', 'সদস্য ভর্তি আবেদনটি বাতিল করা হয়েছে।');
@@ -620,13 +622,7 @@ class HeadOfficeVerificationController extends Controller
                     'reviewed_at' => now(),
                 ]);
 
-                // Close pending issues
-                $loan->issues()->where('status', 'pending')->update([
-                    'status' => 'rejected',
-                    'responded_at' => now(),
-                    'responded_by' => $authUser->id,
-                    'response_message' => 'আবেদন বাতিল: ' . $validated['rejection_reason'],
-                ]);
+                $this->closePendingLoanIssues($loan, $authUser->id);
             });
 
             return back()->with('success', 'ঋণ আবেদনটি বাতিল করা হয়েছে।');
@@ -655,15 +651,7 @@ class HeadOfficeVerificationController extends Controller
         $authUser = auth()->user();
 
         DB::transaction(function () use ($admission, $authUser) {
-            // Resolve all pending issues
-            $admission->issues()
-                ->where('status', 'pending')
-                ->update([
-                    'status' => 'resolved',
-                    'resolved_at' => now(),
-                    'resolved_by' => $authUser->id,
-                    'resolution_note' => 'হেড অফিস ভেরিফিকেশন থেকে অনুমোদিত',
-                ]);
+            $this->closePendingAdmissionIssues($admission, $authUser->id);
 
             // Update admission status to approved
             $admission->update([
@@ -737,15 +725,7 @@ class HeadOfficeVerificationController extends Controller
         $authUser = auth()->user();
 
         DB::transaction(function () use ($loanApplication, $authUser) {
-            // Resolve all pending issues
-            $loanApplication->issues()
-                ->where('status', 'pending')
-                ->update([
-                    'status' => 'resolved',
-                    'responded_at' => now(),
-                    'responded_by' => $authUser->id,
-                    'response_message' => 'হেড অফিস ভেরিফিকেশন থেকে অনুমোদিত',
-                ]);
+            $this->closePendingLoanIssues($loanApplication, $authUser->id);
 
             // Update loan application status to pending_disbursement
             $loanApplication->update([
@@ -857,29 +837,76 @@ class HeadOfficeVerificationController extends Controller
     }
 
     /**
-     * Parse text to separate HO objection from Branch reply if they are combined in revision_comments
+     * Parse text to separate HO objection from Branch reply if they are combined in revision_comments.
+     * Head Office auto-notes that previously overwrote the branch reply are ignored.
      */
     private function parseObjectionAndReply(?string $issueText, ?string $replyText, ?string $revisionComments): array
     {
         $hoObjection = $issueText;
-        $branchReply = $replyText;
+        $branchReply = $this->isHeadOfficeAutoNote($replyText) ? null : $replyText;
 
-        // If no explicit issueText but we have revision_comments
         $combinedText = $issueText ?: $revisionComments;
 
         if ($combinedText && preg_match('/^(.*?)(?:\n+|\s*)(?:---+\s*Branch\s*Revision\s*Note(?:\s*\([^)]*\))?\s*---+)(.*)$/si', $combinedText, $matches)) {
             $hoObjection = trim($matches[1]);
             $parsedBranchReply = trim($matches[2]);
-            if (empty($branchReply) && !empty($parsedBranchReply)) {
+            if (empty($branchReply) && ! empty($parsedBranchReply) && ! $this->isHeadOfficeAutoNote($parsedBranchReply)) {
                 $branchReply = $parsedBranchReply;
             }
-        } elseif (!$hoObjection && $revisionComments) {
+        } elseif (! $hoObjection && $revisionComments && ! $this->isHeadOfficeAutoNote($revisionComments)) {
             $hoObjection = trim($revisionComments);
+        }
+
+        $fallback = trim((string) $revisionComments);
+        if (empty($branchReply) && $fallback !== '' && ! $this->isHeadOfficeAutoNote($fallback)) {
+            if (! $combinedText || ! preg_match('/---+\s*Branch\s*Revision\s*Note/si', $fallback)) {
+                $branchReply = $fallback;
+            }
         }
 
         return [
             'ho_objection' => $hoObjection ?: 'তদন্তাধীন',
             'branch_reply' => $branchReply ?: null,
         ];
+    }
+
+    private function isHeadOfficeAutoNote(?string $text): bool
+    {
+        $text = trim((string) $text);
+        if ($text === '') {
+            return false;
+        }
+
+        return $text === 'হেড অফিস ভেরিফিকেশন থেকে অনুমোদিত'
+            || str_starts_with($text, 'আবেদন বাতিল:');
+    }
+
+    /**
+     * Close pending admission issues without overwriting the branch reply.
+     * Status must stay within ENUM('pending','resolved') — 'rejected' causes data truncated.
+     */
+    private function closePendingAdmissionIssues(MemberAdmission $admission, int $userId): void
+    {
+        $admission->issues()
+            ->where('status', 'pending')
+            ->update([
+                'status' => 'resolved',
+                'resolved_at' => now(),
+                'resolved_by' => $userId,
+            ]);
+    }
+
+    /**
+     * Close pending loan issues without overwriting the branch reply.
+     */
+    private function closePendingLoanIssues(LoanApplication $loan, int $userId): void
+    {
+        $loan->issues()
+            ->where('status', 'pending')
+            ->update([
+                'status' => 'resolved',
+                'responded_at' => now(),
+                'responded_by' => $userId,
+            ]);
     }
 }

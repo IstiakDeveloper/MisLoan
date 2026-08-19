@@ -342,7 +342,7 @@ function buildInitialData(
         guarantor_2_name: '',
         guarantor_2_address: '',
         guarantor_2_mobile: '',
-        member_signature: memberName,
+        member_signature: '',
         // Office comments — FO fills officer; BM/RM/final come from approval workflow
         officer_post_inspection_comments: '',
         officer_comments: '',
@@ -371,6 +371,9 @@ function buildInitialData(
         guarantor_1_name: str(savedData?.guarantor_1_name) || base.guarantor_1_name,
         guarantor_1_mobile: str(savedData?.guarantor_1_mobile) || base.guarantor_1_mobile,
         guarantor_1_address: str(savedData?.guarantor_1_address) || base.guarantor_1_address,
+        guarantor_2_name: str(savedData?.guarantor_2_name) || base.guarantor_2_name,
+        guarantor_2_mobile: str(savedData?.guarantor_2_mobile) || base.guarantor_2_mobile,
+        guarantor_2_address: str(savedData?.guarantor_2_address) || base.guarantor_2_address,
         applied_loan_amount: str(savedData?.applied_loan_amount) || base.applied_loan_amount,
         fund_applied_loan: str(savedData?.fund_applied_loan) || base.fund_applied_loan,
         other_loans: normalizeOtherLoans(
@@ -411,6 +414,7 @@ function buildInitialData(
         installment_total: schedule
             ? String(schedule.principal + schedule.serviceCharge)
             : '',
+        member_signature: '',
     };
 }
 
@@ -569,6 +573,7 @@ export default function AgrosorProfile({
             delete merged.installment_total;
             delete merged.loan_duration_label;
             delete merged.service_charge_rate;
+            delete merged.member_signature;
             setData((prev) => ({ ...prev, ...merged }));
             setLocalRestored(true);
         }
@@ -617,6 +622,7 @@ export default function AgrosorProfile({
                 loan_product_id: loanProduct.id,
                 loan_category_id: loanCategory.id,
                 requested_amount: requestedAmount,
+                application_id: existingApplication?.id,
                 form_data: data,
             },
             {

@@ -29,17 +29,32 @@ class DashboardController extends Controller
 
         // Check if user is Area Manager
         if ($roleName === Role::AREA_MANAGER) {
-            return $this->areaManagerDashboard($user, $request);
+            return $this->unifiedApproverDashboard($user, $request, 'area');
         }
 
         // Check if user is Zone Manager
         if ($roleName === Role::ZONE_MANAGER) {
-            return $this->zoneManagerDashboard($user, $request);
+            return $this->unifiedApproverDashboard($user, $request, 'zone');
         }
 
         // Check if user is an Approver (ADMF / DMF / ED)
         if (in_array($roleName, [Role::ADMF, Role::DMF, Role::ED], true)) {
-            return $this->financialApproverDashboard($user, $request);
+            return $this->unifiedApproverDashboard($user, $request, 'financial');
+        }
+
+        // Check if user is Field Officer (or testing view=field_officer)
+        if ($roleName === Role::FIELD_OFFICER || $roleName === 'field_officer' || $request->get('view') === 'field_officer') {
+            return $this->fieldOfficerDashboard($user, $request);
+        }
+
+        // Check if user is Branch Manager (or testing view=branch_manager)
+        if ($roleName === Role::BRANCH_MANAGER || $roleName === 'branch_manager' || $request->get('view') === 'branch_manager') {
+            return $this->branchManagerDashboard($user, $request);
+        }
+
+        // Check if testing view=approver
+        if ($request->get('view') === 'approver') {
+            return $this->unifiedApproverDashboard($user, $request, 'general');
         }
 
         // Check if user is Head Office / SuperAdmin
@@ -51,130 +66,39 @@ class DashboardController extends Controller
     }
 
     /**
-     * Approver Dashboard
-     * Statistics for Team Based reviews assigned to this approver
+     * Unified Approver Dashboard
+     * For Area Managers (RM), Zone Managers (ZM), Financial Approvers (ADMF, DMF, ED) & General Approvers
      */
-    private function approverDashboard($user, Request $request)
+    private function unifiedApproverDashboard($user, Request $request, string $approverType = 'area')
     {
-        $reviewsQuery = \App\Models\TeamBasedApprovalReview::where('user_id', $user->id);
+        $roleName = $user->role?->name;
 
-        $rawCounts = (clone $reviewsQuery)
-            ->select('status', \DB::raw('COUNT(*) as count'))
-            ->groupBy('status')
-            ->pluck('count', 'status')
-            ->toArray();
+        // 1. Resolve Jurisdiction Branch IDs, Labels, and Level Filter
+        if ($approverType === 'area' || $roleName === Role::AREA_MANAGER) {
+            $areaIds = $user->area_id ? [$user->area_id] : $user->areas()->pluck('areas.id')->toArray();
+            $branchIds = Branch::whereIn('area_id', $areaIds)->pluck('id')->toArray();
+            $roleLabel = 'রিজিওনাল / এরিয়া ম্যানেজার (RM)';
+            $scopeLabel = $user->area?->name ?? 'এরিয়া জুরিসডিকশন';
+            $levelFilter = 'area';
+        } elseif ($approverType === 'zone' || $roleName === Role::ZONE_MANAGER) {
+            $zoneIds = $user->zone_id ? [$user->zone_id] : $user->zones()->pluck('zones.id')->toArray();
+            $branchIds = Branch::whereHas('area', fn ($q) => $q->whereIn('zone_id', $zoneIds))->pluck('id')->toArray();
+            $roleLabel = 'জোনাল ম্যানেজার (ZM)';
+            $scopeLabel = $user->zone?->name ?? 'জোন জুরিসডিকশন';
+            $levelFilter = 'zone';
+        } elseif ($approverType === 'financial' || in_array($roleName, [Role::ADMF, Role::DMF, Role::ED], true)) {
+            $branchIds = Branch::pluck('id')->toArray();
+            $roleLabel = 'উর্ধ্বতন আর্থিক অনুমোদক (' . strtoupper($roleName ?? 'APPROVER') . ')';
+            $scopeLabel = 'সার্বিক আর্থিক অনুমোদন';
+            $levelFilter = 'other';
+        } else {
+            $branchIds = Branch::pluck('id')->toArray();
+            $roleLabel = 'অনুমোদক ড্যাশবোর্ড';
+            $scopeLabel = 'সার্বিক পরিধি';
+            $levelFilter = 'other';
+        }
 
-        $stats = [
-            'pending_count' => $rawCounts['pending'] ?? 0,
-            'approved_count' => $rawCounts['approved'] ?? 0,
-            'rejected_count' => $rawCounts['rejected'] ?? 0,
-            'forwarded_count' => $rawCounts['forwarded'] ?? 0,
-            'total_count' => array_sum($rawCounts),
-        ];
-
-        // Sum of proposed loan amount of items where they have pending reviews.
-        $stats['pending_proposed_amount'] = (int) (clone $reviewsQuery)
-            ->where('status', 'pending')
-            ->whereHas('item')
-            ->join('team_based_approval_items', 'team_based_approval_reviews.team_based_approval_item_id', '=', 'team_based_approval_items.id')
-            ->sum('team_based_approval_items.proposed_loan_amount');
-
-        // Sum of approved amount decided by this user
-        $stats['approved_amount'] = (int) (clone $reviewsQuery)
-            ->where('status', 'approved')
-            ->sum('approved_amount');
-
-        // Recent 5 Pending Reviews
-        $recentPending = \App\Models\TeamBasedApprovalReview::with(['approval.branch', 'item'])
-            ->where('user_id', $user->id)
-            ->where('status', 'pending')
-            ->latest('id')
-            ->take(5)
-            ->get();
-
-        $recentPendingFormatted = $recentPending->map(function ($review) {
-            $item = $review->item;
-            return [
-                'review_id' => $review->id,
-                'member_name' => $item?->member_name ?? '—',
-                'member_code' => $item?->member_code,
-                'proposed_amount' => $item ? (int) $item->proposed_loan_amount : 0,
-                'branch_name' => $review->approval?->branch?->name ?? '—',
-                'sheet_date' => $review->approval?->sheet_date ? $review->approval->sheet_date->toDateString() : '—',
-            ];
-        })->values()->toArray();
-
-        // Recent 5 Decisions
-        $recentDecisions = \App\Models\TeamBasedApprovalReview::with(['approval.branch', 'item'])
-            ->where('user_id', $user->id)
-            ->whereIn('status', ['approved', 'rejected', 'forwarded'])
-            ->latest('decided_at')
-            ->take(5)
-            ->get();
-
-        $recentDecisionsFormatted = $recentDecisions->map(function ($review) {
-            $item = $review->item;
-            return [
-                'review_id' => $review->id,
-                'member_name' => $item?->member_name ?? '—',
-                'member_code' => $item?->member_code,
-                'status' => $review->status,
-                'approved_amount' => $review->approved_amount !== null ? (int) $review->approved_amount : ($item ? (int) $item->approved_amount : null),
-                'branch_name' => $review->approval?->branch?->name ?? '—',
-                'decided_at' => $review->decided_at ? $review->decided_at->toDateTimeString() : '—',
-            ];
-        })->values()->toArray();
-
-        return Inertia::render('Dashboard/ApproverIndex', [
-            'stats' => $stats,
-            'recentPending' => $recentPendingFormatted,
-            'recentDecisions' => $recentDecisionsFormatted,
-        ]);
-    }
-
-    private function financialApproverDashboard($user, Request $request)
-    {
-        $branchIds = Branch::pluck('id')->toArray();
-        $data = $this->getAreaOrZoneDashboardData($user, $branchIds, $request);
-        $data['approverRoleName'] = strtoupper($user->role?->name ?? 'APPROVER');
-        return Inertia::render('Dashboard/FinancialApproverIndex', $data);
-    }
-
-    /**
-     * Area Manager Dashboard
-     */
-    private function areaManagerDashboard($user, Request $request)
-    {
-        $areaIds = $user->area_id ? [$user->area_id] : $user->areas()->pluck('areas.id')->toArray();
-        $branchIds = Branch::whereIn('area_id', $areaIds)->pluck('id')->toArray();
-
-        $data = $this->getAreaOrZoneDashboardData($user, $branchIds, $request);
-        $data['areaName'] = $user->area?->name ?? 'আমার এরিয়া';
-
-        return Inertia::render('Dashboard/AreaManagerIndex', $data);
-    }
-
-    /**
-     * Zone Manager Dashboard
-     */
-    private function zoneManagerDashboard($user, Request $request)
-    {
-        $zoneIds = $user->zone_id ? [$user->zone_id] : $user->zones()->pluck('zones.id')->toArray();
-        $branchIds = Branch::whereHas('area', function ($q) use ($zoneIds) {
-            $q->whereIn('zone_id', $zoneIds);
-        })->pluck('id')->toArray();
-
-        $data = $this->getAreaOrZoneDashboardData($user, $branchIds, $request);
-        $data['zoneName'] = $user->zone?->name ?? 'আমার জোন';
-
-        return Inertia::render('Dashboard/ZoneManagerIndex', $data);
-    }
-
-    /**
-     * Get combined Branch Operations + Approver review stats for Area/Zone Managers
-     */
-    private function getAreaOrZoneDashboardData($user, array $branchIds, Request $request)
-    {
+        // 2. Resolve Period
         $period = trim((string) $request->query('period', 'monthly'));
         if (! in_array($period, ['today', 'monthly', 'date_to_date'], true)) {
             $period = 'monthly';
@@ -182,16 +106,17 @@ class DashboardController extends Controller
         $dateFrom = $request->query('from_date') ? trim((string) $request->query('from_date')) : null;
         $dateTo = $request->query('to_date') ? trim((string) $request->query('to_date')) : null;
 
+        $now = Carbon::now();
         $today = Carbon::today();
-        if ($period === 'monthly') {
+        if ($period === 'today') {
+            $start = $today->copy()->startOfDay();
+            $end = $today->copy()->endOfDay();
+        } elseif ($period === 'monthly') {
             $start = $today->copy()->startOfMonth();
             $end = $today->copy()->endOfDay();
-        } elseif ($period === 'date_to_date' && $dateFrom !== '' && $dateFrom !== null && $dateTo !== '' && $dateTo !== null) {
+        } elseif ($period === 'date_to_date' && $dateFrom && $dateTo) {
             $start = Carbon::parse($dateFrom)->startOfDay();
             $end = Carbon::parse($dateTo)->endOfDay();
-            if ($start->isAfter($end)) {
-                $start = $end->copy()->startOfDay();
-            }
         } else {
             $start = $today->copy()->startOfMonth();
             $end = $today->copy()->endOfDay();
@@ -200,255 +125,299 @@ class DashboardController extends Controller
         $startStr = $start->toDateTimeString();
         $endStr = $end->toDateTimeString();
 
-        // 1. Fetch all branches under this user's jurisdiction for mapping
         $myBranches = Branch::whereIn('id', $branchIds)
-            ->with('area:id,name,code,zone_id', 'area.zone:id,name,code')
+            ->with('area.zone')
             ->get(['id', 'name', 'code', 'area_id']);
 
-        // Fetch all items under these branches within the date range (excluding draft)
-        $allItems = TeamBasedApprovalItem::whereHas('approval', function ($q) use ($branchIds, $startStr, $endStr) {
-            $q->whereIn('branch_id', $branchIds)
-              ->where('status', '!=', 'draft')
-              ->whereBetween('sheet_date', [$startStr, $endStr]);
-        })->with(['approval', 'approval.reviews' => function ($query) {
-            $query->orderBy('id', 'asc');
-        }])->get();
+        // 3. Calculate Pending Approvals by Level in this Jurisdiction
+        $pendingAdmissions = MemberAdmission::whereIn('branch_id', $branchIds)
+            ->whereIn('status', ['submitted', 'under_review', 'pending_head_office'])
+            ->with(['approvals' => fn ($q) => $q->orderBy('sequence')])
+            ->get();
 
-        // Calculate statuses in-memory
-        $jurisdictionStats = [
-            'total' => 0,
-            'pending' => 0,
-            'approved' => 0,
-            'rejected' => 0,
-            'forwarded' => 0,
+        $admMyPending = 0;
+        $admOtherPending = 0;
+
+        foreach ($pendingAdmissions as $adm) {
+            $curr = null;
+            if ($adm->relationLoaded('approvals') && $adm->approvals->isNotEmpty()) {
+                $pendingApprovals = $adm->approvals->where('status', 'pending')->sortBy('sequence');
+                foreach ($pendingApprovals as $p) {
+                    $prev = $adm->approvals->where('sequence', '<', $p->sequence);
+                    if ($prev->every(fn ($a) => $a->status === 'approved')) {
+                        $curr = $p;
+                        break;
+                    }
+                }
+            }
+            if (! $curr) {
+                $curr = $adm->currentPendingApproval();
+            }
+
+            $lvl = $curr ? strtolower((string) $curr->level) : 'branch';
+            $matchesMyLevel = false;
+            if ($levelFilter === 'area' && (str_contains($lvl, 'area') || str_contains($lvl, 'region'))) {
+                $matchesMyLevel = true;
+            } elseif ($levelFilter === 'zone' && str_contains($lvl, 'zone')) {
+                $matchesMyLevel = true;
+            } elseif ($levelFilter === 'other' && ! str_contains($lvl, 'branch') && ! str_contains($lvl, 'area') && ! str_contains($lvl, 'zone')) {
+                $matchesMyLevel = true;
+            }
+
+            if ($matchesMyLevel) {
+                $admMyPending++;
+            } else {
+                $admOtherPending++;
+            }
+        }
+
+        $pendingLoans = LoanApplication::whereIn('branch_id', $branchIds)
+            ->whereIn('status', ['submitted', 'under_review', 'pending_head_office'])
+            ->with(['approvals' => fn ($q) => $q->orderBy('sequence')])
+            ->get();
+
+        $lnMyPending = 0;
+        $lnOtherPending = 0;
+
+        foreach ($pendingLoans as $loan) {
+            $curr = null;
+            if ($loan->relationLoaded('approvals') && $loan->approvals->isNotEmpty()) {
+                $pendingApprovals = $loan->approvals->where('status', 'pending')->sortBy('sequence');
+                foreach ($pendingApprovals as $p) {
+                    $prev = $loan->approvals->where('sequence', '<', $p->sequence);
+                    if ($prev->every(fn ($a) => $a->status === 'approved')) {
+                        $curr = $p;
+                        break;
+                    }
+                }
+            }
+            if (! $curr) {
+                $curr = $loan->approvals()->where('status', 'pending')->orderBy('sequence')->first();
+            }
+
+            $lvl = $curr ? strtolower((string) $curr->level) : 'branch';
+            $matchesMyLevel = false;
+            if ($levelFilter === 'area' && (str_contains($lvl, 'area') || str_contains($lvl, 'region'))) {
+                $matchesMyLevel = true;
+            } elseif ($levelFilter === 'zone' && str_contains($lvl, 'zone')) {
+                $matchesMyLevel = true;
+            } elseif ($levelFilter === 'other' && ! str_contains($lvl, 'branch') && ! str_contains($lvl, 'area') && ! str_contains($lvl, 'zone')) {
+                $matchesMyLevel = true;
+            }
+
+            if ($matchesMyLevel) {
+                $lnMyPending++;
+            } else {
+                $lnOtherPending++;
+            }
+        }
+
+        // 4. Team-Based Reviews Assigned to THIS User
+        $personalReviewsQuery = \App\Models\TeamBasedApprovalReview::where('user_id', $user->id);
+        $teamPendingCount = (clone $personalReviewsQuery)->where('status', 'pending')->count();
+        $teamApprovedCount = (clone $personalReviewsQuery)->where('status', 'approved')->count();
+        $teamRejectedCount = (clone $personalReviewsQuery)->where('status', 'rejected')->count();
+
+        $teamPendingProposedAmount = (float) (clone $personalReviewsQuery)
+            ->where('status', 'pending')
+            ->whereHas('item')
+            ->join('team_based_approval_items', 'team_based_approval_reviews.team_based_approval_item_id', '=', 'team_based_approval_items.id')
+            ->sum('team_based_approval_items.proposed_loan_amount');
+
+        $teamApprovedAmount = (float) (clone $personalReviewsQuery)
+            ->where('status', 'approved')
+            ->sum('approved_amount');
+
+        // Total Team Based Sheets in Jurisdiction
+        $teamBasedQuery = \App\Models\TeamBasedApproval::whereIn('branch_id', $branchIds);
+        $teamBasedStats = [
+            'my_pending_reviews' => $teamPendingCount,
+            'my_pending_amount' => $teamPendingProposedAmount,
+            'my_approved_reviews' => $teamApprovedCount,
+            'my_approved_amount' => $teamApprovedAmount,
+            'jurisdiction_draft' => (clone $teamBasedQuery)->where('status', 'draft')->count(),
+            'jurisdiction_submitted' => (clone $teamBasedQuery)->where('status', 'submitted')->count(),
+            'jurisdiction_approved' => (clone $teamBasedQuery)->where('status', 'approved')->count(),
+            'jurisdiction_rejected' => (clone $teamBasedQuery)->where('status', 'rejected')->count(),
         ];
 
-        // We will also prepare status counts grouped by branch_id
-        $branchStatusCounts = [];
-        foreach ($branchIds as $bid) {
-            $branchStatusCounts[$bid] = [
-                'total' => 0,
-                'pending' => 0,
-                'approved' => 0,
-                'rejected' => 0,
-                'forwarded' => 0,
-            ];
-        }
+        // 5. Approved in Jurisdiction
+        $admApproved = MemberAdmission::whereIn('branch_id', $branchIds)->where('status', 'approved')->count();
+        $lnApproved = LoanApplication::whereIn('branch_id', $branchIds)->where('status', 'approved')->count();
+        $lnApprovedAmount = (float) LoanApplication::whereIn('branch_id', $branchIds)->where('status', 'approved')->sum('approved_amount');
 
-        foreach ($allItems as $item) {
-            $lastReview = $item->approval->reviews
-                ->where('team_based_approval_item_id', $item->id)
-                ->last();
+        // 6. Pending Disbursement
+        $lnPendingDisbursement = LoanApplication::whereIn('branch_id', $branchIds)->where('status', 'pending_disbursement')->count();
+        $lnPendingDisbursementAmount = (float) LoanApplication::whereIn('branch_id', $branchIds)->where('status', 'pending_disbursement')->sum('approved_amount');
 
-            $status = $lastReview ? $lastReview->status : $item->approval->status;
-            $status = strtolower(trim((string) $status));
-            if ($status === 'submitted' || $status === 'under_review') {
-                $status = 'pending';
-            }
+        // 7. Disbursed & Active in Jurisdiction
+        $lnDisbursed = LoanApplication::whereIn('branch_id', $branchIds)->where('status', 'disbursed')->count();
+        $lnDisbursedAmount = (float) LoanApplication::whereIn('branch_id', $branchIds)->where('status', 'disbursed')->sum('disbursed_amount');
 
-            if (!in_array($status, ['pending', 'approved', 'rejected', 'forwarded'], true)) {
-                $status = 'pending';
-            }
+        // 8. Returned for Correction in Jurisdiction
+        $admNeedsCorrection = MemberAdmission::whereIn('branch_id', $branchIds)->where('status', 'needs_revision')->count();
+        $lnNeedsCorrection = LoanApplication::whereIn('branch_id', $branchIds)->where('status', 'needs_correction')->count();
 
-            // Global stats under their jurisdiction
-            $jurisdictionStats['total']++;
-            $jurisdictionStats[$status]++;
+        // 9. Drafts in Jurisdiction
+        $admDraft = MemberAdmission::whereIn('branch_id', $branchIds)->where('status', 'draft')->count();
+        $lnDraft = LoanApplication::whereIn('branch_id', $branchIds)->where('status', 'draft')->count();
 
-            // Branch stats
-            $bid = $item->approval->branch_id;
-            if (isset($branchStatusCounts[$bid])) {
-                $branchStatusCounts[$bid]['total']++;
-                $branchStatusCounts[$bid][$status]++;
-            }
-        }
+        // 10. Rejected in Jurisdiction
+        $admRejected = MemberAdmission::whereIn('branch_id', $branchIds)->where('status', 'rejected')->count();
+        $lnRejected = LoanApplication::whereIn('branch_id', $branchIds)->where('status', 'rejected')->count();
 
-        // 1. Fetch personal counts (assigned directly to THIS user)
-        $personalReviewsQuery = \App\Models\TeamBasedApprovalReview::where('user_id', $user->id)
-            ->whereHas('approval', function ($q) use ($branchIds, $startStr, $endStr) {
-                $q->whereIn('branch_id', $branchIds)->whereBetween('sheet_date', [$startStr, $endStr]);
+        // 11. Immediate Decision Action Queue for this Approver
+        $urgentLoans = LoanApplication::whereIn('branch_id', $branchIds)
+            ->whereIn('status', ['submitted', 'under_review', 'pending_head_office'])
+            ->with(['memberAdmission:id,applicant_name_en,applicant_name_bn', 'loanProduct:id,product_name,product_name_bn', 'branch:id,name,code'])
+            ->latest('updated_at')
+            ->take(5)
+            ->get()
+            ->map(function ($l) {
+                $name = $l->memberAdmission?->applicant_name_bn ?: $l->memberAdmission?->applicant_name_en;
+                if (! $name && is_array($l->legacy_member_snapshot)) {
+                    $name = $l->legacy_member_snapshot['applicant_name_bn'] ?? $l->legacy_member_snapshot['applicant_name_en'] ?? 'সদস্য';
+                }
+
+                return [
+                    'id' => $l->id,
+                    'type' => 'loan',
+                    'application_no' => $l->application_no,
+                    'applicant_name' => $name ?: '—',
+                    'detail' => $l->loanProduct?->product_name_bn ?: ($l->loanProduct?->product_name ?: 'সাধারণ ঋণ'),
+                    'branch_name' => $l->branch?->name ?? 'শাখা',
+                    'amount' => (float) $l->requested_amount,
+                    'status' => $l->status,
+                    'created_at' => $l->created_at?->diffForHumans() ?? 'আজ',
+                    'url' => "/member/loan-applications/{$l->id}",
+                ];
             });
 
-        $personalRawCounts = (clone $personalReviewsQuery)
-            ->select('status', \DB::raw('COUNT(*) as count'))
-            ->groupBy('status')
-            ->pluck('count', 'status')
-            ->toArray();
+        $urgentAdmissions = MemberAdmission::whereIn('branch_id', $branchIds)
+            ->whereIn('status', ['submitted', 'under_review', 'pending_head_office'])
+            ->with(['memberCategory:id,category_name,category_name_bn', 'branch:id,name,code'])
+            ->latest('updated_at')
+            ->take(5)
+            ->get()
+            ->map(function ($a) {
+                return [
+                    'id' => $a->id,
+                    'type' => 'admission',
+                    'application_no' => $a->application_no,
+                    'applicant_name' => $a->applicant_name_bn ?: ($a->applicant_name_en ?: 'নতুন সদস্য'),
+                    'detail' => $a->memberCategory?->category_name_bn ?: ($a->memberCategory?->category_name ?: 'সাধারণ সদস্য'),
+                    'branch_name' => $a->branch?->name ?? 'শাখা',
+                    'amount' => null,
+                    'status' => $a->status,
+                    'created_at' => $a->created_at?->diffForHumans() ?? 'আজ',
+                    'url' => "/member-admissions/{$a->id}",
+                ];
+            });
 
-        $personalStats = [
-            'total_count' => array_sum($personalRawCounts),
-            'pending_count' => $personalRawCounts['pending'] ?? 0,
-            'approved_count' => $personalRawCounts['approved'] ?? 0,
-            'rejected_count' => $personalRawCounts['rejected'] ?? 0,
-            'forwarded_count' => $personalRawCounts['forwarded'] ?? 0,
-        ];
-
-        // Overall jurisdiction stats
-        $jurisdictionStatsFormatted = [
-            'total_count' => $jurisdictionStats['total'],
-            'pending_count' => $jurisdictionStats['pending'],
-            'approved_count' => $jurisdictionStats['approved'],
-            'rejected_count' => $jurisdictionStats['rejected'],
-            'forwarded_count' => $jurisdictionStats['forwarded'],
-        ];
-
-        $approverStats = [
-            'personal' => $personalStats,
-            'jurisdiction' => $jurisdictionStatsFormatted,
-        ];
-
-        // Recent 5 Pending Reviews (assigned directly to THIS user)
-        $recentPending = \App\Models\TeamBasedApprovalReview::with(['approval.branch', 'item'])
+        $urgentTeamReviews = \App\Models\TeamBasedApprovalReview::with(['approval.branch', 'item'])
             ->where('user_id', $user->id)
             ->where('status', 'pending')
             ->latest('id')
             ->take(5)
-            ->get();
-
-        $recentPendingFormatted = $recentPending->map(function ($review) {
-            $item = $review->item;
-            return [
-                'review_id' => $review->id,
-                'member_name' => $item?->member_name ?? '—',
-                'member_code' => $item?->member_code,
-                'branch_name' => $review->approval?->branch?->name ?? '—',
-                'sheet_date' => $review->approval?->sheet_date ? $review->approval->sheet_date->toDateString() : '—',
-            ];
-        })->values()->toArray();
-
-        // Recent 5 Decisions (decided by THIS user)
-        $recentDecisions = \App\Models\TeamBasedApprovalReview::with(['approval.branch', 'item'])
-            ->where('user_id', $user->id)
-            ->whereIn('status', ['approved', 'rejected', 'forwarded'])
-            ->latest('decided_at')
-            ->take(5)
-            ->get();
-
-        $recentDecisionsFormatted = $recentDecisions->map(function ($review) {
-            $item = $review->item;
-            return [
-                'review_id' => $review->id,
-                'member_name' => $item?->member_name ?? '—',
-                'member_code' => $item?->member_code,
-                'status' => $review->status,
-                'branch_name' => $review->approval?->branch?->name ?? '—',
-                'decided_at' => $review->decided_at ? $review->decided_at->toDateTimeString() : '—',
-            ];
-        })->values()->toArray();
-
-        // 2. Breakdown calculation
-        $roleName = $user->role?->name;
-        $breakdown = [];
-
-        if (in_array($roleName, [Role::ADMF, Role::DMF, Role::ED], true)) {
-            // Breakdown by Zone
-            $breakdown = Zone::where('is_active', true)->get()->map(function ($zone) use ($myBranches, $branchStatusCounts) {
-                // Get all branch IDs under this zone
-                $zoneBranchIds = $myBranches->filter(function ($b) use ($zone) {
-                    return $b->area?->zone_id == $zone->id;
-                })->pluck('id')->toArray();
-
-                $total = 0;
-                $approved = 0;
-                $rejected = 0;
-                $pending = 0;
-                $forwarded = 0;
-
-                foreach ($zoneBranchIds as $bid) {
-                    if (isset($branchStatusCounts[$bid])) {
-                        $total += $branchStatusCounts[$bid]['total'];
-                        $approved += $branchStatusCounts[$bid]['approved'];
-                        $rejected += $branchStatusCounts[$bid]['rejected'];
-                        $pending += $branchStatusCounts[$bid]['pending'];
-                        $forwarded += $branchStatusCounts[$bid]['forwarded'];
-                    }
-                }
-
+            ->get()
+            ->map(function ($review) {
+                $item = $review->item;
                 return [
-                    'id' => $zone->id,
-                    'name' => $zone->name,
-                    'code' => $zone->code,
-                    'total_items' => $total,
-                    'approved_items' => $approved,
-                    'rejected_items' => $rejected,
-                    'pending_items' => $pending,
-                    'forwarded_items' => $forwarded,
+                    'id' => $review->id,
+                    'type' => 'team_based',
+                    'application_no' => $item?->member_code ?? ('TBA-' . $review->team_based_approval_id),
+                    'applicant_name' => $item?->member_name ?? 'টিম-বেসড ঋণ অনুমোদন',
+                    'detail' => 'টিম ভিত্তিক আর্থিক অনুমোদন',
+                    'branch_name' => $review->approval?->branch?->name ?? 'শাখা',
+                    'amount' => $item ? (float) $item->proposed_loan_amount : null,
+                    'status' => 'pending',
+                    'created_at' => $review->created_at?->diffForHumans() ?? 'আজ',
+                    'url' => '/team-based-approvals/for-approver',
                 ];
-            })->toArray();
-        } elseif ($roleName === Role::ZONE_MANAGER) {
-            // Breakdown by Area
-            $zoneIds = $user->zone_id ? [$user->zone_id] : $user->zones()->pluck('zones.id')->toArray();
-            $breakdown = Area::whereIn('zone_id', $zoneIds)->where('is_active', true)->get()->map(function ($area) use ($myBranches, $branchStatusCounts) {
-                // Get all branch IDs under this area
-                $areaBranchIds = $myBranches->filter(function ($b) use ($area) {
-                    return $b->area_id == $area->id;
-                })->pluck('id')->toArray();
+            });
 
-                $total = 0;
-                $approved = 0;
-                $rejected = 0;
-                $pending = 0;
-                $forwarded = 0;
+        $approverActionQueue = $urgentTeamReviews->concat($urgentLoans)->concat($urgentAdmissions)
+            ->values()
+            ->take(7);
 
-                foreach ($areaBranchIds as $bid) {
-                    if (isset($branchStatusCounts[$bid])) {
-                        $total += $branchStatusCounts[$bid]['total'];
-                        $approved += $branchStatusCounts[$bid]['approved'];
-                        $rejected += $branchStatusCounts[$bid]['rejected'];
-                        $pending += $branchStatusCounts[$bid]['pending'];
-                        $forwarded += $branchStatusCounts[$bid]['forwarded'];
-                    }
-                }
+        $approverStats = [
+            'my_pending' => [
+                'admission' => $admMyPending,
+                'loan' => $lnMyPending,
+                'total' => $admMyPending + $lnMyPending,
+            ],
+            'team_pending' => [
+                'count' => $teamPendingCount,
+                'proposed_amount' => $teamPendingProposedAmount,
+                'approved_count' => $teamApprovedCount,
+                'approved_amount' => $teamApprovedAmount,
+            ],
+            'other_pending' => [
+                'admission' => $admOtherPending,
+                'loan' => $lnOtherPending,
+                'total' => $admOtherPending + $lnOtherPending,
+            ],
+            'approved' => [
+                'admission' => $admApproved,
+                'loan' => $lnApproved,
+                'total' => $admApproved + $lnApproved,
+                'amount' => $lnApprovedAmount,
+            ],
+            'pending_disbursement' => [
+                'admission' => 0,
+                'loan' => $lnPendingDisbursement,
+                'total' => $lnPendingDisbursement,
+                'amount' => $lnPendingDisbursementAmount,
+            ],
+            'active_disbursed' => [
+                'admission' => 0,
+                'loan' => $lnDisbursed,
+                'total' => $lnDisbursed,
+                'amount' => $lnDisbursedAmount,
+            ],
+            'needs_correction' => [
+                'admission' => $admNeedsCorrection,
+                'loan' => $lnNeedsCorrection,
+                'total' => $admNeedsCorrection + $lnNeedsCorrection,
+            ],
+            'draft' => [
+                'admission' => $admDraft,
+                'loan' => $lnDraft,
+                'total' => $admDraft + $lnDraft,
+            ],
+            'rejected' => [
+                'admission' => $admRejected,
+                'loan' => $lnRejected,
+                'total' => $admRejected + $lnRejected,
+            ],
+            'totals' => [
+                'admission' => MemberAdmission::whereIn('branch_id', $branchIds)->count(),
+                'loan' => LoanApplication::whereIn('branch_id', $branchIds)->count(),
+                'total' => MemberAdmission::whereIn('branch_id', $branchIds)->count() + LoanApplication::whereIn('branch_id', $branchIds)->count(),
+            ],
+        ];
 
-                return [
-                    'id' => $area->id,
-                    'name' => $area->name,
-                    'code' => $area->code,
-                    'total_items' => $total,
-                    'approved_items' => $approved,
-                    'rejected_items' => $rejected,
-                    'pending_items' => $pending,
-                    'forwarded_items' => $forwarded,
-                ];
-            })->toArray();
-        } elseif ($roleName === Role::AREA_MANAGER) {
-            // Breakdown by Branch
-            $breakdown = Branch::whereIn('id', $branchIds)->where('is_active', true)->get()->map(function ($branch) use ($branchStatusCounts) {
-                $counts = $branchStatusCounts[$branch->id] ?? [
-                    'total' => 0,
-                    'approved' => 0,
-                    'rejected' => 0,
-                    'pending' => 0,
-                    'forwarded' => 0,
-                ];
-
-                return [
-                    'id' => $branch->id,
-                    'name' => $branch->name,
-                    'code' => $branch->code,
-                    'total_items' => $counts['total'],
-                    'approved_items' => $counts['approved'],
-                    'rejected_items' => $counts['rejected'],
-                    'pending_items' => $counts['pending'],
-                    'forwarded_items' => $counts['forwarded'],
-                ];
-            })->toArray();
-        }
-
-        return [
-            'approverStats' => $approverStats,
-            'recentPending' => $recentPendingFormatted,
-            'recentDecisions' => $recentDecisionsFormatted,
-            'myBranches' => $myBranches,
-            'breakdown' => $breakdown,
+        return Inertia::render('Dashboard/ApproverIndex', [
             'period' => $period,
             'dateFrom' => $period === 'date_to_date' ? $dateFrom : null,
             'dateTo' => $period === 'date_to_date' ? $dateTo : null,
-        ];
+            'myBranches' => $myBranches,
+            'dashboardType' => 'approver',
+            'approverStats' => $approverStats,
+            'teamBasedStats' => $teamBasedStats,
+            'approverActionQueue' => $approverActionQueue,
+            'user' => [
+                'id' => $user->id,
+                'name' => $user->name,
+                'role' => $roleLabel,
+                'scope' => $scopeLabel,
+            ],
+        ]);
     }
 
     /**
      * Head Office / SuperAdmin Dashboard
-     * Period filter (Today / Monthly / Date to Date), branch submission summary, system stats
+     * Comprehensive organization-wide command center focusing on Head Office pending approvals, national pipeline & portfolio
      */
     private function headOfficeDashboard($user, Request $request)
     {
@@ -460,86 +429,202 @@ class DashboardController extends Controller
         $dateTo = $request->query('to_date') ? trim((string) $request->query('to_date')) : null;
 
         $today = Carbon::today();
-        if ($period === 'monthly') {
+        if ($period === 'today') {
+            $start = $today->copy()->startOfDay();
+            $end = $today->copy()->endOfDay();
+        } elseif ($period === 'monthly') {
             $start = $today->copy()->startOfMonth();
             $end = $today->copy()->endOfDay();
-        } elseif ($period === 'date_to_date' && $dateFrom !== '' && $dateFrom !== null && $dateTo !== '' && $dateTo !== null) {
+        } elseif ($period === 'date_to_date' && $dateFrom && $dateTo) {
             $start = Carbon::parse($dateFrom)->startOfDay();
             $end = Carbon::parse($dateTo)->endOfDay();
-            if ($start->isAfter($end)) {
-                $start = $end->copy()->startOfDay();
-            }
         } else {
             $start = $today->copy()->startOfMonth();
             $end = $today->copy()->endOfDay();
             $period = 'monthly';
         }
-        $startStr = $start->toDateTimeString();
-        $endStr = $end->toDateTimeString();
 
-        // System-wide stats (all time)
-        $totalBranches = Branch::where('is_active', true)->count();
-        $stats = [
-            'total_users' => User::where('is_active', true)->count(),
+        // 1. Head Office Pending Approvals (১ম ও প্রধান কাজ)
+        $admPendingHO = MemberAdmission::where('status', 'pending_head_office')->count();
+        $lnPendingHO = LoanApplication::where('status', 'pending_head_office')->count();
+
+        // 2. Ready for Head Office (শাখা থেকে পাঠানো প্রস্তুত)
+        $admReadyHO = MemberAdmission::where('status', 'ready_for_head_office')->count();
+        $lnReadyHO = LoanApplication::where('status', 'ready_for_head_office')->count();
+
+        // 3. Team-Based Approvals at Head Office
+        $tbPendingReviews = TeamBasedApprovalReview::where('status', 'pending')->count();
+        $tbProposedAmount = (float) TeamBasedApprovalItem::whereHas('approval', fn ($q) => $q->where('status', '!=', 'draft'))->sum('proposed_loan_amount');
+        $tbApprovedAmount = (float) TeamBasedApprovalReview::where('status', 'approved')->sum('approved_amount');
+
+        // 4. Approved & Completed Nationwide
+        $admApproved = MemberAdmission::where('status', 'approved')->count();
+        $lnApproved = LoanApplication::where('status', 'approved')->count();
+        $lnApprovedAmount = (float) LoanApplication::where('status', 'approved')->sum('approved_amount');
+
+        // 5. Pending Disbursement
+        $lnPendingDisbursement = LoanApplication::where('status', 'pending_disbursement')->count();
+        $lnPendingDisbursementAmount = (float) LoanApplication::where('status', 'pending_disbursement')->sum('approved_amount');
+
+        // 6. Active Disbursed Portfolio
+        $lnDisbursed = LoanApplication::where('status', 'disbursed')->count();
+        $lnDisbursedAmount = (float) LoanApplication::where('status', 'disbursed')->sum('disbursed_amount');
+
+        // 7. In Branch / Field Stage
+        $admBranchLevel = MemberAdmission::where('status', 'submitted')->count();
+        $lnBranchLevel = LoanApplication::where('status', 'submitted')->count();
+
+        // 8. In Area / Zone Review Stage
+        $admAreaZoneLevel = MemberAdmission::where('status', 'under_review')->count();
+        $lnAreaZoneLevel = LoanApplication::where('status', 'under_review')->count();
+
+        // 9. Returned for Correction / Needs Revision
+        $admNeedsCorrection = MemberAdmission::where('status', 'needs_revision')->count();
+        $lnNeedsCorrection = LoanApplication::where('status', 'needs_correction')->count();
+
+        // 10. Drafts
+        $admDraft = MemberAdmission::where('status', 'draft')->count();
+        $lnDraft = LoanApplication::where('status', 'draft')->count();
+
+        // 11. Rejected
+        $admRejected = MemberAdmission::where('status', 'rejected')->count();
+        $lnRejected = LoanApplication::where('status', 'rejected')->count();
+
+        // System Network Scale
+        $systemScale = [
             'total_zones' => Zone::where('is_active', true)->count(),
             'total_areas' => Area::where('is_active', true)->count(),
-            'total_branches' => $totalBranches,
-            'total_roles' => Role::count(),
-            'total_applications' => LoanApplication::count(),
-            'pending_applications' => LoanApplication::whereIn('status', ['submitted', 'under_review', 'pending_head_office'])->count(),
-            'approved_applications' => LoanApplication::where('status', 'approved')->count(),
+            'total_branches' => Branch::where('is_active', true)->count(),
+            'total_users' => User::where('is_active', true)->count(),
+            'total_admissions' => MemberAdmission::count(),
+            'total_loans' => LoanApplication::count(),
         ];
 
-        // Branches that submitted at least one loan application in the period
-        $submittedBranchIds = LoanApplication::whereNotNull('submitted_at')
-            ->whereBetween('submitted_at', [$startStr, $endStr])
-            ->distinct()
-            ->pluck('branch_id')
-            ->toArray();
-
-        $branchesSubmittedCount = count(array_filter($submittedBranchIds));
-        $branchesPendingCount = $totalBranches - $branchesSubmittedCount;
-
-        $allBranches = Branch::where('is_active', true)->with('area:id,name,zone_id', 'area.zone:id,name')->get(['id', 'name', 'code', 'area_id']);
-        $submittedBranches = $allBranches->whereIn('id', $submittedBranchIds)->values()->toArray();
-        $missingBranches = $allBranches->whereNotIn('id', $submittedBranchIds)->values()->toArray();
-
-        // Period stats (system-wide, in date range)
-        $periodStats = [
-            'loan_applications_submitted' => LoanApplication::whereNotNull('submitted_at')->whereBetween('submitted_at', [$startStr, $endStr])->count(),
-            'member_admissions_submitted' => MemberAdmission::whereNotNull('submitted_at')->whereBetween('submitted_at', [$startStr, $endStr])->count(),
-            'approved' => LoanApplication::where('status', 'approved')->whereNotNull('reviewed_at')->whereBetween('reviewed_at', [$startStr, $endStr])->count(),
-            'rejected' => LoanApplication::where('status', 'rejected')->whereNotNull('reviewed_at')->whereBetween('reviewed_at', [$startStr, $endStr])->count(),
-            'issues_pending' => LoanApplicationIssue::where('status', 'pending')->count(),
-        ];
-
-        $recentUsers = User::with(['role', 'branch'])
-            ->latest()
+        // Immediate Action Queue for Head Office
+        $urgentLoans = LoanApplication::whereIn('status', ['pending_head_office', 'ready_for_head_office'])
+            ->with(['memberAdmission:id,applicant_name_en,applicant_name_bn', 'loanProduct:id,product_name,product_name_bn', 'branch:id,name,code'])
+            ->latest('updated_at')
             ->take(5)
-            ->get(['id', 'name', 'email', 'role_id', 'branch_id', 'created_at']);
+            ->get()
+            ->map(function ($l) {
+                $name = $l->memberAdmission?->applicant_name_bn ?: $l->memberAdmission?->applicant_name_en;
+                if (! $name && is_array($l->legacy_member_snapshot)) {
+                    $name = $l->legacy_member_snapshot['applicant_name_bn'] ?? $l->legacy_member_snapshot['applicant_name_en'] ?? 'সদস্য';
+                }
 
-        $accessibleData = [
-            'zones' => Zone::where('is_active', true)->get(['id', 'name', 'code']),
-            'areas' => Area::where('is_active', true)->get(['id', 'name', 'code', 'zone_id']),
-            'branches' => $allBranches->toArray(),
+                return [
+                    'id' => $l->id,
+                    'type' => 'loan',
+                    'application_no' => $l->application_no,
+                    'applicant_name' => $name ?: '—',
+                    'detail' => $l->loanProduct?->product_name_bn ?: ($l->loanProduct?->product_name ?: 'সাধারণ ঋণ'),
+                    'branch_name' => $l->branch?->name ?? 'শাখা',
+                    'amount' => (float) $l->requested_amount,
+                    'status' => $l->status,
+                    'created_at' => $l->created_at?->diffForHumans() ?? 'আজ',
+                    'url' => "/member/loan-applications/{$l->id}",
+                ];
+            });
+
+        $urgentAdmissions = MemberAdmission::whereIn('status', ['pending_head_office', 'ready_for_head_office'])
+            ->with(['memberCategory:id,category_name,category_name_bn', 'branch:id,name,code'])
+            ->latest('updated_at')
+            ->take(5)
+            ->get()
+            ->map(function ($a) {
+                return [
+                    'id' => $a->id,
+                    'type' => 'admission',
+                    'application_no' => $a->application_no,
+                    'applicant_name' => $a->applicant_name_bn ?: ($a->applicant_name_en ?: 'নতুন সদস্য'),
+                    'detail' => $a->memberCategory?->category_name_bn ?: ($a->memberCategory?->category_name ?: 'সাধারণ সদস্য'),
+                    'branch_name' => $a->branch?->name ?? 'শাখা',
+                    'amount' => null,
+                    'status' => $a->status,
+                    'created_at' => $a->created_at?->diffForHumans() ?? 'আজ',
+                    'url' => "/member-admissions/{$a->id}",
+                ];
+            });
+
+        $hoActionQueue = $urgentLoans->concat($urgentAdmissions)
+            ->sortByDesc('created_at')
+            ->values()
+            ->take(7);
+
+        $hoStats = [
+            'pending_head_office' => [
+                'admission' => $admPendingHO,
+                'loan' => $lnPendingHO,
+                'total' => $admPendingHO + $lnPendingHO,
+            ],
+            'ready_for_head_office' => [
+                'admission' => $admReadyHO,
+                'loan' => $lnReadyHO,
+                'total' => $admReadyHO + $lnReadyHO,
+            ],
+            'team_based' => [
+                'count' => $tbPendingReviews,
+                'proposed_amount' => $tbProposedAmount,
+                'approved_amount' => $tbApprovedAmount,
+            ],
+            'approved' => [
+                'admission' => $admApproved,
+                'loan' => $lnApproved,
+                'total' => $admApproved + $lnApproved,
+                'amount' => $lnApprovedAmount,
+            ],
+            'pending_disbursement' => [
+                'admission' => 0,
+                'loan' => $lnPendingDisbursement,
+                'total' => $lnPendingDisbursement,
+                'amount' => $lnPendingDisbursementAmount,
+            ],
+            'active_disbursed' => [
+                'admission' => 0,
+                'loan' => $lnDisbursed,
+                'total' => $lnDisbursed,
+                'amount' => $lnDisbursedAmount,
+            ],
+            'branch_level' => [
+                'admission' => $admBranchLevel,
+                'loan' => $lnBranchLevel,
+                'total' => $admBranchLevel + $lnBranchLevel,
+            ],
+            'region_zone_level' => [
+                'admission' => $admAreaZoneLevel,
+                'loan' => $lnAreaZoneLevel,
+                'total' => $admAreaZoneLevel + $lnAreaZoneLevel,
+            ],
+            'needs_correction' => [
+                'admission' => $admNeedsCorrection,
+                'loan' => $lnNeedsCorrection,
+                'total' => $admNeedsCorrection + $lnNeedsCorrection,
+            ],
+            'draft' => [
+                'admission' => $admDraft,
+                'loan' => $lnDraft,
+                'total' => $admDraft + $lnDraft,
+            ],
+            'rejected' => [
+                'admission' => $admRejected,
+                'loan' => $lnRejected,
+                'total' => $admRejected + $lnRejected,
+            ],
+            'system_scale' => $systemScale,
         ];
 
         return Inertia::render('Dashboard/Index', [
-            'stats' => $stats,
-            'periodStats' => $periodStats,
             'period' => $period,
             'dateFrom' => $period === 'date_to_date' ? $dateFrom : null,
             'dateTo' => $period === 'date_to_date' ? $dateTo : null,
-            'branchSummary' => [
-                'total_branches' => $totalBranches,
-                'submitted_in_period' => $branchesSubmittedCount,
-                'pending_in_period' => $branchesPendingCount,
-                'submitted_branches' => $submittedBranches,
-                'missing_branches' => $missingBranches,
-            ],
-            'recentUsers' => $recentUsers,
-            'accessibleData' => $accessibleData,
             'dashboardType' => 'head_office',
+            'hoStats' => $hoStats,
+            'hoActionQueue' => $hoActionQueue,
+            'user' => [
+                'id' => $user->id,
+                'name' => $user->name,
+                'role' => 'প্রধান কার্যালয় (Head Office)',
+            ],
         ]);
     }
 
@@ -560,6 +645,21 @@ class DashboardController extends Controller
                 'dateTo' => null,
                 'myBranches' => [],
                 'dashboardType' => 'branch',
+                'workflowStats' => [
+                    'ready_for_head_office' => ['admission' => 0, 'loan' => 0, 'total' => 0],
+                    'pending_head_office' => ['admission' => 0, 'loan' => 0, 'total' => 0],
+                    'pending_branch_manager' => ['admission' => 0, 'loan' => 0, 'total' => 0],
+                    'pending_area_manager' => ['admission' => 0, 'loan' => 0, 'total' => 0],
+                    'pending_zone_manager' => ['admission' => 0, 'loan' => 0, 'total' => 0],
+                    'pending_other_approvers' => ['admission' => 0, 'loan' => 0, 'total' => 0],
+                    'pending_disbursement' => ['admission' => 0, 'loan' => 0, 'total' => 0, 'amount' => 0],
+                    'active_disbursed' => ['admission' => 0, 'loan' => 0, 'total' => 0, 'amount' => 0],
+                    'completed_approved' => ['admission' => 0, 'loan' => 0, 'total' => 0],
+                    'needs_correction' => ['admission' => 0, 'loan' => 0, 'total' => 0],
+                    'draft' => ['admission' => 0, 'loan' => 0, 'total' => 0],
+                    'rejected' => ['admission' => 0, 'loan' => 0, 'total' => 0],
+                    'totals' => ['admission' => 0, 'loan' => 0, 'total' => 0],
+                ],
             ]);
         }
 
@@ -669,6 +769,267 @@ class DashboardController extends Controller
             'rejected_count' => (clone $teamBasedQuery)->where('status', 'rejected')->count(),
         ];
 
+        // === COMPREHENSIVE WORKFLOW & PORTFOLIO BREAKDOWN ===
+        // 1. Ready for Head Office
+        $admReadyHO = MemberAdmission::whereIn('branch_id', $branchIds)->where('status', 'ready_for_head_office')->count();
+        $lnReadyHO = LoanApplication::whereIn('branch_id', $branchIds)->where('status', 'ready_for_head_office')->count();
+
+        // 2. Pending at Head Office
+        $admPendingHO = MemberAdmission::whereIn('branch_id', $branchIds)->where('status', 'pending_head_office')->count();
+        $lnPendingHO = LoanApplication::whereIn('branch_id', $branchIds)->where('status', 'pending_head_office')->count();
+
+        // 3. Pending by Stage (Branch Manager, Area Manager, Zone Manager, Other Approvers)
+        $pendingAdmissions = MemberAdmission::whereIn('branch_id', $branchIds)
+            ->whereIn('status', ['submitted', 'under_review'])
+            ->with(['approvals' => function ($q) {
+                $q->orderBy('sequence');
+            }])
+            ->get();
+
+        $admByLevel = ['branch' => 0, 'area' => 0, 'zone' => 0, 'other' => 0];
+        foreach ($pendingAdmissions as $adm) {
+            $curr = null;
+            if ($adm->relationLoaded('approvals') && $adm->approvals->isNotEmpty()) {
+                $pendingApprovals = $adm->approvals->where('status', 'pending')->sortBy('sequence');
+                foreach ($pendingApprovals as $p) {
+                    $prev = $adm->approvals->where('sequence', '<', $p->sequence);
+                    if ($prev->every(fn ($a) => $a->status === 'approved')) {
+                        $curr = $p;
+                        break;
+                    }
+                }
+            }
+            if (! $curr) {
+                $curr = $adm->currentPendingApproval();
+            }
+
+            if (! $curr) {
+                $admByLevel['branch']++;
+            } else {
+                $lvl = strtolower((string) $curr->level);
+                if ($lvl === 'branch' || str_contains($lvl, 'branch')) {
+                    $admByLevel['branch']++;
+                } elseif ($lvl === 'area' || str_contains($lvl, 'area')) {
+                    $admByLevel['area']++;
+                } elseif ($lvl === 'zone' || str_contains($lvl, 'zone')) {
+                    $admByLevel['zone']++;
+                } else {
+                    $admByLevel['other']++;
+                }
+            }
+        }
+
+        $pendingLoans = LoanApplication::whereIn('branch_id', $branchIds)
+            ->whereIn('status', ['submitted', 'under_review'])
+            ->with(['approvals' => function ($q) {
+                $q->orderBy('sequence');
+            }])
+            ->get();
+
+        $lnByLevel = ['branch' => 0, 'area' => 0, 'zone' => 0, 'other' => 0];
+        foreach ($pendingLoans as $loan) {
+            $curr = null;
+            if ($loan->relationLoaded('approvals') && $loan->approvals->isNotEmpty()) {
+                $pendingApprovals = $loan->approvals->where('status', 'pending')->sortBy('sequence');
+                foreach ($pendingApprovals as $p) {
+                    $prev = $loan->approvals->where('sequence', '<', $p->sequence);
+                    if ($prev->every(fn ($a) => $a->status === 'approved')) {
+                        $curr = $p;
+                        break;
+                    }
+                }
+            }
+            if (! $curr) {
+                $curr = $loan->approvals()->where('status', 'pending')->orderBy('sequence')->first();
+            }
+
+            if (! $curr) {
+                $lnByLevel['branch']++;
+            } else {
+                $lvl = strtolower((string) $curr->level);
+                if ($lvl === 'branch' || str_contains($lvl, 'branch')) {
+                    $lnByLevel['branch']++;
+                } elseif ($lvl === 'area' || str_contains($lvl, 'area')) {
+                    $lnByLevel['area']++;
+                } elseif ($lvl === 'zone' || str_contains($lvl, 'zone')) {
+                    $lnByLevel['zone']++;
+                } else {
+                    $lnByLevel['other']++;
+                }
+            }
+        }
+
+        // 4. Pending Disbursement (Awaiting Disbursement)
+        $lnPendingDisbursementCount = LoanApplication::whereIn('branch_id', $branchIds)
+            ->where('status', 'pending_disbursement')
+            ->count();
+        $lnPendingDisbursementAmount = (float) LoanApplication::whereIn('branch_id', $branchIds)
+            ->where('status', 'pending_disbursement')
+            ->sum('approved_amount');
+
+        // 5. Active / Disbursed Loans
+        $lnDisbursedCount = LoanApplication::whereIn('branch_id', $branchIds)
+            ->where('status', 'disbursed')
+            ->count();
+        $lnDisbursedAmount = (float) LoanApplication::whereIn('branch_id', $branchIds)
+            ->where('status', 'disbursed')
+            ->sum('disbursed_amount');
+
+        // 6. Approved / Complete
+        $admApprovedCount = MemberAdmission::whereIn('branch_id', $branchIds)
+            ->where('status', 'approved')
+            ->count();
+        $lnApprovedCount = LoanApplication::whereIn('branch_id', $branchIds)
+            ->whereIn('status', ['approved', 'disbursed'])
+            ->count();
+
+        // 7. Needs Revision / Correction
+        $admNeedsRevision = MemberAdmission::whereIn('branch_id', $branchIds)
+            ->where('status', 'needs_revision')
+            ->count();
+        $lnNeedsCorrection = LoanApplication::whereIn('branch_id', $branchIds)
+            ->where('status', 'needs_correction')
+            ->count();
+
+        // 8. Drafts
+        $admDrafts = MemberAdmission::whereIn('branch_id', $branchIds)
+            ->where('status', 'draft')
+            ->count();
+        $lnDrafts = LoanApplication::whereIn('branch_id', $branchIds)
+            ->where('status', 'draft')
+            ->count();
+
+        // 9. Rejected
+        $admRejected = MemberAdmission::whereIn('branch_id', $branchIds)
+            ->where('status', 'rejected')
+            ->count();
+        $lnRejected = LoanApplication::whereIn('branch_id', $branchIds)
+            ->where('status', 'rejected')
+            ->count();
+
+        // Totals
+        $totalMembers = MemberAdmission::whereIn('branch_id', $branchIds)->count();
+        $totalLoans = LoanApplication::whereIn('branch_id', $branchIds)->count();
+
+        $workflowStats = [
+            'ready_for_head_office' => [
+                'admission' => $admReadyHO,
+                'loan' => $lnReadyHO,
+                'total' => $admReadyHO + $lnReadyHO,
+            ],
+            'pending_head_office' => [
+                'admission' => $admPendingHO,
+                'loan' => $lnPendingHO,
+                'total' => $admPendingHO + $lnPendingHO,
+            ],
+            'pending_branch_manager' => [
+                'admission' => $admByLevel['branch'],
+                'loan' => $lnByLevel['branch'],
+                'total' => $admByLevel['branch'] + $lnByLevel['branch'],
+            ],
+            'pending_area_manager' => [
+                'admission' => $admByLevel['area'],
+                'loan' => $lnByLevel['area'],
+                'total' => $admByLevel['area'] + $lnByLevel['area'],
+            ],
+            'pending_zone_manager' => [
+                'admission' => $admByLevel['zone'],
+                'loan' => $lnByLevel['zone'],
+                'total' => $admByLevel['zone'] + $lnByLevel['zone'],
+            ],
+            'pending_other_approvers' => [
+                'admission' => $admByLevel['other'],
+                'loan' => $lnByLevel['other'],
+                'total' => $admByLevel['other'] + $lnByLevel['other'],
+            ],
+            'pending_disbursement' => [
+                'admission' => 0,
+                'loan' => $lnPendingDisbursementCount,
+                'total' => $lnPendingDisbursementCount,
+                'amount' => $lnPendingDisbursementAmount,
+            ],
+            'active_disbursed' => [
+                'admission' => 0,
+                'loan' => $lnDisbursedCount,
+                'total' => $lnDisbursedCount,
+                'amount' => $lnDisbursedAmount,
+            ],
+            'completed_approved' => [
+                'admission' => $admApprovedCount,
+                'loan' => $lnApprovedCount,
+                'total' => $admApprovedCount + $lnApprovedCount,
+            ],
+            'needs_correction' => [
+                'admission' => $admNeedsRevision,
+                'loan' => $lnNeedsCorrection,
+                'total' => $admNeedsRevision + $lnNeedsCorrection,
+            ],
+            'draft' => [
+                'admission' => $admDrafts,
+                'loan' => $lnDrafts,
+                'total' => $admDrafts + $lnDrafts,
+            ],
+            'rejected' => [
+                'admission' => $admRejected,
+                'loan' => $lnRejected,
+                'total' => $admRejected + $lnRejected,
+            ],
+            'totals' => [
+                'admission' => $totalMembers,
+                'loan' => $totalLoans,
+                'total' => $totalMembers + $totalLoans,
+            ],
+        ];
+
+        // Recent Applications for this branch (both Loans and Admissions)
+        $recentLoans = LoanApplication::whereIn('branch_id', $branchIds)
+            ->with(['memberAdmission:id,applicant_name_en,applicant_name_bn', 'loanProduct:id,product_name,product_name_bn'])
+            ->latest('created_at')
+            ->take(5)
+            ->get(['id', 'application_no', 'member_admission_id', 'loan_product_id', 'requested_amount', 'status', 'created_at', 'legacy_member_snapshot'])
+            ->map(function ($l) {
+                $name = $l->memberAdmission?->applicant_name_bn ?: $l->memberAdmission?->applicant_name_en;
+                if (! $name && is_array($l->legacy_member_snapshot)) {
+                    $name = $l->legacy_member_snapshot['applicant_name_bn'] ?? $l->legacy_member_snapshot['applicant_name_en'] ?? 'সদস্য';
+                }
+
+                return [
+                    'id' => $l->id,
+                    'type' => 'loan',
+                    'application_no' => $l->application_no,
+                    'applicant_name' => $name ?: '—',
+                    'detail' => $l->loanProduct?->product_name_bn ?: ($l->loanProduct?->product_name ?: 'সাধারণ ঋণ'),
+                    'amount' => (float) $l->requested_amount,
+                    'status' => $l->status,
+                    'created_at' => $l->created_at?->diffForHumans() ?? 'আজ',
+                    'url' => "/member/loan-applications/{$l->id}",
+                ];
+            });
+
+        $recentAdmissions = MemberAdmission::whereIn('branch_id', $branchIds)
+            ->with(['memberCategory:id,category_name,category_name_bn'])
+            ->latest('created_at')
+            ->take(5)
+            ->get(['id', 'application_no', 'applicant_name_bn', 'applicant_name_en', 'member_category_id', 'status', 'created_at'])
+            ->map(function ($a) {
+                return [
+                    'id' => $a->id,
+                    'type' => 'admission',
+                    'application_no' => $a->application_no,
+                    'applicant_name' => $a->applicant_name_bn ?: ($a->applicant_name_en ?: 'নতুন সদস্য'),
+                    'detail' => $a->memberCategory?->category_name_bn ?: ($a->memberCategory?->category_name ?: 'সাধারণ সদস্য'),
+                    'amount' => null,
+                    'status' => $a->status,
+                    'created_at' => $a->created_at?->diffForHumans() ?? 'আজ',
+                    'url' => "/member-admissions/{$a->id}",
+                ];
+            });
+
+        $recentApplications = $recentLoans->concat($recentAdmissions)
+            ->sortByDesc('created_at')
+            ->values()
+            ->take(6);
+
         return Inertia::render('Dashboard/BranchIndex', [
             'stats' => ['my_branches' => count($branchIds)],
             'periodStats' => $periodStats,
@@ -679,6 +1040,538 @@ class DashboardController extends Controller
             'myBranches' => $myBranches,
             'dashboardType' => 'branch',
             'teamBasedStats' => $teamBasedStats,
+            'workflowStats' => $workflowStats,
+            'recentApplications' => $recentApplications,
+        ]);
+    }
+
+    /**
+     * Field Officer (FO) Dashboard
+     * Streamlined overview for loan proposal preparation, manager tracking, higher approvals & achievements
+     */
+    private function fieldOfficerDashboard($user, Request $request)
+    {
+        $branchIds = $this->getUserBranchIds($user);
+        $period = $request->get('period', 'monthly');
+        $dateFrom = $request->get('from_date');
+        $dateTo = $request->get('to_date');
+
+        $now = Carbon::now();
+        $today = $now->toDateString();
+
+        if ($period === 'today') {
+            $start = $now->copy()->startOfDay();
+            $end = $now->copy()->endOfDay();
+        } elseif ($period === 'monthly') {
+            $start = $now->copy()->startOfMonth();
+            $end = $now->copy()->endOfMonth();
+        } elseif ($period === 'date_to_date' && $dateFrom && $dateTo) {
+            $start = Carbon::parse($dateFrom)->startOfDay();
+            $end = Carbon::parse($dateTo)->endOfDay();
+        } else {
+            $start = $now->copy()->startOfMonth();
+            $end = $now->copy()->endOfMonth();
+        }
+
+        $myBranches = Branch::whereIn('id', $branchIds)
+            ->with(['area.zone'])
+            ->get();
+
+        // Check if there are applications explicitly tagged to this FO user
+        $hasSpecificAdm = MemberAdmission::where(function ($q) use ($user) {
+            $q->where('created_by', $user->id)
+                ->orWhere('submitted_by', $user->id)
+                ->orWhere('assigned_officer_id', $user->id);
+        })->exists();
+
+        $hasSpecificLoan = LoanApplication::where(function ($q) use ($user) {
+            $q->where('submitted_by', $user->id);
+        })->exists();
+
+        // Scope queries: if FO has tagged applications, use their items; else scope to branch
+        $applyAdmScope = function ($query) use ($user, $branchIds, $hasSpecificAdm) {
+            if ($hasSpecificAdm) {
+                return $query->where(function ($q) use ($user) {
+                    $q->where('created_by', $user->id)
+                        ->orWhere('submitted_by', $user->id)
+                        ->orWhere('assigned_officer_id', $user->id);
+                });
+            }
+            return ! empty($branchIds) ? $query->whereIn('branch_id', $branchIds) : $query;
+        };
+
+        $applyLoanScope = function ($query) use ($user, $branchIds, $hasSpecificLoan) {
+            if ($hasSpecificLoan) {
+                return $query->where(function ($q) use ($user) {
+                    $q->where('submitted_by', $user->id);
+                });
+            }
+            return ! empty($branchIds) ? $query->whereIn('branch_id', $branchIds) : $query;
+        };
+
+        // 1. Draft Applications (খসড়া আবেদন - জমা দেওয়ার অপেক্ষায়)
+        $admDraft = $applyAdmScope(MemberAdmission::query())->where('status', 'draft')->count();
+        $lnDraft = $applyLoanScope(LoanApplication::query())->where('status', 'draft')->count();
+
+        // 2. Pending with Branch Manager (ম্যানেজারের কাছে পেন্ডিং)
+        $admPendingBM = $applyAdmScope(MemberAdmission::query())->where('status', 'submitted')->count();
+        $lnPendingBM = $applyLoanScope(LoanApplication::query())->where('status', 'submitted')->count();
+
+        // 3. Higher Approvers (উর্ধ্বতন অনুমোদক - RM / ZM / ADMF / DMF / ED / HO)
+        $higherStatuses = ['under_review', 'ready_for_head_office', 'pending_head_office'];
+        $admHigher = $applyAdmScope(MemberAdmission::query())->whereIn('status', $higherStatuses)->count();
+        $lnHigher = $applyLoanScope(LoanApplication::query())->whereIn('status', $higherStatuses)->count();
+
+        // 4. Returned for Correction (সংশোধনের জন্য ফেরত)
+        $admCorrection = $applyAdmScope(MemberAdmission::query())->whereIn('status', ['needs_correction', 'needs_revision'])->count();
+        $lnCorrection = $applyLoanScope(LoanApplication::query())->whereIn('status', ['needs_correction', 'needs_revision'])->count();
+
+        // 5. Approved & Ready for Disbursement (অনুমোদিত আবেদনসমূহ)
+        $admApproved = $applyAdmScope(MemberAdmission::query())->where('status', 'approved')->count();
+        $lnApproved = $applyLoanScope(LoanApplication::query())->whereIn('status', ['approved', 'pending_disbursement'])->count();
+        $lnApprovedAmount = (float) $applyLoanScope(LoanApplication::query())->whereIn('status', ['approved', 'pending_disbursement'])->sum('approved_amount');
+
+        // 6. Disbursed / Active Portfolio (বিতরণকৃত ও সক্রিয় ঋণ)
+        $lnDisbursed = $applyLoanScope(LoanApplication::query())->where('status', 'disbursed')->count();
+        $lnDisbursedAmount = (float) $applyLoanScope(LoanApplication::query())->where('status', 'disbursed')->sum('disbursed_amount');
+
+        // 7. Rejected / Cancelled (বাতিল / প্রত্যাখ্যাত)
+        $admRejected = $applyAdmScope(MemberAdmission::query())->where('status', 'rejected')->count();
+        $lnRejected = $applyLoanScope(LoanApplication::query())->where('status', 'rejected')->count();
+
+        // Total Counts
+        $totalAdm = $applyAdmScope(MemberAdmission::query())->count();
+        $totalLoan = $applyLoanScope(LoanApplication::query())->count();
+
+        // Recent Applications for FO
+        $recentLoans = $applyLoanScope(LoanApplication::query())
+            ->with(['memberAdmission:id,applicant_name_en,applicant_name_bn', 'loanProduct:id,product_name,product_name_bn'])
+            ->latest('created_at')
+            ->take(5)
+            ->get(['id', 'application_no', 'member_admission_id', 'loan_product_id', 'requested_amount', 'status', 'created_at', 'legacy_member_snapshot'])
+            ->map(function ($l) {
+                $name = $l->memberAdmission?->applicant_name_bn ?: $l->memberAdmission?->applicant_name_en;
+                if (! $name && is_array($l->legacy_member_snapshot)) {
+                    $name = $l->legacy_member_snapshot['applicant_name_bn'] ?? $l->legacy_member_snapshot['applicant_name_en'] ?? 'সদস্য';
+                }
+
+                return [
+                    'id' => $l->id,
+                    'type' => 'loan',
+                    'application_no' => $l->application_no,
+                    'applicant_name' => $name ?: '—',
+                    'detail' => $l->loanProduct?->product_name_bn ?: ($l->loanProduct?->product_name ?: 'সাধারণ ঋণ'),
+                    'amount' => (float) $l->requested_amount,
+                    'status' => $l->status,
+                    'created_at' => $l->created_at?->diffForHumans() ?? 'আজ',
+                    'url' => "/member/loan-applications/{$l->id}",
+                ];
+            });
+
+        $recentAdmissions = $applyAdmScope(MemberAdmission::query())
+            ->with(['memberCategory:id,category_name,category_name_bn'])
+            ->latest('created_at')
+            ->take(5)
+            ->get(['id', 'application_no', 'applicant_name_bn', 'applicant_name_en', 'member_category_id', 'status', 'created_at'])
+            ->map(function ($a) {
+                return [
+                    'id' => $a->id,
+                    'type' => 'admission',
+                    'application_no' => $a->application_no,
+                    'applicant_name' => $a->applicant_name_bn ?: ($a->applicant_name_en ?: 'নতুন সদস্য'),
+                    'detail' => $a->memberCategory?->category_name_bn ?: ($a->memberCategory?->category_name ?: 'সাধারণ সদস্য'),
+                    'amount' => null,
+                    'status' => $a->status,
+                    'created_at' => $a->created_at?->diffForHumans() ?? 'আজ',
+                    'url' => "/member-admissions/{$a->id}",
+                ];
+            });
+
+        $recentApplications = $recentLoans->concat($recentAdmissions)
+            ->sortByDesc('created_at')
+            ->values()
+            ->take(6);
+
+        $foStats = [
+            'draft' => [
+                'admission' => $admDraft,
+                'loan' => $lnDraft,
+                'total' => $admDraft + $lnDraft,
+            ],
+            'pending_manager' => [
+                'admission' => $admPendingBM,
+                'loan' => $lnPendingBM,
+                'total' => $admPendingBM + $lnPendingBM,
+            ],
+            'higher_approvers' => [
+                'admission' => $admHigher,
+                'loan' => $lnHigher,
+                'total' => $admHigher + $lnHigher,
+            ],
+            'needs_correction' => [
+                'admission' => $admCorrection,
+                'loan' => $lnCorrection,
+                'total' => $admCorrection + $lnCorrection,
+            ],
+            'approved' => [
+                'admission' => $admApproved,
+                'loan' => $lnApproved,
+                'total' => $admApproved + $lnApproved,
+                'amount' => $lnApprovedAmount,
+            ],
+            'disbursed' => [
+                'admission' => 0,
+                'loan' => $lnDisbursed,
+                'total' => $lnDisbursed,
+                'amount' => $lnDisbursedAmount,
+            ],
+            'rejected' => [
+                'admission' => $admRejected,
+                'loan' => $lnRejected,
+                'total' => $admRejected + $lnRejected,
+            ],
+            'totals' => [
+                'admission' => $totalAdm,
+                'loan' => $totalLoan,
+                'total' => $totalAdm + $totalLoan,
+            ],
+        ];
+
+        return Inertia::render('Dashboard/FieldOfficerIndex', [
+            'period' => $period,
+            'dateFrom' => $period === 'date_to_date' ? $dateFrom : null,
+            'dateTo' => $period === 'date_to_date' ? $dateTo : null,
+            'myBranches' => $myBranches,
+            'dashboardType' => 'field_officer',
+            'foStats' => $foStats,
+            'recentApplications' => $recentApplications,
+            'user' => [
+                'id' => $user->id,
+                'name' => $user->name,
+                'role' => 'মাঠ কর্মকর্তা (Field Officer)',
+                'branch' => $myBranches[0]->name ?? 'শাখা',
+            ],
+        ]);
+    }
+
+    /**
+     * Branch Manager (BM) Dashboard
+     * Focus on BM pending approvals first, higher hierarchy tracking (RM, ZM, ADMF, DMF, ED, HO), and branch operations
+     */
+    private function branchManagerDashboard($user, Request $request)
+    {
+        $branchIds = $this->getUserBranchIds($user);
+        $period = $request->get('period', 'monthly');
+        $dateFrom = $request->get('from_date');
+        $dateTo = $request->get('to_date');
+
+        $now = Carbon::now();
+        $today = $now->toDateString();
+
+        if ($period === 'today') {
+            $startStr = $now->copy()->startOfDay()->toDateTimeString();
+            $endStr = $now->copy()->endOfDay()->toDateTimeString();
+        } elseif ($period === 'monthly') {
+            $startStr = $now->copy()->startOfMonth()->toDateTimeString();
+            $endStr = $now->copy()->endOfMonth()->toDateTimeString();
+        } elseif ($period === 'date_to_date' && $dateFrom && $dateTo) {
+            $startStr = Carbon::parse($dateFrom)->startOfDay()->toDateTimeString();
+            $endStr = Carbon::parse($dateTo)->endOfDay()->toDateTimeString();
+        } else {
+            $startStr = $now->copy()->startOfMonth()->toDateTimeString();
+            $endStr = $now->copy()->endOfMonth()->toDateTimeString();
+        }
+
+        $myBranches = Branch::whereIn('id', $branchIds)
+            ->with(['area.zone'])
+            ->get();
+
+        // 1. Ready for Head Office
+        $admReadyHO = MemberAdmission::whereIn('branch_id', $branchIds)->where('status', 'ready_for_head_office')->count();
+        $lnReadyHO = LoanApplication::whereIn('branch_id', $branchIds)->where('status', 'ready_for_head_office')->count();
+
+        // 2. Pending at Head Office
+        $admPendingHO = MemberAdmission::whereIn('branch_id', $branchIds)->where('status', 'pending_head_office')->count();
+        $lnPendingHO = LoanApplication::whereIn('branch_id', $branchIds)->where('status', 'pending_head_office')->count();
+
+        // 3. Pending by Stage (Branch Manager, Area Manager, Zone Manager, Other Approvers)
+        $pendingAdmissions = MemberAdmission::whereIn('branch_id', $branchIds)
+            ->whereIn('status', ['submitted', 'under_review'])
+            ->with(['approvals' => function ($q) {
+                $q->orderBy('sequence');
+            }])
+            ->get();
+
+        $admByLevel = ['branch' => 0, 'area' => 0, 'zone' => 0, 'other' => 0];
+        foreach ($pendingAdmissions as $adm) {
+            $curr = null;
+            if ($adm->relationLoaded('approvals') && $adm->approvals->isNotEmpty()) {
+                $pendingApprovals = $adm->approvals->where('status', 'pending')->sortBy('sequence');
+                foreach ($pendingApprovals as $p) {
+                    $prev = $adm->approvals->where('sequence', '<', $p->sequence);
+                    if ($prev->every(fn ($a) => $a->status === 'approved')) {
+                        $curr = $p;
+                        break;
+                    }
+                }
+            }
+            if (! $curr) {
+                $curr = $adm->currentPendingApproval();
+            }
+
+            if (! $curr) {
+                $admByLevel['branch']++;
+            } else {
+                $lvl = strtolower((string) $curr->level);
+                if ($lvl === 'branch' || str_contains($lvl, 'branch')) {
+                    $admByLevel['branch']++;
+                } elseif ($lvl === 'area' || str_contains($lvl, 'area')) {
+                    $admByLevel['area']++;
+                } elseif ($lvl === 'zone' || str_contains($lvl, 'zone')) {
+                    $admByLevel['zone']++;
+                } else {
+                    $admByLevel['other']++;
+                }
+            }
+        }
+
+        $pendingLoans = LoanApplication::whereIn('branch_id', $branchIds)
+            ->whereIn('status', ['submitted', 'under_review'])
+            ->with(['approvals' => function ($q) {
+                $q->orderBy('sequence');
+            }])
+            ->get();
+
+        $lnByLevel = ['branch' => 0, 'area' => 0, 'zone' => 0, 'other' => 0];
+        foreach ($pendingLoans as $loan) {
+            $curr = null;
+            if ($loan->relationLoaded('approvals') && $loan->approvals->isNotEmpty()) {
+                $pendingApprovals = $loan->approvals->where('status', 'pending')->sortBy('sequence');
+                foreach ($pendingApprovals as $p) {
+                    $prev = $loan->approvals->where('sequence', '<', $p->sequence);
+                    if ($prev->every(fn ($a) => $a->status === 'approved')) {
+                        $curr = $p;
+                        break;
+                    }
+                }
+            }
+            if (! $curr) {
+                $curr = $loan->approvals()->where('status', 'pending')->orderBy('sequence')->first();
+            }
+
+            if (! $curr) {
+                $lnByLevel['branch']++;
+            } else {
+                $lvl = strtolower((string) $curr->level);
+                if ($lvl === 'branch' || str_contains($lvl, 'branch')) {
+                    $lnByLevel['branch']++;
+                } elseif ($lvl === 'area' || str_contains($lvl, 'area')) {
+                    $lnByLevel['area']++;
+                } elseif ($lvl === 'zone' || str_contains($lvl, 'zone')) {
+                    $lnByLevel['zone']++;
+                } else {
+                    $lnByLevel['other']++;
+                }
+            }
+        }
+
+        // 4. Pending Disbursement
+        $lnPendingDisbursementCount = LoanApplication::whereIn('branch_id', $branchIds)
+            ->where('status', 'pending_disbursement')
+            ->count();
+        $lnPendingDisbursementAmount = (float) LoanApplication::whereIn('branch_id', $branchIds)
+            ->where('status', 'pending_disbursement')
+            ->sum('approved_amount');
+
+        // 5. Active Disbursed Loans
+        $lnDisbursedCount = LoanApplication::whereIn('branch_id', $branchIds)
+            ->where('status', 'disbursed')
+            ->count();
+        $lnDisbursedAmount = (float) LoanApplication::whereIn('branch_id', $branchIds)
+            ->where('status', 'disbursed')
+            ->sum('disbursed_amount');
+
+        // 6. Fully Completed / Approved
+        $admApprovedCount = MemberAdmission::whereIn('branch_id', $branchIds)
+            ->where('status', 'approved')
+            ->count();
+        $lnApprovedCount = LoanApplication::whereIn('branch_id', $branchIds)
+            ->where('status', 'approved')
+            ->count();
+
+        // 7. Needs Correction / Revision
+        $admNeedsRevision = MemberAdmission::whereIn('branch_id', $branchIds)
+            ->where('status', 'needs_revision')
+            ->count();
+        $lnNeedsCorrection = LoanApplication::whereIn('branch_id', $branchIds)
+            ->where('status', 'needs_correction')
+            ->count();
+
+        // 8. Drafts
+        $admDrafts = MemberAdmission::whereIn('branch_id', $branchIds)
+            ->where('status', 'draft')
+            ->count();
+        $lnDrafts = LoanApplication::whereIn('branch_id', $branchIds)
+            ->where('status', 'draft')
+            ->count();
+
+        // 9. Rejected
+        $admRejected = MemberAdmission::whereIn('branch_id', $branchIds)
+            ->where('status', 'rejected')
+            ->count();
+        $lnRejected = LoanApplication::whereIn('branch_id', $branchIds)
+            ->where('status', 'rejected')
+            ->count();
+
+        // Total Counts
+        $totalMembers = MemberAdmission::whereIn('branch_id', $branchIds)->count();
+        $totalLoans = LoanApplication::whereIn('branch_id', $branchIds)->count();
+
+        // Team-Based Approval stats for Branch Manager
+        $teamBasedQuery = \App\Models\TeamBasedApproval::whereIn('branch_id', $branchIds);
+        $teamBasedStats = [
+            'draft_count' => (clone $teamBasedQuery)->where('status', 'draft')->count(),
+            'pending_count' => (clone $teamBasedQuery)->where('status', 'submitted')->count(),
+            'approved_count' => (clone $teamBasedQuery)->where('status', 'approved')->count(),
+            'rejected_count' => (clone $teamBasedQuery)->where('status', 'rejected')->count(),
+        ];
+
+        // Specific urgent queue for Branch Manager to review right now
+        $bmUrgentLoans = LoanApplication::whereIn('branch_id', $branchIds)
+            ->where('status', 'submitted')
+            ->with(['memberAdmission:id,applicant_name_en,applicant_name_bn', 'loanProduct:id,product_name,product_name_bn'])
+            ->latest('created_at')
+            ->take(5)
+            ->get(['id', 'application_no', 'member_admission_id', 'loan_product_id', 'requested_amount', 'status', 'created_at', 'legacy_member_snapshot'])
+            ->map(function ($l) {
+                $name = $l->memberAdmission?->applicant_name_bn ?: $l->memberAdmission?->applicant_name_en;
+                if (! $name && is_array($l->legacy_member_snapshot)) {
+                    $name = $l->legacy_member_snapshot['applicant_name_bn'] ?? $l->legacy_member_snapshot['applicant_name_en'] ?? 'সদস্য';
+                }
+
+                return [
+                    'id' => $l->id,
+                    'type' => 'loan',
+                    'application_no' => $l->application_no,
+                    'applicant_name' => $name ?: '—',
+                    'detail' => $l->loanProduct?->product_name_bn ?: ($l->loanProduct?->product_name ?: 'সাধারণ ঋণ'),
+                    'amount' => (float) $l->requested_amount,
+                    'status' => $l->status,
+                    'created_at' => $l->created_at?->diffForHumans() ?? 'আজ',
+                    'url' => "/member/loan-applications/{$l->id}",
+                ];
+            });
+
+        $bmUrgentAdmissions = MemberAdmission::whereIn('branch_id', $branchIds)
+            ->where('status', 'submitted')
+            ->with(['memberCategory:id,category_name,category_name_bn'])
+            ->latest('created_at')
+            ->take(5)
+            ->get(['id', 'application_no', 'applicant_name_bn', 'applicant_name_en', 'member_category_id', 'status', 'created_at'])
+            ->map(function ($a) {
+                return [
+                    'id' => $a->id,
+                    'type' => 'admission',
+                    'application_no' => $a->application_no,
+                    'applicant_name' => $a->applicant_name_bn ?: ($a->applicant_name_en ?: 'নতুন সদস্য'),
+                    'detail' => $a->memberCategory?->category_name_bn ?: ($a->memberCategory?->category_name ?: 'সাধারণ সদস্য'),
+                    'amount' => null,
+                    'status' => $a->status,
+                    'created_at' => $a->created_at?->diffForHumans() ?? 'আজ',
+                    'url' => "/member-admissions/{$a->id}",
+                ];
+            });
+
+        $bmActionQueue = $bmUrgentLoans->concat($bmUrgentAdmissions)
+            ->sortByDesc('created_at')
+            ->values()
+            ->take(6);
+
+        $bmStats = [
+            'my_pending' => [
+                'admission' => $admByLevel['branch'],
+                'loan' => $lnByLevel['branch'],
+                'total' => $admByLevel['branch'] + $lnByLevel['branch'],
+            ],
+            'pending_area_manager' => [
+                'admission' => $admByLevel['area'],
+                'loan' => $lnByLevel['area'],
+                'total' => $admByLevel['area'] + $lnByLevel['area'],
+            ],
+            'pending_zone_manager' => [
+                'admission' => $admByLevel['zone'],
+                'loan' => $lnByLevel['zone'],
+                'total' => $admByLevel['zone'] + $lnByLevel['zone'],
+            ],
+            'pending_other_approvers' => [
+                'admission' => $admByLevel['other'],
+                'loan' => $lnByLevel['other'],
+                'total' => $admByLevel['other'] + $lnByLevel['other'],
+            ],
+            'pending_head_office' => [
+                'admission' => $admPendingHO,
+                'loan' => $lnPendingHO,
+                'total' => $admPendingHO + $lnPendingHO,
+            ],
+            'ready_for_head_office' => [
+                'admission' => $admReadyHO,
+                'loan' => $lnReadyHO,
+                'total' => $admReadyHO + $lnReadyHO,
+            ],
+            'pending_disbursement' => [
+                'admission' => 0,
+                'loan' => $lnPendingDisbursementCount,
+                'total' => $lnPendingDisbursementCount,
+                'amount' => $lnPendingDisbursementAmount,
+            ],
+            'active_disbursed' => [
+                'admission' => 0,
+                'loan' => $lnDisbursedCount,
+                'total' => $lnDisbursedCount,
+                'amount' => $lnDisbursedAmount,
+            ],
+            'completed_approved' => [
+                'admission' => $admApprovedCount,
+                'loan' => $lnApprovedCount,
+                'total' => $admApprovedCount + $lnApprovedCount,
+            ],
+            'needs_correction' => [
+                'admission' => $admNeedsRevision,
+                'loan' => $lnNeedsCorrection,
+                'total' => $admNeedsRevision + $lnNeedsCorrection,
+            ],
+            'draft' => [
+                'admission' => $admDrafts,
+                'loan' => $lnDrafts,
+                'total' => $admDrafts + $lnDrafts,
+            ],
+            'rejected' => [
+                'admission' => $admRejected,
+                'loan' => $lnRejected,
+                'total' => $admRejected + $lnRejected,
+            ],
+            'totals' => [
+                'admission' => $totalMembers,
+                'loan' => $totalLoans,
+                'total' => $totalMembers + $totalLoans,
+            ],
+        ];
+
+        return Inertia::render('Dashboard/BranchManagerIndex', [
+            'period' => $period,
+            'dateFrom' => $period === 'date_to_date' ? $dateFrom : null,
+            'dateTo' => $period === 'date_to_date' ? $dateTo : null,
+            'myBranches' => $myBranches,
+            'dashboardType' => 'branch_manager',
+            'bmStats' => $bmStats,
+            'bmActionQueue' => $bmActionQueue,
+            'teamBasedStats' => $teamBasedStats,
+            'user' => [
+                'id' => $user->id,
+                'name' => $user->name,
+                'role' => 'শাখা ব্যবস্থাপক (Branch Manager)',
+                'branch' => $myBranches[0]->name ?? 'শাখা',
+            ],
         ]);
     }
 

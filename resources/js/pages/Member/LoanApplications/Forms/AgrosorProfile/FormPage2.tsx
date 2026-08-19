@@ -336,22 +336,78 @@ export default function FormPage2({
             <div className="bg-white p-4 rounded-xl border border-gray-200 shadow-sm space-y-3">
                 <div className="flex items-center gap-2 font-bold text-sm text-gray-800 border-b pb-2">
                     <Users className="w-4 h-4 text-emerald-700" />
-                    <span>১৩. জামিনদারের তথ্য</span>
+                    <span>১৩. জামিনদারের তথ্য (২ জন)</span>
                 </div>
-                {[1, 2].map((n) => {
-                    const lockFirst = fromAdmission && n === 1;
-                    const cls = lockFirst ? admissionClass : inputClass;
-                    return (
-                        <div key={n} className="grid grid-cols-1 md:grid-cols-3 gap-2">
-                            <input type="text" placeholder={`${n}| নাম`} className={cls} readOnly={lockFirst} value={data[`guarantor_${n}_name`] || ''} onChange={(e) => setData(`guarantor_${n}_name`, e.target.value)} />
-                            <input type="text" placeholder="ঠিকানা" className={cls} readOnly={lockFirst} value={data[`guarantor_${n}_address`] || ''} onChange={(e) => setData(`guarantor_${n}_address`, e.target.value)} />
-                            <input type="text" placeholder="মোবাইল নং" className={cls} readOnly={lockFirst} value={data[`guarantor_${n}_mobile`] || ''} onChange={(e) => setData(`guarantor_${n}_mobile`, e.target.value)} />
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                    <div className="rounded-xl border border-gray-200 bg-gray-50/70 p-3 space-y-2">
+                        <p className="text-xs font-bold text-emerald-800 border-b border-emerald-100 pb-1">১| ১ম জামিনদার</p>
+                        <div>
+                            <label className="text-[10px] font-medium text-gray-600 mb-0.5 block">নাম</label>
+                            <input
+                                type="text"
+                                placeholder="জামিনদারের নাম"
+                                className={fromAdmission ? admissionClass : inputClass}
+                                readOnly={fromAdmission}
+                                value={data.guarantor_1_name || ''}
+                                onChange={(e) => setData('guarantor_1_name', e.target.value)}
+                            />
                         </div>
-                    );
-                })}
-                <div>
-                    <label className="text-xs font-semibold text-gray-700 mb-1 block">সদস্য/সদস্যার স্বাক্ষর</label>
-                    <input type="text" className={admissionClass} readOnly={fromAdmission} value={data.member_signature || ''} onChange={(e) => setData('member_signature', e.target.value)} placeholder="স্বাক্ষর / নাম" />
+                        <div>
+                            <label className="text-[10px] font-medium text-gray-600 mb-0.5 block">ঠিকানা</label>
+                            <input
+                                type="text"
+                                placeholder="ঠিকানা"
+                                className={fromAdmission ? admissionClass : inputClass}
+                                readOnly={fromAdmission}
+                                value={data.guarantor_1_address || ''}
+                                onChange={(e) => setData('guarantor_1_address', e.target.value)}
+                            />
+                        </div>
+                        <div>
+                            <label className="text-[10px] font-medium text-gray-600 mb-0.5 block">মোবাইল নং</label>
+                            <input
+                                type="text"
+                                placeholder="মোবাইল নং"
+                                className={fromAdmission ? admissionClass : inputClass}
+                                readOnly={fromAdmission}
+                                value={data.guarantor_1_mobile || ''}
+                                onChange={(e) => setData('guarantor_1_mobile', e.target.value)}
+                            />
+                        </div>
+                    </div>
+                    <div className="rounded-xl border border-emerald-200 bg-emerald-50/40 p-3 space-y-2">
+                        <p className="text-xs font-bold text-emerald-800 border-b border-emerald-100 pb-1">২| ২য় জামিনদার</p>
+                        <div>
+                            <label className="text-[10px] font-medium text-gray-600 mb-0.5 block">নাম</label>
+                            <input
+                                type="text"
+                                placeholder="২য় জামিনদারের নাম"
+                                className={inputClass}
+                                value={data.guarantor_2_name || ''}
+                                onChange={(e) => setData('guarantor_2_name', e.target.value)}
+                            />
+                        </div>
+                        <div>
+                            <label className="text-[10px] font-medium text-gray-600 mb-0.5 block">ঠিকানা</label>
+                            <input
+                                type="text"
+                                placeholder="ঠিকানা"
+                                className={inputClass}
+                                value={data.guarantor_2_address || ''}
+                                onChange={(e) => setData('guarantor_2_address', e.target.value)}
+                            />
+                        </div>
+                        <div>
+                            <label className="text-[10px] font-medium text-gray-600 mb-0.5 block">মোবাইল নং</label>
+                            <input
+                                type="text"
+                                placeholder="মোবাইল নং"
+                                className={inputClass}
+                                value={data.guarantor_2_mobile || ''}
+                                onChange={(e) => setData('guarantor_2_mobile', e.target.value)}
+                            />
+                        </div>
+                    </div>
                 </div>
             </div>
 

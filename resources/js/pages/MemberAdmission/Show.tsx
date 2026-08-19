@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Head, Link, router, usePage } from '@inertiajs/react';
 import AdminLayout from '@/layouts/admin-layout';
 import { Badge } from '@/components/ui/badge';
@@ -19,13 +19,15 @@ import {
     Clock,
     CreditCard,
     Image as ImageIcon,
+    Lock,
     X,
     Wrench,
 } from 'lucide-react';
 import { MemberAdmission } from '@/types/memberAdmission';
 import MemberAdmissionFormView from '@/components/MemberAdmissionFormView';
-import { formatDate } from '@/utils/dateUtils';
 import HeadOfficeModificationModal, { canHeadOfficeModify } from '@/components/HeadOfficeModificationModal';
+import { toEnglishDigits, formatBranchCode, parseMemberCode } from '@/utils/memberCodeUtils';
+import SendAdmissionToHoModal from '@/components/MemberAdmission/SendAdmissionToHoModal';
 
 interface Props {
     admission: MemberAdmission & {
@@ -65,27 +67,48 @@ export default function Show({ admission, auth }: Props) {
     // Only Branch User can send ready admissions to Head Office (not Branch Manager)
     const isBranchUser = roleName === 'branch_user';
     const isFieldOfficer = roleName === 'field_officer';
+    const assignedOfficerId =
+        typeof admission.assigned_officer_id === 'object'
+            ? admission.assigned_officer_id?.id
+            : admission.assigned_officer_id ?? (admission as { assignedOfficer?: { id?: number } }).assignedOfficer?.id;
+    const creatorId =
+        typeof admission.created_by === 'object'
+            ? admission.created_by?.id
+            : admission.created_by ?? admission.createdBy?.id;
     const canApplyLoan =
         admission.status === 'approved' &&
-        (roleName === 'branch_user' || isFieldOfficer);
+        (roleName === 'branch_user' ||
+            (isFieldOfficer &&
+                Number(assignedOfficerId ?? creatorId) === Number(pageAuth?.user?.id)));
     const backUrl = isHeadOffice ? '/head-office/admission-members' : '/member-admissions';
 
     const [activeTab, setActiveTab] = useState<'form' | 'attachments' | 'approvals'>('form');
     const [selectedImagePreview, setSelectedImagePreview] = useState<{ url: string; title: string } | null>(null);
     const [showModificationModal, setShowModificationModal] = useState(false);
 
-    // Member Code Update Modal State
+    // Member Code Update Modal State (10-digit policy: 4-digit branch code + 6-digit serial)
+    const branchPrefix = formatBranchCode(
+        (admission as any).branch?.code || (admission.branch_id ? String(admission.branch_id) : '0001')
+    );
+    const parsedCode = parseMemberCode(admission.application_no, branchPrefix);
     const [memberCodeModalOpen, setMemberCodeModalOpen] = useState(false);
-    const [newMemberCode, setNewMemberCode] = useState<string>(admission.application_no || '');
+    const [serialInput, setSerialInput] = useState<string>(parsedCode.serial);
     const [submittingMemberCode, setSubmittingMemberCode] = useState(false);
+
+    useEffect(() => {
+        const p = parseMemberCode(admission.application_no, branchPrefix);
+        setSerialInput(p.serial);
+    }, [admission.application_no, branchPrefix]);
 
     const handleMemberCodeSubmit = (e: React.FormEvent) => {
         e.preventDefault();
-        if (!newMemberCode.trim()) return;
+        const cleanSerial = toEnglishDigits(serialInput).replace(/\D/g, '');
+        if (!cleanSerial) return;
+        const fullCode = `${branchPrefix}${cleanSerial.padStart(6, '0')}`;
         setSubmittingMemberCode(true);
         router.patch(
             `/member-admissions/${admission.id}/update-member-code`,
-            { member_code: newMemberCode.trim() },
+            { member_code: fullCode },
             {
                 preserveScroll: true,
                 onFinish: () => {
@@ -140,10 +163,25 @@ export default function Show({ admission, auth }: Props) {
         }
     };
 
+    const [showHoModal, setShowHoModal] = useState(false);
+    const [isSendingToHo, setIsSendingToHo] = useState(false);
+
     const handleSendToHeadOffice = () => {
-        if (confirm(`এই আবেদনটি Head Office এ পাঠাতে চান? (${admission.application_no})`)) {
-            router.patch(`/member-admissions/${admission.id}/send-to-head-office`);
-        }
+        setShowHoModal(true);
+    };
+
+    const handleConfirmSendToHo = () => {
+        setIsSendingToHo(true);
+        router.patch(
+            `/member-admissions/${admission.id}/send-to-head-office`,
+            {},
+            {
+                onFinish: () => {
+                    setIsSendingToHo(false);
+                    setShowHoModal(false);
+                },
+            }
+        );
     };
 
     const handlePrint = () => {
@@ -242,10 +280,11 @@ export default function Show({ admission, auth }: Props) {
                                         <button
                                             type="button"
                                             onClick={() => {
-                                                setNewMemberCode(admission.application_no);
+                                                const p = parseMemberCode(admission.application_no, branchPrefix);
+                                                setSerialInput(p.serial);
                                                 setMemberCodeModalOpen(true);
                                             }}
-                                            className="inline-flex items-center gap-1 text-[10px] bg-indigo-50 hover:bg-indigo-100 text-indigo-700 px-1.5 py-0.5 rounded border border-indigo-200 font-semibold"
+                                            className="inline-flex items-center gap-1 text-[10px] bg-indigo-50 hover:bg-indigo-100 text-indigo-700 px-1.5 py-0.5 rounded border border-indigo-200 font-semibold cursor-pointer"
                                             title="ঋণ বিতরণের পূর্বে মেম্বার কোড পরিবর্তন করুন"
                                         >
                                             <Edit className="w-3 h-3 text-indigo-600" /> কোড পরিবর্তন
@@ -638,40 +677,54 @@ export default function Show({ admission, auth }: Props) {
             {/* Member Code Update Modal */}
             {memberCodeModalOpen && (
                 <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-xs p-4 print:hidden">
-                    <div className="w-full max-w-md rounded-2xl bg-white shadow-2xl overflow-hidden border border-slate-200">
+                    <div className="w-full max-w-md rounded-2xl bg-white shadow-2xl overflow-hidden border border-slate-200 animate-in fade-in zoom-in-95 duration-150">
                         <div className="border-b px-5 py-4 bg-slate-50 flex items-center justify-between">
                             <div>
                                 <h3 className="text-base font-bold text-slate-900 flex items-center gap-2">
-                                    <Edit className="w-5 h-5 text-indigo-600" /> মেম্বার কোড আপডেট
+                                    <Edit className="w-5 h-5 text-indigo-600" /> মেম্বার কোড আপডেট (১০ ডিজিট)
                                 </h3>
-                                <p className="text-xs text-slate-500 mt-0.5">ঋণ বিতরণের পূর্বে মেম্বার কোড পরিবর্তন বা সংশোধন করা যাবে।</p>
+                                <p className="text-xs text-slate-500 mt-0.5">প্রথম ৪ ডিজিট শাখা কোড অপরিবর্তনীয়, শেষের ৬ ডিজিট মেম্বার সিরিয়াল।</p>
                             </div>
-                            <button type="button" onClick={() => setMemberCodeModalOpen(false)} className="text-slate-400 hover:text-slate-600 p-1">
+                            <button type="button" onClick={() => setMemberCodeModalOpen(false)} className="text-slate-400 hover:text-slate-600 p-1 cursor-pointer">
                                 <X className="w-5 h-5" />
                             </button>
                         </div>
                         <form onSubmit={handleMemberCodeSubmit} className="p-5 space-y-4">
                             <div>
-                                <label className="block text-xs font-bold text-slate-700 mb-1">নতুন মেম্বার কোড (Member Code / Application No):</label>
-                                <input
-                                    type="text"
-                                    value={newMemberCode}
-                                    onChange={(e) => setNewMemberCode(e.target.value)}
-                                    className="w-full rounded-xl border border-slate-300 px-3.5 py-2 text-sm focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 font-mono font-bold text-indigo-700 shadow-xs"
-                                    placeholder="যেমন: 42001"
-                                    required
-                                />
-                                <p className="text-[11px] text-slate-500 mt-1">শাখা কোড ভিত্তিক সিরিয়াল মেম্বার কোড (যেমন: 42001)</p>
+                                <label className="block text-xs font-bold text-slate-700 mb-1">মেম্বার কোড / সিরিয়াল (Member Serial):</label>
+                                <div className="flex items-stretch rounded-xl border border-slate-300 overflow-hidden focus-within:border-indigo-500 focus-within:ring-2 focus-within:ring-indigo-500/20 bg-white shadow-xs">
+                                    <div className="flex items-center gap-1 bg-slate-100 px-3.5 py-2 border-r border-slate-300 text-xs font-mono font-bold text-slate-600 select-none shrink-0" title="শাখা কোড (অপরিবর্তনীয়)">
+                                        <Lock className="w-3.5 h-3.5 text-slate-400" />
+                                        <span>{branchPrefix}</span>
+                                    </div>
+                                    <input
+                                        type="text"
+                                        value={serialInput}
+                                        onChange={(e) => setSerialInput(toEnglishDigits(e.target.value).replace(/\D/g, '').slice(0, 6))}
+                                        onBlur={() => {
+                                            if (serialInput) setSerialInput(serialInput.padStart(6, '0'));
+                                        }}
+                                        maxLength={6}
+                                        className="w-full border-0 px-3.5 py-2 text-sm font-mono font-bold text-indigo-700 focus:outline-hidden focus:ring-0"
+                                        placeholder="000065"
+                                        required
+                                        autoFocus
+                                    />
+                                </div>
+                                <div className="mt-1.5 flex items-center justify-between text-[11px] text-slate-500 flex-wrap gap-1">
+                                    <span>পূর্ণাঙ্গ কোড: <span className="font-mono font-bold text-blue-700">{branchPrefix}{serialInput ? serialInput.padStart(6, '0') : '000001'}</span></span>
+                                    <span className="text-[10px] text-slate-400">(যেমন: 65 লিখলে হবে {branchPrefix}000065)</span>
+                                </div>
                             </div>
 
                             <div className="flex justify-end gap-2 pt-2 border-t">
-                                <button type="button" className="px-4 py-2 rounded-xl text-xs border border-slate-300 font-semibold text-slate-700 hover:bg-slate-50" onClick={() => setMemberCodeModalOpen(false)}>
+                                <button type="button" className="px-4 py-2 rounded-xl text-xs border border-slate-300 font-semibold text-slate-700 hover:bg-slate-50 cursor-pointer" onClick={() => setMemberCodeModalOpen(false)}>
                                     বাতিল
                                 </button>
                                 <button
                                     type="submit"
-                                    className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-bold shadow-xs"
-                                    disabled={submittingMemberCode}
+                                    className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-bold shadow-xs cursor-pointer"
+                                    disabled={submittingMemberCode || !serialInput}
                                 >
                                     {submittingMemberCode ? 'আপডেট হচ্ছে...' : 'কোড আপডেট করুন'}
                                 </button>
@@ -680,6 +733,26 @@ export default function Show({ admission, auth }: Props) {
                     </div>
                 </div>
             )}
+
+            {/* Head Office Dispatch Confirmation / Warning Modal */}
+            <SendAdmissionToHoModal
+                isOpen={showHoModal}
+                onClose={() => {
+                    if (!isSendingToHo) {
+                        setShowHoModal(false);
+                    }
+                }}
+                onConfirm={handleConfirmSendToHo}
+                isLoading={isSendingToHo}
+                items={[
+                    {
+                        id: admission.id,
+                        application_no: admission.application_no,
+                        applicant_name: admission.applicant_name_bn || admission.applicant_name_en,
+                        branch_name: admission.branch?.name,
+                    },
+                ]}
+            />
         </AdminLayout>
     );
 }

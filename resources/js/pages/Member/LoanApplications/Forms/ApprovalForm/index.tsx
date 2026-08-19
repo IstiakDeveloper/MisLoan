@@ -20,6 +20,8 @@ import PrintPreview, { numberToWordsBangla } from './PrintPreview';
 import { triggerPrintWithAutoFit } from '@/hooks/useAutoFitPrint';
 import { getRequiredSavingsPercent } from '@/components/LoanApplications/GeneralSavingsSection';
 import { afterLoanFormSaveUrl } from '@/utils/loanFormNavigation';
+import { getLoanYears, scaleAnnualToLoanYears } from './FormPage3';
+import { calculateLoanSchedule, installmentFormFields } from '@/utils/loanInterest';
 
 export const toInputDate = (value: string | null | undefined): string => {
     if (value == null || value === '') return '';
@@ -30,6 +32,43 @@ export const toInputDate = (value: string | null | undefined): string => {
     const day = String(d.getDate()).padStart(2, '0');
     return `${y}-${m}-${day}`;
 };
+
+function lastApprovedAt(app?: any): string {
+    const approvals = Array.isArray(app?.approvals) ? app.approvals : [];
+    const approved = approvals.filter((a: any) => a?.status === 'approved' && a?.approved_at);
+    if (approved.length === 0) return '';
+    return toInputDate(approved[approved.length - 1].approved_at);
+}
+
+function resolveLoanOfficialDates(
+    saved: any,
+    app: any,
+    loanProduct: any,
+    loanCategory: any,
+) {
+    const approval =
+        toInputDate(saved?.loan_approval_date) ||
+        toInputDate(app?.reviewed_at) ||
+        lastApprovedAt(app);
+    const disbursement =
+        toInputDate(saved?.loan_disbursement_date) ||
+        toInputDate(saved?.disbursement_date) ||
+        toInputDate(app?.disbursed_at);
+    let repayment =
+        toInputDate(saved?.loan_repayment_date) ||
+        toInputDate(saved?.repayment_date) ||
+        toInputDate(app?.expected_end_date);
+    if (!repayment && disbursement) {
+        repayment =
+            calculateLoanSchedule(
+                Number(app?.requested_amount || app?.approved_amount) || 1,
+                loanProduct,
+                loanCategory,
+                disbursement,
+            ).lastInstallmentDate || '';
+    }
+    return { approval, disbursement, repayment };
+}
 
 /** Local datetime for `<input type="datetime-local">` (YYYY-MM-DDTHH:mm) */
 export const toLocalDateTimeInput = (value?: string | Date | null): string => {
@@ -199,15 +238,28 @@ export default function ApprovalForm({
     const annualNetFromAdmission = member?.estimated_annual_project_income != null && member?.estimated_annual_project_income !== ''
         ? fmtValue(member.estimated_annual_project_income)
         : '';
+    const loanDurationMonths = loanProduct?.duration_months || loanProduct?.loan_duration_months || '';
+    const durationNetFromAdmission = scaleAnnualToLoanYears(
+        member?.estimated_annual_project_income,
+        loanDurationMonths,
+    );
     const selfFromFamily = getSelfOccupationAndEducation(member);
+    const officialDates = resolveLoanOfficialDates(
+        savedData,
+        existingApplication,
+        loanProduct,
+        loanCategory,
+    );
+    const computedInstallment = installmentFormFields(
+        Number(requestedAmount) || 0,
+        loanProduct,
+        loanCategory,
+    );
 
     const { data, setData, processing } = useForm<LoanApplicationApprovalData>({
         category_name: categoryName,
         branch_address: branch?.address || '',
         application_date: new Date().toISOString().split('T')[0],
-        loan_approval_date: '',
-        loan_disbursement_date: '',
-        loan_repayment_date: '',
         recipient_to: '',
         authority_medium: '',
         committee_name: member?.samity?.samity_name_bn || member?.samity?.samity_name || '',
@@ -250,7 +302,6 @@ export default function ApprovalForm({
         project_manpower_trained: '',
         project_income_1_2_yr: '',
         project_expense_1_2_yr: '',
-        annual_net_profit: annualNetFromAdmission,
         capital_total: '',
         capital_own: '',
         capital_applied_loan: requestedAmount ? String(requestedAmount) : '',
@@ -320,38 +371,18 @@ export default function ApprovalForm({
             : (loanProduct?.service_charge != null && loanProduct?.service_charge !== ''
                 ? String(loanProduct.service_charge)
                 : ''),
-        installment_type: (() => {
-            const t = String(loanProduct?.installment_type || '').toLowerCase();
-            if (t === 'lump_sum' || t.includes('lump')) return 'এককালীন';
-            if (t === 'weekly' || t.includes('week')) return 'সাপ্তাহিক কিস্তি';
-            return 'মাসিক কিস্তি';
-        })(),
-        installment_principal: (() => {
-            const amount = Number(requestedAmount) || 0;
-            const t = String(loanProduct?.installment_type || '').toLowerCase();
-            const n = t === 'lump_sum' || t.includes('lump')
-                ? 1
-                : (Number(loanProduct?.number_of_installments) || Number(loanProduct?.duration_months) || 0);
-            return amount > 0 && n > 0 ? String(Math.round(amount / n)) : '';
-        })(),
-        installment_service_charge: (() => {
-            const amount = Number(requestedAmount) || 0;
-            const t = String(loanProduct?.installment_type || '').toLowerCase();
-            const n = t === 'lump_sum' || t.includes('lump')
-                ? 1
-                : (Number(loanProduct?.number_of_installments) || Number(loanProduct?.duration_months) || 0);
-            if (amount <= 0 || n <= 0) return '';
-            const scPerThousand = Number(loanProduct?.service_charge_per_thousand) || 0;
-            const rate = Number(loanProduct?.interest_rate || 0);
-            const months = Number(loanProduct?.duration_months || 12) || 12;
-            const totalSc = scPerThousand > 0
-                ? (amount / 1000) * scPerThousand
-                : amount * (rate / 100) * (months / 12);
-            return String(Math.round(totalSc / n));
-        })(),
-        number_of_installments: loanProduct?.number_of_installments
-            ? String(loanProduct.number_of_installments)
-            : (loanProduct?.duration_months ? String(loanProduct.duration_months) : ''),
+        installment_type: computedInstallment.installment_type,
+        installment_principal: computedInstallment.installment_principal,
+        installment_service_charge: computedInstallment.installment_service_charge,
+        installment_total: computedInstallment.installment_total,
+        number_of_installments: computedInstallment.number_of_installments
+            || (loanProduct?.number_of_installments
+                ? String(loanProduct.number_of_installments)
+                : (loanProduct?.duration_months ? String(loanProduct.duration_months) : '')),
+        last_installment_amount: computedInstallment.last_installment_amount,
+        total_principal: computedInstallment.total_principal,
+        total_service_charge: computedInstallment.total_service_charge,
+        total_payable: computedInstallment.total_payable,
         guarantor_1_name: member?.guarantor_name || '', guarantor_1_address: '', guarantor_1_mobile: member?.guarantor_mobile || '', guarantor_1_relation: '', guarantor_1_profession: '', guarantor_1_monthly_income: '', guarantor_1_assets_amount: '', guarantor_1_potential_value: '', guarantor_1_interviewer_name: '', guarantor_1_interviewer_designation: '',
         guarantor_2_name: '', guarantor_2_address: '', guarantor_2_mobile: '', guarantor_2_relation: '', guarantor_2_profession: '', guarantor_2_monthly_income: '', guarantor_2_assets_amount: '', guarantor_2_potential_value: '', guarantor_2_interviewer_name: '', guarantor_2_interviewer_designation: '',
         
@@ -383,10 +414,47 @@ export default function ApprovalForm({
         final_approved_loan_amount_words: '',
         
         ...(savedData || {}),
+        // Always recompute schedule from product factors — never keep stale draft values
+        ...computedInstallment,
+        annual_net_profit:
+            durationNetFromAdmission ||
+            String((savedData as any)?.annual_net_profit || '') ||
+            annualNetFromAdmission,
+        ...(() => {
+            const years = getLoanYears(loanDurationMonths);
+            const annual = Number(annualNetFromAdmission) || 0;
+            const src = savedData || {};
+            let income = Number(src.project_income_1_2_yr) || 0;
+            let expense = Number(src.project_expense_1_2_yr) || 0;
+            if (
+                annual > 0 &&
+                years !== 1 &&
+                income > 0 &&
+                Math.round(income - expense) === Math.round(annual)
+            ) {
+                income = Math.round(income * years);
+                expense = Math.round(expense * years);
+            }
+            const other = Number(src.est_other_income_amount) || 0;
+            const result: Record<string, string> = {};
+            if (Number(src.project_income_1_2_yr) > 0) {
+                result.project_income_1_2_yr = String(income);
+            }
+            if (src.project_expense_1_2_yr !== '' && src.project_expense_1_2_yr != null) {
+                result.project_expense_1_2_yr = String(expense);
+            }
+            if (income > 0) {
+                result.est_main_income_amount = String(Math.max(0, income - other));
+            }
+            return result;
+        })(),
         ...(Number(requestedAmount) > 0 ? {
             final_approved_loan_amount_digits: String(requestedAmount),
             final_approved_loan_amount_words: numberToWordsBangla(Number(requestedAmount)) + ' টাকা',
         } : {}),
+        loan_approval_date: officialDates.approval || String((savedData as any)?.loan_approval_date || ''),
+        loan_disbursement_date: officialDates.disbursement || String((savedData as any)?.loan_disbursement_date || ''),
+        loan_repayment_date: officialDates.repayment || String((savedData as any)?.loan_repayment_date || ''),
         // Draft-এ খালি থাকলে ভর্তি ফর্মের «নিজ» সারি থেকে নিন
         occupation:
             String((savedData as any)?.occupation || '').trim() ||
@@ -399,15 +467,57 @@ export default function ApprovalForm({
     useEffect(() => {
         const local = loadLoanDraftLocal<Partial<LoanApplicationApprovalData>>(draftKey);
         if (local?.data) {
+            const restored = { ...local.data } as Partial<LoanApplicationApprovalData>;
+            delete restored.installment_type;
+            delete restored.installment_principal;
+            delete restored.installment_service_charge;
+            delete restored.installment_total;
+            delete restored.number_of_installments;
+            delete restored.last_installment_amount;
+            delete restored.total_principal;
+            delete restored.total_service_charge;
+            delete restored.total_payable;
             setData((prev) => {
-                const merged = { ...prev, ...local.data };
+                const merged = { ...prev, ...restored };
                 return {
                     ...merged,
+                    loan_approval_date: String(merged.loan_approval_date || '').trim() || prev.loan_approval_date,
+                    loan_disbursement_date: String(merged.loan_disbursement_date || '').trim() || prev.loan_disbursement_date,
+                    loan_repayment_date: String(merged.loan_repayment_date || '').trim() || prev.loan_repayment_date,
                     occupation:
                         String(merged.occupation || '').trim() || selfFromFamily.occupation,
                     educational_qualification:
                         String(merged.educational_qualification || '').trim() ||
                         selfFromFamily.educational_qualification,
+                    ...installmentFormFields(
+                        Number(merged.invest_plan_applied_amount) ||
+                            Number(merged.capital_applied_loan) ||
+                            Number(requestedAmount) ||
+                            0,
+                        loanProduct,
+                        loanCategory,
+                    ),
+                    annual_net_profit: durationNetFromAdmission || merged.annual_net_profit,
+                    ...(() => {
+                        const years = getLoanYears(loanDurationMonths);
+                        const annual = Number(annualNetFromAdmission) || 0;
+                        const income = Number(merged.project_income_1_2_yr) || 0;
+                        const expense = Number(merged.project_expense_1_2_yr) || 0;
+                        if (
+                            annual > 0 &&
+                            years !== 1 &&
+                            income > 0 &&
+                            Math.round(income - expense) === Math.round(annual)
+                        ) {
+                            return {
+                                project_income_1_2_yr: String(Math.round(income * years)),
+                                project_expense_1_2_yr: String(Math.round(expense * years)),
+                            };
+                        }
+                        return {};
+                    })(),
+                    est_main_income_amount:
+                        durationNetFromAdmission || merged.est_main_income_amount,
                 };
             });
             setLocalRestored(true);
@@ -428,6 +538,19 @@ export default function ApprovalForm({
     useEffect(() => {
         if (flashError) setSaveError(flashError);
     }, [flashError]);
+
+    useEffect(() => {
+        if (!data.loan_disbursement_date || data.loan_repayment_date) return;
+        const next =
+            calculateLoanSchedule(
+                Number(requestedAmount) || 1,
+                loanProduct,
+                loanCategory,
+                data.loan_disbursement_date,
+            ).lastInstallmentDate || '';
+        if (next) setData('loan_repayment_date', next);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [data.loan_disbursement_date]);
 
     const handleImageUpload = async (field: string, file: File | null) => {
         if (!file) return;
@@ -493,9 +616,43 @@ export default function ApprovalForm({
         const hasNet = data.annual_net_profit !== '' && data.annual_net_profit != null;
         if (hasIncomeExpense && hasNet && income - expense !== net) {
             const ok = confirm(
-                `আয় − ব্যয় = বার্ষিক নিট লাভ মিলছে না (${income} − ${expense} ≠ ${net}).\nতবুও খসড়া সেভ করবেন? পরে সংশোধন করতে পারবেন।`
+                `আয় − ব্যয় = নিট লাভ মিলছে না (${income} − ${expense} ≠ ${net}).\nতবুও খসড়া সেভ করবেন? পরে সংশোধন করতে পারবেন।`
             );
             if (!ok) return;
+        }
+
+        const page3Income =
+            (Number(data.est_main_income_amount) || 0) + (Number(data.est_other_income_amount) || 0);
+        const page3Expense =
+            (Number(data.est_emp_salary) || 0) +
+            (Number(data.est_transport) || 0) +
+            (Number(data.est_bills) || 0) +
+            (Number(data.est_rent) || 0) +
+            (Number(data.est_loan_charge) || 0) +
+            (Number(data.est_other_exp_1_amount) || 0) +
+            (Number(data.est_other_exp_2_amount) || 0) +
+            (Number(data.est_other_exp_3_amount) || 0);
+        if (!hasIncomeExpense) {
+            const msg = 'পৃষ্ঠা ১-এ সম্ভাব্য আয় ও সম্ভাব্য ব্যয় লিখুন। পৃষ্ঠা ৩-এর হিসাব সেখান থেকে মিলতে হবে।';
+            setErrors({ project_income_1_2_yr: msg });
+            const ok = confirm(`${msg}\nতবুও খসড়া সেভ করবেন?`);
+            if (!ok) return;
+            setErrors({});
+        } else {
+            if (page3Income !== income) {
+                const msg = `পৃষ্ঠা ৩-এর মোট আয় (${page3Income}) পৃষ্ঠা ১-এর সম্ভাব্য আয় (${income})-এর সমান হতে হবে।`;
+                setErrors({ est_main_income_amount: msg });
+                const ok = confirm(`${msg}\nতবুও খসড়া সেভ করবেন?`);
+                if (!ok) return;
+                setErrors({});
+            }
+            if (page3Expense !== expense) {
+                const msg = `পৃষ্ঠা ৩-এর মোট ব্যয় (${page3Expense}) পৃষ্ঠা ১-এর সম্ভাব্য ব্যয় (${expense})-এর সমান হতে হবে।`;
+                setErrors({ est_emp_salary: msg });
+                const ok = confirm(`${msg}\nতবুও খসড়া সেভ করবেন?`);
+                if (!ok) return;
+                setErrors({});
+            }
         }
 
         const planTotal = Number(data.invest_plan_total) || 0;
@@ -515,6 +672,7 @@ export default function ApprovalForm({
             loan_category_id: loanCategory.id,
             requested_amount: requestedAmount,
             draft: 1,
+            application_id: existingApplication?.id || undefined,
             form_data: {
                 ...data,
                 member_type: isOldMemberFromAdmission || isLegacy ? 'old' : 'new',
@@ -566,10 +724,32 @@ export default function ApprovalForm({
         errors,
     };
 
+    const liveInstallment = useMemo(
+        () =>
+            installmentFormFields(
+                Number(data.invest_plan_applied_amount) ||
+                    Number(data.capital_applied_loan) ||
+                    Number(data.approval_amount_digits) ||
+                    Number(requestedAmount) ||
+                    0,
+                loanProduct,
+                loanCategory,
+            ),
+        [
+            data.invest_plan_applied_amount,
+            data.capital_applied_loan,
+            data.approval_amount_digits,
+            requestedAmount,
+            loanProduct,
+            loanCategory,
+        ],
+    );
+    const previewData = { ...data, ...liveInstallment };
+
     if (onlyPreview) {
         return (
             <div className="print-container" style={{ fontFamily: 'Kalpurush, Arial, sans-serif', color: '#000' }}>
-                <PrintPreview formData={data} branch={branch} categoryName={categoryName} />
+                <PrintPreview formData={previewData} branch={branch} categoryName={categoryName} />
             </div>
         );
     }
@@ -761,7 +941,7 @@ export default function ApprovalForm({
                                 
                                 {/* Full Width Responsive Preview Document Container */}
                                 <div className="w-full overflow-x-auto print:overflow-visible">
-                                    <PrintPreview formData={data} branch={branch} categoryName={categoryName} />
+                                    <PrintPreview formData={previewData} branch={branch} categoryName={categoryName} />
                                 </div>
 
                                 {/* Mobile Bottom Floating Close Button */}

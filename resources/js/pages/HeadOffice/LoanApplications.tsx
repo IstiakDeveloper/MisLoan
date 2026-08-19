@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Head, router, Link, usePage } from '@inertiajs/react';
 import AdminLayout from '@/layouts/admin-layout';
-import { formatDate } from '@/utils/dateUtils';
+import { formatDate, formatTime } from '@/utils/dateUtils';
 import { Badge } from '@/components/ui/badge';
 import {
     Search,
@@ -29,6 +29,11 @@ import {
     Download,
     Sparkles,
     Wrench,
+    Layers,
+    Send,
+    Banknote,
+    Ban,
+    PlayCircle,
 } from 'lucide-react';
 import AutoFitTableContainer from '@/components/AutoFitTableContainer';
 import ListPagination from '@/components/ListPagination';
@@ -384,276 +389,340 @@ export default function LoanApplications({ loans, filters, stats, zones, areas, 
                 key: defaultStatus,
                 label: workQueue?.label || 'আমার কাজ',
                 count: (stats as Record<string, number>)[defaultStatus] || 0,
-                active: 'border-indigo-500 bg-indigo-50',
-                idle: 'border-indigo-100 hover:border-indigo-300',
-                labelClass: 'text-indigo-600',
-                countClass: 'text-indigo-700',
+                icon: UserCheck,
+                iconColor: 'text-indigo-600',
+                iconBg: 'bg-indigo-50',
+                barColor: 'from-indigo-500 to-indigo-600',
+                activeBg: 'bg-indigo-600 border-indigo-600 text-white',
+                highlight: true,
             }]
             : []),
-        { key: 'all', label: 'সর্বমোট', count: stats.total, active: 'border-slate-500 bg-slate-50', idle: 'border-slate-100 hover:border-slate-300', labelClass: 'text-slate-600', countClass: 'text-slate-800' },
-        { key: 'pending_head_office', label: 'হেড অফিস পেন্ডিং', count: stats.pending_head_office, active: 'border-indigo-500 bg-indigo-50', idle: 'border-indigo-100 hover:border-indigo-300', labelClass: 'text-indigo-600', countClass: 'text-indigo-700' },
-        { key: 'approved', label: 'অনুমোদিত', count: stats.approved, active: 'border-emerald-500 bg-emerald-50', idle: 'border-emerald-100 hover:border-emerald-300', labelClass: 'text-emerald-600', countClass: 'text-emerald-700' },
-        { key: 'pending_disbursement', label: 'বিতরণ অপেক্ষা', count: stats.pending_disbursement ?? 0, active: 'border-amber-500 bg-amber-50', idle: 'border-amber-100 hover:border-amber-300', labelClass: 'text-amber-700', countClass: 'text-amber-800' },
-        { key: 'disbursed', label: 'বিতরণকৃত', count: stats.disbursed, active: 'border-teal-500 bg-teal-50', idle: 'border-teal-100 hover:border-teal-300', labelClass: 'text-teal-600', countClass: 'text-teal-700' },
+        {
+            key: 'all',
+            label: 'সর্বমোট',
+            count: stats.total,
+            icon: Layers,
+            iconColor: 'text-slate-700',
+            iconBg: 'bg-slate-100',
+            barColor: 'from-slate-600 to-slate-800',
+            activeBg: 'bg-slate-900 border-slate-900 text-white',
+        },
+        {
+            key: 'pending_head_office',
+            label: 'হেড অফিসে পেন্ডিং',
+            count: stats.pending_head_office,
+            icon: Building2,
+            iconColor: 'text-purple-600',
+            iconBg: 'bg-purple-50',
+            barColor: 'from-purple-500 to-purple-600',
+            activeBg: 'bg-purple-600 border-purple-600 text-white',
+            highlight: stats.pending_head_office > 0,
+        },
+        {
+            key: 'approved',
+            label: 'অনুমোদিত',
+            count: stats.approved,
+            icon: CheckCircle2,
+            iconColor: 'text-teal-600',
+            iconBg: 'bg-teal-50',
+            barColor: 'from-teal-500 to-teal-600',
+            activeBg: 'bg-teal-600 border-teal-600 text-white',
+        },
+        {
+            key: 'pending_disbursement',
+            label: 'বিতরণ অপেক্ষা',
+            count: stats.pending_disbursement ?? 0,
+            icon: Banknote,
+            iconColor: 'text-amber-600',
+            iconBg: 'bg-amber-50',
+            barColor: 'from-amber-500 to-amber-600',
+            activeBg: 'bg-amber-600 border-amber-600 text-white',
+        },
+        {
+            key: 'disbursed',
+            label: 'বিতরণকৃত',
+            count: stats.disbursed,
+            icon: CheckCheck,
+            iconColor: 'text-emerald-600',
+            iconBg: 'bg-emerald-50',
+            barColor: 'from-emerald-500 to-emerald-600',
+            activeBg: 'bg-emerald-600 border-emerald-600 text-white',
+        },
         ...(canViewAllLoans
             ? [
-                  { key: 'ready_for_head_office', label: 'শাখা অনুমোদিত', count: stats.ready_for_head_office ?? 0, active: 'border-violet-500 bg-violet-50', idle: 'border-violet-100 hover:border-violet-300', labelClass: 'text-violet-600', countClass: 'text-violet-700' },
-                  { key: 'under_review', label: 'যাচাইাধীন', count: stats.under_review, active: 'border-amber-500 bg-amber-50', idle: 'border-amber-100 hover:border-amber-300', labelClass: 'text-amber-600', countClass: 'text-amber-700' },
-                  { key: 'submitted', label: 'জমাকৃত', count: stats.submitted, active: 'border-blue-500 bg-blue-50', idle: 'border-blue-100 hover:border-blue-300', labelClass: 'text-blue-600', countClass: 'text-blue-700' },
+                  {
+                      key: 'ready_for_head_office',
+                      label: 'শাখা অনুমোদিত',
+                      count: stats.ready_for_head_office ?? 0,
+                      icon: Sparkles,
+                      iconColor: 'text-violet-600',
+                      iconBg: 'bg-violet-50',
+                      barColor: 'from-violet-500 to-violet-600',
+                      activeBg: 'bg-violet-600 border-violet-600 text-white',
+                  },
+                  {
+                      key: 'under_review',
+                      label: 'যাচাইাধীন',
+                      count: stats.under_review,
+                      icon: Clock,
+                      iconColor: 'text-amber-600',
+                      iconBg: 'bg-amber-50',
+                      barColor: 'from-amber-400 to-amber-500',
+                      activeBg: 'bg-amber-500 border-amber-500 text-white',
+                  },
+                  {
+                      key: 'submitted',
+                      label: 'জমাকৃত',
+                      count: stats.submitted,
+                      icon: Send,
+                      iconColor: 'text-blue-600',
+                      iconBg: 'bg-blue-50',
+                      barColor: 'from-blue-500 to-blue-600',
+                      activeBg: 'bg-blue-600 border-blue-600 text-white',
+                  },
               ]
             : []),
-        { key: 'rejected', label: 'প্রত্যাখ্যাত', count: stats.rejected, active: 'border-red-500 bg-red-50', idle: 'border-red-100 hover:border-red-300', labelClass: 'text-red-600', countClass: 'text-red-700' },
+        {
+            key: 'rejected',
+            label: 'প্রত্যাখ্যাত',
+            count: stats.rejected,
+            icon: Ban,
+            iconColor: 'text-rose-600',
+            iconBg: 'bg-rose-50',
+            barColor: 'from-rose-500 to-rose-600',
+            activeBg: 'bg-rose-600 border-rose-600 text-white',
+        },
     ].filter((stat, index, all) => all.findIndex((s) => s.key === stat.key) === index);
 
     return (
         <AdminLayout>
             <Head title="Head Office - Loan Applications (ঋণ আবেদনসমূহ)" />
 
-            <div className="p-3 md:p-4 space-y-3 max-w-[1600px] mx-auto">
-                {/* Header Bar */}
-                <div className="bg-slate-900 text-white rounded-xl px-4 py-3 shadow-md flex flex-wrap items-center justify-between gap-3 border border-slate-800">
-                    <div className="flex items-center gap-3">
-                        <div className="p-2 bg-indigo-500/20 text-indigo-400 rounded-lg border border-indigo-500/30">
-                            <FileText className="w-5 h-5" />
+            <div className="p-3 md:p-4 space-y-3 max-w-[1600px] mx-auto pb-16 print:block">
+                {/* ── 1. SLIM PROFESSIONAL HEADER ───────────────────────────────────── */}
+                <div className="bg-white px-4 py-3 rounded-2xl border border-slate-200/90 shadow-2xs flex flex-wrap items-center justify-between gap-3 print:hidden">
+                    <div className="flex items-center gap-2.5 min-w-0">
+                        <div className="w-8 h-8 rounded-xl bg-slate-800 text-white flex items-center justify-center shadow-xs shrink-0">
+                            <CreditCard size={16} />
                         </div>
                         <div>
-                            <h1 className="text-lg font-bold text-white tracking-tight">
-                                {canViewAllLoans
-                                    ? 'Loan Applications (সকল ঋণ আবেদনসমূহ)'
-                                    : 'Loan Applications (হেড অফিসে আসা ঋণ আবেদন)'}
-                            </h1>
-                            <p className="text-xs text-slate-400">
-                                {canViewAllLoans
-                                    ? 'সকল শাখা হতে প্রাপ্ত ঋণ আবেদনপত্রের তথ্য, ফিল্টারিং, প্রিন্ট ও রিপোর্ট'
-                                    : 'হেড অফিসে আসা ঋণ আবেদনপত্রের তথ্য, ফিল্টারিং, প্রিন্ট ও রিপোর্ট'}
-                            </p>
+                            <div className="flex items-center gap-2">
+                                <h1 className="text-sm sm:text-base font-bold text-slate-800 tracking-tight">
+                                    {canViewAllLoans
+                                        ? 'Loan Applications (সকল ঋণ আবেদনসমূহ)'
+                                        : 'Loan Applications (হেড অফিসে আসা ঋণ আবেদন)'}
+                                </h1>
+                                <span className="text-[10px] font-bold px-2 py-0.5 bg-slate-100 text-slate-700 rounded-md border border-slate-200">
+                                    মোট {stats.total || 0} টি
+                                </span>
+                            </div>
                         </div>
                     </div>
 
-                    <div className="flex items-center gap-2">
-                        {/* Today Button */}
+                    {/* Action Buttons */}
+                    <div className="flex items-center gap-2 flex-wrap">
                         <button
                             type="button"
                             onClick={handleTodayFilter}
-                            className={`px-3 py-1.5 text-xs font-semibold rounded-lg shadow transition flex items-center gap-1 border ${
+                            className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl border text-xs font-semibold transition-all active:scale-95 shadow-2xs ${
                                 isTodayFilter
-                                    ? 'bg-blue-600 text-white border-blue-500'
-                                    : 'bg-slate-800 hover:bg-slate-700 text-slate-300 border-slate-700'
+                                    ? 'bg-blue-600 text-white border-blue-600 font-bold'
+                                    : 'bg-slate-50 text-slate-700 border-slate-200 hover:bg-slate-100'
                             }`}
                             title="আজকের আবেদনসমূহ (Today)"
                         >
-                            <CalendarDays className="w-3.5 h-3.5" /> Today (আজ)
+                            <CalendarDays size={13} />
+                            <span>Today (আজ)</span>
                         </button>
 
-                        {/* Process Loans Direct Button */}
                         <Link
                             href="/head-office/process-loans"
-                            className="px-3.5 py-1.5 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white text-xs font-bold rounded-lg shadow transition flex items-center gap-1.5 border border-emerald-500/30"
+                            className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold shadow-2xs transition-all active:scale-95"
                         >
-                            <UserCheck className="w-4 h-4" /> ঋণ আবেদন প্রসেস (Process Loans)
+                            <UserCheck size={14} />
+                            <span>Process Loans</span>
                         </Link>
 
                         <button
                             type="button"
                             onClick={handleExportExcel}
-                            className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-semibold rounded-lg shadow transition flex items-center gap-1.5 border border-emerald-500/30"
-                            title="Excel ডাউনলোড"
+                            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-emerald-50 text-emerald-700 hover:bg-emerald-100 border border-emerald-200 text-xs font-semibold transition-all active:scale-95 shadow-2xs"
+                            title="XLSX এক্সেল ডাউনলোড"
                         >
-                            <Download className="w-3.5 h-3.5" /> XLSX Download
+                            <Download size={13} />
+                            <span>Excel</span>
                         </button>
 
                         <button
-                            onClick={handleResetFilters}
-                            className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-medium rounded-lg border border-slate-700 transition flex items-center gap-1.5"
-                        >
-                            <RefreshCw className="w-3.5 h-3.5" /> রিসেট
-                        </button>
-
-                        <button
+                            type="button"
                             onClick={() => setShowPrintModal(true)}
-                            className="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-semibold rounded-lg shadow transition flex items-center gap-1.5 border border-indigo-500/30"
+                            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-200 text-xs font-semibold transition-all active:scale-95 shadow-2xs"
                         >
-                            <Printer className="w-3.5 h-3.5" /> প্রিন্ট
+                            <Printer size={13} />
+                            <span>প্রিন্ট</span>
                         </button>
                     </div>
                 </div>
 
-                {/* Stats Bar */}
-                <div className="grid grid-cols-2 sm:grid-cols-4 xl:grid-cols-7 gap-2">
-                    {hoLoanStatCards.map((stat) => {
-                        const active = stat.key === 'all' ? isAllStatus : statusFilter === stat.key;
-                        return (
-                            <div
-                                key={stat.key}
-                                onClick={() => selectStatus(stat.key)}
-                                className={`bg-white rounded-xl p-2.5 border shadow-sm cursor-pointer transition ${
-                                    active ? stat.active : stat.idle
-                                }`}
-                            >
-                                <span className={`text-[10px] font-bold uppercase ${stat.labelClass} block`}>{stat.label}</span>
-                                <span className={`text-lg font-black ${stat.countClass}`}>{stat.count}</span>
-                            </div>
-                        );
-                    })}
-                </div>
+                {/* ── 2. UNIFIED FILTER & STATUS CONTROL CARD ─────────────────────────── */}
+                <div className="bg-white rounded-3xl border border-slate-200/90 shadow-2xs p-3.5 space-y-3.5 print:hidden">
+                    {/* Status Filter Cards in 1 Row with Micro Visual Progress & Icons */}
+                    <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-8 gap-2">
+                        {hoLoanStatCards.map((stat) => {
+                            const active = stat.key === 'all' ? isAllStatus : statusFilter === stat.key;
+                            const IconComponent = stat.icon;
+                            const percentage = Math.min(100, Math.round((stat.count / (stats.total || 1)) * 100));
 
-                {workQueue?.hint && !isAllStatus && (
-                    <p className="text-xs text-indigo-800 bg-indigo-50 border border-indigo-100 rounded-xl px-3 py-2">
-                        {workQueue.hint}
-                    </p>
-                )}
+                            return (
+                                <button
+                                    key={stat.key}
+                                    type="button"
+                                    onClick={() => selectStatus(stat.key)}
+                                    className={`relative p-2.5 rounded-2xl border text-left transition-all duration-150 active:scale-95 group overflow-hidden ${
+                                        active
+                                            ? `${stat.activeBg} shadow-md ring-2 ring-offset-1 ring-blue-500/40`
+                                            : stat.highlight
+                                            ? 'bg-gradient-to-b from-purple-50/90 to-white border-purple-300 hover:border-purple-400 hover:shadow-xs'
+                                            : 'bg-white hover:bg-slate-50/90 border-slate-200/90 hover:border-slate-300 shadow-2xs'
+                                    }`}
+                                >
+                                    {/* Top Row: Icon & Count */}
+                                    <div className="flex items-center justify-between gap-1 mb-1.5">
+                                        <div className={`w-7 h-7 rounded-xl flex items-center justify-center shrink-0 transition-transform group-hover:scale-105 ${
+                                            active ? 'bg-white/20 text-white' : `${stat.iconBg} ${stat.iconColor}`
+                                        }`}>
+                                            <IconComponent size={14} className="stroke-[2.2]" />
+                                        </div>
+                                        <span className={`text-base font-black tracking-tight ${
+                                            active ? 'text-white' : 'text-slate-900'
+                                        }`}>
+                                            {stat.count}
+                                        </span>
+                                    </div>
 
-                {/* Filter Control Bar */}
-                <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-3 space-y-2 text-xs">
-                    <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 xl:grid-cols-9 gap-2">
-                        {/* Date From */}
-                        <div>
-                            <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">হতে (Date From)</label>
+                                    {/* Middle: Label */}
+                                    <span className={`text-[11px] font-bold truncate block ${
+                                        active ? 'text-white/90' : 'text-slate-600'
+                                    }`}>
+                                        {stat.label}
+                                    </span>
+
+                                    {/* Visual Micro Progress Bar */}
+                                    <div className="mt-1.5 w-full bg-slate-100 rounded-full h-1 overflow-hidden">
+                                        <div
+                                            className={`h-full rounded-full transition-all duration-300 ${
+                                                active ? 'bg-white' : `bg-gradient-to-r ${stat.barColor}`
+                                            }`}
+                                            style={{ width: `${stat.key === 'all' ? 100 : Math.max(8, percentage)}%` }}
+                                        />
+                                    </div>
+                                </button>
+                            );
+                        })}
+                    </div>
+
+                    {/* Integrated Search & Filter Controls Toolbar */}
+                    <div className="pt-2 border-t border-slate-100 flex flex-wrap items-center gap-2 text-xs">
+                        <div className="relative flex-grow min-w-[200px] max-w-sm">
+                            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 pointer-events-none" />
+                            <input
+                                type="text"
+                                value={searchQuery}
+                                onChange={(e) => setSearchQuery(e.target.value)}
+                                onKeyDown={(e) => { if (e.key === 'Enter') applyFilters(); }}
+                                placeholder="সদস্য নং, নাম, মোবাইল, এনআইডি..."
+                                className="w-full pl-9 pr-4 py-2 text-xs border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 bg-slate-50/50 transition-all font-medium"
+                            />
+                        </div>
+
+                        <div className="flex items-center gap-1.5 bg-slate-50 border border-slate-200 p-1 rounded-xl">
                             <input
                                 type="date"
                                 value={dateFrom}
                                 onChange={(e) => { setDateFrom(e.target.value); applyFilters({ date_from: e.target.value }); }}
-                                className="w-full px-2.5 py-1.5 bg-slate-50 border border-slate-300 rounded-lg text-xs"
+                                className="px-2 py-1 text-xs border border-slate-300 rounded-lg bg-white focus:outline-none"
+                                title="তারিখ হতে"
                             />
-                        </div>
-
-                        {/* Date To */}
-                        <div>
-                            <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">পর্যন্ত (Date To)</label>
+                            <span className="text-slate-400 text-xs font-bold">–</span>
                             <input
                                 type="date"
                                 value={dateTo}
                                 onChange={(e) => { setDateTo(e.target.value); applyFilters({ date_to: e.target.value }); }}
-                                className="w-full px-2.5 py-1.5 bg-slate-50 border border-slate-300 rounded-lg text-xs"
+                                className="px-2 py-1 text-xs border border-slate-300 rounded-lg bg-white focus:outline-none"
+                                title="তারিখ পর্যন্ত"
                             />
                         </div>
 
-                        {/* Zone Filter */}
-                        <div>
-                            <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">জোন (Zone)</label>
-                            <select
-                                value={selectedZone}
-                                onChange={(e) => { setSelectedZone(e.target.value); setSelectedArea(''); setSelectedBranch(''); applyFilters({ zone_id: e.target.value, area_id: '', branch_id: '' }); }}
-                                className="w-full px-2.5 py-1.5 bg-slate-50 border border-slate-300 rounded-lg text-xs font-medium"
-                            >
-                                <option value="">সকল জোন</option>
-                                {zones.map((z) => (
-                                    <option key={z.id} value={z.id}>{z.name}</option>
-                                ))}
-                            </select>
-                        </div>
+                        <select
+                            value={selectedZone}
+                            onChange={(e) => { setSelectedZone(e.target.value); setSelectedArea(''); setSelectedBranch(''); applyFilters({ zone_id: e.target.value, area_id: '', branch_id: '' }); }}
+                            className="px-2.5 py-2 text-xs border border-slate-200 rounded-xl bg-slate-50/50 font-medium"
+                        >
+                            <option value="">সকল জোন</option>
+                            {zones.map((z) => (
+                                <option key={z.id} value={z.id}>{z.name}</option>
+                            ))}
+                        </select>
 
-                        {/* Area Filter */}
-                        <div>
-                            <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">আঞ্চলিক অফিস (Area)</label>
-                            <select
-                                value={selectedArea}
-                                onChange={(e) => { setSelectedArea(e.target.value); setSelectedBranch(''); applyFilters({ area_id: e.target.value, branch_id: '' }); }}
-                                disabled={!selectedZone && filteredAreas.length === 0}
-                                className="w-full px-2.5 py-1.5 bg-slate-50 border border-slate-300 rounded-lg text-xs font-medium disabled:opacity-60"
-                            >
-                                <option value="">সকল আঞ্চলিক অফিস</option>
-                                {filteredAreas.map((a) => (
-                                    <option key={a.id} value={a.id}>{a.name}</option>
-                                ))}
-                            </select>
-                        </div>
+                        <select
+                            value={selectedArea}
+                            onChange={(e) => { setSelectedArea(e.target.value); setSelectedBranch(''); applyFilters({ area_id: e.target.value, branch_id: '' }); }}
+                            disabled={!selectedZone && filteredAreas.length === 0}
+                            className="px-2.5 py-2 text-xs border border-slate-200 rounded-xl bg-slate-50/50 font-medium disabled:opacity-50"
+                        >
+                            <option value="">সকল আঞ্চলিক অফিস</option>
+                            {filteredAreas.map((a) => (
+                                <option key={a.id} value={a.id}>{a.name}</option>
+                            ))}
+                        </select>
 
-                        {/* Branch Filter */}
-                        <div>
-                            <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">শাখা (Branch)</label>
-                            <select
-                                value={selectedBranch}
-                                onChange={(e) => { setSelectedBranch(e.target.value); applyFilters({ branch_id: e.target.value }); }}
-                                disabled={filteredBranches.length === 0}
-                                className="w-full px-2.5 py-1.5 bg-slate-50 border border-slate-300 rounded-lg text-xs font-medium disabled:opacity-60"
-                            >
-                                <option value="">সকল শাখা</option>
-                                {filteredBranches.map((b) => (
-                                    <option key={b.id} value={b.id}>{formatBranchLabel(b)}</option>
-                                ))}
-                            </select>
-                        </div>
+                        <select
+                            value={selectedBranch}
+                            onChange={(e) => { setSelectedBranch(e.target.value); applyFilters({ branch_id: e.target.value }); }}
+                            disabled={filteredBranches.length === 0}
+                            className="px-2.5 py-2 text-xs border border-slate-200 rounded-xl bg-slate-50/50 font-medium disabled:opacity-50"
+                        >
+                            <option value="">সকল শাখা</option>
+                            {filteredBranches.map((b) => (
+                                <option key={b.id} value={b.id}>{formatBranchLabel(b)}</option>
+                            ))}
+                        </select>
 
-                        {/* Status Filter */}
-                        <div>
-                            <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">স্ট্যাটাস (Status)</label>
-                            <select
-                                value={statusFilter === 'all' ? 'all' : statusFilter}
-                                onChange={(e) => selectStatus(e.target.value)}
-                                className="w-full px-2.5 py-1.5 bg-slate-50 border border-slate-300 rounded-lg text-xs font-medium"
-                            >
-                                {defaultStatus === 'pending_my_approval' && (
-                                    <option value="pending_my_approval">আমার অনুমোদন</option>
-                                )}
-                                <option value="all">সকল স্ট্যাটাস</option>
-                                <option value="pending_head_office">হেড অফিস পেন্ডিং</option>
-                                <option value="approved">অনুমোদিত</option>
-                                <option value="pending_disbursement">বিতরণ অপেক্ষা</option>
-                                <option value="disbursed">বিতরণকৃত</option>
-                                {canViewAllLoans && (
-                                    <>
-                                        <option value="ready_for_head_office">শাখা অনুমোদিত</option>
-                                        <option value="under_review">যাচাইাধীন</option>
-                                        <option value="submitted">জমাকৃত</option>
-                                        <option value="draft">ড্রাফট</option>
-                                    </>
-                                )}
-                                <option value="rejected">প্রত্যাখ্যাত</option>
-                            </select>
-                        </div>
+                        <select
+                            value={printedFilter}
+                            onChange={(e) => { setPrintedFilter(e.target.value); applyFilters({ printed: e.target.value }); }}
+                            className="px-2.5 py-2 text-xs border border-slate-200 rounded-xl bg-slate-50/50 font-medium"
+                        >
+                            <option value="">প্রিন্ট: সকল</option>
+                            <option value="yes">প্রিন্ট সম্পন্ন</option>
+                            <option value="no">প্রিন্ট হয়নি</option>
+                        </select>
 
-                        {/* Printed Filter */}
-                        <div>
-                            <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">প্রিন্ট স্থিতি (Printed)</label>
-                            <select
-                                value={printedFilter}
-                                onChange={(e) => { setPrintedFilter(e.target.value); applyFilters({ printed: e.target.value }); }}
-                                className="w-full px-2.5 py-1.5 bg-slate-50 border border-slate-300 rounded-lg text-xs font-medium"
-                            >
-                                <option value="">সকল</option>
-                                <option value="yes">প্রিন্ট সম্পন্ন (Printed)</option>
-                                <option value="no">প্রিন্ট হয়নি (Not Printed)</option>
-                            </select>
-                        </div>
+                        <select
+                            value={hadIssues}
+                            onChange={(e) => { setHadIssues(e.target.value); applyFilters({ had_issues: e.target.value }); }}
+                            className="px-2.5 py-2 text-xs border border-slate-200 rounded-xl bg-slate-50/50 font-medium"
+                        >
+                            <option value="">সমস্যা: সকল</option>
+                            <option value="yes">সমস্যা চিহ্নিত</option>
+                            <option value="no">সমস্যামুক্ত</option>
+                        </select>
 
-                        {/* Issues Filter */}
-                        <div>
-                            <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">সমস্যা (Had Issues)</label>
-                            <select
-                                value={hadIssues}
-                                onChange={(e) => { setHadIssues(e.target.value); applyFilters({ had_issues: e.target.value }); }}
-                                className="w-full px-2.5 py-1.5 bg-slate-50 border border-slate-300 rounded-lg text-xs font-medium"
-                            >
-                                <option value="">সকল</option>
-                                <option value="yes">সমস্যা চিহ্নিত (Yes)</option>
-                                <option value="no">সমস্যামুক্ত (No)</option>
-                            </select>
-                        </div>
+                        <button
+                            type="button"
+                            onClick={() => applyFilters()}
+                            className="px-4 py-2 text-xs font-bold bg-slate-800 hover:bg-slate-900 text-white rounded-xl transition shadow-2xs active:scale-95"
+                        >
+                            খুঁজুন
+                        </button>
 
-                        {/* Search Input */}
-                        <div>
-                            <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">খুঁজুন (Search)</label>
-                            <form onSubmit={(e) => { e.preventDefault(); applyFilters(); }} className="relative">
-                                <input
-                                    type="text"
-                                    value={searchQuery}
-                                    onChange={(e) => setSearchQuery(e.target.value)}
-                                    placeholder="সদস্য নং, নাম, মোবাইল, এনআইডি..."
-                                    className="w-full pl-7 pr-6 py-1.5 bg-slate-50 border border-slate-300 rounded-lg text-xs text-slate-800 placeholder-slate-400"
-                                />
-                                <Search className="w-3.5 h-3.5 text-slate-400 absolute left-2 top-1/2 -translate-y-1/2" />
-                                {searchQuery && (
-                                    <button
-                                        type="button"
-                                        onClick={() => { setSearchQuery(''); applyFilters({ search: '' }); }}
-                                        className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
-                                    >
-                                        <X className="w-3 h-3" />
-                                    </button>
-                                )}
-                            </form>
-                        </div>
+                        <button
+                            type="button"
+                            onClick={handleResetFilters}
+                            className="px-3 py-2 text-xs font-bold text-slate-600 bg-slate-100 hover:bg-slate-200 rounded-xl transition"
+                        >
+                            রিসেট
+                        </button>
                     </div>
                 </div>
 
@@ -798,9 +867,14 @@ export default function LoanApplications({ loans, filters, stats, zones, areas, 
                                             <div className="text-[10.5px] text-slate-500 mt-0.5">{loan.samity?.samity_name || ''}</div>
                                         </td>
 
-                                        {/* Date */}
+                                        {/* Date + time (AM/PM) */}
                                         <td className="py-2 px-2.5 text-slate-600 whitespace-nowrap text-[11px]">
-                                            {formatDate(loan.submitted_at || loan.created_at)}
+                                            <div>{formatDate(loan.submitted_at || loan.created_at)}</div>
+                                            {formatTime(loan.submitted_at || loan.created_at) && (
+                                                <div className="text-[10px] text-slate-500 font-medium mt-0.5">
+                                                    {formatTime(loan.submitted_at || loan.created_at)}
+                                                </div>
+                                            )}
                                         </td>
 
                                         {/* Printed Status Indicator */}

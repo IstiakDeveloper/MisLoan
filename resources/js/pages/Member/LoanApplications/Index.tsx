@@ -6,11 +6,12 @@ import {
     Plus, Calendar, FileText, CheckCircle, XCircle, Clock,
     Search, Eye, Edit, Trash2, X, AlertTriangle, MessageSquare, Send,
     Filter, RefreshCw, UserCheck, Layers, CreditCard, ChevronRight, AlertCircle, ArrowUpRight, Sparkles,
-    Download
+    Download, Printer, Building2, CheckCircle2, Banknote, Ban
 } from 'lucide-react';
 import ListPagination from '@/components/ListPagination';
 import AutoFitTableContainer from '@/components/AutoFitTableContainer';
 import { keepListFilters } from '@/utils/branchLabel';
+import SendLoanToHoModal, { HoLoanItem } from '@/components/LoanApplications/SendLoanToHoModal';
 
 interface LoanProduct {
     id: number;
@@ -470,33 +471,105 @@ export default function Index({ categories, applications, stats, selectedDate, d
                 key: defaultStatus,
                 label: workQueue?.label || 'আমার কাজ',
                 count: (filteredStats as Record<string, number>)[defaultStatus] || 0,
-                active: 'bg-indigo-600 border-indigo-600 text-white',
-                idle: 'bg-white border-indigo-200 hover:border-indigo-300',
-                labelActive: 'text-indigo-100',
-                labelIdle: 'text-indigo-700',
-                countActive: 'text-white',
-                countIdle: 'text-indigo-700',
+                icon: UserCheck,
+                iconColor: 'text-indigo-600',
+                iconBg: 'bg-indigo-50',
+                barColor: 'from-indigo-500 to-indigo-600',
+                activeBg: 'bg-indigo-600 border-indigo-600 text-white',
+                highlight: true,
             }]
             : []),
         {
             key: 'all',
             label: 'সর্বমোট',
             count: filteredStats.total,
-            active: 'bg-slate-900 border-slate-900 text-white',
-            idle: 'bg-white border-slate-200 hover:border-slate-300',
-            labelActive: 'text-slate-300',
-            labelIdle: 'text-slate-500',
-            countActive: 'text-white',
-            countIdle: 'text-slate-900',
+            icon: Layers,
+            iconColor: 'text-slate-700',
+            iconBg: 'bg-slate-100',
+            barColor: 'from-slate-600 to-slate-800',
+            activeBg: 'bg-slate-900 border-slate-900 text-white',
         },
-        { key: 'draft', label: 'খসড়া', count: filteredStats.draft, active: 'bg-slate-800 border-slate-800 text-white', idle: 'bg-white border-slate-200 hover:border-slate-300', labelActive: 'text-slate-300', labelIdle: 'text-slate-500', countActive: 'text-white', countIdle: 'text-slate-700' },
-        { key: 'submitted', label: 'জমাকৃত', count: filteredStats.submitted, active: 'bg-blue-600 border-blue-600 text-white', idle: 'bg-white border-blue-100 hover:border-blue-300', labelActive: 'text-blue-100', labelIdle: 'text-blue-600', countActive: 'text-white', countIdle: 'text-blue-600' },
-        { key: 'under_review', label: 'পর্যালোচনা', count: filteredStats.under_review, active: 'bg-amber-500 border-amber-500 text-white', idle: 'bg-white border-amber-100 hover:border-amber-300', labelActive: 'text-amber-100', labelIdle: 'text-amber-700', countActive: 'text-white', countIdle: 'text-amber-700' },
-        { key: 'ready_for_head_office', label: 'হেড অফিসে পাঠান', count: filteredStats.ready_for_head_office, active: 'bg-emerald-600 border-emerald-600 text-white', idle: 'bg-white border-emerald-100 hover:border-emerald-300', labelActive: 'text-emerald-100', labelIdle: 'text-emerald-700', countActive: 'text-white', countIdle: 'text-emerald-700' },
-        { key: 'pending_head_office', label: 'হেড অফিসে', count: filteredStats.pending_head_office, active: 'bg-indigo-600 border-indigo-600 text-white', idle: 'bg-white border-indigo-100 hover:border-indigo-300', labelActive: 'text-indigo-100', labelIdle: 'text-indigo-700', countActive: 'text-white', countIdle: 'text-indigo-700' },
-        { key: 'approved', label: 'অনুমোদিত', count: filteredStats.approved, active: 'bg-emerald-600 border-emerald-600 text-white', idle: 'bg-white border-emerald-100 hover:border-emerald-300', labelActive: 'text-emerald-100', labelIdle: 'text-emerald-600', countActive: 'text-white', countIdle: 'text-emerald-600' },
-        { key: 'pending_disbursement', label: 'বিতরণ অপেক্ষা', count: filteredStats.pending_disbursement, active: 'bg-amber-600 border-amber-600 text-white', idle: 'bg-white border-amber-100 hover:border-amber-300', labelActive: 'text-amber-100', labelIdle: 'text-amber-700', countActive: 'text-white', countIdle: 'text-amber-700' },
-        { key: 'rejected', label: 'প্রত্যাখ্যাত', count: filteredStats.rejected, active: 'bg-rose-600 border-rose-600 text-white', idle: 'bg-white border-rose-100 hover:border-rose-300', labelActive: 'text-rose-100', labelIdle: 'text-rose-600', countActive: 'text-white', countIdle: 'text-rose-600' },
+        {
+            key: 'draft',
+            label: 'খসড়া',
+            count: filteredStats.draft,
+            icon: FileText,
+            iconColor: 'text-slate-600',
+            iconBg: 'bg-slate-100',
+            barColor: 'from-slate-400 to-slate-500',
+            activeBg: 'bg-slate-800 border-slate-800 text-white',
+        },
+        {
+            key: 'submitted',
+            label: 'জমাকৃত',
+            count: filteredStats.submitted,
+            icon: Send,
+            iconColor: 'text-blue-600',
+            iconBg: 'bg-blue-50',
+            barColor: 'from-blue-500 to-blue-600',
+            activeBg: 'bg-blue-600 border-blue-600 text-white',
+        },
+        {
+            key: 'under_review',
+            label: 'পর্যালোচনা',
+            count: filteredStats.under_review,
+            icon: Clock,
+            iconColor: 'text-amber-600',
+            iconBg: 'bg-amber-50',
+            barColor: 'from-amber-400 to-amber-500',
+            activeBg: 'bg-amber-500 border-amber-500 text-white',
+        },
+        {
+            key: 'ready_for_head_office',
+            label: 'HO তে পাঠান',
+            count: filteredStats.ready_for_head_office,
+            icon: Sparkles,
+            iconColor: 'text-emerald-700',
+            iconBg: 'bg-emerald-100',
+            barColor: 'from-emerald-500 to-emerald-600',
+            activeBg: 'bg-emerald-600 border-emerald-600 text-white',
+            highlight: filteredStats.ready_for_head_office > 0,
+        },
+        {
+            key: 'pending_head_office',
+            label: 'হেড অফিসে',
+            count: filteredStats.pending_head_office,
+            icon: Building2,
+            iconColor: 'text-purple-600',
+            iconBg: 'bg-purple-50',
+            barColor: 'from-purple-500 to-purple-600',
+            activeBg: 'bg-purple-600 border-purple-600 text-white',
+        },
+        {
+            key: 'approved',
+            label: 'অনুমোদিত',
+            count: filteredStats.approved,
+            icon: CheckCircle2,
+            iconColor: 'text-teal-600',
+            iconBg: 'bg-teal-50',
+            barColor: 'from-teal-500 to-teal-600',
+            activeBg: 'bg-teal-600 border-teal-600 text-white',
+        },
+        {
+            key: 'pending_disbursement',
+            label: 'বিতরণ অপেক্ষা',
+            count: filteredStats.pending_disbursement,
+            icon: Banknote,
+            iconColor: 'text-amber-600',
+            iconBg: 'bg-amber-50',
+            barColor: 'from-amber-500 to-amber-600',
+            activeBg: 'bg-amber-600 border-amber-600 text-white',
+        },
+        {
+            key: 'rejected',
+            label: 'প্রত্যাখ্যাত',
+            count: filteredStats.rejected,
+            icon: Ban,
+            iconColor: 'text-rose-600',
+            iconBg: 'bg-rose-50',
+            barColor: 'from-rose-500 to-rose-600',
+            activeBg: 'bg-rose-600 border-rose-600 text-white',
+        },
     ].filter((stat, index, all) => all.findIndex((s) => s.key === stat.key) === index);
 
     const selectStatus = (status: string) => {
@@ -522,22 +595,78 @@ export default function Index({ categories, applications, stats, selectedDate, d
         setSelectedHoIds(allReadySelected ? [] : readyForHoIds);
     };
 
-    const sendSelectedToHeadOffice = () => {
-        if (selectedHoIds.length === 0 || bulkSending) return;
-        if (!confirm(`${selectedHoIds.length}টি ঋণ আবেদন Head Office এ পাঠাতে চান?`)) return;
+    const [showLoanHoModal, setShowLoanHoModal] = useState(false);
+    const [loanHoModalItems, setLoanHoModalItems] = useState<HoLoanItem[]>([]);
+    const [isSendingLoanToHo, setIsSendingLoanToHo] = useState(false);
 
-        setBulkSending(true);
-        router.post(
-            '/member/loan-applications/send-to-head-office-bulk',
-            { ids: selectedHoIds },
+    const openSendSingleToHo = (app: LoanApplication) => {
+        const member = app.member_display ?? app.member_admission;
+        const memberName = member?.applicant_name_bn || member?.applicant_name_en || 'সদস্য';
+        setLoanHoModalItems([
             {
-                ...keepListFilters,
-                onFinish: () => {
-                    setBulkSending(false);
-                    setSelectedHoIds([]);
-                },
+                id: app.id,
+                application_no: app.application_no,
+                applicant_name: memberName,
+                branch_name: app.branch?.name,
+                amount: app.requested_amount || app.proposed_amount,
             },
-        );
+        ]);
+        setShowLoanHoModal(true);
+    };
+
+    const openSendBulkToHo = () => {
+        if (selectedHoIds.length === 0) return;
+        const selectedApps = applicationRows
+            .filter((a) => selectedHoIds.includes(a.id))
+            .map((a) => {
+                const member = a.member_display ?? a.member_admission;
+                const memberName = member?.applicant_name_bn || member?.applicant_name_en || 'সদস্য';
+                return {
+                    id: a.id,
+                    application_no: a.application_no,
+                    applicant_name: memberName,
+                    branch_name: a.branch?.name,
+                    amount: a.requested_amount || a.proposed_amount,
+                };
+            });
+        setLoanHoModalItems(selectedApps);
+        setShowLoanHoModal(true);
+    };
+
+    const handleConfirmSendLoanToHo = () => {
+        if (loanHoModalItems.length === 0 || isSendingLoanToHo) return;
+        setIsSendingLoanToHo(true);
+
+        if (loanHoModalItems.length === 1) {
+            router.patch(
+                `/member/loan-applications/${loanHoModalItems[0].id}/send-to-head-office`,
+                {},
+                {
+                    ...keepListFilters,
+                    onFinish: () => {
+                        setIsSendingLoanToHo(false);
+                        setShowLoanHoModal(false);
+                        setLoanHoModalItems([]);
+                        setSelectedHoIds((prev) => prev.filter((id) => id !== loanHoModalItems[0].id));
+                    },
+                }
+            );
+        } else {
+            const ids = loanHoModalItems.map((i) => i.id);
+            router.post(
+                '/member/loan-applications/send-to-head-office-bulk',
+                { ids },
+                {
+                    ...keepListFilters,
+                    onFinish: () => {
+                        setIsSendingLoanToHo(false);
+                        setShowLoanHoModal(false);
+                        setLoanHoModalItems([]);
+                        setSelectedHoIds([]);
+                    },
+                }
+            );
+        }
     };
 
     return (
@@ -561,208 +690,242 @@ export default function Index({ categories, applications, stats, selectedDate, d
                     </div>
                 )}
 
-                {/* COMPACT HEADER BAR */}
-                <div className="bg-slate-900 text-white rounded-xl px-4 py-3 shadow-md flex flex-wrap items-center justify-between gap-3 border border-slate-800">
-                    <div className="flex items-center gap-3">
-                        <div className="p-2 bg-blue-500/20 text-blue-400 rounded-lg border border-blue-500/30">
-                            <CreditCard className="w-5 h-5" />
-                        </div>
-                        <div>
-                            <h1 className="text-lg font-bold text-white tracking-tight">
-                                Loan Applications (ঋণ আবেদনসমূহ)
-                            </h1>
-                            <p className="text-xs text-slate-400">
-                                নতুন ঋণ আবেদন তৈরি করুন, ফর্মের অগ্রগতি ট্র্যাক করুন এবং অনুমোদন স্থিতি পরীক্ষা করুন
-                            </p>
-                        </div>
-                    </div>
-
-                    <div className="flex items-center gap-2">
-                        <button
-                            type="button"
-                            onClick={handleTodayFilter}
-                            className={`px-3.5 py-2 rounded-lg text-xs font-extrabold shadow transition flex items-center gap-1.5 border ${
-                                isTodayFilter
-                                    ? 'bg-blue-600 text-white border-blue-500'
-                                    : 'bg-slate-800 hover:bg-slate-700 text-slate-300 border-slate-700'
-                            }`}
-                            title="আজকের আবেদনসমূহ (Today)"
-                        >
-                            <Calendar className="w-4 h-4" /> Today (আজ)
-                        </button>
-
-                        <button
-                            type="button"
-                            onClick={handleExportExcel}
-                            className="px-3.5 py-2 rounded-lg text-xs font-extrabold shadow transition flex items-center gap-1.5 border bg-emerald-600 hover:bg-emerald-500 text-white border-emerald-500"
-                            title="XLSX এক্সেল ডাউনলোড"
-                        >
-                            <Download className="w-4 h-4" />
-                            <span>XLSX Download</span>
-                        </button>
-
-                        {canCreateLoanApplication && (
-                            <button
-                                onClick={handleNewApplication}
-                                className="px-4 py-2 rounded-lg bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white text-xs font-extrabold shadow-md transition flex items-center gap-1.5 border border-blue-500/30"
-                            >
-                                <Plus className="w-4 h-4" />
-                                <span>নতুন ঋণ আবেদন</span>
-                            </button>
-                        )}
-                    </div>
-                </div>
-
-                {/* COMPACT METRIC STATS PILLS */}
-                <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2">
-                    {loanStatCards.map((stat) => {
-                        const active = isStatActive(stat.key);
-                        return (
-                            <div
-                                key={stat.key}
-                                onClick={() => selectStatus(stat.key)}
-                                className={`rounded-xl p-2.5 border shadow-sm cursor-pointer transition ${active ? stat.active : stat.idle}`}
-                            >
-                                <span className={`text-[10px] font-bold uppercase block ${active ? stat.labelActive : stat.labelIdle}`}>
-                                    {stat.label}
-                                </span>
-                                <span className={`text-lg font-black ${active ? stat.countActive : stat.countIdle}`}>
-                                    {stat.count}
-                                </span>
+                {/* ── 1. SLIM PROFESSIONAL HEADER & TIMING WARNING ───────────────────── */}
+                <div className="space-y-2.5 print:hidden">
+                    {/* Compact Top Action Bar */}
+                    <div className="bg-white px-4 py-3 rounded-2xl border border-slate-200/90 shadow-2xs flex flex-wrap items-center justify-between gap-3">
+                        <div className="flex items-center gap-2.5 min-w-0">
+                            <div className="w-8 h-8 rounded-xl bg-slate-800 text-white flex items-center justify-center shadow-xs shrink-0">
+                                <CreditCard size={16} />
                             </div>
-                        );
-                    })}
-                </div>
-
-                {workQueue?.hint && !isAllStatus && (
-                    <p className="text-xs text-indigo-800 bg-indigo-50 border border-indigo-100 rounded-xl px-3 py-2">
-                        {workQueue.hint}
-                    </p>
-                )}
-
-                {/* INTEGRATED SEARCH & FILTER CONTROL BAR */}
-                <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-3 space-y-2 text-xs">
-                    <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2">
-                        {/* Date From */}
-                        <div>
-                            <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">
-                                হতে (Date From)
-                            </label>
-                            <input
-                                type="date"
-                                value={currentDateFrom}
-                                onChange={(e) => setCurrentDateFrom(e.target.value)}
-                                className="w-full px-2.5 py-1.5 bg-slate-50 border border-slate-300 rounded-lg text-xs"
-                            />
-                        </div>
-
-                        {/* Date To */}
-                        <div>
-                            <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">
-                                পর্যন্ত (Date To)
-                            </label>
-                            <input
-                                type="date"
-                                value={currentDateTo}
-                                onChange={(e) => setCurrentDateTo(e.target.value)}
-                                className="w-full px-2.5 py-1.5 bg-slate-50 border border-slate-300 rounded-lg text-xs"
-                            />
-                        </div>
-
-                        {/* Status Filter */}
-                        <div>
-                            <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">
-                                স্ট্যাটাস (Status)
-                            </label>
-                            <select
-                                value={currentStatusFilter === 'all' ? 'all' : currentStatusFilter}
-                                onChange={(e) => selectStatus(e.target.value)}
-                                className="w-full px-2.5 py-1.5 bg-slate-50 border border-slate-300 rounded-lg text-xs font-medium"
-                            >
-                                {defaultStatus === 'pending_my_approval' && (
-                                    <option value="pending_my_approval">আমার অনুমোদন</option>
-                                )}
-                                <option value="all">সকল স্ট্যাটাস</option>
-                                <option value="draft">Draft (খসড়া)</option>
-                                <option value="submitted">Submitted (জমা)</option>
-                                <option value="under_review">Under Review (পর্যালোচনা)</option>
-                                <option value="ready_for_head_office">Branch Approved (শাখা অনুমোদিত)</option>
-                                <option value="pending_head_office">Pending Head Office (হেড অফিসে প্রেরিত)</option>
-                                <option value="approved">Approved (অনুমোদিত)</option>
-                                <option value="pending_disbursement">Disburse Pending (বিতরণ অপেক্ষা)</option>
-                                <option value="rejected">Rejected (প্রত্যাখ্যাত)</option>
-                                <option value="disbursed">Disbursed (বিতরণকৃত)</option>
-                            </select>
-                        </div>
-
-                        {/* Search Input */}
-                        <div>
-                            <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">
-                                খুঁজুন (Search)
-                            </label>
-                            <div className="relative">
-                                <input
-                                    type="text"
-                                    placeholder="সদস্য কোড, নাম, ফোন..."
-                                    value={searchQuery}
-                                    onChange={(e) => setSearchQuery(e.target.value)}
-                                    onKeyDown={(e) => {
-                                        if (e.key === 'Enter') {
-                                            e.preventDefault();
-                                            applyListFilters({ page: 1 });
-                                        }
-                                    }}
-                                    className="w-full pl-7 pr-6 py-1.5 bg-slate-50 border border-slate-300 rounded-lg text-xs text-slate-800 placeholder-slate-400"
-                                />
-                                <Search className="w-3.5 h-3.5 text-slate-400 absolute left-2 top-1/2 -translate-y-1/2" />
-                                {searchQuery && (
-                                    <button
-                                        onClick={() => setSearchQuery('')}
-                                        className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
-                                    >
-                                        <X className="w-3 h-3" />
-                                    </button>
-                                )}
+                            <div>
+                                <div className="flex items-center gap-2">
+                                    <h1 className="text-sm sm:text-base font-bold text-slate-800 tracking-tight">
+                                        ঋণ আবেদন তালিকা
+                                    </h1>
+                                    <span className="text-[10px] font-bold px-2 py-0.5 bg-slate-100 text-slate-700 rounded-md border border-slate-200">
+                                        মোট {stats.total || 0} টি
+                                    </span>
+                                </div>
                             </div>
                         </div>
 
-                        {/* Filter & Reset Action Buttons */}
-                        <div className="col-span-2 flex items-end gap-1.5">
+                        {/* Action Buttons */}
+                        <div className="flex items-center gap-2 flex-wrap">
                             <button
                                 type="button"
                                 onClick={handleTodayFilter}
-                                className={`px-2.5 py-1.5 text-xs font-semibold rounded-lg shadow transition flex items-center justify-center gap-1 border ${
+                                className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl border text-xs font-semibold transition-all active:scale-95 shadow-2xs ${
                                     isTodayFilter
-                                        ? 'bg-blue-600 text-white border-blue-500'
-                                        : 'bg-slate-100 hover:bg-slate-200 text-slate-700 border-slate-200'
+                                        ? 'bg-blue-600 text-white border-blue-600 font-bold'
+                                        : 'bg-slate-50 text-slate-700 border-slate-200 hover:bg-slate-100'
                                 }`}
                                 title="আজকের আবেদনসমূহ (Today)"
                             >
-                                <Calendar className="w-3.5 h-3.5" /> আজ
+                                <Calendar size={13} />
+                                <span>Today (আজ)</span>
                             </button>
+
+                            {canCreateLoanApplication && (
+                                <button
+                                    onClick={handleNewApplication}
+                                    className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold shadow-2xs transition-all active:scale-95"
+                                >
+                                    <Plus size={14} />
+                                    <span>নতুন ঋণ আবেদন</span>
+                                </button>
+                            )}
+
                             <button
                                 type="button"
                                 onClick={handleExportExcel}
-                                className="px-2.5 py-1.5 text-xs font-semibold rounded-lg shadow transition flex items-center justify-center gap-1 border bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border-emerald-200"
+                                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-emerald-50 text-emerald-700 hover:bg-emerald-100 border border-emerald-200 text-xs font-semibold transition-all active:scale-95 shadow-2xs"
                                 title="XLSX এক্সেল ডাউনলোড"
                             >
-                                <Download className="w-3.5 h-3.5" /> XLSX
+                                <Download size={13} />
+                                <span>Excel</span>
                             </button>
+
                             <button
-                                onClick={handleDateFilterChange}
-                                className="flex-1 px-3 py-1.5 bg-slate-900 hover:bg-slate-800 text-white text-xs font-semibold rounded-lg shadow transition flex items-center justify-center gap-1"
+                                type="button"
+                                onClick={() => window.print()}
+                                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-200 text-xs font-semibold transition-all active:scale-95 shadow-2xs"
                             >
-                                <Filter className="w-3.5 h-3.5" /> ফিল্টার
-                            </button>
-                            <button
-                                onClick={resetFilters}
-                                className="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-semibold rounded-lg transition border border-slate-200 flex items-center justify-center gap-1"
-                                title="ফিল্টার রিসেট"
-                            >
-                                <RefreshCw className="w-3.5 h-3.5" /> রিসেট
+                                <Printer size={13} />
+                                <span>প্রিন্ট</span>
                             </button>
                         </div>
                     </div>
+
+                    {/* Prominent & Professional 2:00 PM Deadline Warning Notice for Branch Users */}
+                    {isBranchUser && (
+                        <div className="bg-amber-50/90 border border-amber-200/90 px-3.5 py-2.5 rounded-xl text-xs text-amber-950 flex items-center justify-between gap-3 shadow-2xs">
+                            <div className="flex items-center gap-2.5 min-w-0">
+                                <div className="w-6 h-6 rounded-lg bg-amber-200/80 text-amber-900 flex items-center justify-center shrink-0">
+                                    <Clock size={14} className="stroke-[2.5]" />
+                                </div>
+                                <p className="font-medium text-amber-900 leading-snug">
+                                    <strong className="font-bold text-amber-950">জরুরি সময়সীমা:</strong> ঋণ আবেদনসমূহ <span className="underline decoration-amber-500 font-bold">অবশ্যই দুপুর ২:০০ টার মধ্যে</span> হেড অফিসে পাঠাতে হবে, যাতে একই কার্যদিবসে যথাসময়ে যাচাই ও চূড়ান্ত অনুমোদন সম্পন্ন করা যায়।
+                                </p>
+                            </div>
+                            <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-amber-200/70 text-amber-900 border border-amber-300 shrink-0 hidden sm:inline-block">
+                                সময়সীমা: ২:০০ PM
+                            </span>
+                        </div>
+                    )}
+                </div>
+
+                {/* ── 2. UNIFIED FILTER & STATUS CONTROL CARD ─────────────────────────── */}
+                <div className="bg-white rounded-3xl border border-slate-200/90 shadow-2xs p-3.5 space-y-3.5 print:hidden">
+                    {/* Status Filter Cards in 1 Row with Micro Visual Progress & Icons */}
+                    <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 lg:grid-cols-9 gap-2">
+                        {loanStatCards.map((stat) => {
+                            const active = isStatActive(stat.key);
+                            const IconComponent = stat.icon;
+                            const percentage = Math.min(100, Math.round((stat.count / (filteredStats.total || 1)) * 100));
+
+                            return (
+                                <button
+                                    key={stat.key}
+                                    type="button"
+                                    onClick={() => selectStatus(stat.key)}
+                                    className={`relative p-2.5 rounded-2xl border text-left transition-all duration-150 active:scale-95 group overflow-hidden ${
+                                        active
+                                            ? `${stat.activeBg} shadow-md ring-2 ring-offset-1 ring-blue-500/40`
+                                            : stat.highlight
+                                            ? 'bg-gradient-to-b from-emerald-50/90 to-white border-emerald-300 hover:border-emerald-400 hover:shadow-xs'
+                                            : 'bg-white hover:bg-slate-50/90 border-slate-200/90 hover:border-slate-300 shadow-2xs'
+                                    }`}
+                                >
+                                    {/* Top Row: Icon & Count */}
+                                    <div className="flex items-center justify-between gap-1 mb-1.5">
+                                        <div className={`w-7 h-7 rounded-xl flex items-center justify-center shrink-0 transition-transform group-hover:scale-105 ${
+                                            active ? 'bg-white/20 text-white' : `${stat.iconBg} ${stat.iconColor}`
+                                        }`}>
+                                            <IconComponent size={14} className="stroke-[2.2]" />
+                                        </div>
+                                        <span className={`text-base font-black tracking-tight ${
+                                            active ? 'text-white' : 'text-slate-900'
+                                        }`}>
+                                            {stat.count}
+                                        </span>
+                                    </div>
+
+                                    {/* Middle: Label */}
+                                    <span className={`text-[11px] font-bold truncate block ${
+                                        active ? 'text-white/90' : 'text-slate-600'
+                                    }`}>
+                                        {stat.label}
+                                    </span>
+
+                                    {/* Visual Micro Progress Bar */}
+                                    <div className="mt-1.5 w-full bg-slate-100 rounded-full h-1 overflow-hidden">
+                                        <div
+                                            className={`h-full rounded-full transition-all duration-300 ${
+                                                active ? 'bg-white' : `bg-gradient-to-r ${stat.barColor}`
+                                            }`}
+                                            style={{ width: `${stat.key === 'all' ? 100 : Math.max(8, percentage)}%` }}
+                                        />
+                                    </div>
+                                </button>
+                            );
+                        })}
+                    </div>
+
+                    {/* Integrated Search & Date Toolbar */}
+                    <div className="pt-2 border-t border-slate-100 flex flex-col lg:flex-row items-stretch lg:items-center justify-between gap-2.5 text-xs">
+                        {/* Search Input Box */}
+                        <div className="relative flex-grow max-w-lg">
+                            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 pointer-events-none" />
+                            <input
+                                type="text"
+                                placeholder="সদস্য কোড, নাম, ফোন..."
+                                value={searchQuery}
+                                onChange={(e) => setSearchQuery(e.target.value)}
+                                onKeyDown={(e) => {
+                                    if (e.key === 'Enter') {
+                                        e.preventDefault();
+                                        applyListFilters({ page: 1 });
+                                    }
+                                }}
+                                className="w-full pl-9 pr-7 py-2 text-xs border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 bg-slate-50/50 transition-all font-medium"
+                            />
+                            {searchQuery && (
+                                <button
+                                    onClick={() => setSearchQuery('')}
+                                    className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
+                                >
+                                    <X className="w-3.5 h-3.5" />
+                                </button>
+                            )}
+                        </div>
+
+                        {/* Date Range & Action Buttons */}
+                        <div className="flex flex-wrap items-center gap-2">
+                            <div className="flex items-center gap-1.5 bg-slate-50 border border-slate-200 p-1 rounded-xl">
+                                <input
+                                    type="date"
+                                    value={currentDateFrom}
+                                    onChange={(e) => setCurrentDateFrom(e.target.value)}
+                                    className="px-2 py-1 text-xs border border-slate-300 rounded-lg bg-white focus:outline-none"
+                                    title="তারিখ হতে"
+                                />
+                                <span className="text-slate-400 text-xs font-bold">–</span>
+                                <input
+                                    type="date"
+                                    value={currentDateTo}
+                                    onChange={(e) => setCurrentDateTo(e.target.value)}
+                                    className="px-2 py-1 text-xs border border-slate-300 rounded-lg bg-white focus:outline-none"
+                                    title="তারিখ পর্যন্ত"
+                                />
+                            </div>
+
+                            <button
+                                onClick={handleDateFilterChange}
+                                className="px-4 py-2 text-xs font-bold bg-slate-800 hover:bg-slate-900 text-white rounded-xl transition shadow-2xs active:scale-95 flex items-center gap-1"
+                            >
+                                <Filter className="w-3.5 h-3.5" />
+                                <span>ফিল্টার</span>
+                            </button>
+
+                            <button
+                                onClick={resetFilters}
+                                className="px-3 py-2 text-xs font-bold text-slate-600 bg-slate-100 hover:bg-slate-200 rounded-xl transition flex items-center gap-1"
+                                title="ফিল্টার রিসেট"
+                            >
+                                <RefreshCw className="w-3.5 h-3.5" />
+                                <span>রিসেট</span>
+                            </button>
+                        </div>
+                    </div>
+
+                    {/* Bulk Selection Notification Bar */}
+                    {isBranchUser && readyForHoIds.length > 0 && (
+                        <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-indigo-200 bg-indigo-50/80 px-3 py-2 text-xs">
+                            <p className="text-indigo-950 font-medium">
+                                শাখা অনুমোদিত: <strong className="font-bold text-indigo-900">{readyForHoIds.length}</strong> টি · নির্বাচিত:{' '}
+                                <strong className="font-bold text-indigo-900">{selectedHoIds.length}</strong> টি
+                            </p>
+                            <div className="flex items-center gap-2">
+                                <button
+                                    type="button"
+                                    onClick={toggleSelectAllReady}
+                                    className="rounded-lg border border-indigo-300 bg-white px-2.5 py-1 text-xs font-bold text-indigo-800 hover:bg-indigo-100 shadow-2xs"
+                                >
+                                    {allReadySelected ? 'সব আনসিলেক্ট' : 'একবারে সব সিলেক্ট'}
+                                </button>
+                                <button
+                                    type="button"
+                                    onClick={openSendBulkToHo}
+                                    disabled={selectedHoIds.length === 0 || isSendingLoanToHo}
+                                    className="inline-flex items-center gap-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-700 disabled:opacity-40 px-3 py-1 text-xs font-bold text-white shadow-2xs transition active:scale-95"
+                                >
+                                    <Send className="w-3.5 h-3.5" />
+                                    <span>{isSendingLoanToHo ? 'পাঠানো হচ্ছে...' : `HO তে পাঠান (${selectedHoIds.length})`}</span>
+                                </button>
+                            </div>
+                        </div>
+                    )}
                 </div>
 
                 {/* APPLICATIONS CONTAINER */}
@@ -774,33 +937,6 @@ export default function Index({ categories, applications, stats, selectedDate, d
                             মোট পাওয়া গেছে: <strong className="text-slate-900 font-bold">{applications.total}</strong> টি আবেদন
                         </span>
                     </div>
-
-                    {isBranchUser && readyForHoIds.length > 0 && (
-                        <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-indigo-200 bg-indigo-50 px-3 py-2.5">
-                            <p className="text-sm text-indigo-900">
-                                শাখা অনুমোদিত: <span className="font-semibold">{readyForHoIds.length}</span> · সিলেক্টেড:{' '}
-                                <span className="font-semibold">{selectedHoIds.length}</span>
-                        </p>
-                            <div className="flex flex-wrap items-center gap-2">
-                                <button
-                                    type="button"
-                                    onClick={toggleSelectAllReady}
-                                    className="rounded-lg border border-indigo-300 bg-white px-3 py-1.5 text-xs font-semibold text-indigo-800 hover:bg-indigo-100"
-                                >
-                                    {allReadySelected ? 'সব আনসিলেক্ট' : 'একবারে সব সিলেক্ট'}
-                                </button>
-                                <button
-                                    type="button"
-                                    onClick={sendSelectedToHeadOffice}
-                                    disabled={selectedHoIds.length === 0 || bulkSending}
-                                    className="inline-flex items-center gap-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-700 disabled:opacity-40 px-3 py-1.5 text-xs font-bold text-white"
-                                >
-                                    <Send className="w-3.5 h-3.5" />
-                                    {bulkSending ? 'পাঠানো হচ্ছে...' : `HO তে পাঠান (${selectedHoIds.length})`}
-                                </button>
-                            </div>
-                        </div>
-                    )}
 
                     {/* MOBILE CARDS VIEW (md:hidden) */}
                     <div className="md:hidden flex flex-col gap-3.5">
@@ -1229,12 +1365,8 @@ export default function Index({ categories, applications, stats, selectedDate, d
                                                             )}
                                                             {app.status === 'ready_for_head_office' && isBranchUser && (
                                                                 <button
-                                                                    onClick={() => {
-                                                                        if (confirm(`সদস্য ${member?.applicant_name_bn || member?.applicant_name_en || ''} (${memberCode}) এর ঋণ আবেদন Head Office এ পাঠাতে চান?`)) {
-                                                                            router.patch(`/member/loan-applications/${app.id}/send-to-head-office`, {}, keepListFilters);
-                                                                        }
-                                                                    }}
-                                                                    className="inline-flex items-center gap-1 text-xs px-2.5 py-1 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-xl shadow-sm transition active:scale-95"
+                                                                    onClick={() => openSendSingleToHo(app)}
+                                                                    className="inline-flex items-center gap-1 text-xs px-2.5 py-1 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-xl shadow-sm transition active:scale-95 shadow-2xs"
                                                                     title="Head Office এ পাঠান"
                                                                 >
                                                                     <Send className="w-3 h-3" />
@@ -1540,6 +1672,20 @@ export default function Index({ categories, applications, stats, selectedDate, d
                     </div>
                 </div>
             )}
+
+            {/* Head Office Dispatch Confirmation / Warning Modal */}
+            <SendLoanToHoModal
+                isOpen={showLoanHoModal}
+                onClose={() => {
+                    if (!isSendingLoanToHo) {
+                        setShowLoanHoModal(false);
+                        setLoanHoModalItems([]);
+                    }
+                }}
+                onConfirm={handleConfirmSendLoanToHo}
+                isLoading={isSendingLoanToHo}
+                items={loanHoModalItems}
+            />
         </AdminLayout>
     );
 }

@@ -8,6 +8,10 @@ interface Props {
     processing?: boolean;
     onClose: () => void;
     onConfirm: (pin: string) => void;
+    confirmLabel?: string;
+    processingLabel?: string;
+    pinLabel?: string;
+    accent?: 'rose' | 'indigo';
 }
 
 export default function SuperAdminDeletePinModal({
@@ -17,6 +21,10 @@ export default function SuperAdminDeletePinModal({
     processing = false,
     onClose,
     onConfirm,
+    confirmLabel = 'মুছে ফেলুন',
+    processingLabel = 'মুছে ফেলা হচ্ছে...',
+    pinLabel = 'SuperAdmin Delete PIN',
+    accent = 'rose',
 }: Props) {
     const [pin, setPin] = useState('');
 
@@ -30,6 +38,18 @@ export default function SuperAdminDeletePinModal({
         return null;
     }
 
+    const isIndigo = accent === 'indigo';
+    const headerClass = isIndigo ? 'bg-indigo-600' : 'bg-rose-600';
+    const closeClass = isIndigo
+        ? 'p-1 rounded-lg text-indigo-100 hover:text-white hover:bg-indigo-700'
+        : 'p-1 rounded-lg text-rose-100 hover:text-white hover:bg-rose-700';
+    const inputFocusClass = isIndigo
+        ? 'focus:ring-1 focus:ring-indigo-500 focus:bg-white'
+        : 'focus:ring-1 focus:ring-rose-500 focus:bg-white';
+    const submitClass = isIndigo
+        ? 'px-4 py-2 text-sm font-medium text-white bg-indigo-600 rounded-xl hover:bg-indigo-700 disabled:opacity-50'
+        : 'px-4 py-2 text-sm font-medium text-white bg-rose-600 rounded-xl hover:bg-rose-700 disabled:opacity-50';
+
     const handleSubmit = (e: React.FormEvent) => {
         e.preventDefault();
         if (!pin.trim()) {
@@ -41,7 +61,7 @@ export default function SuperAdminDeletePinModal({
     return (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-sm p-4">
             <div className="bg-white rounded-2xl max-w-md w-full shadow-2xl overflow-hidden border border-slate-200">
-                <div className="bg-rose-600 text-white px-4 py-3.5 flex items-center justify-between">
+                <div className={`${headerClass} text-white px-4 py-3.5 flex items-center justify-between`}>
                     <h3 className="text-sm font-bold flex items-center gap-2">
                         <Lock className="w-4 h-4" />
                         {title}
@@ -49,7 +69,7 @@ export default function SuperAdminDeletePinModal({
                     <button
                         type="button"
                         onClick={onClose}
-                        className="p-1 rounded-lg text-rose-100 hover:text-white hover:bg-rose-700"
+                        className={closeClass}
                     >
                         <X className="w-5 h-5" />
                     </button>
@@ -58,7 +78,7 @@ export default function SuperAdminDeletePinModal({
                     <p className="text-sm text-slate-600 leading-relaxed">{description}</p>
                     <div>
                         <label className="block text-xs font-semibold text-slate-700 mb-1">
-                            SuperAdmin Delete PIN <span className="text-red-500">*</span>
+                            {pinLabel} <span className="text-red-500">*</span>
                         </label>
                         <input
                             type="password"
@@ -66,7 +86,7 @@ export default function SuperAdminDeletePinModal({
                             autoFocus
                             value={pin}
                             onChange={(e) => setPin(e.target.value)}
-                            className="w-full px-3 py-2.5 bg-slate-50 border border-slate-300 rounded-xl text-sm tracking-widest focus:ring-1 focus:ring-rose-500 focus:bg-white"
+                            className={`w-full px-3 py-2.5 bg-slate-50 border border-slate-300 rounded-xl text-sm tracking-widest ${inputFocusClass}`}
                             placeholder="PIN লিখুন"
                         />
                     </div>
@@ -81,9 +101,9 @@ export default function SuperAdminDeletePinModal({
                         <button
                             type="submit"
                             disabled={processing || !pin.trim()}
-                            className="px-4 py-2 text-sm font-medium text-white bg-rose-600 rounded-xl hover:bg-rose-700 disabled:opacity-50"
+                            className={submitClass}
                         >
-                            {processing ? 'মুছে ফেলা হচ্ছে...' : 'মুছে ফেলুন'}
+                            {processing ? processingLabel : confirmLabel}
                         </button>
                     </div>
                 </form>

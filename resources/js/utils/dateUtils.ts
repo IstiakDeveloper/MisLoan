@@ -34,8 +34,13 @@ function parseDateValue(value: string | Date | null | undefined): Date | null {
     return Number.isNaN(parsed.getTime()) ? null : parsed;
 }
 
-/** Display date as dd/mm/YYYY */
+/** Display date as dd/mm/YYYY (Asia/Dhaka when a time is present). */
 export function formatDate(value: string | Date | null | undefined, fallback = '-'): string {
+    const instant = parseDateTimeInstant(value);
+    if (instant) {
+        return formatDhakaParts(instant).date;
+    }
+
     const date = parseDateValue(value);
     if (!date) return fallback === '' ? '' : fallback;
 
@@ -45,34 +50,66 @@ export function formatDate(value: string | Date | null | undefined, fallback = '
     return `${day}/${month}/${year}`;
 }
 
-/** Display date + time as dd/mm/YYYY hh:mm AM/PM */
+const DISPLAY_TIMEZONE = 'Asia/Dhaka';
+
+function isDateOnlyString(str: string): boolean {
+    const s = str.trim();
+    return /^\d{4}-\d{2}-\d{2}$/.test(s) || /^\d{1,2}\/\d{1,2}\/\d{4}$/.test(s);
+}
+
+/** Parse a datetime (ISO / Laravel) as an instant; date-only strings return null. */
+function parseDateTimeInstant(value: string | Date | null | undefined): Date | null {
+    if (value == null || value === '') return null;
+    if (value instanceof Date) return Number.isNaN(value.getTime()) ? null : value;
+
+    const str = String(value).trim();
+    if (!str || isDateOnlyString(str)) return null;
+    if (!/(?:T|\s)\d{1,2}:\d{2}/.test(str)) return null;
+
+    // Laravel may send 6-digit microseconds; Date() expects up to 3.
+    const normalized = str.replace(/\.(\d{3})\d+/, '.$1');
+    const parsed = new Date(normalized);
+    return Number.isNaN(parsed.getTime()) ? null : parsed;
+}
+
+function formatDhakaParts(date: Date): { date: string; time: string } {
+    const parts = new Intl.DateTimeFormat('en-GB', {
+        timeZone: DISPLAY_TIMEZONE,
+        day: '2-digit',
+        month: '2-digit',
+        year: 'numeric',
+        hour: 'numeric',
+        minute: '2-digit',
+        hour12: true,
+    }).formatToParts(date);
+
+    const get = (type: Intl.DateTimeFormatPartTypes) => parts.find((p) => p.type === type)?.value ?? '';
+    const ampm = (get('dayPeriod') || 'AM').replace(/\./g, '').replace(/\s/g, '').toUpperCase();
+
+    return {
+        date: `${get('day')}/${get('month')}/${get('year')}`,
+        time: `${String(get('hour')).padStart(2, '0')}:${get('minute')} ${ampm}`,
+    };
+}
+
+/** Display time only as hh:mm AM/PM (Asia/Dhaka). Date-only values return fallback. */
+export function formatTime(value: string | Date | null | undefined, fallback = ''): string {
+    const date = parseDateTimeInstant(value);
+    if (!date) return fallback;
+    return formatDhakaParts(date).time;
+}
+
+/** Display date + time as dd/mm/YYYY hh:mm AM/PM (Asia/Dhaka). */
 export function formatDateTime(value: string | Date | null | undefined, fallback = '-'): string {
     if (value == null || value === '') return fallback;
 
-    const str = String(value).trim();
-    const date = parseDateValue(value);
-    if (!date) return fallback;
-
-    let hours = 0;
-    let minutes = 0;
-
-    const timeFromString = str.match(/(?:T|\s)(\d{1,2}):(\d{2})/);
-    if (timeFromString) {
-        hours = Number(timeFromString[1]);
-        minutes = Number(timeFromString[2]);
-    } else if (value instanceof Date) {
-        hours = value.getHours();
-        minutes = value.getMinutes();
+    const instant = parseDateTimeInstant(value);
+    if (!instant) {
+        return formatDate(value, fallback);
     }
 
-    const hasTime = Boolean(timeFromString) || (value instanceof Date && (hours !== 0 || minutes !== 0));
-    if (!hasTime) {
-        return formatDate(date, fallback);
-    }
-
-    const h12 = hours % 12 || 12;
-    const ampm = hours >= 12 ? 'PM' : 'AM';
-    return `${formatDate(date, '')} ${String(h12).padStart(2, '0')}:${String(minutes).padStart(2, '0')} ${ampm}`;
+    const { date, time } = formatDhakaParts(instant);
+    return `${date} ${time}`;
 }
 
 /** For <input type="date"> — always YYYY-MM-DD */

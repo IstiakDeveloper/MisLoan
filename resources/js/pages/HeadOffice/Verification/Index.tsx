@@ -434,7 +434,7 @@ export default function VerificationIndex({ items, stats, filters, permissions, 
                                 : 'border-indigo-100 bg-white text-slate-800 hover:border-indigo-300 hover:bg-indigo-50/50'
                         }`}
                     >
-                        <div className="text-xl font-bold tabular-nums leading-none">{stats.total}</div>
+                        <div className="text-xl font-bold tabular-nums leading-none">{stats?.total ?? 0}</div>
                         <div className={`text-[11px] font-medium mt-1 ${issueStatusFilter === 'all' ? 'text-indigo-100' : 'text-slate-500'}`}>
                             মোট যাচাই/তদন্ত
                         </div>
@@ -449,7 +449,7 @@ export default function VerificationIndex({ items, stats, filters, permissions, 
                                 : 'border-amber-200 bg-amber-50/50 text-slate-800 hover:border-amber-400 hover:bg-amber-100/50'
                         }`}
                     >
-                        <div className="text-xl font-bold tabular-nums leading-none text-amber-700">{stats.pending_issues}</div>
+                        <div className="text-xl font-bold tabular-nums leading-none text-amber-700">{stats?.pending_issues ?? 0}</div>
                         <div className="text-[11px] font-medium text-amber-900 mt-1">
                             অমীমাংসিত আপত্তি
                         </div>
@@ -464,7 +464,7 @@ export default function VerificationIndex({ items, stats, filters, permissions, 
                                 : 'border-sky-200 bg-sky-50/50 text-slate-800 hover:border-sky-400 hover:bg-sky-100/50'
                         }`}
                     >
-                        <div className="text-xl font-bold tabular-nums leading-none text-sky-700">{stats.branch_replied}</div>
+                        <div className="text-xl font-bold tabular-nums leading-none text-sky-700">{stats?.branch_replied ?? 0}</div>
                         <div className="text-[11px] font-medium text-sky-900 mt-1">
                             শাখা জবাব দিয়েছে
                         </div>
@@ -479,7 +479,7 @@ export default function VerificationIndex({ items, stats, filters, permissions, 
                                 : 'border-emerald-200 bg-emerald-50/50 text-slate-800 hover:border-emerald-400 hover:bg-emerald-100/50'
                         }`}
                     >
-                        <div className="text-xl font-bold tabular-nums leading-none text-emerald-700">{stats.approved}</div>
+                        <div className="text-xl font-bold tabular-nums leading-none text-emerald-700">{stats?.approved ?? 0}</div>
                         <div className="text-[11px] font-medium text-emerald-900 mt-1">
                             অনুমোদিত
                         </div>
@@ -494,7 +494,7 @@ export default function VerificationIndex({ items, stats, filters, permissions, 
                                 : 'border-blue-100 bg-white text-slate-800 hover:border-blue-300 hover:bg-blue-50/50'
                         }`}
                     >
-                        <div className="text-xl font-bold tabular-nums leading-none">{stats.admission_count}</div>
+                        <div className="text-xl font-bold tabular-nums leading-none">{stats?.admission_count ?? 0}</div>
                         <div className={`text-[11px] font-medium mt-1 ${typeFilter === 'admission' ? 'text-blue-100' : 'text-slate-500'}`}>
                             সদস্য ভর্তি
                         </div>
@@ -509,7 +509,7 @@ export default function VerificationIndex({ items, stats, filters, permissions, 
                                 : 'border-emerald-100 bg-white text-slate-800 hover:border-emerald-300 hover:bg-emerald-50/50'
                         }`}
                     >
-                        <div className="text-xl font-bold tabular-nums leading-none">{stats.loan_count}</div>
+                        <div className="text-xl font-bold tabular-nums leading-none">{stats?.loan_count ?? 0}</div>
                         <div className={`text-[11px] font-medium mt-1 ${typeFilter === 'loan' ? 'text-emerald-100' : 'text-slate-500'}`}>
                             ঋণ আবেদন
                         </div>
@@ -699,7 +699,7 @@ export default function VerificationIndex({ items, stats, filters, permissions, 
                                 </tr>
                             </thead>
                             <tbody className="divide-y divide-slate-100 text-xs">
-                                {items.data.length === 0 ? (
+                                {(items?.data ?? []).length === 0 ? (
                                     <tr>
                                         <td colSpan={7} className="py-16 text-center text-slate-400">
                                             <div className="flex flex-col items-center justify-center gap-2">
@@ -710,7 +710,7 @@ export default function VerificationIndex({ items, stats, filters, permissions, 
                                         </td>
                                     </tr>
                                 ) : (
-                                    items.data.map((item, index) => {
+                                    (items?.data ?? []).map((item, index) => {
                                         const isAdmission = item.item_type === 'admission';
                                         const isApproved = item.status === 'approved' || item.status === 'pending_disbursement' || item.status === 'disbursed';
                                         const isRejected = item.status === 'rejected';
@@ -944,20 +944,18 @@ export default function VerificationIndex({ items, stats, filters, permissions, 
                     </AutoFitTableContainer>
 
                     {/* Pagination */}
-                    {items.total > items.per_page && (
+                    {items && items.total > 0 && (
                         <div className="p-3 border-t border-indigo-100 bg-slate-50/50">
                             <ListPagination
-                                pagination={{
-                                    current_page: items.current_page,
-                                    last_page: items.last_page,
-                                    per_page: items.per_page,
-                                    total: items.total,
-                                    from: items.from || 1,
-                                    to: items.to || items.total,
-                                    links: [],
-                                }}
+                                meta={items}
                                 onPageChange={(page) => {
                                     router.get('/verifications', filterPayload({ page: String(page) }), {
+                                        preserveState: true,
+                                        preserveScroll: true,
+                                    });
+                                }}
+                                onPerPageChange={(size) => {
+                                    router.get('/verifications', filterPayload({ per_page: String(size), page: '1' }), {
                                         preserveState: true,
                                         preserveScroll: true,
                                     });

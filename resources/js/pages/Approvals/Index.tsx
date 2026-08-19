@@ -45,6 +45,7 @@ interface Approval {
     applicant_name_bn: string;
     branch_name: string;
     branch_id?: number;
+    branch_code?: string;
     samity_name: string;
     submitted_at: string;
     level: string;
@@ -54,6 +55,7 @@ interface Approval {
     status: string;
     requested_loan_amount?: number;
     escalation_approvers?: EscalationApprover[];
+    block_list?: BlockListFields;
 }
 
 interface LoanApproval {
@@ -64,13 +66,11 @@ interface LoanApproval {
     applicant_name_bn: string;
     branch_name: string;
     branch_id?: number;
-    branch_code?: string;
     requested_amount: number;
     submitted_at: string;
     level: string;
     sequence?: number;
     escalation_approvers?: EscalationApprover[];
-    block_list?: BlockListFields;
 }
 
 interface BlockListFields {
@@ -96,6 +96,56 @@ function toEnglishDigits(value: string): string {
     return result.replace(/[^0-9]/g, '');
 }
 
+function validateNid(value: string): string | null {
+    if (!value.trim()) return 'NID নম্বর প্রয়োজন';
+    if (value.length < 10 || value.length > 17) return 'NID ১০–১৭ অঙ্কের হতে হবে';
+    return null;
+}
+
+function validatePhone(value: string): string | null {
+    if (!value.trim()) return 'ফোন নম্বর প্রয়োজন';
+    if (value.length < 10) return `আরও ${10 - value.length} অঙ্ক লিখুন (মোট ১০–১৪)`;
+    if (value.length > 14) return 'সর্বোচ্চ ১৪ অঙ্ক';
+    return null;
+}
+
+function validateRejectComments(value: string): string | null {
+    if (!value.trim()) return 'প্রত্যাখ্যানের কারণ লিখুন';
+    return null;
+}
+
+function isValidDate(day: number, month: number, year: number): boolean {
+    if (year < 1900 || year > 2100) return false;
+    if (month < 1 || month > 12) return false;
+    const daysInMonth = new Date(year, month, 0).getDate();
+    return day >= 1 && day <= daysInMonth;
+}
+
+function validateDob(value: string | undefined | null): string | null {
+    if (!value) return null;
+    if (value.includes('/')) {
+        const digits = value.replace(/\D/g, '');
+        if (digits.length < 8) return 'পূর্ণাঙ্গ তারিখ লিখুন (দিন/মাস/বছর)';
+        const day = parseInt(digits.slice(0, 2), 10);
+        const month = parseInt(digits.slice(2, 4), 10);
+        const year = parseInt(digits.slice(4, 8), 10);
+        if (!isValidDate(day, month, year)) return 'সঠিক তারিখ লিখুন (দিন/মাস/বছর)';
+    }
+    const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value);
+    if (match) {
+        const year = parseInt(match[1], 10);
+        const month = parseInt(match[2], 10);
+        const day = parseInt(match[3], 10);
+        if (isValidDate(day, month, year)) return null;
+    }
+    return 'সঠিক তারিখ লিখুন (দিন/মাস/বছর)';
+}
+
+function FieldError({ message }: { message?: string | null }) {
+    if (!message) return null;
+    return <p className="mt-1 text-[11px] font-medium text-rose-600">{message}</p>;
+}
+
 function emptyBlockList(): BlockListFields {
     return {
         name_bn: '',
@@ -109,8 +159,8 @@ function emptyBlockList(): BlockListFields {
     };
 }
 
-function buildBlockListFromLoan(loan?: LoanApproval | null): BlockListFields {
-    const bl = loan?.block_list;
+function buildBlockListFromAdmission(approval?: Approval | null): BlockListFields {
+    const bl = approval?.block_list;
     return {
         name_bn: bl?.name_bn ?? '',
         father_name: bl?.father_name ?? '',
@@ -195,10 +245,16 @@ export default function Index({
     branches = [],
     filters = {},
 }: Props) {
-    const { auth } = usePage().props as {
-        auth?: { user?: { username?: string | null; name?: string; role?: { name: string } } };
+    const page = usePage() as {
+        url: string;
+        props: {
+            auth?: { user?: { username?: string | null; name?: string; role?: { name: string } } };
+            flash?: { error?: string | null; success?: string | null };
+            errors?: Record<string, string>;
+        };
     };
-    const authUsername = auth?.user?.username ?? '';
+    const authUsername = page.props.auth?.user?.username ?? '';
+    const pageUrl = page.url;
 
     const [searchQuery, setSearchQuery] = useState('');
     const [activeTab, setActiveTab] = useState<'all' | 'admissions' | 'loans'>('all');
@@ -276,6 +332,15 @@ export default function Index({
     const [forwardToUserId, setForwardToUserId] = useState<string>('');
     const [showModal, setShowModal] = useState(false);
     const [isSubmitting, setIsSubmitting] = useState(false);
+    const [pushToBlockList, setPushToBlockList] = useState(true);
+    const [admissionBlockList, setAdmissionBlockList] = useState<BlockListFields>(emptyBlockList);
+    const [admissionBlockErrors, setAdmissionBlockErrors] = useState<Record<string, string | null>>({});
+    const [commentsError, setCommentsError] = useState<string | null>(null);
+    const [serverError, setServerError] = useState<string | null>(null);
+    const [usernameVerifying, setUsernameVerifying] = useState(false);
+    const [usernameVerified, setUsernameVerified] = useState(false);
+    const [usernameVerifyError, setUsernameVerifyError] = useState<string | null>(null);
+    const [checkingUsername, setCheckingUsername] = useState(false);
 
     // Loan Modals state
     const [selectedLoanApproval, setSelectedLoanApproval] = useState<LoanApproval | null>(null);
@@ -284,12 +349,6 @@ export default function Index({
     const [loanApprovedAmount, setLoanApprovedAmount] = useState('');
     const [loanForwardToUserId, setLoanForwardToUserId] = useState<string>('');
     const [showLoanModal, setShowLoanModal] = useState(false);
-    const [loanPushToBlockList, setLoanPushToBlockList] = useState(true);
-    const [loanBlockList, setLoanBlockList] = useState<BlockListFields>(emptyBlockList);
-    const [loanBlockErrors, setLoanBlockErrors] = useState<Record<string, string | null>>({});
-    const [usernameVerifying, setUsernameVerifying] = useState(false);
-    const [usernameVerified, setUsernameVerified] = useState(false);
-    const [usernameVerifyError, setUsernameVerifyError] = useState<string | null>(null);
 
     // Search Filtering
     const filteredApprovals = useMemo(() => {
@@ -322,15 +381,59 @@ export default function Index({
         return loanApprovals.reduce((acc, curr) => acc + (Number(curr.requested_amount) || 0), 0);
     }, [loanApprovals]);
 
+    const resetAdmissionBlockList = () => {
+        setPushToBlockList(true);
+        setAdmissionBlockList(emptyBlockList());
+        setAdmissionBlockErrors({});
+        setCommentsError(null);
+        setServerError(null);
+        setUsernameVerified(false);
+        setUsernameVerifyError(null);
+        setUsernameVerifying(false);
+        setCheckingUsername(false);
+    };
+
+    const closeAdmissionModal = () => {
+        setShowModal(false);
+        setSelectedApproval(null);
+        setAction(null);
+        setComments('');
+        setForwardToUserId('');
+        resetAdmissionBlockList();
+        setIsSubmitting(false);
+    };
+
+    const applyServerErrors = (errors: Record<string, string | string[]>) => {
+        const pick = (key: string): string | null => {
+            const value = errors[key];
+            if (Array.isArray(value)) return value[0] ?? null;
+            return typeof value === 'string' ? value : null;
+        };
+        setCommentsError(pick('comments'));
+        setAdmissionBlockErrors((prev) => ({
+            ...prev,
+            nid_number: pick('block_list.nid_number') ?? prev.nid_number,
+            phone_number: pick('block_list.phone_number') ?? prev.phone_number,
+            dob: pick('block_list.dob') ?? prev.dob,
+        }));
+        const first = Object.values(errors).flat().find((v) => typeof v === 'string' && v.trim());
+        if (typeof first === 'string') {
+            setServerError(first);
+        }
+    };
+
     const handleAction = (approval: Approval, actionType: 'approve' | 'reject' | 'return' | 'forward') => {
         const isBranch = approval.level === 'branch';
         const amount = Number(approval.requested_loan_amount || 0);
 
-        if (actionType === 'approve' && isBranch && amount > 70000) {
+        if (actionType === 'approve' && isBranch && amount >= 70000) {
             setSelectedApproval(approval);
             setAction('forward');
             setComments('');
+            setCommentsError(null);
+            setServerError(null);
             setForwardToUserId('');
+            resetAdmissionBlockList();
             setShowModal(true);
             return;
         }
@@ -338,7 +441,23 @@ export default function Index({
         setSelectedApproval(approval);
         setAction(actionType);
         setComments('');
+        setCommentsError(null);
+        setServerError(null);
         setForwardToUserId('');
+        if (actionType === 'reject') {
+            const bl = buildBlockListFromAdmission(approval);
+            setPushToBlockList(true);
+            setAdmissionBlockList(bl);
+            setAdmissionBlockErrors({
+                nid_number: validateNid(bl.nid_number ?? ''),
+                phone_number: validatePhone(bl.phone_number ?? ''),
+                dob: validateDob(bl.dob),
+            });
+            setUsernameVerified(false);
+            setUsernameVerifyError(null);
+        } else {
+            resetAdmissionBlockList();
+        }
         setShowModal(true);
     };
 
@@ -349,7 +468,12 @@ export default function Index({
             return;
         }
 
+        if (action === 'reject' && !validateAdmissionReject()) {
+            return;
+        }
+
         setIsSubmitting(true);
+        setServerError(null);
 
         if (action === 'forward') {
             router.patch(
@@ -360,15 +484,19 @@ export default function Index({
                 },
                 {
                     ...keepListFilters,
-                    onSuccess: () => {
-                        setShowModal(false);
-                        setSelectedApproval(null);
-                        setAction(null);
-                        setComments('');
-                        setForwardToUserId('');
+                    onSuccess: (visit) => {
+                        const flashError = (visit.props as { flash?: { error?: string | null } }).flash?.error;
+                        if (flashError) {
+                            setServerError(flashError);
+                            setIsSubmitting(false);
+                            return;
+                        }
+                        closeAdmissionModal();
+                    },
+                    onError: (errors) => {
+                        applyServerErrors(errors);
                         setIsSubmitting(false);
                     },
-                    onError: () => setIsSubmitting(false),
                 }
             );
             return;
@@ -380,16 +508,38 @@ export default function Index({
             return: `/approvals/${selectedApproval.id}/return-to-branch`,
         };
 
-        router.patch(routes[action as keyof typeof routes], { comments }, {
+        const payload: Record<string, unknown> = { comments };
+        if (action === 'reject') {
+            payload.push_to_block_list = pushToBlockList;
+            if (pushToBlockList) {
+                payload.block_list = {
+                    name_bn: admissionBlockList.name_bn || undefined,
+                    father_name: admissionBlockList.father_name || undefined,
+                    mother_name: admissionBlockList.mother_name || undefined,
+                    spouse_name: admissionBlockList.spouse_name || undefined,
+                    dob: admissionBlockList.dob || undefined,
+                    nid_number: admissionBlockList.nid_number,
+                    phone_number: (admissionBlockList.phone_number ?? '').replace(/\D/g, ''),
+                    address: admissionBlockList.address || undefined,
+                };
+            }
+        }
+
+        router.patch(routes[action as keyof typeof routes], payload, {
             ...keepListFilters,
-            onSuccess: () => {
-                setShowModal(false);
-                setSelectedApproval(null);
-                setAction(null);
-                setComments('');
+            onSuccess: (visit) => {
+                const flashError = (visit.props as { flash?: { error?: string | null } }).flash?.error;
+                if (flashError) {
+                    setServerError(flashError);
+                    setIsSubmitting(false);
+                    return;
+                }
+                closeAdmissionModal();
+            },
+            onError: (errors) => {
+                applyServerErrors(errors);
                 setIsSubmitting(false);
             },
-            onError: () => setIsSubmitting(false),
         });
     };
 
@@ -397,17 +547,12 @@ export default function Index({
         const isBranch = loanApproval.level === 'branch';
         const amount = Number(loanApproval.requested_amount || 0);
 
-        if (actionType === 'approve' && isBranch && amount > 70000) {
+        if (actionType === 'approve' && isBranch && amount >= 70000) {
             setSelectedLoanApproval(loanApproval);
             setLoanAction('forward');
             setLoanComments('');
             setLoanApprovedAmount('');
             setLoanForwardToUserId('');
-            setLoanPushToBlockList(true);
-            setLoanBlockList(emptyBlockList());
-            setLoanBlockErrors({});
-            setUsernameVerified(false);
-            setUsernameVerifyError(null);
             setShowLoanModal(true);
             return;
         }
@@ -421,23 +566,6 @@ export default function Index({
                 : ''
         );
         setLoanForwardToUserId('');
-        if (actionType === 'reject') {
-            const bl = buildBlockListFromLoan(loanApproval);
-            setLoanPushToBlockList(true);
-            setLoanBlockList(bl);
-            setLoanBlockErrors({
-                nid_number: !bl.nid_number || bl.nid_number.length < 10 ? 'NID নম্বর প্রয়োজন' : null,
-                phone_number: !bl.phone_number || bl.phone_number.length < 10 ? 'ফোন নম্বর প্রয়োজন' : null,
-            });
-            setUsernameVerified(false);
-            setUsernameVerifyError(null);
-        } else {
-            setLoanPushToBlockList(true);
-            setLoanBlockList(emptyBlockList());
-            setLoanBlockErrors({});
-            setUsernameVerified(false);
-            setUsernameVerifyError(null);
-        }
         setShowLoanModal(true);
     };
 
@@ -448,12 +576,6 @@ export default function Index({
         setLoanComments('');
         setLoanApprovedAmount('');
         setLoanForwardToUserId('');
-        setLoanPushToBlockList(true);
-        setLoanBlockList(emptyBlockList());
-        setLoanBlockErrors({});
-        setUsernameVerified(false);
-        setUsernameVerifyError(null);
-        setUsernameVerifying(false);
         setIsSubmitting(false);
     };
 
@@ -463,11 +585,16 @@ export default function Index({
             setUsernameVerifyError('Username সেট করা নেই');
             return;
         }
+        if (!selectedApproval?.branch_code?.trim()) {
+            setUsernameVerified(false);
+            setUsernameVerifyError('শাখার code পাওয়া যায়নি। Block list যাচাই করা যায়নি।');
+            return;
+        }
         setUsernameVerifying(true);
         setUsernameVerifyError(null);
         setUsernameVerified(false);
         try {
-            const result = await fetchBlockListUsernameVerify(selectedLoanApproval?.branch_code);
+            const result = await fetchBlockListUsernameVerify(selectedApproval.branch_code);
             if (result.ok) {
                 setUsernameVerified(true);
                 setUsernameVerifyError(null);
@@ -481,38 +608,76 @@ export default function Index({
         } finally {
             setUsernameVerifying(false);
         }
-    }, [authUsername, selectedLoanApproval?.branch_code]);
+    }, [authUsername, selectedApproval?.branch_code]);
 
     useEffect(() => {
-        if (loanAction !== 'reject' || !loanPushToBlockList || !showLoanModal) {
+        if (action !== 'reject' || !pushToBlockList || !showModal) {
+            setUsernameVerified(false);
             return;
         }
         verifyBlockListUsername();
-    }, [loanAction, loanPushToBlockList, showLoanModal, verifyBlockListUsername]);
+    }, [action, pushToBlockList, showModal, verifyBlockListUsername]);
 
-    const setLoanBlockField = (key: keyof BlockListFields, value: string) => {
-        setLoanBlockList((prev) => ({ ...prev, [key]: value }));
+    const getUsernameError = (): string | null => {
+        if (action !== 'reject' || !pushToBlockList) return null;
+        if (!authUsername?.trim()) return 'Username সেট করা নেই';
+        if (!selectedApproval?.branch_code?.trim()) return 'শাখার code পাওয়া যায়নি';
+        if (usernameVerifying) return 'Username যাচাই হচ্ছে...';
+        if (usernameVerifyError) return usernameVerifyError;
+        if (!usernameVerified) return 'Username block list-এ যাচাই করুন';
+        return null;
     };
 
-    const validateLoanRejectBlockList = (): boolean => {
-        if (!loanPushToBlockList) return true;
-        const errors: Record<string, string | null> = {};
-        const nid = loanBlockList.nid_number ?? '';
-        const phone = loanBlockList.phone_number ?? '';
-        if (!nid.trim()) errors.nid_number = 'NID নম্বর প্রয়োজন';
-        else if (nid.length < 10 || nid.length > 17) errors.nid_number = 'NID ১০–১৭ অঙ্কের হতে হবে';
-        else errors.nid_number = null;
-        if (!phone.trim()) errors.phone_number = 'ফোন নম্বর প্রয়োজন';
-        else if (phone.length < 10 || phone.length > 14) errors.phone_number = 'ফোন নম্বর ১০–১৪ অঙ্কের হতে হবে';
-        else errors.phone_number = null;
-        setLoanBlockErrors(errors);
-        if (errors.nid_number || errors.phone_number) return false;
-        if (!authUsername?.trim()) {
-            setUsernameVerifyError('Username সেট করা নেই');
-            return false;
+    const handleRefreshUsername = () => {
+        setCheckingUsername(true);
+        router.get(pageUrl, {}, {
+            preserveScroll: true,
+            preserveState: true,
+            onFinish: () => {
+                setCheckingUsername(false);
+                if (action === 'reject' && pushToBlockList) {
+                    verifyBlockListUsername();
+                }
+            },
+        });
+    };
+
+    const setAdmissionBlockField = (key: keyof BlockListFields, value: string) => {
+        setAdmissionBlockList((prev) => ({ ...prev, [key]: value }));
+    };
+
+    const validateAdmissionReject = (): boolean => {
+        const commentErr = validateRejectComments(comments);
+        setCommentsError(commentErr);
+
+        if (!pushToBlockList) {
+            return !commentErr;
         }
-        if (!usernameVerified) {
-            setUsernameVerifyError(usernameVerifyError || 'Username block list-এ যাচাই করুন');
+
+        const nextErrors: Record<string, string | null> = {
+            nid_number: validateNid(admissionBlockList.nid_number ?? ''),
+            phone_number: validatePhone(admissionBlockList.phone_number ?? ''),
+            dob: validateDob(admissionBlockList.dob),
+        };
+        setAdmissionBlockErrors(nextErrors);
+
+        const usernameErr = getUsernameError();
+        if (usernameErr && usernameErr !== 'Username যাচাই হচ্ছে...') {
+            setUsernameVerifyError(usernameErr);
+        }
+
+        const hasFieldError = Object.values(nextErrors).some(Boolean);
+        if (commentErr || hasFieldError || usernameErr) {
+            const problems = [
+                commentErr,
+                usernameErr && usernameErr !== 'Username যাচাই হচ্ছে...' ? usernameErr : null,
+                nextErrors.nid_number,
+                nextErrors.phone_number,
+                nextErrors.dob,
+            ].filter(Boolean) as string[];
+            if (problems.length > 0) {
+                setServerError(problems[0]);
+            }
             return false;
         }
         return true;
@@ -528,10 +693,6 @@ export default function Index({
 
         if (loanAction === 'reject' && !loanComments.trim()) {
             alert('প্রত্যাখ্যানের জন্য মন্তব্য দিন।');
-            return;
-        }
-
-        if (loanAction === 'reject' && !validateLoanRejectBlockList()) {
             return;
         }
 
@@ -564,21 +725,6 @@ export default function Index({
         const payload: Record<string, unknown> = { comments: loanComments };
         if (loanAction === 'approve') {
             payload.approved_amount = Math.round(Number(loanApprovedAmount));
-        }
-        if (loanAction === 'reject') {
-            payload.push_to_block_list = loanPushToBlockList;
-            if (loanPushToBlockList) {
-                payload.block_list = {
-                    name_bn: loanBlockList.name_bn || undefined,
-                    father_name: loanBlockList.father_name || undefined,
-                    mother_name: loanBlockList.mother_name || undefined,
-                    spouse_name: loanBlockList.spouse_name || undefined,
-                    dob: loanBlockList.dob || undefined,
-                    nid_number: loanBlockList.nid_number,
-                    phone_number: (loanBlockList.phone_number ?? '').replace(/\D/g, ''),
-                    address: loanBlockList.address || undefined,
-                };
-            }
         }
 
         router.patch(
@@ -1120,7 +1266,7 @@ export default function Index({
                                 {/* MOBILE CARDS VIEW FOR LOAN APPROVALS (md:hidden) */}
                                 <div className="md:hidden flex flex-col gap-2.5">
                                     {filteredLoanApprovals.map((la) => {
-                                        const isHighAmount = la.level === 'branch' && Number(la.requested_amount || 0) > 70000;
+                                        const isHighAmount = la.level === 'branch' && Number(la.requested_amount || 0) >= 70000;
                                         return (
                                             <div
                                                 key={la.id}
@@ -1226,7 +1372,7 @@ export default function Index({
                                             </thead>
                                             <tbody className="divide-y divide-slate-100 text-xs">
                                                 {filteredLoanApprovals.map((la) => {
-                                                    const isHighAmount = la.level === 'branch' && Number(la.requested_amount || 0) > 70000;
+                                                    const isHighAmount = la.level === 'branch' && Number(la.requested_amount || 0) >= 70000;
                                                     return (
                                                         <tr key={la.id} className="hover:bg-slate-50/80 transition-colors group">
                                                             <td className="py-2.5 px-3.5">
@@ -1393,7 +1539,7 @@ export default function Index({
             {/* ── MEMBER ADMISSION ACTION MODAL ───────────────────────────── */}
             {showModal && selectedApproval && action && (
                 <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center z-50 p-4 overflow-y-auto animate-in fade-in duration-200">
-                    <div className="bg-white rounded-2xl p-5 max-w-md w-full shadow-2xl border border-slate-200 space-y-3.5">
+                    <div className={`bg-white rounded-2xl p-5 w-full max-h-[90vh] overflow-y-auto shadow-2xl border border-slate-200 space-y-3.5 ${action === 'reject' ? 'max-w-xl' : 'max-w-md'}`}>
                         <div className="flex items-center justify-between border-b border-slate-100 pb-2.5">
                             <div className="flex items-center gap-2">
                                 <div className={`w-7 h-7 rounded-lg flex items-center justify-center ${
@@ -1412,13 +1558,13 @@ export default function Index({
                                 </div>
                                 <h3 className="text-sm font-bold text-slate-900">
                                     {action === 'approve' && 'সদস্য ভর্তি অনুমোদন'}
-                                    {action === 'reject' && 'সদস্য ভর্তি বাতিল'}
+                                    {action === 'reject' && 'সদস্য ভর্তি বাতিল ও ব্লক লিস্ট'}
                                     {action === 'return' && 'শাখায় ফেরত পাঠান'}
                                     {action === 'forward' && 'উচ্চতর কর্মকর্তা নির্বাচন ও ফরওয়ার্ড'}
                                 </h3>
                             </div>
                             <button
-                                onClick={() => setShowModal(false)}
+                                onClick={closeAdmissionModal}
                                 className="p-1 rounded-full text-slate-400 hover:text-slate-600 hover:bg-slate-100 transition"
                             >
                                 <X className="w-4 h-4" />
@@ -1441,6 +1587,12 @@ export default function Index({
                                 <span className="text-slate-500">শাখা ও সমিতি:</span>
                                 <span className="text-slate-800 font-semibold">{selectedApproval.branch_name} · {selectedApproval.samity_name}</span>
                             </div>
+                            {selectedApproval.branch_code ? (
+                                <div className="flex justify-between items-center">
+                                    <span className="text-slate-500">শাখা কোড:</span>
+                                    <strong className="font-mono text-slate-800">{selectedApproval.branch_code}</strong>
+                                </div>
+                            ) : null}
                             {selectedApproval.requested_loan_amount ? (
                                 <div className="flex justify-between items-center pt-1 border-t border-slate-200/60">
                                     <span className="text-slate-500">ঋণ চাহিদা:</span>
@@ -1460,7 +1612,7 @@ export default function Index({
                                         <span>উচ্চতর কর্মকর্তা নির্বাচন প্রয়োজন</span>
                                     </p>
                                     <p className="text-[11px] leading-relaxed text-amber-800">
-                                        ঋণ চাহিদা <strong>৳ {Number(selectedApproval.requested_loan_amount || 0).toLocaleString('bn-BD')}</strong> (৭০,০০০ টাকার বেশি)। পরবর্তী কর্মকর্তা নির্বাচন করুন।
+                                        ঋণ চাহিদা <strong>৳ {Number(selectedApproval.requested_loan_amount || 0).toLocaleString('bn-BD')}</strong> (৭০,০০০ টাকা বা তার বেশি)। পরবর্তী কর্মকর্তা নির্বাচন করুন।
                                     </p>
                                 </div>
                                 <div className="space-y-1">
@@ -1483,24 +1635,220 @@ export default function Index({
                             </div>
                         )}
 
+                        {action === 'reject' && (() => {
+                            const usernameErr = getUsernameError();
+                            const problems = [
+                                serverError,
+                                commentsError,
+                                pushToBlockList ? usernameErr : null,
+                                pushToBlockList ? admissionBlockErrors.nid_number : null,
+                                pushToBlockList ? admissionBlockErrors.phone_number : null,
+                                pushToBlockList ? admissionBlockErrors.dob : null,
+                                pushToBlockList && !selectedApproval.branch_code ? 'শাখার code নেই — block list যাচাই করা যায়নি' : null,
+                            ].filter((item, index, arr): item is string => Boolean(item) && arr.indexOf(item) === index);
+                            return problems.length > 0 ? (
+                                <div className="rounded-xl border border-rose-300 bg-rose-50 p-3">
+                                    <p className="text-xs font-bold text-rose-800">প্রত্যাখ্যান করা যাচ্ছে না — সমস্যা:</p>
+                                    <ul className="mt-1.5 list-disc space-y-0.5 pl-4 text-[11px] font-medium text-rose-700">
+                                        {problems.map((problem) => (
+                                            <li key={problem}>{problem}</li>
+                                        ))}
+                                    </ul>
+                                </div>
+                            ) : null;
+                        })()}
+
                         <div className="space-y-1">
                             <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider">
                                 মন্তব্য {action !== 'approve' && action !== 'forward' && <span className="text-rose-500">*</span>}
                             </label>
                             <textarea
                                 value={comments}
-                                onChange={(e) => setComments(e.target.value)}
+                                onChange={(e) => {
+                                    setComments(e.target.value);
+                                    if (action === 'reject') {
+                                        setCommentsError(validateRejectComments(e.target.value));
+                                    }
+                                }}
                                 rows={3}
-                                className="w-full border border-slate-300 rounded-xl p-2.5 text-xs focus:outline-none focus:ring-1 focus:ring-blue-500 focus:border-blue-500 text-slate-900 transition"
-                                placeholder={action === 'forward' ? 'ঐচ্ছিক মন্তব্য লিখুন...' : 'এখানে বিস্তারিত মন্তব্য লিখুন...'}
+                                className={`w-full border rounded-xl p-2.5 text-xs focus:outline-none focus:ring-1 focus:ring-blue-500 focus:border-blue-500 text-slate-900 transition ${
+                                    commentsError ? 'border-rose-400' : 'border-slate-300'
+                                }`}
+                                placeholder={action === 'forward' ? 'ঐচ্ছিক মন্তব্য লিখুন...' : action === 'reject' ? 'প্রত্যাখ্যানের কারণ লিখুন...' : 'এখানে বিস্তারিত মন্তব্য লিখুন...'}
                                 required={action !== 'approve' && action !== 'forward'}
                             />
+                            <FieldError message={commentsError} />
                         </div>
+
+                        {action === 'reject' && (
+                            <div className="space-y-2.5">
+                                <label className="flex cursor-pointer items-start gap-2.5 rounded-xl border border-slate-200 bg-white p-2.5 shadow-sm">
+                                    <input
+                                        type="checkbox"
+                                        checked={pushToBlockList}
+                                        onChange={(e) => {
+                                            setPushToBlockList(e.target.checked);
+                                            setServerError(null);
+                                        }}
+                                        className="mt-0.5 h-3.5 w-3.5 rounded border-slate-300 text-rose-600 focus:ring-rose-500"
+                                    />
+                                    <div>
+                                        <p className="text-xs font-bold text-slate-900">Block List-এ যোগ করুন</p>
+                                        <p className="text-[10px] text-slate-500">আনচেক করলে শুধুমাত্র সদস্য আবেদন বাতিল হবে</p>
+                                    </div>
+                                </label>
+
+                                {pushToBlockList && (
+                                    <div className="space-y-2.5 rounded-xl border border-rose-200/80 bg-gradient-to-br from-rose-50/80 via-white to-orange-50/40 p-3">
+                                        <div className={`rounded-xl border p-3 ${getUsernameError() ? 'border-rose-300 bg-rose-50/80' : usernameVerified ? 'border-emerald-300 bg-emerald-50/60' : 'border-slate-200 bg-white'}`}>
+                                            <div className="flex flex-wrap items-center gap-2">
+                                                <p className="flex-1 text-xs text-slate-500">
+                                                    {authUsername.trim() ? (
+                                                        <>
+                                                            Block list Username:{' '}
+                                                            <span className={`font-semibold ${usernameVerified ? 'text-emerald-700' : getUsernameError() ? 'text-rose-700' : 'text-slate-700'}`}>
+                                                                {authUsername}
+                                                            </span>
+                                                        </>
+                                                    ) : (
+                                                        <span className="font-semibold text-rose-600">Username সেট করা নেই</span>
+                                                    )}
+                                                    <span className="text-slate-400">
+                                                        {' '}· শাখা {selectedApproval.branch_name}
+                                                        {selectedApproval.branch_code ? ` (${selectedApproval.branch_code})` : ' (কোড নেই)'}
+                                                    </span>
+                                                </p>
+                                                <button
+                                                    type="button"
+                                                    onClick={() => {
+                                                        if (!checkingUsername && !usernameVerifying) {
+                                                            handleRefreshUsername();
+                                                        }
+                                                    }}
+                                                    disabled={checkingUsername || usernameVerifying}
+                                                    className="inline-flex items-center gap-1 rounded-lg border border-slate-200 bg-white px-2 py-1 text-[10px] font-bold text-slate-600 disabled:opacity-60"
+                                                >
+                                                    {checkingUsername || usernameVerifying ? 'যাচাই...' : 'যাচাই করুন'}
+                                                </button>
+                                            </div>
+                                            <FieldError message={getUsernameError()} />
+                                            {usernameVerified && !getUsernameError() && (
+                                                <p className="mt-1 text-[11px] font-medium text-emerald-700">
+                                                    Block list-এ username ও শাখা মিলেছে
+                                                </p>
+                                            )}
+                                        </div>
+
+                                        <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                                            <div className="sm:col-span-2">
+                                                <label className="text-[10px] font-bold text-slate-600 uppercase">
+                                                    NID <span className="text-rose-500">*</span>
+                                                </label>
+                                                <input
+                                                    type="text"
+                                                    inputMode="numeric"
+                                                    value={admissionBlockList.nid_number ?? ''}
+                                                    onChange={(e) => {
+                                                        const v = toEnglishDigits(e.target.value);
+                                                        setAdmissionBlockField('nid_number', v);
+                                                        setAdmissionBlockErrors((prev) => ({
+                                                            ...prev,
+                                                            nid_number: validateNid(v),
+                                                        }));
+                                                    }}
+                                                    placeholder="শুধু সংখ্যা"
+                                                    className={`mt-0.5 w-full border rounded-lg px-2.5 py-1.5 text-xs bg-white outline-none ${admissionBlockErrors.nid_number ? 'border-rose-400' : 'border-slate-300'}`}
+                                                />
+                                                <FieldError message={admissionBlockErrors.nid_number} />
+                                            </div>
+
+                                            <div>
+                                                <label className="text-[10px] font-bold text-slate-600 uppercase">
+                                                    ফোন <span className="text-rose-500">*</span>
+                                                </label>
+                                                <input
+                                                    type="text"
+                                                    inputMode="numeric"
+                                                    value={admissionBlockList.phone_number ?? ''}
+                                                    onChange={(e) => {
+                                                        const v = toEnglishDigits(e.target.value);
+                                                        setAdmissionBlockField('phone_number', v);
+                                                        setAdmissionBlockErrors((prev) => ({
+                                                            ...prev,
+                                                            phone_number: validatePhone(v),
+                                                        }));
+                                                    }}
+                                                    placeholder="01XXXXXXXXX"
+                                                    className={`mt-0.5 w-full border rounded-lg px-2.5 py-1.5 text-xs bg-white outline-none ${admissionBlockErrors.phone_number ? 'border-rose-400' : 'border-slate-300'}`}
+                                                />
+                                                <FieldError message={admissionBlockErrors.phone_number} />
+                                            </div>
+
+                                            <div>
+                                                <label className="text-[10px] font-bold text-slate-600 uppercase">নাম (বাংলা)</label>
+                                                <input
+                                                    type="text"
+                                                    value={admissionBlockList.name_bn ?? ''}
+                                                    onChange={(e) => setAdmissionBlockField('name_bn', e.target.value)}
+                                                    className="mt-0.5 w-full border border-slate-300 rounded-lg px-2.5 py-1.5 text-xs bg-white outline-none"
+                                                />
+                                            </div>
+
+                                            <div>
+                                                <label className="text-[10px] font-bold text-slate-600 uppercase">জন্ম তারিখ</label>
+                                                <SmartDateInput
+                                                    value={admissionBlockList.dob}
+                                                    onChange={(v) => {
+                                                        setAdmissionBlockField('dob', v);
+                                                        setAdmissionBlockErrors((prev) => ({
+                                                            ...prev,
+                                                            dob: validateDob(v),
+                                                        }));
+                                                    }}
+                                                    className="mt-0.5"
+                                                    error={admissionBlockErrors.dob}
+                                                />
+                                            </div>
+
+                                            <div>
+                                                <label className="text-[10px] font-bold text-slate-600 uppercase">পিতার নাম</label>
+                                                <input
+                                                    type="text"
+                                                    value={admissionBlockList.father_name ?? ''}
+                                                    onChange={(e) => setAdmissionBlockField('father_name', e.target.value)}
+                                                    className="mt-0.5 w-full border border-slate-300 rounded-lg px-2.5 py-1.5 text-xs bg-white outline-none"
+                                                />
+                                            </div>
+
+                                            <div>
+                                                <label className="text-[10px] font-bold text-slate-600 uppercase">মাতার নাম</label>
+                                                <input
+                                                    type="text"
+                                                    value={admissionBlockList.mother_name ?? ''}
+                                                    onChange={(e) => setAdmissionBlockField('mother_name', e.target.value)}
+                                                    className="mt-0.5 w-full border border-slate-300 rounded-lg px-2.5 py-1.5 text-xs bg-white outline-none"
+                                                />
+                                            </div>
+
+                                            <div className="sm:col-span-2">
+                                                <label className="text-[10px] font-bold text-slate-600 uppercase">ঠিকানা</label>
+                                                <textarea
+                                                    rows={1.5}
+                                                    value={admissionBlockList.address ?? ''}
+                                                    onChange={(e) => setAdmissionBlockField('address', e.target.value)}
+                                                    className="mt-0.5 w-full border border-slate-300 rounded-lg px-2.5 py-1.5 text-xs bg-white outline-none resize-none"
+                                                />
+                                            </div>
+                                        </div>
+                                    </div>
+                                )}
+                            </div>
+                        )}
 
                         <div className="flex items-center justify-end gap-2 pt-1">
                             <button
                                 type="button"
-                                onClick={() => setShowModal(false)}
+                                onClick={closeAdmissionModal}
                                 className="px-3.5 py-2 border border-slate-300 rounded-xl text-xs font-bold text-slate-700 hover:bg-slate-50 transition"
                             >
                                 বাতিল
@@ -1508,11 +1856,7 @@ export default function Index({
                             <button
                                 type="button"
                                 onClick={submitAction}
-                                disabled={
-                                    isSubmitting ||
-                                    (action !== 'approve' && action !== 'forward' && !comments.trim()) ||
-                                    (action === 'forward' && !forwardToUserId)
-                                }
+                                disabled={isSubmitting || (action === 'forward' && !forwardToUserId)}
                                 className={`px-4 py-2 rounded-xl text-xs font-bold text-white shadow-xs transition disabled:opacity-50 disabled:cursor-not-allowed ${
                                     action === 'approve'
                                         ? 'bg-emerald-600 hover:bg-emerald-700'
@@ -1523,7 +1867,13 @@ export default function Index({
                                             : 'bg-amber-600 hover:bg-amber-700'
                                 }`}
                             >
-                                {isSubmitting ? 'প্রসেসিং...' : 'নিশ্চিত করুন'}
+                                {isSubmitting
+                                    ? 'প্রসেসিং...'
+                                    : action === 'reject'
+                                      ? pushToBlockList
+                                        ? 'প্রত্যাখ্যান ও Block List'
+                                        : 'শুধু প্রত্যাখ্যান'
+                                      : 'নিশ্চিত করুন'}
                             </button>
                         </div>
                     </div>
@@ -1533,7 +1883,7 @@ export default function Index({
             {/* ── LOAN ACTION MODAL ────────────────────────────────────────── */}
             {showLoanModal && selectedLoanApproval && loanAction && (
                 <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center z-50 p-4 overflow-y-auto animate-in fade-in duration-200">
-                    <div className={`bg-white rounded-2xl p-5 w-full max-h-[90vh] overflow-y-auto shadow-2xl border border-slate-200 space-y-3.5 ${loanAction === 'reject' ? 'max-w-xl' : 'max-w-md'}`}>
+                    <div className="bg-white rounded-2xl p-5 max-w-md w-full max-h-[90vh] overflow-y-auto shadow-2xl border border-slate-200 space-y-3.5">
                         <div className="flex items-center justify-between border-b border-slate-100 pb-2.5">
                             <div className="flex items-center gap-2">
                                 <div className={`w-7 h-7 rounded-lg flex items-center justify-center ${
@@ -1552,7 +1902,7 @@ export default function Index({
                                         ? 'ঋণ আবেদন অনুমোদন'
                                         : loanAction === 'forward'
                                           ? 'উচ্চতর অনুমোদনকারীর নিকট ফরওয়ার্ড'
-                                          : 'ঋণ আবেদন প্রত্যাখ্যান ও ব্লক লিস্ট'}
+                                          : 'ঋণ আবেদন প্রত্যাখ্যান'}
                                 </h3>
                             </div>
                             <button
@@ -1606,7 +1956,7 @@ export default function Index({
                                     ))}
                                 </select>
                                 <p className="text-[11px] text-amber-800 bg-amber-50 border border-amber-200 rounded-lg p-2">
-                                    ৭০,০০০ টাকার বেশি ঋণের জন্য উচ্চতর কর্মকর্তার কাছে ফরওয়ার্ড করা হচ্ছে।
+                                    ৭০,০০০ টাকা বা তার বেশি ঋণের জন্য উচ্চতর কর্মকর্তার কাছে ফরওয়ার্ড করা হচ্ছে।
                                 </p>
                             </div>
                         )}
@@ -1657,157 +2007,6 @@ export default function Index({
                             />
                         </div>
 
-                        {/* Reject + Block List Section */}
-                        {loanAction === 'reject' && (
-                            <div className="space-y-2.5">
-                                <label className="flex cursor-pointer items-start gap-2.5 rounded-xl border border-slate-200 bg-slate-50 p-2.5 transition">
-                                    <input
-                                        type="checkbox"
-                                        checked={loanPushToBlockList}
-                                        onChange={(e) => setLoanPushToBlockList(e.target.checked)}
-                                        className="mt-0.5 h-3.5 w-3.5 rounded border-slate-300 text-rose-600 focus:ring-rose-500"
-                                    />
-                                    <div>
-                                        <p className="text-xs font-bold text-slate-900">Block List-এ সদস্যের তথ্য সংরক্ষণ করুন</p>
-                                        <p className="text-[10px] text-slate-500">আনচেক করলে শুধুমাত্র ঋণ বাতিল হবে</p>
-                                    </div>
-                                </label>
-
-                                {loanPushToBlockList && (
-                                    <div className="space-y-2.5 rounded-xl border border-rose-200 bg-rose-50/40 p-3">
-                                        <div className={`rounded-lg border p-2 ${usernameVerifyError ? 'border-rose-300 bg-rose-50' : usernameVerified ? 'border-emerald-300 bg-emerald-50/70' : 'border-slate-200 bg-white'}`}>
-                                            <div className="flex flex-wrap items-center justify-between gap-1.5">
-                                                <p className="text-[11px] text-slate-600 font-medium">
-                                                    অপারেটর:{' '}
-                                                    <span className={`font-bold ${usernameVerified ? 'text-emerald-800' : usernameVerifyError ? 'text-rose-800' : 'text-slate-800'}`}>
-                                                        {authUsername || 'সেট নেই'}
-                                                    </span>
-                                                </p>
-                                                <button
-                                                    type="button"
-                                                    onClick={() => verifyBlockListUsername()}
-                                                    disabled={usernameVerifying}
-                                                    className="inline-flex items-center gap-1 rounded border border-slate-300 bg-white px-2 py-0.5 text-[10px] font-bold text-slate-700 hover:bg-slate-50 disabled:opacity-60 transition"
-                                                >
-                                                    {usernameVerifying ? 'যাচাই হচ্ছে...' : 'যাচাই'}
-                                                </button>
-                                            </div>
-                                            {usernameVerifyError && (
-                                                <p className="mt-1 text-[10px] font-semibold text-rose-600">{usernameVerifyError}</p>
-                                            )}
-                                        </div>
-
-                                        <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-                                            <div>
-                                                <label className="text-[10px] font-bold text-slate-600 uppercase">
-                                                    NID <span className="text-rose-500">*</span>
-                                                </label>
-                                                <input
-                                                    type="text"
-                                                    inputMode="numeric"
-                                                    value={loanBlockList.nid_number ?? ''}
-                                                    onChange={(e) => {
-                                                        const v = toEnglishDigits(e.target.value);
-                                                        setLoanBlockField('nid_number', v);
-                                                        setLoanBlockErrors((prev) => ({
-                                                            ...prev,
-                                                            nid_number: !v.trim()
-                                                                ? 'NID নম্বর প্রয়োজন'
-                                                                : v.length < 10 || v.length > 17
-                                                                  ? 'NID ১০–১৭ অঙ্কের হতে হবে'
-                                                                  : null,
-                                                        }));
-                                                    }}
-                                                    placeholder="NID নম্বর"
-                                                    className={`mt-0.5 w-full border rounded-lg px-2.5 py-1.5 text-xs bg-white outline-none ${loanBlockErrors.nid_number ? 'border-rose-400' : 'border-slate-300'}`}
-                                                />
-                                                {loanBlockErrors.nid_number && (
-                                                    <p className="mt-0.5 text-[10px] text-rose-600 font-medium">{loanBlockErrors.nid_number}</p>
-                                                )}
-                                            </div>
-
-                                            <div>
-                                                <label className="text-[10px] font-bold text-slate-600 uppercase">
-                                                    ফোন <span className="text-rose-500">*</span>
-                                                </label>
-                                                <input
-                                                    type="text"
-                                                    inputMode="numeric"
-                                                    value={loanBlockList.phone_number ?? ''}
-                                                    onChange={(e) => {
-                                                        const v = toEnglishDigits(e.target.value);
-                                                        setLoanBlockField('phone_number', v);
-                                                        setLoanBlockErrors((prev) => ({
-                                                            ...prev,
-                                                            phone_number: !v.trim()
-                                                                ? 'ফোন নম্বর প্রয়োজন'
-                                                                : v.length < 10 || v.length > 14
-                                                                  ? 'ফোন নম্বর ১০–১৪ অঙ্কের হতে হবে'
-                                                                  : null,
-                                                        }));
-                                                    }}
-                                                    placeholder="01XXXXXXXXX"
-                                                    className={`mt-0.5 w-full border rounded-lg px-2.5 py-1.5 text-xs bg-white outline-none ${loanBlockErrors.phone_number ? 'border-rose-400' : 'border-slate-300'}`}
-                                                />
-                                                {loanBlockErrors.phone_number && (
-                                                    <p className="mt-0.5 text-[10px] text-rose-600 font-medium">{loanBlockErrors.phone_number}</p>
-                                                )}
-                                            </div>
-
-                                            <div>
-                                                <label className="text-[10px] font-bold text-slate-600 uppercase">নাম (বাংলা)</label>
-                                                <input
-                                                    type="text"
-                                                    value={loanBlockList.name_bn ?? ''}
-                                                    onChange={(e) => setLoanBlockField('name_bn', e.target.value)}
-                                                    className="mt-0.5 w-full border border-slate-300 rounded-lg px-2.5 py-1.5 text-xs bg-white outline-none"
-                                                />
-                                            </div>
-
-                                            <div>
-                                                <label className="text-[10px] font-bold text-slate-600 uppercase">জন্ম তারিখ</label>
-                                                <SmartDateInput
-                                                    value={loanBlockList.dob}
-                                                    onChange={(v) => setLoanBlockField('dob', v)}
-                                                    className="mt-0.5"
-                                                />
-                                            </div>
-
-                                            <div>
-                                                <label className="text-[10px] font-bold text-slate-600 uppercase">পিতার নাম</label>
-                                                <input
-                                                    type="text"
-                                                    value={loanBlockList.father_name ?? ''}
-                                                    onChange={(e) => setLoanBlockField('father_name', e.target.value)}
-                                                    className="mt-0.5 w-full border border-slate-300 rounded-lg px-2.5 py-1.5 text-xs bg-white outline-none"
-                                                />
-                                            </div>
-
-                                            <div>
-                                                <label className="text-[10px] font-bold text-slate-600 uppercase">মাতার নাম</label>
-                                                <input
-                                                    type="text"
-                                                    value={loanBlockList.mother_name ?? ''}
-                                                    onChange={(e) => setLoanBlockField('mother_name', e.target.value)}
-                                                    className="mt-0.5 w-full border border-slate-300 rounded-lg px-2.5 py-1.5 text-xs bg-white outline-none"
-                                                />
-                                            </div>
-
-                                            <div className="sm:col-span-2">
-                                                <label className="text-[10px] font-bold text-slate-600 uppercase">ঠিকানা</label>
-                                                <textarea
-                                                    rows={1.5}
-                                                    value={loanBlockList.address ?? ''}
-                                                    onChange={(e) => setLoanBlockField('address', e.target.value)}
-                                                    className="mt-0.5 w-full border border-slate-300 rounded-lg px-2.5 py-1.5 text-xs bg-white outline-none resize-none"
-                                                />
-                                            </div>
-                                        </div>
-                                    </div>
-                                )}
-                            </div>
-                        )}
-
                         <div className="flex items-center justify-end gap-2 pt-1">
                             <button
                                 type="button"
@@ -1823,17 +2022,7 @@ export default function Index({
                                     isSubmitting ||
                                     (loanAction === 'approve' && !loanApprovedAmount.trim()) ||
                                     (loanAction === 'forward' && !loanForwardToUserId) ||
-                                    (loanAction === 'reject' && (
-                                        !loanComments.trim() ||
-                                        (loanPushToBlockList && (
-                                            !loanBlockList.nid_number?.trim() ||
-                                            !loanBlockList.phone_number?.trim() ||
-                                            Boolean(loanBlockErrors.nid_number) ||
-                                            Boolean(loanBlockErrors.phone_number) ||
-                                            usernameVerifying ||
-                                            !usernameVerified
-                                        ))
-                                    ))
+                                    (loanAction === 'reject' && !loanComments.trim())
                                 }
                                 className={`px-4 py-2 rounded-xl text-xs font-bold text-white shadow-xs transition disabled:opacity-50 disabled:cursor-not-allowed ${
                                     loanAction === 'approve'

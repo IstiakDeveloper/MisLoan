@@ -1,7 +1,7 @@
 import React, { useState, useMemo } from 'react';
-import { Head, router, useForm } from '@inertiajs/react';
+import { Head, router, useForm, usePage } from '@inertiajs/react';
 import AdminLayout from '@/layouts/admin-layout';
-import { formatDate, formatDateTime } from '@/utils/dateUtils';
+import { formatDate, formatDateTime, formatTime } from '@/utils/dateUtils';
 import ListPagination from '@/components/ListPagination';
 import AutoFitTableContainer from '@/components/AutoFitTableContainer';
 import { formatBranchLabel, keepListFilters, sortBranchesByCode } from '@/utils/branchLabel';
@@ -75,6 +75,7 @@ interface Admission {
     status?: string;
     branch: {
         name: string;
+        code?: string;
     };
     samity: {
         samity_name: string;
@@ -122,6 +123,8 @@ const PRESET_ISSUES = [
 ];
 
 export default function ProcessAdmissions({ admissions, filters, zones = [], areas = [], branches = [] }: Props) {
+    const { auth } = usePage().props as { auth?: { user?: { username?: string | null } } };
+    const authUsername = auth?.user?.username ?? '';
     const getCurrentMonth = () => {
         const now = new Date();
         const year = now.getFullYear();
@@ -145,6 +148,9 @@ export default function ProcessAdmissions({ admissions, filters, zones = [], are
     const [showViewModal, setShowViewModal] = useState(false);
     const [showRejectModal, setShowRejectModal] = useState(false);
     const [rejectionReason, setRejectionReason] = useState('');
+    const [pushToBlockList, setPushToBlockList] = useState(true);
+    const [rejectError, setRejectError] = useState<string | null>(null);
+    const [rejectFieldErrors, setRejectFieldErrors] = useState<string[]>([]);
 
     const { data, setData, post, processing, reset, errors } = useForm({
         issue_description: '',
@@ -369,6 +375,9 @@ export default function ProcessAdmissions({ admissions, filters, zones = [], are
     const openRejectModal = (admission: Admission) => {
         setSelectedAdmission(admission);
         setRejectionReason('');
+        setPushToBlockList(true);
+        setRejectError(null);
+        setRejectFieldErrors([]);
         setShowRejectModal(true);
     };
 
@@ -376,19 +385,51 @@ export default function ProcessAdmissions({ admissions, filters, zones = [], are
         setShowRejectModal(false);
         setSelectedAdmission(null);
         setRejectionReason('');
+        setPushToBlockList(true);
+        setRejectError(null);
+        setRejectFieldErrors([]);
     };
 
     const handleReject = () => {
-        if (!selectedAdmission || !rejectionReason.trim()) {
-            alert('প্রত্যাখ্যানের সঠিক কারণ প্রদান করুন');
+        if (!selectedAdmission) return;
+        const problems: string[] = [];
+        if (!rejectionReason.trim()) {
+            problems.push('প্রত্যাখ্যানের কারণ লিখুন');
+        }
+        if (pushToBlockList) {
+            const nid = selectedAdmission.nid_number || selectedAdmission.smart_card_number || '';
+            const phone = (selectedAdmission.mobile_number || '').replace(/\D/g, '');
+            if (!nid.trim()) problems.push('NID নম্বর নেই — block list-এ যোগ করা যাবে না');
+            if (phone.length < 10) problems.push('ফোন নম্বর ১০–১৪ অঙ্কের হতে হবে');
+            if (!authUsername.trim()) problems.push('Username সেট করা নেই');
+            if (!selectedAdmission.branch?.code) problems.push('শাখার code পাওয়া যায়নি');
+        }
+        if (problems.length > 0) {
+            setRejectFieldErrors(problems);
+            setRejectError(problems[0]);
             return;
         }
+
+        setRejectError(null);
+        setRejectFieldErrors([]);
         router.patch(`/head-office/admissions/${selectedAdmission.id}/reject`, {
             rejection_reason: rejectionReason,
+            push_to_block_list: pushToBlockList,
         }, {
             ...keepListFilters,
-            onSuccess: () => {
+            onSuccess: (visit) => {
+                const flashError = (visit.props as { flash?: { error?: string | null } }).flash?.error;
+                if (flashError) {
+                    setRejectError(flashError);
+                    setRejectFieldErrors([flashError]);
+                    return;
+                }
                 closeRejectModal();
+            },
+            onError: (errors) => {
+                const messages = Object.values(errors).flat().filter((v): v is string => typeof v === 'string');
+                setRejectFieldErrors(messages);
+                setRejectError(messages[0] || 'প্রত্যাখ্যান করা যায়নি।');
             },
         });
     };
@@ -921,12 +962,17 @@ export default function ProcessAdmissions({ admissions, filters, zones = [], are
                                                     </div>
                                                 </td>
 
-                                                {/* Submission Date */}
-                                                <td className="py-3 px-4 align-top text-xs text-slate-600">
+                                                {/* Submission Date + time (AM/PM) */}
+                                                <td className="py-3 px-4 align-top text-xs text-slate-600 whitespace-nowrap">
                                                     <div className="flex items-center gap-1">
                                                         <Calendar className="w-3 h-3 text-slate-400" />
                                                         <span>{formatDate(admission.submitted_at)}</span>
                                                     </div>
+                                                    {formatTime(admission.submitted_at) && (
+                                                        <div className="text-[10px] text-slate-500 font-medium mt-0.5 pl-4">
+                                                            {formatTime(admission.submitted_at)}
+                                                        </div>
+                                                    )}
                                                 </td>
 
                                                 {/* Issues Status */}
@@ -1227,9 +1273,31 @@ export default function ProcessAdmissions({ admissions, filters, zones = [], are
                         </div>
 
                         <div className="p-5 space-y-3 text-xs">
+                            {rejectFieldErrors.length > 0 && (
+                                <div className="rounded-xl border border-rose-300 bg-rose-50 p-3">
+                                    <p className="text-xs font-bold text-rose-800">প্রত্যাখ্যান করা যাচ্ছে না — সমস্যা:</p>
+                                    <ul className="mt-1.5 list-disc space-y-0.5 pl-4 text-[11px] font-medium text-rose-700">
+                                        {rejectFieldErrors.map((problem) => (
+                                            <li key={problem}>{problem}</li>
+                                        ))}
+                                    </ul>
+                                </div>
+                            )}
                             <p className="text-slate-600">
                                 আবেদন নং: <strong className="text-slate-900">{selectedAdmission.application_no}</strong> ({selectedAdmission.applicant_name_en})
                             </p>
+                            <p className="text-slate-600">
+                                শাখা: <strong className="text-slate-900">{selectedAdmission.branch?.name}</strong>
+                                {selectedAdmission.branch?.code ? ` (${selectedAdmission.branch.code})` : ' (কোড নেই)'}
+                            </p>
+                            <p className="text-slate-600">
+                                Username: <strong className={authUsername ? 'text-slate-900' : 'text-rose-600'}>{authUsername || 'সেট নেই'}</strong>
+                                {' · '}NID: <strong className="text-slate-900">{selectedAdmission.nid_number || selectedAdmission.smart_card_number || 'নেই'}</strong>
+                                {' · '}ফোন: <strong className="text-slate-900">{selectedAdmission.mobile_number || 'নেই'}</strong>
+                            </p>
+                            {rejectError && rejectFieldErrors.length === 0 && (
+                                <p className="rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-[11px] font-semibold text-rose-700">{rejectError}</p>
+                            )}
                             <div>
                                 <label className="block text-xs font-semibold text-slate-700 mb-1">
                                     প্রত্যাখ্যানের কারণ (Rejection Reason) <span className="text-red-500">*</span>
@@ -1242,6 +1310,19 @@ export default function ProcessAdmissions({ admissions, filters, zones = [], are
                                     placeholder="কেন আবেদনটি বাতিল করা হচ্ছে তার কারণ লিখুন..."
                                 />
                             </div>
+
+                            <label className="flex cursor-pointer items-start gap-2.5 rounded-xl border border-slate-200 bg-slate-50 p-2.5">
+                                <input
+                                    type="checkbox"
+                                    checked={pushToBlockList}
+                                    onChange={(e) => setPushToBlockList(e.target.checked)}
+                                    className="mt-0.5 h-3.5 w-3.5 rounded border-slate-300 text-rose-600 focus:ring-rose-500"
+                                />
+                                <div>
+                                    <p className="text-xs font-bold text-slate-900">Block List-এ সদস্যের তথ্য সংরক্ষণ করুন</p>
+                                    <p className="text-[10px] text-slate-500">আবেদনের NID ও ফোন নম্বর দিয়ে যোগ করা হবে</p>
+                                </div>
+                            </label>
 
                             <div className="flex justify-end gap-2.5 pt-3 border-t border-slate-100">
                                 <button

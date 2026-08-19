@@ -73,10 +73,10 @@ class LoanFormVisibility
 
     public const BM_CEILING = 70000.0;
 
-    /** Branch Manager before approve/forward: Form 4 is required only when loan amount is within BM ceiling (<= 70,000 TK) */
+    /** Branch Manager before approve/forward: Form 4 is required only when loan amount is within BM ceiling (< 70,000 TK) */
     public static function bmRequiredFormIds(?object $product, float $amount, ?object $category = null): array
     {
-        if ($amount > self::BM_CEILING) {
+        if ($amount >= self::BM_CEILING) {
             return [];
         }
 

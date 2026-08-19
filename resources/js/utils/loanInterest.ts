@@ -244,7 +244,16 @@ export function calcInstallmentSchedule(
     loanProduct: any,
     durationMonths?: number | string | null,
     loanCategory?: any,
-): { principal: number; serviceCharge: number; installments: number; typeLabel: string; totalServiceCharge: number; installmentAmount: number; lastInstallmentAmount: number } | null {
+): {
+    principal: number;
+    serviceCharge: number;
+    installments: number;
+    typeLabel: string;
+    totalServiceCharge: number;
+    installmentAmount: number;
+    lastInstallmentAmount: number;
+    totalAmount: number;
+} | null {
     const amount = Number(loanAmount) || 0;
     if (amount <= 0) return null;
 
@@ -266,5 +275,52 @@ export function calcInstallmentSchedule(
         totalServiceCharge: schedule.serviceCharge,
         installmentAmount: schedule.installmentAmount,
         lastInstallmentAmount: schedule.lastInstallmentAmount,
+        totalAmount: schedule.totalAmount,
+    };
+}
+
+/** Form field map for কিস্তির ধরণ / আসল / সার্ভিস চার্জ / মোট */
+export function installmentFormFields(
+    loanAmount: number,
+    loanProduct: any,
+    loanCategory?: any,
+): {
+    installment_type: string;
+    installment_principal: string;
+    installment_service_charge: string;
+    installment_total: string;
+    number_of_installments: string;
+    last_installment_amount: string;
+    total_principal: string;
+    total_service_charge: string;
+    total_payable: string;
+} {
+    const schedule = calcInstallmentSchedule(loanAmount, loanProduct, undefined, loanCategory);
+    if (!schedule) {
+        return {
+            installment_type: getInstallmentTypeLabel(loanProduct, loanCategory),
+            installment_principal: '',
+            installment_service_charge: '',
+            installment_total: '',
+            number_of_installments: '',
+            last_installment_amount: '',
+            total_principal: '',
+            total_service_charge: '',
+            total_payable: '',
+        };
+    }
+
+    const amount = Number(loanAmount) || 0;
+
+    return {
+        installment_type: schedule.typeLabel,
+        installment_principal: String(schedule.principal),
+        installment_service_charge: String(schedule.serviceCharge),
+        installment_total: String(schedule.installmentAmount),
+        number_of_installments: String(schedule.installments),
+        last_installment_amount: String(schedule.lastInstallmentAmount),
+        total_principal: String(amount),
+        total_service_charge: String(schedule.totalServiceCharge),
+        total_payable: String(schedule.totalAmount),
     };
 }
