@@ -90,3 +90,43 @@ export function parseMemberCode(
         fullCode: `${branchPrefix}${serial}`,
     };
 }
+
+/** Live admission member code (application_no), not a snapshot saved on a form. */
+export function liveMemberCode(member: any): string {
+    return String(member?.application_no || member?.member_code || '').trim();
+}
+
+/**
+ * Always prefer the current member code over values saved in loan-form JSON / local drafts.
+ */
+export function withLiveMemberCode<T extends Record<string, any>>(data: T, member: any): T {
+    const code = liveMemberCode(member);
+    if (!code || !data) {
+        return data;
+    }
+
+    const next: Record<string, any> = { ...data };
+
+    if ('member_code' in next) {
+        next.member_code = code;
+    }
+    if ('member_no' in next) {
+        next.member_no = code;
+    }
+    if ('loan_recipient_code1' in next) {
+        next.loan_recipient_code1 = code;
+    }
+    if ('loan_recipient_code2' in next) {
+        next.loan_recipient_code2 = code;
+    }
+    if ('member_name_code' in next) {
+        const name =
+            member?.applicant_name_bn ||
+            member?.applicant_name_en ||
+            String(next.member_name_code || '').split(' / ')[0] ||
+            '';
+        next.member_name_code = [String(name).trim(), code].filter(Boolean).join(' / ');
+    }
+
+    return next as T;
+}

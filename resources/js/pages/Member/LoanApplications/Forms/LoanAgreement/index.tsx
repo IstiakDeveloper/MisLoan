@@ -16,6 +16,7 @@ import { LoanAgreementForm } from './LoanAgreementForm';
 import { afterLoanFormSaveUrl } from '@/utils/loanFormNavigation';
 import { calculateLoanSchedule, isSufolonLoan } from '@/utils/loanInterest';
 import { numberToWordsBangla } from '../ApprovalForm/PrintPreview';
+import { withLiveMemberCode } from '@/utils/memberCodeUtils';
 
 function getAcresAndDecimals(totalDecimals: any): { acres: string; decimal: string } {
     if (totalDecimals == null || totalDecimals === '' || isNaN(Number(totalDecimals))) {
@@ -119,11 +120,11 @@ export function buildLoanAgreementDefaults(
     };
 }
 
-function mergeFormData<T extends Record<string, any>>(defaults: T, savedData?: any, baseAmount?: number): T {
+function mergeFormData<T extends Record<string, any>>(defaults: T, savedData?: any, baseAmount?: number, member?: any): T {
     if (!savedData || typeof savedData !== 'object' || Object.keys(savedData).length === 0) {
-        return defaults;
+        return withLiveMemberCode(defaults, member);
     }
-    return {
+    return withLiveMemberCode({
         ...defaults,
         ...savedData,
         ...((baseAmount && baseAmount > 0) ? {
@@ -136,7 +137,7 @@ function mergeFormData<T extends Record<string, any>>(defaults: T, savedData?: a
             number_of_installments: defaults.number_of_installments,
             last_installment_date: defaults.last_installment_date,
         } : {}),
-    };
+    }, member);
 }
 
 export default function LoanAgreement({
@@ -154,7 +155,8 @@ export default function LoanAgreement({
         const previewData = mergeFormData(
             buildLoanAgreementDefaults(member, loanProduct, loanCategory, requestedAmount, branch),
             savedData,
-            Number(requestedAmount) || 0
+            Number(requestedAmount) || 0,
+            member,
         );
         return (
             <div className="print-container">
@@ -193,11 +195,11 @@ export default function LoanAgreement({
     useEffect(() => {
         const local = loadLoanDraftLocal<Partial<LoanAgreementData>>(draftKey);
         if (savedData || local?.data) {
-            setData((prev) => ({
+            setData((prev) => withLiveMemberCode({
                 ...prev,
                 ...(savedData || {}),
                 ...(local?.data || {}),
-            }));
+            }, member));
             setShowPreview(true);
             if (local?.data) {
                 setLocalRestored(true);

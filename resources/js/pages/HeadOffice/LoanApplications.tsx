@@ -179,6 +179,7 @@ export default function LoanApplications({ loans, filters, stats, zones, areas, 
     const [deleteIntent, setDeleteIntent] = useState<{ type: 'single'; id: number; label: string } | { type: 'bulk' } | null>(null);
     const [deleteProcessing, setDeleteProcessing] = useState(false);
     const [markAsPrintedCheckbox, setMarkAsPrintedCheckbox] = useState(false);
+    const [syncProcessing, setSyncProcessing] = useState(false);
 
     // Date filters - default to current month (1st .. today)
     const today = new Date().toISOString().split('T')[0];
@@ -353,6 +354,26 @@ export default function LoanApplications({ loans, filters, stats, zones, areas, 
     const handleExportExcel = () => {
         const params = new URLSearchParams(getQueryParams());
         window.location.href = `/head-office/loan-applications/export?${params.toString()}`;
+    };
+
+    const handleSyncMemberCodes = (onlySelected: boolean) => {
+        const selected = onlySelected && selectedIds.length > 0;
+        const message = selected
+            ? `নির্বাচিত ${selectedIds.length} টি ঋণ আবেদনের বর্তমান মেম্বার কোড সব ফর্মে সিঙ্ক হবে। চালিয়ে যাবেন?`
+            : 'সব সদস্যের বর্তমান মেম্বার কোড সব ঋণ ফর্ম, সঞ্চয় ও টিম-ভিত্তিক শিটে সিঙ্ক হবে। চালিয়ে যাবেন?';
+        if (!confirm(message)) {
+            return;
+        }
+
+        setSyncProcessing(true);
+        router.post(
+            '/head-office/loan-applications/sync-member-codes',
+            selected ? { ids: selectedIds } : {},
+            {
+                preserveScroll: true,
+                onFinish: () => setSyncProcessing(false),
+            },
+        );
     };
 
     const getStatusBadge = (status: string) => {
@@ -561,6 +582,19 @@ export default function LoanApplications({ loans, filters, stats, zones, areas, 
                             <Printer size={13} />
                             <span>প্রিন্ট</span>
                         </button>
+
+                        {isSuperAdmin && (
+                            <button
+                                type="button"
+                                disabled={syncProcessing}
+                                onClick={() => handleSyncMemberCodes(false)}
+                                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-indigo-50 text-indigo-700 hover:bg-indigo-100 border border-indigo-200 text-xs font-semibold transition-all active:scale-95 shadow-2xs disabled:opacity-60"
+                                title="বর্তমান মেম্বার কোড সব ঋণ ফর্মে আপডেট করুন"
+                            >
+                                <RefreshCw size={13} className={syncProcessing ? 'animate-spin' : ''} />
+                                <span>{syncProcessing ? 'সিঙ্ক হচ্ছে...' : 'মেম্বার কোড সিঙ্ক'}</span>
+                            </button>
+                        )}
                     </div>
                 </div>
 
@@ -737,6 +771,14 @@ export default function LoanApplications({ loans, filters, stats, zones, areas, 
                                 className="px-4 py-2 rounded-lg border border-slate-300 bg-white text-xs font-medium text-slate-700 hover:bg-slate-50"
                             >
                                 নির্বাচন সরান
+                            </button>
+                            <button
+                                type="button"
+                                disabled={syncProcessing}
+                                onClick={() => handleSyncMemberCodes(true)}
+                                className="px-4 py-2 rounded-lg bg-indigo-600 text-white text-xs font-semibold hover:bg-indigo-700 shadow-sm disabled:opacity-60"
+                            >
+                                মেম্বার কোড সিঙ্ক
                             </button>
                             <button
                                 type="button"

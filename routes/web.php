@@ -336,6 +336,7 @@ Route::middleware(['auth', 'verified'])->group(function () {
         Route::get('loan-applications/print', [HeadOfficeLoanController::class, 'print'])->name('loan-applications.print');
         Route::get('loan-applications/export', [HeadOfficeLoanController::class, 'exportExcel'])->name('loan-applications.export');
         Route::post('loan-applications/mark-printed', [HeadOfficeLoanController::class, 'markAsPrinted'])->name('loan-applications.mark-printed');
+        Route::post('loan-applications/sync-member-codes', [HeadOfficeLoanController::class, 'syncMemberCodes'])->name('loan-applications.sync-member-codes');
         Route::get('process-loans', [HeadOfficeLoanController::class, 'process'])->name('process-loans');
         Route::get('loans/{loanApplication}', [HeadOfficeLoanController::class, 'show'])->name('loans.show');
         Route::post('loans/{loanApplication}/issue', [HeadOfficeLoanController::class, 'storeIssue'])->name('loans.issue');

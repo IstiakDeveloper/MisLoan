@@ -3,7 +3,11 @@
 namespace App\Services;
 
 use App\Models\Branch;
+use App\Models\LoanApplication;
+use App\Models\LoanMember;
 use App\Models\MemberAdmission;
+use App\Models\SavingsApplication;
+use App\Models\TeamBasedApprovalItem;
 use Illuminate\Database\Eloquent\Builder;
 
 class MemberCodeService
@@ -254,5 +258,223 @@ class MemberCodeService
                      ->orWhere('product_name_bn', 'like', "%{$clean}%");
               });
         });
+    }
+
+    /**
+     * Push the live member code into every related loan form snapshot
+     * (and matching savings / team-based rows) after application_no changes.
+     */
+    public static function syncRelatedRecords(
+        int $memberAdmissionId,
+        string $newCode,
+        ?string $oldCode = null,
+        ?string $memberName = null,
+    ): void {
+        $member = MemberAdmission::query()
+            ->select(['id', 'application_no', 'applicant_name_bn', 'applicant_name_en', 'nid_number', 'mobile_number'])
+            ->find($memberAdmissionId);
+
+        if (! $member) {
+            return;
+        }
+
+        $member->application_no = $newCode;
+        if ($memberName) {
+            $member->applicant_name_bn = $member->applicant_name_bn ?: $memberName;
+        }
+
+        self::syncCurrentCodeForMember($member, $oldCode);
+    }
+
+    /**
+     * Write this member's current application_no onto all related loan forms and records.
+     *
+     * @return int Number of loan applications whose form JSON actually changed
+     */
+    public static function syncCurrentCodeForMember(MemberAdmission $member, ?string $oldCode = null): int
+    {
+        $newCode = trim((string) $member->application_no);
+        if ($newCode === '') {
+            return 0;
+        }
+
+        $memberName = $member->applicant_name_bn ?: $member->applicant_name_en;
+        $updated = 0;
+        $loans = LoanApplication::where('member_admission_id', $member->id)->get();
+
+        foreach ($loans as $loan) {
+            if (self::overlayMemberCodeOnLoanApplication($loan, $newCode, $memberName)) {
+                $loan->save();
+                $updated++;
+            }
+        }
+
+        $loanIds = $loans->pluck('id')->filter()->all();
+        if ($loanIds !== []) {
+            LoanMember::whereIn('loan_application_id', $loanIds)->update([
+                'member_code' => $newCode,
+            ]);
+        }
+
+        SavingsApplication::where('member_admission_id', $member->id)->update([
+            'member_no' => $newCode,
+        ]);
+
+        self::syncTeamBasedMemberCode($member, $newCode, $oldCode);
+
+        return $updated;
+    }
+
+    /**
+     * Backfill: push every member's current code onto their existing loan forms.
+     *
+     * @param  list<int>|null  $loanIds  When set, only members of these loan applications are synced.
+     * @return array{members: int, loans: int}
+     */
+    public static function syncAllCurrentMemberCodes(?array $loanIds = null): array
+    {
+        $membersSynced = 0;
+        $loansUpdated = 0;
+
+        $query = MemberAdmission::query()
+            ->select(['id', 'application_no', 'applicant_name_bn', 'applicant_name_en', 'nid_number', 'mobile_number'])
+            ->whereNotNull('application_no')
+            ->where('application_no', '!=', '')
+            ->whereHas('loanApplications', function ($q) use ($loanIds) {
+                if ($loanIds) {
+                    $q->whereIn('id', $loanIds);
+                }
+            });
+
+        $query->chunkById(50, function ($members) use (&$membersSynced, &$loansUpdated) {
+            foreach ($members as $member) {
+                $changed = self::syncCurrentCodeForMember($member);
+                if ($changed > 0) {
+                    $membersSynced++;
+                    $loansUpdated += $changed;
+                }
+            }
+        });
+
+        return [
+            'members' => $membersSynced,
+            'loans' => $loansUpdated,
+        ];
+    }
+
+    private static function syncTeamBasedMemberCode(MemberAdmission $member, string $newCode, ?string $oldCode): void
+    {
+        if ($oldCode && $oldCode !== $newCode) {
+            TeamBasedApprovalItem::where('member_code', $oldCode)->update([
+                'member_code' => $newCode,
+            ]);
+        }
+
+        $itemQuery = TeamBasedApprovalItem::query()
+            ->where(function ($q) use ($newCode) {
+                $q->whereNull('member_code')->orWhere('member_code', '!=', $newCode);
+            })
+            ->where(function ($q) use ($member) {
+                $matched = false;
+                if (! empty($member->nid_number)) {
+                    $q->orWhere('nid_number', $member->nid_number);
+                    $matched = true;
+                }
+                if (! empty($member->mobile_number)) {
+                    $q->orWhere('member_phone', $member->mobile_number);
+                    $matched = true;
+                }
+                if (! $matched) {
+                    $q->whereRaw('0 = 1');
+                }
+            });
+
+        $itemQuery->update(['member_code' => $newCode]);
+    }
+
+    /**
+     * Overlay the live member code onto saved loan-form JSON. Returns true if anything changed.
+     */
+    public static function overlayMemberCodeOnLoanApplication(
+        LoanApplication $loan,
+        string $newCode,
+        ?string $memberName = null,
+    ): bool {
+        $dirty = false;
+
+        $loan->loan_agreement_data = self::setJsonMemberCodeFields(
+            $loan->loan_agreement_data,
+            ['member_code' => $newCode],
+            $dirty,
+        );
+
+        $loan->guarantor_info = self::setJsonMemberCodeFields(
+            $loan->guarantor_info,
+            ['member_code' => $newCode],
+            $dirty,
+        );
+
+        $business = is_array($loan->business_plan) ? $loan->business_plan : null;
+        if (is_array($business) && $business !== []) {
+            $fields = ['member_code' => $newCode];
+            $name = $memberName;
+            if (! $name && is_string($business['member_name_code'] ?? null)) {
+                $name = trim(explode(' / ', $business['member_name_code'], 2)[0]);
+            }
+            if ($name !== null && $name !== '') {
+                $fields['member_name_code'] = $name.' / '.$newCode;
+            }
+            $loan->business_plan = self::setJsonMemberCodeFields($business, $fields, $dirty);
+        }
+
+        $loan->asset_info = self::setJsonMemberCodeFields(
+            $loan->asset_info,
+            ['member_no' => $newCode],
+            $dirty,
+        );
+
+        $loan->nominee_info = self::setJsonMemberCodeFields(
+            $loan->nominee_info,
+            [
+                'loan_recipient_code1' => $newCode,
+                'loan_recipient_code2' => $newCode,
+            ],
+            $dirty,
+        );
+
+        $snapshot = $loan->legacy_member_snapshot;
+        if (is_array($snapshot) && $snapshot !== []) {
+            $loan->legacy_member_snapshot = self::setJsonMemberCodeFields(
+                $snapshot,
+                [
+                    'application_no' => $newCode,
+                    'member_code' => $newCode,
+                ],
+                $dirty,
+            );
+        }
+
+        return $dirty;
+    }
+
+    /**
+     * @param  array<string, mixed>|null  $data
+     * @param  array<string, string>  $fields
+     * @return array<string, mixed>|null
+     */
+    private static function setJsonMemberCodeFields(mixed $data, array $fields, bool &$dirty): mixed
+    {
+        if (! is_array($data) || $data === []) {
+            return $data;
+        }
+
+        foreach ($fields as $key => $value) {
+            if (($data[$key] ?? null) !== $value) {
+                $data[$key] = $value;
+                $dirty = true;
+            }
+        }
+
+        return $data;
     }
 }

@@ -2831,35 +2831,21 @@ class LoanApplicationController extends Controller
             return back()->withErrors(['member_code' => "মেম্বার কোড {$normalizedCode} ইতিমধ্যে অন্য সদস্যের জন্য ব্যবহার করা হয়েছে।"]);
         }
 
-        $member->update([
-            'application_no' => $normalizedCode,
-        ]);
+        $oldCode = $member->application_no;
+        $memberName = $member->applicant_name_bn ?: $member->applicant_name_en;
 
-        $needsSave = false;
-        if (is_array($application->loan_agreement_data) && isset($application->loan_agreement_data['member_code'])) {
-            $agreementData = $application->loan_agreement_data;
-            $agreementData['member_code'] = $normalizedCode;
-            $application->loan_agreement_data = $agreementData;
-            $needsSave = true;
-        }
+        DB::transaction(function () use ($member, $normalizedCode, $oldCode, $memberName) {
+            $member->update([
+                'application_no' => $normalizedCode,
+            ]);
 
-        if (is_array($application->guarantor_info) && isset($application->guarantor_info['member_code'])) {
-            $guarantorData = $application->guarantor_info;
-            $guarantorData['member_code'] = $normalizedCode;
-            $application->guarantor_info = $guarantorData;
-            $needsSave = true;
-        }
-
-        if (is_array($application->business_plan) && isset($application->business_plan['member_code'])) {
-            $businessData = $application->business_plan;
-            $businessData['member_code'] = $normalizedCode;
-            $application->business_plan = $businessData;
-            $needsSave = true;
-        }
-
-        if ($needsSave) {
-            $application->save();
-        }
+            \App\Services\MemberCodeService::syncRelatedRecords(
+                (int) $member->id,
+                $normalizedCode,
+                $oldCode,
+                $memberName
+            );
+        });
 
         return back()->with('success', 'মেম্বার কোড সফলভাবে আপডেট করা হয়েছে: ' . $normalizedCode);
     }

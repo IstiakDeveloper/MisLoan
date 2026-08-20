@@ -464,6 +464,7 @@ export default function ApprovalForm({
         educational_qualification:
             String((savedData as any)?.educational_qualification || '').trim() ||
             selfFromFamily.educational_qualification,
+        member_code: member?.application_no || String((savedData as any)?.member_code || ''),
     });
 
     useEffect(() => {
@@ -524,6 +525,7 @@ export default function ApprovalForm({
                     })(),
                     est_main_income_amount:
                         durationNetFromAdmission || merged.est_main_income_amount,
+                    member_code: member?.application_no || merged.member_code || prev.member_code,
                 };
             });
             setLocalRestored(true);
@@ -750,7 +752,11 @@ export default function ApprovalForm({
             loanCategory,
         ],
     );
-    const previewData = { ...data, ...liveInstallment };
+    const previewData = {
+        ...data,
+        ...liveInstallment,
+        member_code: member?.application_no || data.member_code,
+    };
 
     if (onlyPreview) {
         return (

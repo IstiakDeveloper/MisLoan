@@ -11,6 +11,7 @@ use App\Models\Branch;
 use App\Models\Role;
 use App\Models\User;
 use App\Services\ApprovalService;
+use App\Services\MemberCodeService;
 use App\Services\NotificationService;
 use App\Support\RoleListWorkQueue;
 use Illuminate\Http\Request;
@@ -1103,6 +1104,50 @@ class HeadOfficeLoanController extends Controller
         });
 
         return back()->with('success', $count . ' টি ঋণ আবেদন মুছে ফেলা হয়েছে।');
+    }
+
+    /**
+     * SuperAdmin: write each member's current application_no onto all loan form snapshots.
+     */
+    public function syncMemberCodes(Request $request)
+    {
+        $user = $request->user();
+        if (! $user || ! $user->isSuperAdmin()) {
+            return back()->with('error', 'শুধুমাত্র সুপার অ্যাডমিন মেম্বার কোড সিঙ্ক করতে পারবেন।');
+        }
+
+        $validated = $request->validate([
+            'ids' => ['nullable', 'array'],
+            'ids.*' => ['integer'],
+        ]);
+
+        $loanIds = isset($validated['ids']) && $validated['ids'] !== []
+            ? array_values(array_unique(array_map('intval', $validated['ids'])))
+            : null;
+
+        if ($loanIds !== null) {
+            $scoped = LoanApplication::query()->whereIn('id', $loanIds);
+            $this->applyAccessibleBranchScope($scoped);
+            $loanIds = $scoped->pluck('id')->map(fn ($id) => (int) $id)->all();
+            if ($loanIds === []) {
+                return back()->with('error', 'নির্বাচিত ঋণ আবেদন পাওয়া যায়নি।');
+            }
+        }
+
+        @set_time_limit(300);
+
+        $result = MemberCodeService::syncAllCurrentMemberCodes($loanIds);
+
+        $scope = $loanIds === null ? 'সব ঋণ আবেদনে' : 'নির্বাচিত আবেদনগুলোতে';
+
+        if ($result['loans'] === 0) {
+            return back()->with('success', "{$scope} বর্তমান মেম্বার কোড ইতিমধ্যে সিঙ্ক করা আছে।");
+        }
+
+        return back()->with(
+            'success',
+            "মেম্বার কোড সিঙ্ক সম্পন্ন: {$result['members']} জন সদস্যের {$result['loans']} টি ঋণ ফর্ম আপডেট হয়েছে।"
+        );
     }
 
     /**

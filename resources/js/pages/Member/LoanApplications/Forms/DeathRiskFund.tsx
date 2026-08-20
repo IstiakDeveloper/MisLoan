@@ -6,6 +6,7 @@ import { formatDateBangla } from '@/utils/dateUtils';
 import { numberToWordsBangla } from './ApprovalForm/PrintPreview';
 import { afterLoanFormSaveUrl } from '@/utils/loanFormNavigation';
 import { useAutoFitPrint } from '@/hooks/useAutoFitPrint';
+import { withLiveMemberCode } from '@/utils/memberCodeUtils';
 
 interface DeathRiskFundData {
     // Branch & Date
@@ -381,16 +382,19 @@ function resolveBackUrl(
 function DeathRiskFundOnlyPreview({ member, loanProduct, loanCategory, requestedAmount, branch, savedData }: any) {
     const baseAmount = Number(requestedAmount) || 0;
     const defaults = buildDeathRiskFundDefaults(member, loanProduct, loanCategory, requestedAmount, branch);
-    const previewData = savedData && Object.keys(savedData).length > 0
-        ? {
-            ...defaults,
-            ...savedData,
-            ...(baseAmount > 0 ? {
-                loan_amount_received: defaults.loan_amount_received,
-                loan_amount_words: defaults.loan_amount_words,
-            } : {}),
-        }
-        : defaults;
+    const previewData = withLiveMemberCode(
+        savedData && Object.keys(savedData).length > 0
+            ? {
+                ...defaults,
+                ...savedData,
+                ...(baseAmount > 0 ? {
+                    loan_amount_received: defaults.loan_amount_received,
+                    loan_amount_words: defaults.loan_amount_words,
+                } : {}),
+            }
+            : defaults,
+        member,
+    );
 
     useAutoFitPrint([previewData], '.death-risk-print');
 
@@ -521,7 +525,7 @@ export default function DeathRiskFund({
         if (savedData) {
             const effectiveAmount = baseAmount > 0 ? baseAmount : (Number(savedData.loan_amount_received) || 0);
             const effectiveWords = effectiveAmount > 0 ? numberToWordsBangla(effectiveAmount) + ' টাকা' : (savedData.loan_amount_words || '');
-            setData(prev => ({
+            setData(prev => withLiveMemberCode({
                 ...prev,
                 ...savedData,
                 // Keep photos from MemberAdmission if not in savedData
@@ -531,7 +535,7 @@ export default function DeathRiskFund({
                     loan_amount_received: effectiveAmount,
                     loan_amount_words: effectiveWords,
                 } : {}),
-            }));
+            }, member));
         } else if (memberPhotoUrl || guardianPhotoUrl) {
             // If no saved data but photos exist in MemberAdmission, load them
             setData(prev => ({

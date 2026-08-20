@@ -7,6 +7,7 @@ import { Save, Printer, Eye, ArrowLeft, ShieldCheck, UserCheck, CreditCard, File
 import { numberToWordsBangla } from './ApprovalForm/PrintPreview';
 import { afterLoanFormSaveUrl } from '@/utils/loanFormNavigation';
 import { useAutoFitPrint } from '@/hooks/useAutoFitPrint';
+import { withLiveMemberCode } from '@/utils/memberCodeUtils';
 
 interface GuarantorCommitmentData {
     branch_name: string;
@@ -145,16 +146,19 @@ function buildGuarantorCommitmentDefaults(
 function GuarantorCommitmentOnlyPreview({ member, loanProduct, requestedAmount, branch, savedData }: any) {
     const baseLoanAmount = Number(requestedAmount) || 0;
     const defaults = buildGuarantorCommitmentDefaults(member, loanProduct, requestedAmount, branch);
-    const previewData = savedData && Object.keys(savedData).length > 0
-        ? {
-            ...defaults,
-            ...savedData,
-            ...(baseLoanAmount > 0 ? {
-                loan_amount: defaults.loan_amount,
-                loan_amount_words: defaults.loan_amount_words,
-            } : {}),
-        }
-        : defaults;
+    const previewData = withLiveMemberCode(
+        savedData && Object.keys(savedData).length > 0
+            ? {
+                ...defaults,
+                ...savedData,
+                ...(baseLoanAmount > 0 ? {
+                    loan_amount: defaults.loan_amount,
+                    loan_amount_words: defaults.loan_amount_words,
+                } : {}),
+            }
+            : defaults,
+        member,
+    );
 
     useAutoFitPrint([previewData], '.guarantor-commitment-sheet');
 
@@ -265,14 +269,14 @@ export default function GuarantorCommitment({
         if (savedData) {
             const calculated = baseLoanAmount > 0 ? calcLoanAmountWithServiceCharge(baseLoanAmount, loanProduct) : (savedData.loan_amount || 0);
             const words = calculated > 0 ? numberToWordsBangla(calculated) + ' টাকা' : (savedData.loan_amount_words || '');
-            setData(prev => ({
+            setData(prev => withLiveMemberCode({
                 ...prev,
                 ...savedData,
                 ...(baseLoanAmount > 0 ? {
                     loan_amount: calculated,
                     loan_amount_words: words,
                 } : {}),
-            }));
+            }, member));
             setShowPreview(true);
         }
     }, [savedData, baseLoanAmount, loanProduct]);

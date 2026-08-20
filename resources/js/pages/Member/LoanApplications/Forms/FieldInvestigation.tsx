@@ -6,6 +6,7 @@ import { Save, Printer, Eye, ArrowLeft, ClipboardList } from 'lucide-react';
 import GeneralSavingsSection, { getRequiredSavingsPercent } from '@/components/LoanApplications/GeneralSavingsSection';
 import { afterLoanFormSaveUrl } from '@/utils/loanFormNavigation';
 import { useAutoFitPrint, triggerPrintWithAutoFit } from '@/hooks/useAutoFitPrint';
+import { withLiveMemberCode } from '@/utils/memberCodeUtils';
 
 interface FieldInvestigationData {
     branch_name: string;
@@ -474,7 +475,7 @@ export default function FieldInvestigation({
     if (onlyPreview) {
         const reqAmt = Number(requestedAmount) || 0;
         const defaults = buildFieldInvestigationDefaults(member, requestedAmount, branch, loanRound);
-        const previewData =
+        const previewData = withLiveMemberCode(
             savedData && Object.keys(savedData).length > 0
                 ? {
                     ...defaults,
@@ -483,7 +484,9 @@ export default function FieldInvestigation({
                         current_loan_demand: reqAmt,
                     } : {}),
                 }
-                : defaults;
+                : defaults,
+            member,
+        );
         if (!String(previewData.nid_number || '').trim()) {
             previewData.nid_number = resolveMemberIdentityNumber(member);
         }
@@ -569,7 +572,7 @@ export default function FieldInvestigation({
                 if (!String(merged.nid_number || '').trim()) {
                     merged.nid_number = resolveMemberIdentityNumber(member);
                 }
-                return merged;
+                return withLiveMemberCode(merged, member);
             });
             setShowPreview(true);
         }

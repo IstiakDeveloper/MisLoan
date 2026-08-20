@@ -18,6 +18,7 @@ import FormPage1 from './FormPage1';
 import FormPage2 from './FormPage2';
 import PrintPreview from './PrintPreview';
 import { numberToWordsBangla } from '../ApprovalForm/PrintPreview';
+import { withLiveMemberCode } from '@/utils/memberCodeUtils';
 import { afterLoanFormSaveUrl } from '@/utils/loanFormNavigation';
 
 function resolveBackUrl(
@@ -365,7 +366,9 @@ function buildInitialData(
         ...base,
         ...(savedData || {}),
         // Prefer admission when saved draft left these empty
-        member_name_code: str(savedData?.member_name_code) || base.member_name_code,
+        member_name_code: memberCode
+            ? [memberName, memberCode].filter(Boolean).join(' / ')
+            : (str(savedData?.member_name_code) || base.member_name_code),
         samity_name_code: str(savedData?.samity_name_code) || base.samity_name_code,
         implemented_project_name: str(savedData?.implemented_project_name) || base.implemented_project_name,
         guarantor_1_name: str(savedData?.guarantor_1_name) || base.guarantor_1_name,
@@ -574,7 +577,7 @@ export default function AgrosorProfile({
             delete merged.loan_duration_label;
             delete merged.service_charge_rate;
             delete merged.member_signature;
-            setData((prev) => ({ ...prev, ...merged }));
+            setData((prev) => withLiveMemberCode({ ...prev, ...merged }, member));
             setLocalRestored(true);
         }
         const t = setTimeout(() => {

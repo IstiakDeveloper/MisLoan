@@ -1786,9 +1786,21 @@ class MemberAdmissionController extends Controller
             return back()->withErrors(['member_code' => "মেম্বার কোড {$normalizedCode} ইতিমধ্যে অন্য সদস্যের জন্য ব্যবহার করা হয়েছে।"]);
         }
 
-        $memberAdmission->update([
-            'application_no' => $normalizedCode,
-        ]);
+        $oldCode = $memberAdmission->application_no;
+        $memberName = $memberAdmission->applicant_name_bn ?: $memberAdmission->applicant_name_en;
+
+        DB::transaction(function () use ($memberAdmission, $normalizedCode, $oldCode, $memberName) {
+            $memberAdmission->update([
+                'application_no' => $normalizedCode,
+            ]);
+
+            \App\Services\MemberCodeService::syncRelatedRecords(
+                (int) $memberAdmission->id,
+                $normalizedCode,
+                $oldCode,
+                $memberName
+            );
+        });
 
         return back()->with('success', 'মেম্বার কোড সফলভাবে আপডেট করা হয়েছে: ' . $normalizedCode);
     }
