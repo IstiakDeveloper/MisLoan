@@ -52,7 +52,8 @@ class HeadOfficeVerificationController extends Controller
             'memberCategory:id,category_name',
             'submittedBy:id,name',
             'createdBy:id,name',
-            'issues' => fn ($q) => $q->with(['reporter:id,name', 'resolver:id,name'])->orderBy('created_at', 'desc'),
+            'reviewedBy:id,name',
+            'issues' => fn ($q) => $q->with(['reporter:id,name', 'resolver:id,name'])->orderBy('created_at', 'asc'),
         ])
         ->where(function ($q) {
             $q->whereHas('issues')
@@ -146,7 +147,8 @@ class HeadOfficeVerificationController extends Controller
             'loanCategory:id,category_name,category_name_bn',
             'memberAdmission:id,applicant_name_en,applicant_name_bn,nid_number,mobile_number,application_no,is_legacy,loan_dofa',
             'submittedBy:id,name',
-            'issues' => fn ($q) => $q->with(['reporter:id,name', 'responder:id,name'])->orderBy('created_at', 'desc'),
+            'reviewedBy:id,name',
+            'issues' => fn ($q) => $q->with(['reporter:id,name', 'responder:id,name'])->orderBy('created_at', 'asc'),
         ])
         ->where(function ($q) {
             $q->whereHas('issues')
@@ -248,9 +250,8 @@ class HeadOfficeVerificationController extends Controller
         $verificationItems = collect();
 
         foreach ($admissionList as $admission) {
-            $latestIssue = $admission->issues->first();
+            $latestIssue = $admission->issues->last();
             $hasPendingIssue = $admission->issues->contains(fn ($i) => $i->status === 'pending');
-            $hasReplied = $admission->issues->contains(fn ($i) => !empty($i->resolution_note) || $i->status === 'resolved');
 
             $branchCode = (string) ($admission->branch?->code ?? $admission->branch?->branch_code ?? '0000');
             $branchCodeInt = is_numeric($branchCode) ? (int)$branchCode : 999999;
@@ -259,11 +260,33 @@ class HeadOfficeVerificationController extends Controller
                 ? "/head-office/admissions/{$admission->id}"
                 : "/member-admissions/{$admission->id}";
 
+            $mappedIssues = $admission->issues->map(function ($i) use ($admission, $latestIssue) {
+                $itemParsed = $this->parseObjectionAndReply(
+                    $i->issue_description,
+                    $i->resolution_note,
+                    $latestIssue && $i->id === $latestIssue->id ? $admission->revision_comments : null
+                );
+                return [
+                    'id' => $i->id,
+                    'issue_description' => $itemParsed['ho_objection'],
+                    'reporter_name' => $i->reporter?->name ?? 'Head Office',
+                    'status' => $i->status,
+                    'reply_message' => $itemParsed['branch_reply'],
+                    'responder_name' => $i->resolver?->name ?? null,
+                    'created_at' => $i->created_at ? $i->created_at->toIso8601String() : null,
+                    'replied_at' => $itemParsed['branch_reply'] && $i->resolved_at
+                        ? $i->resolved_at->toIso8601String()
+                        : null,
+                ];
+            })->values();
+
+            $latestMapped = $mappedIssues->last() ?: [];
             $parsed = $this->parseObjectionAndReply(
                 $latestIssue?->issue_description,
                 $latestIssue?->resolution_note,
                 $admission->revision_comments
             );
+            $hasReplied = $mappedIssues->contains(fn ($i) => !empty($i['reply_message']));
 
             $latestActionAt = collect([
                 $admission->submitted_at,
@@ -295,33 +318,23 @@ class HeadOfficeVerificationController extends Controller
                 'submitted_at' => $latestActionAt ? Carbon::parse($latestActionAt)->toIso8601String() : null,
                 'created_at' => $admission->created_at->toIso8601String(),
                 'latest_action_at' => $latestActionAt ? Carbon::parse($latestActionAt)->toIso8601String() : $admission->created_at->toIso8601String(),
+                'reviewed_at' => $admission->reviewed_at ? Carbon::parse($admission->reviewed_at)->toIso8601String() : null,
+                'reviewed_by_name' => $admission->reviewedBy?->name ?? null,
+                'rejection_reason' => $admission->rejection_reason,
                 'has_pending_issue' => $hasPendingIssue,
-                'has_replied' => $hasReplied || !empty($parsed['branch_reply']),
-                'issues' => $admission->issues->map(function ($i) use ($admission) {
-                    $itemParsed = $this->parseObjectionAndReply($i->issue_description, $i->resolution_note, $admission->revision_comments);
-                    return [
-                        'id' => $i->id,
-                        'issue_description' => $itemParsed['ho_objection'],
-                        'reporter_name' => $i->reporter?->name ?? 'Head Office',
-                        'status' => $i->status,
-                        'reply_message' => $itemParsed['branch_reply'],
-                        'responder_name' => $i->resolver?->name ?? null,
-                        'created_at' => $i->created_at ? $i->created_at->toIso8601String() : null,
-                        'replied_at' => $i->resolved_at ? $i->resolved_at->toIso8601String() : null,
-                    ];
-                }),
+                'has_replied' => $hasReplied,
+                'issues' => $mappedIssues,
                 'latest_issue_id' => $latestIssue?->id ?? null,
-                'latest_issue_description' => $parsed['ho_objection'],
-                'latest_reply_message' => $parsed['branch_reply'],
+                'latest_issue_description' => $latestMapped['issue_description'] ?? $parsed['ho_objection'],
+                'latest_reply_message' => $latestMapped['reply_message'] ?? $parsed['branch_reply'],
                 'view_url' => $viewUrl,
                 'amount' => null,
             ]);
         }
 
         foreach ($loanList as $loan) {
-            $latestIssue = $loan->issues->first();
+            $latestIssue = $loan->issues->last();
             $hasPendingIssue = $loan->issues->contains(fn ($i) => $i->status === 'pending');
-            $hasReplied = $loan->issues->contains(fn ($i) => !empty($i->response_message));
 
             $branchCode = (string) ($loan->branch?->code ?? $loan->branch?->branch_code ?? '0000');
             $branchCodeInt = is_numeric($branchCode) ? (int)$branchCode : 999999;
@@ -330,11 +343,33 @@ class HeadOfficeVerificationController extends Controller
                 ? "/head-office/loans/{$loan->id}"
                 : "/member/loan-applications/{$loan->id}";
 
+            $mappedIssues = $loan->issues->map(function ($i) use ($loan, $latestIssue) {
+                $itemParsed = $this->parseObjectionAndReply(
+                    $i->issue_description,
+                    $i->response_message,
+                    $latestIssue && $i->id === $latestIssue->id ? ($loan->revision_comments ?? null) : null
+                );
+                return [
+                    'id' => $i->id,
+                    'issue_description' => $itemParsed['ho_objection'],
+                    'reporter_name' => $i->reporter?->name ?? 'Head Office',
+                    'status' => $i->status,
+                    'reply_message' => $itemParsed['branch_reply'],
+                    'responder_name' => $i->responder?->name ?? null,
+                    'created_at' => $i->created_at ? $i->created_at->toIso8601String() : null,
+                    'replied_at' => $itemParsed['branch_reply'] && $i->responded_at
+                        ? $i->responded_at->toIso8601String()
+                        : null,
+                ];
+            })->values();
+
+            $latestMapped = $mappedIssues->last() ?: [];
             $parsed = $this->parseObjectionAndReply(
                 $latestIssue?->issue_description,
                 $latestIssue?->response_message,
-                $loan->revision_comments
+                $loan->revision_comments ?? null
             );
+            $hasReplied = $mappedIssues->contains(fn ($i) => !empty($i['reply_message']));
 
             $latestActionAt = collect([
                 $loan->submitted_at,
@@ -365,24 +400,15 @@ class HeadOfficeVerificationController extends Controller
                 'submitted_at' => $latestActionAt ? Carbon::parse($latestActionAt)->toIso8601String() : null,
                 'created_at' => $loan->created_at->toIso8601String(),
                 'latest_action_at' => $latestActionAt ? Carbon::parse($latestActionAt)->toIso8601String() : $loan->created_at->toIso8601String(),
+                'reviewed_at' => $loan->reviewed_at ? Carbon::parse($loan->reviewed_at)->toIso8601String() : null,
+                'reviewed_by_name' => $loan->reviewedBy?->name ?? null,
+                'rejection_reason' => $loan->rejection_reason,
                 'has_pending_issue' => $hasPendingIssue,
-                'has_replied' => $hasReplied || !empty($parsed['branch_reply']),
-                'issues' => $loan->issues->map(function ($i) use ($loan) {
-                    $itemParsed = $this->parseObjectionAndReply($i->issue_description, $i->response_message, $loan->revision_comments ?? null);
-                    return [
-                        'id' => $i->id,
-                        'issue_description' => $itemParsed['ho_objection'],
-                        'reporter_name' => $i->reporter?->name ?? 'Head Office',
-                        'status' => $i->status,
-                        'reply_message' => $itemParsed['branch_reply'],
-                        'responder_name' => $i->responder?->name ?? null,
-                        'created_at' => $i->created_at ? $i->created_at->toIso8601String() : null,
-                        'replied_at' => $i->responded_at ? $i->responded_at->toIso8601String() : null,
-                    ];
-                }),
+                'has_replied' => $hasReplied,
+                'issues' => $mappedIssues,
                 'latest_issue_id' => $latestIssue?->id ?? null,
-                'latest_issue_description' => $parsed['ho_objection'],
-                'latest_reply_message' => $parsed['branch_reply'],
+                'latest_issue_description' => $latestMapped['issue_description'] ?? $parsed['ho_objection'],
+                'latest_reply_message' => $latestMapped['reply_message'] ?? $parsed['branch_reply'],
                 'view_url' => $viewUrl,
                 'amount' => $loan->approved_amount ?: $loan->requested_amount,
             ]);
@@ -837,37 +863,53 @@ class HeadOfficeVerificationController extends Controller
     }
 
     /**
-     * Parse text to separate HO objection from Branch reply if they are combined in revision_comments.
-     * Head Office auto-notes that previously overwrote the branch reply are ignored.
+     * Separate Head Office objection from the Branch reply.
+     * revision_comments is primarily an HO note (often a copy of the issue text) — never treat
+     * that copy as a branch reply. Only the text after "--- Branch Revision Note ---" is a reply.
      */
     private function parseObjectionAndReply(?string $issueText, ?string $replyText, ?string $revisionComments): array
     {
-        $hoObjection = $issueText;
-        $branchReply = $this->isHeadOfficeAutoNote($replyText) ? null : $replyText;
+        $hoObjection = trim((string) $issueText);
+        $branchReply = $this->isRealBranchReply($replyText) ? trim((string) $replyText) : null;
+        $revision = trim((string) $revisionComments);
 
-        $combinedText = $issueText ?: $revisionComments;
-
-        if ($combinedText && preg_match('/^(.*?)(?:\n+|\s*)(?:---+\s*Branch\s*Revision\s*Note(?:\s*\([^)]*\))?\s*---+)(.*)$/si', $combinedText, $matches)) {
-            $hoObjection = trim($matches[1]);
+        if ($revision !== '' && preg_match('/^(.*?)(?:\n+|\s*)(?:---+\s*Branch\s*Revision\s*Note(?:\s*\([^)]*\))?\s*---+)(.*)$/si', $revision, $matches)) {
+            if ($hoObjection === '') {
+                $hoObjection = trim($matches[1]);
+            }
             $parsedBranchReply = trim($matches[2]);
-            if (empty($branchReply) && ! empty($parsedBranchReply) && ! $this->isHeadOfficeAutoNote($parsedBranchReply)) {
+            if (empty($branchReply) && $this->isRealBranchReply($parsedBranchReply)) {
                 $branchReply = $parsedBranchReply;
             }
-        } elseif (! $hoObjection && $revisionComments && ! $this->isHeadOfficeAutoNote($revisionComments)) {
-            $hoObjection = trim($revisionComments);
+        } elseif ($hoObjection === '' && $revision !== '' && ! $this->isHeadOfficeAutoNote($revision)) {
+            $hoObjection = $revision;
         }
 
-        $fallback = trim((string) $revisionComments);
-        if (empty($branchReply) && $fallback !== '' && ! $this->isHeadOfficeAutoNote($fallback)) {
-            if (! $combinedText || ! preg_match('/---+\s*Branch\s*Revision\s*Note/si', $fallback)) {
-                $branchReply = $fallback;
-            }
+        // HO text copied into revision_comments / reply field must not appear as Branch reply
+        if ($this->isSameMessage($branchReply, $hoObjection)) {
+            $branchReply = null;
         }
 
         return [
-            'ho_objection' => $hoObjection ?: 'তদন্তাধীন',
+            'ho_objection' => $hoObjection !== '' ? $hoObjection : 'তদন্তাধীন',
             'branch_reply' => $branchReply ?: null,
         ];
+    }
+
+    private function isRealBranchReply(?string $text): bool
+    {
+        $text = trim((string) $text);
+
+        return $text !== '' && ! $this->isHeadOfficeAutoNote($text);
+    }
+
+    private function isSameMessage(?string $a, ?string $b): bool
+    {
+        $normalize = static fn (?string $s) => preg_replace('/\s+/u', ' ', trim((string) $s));
+        $a = $normalize($a);
+        $b = $normalize($b);
+
+        return $a !== '' && $b !== '' && $a === $b;
     }
 
     private function isHeadOfficeAutoNote(?string $text): bool

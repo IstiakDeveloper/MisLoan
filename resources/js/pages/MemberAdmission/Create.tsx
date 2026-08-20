@@ -284,6 +284,7 @@ export default function Create({
     const [samitySearchQuery, setSamitySearchQuery] = useState('');
     const [samityDropdownOpen, setSamityDropdownOpen] = useState(false);
     const [memberTypeChosen, setMemberTypeChosen] = useState(false);
+    const [draftTypeHint, setDraftTypeHint] = useState<'new' | 'old' | null>(null);
 
     // Auto-save & draft states
     const [isInitialized, setIsInitialized] = useState(false);
@@ -315,22 +316,41 @@ export default function Create({
 
     const isLegacyMember = !!data.is_legacy;
 
-    const chooseMemberType = (legacy: boolean) => {
+    const applyMemberType = (legacy: boolean) => {
         setData((prev) => ({
             ...prev,
             is_legacy: legacy,
             loan_dofa: legacy ? prev.loan_dofa || '' : '',
         }));
         setMemberTypeChosen(true);
+        setDraftTypeHint(null);
     };
 
-    // Load local draft on mount if available
+    const chooseMemberType = (legacy: boolean) => {
+        applyMemberType(legacy);
+    };
+
+    const handleMemberTypeChange = (legacy: boolean) => {
+        if (legacy === !!data.is_legacy) return;
+        if (!legacy) {
+            const ok = window.confirm(
+                'নতুন সদস্যে পরিবর্তন করলে ঋণের দফা মুছে যাবে এবং জমা দিলে হেড অফিসের অনুমোদন লাগবে। পূরণ করা তথ্য থাকবে। চালিয়ে যাবেন?'
+            );
+            if (!ok) return;
+        } else {
+            const ok = window.confirm(
+                'পুরাতন সদস্যে পরিবর্তন করলে ঋণের দফা দিতে হবে এবং জমা দিলে স্বয়ংক্রিয় অনুমোদন হবে। পূরণ করা তথ্য থাকবে। চালিয়ে যাবেন?'
+            );
+            if (!ok) return;
+        }
+        applyMemberType(legacy);
+    };
+
+    // Load local draft on mount if available.
+    // Always ask নতুন/পুরাতন again — never skip the type modal just because a draft exists.
     useEffect(() => {
         const draft = loadMemberAdmissionDraftLocal(draftKey);
         if (draft && draft.data) {
-            if (draft.memberTypeChosen) {
-                setMemberTypeChosen(true);
-            }
             if (draft.presentDistricts && draft.presentDistricts.length > 0) {
                 setPresentDistricts(draft.presentDistricts);
             }
@@ -376,6 +396,7 @@ export default function Create({
 
             if (hasMeaningfulDraftData(draft.data) || draft.memberTypeChosen) {
                 setIsDraftRestored(true);
+                setDraftTypeHint(draft.data.is_legacy ? 'old' : 'new');
             }
         }
         setIsInitialized(true);
@@ -434,6 +455,7 @@ export default function Create({
         setPermanentUpazilas([]);
         setLastSavedTime(null);
         setIsDraftRestored(false);
+        setDraftTypeHint(null);
 
         setData(getDefaultFormData(suggested_application_no, initialBranchId, currentUser));
     };
@@ -785,14 +807,30 @@ export default function Create({
                                 <Sparkles className="w-6 h-6" />
                             </div>
                             <h2 className="text-xl font-extrabold text-white tracking-tight">সদস্যের ধরন নির্বাচন করুন</h2>
+                            {isDraftRestored && (
+                                <p className="mt-2 text-xs text-slate-300 leading-relaxed">
+                                    আগের খসড়া সংরক্ষিত আছে। নতুন বা পুরাতন বেছে নিলে সেই অনুযায়ী আপডেট হবে — পূরণ করা তথ্য মুছে যাবে না।
+                                </p>
+                            )}
                         </div>
 
                         {/* Options Body */}
                         <div className="p-6 space-y-3.5">
+                            {isDraftRestored && draftTypeHint && (
+                                <p className="text-xs font-semibold text-slate-500 text-center">
+                                    আগে নির্বাচিত ছিল:{' '}
+                                    <span className={draftTypeHint === 'old' ? 'text-amber-700' : 'text-blue-700'}>
+                                        {draftTypeHint === 'old' ? 'পুরাতন সদস্য' : 'নতুন সদস্য'}
+                                    </span>
+                                    {' '}— এখন আবার বেছে নিন
+                                </p>
+                            )}
                             <button
                                 type="button"
                                 onClick={() => chooseMemberType(false)}
-                                className="group w-full flex items-center justify-between p-4 rounded-2xl border-2 border-slate-100 bg-slate-50/50 hover:bg-blue-50/80 hover:border-blue-500 transition-all duration-200 shadow-sm hover:shadow-md text-left active:scale-[0.99]"
+                                className={`group w-full flex items-center justify-between p-4 rounded-2xl border-2 bg-slate-50/50 hover:bg-blue-50/80 hover:border-blue-500 transition-all duration-200 shadow-sm hover:shadow-md text-left active:scale-[0.99] ${
+                                    draftTypeHint === 'new' ? 'border-blue-300' : 'border-slate-100'
+                                }`}
                             >
                                 <div className="flex items-center gap-4">
                                     <div className="w-12 h-12 rounded-2xl bg-blue-600 text-white flex items-center justify-center shadow-md shadow-blue-600/30 group-hover:scale-105 transition-transform">
@@ -802,6 +840,9 @@ export default function Create({
                                         <div className="text-base font-extrabold text-slate-800 group-hover:text-blue-900">
                                             নতুন সদস্য ভর্তি
                                         </div>
+                                        {draftTypeHint === 'new' && (
+                                            <div className="text-[11px] font-semibold text-blue-700 mt-0.5">আগে এই ধরন ছিল</div>
+                                        )}
                                     </div>
                                 </div>
                                 <div className="w-8 h-8 rounded-full bg-white border border-slate-200 flex items-center justify-center text-slate-400 group-hover:bg-blue-600 group-hover:border-blue-600 group-hover:text-white transition-all shadow-sm">
@@ -812,7 +853,9 @@ export default function Create({
                             <button
                                 type="button"
                                 onClick={() => chooseMemberType(true)}
-                                className="group w-full flex items-center justify-between p-4 rounded-2xl border-2 border-slate-100 bg-slate-50/50 hover:bg-amber-50/80 hover:border-amber-500 transition-all duration-200 shadow-sm hover:shadow-md text-left active:scale-[0.99]"
+                                className={`group w-full flex items-center justify-between p-4 rounded-2xl border-2 bg-slate-50/50 hover:bg-amber-50/80 hover:border-amber-500 transition-all duration-200 shadow-sm hover:shadow-md text-left active:scale-[0.99] ${
+                                    draftTypeHint === 'old' ? 'border-amber-300' : 'border-slate-100'
+                                }`}
                             >
                                 <div className="flex items-center gap-4">
                                     <div className="w-12 h-12 rounded-2xl bg-amber-600 text-white flex items-center justify-center shadow-md shadow-amber-600/30 group-hover:scale-105 transition-transform">
@@ -822,6 +865,9 @@ export default function Create({
                                         <div className="text-base font-extrabold text-slate-800 group-hover:text-amber-900">
                                             পুরাতন সদস্য (আগের ডাটা এন্ট্রি)
                                         </div>
+                                        {draftTypeHint === 'old' && (
+                                            <div className="text-[11px] font-semibold text-amber-700 mt-0.5">আগে এই ধরন ছিল</div>
+                                        )}
                                     </div>
                                 </div>
                                 <div className="w-8 h-8 rounded-full bg-white border border-slate-200 flex items-center justify-center text-slate-400 group-hover:bg-amber-600 group-hover:border-amber-600 group-hover:text-white transition-all shadow-sm">
@@ -851,6 +897,30 @@ export default function Create({
                     <div className="relative z-10 flex flex-col md:flex-row md:items-center justify-between gap-6">
                         <div className="space-y-2 max-w-2xl">
                             <div className="flex flex-wrap items-center gap-2">
+                                <div className="inline-flex items-center rounded-full border border-white/15 bg-black/25 p-0.5 backdrop-blur-md">
+                                    <button
+                                        type="button"
+                                        onClick={() => handleMemberTypeChange(false)}
+                                        className={`rounded-full px-2.5 py-1 text-[11px] font-bold transition-all ${
+                                            !isLegacyMember
+                                                ? 'bg-blue-500 text-white shadow-sm'
+                                                : 'text-slate-300 hover:text-white'
+                                        }`}
+                                    >
+                                        নতুন
+                                    </button>
+                                    <button
+                                        type="button"
+                                        onClick={() => handleMemberTypeChange(true)}
+                                        className={`rounded-full px-2.5 py-1 text-[11px] font-bold transition-all ${
+                                            isLegacyMember
+                                                ? 'bg-amber-500 text-white shadow-sm'
+                                                : 'text-slate-300 hover:text-white'
+                                        }`}
+                                    >
+                                        পুরাতন
+                                    </button>
+                                </div>
                                 <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-blue-500/15 border border-blue-400/20 text-blue-300 text-xs font-semibold backdrop-blur-md">
                                     <Save className="w-4 h-4 text-blue-400" />
                                     <span>
@@ -933,7 +1003,7 @@ export default function Create({
                                     পূর্বে পূরণ করা অটো-সংরক্ষিত খসড়া লোড করা হয়েছে {lastSavedTime ? `(${lastSavedTime})` : ''}
                                 </p>
                                 <p className="text-xs text-emerald-800 mt-0.5">
-                                    আপনার পূর্বের তথ্য সুরক্ষিত রয়েছে। আপনি সরাসরি এন্ট্রি চালিয়ে যেতে পারেন অথবা নতুন সদস্যের জন্য ফর্ম রিসেট করতে পারেন।
+                                    আপনার পূর্বের তথ্য সুরক্ষিত রয়েছে। নতুন/পুরাতন উপরের টগল থেকে পরিবর্তন করা যাবে — ডেটা মুছে যাবে না। খালি ফর্ম চাইলে রিসেট করুন।
                                 </p>
                             </div>
                         </div>

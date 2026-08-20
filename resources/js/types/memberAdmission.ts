@@ -148,6 +148,8 @@ export interface MemberAdmission {
     revision_comments?: string;
     has_active_loan?: boolean;
     active_loan_status?: string | null;
+    has_disbursed_loan?: boolean;
+    can_be_edited?: boolean;
 
     created_at: string;
     updated_at: string;

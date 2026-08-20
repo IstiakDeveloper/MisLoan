@@ -103,7 +103,7 @@ class LoanApplicationController extends Controller
         return $user->role?->name === Role::BRANCH_MANAGER;
     }
 
-    private function attachFormMeta(LoanApplication $application, $user, ?array $formSavedOverride = null): void
+    private function attachFormMeta(LoanApplication $application, $user, ?array $formSavedOverride = null, bool $withEscalationApprovers = false): void
     {
         $application->loadMissing(['loanProduct.loanCategory', 'loanCategory', 'memberAdmission']);
         $product = $application->loanProduct;
@@ -160,6 +160,23 @@ class LoanApplicationController extends Controller
         $application->can_branch_approve = $isBranchManagerUser
             && $pendingApproval !== null
             && in_array($status, [LoanApplication::STATUS_SUBMITTED, LoanApplication::STATUS_UNDER_REVIEW]);
+
+        $mustForward = (bool) $application->can_branch_approve
+            && $amount >= ApprovalService::BRANCH_MANAGER_LOAN_CEILING;
+        $application->must_forward_approval = $mustForward;
+        $application->escalation_approvers = [];
+        if ($mustForward && $withEscalationApprovers && $application->branch_id) {
+            $application->escalation_approvers = app(ApprovalService::class)
+                ->getEscalationApprovers((int) $application->branch_id)
+                ->map(fn ($user) => [
+                    'id' => $user->id,
+                    'name' => $user->name,
+                    'email' => $user->email ?? '',
+                    'level' => $user->level ?? '',
+                    'role_name' => $user->role->name ?? '',
+                ])
+                ->values();
+        }
     }
 
     private function ensureMemberApprovedForLoanSubmit(MemberAdmission $member): void
@@ -195,71 +212,38 @@ class LoanApplicationController extends Controller
             );
         }
 
-        if ($formId === 4) {
-            if (! $this->isBranchManager($user)) {
-                abort(403, 'সরেজমিন তদন্ত প্রতিবেদন শুধু শাখা ব্যবস্থাপক পূরণ করতে পারবেন।');
-            }
-            $application = $this->findApplicationForMemberProduct($memberId, $legacyKey, $loanProductId, $loanCategoryId, [
-                LoanApplication::STATUS_SUBMITTED,
-                LoanApplication::STATUS_UNDER_REVIEW,
-            ]);
-            if (! $application) {
-                abort(404, 'অনুমোদনের জন্য জমা দেওয়া ঋণ আবেদন পাওয়া যায়নি।');
-            }
-            $this->ensureApplicationAccessibleToUser($application, $user);
-
-            return $application;
-        }
-
-        if (in_array($formId, [2, 3], true)) {
-            if (! $this->isBranchUserRole($user) && ! $this->isBranchManager($user)) {
-                abort(403, 'এই ফর্ম শুধু শাখা ব্যবহারকারী পূরণ করতে পারবেন।');
-            }
-            if ($request->filled('application_id')) {
-                $application = LoanApplication::find((int) $request->input('application_id'));
-                if ($application) {
-                    $this->ensureApplicationAccessibleToUser($application, $user);
-                    return $application;
-                }
-            }
-            $application = $this->findApplicationForMemberProduct($memberId, $legacyKey, $loanProductId, $loanCategoryId, [
-                LoanApplication::STATUS_PENDING_DISBURSEMENT,
-                LoanApplication::STATUS_APPROVED,
-                LoanApplication::STATUS_READY_FOR_HEAD_OFFICE,
-                LoanApplication::STATUS_PENDING_HEAD_OFFICE,
-                LoanApplication::STATUS_DISBURSED,
-                LoanApplication::STATUS_DRAFT,
-                LoanApplication::STATUS_SUBMITTED,
-                LoanApplication::STATUS_UNDER_REVIEW,
-            ]);
-            if (! $application) {
-                abort(404, 'ঋণ আবেদন পাওয়া যায়নি।');
-            }
-            $this->ensureApplicationAccessibleToUser($application, $user);
-
-            return $application;
+        if ($this->isBranchUserRole($user)) {
+            return $this->resolveApplicationForBranchUserFormSave(
+                $request,
+                $formId,
+                $loanProductId,
+                $loanCategoryId,
+                $requestedAmount,
+                $memberId,
+                $legacyKey,
+                $legacySnapshot
+            );
         }
 
         if ($this->isBranchManager($user)) {
-            $loanProduct = LoanProduct::with('loanCategory')->find($loanProductId);
-            $loanCategory = LoanCategory::find($loanCategoryId);
-            $bmEditableFormIds = array_values(array_unique(array_merge(
-                LoanFormVisibility::foSubmitFormIds($loanProduct, $requestedAmount, $loanCategory),
-                LoanFormVisibility::bmRequiredFormIds($loanProduct, $requestedAmount, $loanCategory)
-            )));
+            return $this->resolveApplicationForBranchManagerFormSave(
+                $request,
+                $formId,
+                $loanProductId,
+                $loanCategoryId,
+                $requestedAmount,
+                $memberId,
+                $legacyKey,
+                $legacySnapshot
+            );
+        }
 
-            if (in_array($formId, $bmEditableFormIds, true)) {
-                $application = $this->findApplicationForMemberProduct($memberId, $legacyKey, $loanProductId, $loanCategoryId, [
-                    LoanApplication::STATUS_SUBMITTED,
-                    LoanApplication::STATUS_UNDER_REVIEW,
-                ]);
+        if ($formId === 4) {
+            abort(403, 'সরেজমিন তদন্ত প্রতিবেদন শুধু শাখা ব্যবস্থাপক পূরণ করতে পারবেন।');
+        }
 
-                if ($application) {
-                    $this->ensureApplicationAccessibleToUser($application, $user);
-
-                    return $application;
-                }
-            }
+        if (in_array($formId, [2, 3], true)) {
+            abort(403, 'এই ফর্ম শুধু শাখা ব্যবহারকারী বা শাখা ব্যবস্থাপক পূরণ করতে পারবেন।');
         }
 
         $draft = $this->getOrCreateDraftForSave(
@@ -276,6 +260,147 @@ class LoanApplicationController extends Controller
         }
 
         return $draft;
+    }
+
+    /**
+     * Branch Manager may save every relevant form until they approve/forward,
+     * and Guarantor / Death Risk forms while pending disbursement.
+     */
+    private function resolveApplicationForBranchManagerFormSave(
+        Request $request,
+        int $formId,
+        int $loanProductId,
+        int $loanCategoryId,
+        float $requestedAmount,
+        ?int $memberId,
+        ?string $legacyKey,
+        ?array $legacySnapshot
+    ): LoanApplication {
+        $user = $request->user();
+        $application = null;
+
+        if ($request->filled('application_id')) {
+            $application = LoanApplication::find((int) $request->input('application_id'));
+        }
+
+        if (! $application) {
+            $application = $this->findApplicationForMemberProduct(
+                $memberId,
+                $legacyKey,
+                $loanProductId,
+                $loanCategoryId,
+                array_values(array_unique(array_merge(
+                    LoanFormVisibility::bmPreSubmitStatuses(),
+                    [LoanApplication::STATUS_PENDING_DISBURSEMENT]
+                )))
+            );
+        }
+
+        if ($application) {
+            $this->ensureApplicationAccessibleToUser($application, $user);
+            $this->assertFormEditableByUser($user, $application, $formId);
+
+            return $application;
+        }
+
+        if (in_array($formId, [2, 3, 4], true)) {
+            abort(404, 'ঋণ আবেদন পাওয়া যায়নি।');
+        }
+
+        $draft = $this->getOrCreateDraftForSave(
+            $request,
+            $loanProductId,
+            $loanCategoryId,
+            $requestedAmount,
+            $memberId,
+            $legacyKey,
+            $legacySnapshot
+        );
+        if (! $draft) {
+            abort(404, 'সদস্য পাওয়া যাচ্ছে না।');
+        }
+
+        return $draft;
+    }
+
+    /**
+     * Branch User may save any relevant loan form until disbursement.
+     */
+    private function resolveApplicationForBranchUserFormSave(
+        Request $request,
+        int $formId,
+        int $loanProductId,
+        int $loanCategoryId,
+        float $requestedAmount,
+        ?int $memberId,
+        ?string $legacyKey,
+        ?array $legacySnapshot
+    ): LoanApplication {
+        $user = $request->user();
+        $application = null;
+
+        if ($request->filled('application_id')) {
+            $application = LoanApplication::find((int) $request->input('application_id'));
+            if ($application && ! LoanFormVisibility::isBeforeDisbursement((string) $application->status)) {
+                abort(403, 'বিতরণ সম্পন্ন হওয়ার পরে ফর্ম এডিট করা যাবে না।');
+            }
+        }
+
+        if (! $application) {
+            $application = $this->findApplicationForMemberProduct(
+                $memberId,
+                $legacyKey,
+                $loanProductId,
+                $loanCategoryId,
+                LoanFormVisibility::preDisbursementStatuses()
+            );
+        }
+
+        if ($application) {
+            $this->ensureApplicationAccessibleToUser($application, $user);
+            $this->assertFormEditableByUser($user, $application, $formId);
+
+            return $application;
+        }
+
+        if (in_array($formId, [2, 3, 4], true)) {
+            abort(404, 'ঋণ আবেদন পাওয়া যায়নি।');
+        }
+
+        $draft = $this->getOrCreateDraftForSave(
+            $request,
+            $loanProductId,
+            $loanCategoryId,
+            $requestedAmount,
+            $memberId,
+            $legacyKey,
+            $legacySnapshot
+        );
+        if (! $draft) {
+            abort(404, 'সদস্য পাওয়া যাচ্ছে না।');
+        }
+
+        return $draft;
+    }
+
+    private function assertFormEditableByUser($user, LoanApplication $application, int $formId): void
+    {
+        $application->loadMissing(['loanProduct.loanCategory', 'loanCategory']);
+        $product = $application->loanProduct;
+        $category = $application->loanCategory ?? $product?->loanCategory;
+        $amount = (float) ($application->requested_amount ?? 0);
+        $roleName = $user->role?->name ?? '';
+        $editable = LoanFormVisibility::editableFormIdsForUser(
+            $roleName,
+            (string) $application->status,
+            $product,
+            $amount,
+            $category
+        );
+
+        if (! in_array($formId, $editable, true)) {
+            abort(403, 'এই ফর্ম এখন এডিট করার অনুমতি নেই।');
+        }
     }
 
     private function findApplicationForMemberProduct(
@@ -1264,7 +1389,7 @@ class LoanApplicationController extends Controller
         ])->findOrFail($id);
         $this->ensureApplicationAccessibleToUser($application, request()->user());
 
-        $this->attachFormMeta($application, request()->user());
+        $this->attachFormMeta($application, request()->user(), null, true);
 
         return Inertia::render('Member/LoanApplications/Show', [
             'application' => $application,
@@ -1497,20 +1622,40 @@ class LoanApplicationController extends Controller
 
         $scPerThousand = (float) ($loanProduct->service_charge_per_thousand ?? 0);
         if ($scPerThousand > 0) {
-            return ($amount / 1000) * $scPerThousand;
+            return round(($amount / 1000) * $scPerThousand);
         }
 
         $rate = (float) ($loanProduct->interest_rate ?? $loanProduct->service_charge ?? 0);
-        if ($rate <= 0) {
-            return 0;
+        $installmentType = strtolower((string) ($loanProduct->installment_type ?? ''));
+        $productName = strtolower((string) ($loanProduct->product_name ?? ''));
+        $productCode = strtolower((string) ($loanProduct->product_code ?? ''));
+        $isLump = $installmentType === 'lump_sum'
+            || str_contains($installmentType, 'lump')
+            || str_contains($productName, 'sufolon')
+            || str_starts_with($productCode, '4.');
+
+        // Monthly/weekly rates already include the full tenure (19.90% for 18 months).
+        // Sufolon/lump-sum rates are annual and must be scaled by months/12.
+        if ($rate > 0) {
+            if ($isLump) {
+                $months = (int) ($loanProduct->duration_months ?? 12);
+                if ($months <= 0) {
+                    $months = 12;
+                }
+
+                return round($amount * ($rate / 100) * ($months / 12));
+            }
+
+            return round($amount * ($rate / 100));
         }
 
-        $months = (int) ($loanProduct->duration_months ?? 12);
-        if ($months <= 0) {
-            $months = 12;
+        $intFactor = (float) ($loanProduct->interest_installment_factor ?? 0);
+        $installments = (int) ($loanProduct->number_of_installments ?? 0);
+        if ($intFactor > 0 && $installments > 0) {
+            return round($amount * $intFactor * $installments);
         }
 
-        return $amount * ($rate / 100) * ($months / 12);
+        return 0;
     }
 
     /**
@@ -1879,15 +2024,21 @@ class LoanApplicationController extends Controller
         $applicationStatuses = [LoanApplication::STATUS_DRAFT];
         if ($user->isSuperAdmin()) {
             $applicationStatuses = $this->allLoanStatuses();
-        } elseif ($this->isBranchManager($user) && in_array($formId, [1, 4, 5], true)) {
-            $applicationStatuses = [LoanApplication::STATUS_SUBMITTED, LoanApplication::STATUS_UNDER_REVIEW];
+        } elseif ($this->isBranchUserRole($user)) {
+            $applicationStatuses = LoanFormVisibility::preDisbursementStatuses();
+        } elseif ($this->isBranchManager($user)) {
+            $applicationStatuses = array_values(array_unique(array_merge(
+                LoanFormVisibility::bmPreSubmitStatuses(),
+                $formId !== null && in_array($formId, [2, 3], true)
+                    ? [LoanApplication::STATUS_PENDING_DISBURSEMENT]
+                    : []
+            )));
         } elseif (in_array($formId, [2, 3], true)) {
             $applicationStatuses = [
                 LoanApplication::STATUS_PENDING_DISBURSEMENT,
                 LoanApplication::STATUS_APPROVED,
                 LoanApplication::STATUS_READY_FOR_HEAD_OFFICE,
                 LoanApplication::STATUS_PENDING_HEAD_OFFICE,
-                LoanApplication::STATUS_DISBURSED,
                 LoanApplication::STATUS_DRAFT,
                 LoanApplication::STATUS_SUBMITTED,
                 LoanApplication::STATUS_UNDER_REVIEW,
@@ -1925,7 +2076,12 @@ class LoanApplicationController extends Controller
         if ($member) {
             if ($user->isSuperAdmin()) {
                 // Super admin may open any member's forms after PIN unlock.
-            } elseif (($this->isBranchManager($user) && in_array($formId, [1, 4, 5], true)) || $formId === 4 || in_array($formId, [2, 3], true)) {
+            } elseif (
+                $this->isBranchUserRole($user)
+                || $this->isBranchManager($user)
+                || $formId === 4
+                || in_array($formId, [2, 3], true)
+            ) {
                 if (!$user->has_all_access && !$user->canAccessBranch((int) $member->branch_id)) {
                     abort(403, 'এই সদস্য আপনার এলাকার/শাখার নয়।');
                 }

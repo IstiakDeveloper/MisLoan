@@ -100,6 +100,7 @@ Route::middleware(['auth', 'verified'])->group(function () {
     Route::middleware('head.office')->group(function () {
         Route::get('roles', [RoleController::class, 'index'])->name('roles.index');
         Route::post('roles', [RoleController::class, 'store'])->name('roles.store');
+        Route::post('roles/sync', [RoleController::class, 'sync'])->name('roles.sync');
         Route::put('roles/{role}', [RoleController::class, 'update'])->name('roles.update');
         Route::delete('roles/{role}', [RoleController::class, 'destroy'])->name('roles.destroy');
     });
@@ -186,6 +187,7 @@ Route::middleware(['auth', 'verified'])->group(function () {
         Route::get('/', [MemberAdmissionController::class, 'index'])->name('index')->middleware('branch.user');
         Route::get('export/excel', [MemberAdmissionController::class, 'exportExcel'])->name('export.excel')->middleware('branch.user');
         Route::get('create', [MemberAdmissionController::class, 'create'])->name('create')->middleware('branch.user');
+        Route::get('check-unique', [MemberAdmissionController::class, 'checkUnique'])->name('check-unique')->middleware('branch.user');
         Route::post('/', [MemberAdmissionController::class, 'store'])->name('store')->middleware('branch.user');
         Route::post('send-to-head-office-bulk', [MemberAdmissionController::class, 'sendToHeadOfficeBulk'])->name('send-to-head-office-bulk')->middleware('branch.user');
         Route::get('{memberAdmission}', [MemberAdmissionController::class, 'show'])->name('show')->middleware('member.admission.view');

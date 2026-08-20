@@ -1,21 +1,67 @@
-import React from 'react';
+import React, { useState } from 'react';
 import FormSection from '@/components/MemberAdmission/FormSection';
 import { SmartDateInput } from '@/components/ui/SmartDateInput';
 import { FileText } from 'lucide-react';
+import { checkAdmissionUnique } from '@/utils/checkAdmissionUnique';
 
 interface IdentitySectionProps {
     data: any;
     setData: (field: string, value: any) => void;
     errors: Record<string, string>;
+    ignoreAdmissionId?: number | null;
 }
 
 export default function IdentitySection({
     data,
     setData,
     errors,
+    ignoreAdmissionId,
 }: IdentitySectionProps) {
+    const [uniqueErrors, setUniqueErrors] = useState<Record<string, string>>({});
+    const shown = { ...uniqueErrors, ...errors };
+
     const inputClass = (hasErr?: boolean) =>
         `w-full rounded-xl border ${hasErr ? 'border-red-500 bg-red-50/50 ring-2 ring-red-200' : 'border-gray-300 bg-white'} px-3 py-2 text-xs md:text-sm focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 font-medium transition-all`;
+
+    const setField = (field: 'nid_number' | 'smart_card_number', value: string) => {
+        setUniqueErrors((prev) => {
+            if (!prev[field]) return prev;
+            const next = { ...prev };
+            delete next[field];
+            return next;
+        });
+        setData(field, value);
+    };
+
+    const checkField = async (field: 'nid_number' | 'smart_card_number', value: string) => {
+        const trimmed = value.trim();
+        if (!trimmed) {
+            setUniqueErrors((prev) => {
+                if (!prev[field]) return prev;
+                const next = { ...prev };
+                delete next[field];
+                return next;
+            });
+            return;
+        }
+        try {
+            const result = await checkAdmissionUnique({
+                [field]: trimmed,
+                ignore_id: ignoreAdmissionId,
+            });
+            setUniqueErrors((prev) => {
+                const next = { ...prev };
+                if (result[field]) {
+                    next[field] = result[field];
+                } else {
+                    delete next[field];
+                }
+                return next;
+            });
+        } catch {
+            // Server save still enforces uniqueness.
+        }
+    };
 
     return (
         <FormSection
@@ -34,11 +80,12 @@ export default function IdentitySection({
                             type="text"
                             placeholder="এনআইডি নম্বর"
                             value={data.nid_number}
-                            onChange={(e) => setData('nid_number', e.target.value)}
-                            className={inputClass(Boolean(errors.nid_number))}
+                            onChange={(e) => setField('nid_number', e.target.value)}
+                            onBlur={(e) => void checkField('nid_number', e.target.value)}
+                            className={inputClass(Boolean(shown.nid_number))}
                         />
-                        {errors.nid_number && (
-                            <p className="mt-1 text-xs text-red-600 font-medium">{errors.nid_number}</p>
+                        {shown.nid_number && (
+                            <p className="mt-1 text-xs text-red-600 font-medium">{shown.nid_number}</p>
                         )}
                     </div>
 
@@ -47,9 +94,13 @@ export default function IdentitySection({
                         <input
                             type="text"
                             value={data.smart_card_number}
-                            onChange={(e) => setData('smart_card_number', e.target.value)}
-                            className={inputClass()}
+                            onChange={(e) => setField('smart_card_number', e.target.value)}
+                            onBlur={(e) => void checkField('smart_card_number', e.target.value)}
+                            className={inputClass(Boolean(shown.smart_card_number))}
                         />
+                        {shown.smart_card_number && (
+                            <p className="mt-1 text-xs text-red-600 font-medium">{shown.smart_card_number}</p>
+                        )}
                     </div>
                 </div>
 

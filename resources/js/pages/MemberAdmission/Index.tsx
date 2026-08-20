@@ -96,6 +96,10 @@ export default function Index({ admissions, filters, stats, workQueue }: Props) 
         return Number(assignedId ?? creatorId) === Number(currentUserId);
     };
 
+    const canEditAdmission = (admission: MemberAdmission) =>
+        admission.can_be_edited ??
+        (admission.status === 'draft' || admission.status === 'rejected');
+
     const [searchQuery, setSearchQuery] = useState(filters.search || '');
     const [statusFilter, setStatusFilter] = useState(filters.status || 'all');
     const [fromDate, setFromDate] = useState(filters.from_date || '');
@@ -801,25 +805,23 @@ export default function Index({ admissions, filters, stats, workQueue }: Props) 
                                             </Link>
                                         )}
 
-                                        {(admission.status === 'draft' || admission.status === 'rejected') && (
-                                            <>
-                                                <Link
-                                                    href={`/member-admissions/${admission.id}/edit`}
-                                                    className="p-2 text-amber-700 bg-amber-50 hover:bg-amber-100 border border-amber-200 rounded-xl transition"
-                                                    title="সম্পাদনা"
-                                                >
-                                                    <Edit className="w-4 h-4" />
-                                                </Link>
-                                                {admission.status === 'draft' && (
-                                                    <button
-                                                        onClick={() => handleSubmit(admission.id, admission.application_no, admission.is_legacy)}
-                                                        className="p-2 text-white bg-emerald-600 hover:bg-emerald-700 rounded-xl transition"
-                                                        title={admission.is_legacy ? 'সংরক্ষণ ও অটো অনুমোদন' : 'জমা দিন'}
-                                                    >
-                                                        <Send className="w-4 h-4" />
-                                                    </button>
-                                                )}
-                                            </>
+                                        {canEditAdmission(admission) && (
+                                            <Link
+                                                href={`/member-admissions/${admission.id}/edit`}
+                                                className="p-2 text-amber-700 bg-amber-50 hover:bg-amber-100 border border-amber-200 rounded-xl transition"
+                                                title="সম্পাদনা"
+                                            >
+                                                <Edit className="w-4 h-4" />
+                                            </Link>
+                                        )}
+                                        {admission.status === 'draft' && (
+                                            <button
+                                                onClick={() => handleSubmit(admission.id, admission.application_no, admission.is_legacy)}
+                                                className="p-2 text-white bg-emerald-600 hover:bg-emerald-700 rounded-xl transition"
+                                                title={admission.is_legacy ? 'সংরক্ষণ ও অটো অনুমোদন' : 'জমা দিন'}
+                                            >
+                                                <Send className="w-4 h-4" />
+                                            </button>
                                         )}
 
                                         {admission.status === 'needs_revision' && !isFieldOfficer && (
@@ -980,25 +982,23 @@ export default function Index({ admissions, filters, stats, workQueue }: Props) 
                                                             </Link>
                                                         )}
 
-                                                        {(admission.status === 'draft' || admission.status === 'rejected') && (
-                                                            <>
-                                                                <Link
-                                                                    href={`/member-admissions/${admission.id}/edit`}
-                                                                    className="p-2 text-amber-600 hover:bg-amber-50 rounded-lg transition-colors"
-                                                                    title="সম্পাদনা"
-                                                                >
-                                                                    <Edit className="w-4 h-4" />
-                                                                </Link>
-                                                                {admission.status === 'draft' && (
-                                                                    <button
-                                                                        onClick={() => handleSubmit(admission.id, admission.application_no, admission.is_legacy)}
-                                                                        className="p-2 text-emerald-600 hover:bg-emerald-50 rounded-lg transition-colors"
-                                                                        title={admission.is_legacy ? 'সংরক্ষণ ও অটো অনুমোদন' : 'জমা দিন'}
-                                                                    >
-                                                                        <Send className="w-4 h-4" />
-                                                                    </button>
-                                                                )}
-                                                            </>
+                                                        {canEditAdmission(admission) && (
+                                                            <Link
+                                                                href={`/member-admissions/${admission.id}/edit`}
+                                                                className="p-2 text-amber-600 hover:bg-amber-50 rounded-lg transition-colors"
+                                                                title="সম্পাদনা"
+                                                            >
+                                                                <Edit className="w-4 h-4" />
+                                                            </Link>
+                                                        )}
+                                                        {admission.status === 'draft' && (
+                                                            <button
+                                                                onClick={() => handleSubmit(admission.id, admission.application_no, admission.is_legacy)}
+                                                                className="p-2 text-emerald-600 hover:bg-emerald-50 rounded-lg transition-colors"
+                                                                title={admission.is_legacy ? 'সংরক্ষণ ও অটো অনুমোদন' : 'জমা দিন'}
+                                                            >
+                                                                <Send className="w-4 h-4" />
+                                                            </button>
                                                         )}
 
                                                         {admission.status === 'needs_revision' && !isFieldOfficer && (

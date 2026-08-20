@@ -166,6 +166,12 @@ export default function FormPage3({ data, setData, member, loanProduct, loanCate
         if (String(data.last_installment_amount || '') !== String(liveSchedule.lastInstallmentAmount)) {
             setData('last_installment_amount', String(liveSchedule.lastInstallmentAmount));
         }
+        if (String(data.last_installment_principal || '') !== String(liveSchedule.lastPrincipal)) {
+            setData('last_installment_principal', String(liveSchedule.lastPrincipal));
+        }
+        if (String(data.last_installment_service_charge || '') !== String(liveSchedule.lastServiceCharge)) {
+            setData('last_installment_service_charge', String(liveSchedule.lastServiceCharge));
+        }
         if (String(data.total_principal || '') !== String(loanAmount)) {
             setData('total_principal', String(loanAmount));
         }
@@ -189,6 +195,7 @@ export default function FormPage3({ data, setData, member, loanProduct, loanCate
         loanProduct?.service_charge_rate,
         loanProduct?.service_charge_per_thousand,
         loanProduct?.installment_amount_per_thousand,
+        loanProduct?.last_installment_per_thousand,
         loanProduct?.loan_installment_factor,
         loanProduct?.interest_installment_factor,
         loanProduct?.number_of_installments,
@@ -360,7 +367,12 @@ export default function FormPage3({ data, setData, member, loanProduct, loanCate
                             <tbody>
                                 <tr>
                                     <td className="border border-indigo-200 p-1">
-                                        <input type="text" value={scheduleType} className={readOnlyClass} readOnly />
+                                        <input
+                                            type="text"
+                                            value={scheduleType}
+                                            className={readOnlyClass}
+                                            readOnly
+                                        />
                                     </td>
                                     <td className="border border-indigo-200 p-1">
                                         <input type="number" value={schedulePrincipal} className={readOnlyClass} readOnly />

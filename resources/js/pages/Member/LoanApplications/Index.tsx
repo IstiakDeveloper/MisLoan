@@ -1063,7 +1063,8 @@ export default function Index({ categories, applications, stats, selectedDate, d
                                                 <Eye className="w-3.5 h-3.5" />
                                                 <span>বিবরণ দেখুন</span>
                                             </button>
-                                            {(app.status === 'submitted' || app.status === 'under_review') && isBranchManager && (app.editable_form_ids?.length ?? 0) > 0 && (
+                                            {((isBranchManager || (isBranchUser && app.status !== 'draft' && app.status !== 'disbursed'))
+                                                && (app.editable_form_ids?.length ?? 0) > 0) && (
                                                 <button
                                                     onClick={() => router.get(`/member/loan-applications/${app.id}`)}
                                                     className="inline-flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold text-amber-700 bg-amber-50 hover:bg-amber-100 border border-amber-200 transition active:scale-95"
@@ -1310,7 +1311,8 @@ export default function Index({ categories, applications, stats, selectedDate, d
                                                             >
                                                                 <Eye className="w-4 h-4" />
                                                             </button>
-                                                            {(app.status === 'submitted' || app.status === 'under_review') && isBranchManager && (app.editable_form_ids?.length ?? 0) > 0 && (
+                                                            {((isBranchManager || (isBranchUser && app.status !== 'draft' && app.status !== 'disbursed'))
+                                                                && (app.editable_form_ids?.length ?? 0) > 0) && (
                                                                 <button
                                                                     onClick={() => router.get(`/member/loan-applications/${app.id}`)}
                                                                     className="inline-flex items-center gap-1 text-xs px-2.5 py-1 bg-amber-50 hover:bg-amber-100 text-amber-700 font-bold rounded-xl border border-amber-200 shadow-sm transition active:scale-95"

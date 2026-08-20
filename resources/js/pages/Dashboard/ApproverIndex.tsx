@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import AdminLayout from '@/layouts/admin-layout';
 import { Head, Link, router } from '@inertiajs/react';
 import {
@@ -21,6 +21,10 @@ import {
     Layers,
     Send,
     TrendingUp,
+    Users,
+    Search,
+    Phone,
+    Filter,
 } from 'lucide-react';
 
 interface MyBranch {
@@ -84,6 +88,31 @@ interface ActionQueueItem {
     url: string;
 }
 
+export interface SubordinateManager {
+    id: number;
+    manager_id?: number | null;
+    manager_name: string;
+    manager_phone?: string | null;
+    manager_role: string;
+    unit_name: string;
+    unit_code: string;
+    parent_name: string;
+    admission_pending: number;
+    loan_pending: number;
+    total_pending: number;
+    loan_amount: number;
+    branches_count?: number | null;
+}
+
+export interface SubordinateSummary {
+    type: 'branch_managers' | 'regional_managers' | 'zonal_and_regional_managers';
+    title: string;
+    list: SubordinateManager[];
+    total_managers: number;
+    total_pending_all: number;
+    total_amount_all: number;
+}
+
 interface Props {
     period: 'today' | 'monthly' | 'date_to_date';
     dateFrom: string | null;
@@ -93,6 +122,7 @@ interface Props {
     approverStats: ApproverStats;
     teamBasedStats: TeamBasedStats;
     approverActionQueue: ActionQueueItem[];
+    subordinateSummary?: SubordinateSummary;
     user: {
         id: number;
         name: string;
@@ -200,11 +230,31 @@ export default function UnifiedApproverDashboard({
     approverStats,
     teamBasedStats,
     approverActionQueue,
+    subordinateSummary,
     user,
 }: Props) {
     const [periodSelect, setPeriodSelect] = useState<'today' | 'monthly' | 'date_to_date'>(period);
     const [fromDate, setFromDate] = useState(dateFrom ?? '');
     const [toDate, setToDate] = useState(dateTo ?? '');
+
+    const [searchManager, setSearchManager] = useState('');
+    const [managerFilterTab, setManagerFilterTab] = useState<'all' | 'pending' | 'zero'>('all');
+
+    const filteredSubordinates = useMemo(() => {
+        if (!subordinateSummary?.list) return [];
+        return subordinateSummary.list.filter((mgr) => {
+            if (managerFilterTab === 'pending' && mgr.total_pending === 0) return false;
+            if (managerFilterTab === 'zero' && mgr.total_pending > 0) return false;
+            if (!searchManager) return true;
+            const query = searchManager.toLowerCase();
+            return (
+                mgr.manager_name.toLowerCase().includes(query) ||
+                mgr.unit_name.toLowerCase().includes(query) ||
+                mgr.unit_code.toLowerCase().includes(query) ||
+                mgr.parent_name.toLowerCase().includes(query)
+            );
+        });
+    }, [subordinateSummary, searchManager, managerFilterTab]);
 
     useEffect(() => {
         setPeriodSelect(period);
@@ -270,8 +320,8 @@ export default function UnifiedApproverDashboard({
             total: stats.my_pending.total || 0,
             admission: stats.my_pending.admission || 0,
             loan: stats.my_pending.loan || 0,
-            admUrl: '/member-admissions?status=under_review',
-            loanUrl: '/member/loan-applications?status=under_review',
+            admUrl: '/member-admissions?status=pending_my_approval',
+            loanUrl: '/member/loan-applications?status=pending_my_approval',
             badgeBg: 'bg-indigo-600 text-white',
             btnBg: 'bg-indigo-50/80 hover:bg-indigo-100/90 text-indigo-900 border-indigo-200/90',
             iconBg: 'bg-indigo-600 text-white border-indigo-600',
@@ -802,6 +852,255 @@ export default function UnifiedApproverDashboard({
                         </div>
                     </div>
                 </div>
+
+                {/* 5. SUBORDINATE MANAGERS NAME-BASED PENDING MONITOR */}
+                {subordinateSummary && subordinateSummary.list && (
+                    <div className="bg-white rounded-2xl border border-slate-200/90 shadow-2xs p-4 space-y-4">
+                        {/* Section Header */}
+                        <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 pb-3 border-b border-slate-100">
+                            <div className="flex items-center gap-2.5">
+                                <div className="w-8 h-8 rounded-xl bg-gradient-to-tr from-indigo-600 to-blue-600 text-white flex items-center justify-center shadow-xs shrink-0">
+                                    <Users size={16} />
+                                </div>
+                                <div>
+                                    <div className="flex items-center gap-2">
+                                        <h3 className="text-sm sm:text-base font-bold text-slate-800 tracking-tight">
+                                            {subordinateSummary.title}
+                                        </h3>
+                                        <span className="text-[10px] font-bold px-2 py-0.5 bg-indigo-50 text-indigo-700 rounded-md border border-indigo-200">
+                                            মোট {subordinateSummary.total_managers} জন কর্মকর্তা
+                                        </span>
+                                        <span className="text-[10px] font-bold px-2 py-0.5 bg-amber-50 text-amber-800 rounded-md border border-amber-200">
+                                            মোট পেন্ডিং {subordinateSummary.total_pending_all} টি
+                                        </span>
+                                    </div>
+                                    <p className="text-[11px] text-slate-400 font-medium mt-0.5">
+                                        আওতাধীন কর্মকর্তাদের নাম, শাখা/অঞ্চল এবং পেন্ডিং আবেদনের তাৎক্ষণিক পর্যবেক্ষণ
+                                    </p>
+                                </div>
+                            </div>
+
+                            {/* Search & Tabs Toolbar */}
+                            <div className="flex flex-wrap items-center gap-2">
+                                <div className="relative min-w-[200px] max-w-xs">
+                                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 w-3.5 h-3.5" />
+                                    <input
+                                        type="text"
+                                        value={searchManager}
+                                        onChange={(e) => setSearchManager(e.target.value)}
+                                        placeholder="কর্মকর্তা বা শাখার নাম খুঁজুন..."
+                                        className="w-full pl-8 pr-3 py-1.5 text-xs bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 font-medium"
+                                    />
+                                    {searchManager && (
+                                        <button
+                                            type="button"
+                                            onClick={() => setSearchManager('')}
+                                            className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 text-xs"
+                                        >
+                                            ✕
+                                        </button>
+                                    )}
+                                </div>
+
+                                <div className="flex items-center bg-slate-100 p-1 rounded-xl text-[11px] font-bold">
+                                    <button
+                                        type="button"
+                                        onClick={() => setManagerFilterTab('all')}
+                                        className={`px-2.5 py-1 rounded-lg transition-all ${
+                                            managerFilterTab === 'all'
+                                                ? 'bg-white text-slate-900 shadow-2xs font-extrabold'
+                                                : 'text-slate-600 hover:text-slate-900'
+                                        }`}
+                                    >
+                                        সব ({subordinateSummary.list.length})
+                                    </button>
+                                    <button
+                                        type="button"
+                                        onClick={() => setManagerFilterTab('pending')}
+                                        className={`px-2.5 py-1 rounded-lg transition-all ${
+                                            managerFilterTab === 'pending'
+                                                ? 'bg-amber-500 text-white shadow-2xs font-extrabold'
+                                                : 'text-slate-600 hover:text-amber-600'
+                                        }`}
+                                    >
+                                        পেন্ডিং আছে ({subordinateSummary.list.filter((m) => m.total_pending > 0).length})
+                                    </button>
+                                    <button
+                                        type="button"
+                                        onClick={() => setManagerFilterTab('zero')}
+                                        className={`px-2.5 py-1 rounded-lg transition-all ${
+                                            managerFilterTab === 'zero'
+                                                ? 'bg-emerald-600 text-white shadow-2xs font-extrabold'
+                                                : 'text-slate-600 hover:text-emerald-600'
+                                        }`}
+                                    >
+                                        শূন্য ({subordinateSummary.list.filter((m) => m.total_pending === 0).length})
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+
+                        {/* Managers Table View */}
+                        <div className="overflow-x-auto rounded-xl border border-slate-200/80">
+                            <table className="w-full text-left text-xs border-collapse">
+                                <thead>
+                                    <tr className="bg-slate-50/80 text-slate-600 border-b border-slate-200 text-[11px] font-bold uppercase tracking-wider">
+                                        <th className="py-2.5 px-3">#</th>
+                                        <th className="py-2.5 px-3">কর্মকর্তার নাম ও পদবি</th>
+                                        <th className="py-2.5 px-3">শাখা / অঞ্চল</th>
+                                        <th className="py-2.5 px-3 text-center">ভর্তি পেন্ডিং</th>
+                                        <th className="py-2.5 px-3 text-center">ঋণ পেন্ডিং</th>
+                                        <th className="py-2.5 px-3 text-center">সর্বমোট পেন্ডিং</th>
+                                        <th className="py-2.5 px-3 text-right">ঋণের পরিমাণ (৳)</th>
+                                        <th className="py-2.5 px-3 text-center">অবস্থা</th>
+                                    </tr>
+                                </thead>
+                                <tbody className="divide-y divide-slate-100">
+                                    {filteredSubordinates.length === 0 ? (
+                                        <tr>
+                                            <td colSpan={8} className="py-8 text-center text-slate-400 font-medium">
+                                                কোনো কর্মকর্তার তথ্য পাওয়া যায়নি।
+                                            </td>
+                                        </tr>
+                                    ) : (
+                                        filteredSubordinates.map((mgr, idx) => {
+                                            const hasPending = mgr.total_pending > 0;
+                                            const isHighLoad = mgr.total_pending >= 5;
+
+                                            return (
+                                                <tr
+                                                    key={mgr.id || idx}
+                                                    className={`hover:bg-indigo-50/30 transition-colors ${
+                                                        isHighLoad ? 'bg-amber-50/20' : ''
+                                                    }`}
+                                                >
+                                                    <td className="py-2.5 px-3 text-slate-400 font-semibold">
+                                                        {idx + 1}
+                                                    </td>
+
+                                                    {/* Manager Name & Role */}
+                                                    <td className="py-2.5 px-3">
+                                                        <div className="flex items-center gap-2.5">
+                                                            <div className="w-8 h-8 rounded-xl bg-gradient-to-tr from-slate-700 to-slate-900 text-white font-bold flex items-center justify-center text-xs shadow-2xs shrink-0">
+                                                                {(mgr.manager_name || 'M')[0]}
+                                                            </div>
+                                                            <div>
+                                                                <div className="flex items-center gap-1.5">
+                                                                    <span className="font-bold text-slate-900">
+                                                                        {mgr.manager_name}
+                                                                    </span>
+                                                                    {mgr.manager_phone && (
+                                                                        <a
+                                                                            href={`tel:${mgr.manager_phone}`}
+                                                                            className="text-slate-400 hover:text-indigo-600 transition-colors"
+                                                                            title={`কল করুন: ${mgr.manager_phone}`}
+                                                                        >
+                                                                            <Phone size={11} />
+                                                                        </a>
+                                                                    )}
+                                                                </div>
+                                                                <span className="text-[10px] text-slate-500 font-medium">
+                                                                    {mgr.manager_role}
+                                                                </span>
+                                                            </div>
+                                                        </div>
+                                                    </td>
+
+                                                    {/* Branch / Area Name */}
+                                                    <td className="py-2.5 px-3">
+                                                        <div>
+                                                            <div className="flex items-center gap-1.5">
+                                                                <span className="font-bold text-slate-800">
+                                                                    {mgr.unit_name}
+                                                                </span>
+                                                                {mgr.unit_code && (
+                                                                    <span className="text-[9px] font-mono px-1.5 py-0.2 bg-slate-100 text-slate-600 rounded border border-slate-200">
+                                                                        {mgr.unit_code}
+                                                                    </span>
+                                                                )}
+                                                            </div>
+                                                            <span className="text-[10px] text-slate-400 font-medium">
+                                                                {mgr.parent_name}
+                                                            </span>
+                                                        </div>
+                                                    </td>
+
+                                                    {/* Admission Pending */}
+                                                    <td className="py-2.5 px-3 text-center">
+                                                        <span
+                                                            className={`inline-flex items-center justify-center min-w-[24px] px-2 py-0.5 rounded-full text-xs font-bold ${
+                                                                mgr.admission_pending > 0
+                                                                    ? 'bg-amber-100 text-amber-800 border border-amber-200'
+                                                                    : 'text-slate-400'
+                                                            }`}
+                                                        >
+                                                            {mgr.admission_pending}
+                                                        </span>
+                                                    </td>
+
+                                                    {/* Loan Pending */}
+                                                    <td className="py-2.5 px-3 text-center">
+                                                        <span
+                                                            className={`inline-flex items-center justify-center min-w-[24px] px-2 py-0.5 rounded-full text-xs font-bold ${
+                                                                mgr.loan_pending > 0
+                                                                    ? 'bg-blue-100 text-blue-800 border border-blue-200'
+                                                                    : 'text-slate-400'
+                                                            }`}
+                                                        >
+                                                            {mgr.loan_pending}
+                                                        </span>
+                                                    </td>
+
+                                                    {/* Total Pending */}
+                                                    <td className="py-2.5 px-3 text-center">
+                                                        <span
+                                                            className={`inline-flex items-center justify-center min-w-[28px] px-2.5 py-0.5 rounded-full text-xs font-black ${
+                                                                isHighLoad
+                                                                    ? 'bg-rose-600 text-white shadow-2xs'
+                                                                    : hasPending
+                                                                    ? 'bg-indigo-600 text-white shadow-2xs'
+                                                                    : 'bg-slate-100 text-slate-500'
+                                                            }`}
+                                                        >
+                                                            {mgr.total_pending}
+                                                        </span>
+                                                    </td>
+
+                                                    {/* Loan Amount */}
+                                                    <td className="py-2.5 px-3 text-right">
+                                                        <span className="font-bold text-slate-800">
+                                                            {mgr.loan_amount > 0 ? `৳ ${mgr.loan_amount.toLocaleString()}` : '—'}
+                                                        </span>
+                                                    </td>
+
+                                                    {/* Status Badge */}
+                                                    <td className="py-2.5 px-3 text-center">
+                                                        {isHighLoad ? (
+                                                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-bold bg-rose-50 text-rose-700 border border-rose-200">
+                                                                <span className="w-1.5 h-1.5 rounded-full bg-rose-500 animate-pulse" />
+                                                                উচ্চ চাপ ({mgr.total_pending})
+                                                            </span>
+                                                        ) : hasPending ? (
+                                                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-bold bg-amber-50 text-amber-700 border border-amber-200">
+                                                                <span className="w-1.5 h-1.5 rounded-full bg-amber-500" />
+                                                                চলমান ({mgr.total_pending})
+                                                            </span>
+                                                        ) : (
+                                                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200">
+                                                                <CheckCircle2 size={10} />
+                                                                ক্লিয়ার
+                                                            </span>
+                                                        )}
+                                                    </td>
+                                                </tr>
+                                            );
+                                        })
+                                    )}
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                )}
             </div>
         </AdminLayout>
     );

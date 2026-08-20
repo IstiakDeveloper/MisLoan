@@ -57,6 +57,12 @@ export function getInstallmentCount(
     return months > 0 ? months : 12;
 }
 
+function isLumpSumProduct(loanProduct: any, loanCategory?: any): boolean {
+    if (isSufolonLoan(loanCategory, loanProduct)) return true;
+    const t = String(loanProduct?.installment_type || '').toLowerCase();
+    return t === 'lump_sum' || t.includes('lump') || t.includes('এককাল');
+}
+
 export function calculateTotalServiceCharge(
     loanAmount: number,
     loanProduct: any,
@@ -71,23 +77,32 @@ export function calculateTotalServiceCharge(
         return Math.round((amount / 1000) * scPerThousand);
     }
 
-    const intFactor = Number(loanProduct?.interest_installment_factor) || 0;
-    const installments = getInstallmentCount(loanProduct, durationMonths, loanCategory);
-
-    if (intFactor > 0 && installments > 0) {
-        return Math.round(amount * intFactor * installments);
-    }
-
     const rate = Number(
         loanProduct?.interest_rate ??
             loanProduct?.service_charge ??
             loanProduct?.service_charge_rate ??
             0,
     );
-    if (rate <= 0) return 0;
 
-    const months = Number(durationMonths || getLoanDurationMonths(loanProduct, 12));
-    return Math.round(amount * (rate / 100) * (months / 12));
+    if (rate > 0) {
+        // Sufolon/lump-sum rates are annual (scale by tenure).
+        // Monthly/weekly product rates already include the full tenure
+        // (13.30% for 1yr, 19.90% for 1.5yr, 26.60% for 2yr).
+        if (isLumpSumProduct(loanProduct, loanCategory)) {
+            const months = Number(durationMonths || getLoanDurationMonths(loanProduct, 12));
+            const years = (months > 0 ? months : 12) / 12;
+            return Math.round(amount * (rate / 100) * years);
+        }
+        return Math.round(amount * (rate / 100));
+    }
+
+    const intFactor = Number(loanProduct?.interest_installment_factor) || 0;
+    const installments = getInstallmentCount(loanProduct, durationMonths, loanCategory);
+    if (intFactor > 0 && installments > 0) {
+        return Math.round(amount * intFactor * installments);
+    }
+
+    return 0;
 }
 
 /**
@@ -100,9 +115,8 @@ export function calculateLoanSchedule(
     customDisbursementDate?: string | null,
 ) {
     const amount = Number(loanAmount) || 0;
-    const isSufolon = isSufolonLoan(loanCategory, loanProduct);
     const rawType = String(loanProduct?.installment_type || '').toLowerCase();
-    const isLumpSum = isSufolon || rawType === 'lump_sum' || rawType.includes('lump') || rawType.includes('এককাল');
+    const isLumpSum = isLumpSumProduct(loanProduct, loanCategory);
     const durationMonths = getLoanDurationMonths(loanProduct, 12);
     const numberOfInstallments = getInstallmentCount(loanProduct, durationMonths, loanCategory);
     const serviceCharge = calculateTotalServiceCharge(amount, loanProduct, durationMonths, loanCategory);
@@ -247,6 +261,8 @@ export function calcInstallmentSchedule(
 ): {
     principal: number;
     serviceCharge: number;
+    lastPrincipal: number;
+    lastServiceCharge: number;
     installments: number;
     typeLabel: string;
     totalServiceCharge: number;
@@ -261,15 +277,39 @@ export function calcInstallmentSchedule(
     const installments = schedule.numberOfInstallments;
     if (installments <= 0) return null;
 
+    if (installments <= 1) {
+        return {
+            principal: amount,
+            serviceCharge: schedule.serviceCharge,
+            lastPrincipal: amount,
+            lastServiceCharge: schedule.serviceCharge,
+            installments,
+            typeLabel: schedule.typeLabel,
+            totalServiceCharge: schedule.serviceCharge,
+            installmentAmount: schedule.installmentAmount,
+            lastInstallmentAmount: schedule.lastInstallmentAmount,
+            totalAmount: schedule.totalAmount,
+        };
+    }
+
     const loanInstFactor = Number(loanProduct?.loan_installment_factor) || 0;
     const intInstFactor = Number(loanProduct?.interest_installment_factor) || 0;
 
-    const principal = loanInstFactor > 0 ? Math.round(amount * loanInstFactor) : Math.round(amount / installments);
-    const serviceCharge = intInstFactor > 0 ? Math.round(amount * intInstFactor) : Math.round(schedule.serviceCharge / installments);
+    const principal = loanInstFactor > 0
+        ? Math.round(amount * loanInstFactor)
+        : Math.round(amount / installments);
+    const serviceCharge = intInstFactor > 0
+        ? Math.round(amount * intInstFactor)
+        : Math.round(schedule.installmentAmount - principal);
+
+    const lastPrincipal = Math.round(amount - principal * (installments - 1));
+    const lastServiceCharge = Math.round(schedule.lastInstallmentAmount - lastPrincipal);
 
     return {
         principal,
         serviceCharge,
+        lastPrincipal,
+        lastServiceCharge,
         installments,
         typeLabel: schedule.typeLabel,
         totalServiceCharge: schedule.serviceCharge,
@@ -291,6 +331,8 @@ export function installmentFormFields(
     installment_total: string;
     number_of_installments: string;
     last_installment_amount: string;
+    last_installment_principal: string;
+    last_installment_service_charge: string;
     total_principal: string;
     total_service_charge: string;
     total_payable: string;
@@ -304,6 +346,8 @@ export function installmentFormFields(
             installment_total: '',
             number_of_installments: '',
             last_installment_amount: '',
+            last_installment_principal: '',
+            last_installment_service_charge: '',
             total_principal: '',
             total_service_charge: '',
             total_payable: '',
@@ -319,6 +363,8 @@ export function installmentFormFields(
         installment_total: String(schedule.installmentAmount),
         number_of_installments: String(schedule.installments),
         last_installment_amount: String(schedule.lastInstallmentAmount),
+        last_installment_principal: String(schedule.lastPrincipal),
+        last_installment_service_charge: String(schedule.lastServiceCharge),
         total_principal: String(amount),
         total_service_charge: String(schedule.totalServiceCharge),
         total_payable: String(schedule.totalAmount),

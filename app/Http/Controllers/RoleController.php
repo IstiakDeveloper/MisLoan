@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Models\Role;
+use App\Support\RoleCatalog;
 use Illuminate\Http\Request;
 use Inertia\Inertia;
 
@@ -46,6 +47,8 @@ class RoleController extends Controller
                 'loan_applications.view' => 'View Loan Applications',
                 'loan_applications.create' => 'Submit Loan Application',
                 'loan_applications.edit' => 'Edit Loan Application',
+                'loan_applications.edit_forms' => 'Edit Loan Forms (before disbursement)',
+                'member_admissions.edit_forms' => 'Edit Admission Forms (before loan disbursement)',
                 'loan_applications.review' => 'Review Loan Application',
                 'loan_applications.approve' => 'Approve Loan Application',
                 'loan_applications.reject' => 'Reject Loan Application',
@@ -95,6 +98,22 @@ class RoleController extends Controller
 
         return redirect()->route('roles.index')
             ->with('success', 'Role created successfully.');
+    }
+
+    /**
+     * Merge catalog roles/permissions without overwriting existing customizations.
+     */
+    public function sync(Request $request)
+    {
+        $user = $request->user();
+        if (! $user?->isSuperAdmin() && ! $user?->isHeadOffice() && ! $user?->has_all_access) {
+            abort(403, 'শুধুমাত্র সুপার অ্যাডমিন বা হেড অফিস রোল সিঙ্ক করতে পারবেন।');
+        }
+
+        $result = RoleCatalog::sync();
+
+        return redirect()->route('roles.index')
+            ->with('success', RoleCatalog::summaryMessage($result));
     }
 
     public function update(Request $request, Role $role)

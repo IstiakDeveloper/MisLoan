@@ -13,6 +13,7 @@ use App\Models\MemberAdmission;
 use App\Models\TeamBasedApproval;
 use App\Models\TeamBasedApprovalItem;
 use App\Models\TeamBasedApprovalReview;
+use App\Services\ApprovalService;
 use Carbon\Carbon;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
@@ -73,29 +74,25 @@ class DashboardController extends Controller
     {
         $roleName = $user->role?->name;
 
-        // 1. Resolve Jurisdiction Branch IDs, Labels, and Level Filter
+        // 1. Resolve jurisdiction branch IDs and labels
         if ($approverType === 'area' || $roleName === Role::AREA_MANAGER) {
             $areaIds = $user->area_id ? [$user->area_id] : $user->areas()->pluck('areas.id')->toArray();
             $branchIds = Branch::whereIn('area_id', $areaIds)->pluck('id')->toArray();
             $roleLabel = 'রিজিওনাল / এরিয়া ম্যানেজার (RM)';
             $scopeLabel = $user->area?->name ?? 'এরিয়া জুরিসডিকশন';
-            $levelFilter = 'area';
         } elseif ($approverType === 'zone' || $roleName === Role::ZONE_MANAGER) {
             $zoneIds = $user->zone_id ? [$user->zone_id] : $user->zones()->pluck('zones.id')->toArray();
             $branchIds = Branch::whereHas('area', fn ($q) => $q->whereIn('zone_id', $zoneIds))->pluck('id')->toArray();
             $roleLabel = 'জোনাল ম্যানেজার (ZM)';
             $scopeLabel = $user->zone?->name ?? 'জোন জুরিসডিকশন';
-            $levelFilter = 'zone';
         } elseif ($approverType === 'financial' || in_array($roleName, [Role::ADMF, Role::DMF, Role::ED], true)) {
             $branchIds = Branch::pluck('id')->toArray();
             $roleLabel = 'উর্ধ্বতন আর্থিক অনুমোদক (' . strtoupper($roleName ?? 'APPROVER') . ')';
             $scopeLabel = 'সার্বিক আর্থিক অনুমোদন';
-            $levelFilter = 'other';
         } else {
             $branchIds = Branch::pluck('id')->toArray();
             $roleLabel = 'অনুমোদক ড্যাশবোর্ড';
             $scopeLabel = 'সার্বিক পরিধি';
-            $levelFilter = 'other';
         }
 
         // 2. Resolve Period
@@ -129,88 +126,29 @@ class DashboardController extends Controller
             ->with('area.zone')
             ->get(['id', 'name', 'code', 'area_id']);
 
-        // 3. Calculate Pending Approvals by Level in this Jurisdiction
+        // 3. Pending in this jurisdiction vs assigned to THIS user (must match /approvals)
         $pendingAdmissions = MemberAdmission::whereIn('branch_id', $branchIds)
             ->whereIn('status', ['submitted', 'under_review', 'pending_head_office'])
-            ->with(['approvals' => fn ($q) => $q->orderBy('sequence')])
-            ->get();
-
-        $admMyPending = 0;
-        $admOtherPending = 0;
-
-        foreach ($pendingAdmissions as $adm) {
-            $curr = null;
-            if ($adm->relationLoaded('approvals') && $adm->approvals->isNotEmpty()) {
-                $pendingApprovals = $adm->approvals->where('status', 'pending')->sortBy('sequence');
-                foreach ($pendingApprovals as $p) {
-                    $prev = $adm->approvals->where('sequence', '<', $p->sequence);
-                    if ($prev->every(fn ($a) => $a->status === 'approved')) {
-                        $curr = $p;
-                        break;
-                    }
-                }
-            }
-            if (! $curr) {
-                $curr = $adm->currentPendingApproval();
-            }
-
-            $lvl = $curr ? strtolower((string) $curr->level) : 'branch';
-            $matchesMyLevel = false;
-            if ($levelFilter === 'area' && (str_contains($lvl, 'area') || str_contains($lvl, 'region'))) {
-                $matchesMyLevel = true;
-            } elseif ($levelFilter === 'zone' && str_contains($lvl, 'zone')) {
-                $matchesMyLevel = true;
-            } elseif ($levelFilter === 'other' && ! str_contains($lvl, 'branch') && ! str_contains($lvl, 'area') && ! str_contains($lvl, 'zone')) {
-                $matchesMyLevel = true;
-            }
-
-            if ($matchesMyLevel) {
-                $admMyPending++;
-            } else {
-                $admOtherPending++;
-            }
-        }
+            ->get(['id']);
 
         $pendingLoans = LoanApplication::whereIn('branch_id', $branchIds)
             ->whereIn('status', ['submitted', 'under_review', 'pending_head_office'])
-            ->with(['approvals' => fn ($q) => $q->orderBy('sequence')])
-            ->get();
+            ->get(['id']);
 
-        $lnMyPending = 0;
-        $lnOtherPending = 0;
+        $approvalService = app(ApprovalService::class);
+        $myAdmissionIds = array_values(array_intersect(
+            $approvalService->pendingAdmissionIdsForUser($user),
+            $pendingAdmissions->pluck('id')->all()
+        ));
+        $myLoanIds = array_values(array_intersect(
+            $approvalService->pendingLoanApplicationIdsForUser($user),
+            $pendingLoans->pluck('id')->all()
+        ));
 
-        foreach ($pendingLoans as $loan) {
-            $curr = null;
-            if ($loan->relationLoaded('approvals') && $loan->approvals->isNotEmpty()) {
-                $pendingApprovals = $loan->approvals->where('status', 'pending')->sortBy('sequence');
-                foreach ($pendingApprovals as $p) {
-                    $prev = $loan->approvals->where('sequence', '<', $p->sequence);
-                    if ($prev->every(fn ($a) => $a->status === 'approved')) {
-                        $curr = $p;
-                        break;
-                    }
-                }
-            }
-            if (! $curr) {
-                $curr = $loan->approvals()->where('status', 'pending')->orderBy('sequence')->first();
-            }
-
-            $lvl = $curr ? strtolower((string) $curr->level) : 'branch';
-            $matchesMyLevel = false;
-            if ($levelFilter === 'area' && (str_contains($lvl, 'area') || str_contains($lvl, 'region'))) {
-                $matchesMyLevel = true;
-            } elseif ($levelFilter === 'zone' && str_contains($lvl, 'zone')) {
-                $matchesMyLevel = true;
-            } elseif ($levelFilter === 'other' && ! str_contains($lvl, 'branch') && ! str_contains($lvl, 'area') && ! str_contains($lvl, 'zone')) {
-                $matchesMyLevel = true;
-            }
-
-            if ($matchesMyLevel) {
-                $lnMyPending++;
-            } else {
-                $lnOtherPending++;
-            }
-        }
+        $admMyPending = count($myAdmissionIds);
+        $lnMyPending = count($myLoanIds);
+        $admOtherPending = max(0, $pendingAdmissions->count() - $admMyPending);
+        $lnOtherPending = max(0, $pendingLoans->count() - $lnMyPending);
 
         // 4. Team-Based Reviews Assigned to THIS User
         $personalReviewsQuery = \App\Models\TeamBasedApprovalReview::where('user_id', $user->id);
@@ -397,6 +335,144 @@ class DashboardController extends Controller
             ],
         ];
 
+        // 12. Subordinate Managers Breakdown with Name & Pending Counts
+        $subordinateList = [];
+        $subordinateTitle = '';
+        $subordinateType = '';
+
+        if ($approverType === 'area' || $roleName === Role::AREA_MANAGER) {
+            $subordinateType = 'branch_managers';
+            $subordinateTitle = 'শাখা ব্যবস্থাপকগণের নামভিত্তিক পেন্ডিং তালিকা (Branch Managers Pending)';
+            $branches = Branch::whereIn('id', $branchIds)->with('area')->get();
+            foreach ($branches as $branch) {
+                $bmUser = User::where('branch_id', $branch->id)
+                    ->whereHas('role', fn ($q) => $q->where('name', Role::BRANCH_MANAGER))
+                    ->first();
+                if (! $bmUser) {
+                    $bmUser = User::where('branch_id', $branch->id)->first();
+                }
+
+                $admPendingCount = MemberAdmission::where('branch_id', $branch->id)
+                    ->whereIn('status', ['submitted', 'under_review', 'pending_head_office'])
+                    ->count();
+
+                $loanPendingQuery = LoanApplication::where('branch_id', $branch->id)
+                    ->whereIn('status', ['submitted', 'under_review', 'pending_head_office']);
+
+                $loanPendingCount = (clone $loanPendingQuery)->count();
+                $loanPendingAmount = (float) (clone $loanPendingQuery)->sum('requested_amount');
+
+                $subordinateList[] = [
+                    'id' => $branch->id,
+                    'manager_id' => $bmUser?->id,
+                    'manager_name' => $bmUser?->name ?? 'নিযুক্ত নেই',
+                    'manager_phone' => $bmUser?->phone,
+                    'manager_role' => 'শাখা ব্যবস্থাপক (BM)',
+                    'unit_name' => $branch->name,
+                    'unit_code' => $branch->code,
+                    'parent_name' => $branch->area?->name ?? '—',
+                    'admission_pending' => $admPendingCount,
+                    'loan_pending' => $loanPendingCount,
+                    'total_pending' => $admPendingCount + $loanPendingCount,
+                    'loan_amount' => $loanPendingAmount,
+                    'branches_count' => 1,
+                ];
+            }
+        } elseif ($approverType === 'zone' || $roleName === Role::ZONE_MANAGER) {
+            $subordinateType = 'regional_managers';
+            $subordinateTitle = 'আঞ্চলিক ব্যবস্থাপকগণের নামভিত্তিক পেন্ডিং তালিকা (Regional / Area Managers Pending)';
+            $areas = Area::whereIn('zone_id', $zoneIds ?? ($user->zone_id ? [$user->zone_id] : []))->with(['branches', 'zone'])->get();
+            foreach ($areas as $area) {
+                $rmUser = User::where(function ($q) use ($area) {
+                        $q->where('area_id', $area->id)
+                          ->orWhereHas('areas', fn ($sq) => $sq->where('areas.id', $area->id));
+                    })
+                    ->whereHas('role', fn ($q) => $q->where('name', Role::AREA_MANAGER))
+                    ->first();
+
+                $areaBranchIds = $area->branches->pluck('id')->toArray();
+
+                $admPendingCount = MemberAdmission::whereIn('branch_id', $areaBranchIds)
+                    ->whereIn('status', ['submitted', 'under_review', 'pending_head_office'])
+                    ->count();
+
+                $loanPendingQuery = LoanApplication::whereIn('branch_id', $areaBranchIds)
+                    ->whereIn('status', ['submitted', 'under_review', 'pending_head_office']);
+
+                $loanPendingCount = (clone $loanPendingQuery)->count();
+                $loanPendingAmount = (float) (clone $loanPendingQuery)->sum('requested_amount');
+
+                $subordinateList[] = [
+                    'id' => $area->id,
+                    'manager_id' => $rmUser?->id,
+                    'manager_name' => $rmUser?->name ?? 'নিযুক্ত নেই',
+                    'manager_phone' => $rmUser?->phone,
+                    'manager_role' => 'আঞ্চলিক ব্যবস্থাপক (RM)',
+                    'unit_name' => $area->name,
+                    'unit_code' => $area->code,
+                    'parent_name' => $area->zone?->name ?? '—',
+                    'admission_pending' => $admPendingCount,
+                    'loan_pending' => $loanPendingCount,
+                    'total_pending' => $admPendingCount + $loanPendingCount,
+                    'loan_amount' => $loanPendingAmount,
+                    'branches_count' => count($areaBranchIds),
+                ];
+            }
+        } else {
+            // Financial / Senior Approvers (ADMF, DMF, ED, General Approver)
+            $subordinateType = 'zonal_and_regional_managers';
+            $subordinateTitle = 'জোনাল ও আঞ্চলিক ব্যবস্থাপকগণের নামভিত্তিক পেন্ডিং তালিকা (Zonal & Regional Managers Pending)';
+            $zones = Zone::with(['areas.branches'])->get();
+            foreach ($zones as $zone) {
+                $zmUser = User::where(function ($q) use ($zone) {
+                        $q->where('zone_id', $zone->id)
+                          ->orWhereHas('zones', fn ($sq) => $sq->where('zones.id', $zone->id));
+                    })
+                    ->whereHas('role', fn ($q) => $q->where('name', Role::ZONE_MANAGER))
+                    ->first();
+
+                $zoneBranchIds = Branch::whereHas('area', fn ($q) => $q->where('zone_id', $zone->id))->pluck('id')->toArray();
+
+                $admPendingCount = MemberAdmission::whereIn('branch_id', $zoneBranchIds)
+                    ->whereIn('status', ['submitted', 'under_review', 'pending_head_office'])
+                    ->count();
+
+                $loanPendingQuery = LoanApplication::whereIn('branch_id', $zoneBranchIds)
+                    ->whereIn('status', ['submitted', 'under_review', 'pending_head_office']);
+
+                $loanPendingCount = (clone $loanPendingQuery)->count();
+                $loanPendingAmount = (float) (clone $loanPendingQuery)->sum('requested_amount');
+
+                $subordinateList[] = [
+                    'id' => $zone->id,
+                    'manager_id' => $zmUser?->id,
+                    'manager_name' => $zmUser?->name ?? 'নিযুক্ত নেই',
+                    'manager_phone' => $zmUser?->phone,
+                    'manager_role' => 'জোনাল ম্যানেজার (ZM)',
+                    'unit_name' => $zone->name,
+                    'unit_code' => $zone->code,
+                    'parent_name' => 'হেড অফিস',
+                    'admission_pending' => $admPendingCount,
+                    'loan_pending' => $loanPendingCount,
+                    'total_pending' => $admPendingCount + $loanPendingCount,
+                    'loan_amount' => $loanPendingAmount,
+                    'branches_count' => count($zoneBranchIds),
+                ];
+            }
+        }
+
+        // Sort by highest pending count first
+        usort($subordinateList, fn ($a, $b) => $b['total_pending'] <=> $a['total_pending']);
+
+        $subordinateSummary = [
+            'type' => $subordinateType,
+            'title' => $subordinateTitle,
+            'list' => $subordinateList,
+            'total_managers' => count($subordinateList),
+            'total_pending_all' => array_sum(array_column($subordinateList, 'total_pending')),
+            'total_amount_all' => array_sum(array_column($subordinateList, 'loan_amount')),
+        ];
+
         return Inertia::render('Dashboard/ApproverIndex', [
             'period' => $period,
             'dateFrom' => $period === 'date_to_date' ? $dateFrom : null,
@@ -406,6 +482,7 @@ class DashboardController extends Controller
             'approverStats' => $approverStats,
             'teamBasedStats' => $teamBasedStats,
             'approverActionQueue' => $approverActionQueue,
+            'subordinateSummary' => $subordinateSummary,
             'user' => [
                 'id' => $user->id,
                 'name' => $user->name,
@@ -613,6 +690,187 @@ class DashboardController extends Controller
             'system_scale' => $systemScale,
         ];
 
+        // 12. Head Office All Tiers Managers & Approvers Breakdown (RM up to Senior Approvers & BM)
+        // A. Regional Managers (RM)
+        $rmList = [];
+        $areas = Area::with(['branches', 'zone'])->get();
+        foreach ($areas as $area) {
+            $rmUser = User::where(function ($q) use ($area) {
+                    $q->where('area_id', $area->id)
+                      ->orWhereHas('areas', fn ($sq) => $sq->where('areas.id', $area->id));
+                })
+                ->whereHas('role', fn ($q) => $q->where('name', Role::AREA_MANAGER))
+                ->first();
+
+            $areaBranchIds = $area->branches->pluck('id')->toArray();
+
+            $admPendingCount = MemberAdmission::whereIn('branch_id', $areaBranchIds)
+                ->whereIn('status', ['submitted', 'under_review', 'pending_head_office'])
+                ->count();
+
+            $loanPendingQuery = LoanApplication::whereIn('branch_id', $areaBranchIds)
+                ->whereIn('status', ['submitted', 'under_review', 'pending_head_office']);
+
+            $loanPendingCount = (clone $loanPendingQuery)->count();
+            $loanPendingAmount = (float) (clone $loanPendingQuery)->sum('requested_amount');
+
+            $rmList[] = [
+                'id' => $area->id,
+                'tier' => 'rm',
+                'manager_id' => $rmUser?->id,
+                'manager_name' => $rmUser?->name ?? 'নিযুক্ত নেই',
+                'manager_phone' => $rmUser?->phone,
+                'manager_role' => 'আঞ্চলিক ব্যবস্থাপক (RM)',
+                'unit_name' => $area->name,
+                'unit_code' => $area->code,
+                'parent_name' => $area->zone?->name ?? '—',
+                'admission_pending' => $admPendingCount,
+                'loan_pending' => $loanPendingCount,
+                'total_pending' => $admPendingCount + $loanPendingCount,
+                'loan_amount' => $loanPendingAmount,
+                'branches_count' => count($areaBranchIds),
+            ];
+        }
+        usort($rmList, fn ($a, $b) => $b['total_pending'] <=> $a['total_pending']);
+
+        // B. Zonal Managers (ZM)
+        $zmList = [];
+        $zones = Zone::with(['areas.branches'])->get();
+        foreach ($zones as $zone) {
+            $zmUser = User::where(function ($q) use ($zone) {
+                    $q->where('zone_id', $zone->id)
+                      ->orWhereHas('zones', fn ($sq) => $sq->where('zones.id', $zone->id));
+                })
+                ->whereHas('role', fn ($q) => $q->where('name', Role::ZONE_MANAGER))
+                ->first();
+
+            $zoneBranchIds = Branch::whereHas('area', fn ($q) => $q->where('zone_id', $zone->id))->pluck('id')->toArray();
+
+            $admPendingCount = MemberAdmission::whereIn('branch_id', $zoneBranchIds)
+                ->whereIn('status', ['submitted', 'under_review', 'pending_head_office'])
+                ->count();
+
+            $loanPendingQuery = LoanApplication::whereIn('branch_id', $zoneBranchIds)
+                ->whereIn('status', ['submitted', 'under_review', 'pending_head_office']);
+
+            $loanPendingCount = (clone $loanPendingQuery)->count();
+            $loanPendingAmount = (float) (clone $loanPendingQuery)->sum('requested_amount');
+
+            $zmList[] = [
+                'id' => $zone->id,
+                'tier' => 'zm',
+                'manager_id' => $zmUser?->id,
+                'manager_name' => $zmUser?->name ?? 'নিযুক্ত নেই',
+                'manager_phone' => $zmUser?->phone,
+                'manager_role' => 'জোনাল ম্যানেজার (ZM)',
+                'unit_name' => $zone->name,
+                'unit_code' => $zone->code,
+                'parent_name' => 'হেড অফিস',
+                'admission_pending' => $admPendingCount,
+                'loan_pending' => $loanPendingCount,
+                'total_pending' => $admPendingCount + $loanPendingCount,
+                'loan_amount' => $loanPendingAmount,
+                'branches_count' => count($zoneBranchIds),
+                'areas_count' => $zone->areas->count(),
+            ];
+        }
+        usort($zmList, fn ($a, $b) => $b['total_pending'] <=> $a['total_pending']);
+
+        // C. Senior Approvers (ADMF, DMF, ED)
+        $seniorApprovers = User::whereHas('role', fn ($q) => $q->whereIn('name', [Role::ADMF, Role::DMF, Role::ED]))
+            ->with('role')
+            ->get();
+        $seniorList = [];
+        foreach ($seniorApprovers as $sa) {
+            $pendingReviews = TeamBasedApprovalReview::where('user_id', $sa->id)
+                ->where('status', 'pending')
+                ->count();
+            $pendingProposedAmount = (float) TeamBasedApprovalReview::where('user_id', $sa->id)
+                ->where('status', 'pending')
+                ->join('team_based_approval_items', 'team_based_approval_reviews.team_based_approval_item_id', '=', 'team_based_approval_items.id')
+                ->sum('team_based_approval_items.proposed_loan_amount');
+
+            $roleTitle = match ($sa->role?->name) {
+                Role::ADMF => 'সহকারী পরিচালক (ADMF)',
+                Role::DMF => 'পরিচালক ক্ষুদ্রঋণ (DMF)',
+                Role::ED => 'নির্বাহী পরিচালক (ED)',
+                default => strtoupper($sa->role?->name ?? 'APPROVER'),
+            };
+
+            $seniorList[] = [
+                'id' => $sa->id,
+                'tier' => 'senior',
+                'manager_id' => $sa->id,
+                'manager_name' => $sa->name,
+                'manager_phone' => $sa->phone,
+                'manager_role' => $roleTitle,
+                'unit_name' => 'হেড অফিস অনুমোদন টিম',
+                'unit_code' => 'HO-APP',
+                'parent_name' => 'প্রধান কার্যালয়',
+                'admission_pending' => 0,
+                'loan_pending' => $pendingReviews,
+                'total_pending' => $pendingReviews,
+                'loan_amount' => $pendingProposedAmount,
+                'branches_count' => null,
+            ];
+        }
+        usort($seniorList, fn ($a, $b) => $b['total_pending'] <=> $a['total_pending']);
+
+        // D. Branch Managers (BM)
+        $bmList = [];
+        $allBranches = Branch::with('area.zone')->get();
+        foreach ($allBranches as $branch) {
+            $bmUser = User::where('branch_id', $branch->id)
+                ->whereHas('role', fn ($q) => $q->where('name', Role::BRANCH_MANAGER))
+                ->first();
+            if (! $bmUser) {
+                $bmUser = User::where('branch_id', $branch->id)->first();
+            }
+
+            $admPendingCount = MemberAdmission::where('branch_id', $branch->id)
+                ->whereIn('status', ['submitted', 'under_review', 'pending_head_office'])
+                ->count();
+
+            $loanPendingQuery = LoanApplication::where('branch_id', $branch->id)
+                ->whereIn('status', ['submitted', 'under_review', 'pending_head_office']);
+
+            $loanPendingCount = (clone $loanPendingQuery)->count();
+            $loanPendingAmount = (float) (clone $loanPendingQuery)->sum('requested_amount');
+
+            $bmList[] = [
+                'id' => $branch->id,
+                'tier' => 'bm',
+                'manager_id' => $bmUser?->id,
+                'manager_name' => $bmUser?->name ?? 'নিযুক্ত নেই',
+                'manager_phone' => $bmUser?->phone,
+                'manager_role' => 'শাখা ব্যবস্থাপক (BM)',
+                'unit_name' => $branch->name,
+                'unit_code' => $branch->code,
+                'parent_name' => ($branch->area?->name ?? '') . ($branch->area?->zone ? ' • ' . $branch->area->zone->name : ''),
+                'admission_pending' => $admPendingCount,
+                'loan_pending' => $loanPendingCount,
+                'total_pending' => $admPendingCount + $loanPendingCount,
+                'loan_amount' => $loanPendingAmount,
+                'branches_count' => 1,
+            ];
+        }
+        usort($bmList, fn ($a, $b) => $b['total_pending'] <=> $a['total_pending']);
+
+        $hoManagersSummary = [
+            'rm_list' => $rmList,
+            'zm_list' => $zmList,
+            'senior_list' => $seniorList,
+            'bm_list' => $bmList,
+            'total_rm' => count($rmList),
+            'total_zm' => count($zmList),
+            'total_senior' => count($seniorList),
+            'total_bm' => count($bmList),
+            'rm_total_pending' => array_sum(array_column($rmList, 'total_pending')),
+            'zm_total_pending' => array_sum(array_column($zmList, 'total_pending')),
+            'senior_total_pending' => array_sum(array_column($seniorList, 'total_pending')),
+            'bm_total_pending' => array_sum(array_column($bmList, 'total_pending')),
+        ];
+
         return Inertia::render('Dashboard/Index', [
             'period' => $period,
             'dateFrom' => $period === 'date_to_date' ? $dateFrom : null,
@@ -620,6 +878,7 @@ class DashboardController extends Controller
             'dashboardType' => 'head_office',
             'hoStats' => $hoStats,
             'hoActionQueue' => $hoActionQueue,
+            'hoManagersSummary' => $hoManagersSummary,
             'user' => [
                 'id' => $user->id,
                 'name' => $user->name,

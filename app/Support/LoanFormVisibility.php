@@ -73,6 +73,8 @@ class LoanFormVisibility
 
     public const BM_CEILING = 70000.0;
 
+    public const BM_FORM_INCOMPLETE_MESSAGE = 'অনুমোদন করার আগে সরেজমিন তদন্ত প্রতিবেদন (ফর্ম ৪) পূরণ করতে হবে।';
+
     /** Branch Manager before approve/forward: Form 4 is required only when loan amount is within BM ceiling (< 70,000 TK) */
     public static function bmRequiredFormIds(?object $product, float $amount, ?object $category = null): array
     {
@@ -102,6 +104,48 @@ class LoanFormVisibility
     }
 
     /**
+     * Statuses where the loan has not been disbursed (or cancelled) yet.
+     *
+     * @return string[]
+     */
+    public static function preDisbursementStatuses(): array
+    {
+        return [
+            LoanApplication::STATUS_DRAFT,
+            LoanApplication::STATUS_PENDING,
+            LoanApplication::STATUS_SUBMITTED,
+            LoanApplication::STATUS_UNDER_REVIEW,
+            LoanApplication::STATUS_READY_FOR_HEAD_OFFICE,
+            LoanApplication::STATUS_PENDING_HEAD_OFFICE,
+            LoanApplication::STATUS_APPROVED,
+            LoanApplication::STATUS_PENDING_DISBURSEMENT,
+            LoanApplication::STATUS_REJECTED,
+            LoanApplication::STATUS_NEEDS_CORRECTION,
+        ];
+    }
+
+    public static function isBeforeDisbursement(string $status): bool
+    {
+        return in_array($status, self::preDisbursementStatuses(), true);
+    }
+
+    /**
+     * Statuses where Branch Manager has not yet approved / forwarded (their submit).
+     *
+     * @return string[]
+     */
+    public static function bmPreSubmitStatuses(): array
+    {
+        return [
+            LoanApplication::STATUS_DRAFT,
+            LoanApplication::STATUS_REJECTED,
+            LoanApplication::STATUS_NEEDS_CORRECTION,
+            LoanApplication::STATUS_SUBMITTED,
+            LoanApplication::STATUS_UNDER_REVIEW,
+        ];
+    }
+
+    /**
      * Form IDs the current user may fill/edit at this application status.
      *
      * @return int[]
@@ -110,30 +154,31 @@ class LoanFormVisibility
     {
         $roleName = strtolower((string) $roleName);
 
+        // Branch User may edit every relevant form until the loan is disbursed.
+        if ($roleName === Role::BRANCH_USER) {
+            if (self::isBeforeDisbursement($status)) {
+                return self::visibleFormIdsForShow($roleName, $status, $product, $amount, $category);
+            }
+
+            return [];
+        }
+
         if ($status === LoanApplication::STATUS_PENDING_DISBURSEMENT) {
-            if (in_array($roleName, [Role::BRANCH_USER, Role::BRANCH_MANAGER], true)) {
+            if ($roleName === Role::BRANCH_MANAGER) {
                 return self::disburseFormIds();
             }
 
             return [];
         }
 
-        if (in_array($status, [LoanApplication::STATUS_SUBMITTED, LoanApplication::STATUS_UNDER_REVIEW], true)) {
-            if ($roleName === Role::BRANCH_MANAGER) {
-                return array_values(array_unique(array_merge(
-                    self::foSubmitFormIds($product, $amount, $category),
-                    self::bmRequiredFormIds($product, $amount, $category)
-                )));
-            }
-
-            return [];
+        // Branch Manager may edit every relevant form (including Guarantor / Death Risk)
+        // until they approve or forward the application.
+        if ($roleName === Role::BRANCH_MANAGER && in_array($status, self::bmPreSubmitStatuses(), true)) {
+            return self::visibleFormIdsForShow($roleName, $status, $product, $amount, $category);
         }
 
         if (in_array($status, [LoanApplication::STATUS_DRAFT, LoanApplication::STATUS_REJECTED, LoanApplication::STATUS_NEEDS_CORRECTION], true)) {
             if ($roleName === Role::FIELD_OFFICER) {
-                return self::foSubmitFormIds($product, $amount, $category);
-            }
-            if (in_array($roleName, [Role::BRANCH_USER, Role::BRANCH_MANAGER], true)) {
                 return self::foSubmitFormIds($product, $amount, $category);
             }
         }
@@ -246,7 +291,17 @@ class LoanFormVisibility
 
         $saved = self::buildFormSavedMap($loan);
         if (! self::allRequiredFormsSaved($required, $saved)) {
-            throw new \Exception('অনুমোদন করার আগে সরেজমিন তদন্ত প্রতিবেদন (ফর্ম ৪) পূরণ করতে হবে।');
+            throw new \Exception(self::BM_FORM_INCOMPLETE_MESSAGE);
         }
+    }
+
+    public static function isBmFormIncompleteMessage(?string $message): bool
+    {
+        if ($message === null || $message === '') {
+            return false;
+        }
+
+        return $message === self::BM_FORM_INCOMPLETE_MESSAGE
+            || str_contains($message, 'সরেজমিন তদন্ত প্রতিবেদন (ফর্ম ৪)');
     }
 }

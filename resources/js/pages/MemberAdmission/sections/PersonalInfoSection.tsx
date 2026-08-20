@@ -1,18 +1,23 @@
-import React from 'react';
+import React, { useState } from 'react';
 import FormSection from '@/components/MemberAdmission/FormSection';
 import { User } from 'lucide-react';
+import { checkAdmissionUnique } from '@/utils/checkAdmissionUnique';
 
 interface PersonalInfoSectionProps {
     data: any;
     setData: (field: string, value: any) => void;
     errors: Record<string, string>;
+    ignoreAdmissionId?: number | null;
 }
 
 export default function PersonalInfoSection({
     data,
     setData,
     errors,
+    ignoreAdmissionId,
 }: PersonalInfoSectionProps) {
+    const [mobileUniqueError, setMobileUniqueError] = useState('');
+    const mobileError = errors.mobile_number || mobileUniqueError;
     const inputClass = (hasErr?: boolean) =>
         `w-full rounded-xl border ${hasErr ? 'border-red-500 bg-red-50/50 ring-2 ring-red-200' : 'border-gray-300 bg-white'} px-3 py-2 text-xs md:text-sm focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 font-medium transition-all`;
 
@@ -113,12 +118,31 @@ export default function PersonalInfoSection({
                         <input
                             type="text"
                             value={data.mobile_number}
-                            onChange={(e) => setData('mobile_number', e.target.value)}
+                            onChange={(e) => {
+                                setMobileUniqueError('');
+                                setData('mobile_number', e.target.value);
+                            }}
+                            onBlur={async (e) => {
+                                const value = e.target.value.trim();
+                                if (!value) {
+                                    setMobileUniqueError('');
+                                    return;
+                                }
+                                try {
+                                    const result = await checkAdmissionUnique({
+                                        mobile_number: value,
+                                        ignore_id: ignoreAdmissionId,
+                                    });
+                                    setMobileUniqueError(result.mobile_number || '');
+                                } catch {
+                                    // Server save still enforces uniqueness.
+                                }
+                            }}
                             placeholder="017xxxxxxxx"
-                            className={inputClass(Boolean(errors.mobile_number))}
+                            className={inputClass(Boolean(mobileError))}
                         />
-                        {errors.mobile_number && (
-                            <p className="mt-1 text-xs text-red-600 font-medium">{errors.mobile_number}</p>
+                        {mobileError && (
+                            <p className="mt-1 text-xs text-red-600 font-medium">{mobileError}</p>
                         )}
                     </div>
 

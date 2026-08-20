@@ -15,6 +15,7 @@ import {
     Edit,
     ArrowLeft,
     Send,
+    ArrowUpRight,
     MessageSquare,
     User,
     Banknote,
@@ -79,6 +80,14 @@ interface LoanApplication {
     loan_category_id?: number;
     pending_approval_id?: number | null;
     can_branch_approve?: boolean;
+    must_forward_approval?: boolean;
+    escalation_approvers?: Array<{
+        id: number;
+        name: string;
+        email?: string;
+        level?: string;
+        role_name?: string;
+    }>;
     member_admission: {
         id: number;
         application_no: string;
@@ -157,11 +166,11 @@ const FORM_NAMES: Record<number, string> = {
 
 /** Who is responsible for filling each form */
 const FORM_FILLERS: Record<number, string> = {
-    1: 'ফিল্ড অফিসার / শাখা ব্যবহারকারী',
+    1: 'ফিল্ড অফিসার / শাখা ব্যবহারকারী (বিতরণের আগে)',
     2: 'শাখা ব্যবহারকারী (বিতরণের আগে)',
     3: 'শাখা ব্যবহারকারী (বিতরণের আগে)',
-    4: 'শাখা ব্যবস্থাপক',
-    5: 'ফিল্ড অফিসার / শাখা ব্যবহারকারী',
+    4: 'শাখা ব্যবস্থাপক / শাখা ব্যবহারকারী (বিতরণের আগে)',
+    5: 'ফিল্ড অফিসার / শাখা ব্যবহারকারী (বিতরণের আগে)',
 };
 
 interface Props {
@@ -212,6 +221,12 @@ export default function Show({ application, routes }: Props) {
     const isBranchUser = pageAuth?.user?.role?.name === 'branch_user';
     const isBranchManager = pageAuth?.user?.role?.name === 'branch_manager' || pageAuth?.user?.role?.name === 'super_admin';
     const canRespondToIssues = isBranchUser || isBranchManager;
+    const showBranchApproveButton = isBranchManager &&
+        !!application.can_branch_approve &&
+        !!application.pending_approval_id &&
+        (application.status === 'submitted' || application.status === 'under_review');
+    const mustForwardApproval = showBranchApproveButton && !!application.must_forward_approval;
+    const escalationApprovers = application.escalation_approvers ?? [];
 
     const [selectedIssueId, setSelectedIssueId] = useState<number | null>(null);
     const [issueAction, setIssueAction] = useState<'resolve' | 'reject' | null>(null);
@@ -222,6 +237,7 @@ export default function Show({ application, routes }: Props) {
     const [approveModalOpen, setApproveModalOpen] = useState(false);
     const [approvalAmount, setApprovalAmount] = useState<string>(String(application.requested_amount || ''));
     const [approvalComments, setApprovalComments] = useState<string>('');
+    const [forwardToUserId, setForwardToUserId] = useState<string>('');
     const [submittingApproval, setSubmittingApproval] = useState(false);
 
     // Member Code Update Modal State (10-digit policy: 4-digit branch code + 6-digit serial)
@@ -524,6 +540,28 @@ export default function Show({ application, routes }: Props) {
             alert('অনুমোদন আইডি পাওয়া যায়নি।');
             return;
         }
+        if (mustForwardApproval) {
+            if (!forwardToUserId) {
+                alert('উচ্চতর কর্মকর্তা নির্বাচন করুন।');
+                return;
+            }
+            setSubmittingApproval(true);
+            router.patch(
+                `/approvals/loan/${approvalId}/forward`,
+                {
+                    forward_to_user_id: forwardToUserId,
+                    comments: approvalComments,
+                },
+                {
+                    preserveScroll: true,
+                    onFinish: () => {
+                        setSubmittingApproval(false);
+                        setApproveModalOpen(false);
+                    },
+                }
+            );
+            return;
+        }
         setSubmittingApproval(true);
         router.patch(
             `/approvals/loan/${approvalId}/approve`,
@@ -702,8 +740,12 @@ export default function Show({ application, routes }: Props) {
             case 'submitted':
             case 'under_review':
                 return {
-                    title: 'পেন্ডিং অবস্থা: শাখা ব্যবস্থাপকের পর্যালোচনাধীন',
-                    desc: 'আবেদনটি বর্তমানে শাখা ব্যবস্থাপক কর্তৃক পর্যালোচনার অপেক্ষায় রয়েছে। শাখা ব্যবস্থাপক নিচে থেকে আবেদনটি পর্যালোচনা ও অনুমোদন করতে পারবেন।',
+                    title: mustForwardApproval
+                        ? 'পেন্ডিং অবস্থা: ৭০,০০০ টাকা বা বেশি — উচ্চতর কর্মকর্তার কাছে ফরওয়ার্ড করতে হবে'
+                        : 'পেন্ডিং অবস্থা: শাখা ব্যবস্থাপকের পর্যালোচনাধীন',
+                    desc: mustForwardApproval
+                        ? 'এই ঋণের পরিমাণ ৭০,০০০ টাকা বা তার বেশি। শাখা ব্যবস্থাপক সরাসরি অনুমোদন করতে পারবেন না — Area/Zone/ADMF/DMF/ED নির্বাচন করে ফরওয়ার্ড করুন।'
+                        : 'আবেদনটি বর্তমানে শাখা ব্যবস্থাপক কর্তৃক পর্যালোচনার অপেক্ষায় রয়েছে। শাখা ব্যবস্থাপক নিচে থেকে আবেদনটি পর্যালোচনা ও অনুমোদন করতে পারবেন।',
                     badgeColor: 'bg-yellow-100 text-yellow-900 border-yellow-300',
                     cardBg: 'bg-yellow-50/90 border-yellow-200 text-yellow-950',
                     iconColor: 'text-yellow-600',
@@ -824,11 +866,6 @@ export default function Show({ application, routes }: Props) {
                 return null;
         }
     };
-
-    const showBranchApproveButton = isBranchManager &&
-        application.can_branch_approve &&
-        !!application.pending_approval_id &&
-        (application.status === 'submitted' || application.status === 'under_review');
 
     return (
         <AdminLayout>
@@ -1026,11 +1063,27 @@ export default function Show({ application, routes }: Props) {
                             {/* Branch Manager Approval Action Button */}
                             {showBranchApproveButton && (
                                 <Button
-                                    className="w-full sm:w-auto bg-emerald-600 hover:bg-emerald-700 text-white shadow-xs font-bold rounded-xl text-xs sm:text-sm h-9 sm:h-10 animate-pulse"
-                                    onClick={() => setApproveModalOpen(true)}
+                                    className={`w-full sm:w-auto text-white shadow-xs font-bold rounded-xl text-xs sm:text-sm h-9 sm:h-10 animate-pulse ${
+                                        mustForwardApproval
+                                            ? 'bg-blue-600 hover:bg-blue-700'
+                                            : 'bg-emerald-600 hover:bg-emerald-700'
+                                    }`}
+                                    onClick={() => {
+                                        setForwardToUserId('');
+                                        setApproveModalOpen(true);
+                                    }}
                                 >
-                                    <ShieldCheck className="w-4 h-4 mr-1.5" />
-                                    শাখা অনুমোদন করুন
+                                    {mustForwardApproval ? (
+                                        <>
+                                            <ArrowUpRight className="w-4 h-4 mr-1.5" />
+                                            ফরওয়ার্ড করুন
+                                        </>
+                                    ) : (
+                                        <>
+                                            <ShieldCheck className="w-4 h-4 mr-1.5" />
+                                            শাখা অনুমোদন করুন
+                                        </>
+                                    )}
                                 </Button>
                             )}
 
@@ -1149,11 +1202,27 @@ export default function Show({ application, routes }: Props) {
                                     <div className="mt-2.5">
                                         <Button
                                             size="sm"
-                                            className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-lg text-xs"
-                                            onClick={() => setApproveModalOpen(true)}
+                                            className={`text-white font-bold rounded-lg text-xs ${
+                                                mustForwardApproval
+                                                    ? 'bg-blue-600 hover:bg-blue-700'
+                                                    : 'bg-emerald-600 hover:bg-emerald-700'
+                                            }`}
+                                            onClick={() => {
+                                                setForwardToUserId('');
+                                                setApproveModalOpen(true);
+                                            }}
                                         >
-                                            <ShieldCheck className="w-4 h-4 mr-1" />
-                                            এখান থেকেই শাখা অনুমোদন করুন
+                                            {mustForwardApproval ? (
+                                                <>
+                                                    <ArrowUpRight className="w-4 h-4 mr-1" />
+                                                    এখান থেকেই ফরওয়ার্ড করুন
+                                                </>
+                                            ) : (
+                                                <>
+                                                    <ShieldCheck className="w-4 h-4 mr-1" />
+                                                    এখান থেকেই শাখা অনুমোদন করুন
+                                                </>
+                                            )}
                                         </Button>
                                     </div>
                                 )}
@@ -1632,7 +1701,8 @@ export default function Show({ application, routes }: Props) {
                                                 variant="outline"
                                                 className="text-xs h-8 border-indigo-200 text-indigo-700 hover:bg-indigo-50 font-semibold"
                                                 onClick={() => {
-                                                    setNewMemberCode(application.member_admission?.application_no || '');
+                                                    const p = parseMemberCode(application.member_admission?.application_no, branchPrefix);
+                                                    setSerialInput(p.serial);
                                                     setMemberCodeModalOpen(true);
                                                 }}
                                             >
@@ -1834,14 +1904,22 @@ export default function Show({ application, routes }: Props) {
                 </div>
             </div>
 
-            {/* Branch Manager Approval Modal */}
+            {/* Branch Manager Approval / Forward Modal */}
             {approveModalOpen && (
                 <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-xs p-4 print:hidden">
                     <div className="w-full max-w-md rounded-2xl bg-white shadow-2xl overflow-hidden border border-slate-200">
                         <div className="border-b px-5 py-4 bg-slate-50 flex items-center justify-between">
                             <div>
                                 <h3 className="text-base font-bold text-slate-900 flex items-center gap-2">
-                                    <ShieldCheck className="w-5 h-5 text-emerald-600" /> ঋণ আবেদন শাখা অনুমোদন
+                                    {mustForwardApproval ? (
+                                        <>
+                                            <ArrowUpRight className="w-5 h-5 text-blue-600" /> উচ্চতর কর্মকর্তার কাছে ফরওয়ার্ড
+                                        </>
+                                    ) : (
+                                        <>
+                                            <ShieldCheck className="w-5 h-5 text-emerald-600" /> ঋণ আবেদন শাখা অনুমোদন
+                                        </>
+                                    )}
                                 </h3>
                                 <p className="text-xs text-slate-500 mt-0.5">আবেদন নং: {application.application_no}</p>
                             </div>
@@ -1850,18 +1928,45 @@ export default function Show({ application, routes }: Props) {
                             </button>
                         </div>
                         <form onSubmit={handleBranchApprovalSubmit} className="p-5 space-y-4">
-                            <div>
-                                <label className="block text-xs font-bold text-slate-700 mb-1">অনুমোদিত ঋণের পরিমাণ (টাকা):</label>
-                                <input
-                                    type="number"
-                                    min="1"
-                                    value={approvalAmount}
-                                    onChange={(e) => setApprovalAmount(e.target.value)}
-                                    className="w-full rounded-xl border border-slate-300 px-3.5 py-2 text-sm focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 font-bold text-emerald-700 shadow-xs"
-                                    required
-                                />
-                                <p className="text-[11px] text-slate-500 mt-1">আবেদিত পরিমাণ: ৳{Number(application.requested_amount || 0).toLocaleString('bn-BD')}</p>
-                            </div>
+                            {mustForwardApproval ? (
+                                <div>
+                                    <label className="block text-xs font-bold text-slate-700 mb-1">
+                                        কর্মকর্তা নির্বাচন <span className="text-rose-500">*</span>
+                                    </label>
+                                    <select
+                                        value={forwardToUserId}
+                                        onChange={(e) => setForwardToUserId(e.target.value)}
+                                        className="w-full rounded-xl border border-slate-300 px-3.5 py-2 text-sm bg-white font-semibold focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 shadow-xs"
+                                        required
+                                    >
+                                        <option value="">নির্বাচন করুন...</option>
+                                        {escalationApprovers.map((approver) => (
+                                            <option key={approver.id} value={approver.id}>
+                                                {approver.name} ({approver.role_name || approver.level})
+                                            </option>
+                                        ))}
+                                    </select>
+                                    <p className="text-[11px] text-amber-800 bg-amber-50 border border-amber-200 rounded-lg p-2 mt-2">
+                                        ৭০,০০০ টাকা বা তার বেশি ঋণ সরাসরি অনুমোদন করা যাবে না। Area / Zone / ADMF / DMF / ED নির্বাচন করে ফরওয়ার্ড করুন।
+                                    </p>
+                                    {escalationApprovers.length === 0 && (
+                                        <p className="text-[11px] text-rose-700 mt-1">কোনো উচ্চতর কর্মকর্তা পাওয়া যায়নি। ইউজার সেটিংস যাচাই করুন।</p>
+                                    )}
+                                </div>
+                            ) : (
+                                <div>
+                                    <label className="block text-xs font-bold text-slate-700 mb-1">অনুমোদিত ঋণের পরিমাণ (টাকা):</label>
+                                    <input
+                                        type="number"
+                                        min="1"
+                                        value={approvalAmount}
+                                        onChange={(e) => setApprovalAmount(e.target.value)}
+                                        className="w-full rounded-xl border border-slate-300 px-3.5 py-2 text-sm focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 font-bold text-emerald-700 shadow-xs"
+                                        required
+                                    />
+                                    <p className="text-[11px] text-slate-500 mt-1">আবেদিত পরিমাণ: ৳{Number(application.requested_amount || 0).toLocaleString('bn-BD')}</p>
+                                </div>
+                            )}
 
                             <div>
                                 <label className="block text-xs font-bold text-slate-700 mb-1">শাখা ব্যবস্থাপকের মন্তব্য (ঐচ্ছিক):</label>
@@ -1870,7 +1975,7 @@ export default function Show({ application, routes }: Props) {
                                     onChange={(e) => setApprovalComments(e.target.value)}
                                     rows={3}
                                     className="w-full rounded-xl border border-slate-300 p-3 text-sm focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 shadow-xs"
-                                    placeholder="অনুমোদন সংক্রান্ত মন্তব্য লিখুন..."
+                                    placeholder={mustForwardApproval ? 'ঐচ্ছিক মন্তব্য লিখুন...' : 'অনুমোদন সংক্রান্ত মন্তব্য লিখুন...'}
                                 />
                             </div>
 
@@ -1880,56 +1985,16 @@ export default function Show({ application, routes }: Props) {
                                 </Button>
                                 <Button
                                     type="submit"
-                                    className="bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold shadow-xs"
-                                    disabled={submittingApproval}
+                                    className={`text-white rounded-xl text-xs font-bold shadow-xs ${
+                                        mustForwardApproval
+                                            ? 'bg-blue-600 hover:bg-blue-700'
+                                            : 'bg-emerald-600 hover:bg-emerald-700'
+                                    }`}
+                                    disabled={submittingApproval || (mustForwardApproval && !forwardToUserId)}
                                 >
-                                    {submittingApproval ? 'অনুমোদন হচ্ছে...' : 'অনুমোদন নিশ্চিত করুন'}
-                                </Button>
-                            </div>
-                        </form>
-                    </div>
-                </div>
-            )}
-
-            {/* Member Code Update Modal */}
-            {memberCodeModalOpen && (
-                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-xs p-4 print:hidden">
-                    <div className="w-full max-w-md rounded-2xl bg-white shadow-2xl overflow-hidden border border-slate-200">
-                        <div className="border-b px-5 py-4 bg-slate-50 flex items-center justify-between">
-                            <div>
-                                <h3 className="text-base font-bold text-slate-900 flex items-center gap-2">
-                                    <Edit className="w-5 h-5 text-indigo-600" /> মেম্বার কোড আপডেট
-                                </h3>
-                                <p className="text-xs text-slate-500 mt-0.5">ঋণ বিতরণের পূর্বে মেম্বার কোড পরিবর্তন বা সংশোধন করা যাবে।</p>
-                            </div>
-                            <button type="button" onClick={() => setMemberCodeModalOpen(false)} className="text-slate-400 hover:text-slate-600 p-1">
-                                <XCircle className="w-5 h-5" />
-                            </button>
-                        </div>
-                        <form onSubmit={handleMemberCodeSubmit} className="p-5 space-y-4">
-                            <div>
-                                <label className="block text-xs font-bold text-slate-700 mb-1">নতুন মেম্বার কোড (Member Code):</label>
-                                <input
-                                    type="text"
-                                    value={newMemberCode}
-                                    onChange={(e) => setNewMemberCode(e.target.value)}
-                                    className="w-full rounded-xl border border-slate-300 px-3.5 py-2 text-sm focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 font-mono font-bold text-indigo-700 shadow-xs"
-                                    placeholder="যেমন: 42001"
-                                    required
-                                />
-                                <p className="text-[11px] text-slate-500 mt-1">শাখা কোড ভিত্তিক সিরিয়াল মেম্বার কোড (যেমন: 42001)</p>
-                            </div>
-
-                            <div className="flex justify-end gap-2 pt-2 border-t">
-                                <Button type="button" variant="outline" className="rounded-xl text-xs" onClick={() => setMemberCodeModalOpen(false)}>
-                                    বাতিল
-                                </Button>
-                                <Button
-                                    type="submit"
-                                    className="bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-bold shadow-xs"
-                                    disabled={submittingMemberCode}
-                                >
-                                    {submittingMemberCode ? 'আপডেট হচ্ছে...' : 'কোড আপডেট করুন'}
+                                    {submittingApproval
+                                        ? (mustForwardApproval ? 'ফরওয়ার্ড হচ্ছে...' : 'অনুমোদন হচ্ছে...')
+                                        : (mustForwardApproval ? 'ফরওয়ার্ড নিশ্চিত করুন' : 'অনুমোদন নিশ্চিত করুন')}
                                 </Button>
                             </div>
                         </form>

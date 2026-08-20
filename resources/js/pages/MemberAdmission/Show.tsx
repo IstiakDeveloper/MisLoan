@@ -191,7 +191,13 @@ export default function Show({ admission, auth }: Props) {
         window.open(printUrl, '_blank');
     };
 
-    const isEditable = admission.can_be_edited ?? (admission.status === 'draft' || admission.status === 'submitted' || admission.status === 'under_review' || admission.status === 'needs_revision');
+    const isEditable = admission.can_be_edited ?? (
+        admission.status === 'draft' ||
+        admission.status === 'submitted' ||
+        admission.status === 'under_review' ||
+        admission.status === 'needs_revision'
+    );
+    const hasDisbursedLoan = admission.has_disbursed_loan ?? false;
 
     // Attachments list
     const attachments = [
@@ -276,7 +282,7 @@ export default function Show({ admission, auth }: Props) {
                                 </div>
                                 <p className="text-[11px] sm:text-xs text-slate-500 mt-1 font-medium break-words flex items-center gap-1.5 flex-wrap">
                                     <span>আবেদন নং / মেম্বার কোড: <span className="font-mono font-bold text-blue-700">{admission.application_no}</span></span>
-                                    {admission.status !== 'disbursed' && (
+                                    {admission.status !== 'disbursed' && !hasDisbursedLoan && (
                                         <button
                                             type="button"
                                             onClick={() => {

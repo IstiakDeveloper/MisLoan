@@ -11,10 +11,12 @@ use App\Models\User;
 use App\Services\ApprovalService;
 use App\Services\ImageCompressionService;
 use App\Services\NotificationService;
+use App\Support\AdmissionFormVisibility;
 use App\Support\RoleListWorkQueue;
 use Carbon\Carbon;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Validation\ValidationException;
 use Inertia\Inertia;
 use PhpOffice\PhpSpreadsheet\Cell\Coordinate;
 use PhpOffice\PhpSpreadsheet\Spreadsheet;
@@ -36,6 +38,22 @@ class MemberAdmissionController extends Controller
         $user = auth()->user();
 
         return $user && ($user->has_all_access || $user->isSuperAdmin() || $user->isHeadOffice());
+    }
+
+    private function userCanEditAdmission(MemberAdmission $memberAdmission): bool
+    {
+        $user = auth()->user();
+
+        return $user && $memberAdmission->canBeEditedBy($user);
+    }
+
+    private function admissionNotEditableResponse(MemberAdmission $memberAdmission)
+    {
+        $message = $memberAdmission->hasDisbursedLoan()
+            ? 'ঋণ বিতরণ সম্পন্ন হওয়ার পর ভর্তি ফর্ম সম্পাদনা করা যাবে না।'
+            : 'এই ভর্তি আবেদন এখন সম্পাদনা করা যাবে না।';
+
+        return back()->with('error', $message);
     }
 
     /**
@@ -128,6 +146,78 @@ class MemberAdmissionController extends Controller
     private function isDraftSave(Request $request): bool
     {
         return $request->boolean('draft') || $request->query('draft') == '1';
+    }
+
+    /**
+     * Duplicate NID / Smart Card / mobile — same identity number in either field is rejected.
+     *
+     * @return array<string, string>
+     */
+    private function uniqueIdentityErrors(mixed $nid, mixed $smartCard, mixed $mobile, ?int $ignoreId = null): array
+    {
+        $nid = is_scalar($nid) ? trim((string) $nid) : '';
+        $smartCard = is_scalar($smartCard) ? trim((string) $smartCard) : '';
+        $mobile = is_scalar($mobile) ? trim((string) $mobile) : '';
+
+        $errors = [];
+
+        $nidDup = MemberAdmission::findDuplicateByIdentity($nid, $ignoreId);
+        if ($nidDup) {
+            $errors['nid_number'] = $this->duplicateIdentityMessage($nidDup);
+        }
+
+        $smartDup = MemberAdmission::findDuplicateByIdentity($smartCard, $ignoreId);
+        if ($smartDup) {
+            $errors['smart_card_number'] = $this->duplicateIdentityMessage($smartDup);
+        }
+
+        $mobileDup = MemberAdmission::findDuplicateByMobile($mobile, $ignoreId);
+        if ($mobileDup) {
+            $errors['mobile_number'] = $this->duplicateMobileMessage($mobileDup);
+        }
+
+        return $errors;
+    }
+
+    private function duplicateIdentityMessage(MemberAdmission $dup): string
+    {
+        $name = trim((string) ($dup->applicant_name_bn ?: $dup->applicant_name_en)) ?: 'অজানা';
+        $appNo = $dup->application_no ?: '—';
+
+        return "এই NID/স্মার্ট কার্ড নম্বর ইতিমধ্যে ব্যবহৃত হয়েছে (আবেদন নং: {$appNo}, নাম: {$name})। একই পরিচয়পত্র দিয়ে নতুন ভর্তি নেওয়া যাবে না।";
+    }
+
+    private function duplicateMobileMessage(MemberAdmission $dup): string
+    {
+        $name = trim((string) ($dup->applicant_name_bn ?: $dup->applicant_name_en)) ?: 'অজানা';
+        $appNo = $dup->application_no ?: '—';
+
+        return "এই মোবাইল নম্বর ইতিমধ্যে ব্যবহৃত হয়েছে (আবেদন নং: {$appNo}, নাম: {$name})। আলাদা মোবাইল নম্বর দিন।";
+    }
+
+    private function assertUniqueIdentity(mixed $nid, mixed $smartCard, mixed $mobile, ?int $ignoreId = null): void
+    {
+        $errors = $this->uniqueIdentityErrors($nid, $smartCard, $mobile, $ignoreId);
+        if ($errors !== []) {
+            throw ValidationException::withMessages($errors);
+        }
+    }
+
+    /**
+     * Live uniqueness check for Admission Create/Edit fields.
+     */
+    public function checkUnique(Request $request)
+    {
+        $ignoreId = $request->filled('ignore_id') ? (int) $request->input('ignore_id') : 0;
+
+        return response()->json([
+            'errors' => $this->uniqueIdentityErrors(
+                $request->input('nid_number'),
+                $request->input('smart_card_number'),
+                $request->input('mobile_number'),
+                $ignoreId > 0 ? $ignoreId : null
+            ),
+        ]);
     }
 
     /**
@@ -273,9 +363,14 @@ class MemberAdmissionController extends Controller
         $this->applyCoalesceDateRange($query, $fromDate, $toDate, 'COALESCE(reviewed_at, submitted_at, created_at)');
 
         $perPage = $this->resolvePerPage($request);
+        $query->withExists([
+            'loanApplications as has_disbursed_loan' => function ($q) {
+                $q->where('status', \App\Models\LoanApplication::STATUS_DISBURSED);
+            },
+        ]);
         $admissions = $query->orderByRaw('COALESCE(reviewed_at, submitted_at, created_at) desc')->paginate($perPage)->withQueryString();
 
-        $admissions = $admissions->through(function (MemberAdmission $admission) {
+        $admissions = $admissions->through(function (MemberAdmission $admission) use ($user) {
             $arr = $admission->toArray();
             $arr['tracking_state'] = $admission->getTrackingState();
             $activeLoan = $admission->loanApplications()
@@ -291,6 +386,14 @@ class MemberAdmissionController extends Controller
                 ->first();
             $arr['has_active_loan'] = $activeLoan !== null;
             $arr['active_loan_status'] = $activeLoan?->status;
+            $hasDisbursedLoan = (bool) ($admission->has_disbursed_loan ?? false);
+            $arr['has_disbursed_loan'] = $hasDisbursedLoan;
+            $arr['can_be_edited'] = AdmissionFormVisibility::canEditAdmissionForm(
+                $user->role?->name,
+                (string) $admission->status,
+                $hasDisbursedLoan,
+                $this->canManageAnyStatus()
+            );
             return $arr;
         });
 
@@ -628,6 +731,12 @@ class MemberAdmissionController extends Controller
             'loan_dofa' => 'nullable|integer|min:1|max:999',
         ], $this->admissionFileValidationMessages());
 
+        $this->assertUniqueIdentity(
+            $request->input('nid_number'),
+            $request->input('smart_card_number'),
+            $request->input('mobile_number')
+        );
+
         $isLegacy = $request->boolean('is_legacy');
         // loan_dofa only required on final submit (not draft)
         if ($isLegacy && !$saveAsDraft && empty($validated['loan_dofa'])) {
@@ -805,6 +914,9 @@ class MemberAdmissionController extends Controller
             'approvals.user',
         ]);
 
+        $memberAdmission->setAttribute('has_disbursed_loan', $memberAdmission->hasDisbursedLoan());
+        $memberAdmission->setAttribute('can_be_edited', $memberAdmission->canBeEditedBy(auth()->user()));
+
         return Inertia::render('MemberAdmission/Show', [
             'admission' => $memberAdmission,
         ]);
@@ -832,9 +944,8 @@ class MemberAdmissionController extends Controller
 
     public function edit(Request $request, MemberAdmission $memberAdmission)
     {
-        // Head Office / SuperAdmin can edit any status; others only editable ones.
-        if (!$this->canManageAnyStatus() && !$memberAdmission->canBeEdited()) {
-            return back()->with('error', 'This admission cannot be edited!');
+        if (!$this->userCanEditAdmission($memberAdmission)) {
+            return $this->admissionNotEditableResponse($memberAdmission);
         }
 
         $memberAdmission->load(['familyMembers', 'otherAssets']);
@@ -862,9 +973,8 @@ class MemberAdmissionController extends Controller
 
     public function update(Request $request, MemberAdmission $memberAdmission)
     {
-        // Head Office / SuperAdmin can edit any status; others only editable ones.
-        if (!$this->canManageAnyStatus() && !$memberAdmission->canBeEdited()) {
-            return back()->with('error', 'This admission cannot be edited!');
+        if (!$this->userCanEditAdmission($memberAdmission)) {
+            return $this->admissionNotEditableResponse($memberAdmission);
         }
 
         $this->normalizeAdmissionRequest($request);
@@ -1006,6 +1116,13 @@ class MemberAdmissionController extends Controller
             'is_legacy' => 'nullable|boolean',
             'loan_dofa' => 'nullable|integer|min:1|max:999',
         ], $this->admissionFileValidationMessages());
+
+        $this->assertUniqueIdentity(
+            $request->input('nid_number'),
+            $request->input('smart_card_number'),
+            $request->input('mobile_number'),
+            $memberAdmission->id
+        );
 
         $canChangeMemberType = $memberAdmission->isDraft();
         $isLegacy = (bool) $memberAdmission->is_legacy;
@@ -1310,6 +1427,21 @@ class MemberAdmissionController extends Controller
             ])
                 ->withErrors($validator)
                 ->with('error', 'আবেদনটি জমা দেওয়ার আগে লাল চিহ্নিত আবশ্যকীয় তথ্যগুলো পূরণ করুন।');
+        }
+
+        $uniqueErrors = $this->uniqueIdentityErrors(
+            $memberAdmission->nid_number,
+            $memberAdmission->smart_card_number,
+            $memberAdmission->mobile_number,
+            $memberAdmission->id
+        );
+        if ($uniqueErrors !== []) {
+            return redirect()->route('member-admissions.edit', [
+                'memberAdmission' => $memberAdmission->id,
+                'for_submit' => 1,
+            ])
+                ->withErrors($uniqueErrors)
+                ->with('error', 'এই NID, স্মার্ট কার্ড অথবা মোবাইল নম্বর ইতিমধ্যে অন্য ভর্তি আবেদনে ব্যবহৃত হয়েছে।');
         }
 
         // «নিজ» family row is required and must be filled (feeds loan application later)
@@ -1635,11 +1767,7 @@ class MemberAdmissionController extends Controller
      */
     public function updateMemberCode(Request $request, MemberAdmission $memberAdmission)
     {
-        $hasDisbursedLoan = $memberAdmission->loanApplications()
-            ->where('status', \App\Models\LoanApplication::STATUS_DISBURSED)
-            ->exists();
-
-        if ($hasDisbursedLoan) {
+        if ($memberAdmission->hasDisbursedLoan()) {
             return back()->withErrors(['error' => 'ঋণ বিতরণ সম্পন্ন হওয়ার পর মেম্বার কোড পরিবর্তন করা যাবে না।']);
         }
 

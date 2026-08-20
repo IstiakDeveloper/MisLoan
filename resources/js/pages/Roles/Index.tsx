@@ -10,7 +10,7 @@ import {
 import { useCanMutate } from '@/hooks/use-can-mutate';
 import AdminLayout from '@/layouts/admin-layout';
 import { Head, router } from '@inertiajs/react';
-import { Edit, Plus, Shield, Trash2 } from 'lucide-react';
+import { Edit, Plus, RefreshCw, Shield, Trash2 } from 'lucide-react';
 import { useState } from 'react';
 import RoleModal from './Components/RoleModal';
 
@@ -40,6 +40,7 @@ export default function Index({ roles, permissions }: Props) {
     const [openDropdown, setOpenDropdown] = useState<number | null>(null);
     const [roleModalOpen, setRoleModalOpen] = useState(false);
     const [selectedRole, setSelectedRole] = useState<Role | null>(null);
+    const [syncing, setSyncing] = useState(false);
 
     const [currentPage, setCurrentPage] = useState(1);
     const [itemsPerPage, setItemsPerPage] = useState(50);
@@ -55,6 +56,26 @@ export default function Index({ roles, permissions }: Props) {
     const handleAddNew = () => {
         setSelectedRole(null);
         setRoleModalOpen(true);
+    };
+
+    const handleSyncRoles = () => {
+        if (
+            !confirm(
+                'শুধু অনুপস্থিত সিস্টেম রোল ও পারমিশন যোগ হবে। আগের নাম, বিবরণ বা কাস্টম পারমিশন মুছে যাবে না। চালিয়ে যাবেন?',
+            )
+        ) {
+            return;
+        }
+
+        setSyncing(true);
+        router.post(
+            '/roles/sync',
+            {},
+            {
+                preserveScroll: true,
+                onFinish: () => setSyncing(false),
+            },
+        );
     };
 
     const handleEdit = (role: Role) => {
@@ -93,13 +114,25 @@ export default function Index({ roles, permissions }: Props) {
                     icon={Shield}
                     actions={
                         canMutate ? (
-                        <button
-                            onClick={handleAddNew}
-                            className="flex min-h-10 w-full items-center justify-center gap-2 rounded-lg bg-white px-4 py-2 text-sm font-semibold text-blue-700 shadow-sm hover:bg-blue-50 focus:ring-4 focus:ring-white/30 focus:outline-none sm:w-auto"
-                        >
-                            <Plus className="h-4 w-4" />
-                            Add New Role
-                        </button>
+                            <>
+                                <button
+                                    type="button"
+                                    onClick={handleSyncRoles}
+                                    disabled={syncing}
+                                    className="flex min-h-10 w-full items-center justify-center gap-2 rounded-lg border border-white/20 bg-white/10 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-white/20 focus:ring-4 focus:ring-white/30 focus:outline-none disabled:opacity-60 sm:w-auto"
+                                    title="Missing system roles/permissions যোগ করবে; আগের ডেটা মুছবে না"
+                                >
+                                    <RefreshCw className={`h-4 w-4 ${syncing ? 'animate-spin' : ''}`} />
+                                    {syncing ? 'Syncing...' : 'Sync Roles'}
+                                </button>
+                                <button
+                                    onClick={handleAddNew}
+                                    className="flex min-h-10 w-full items-center justify-center gap-2 rounded-lg bg-white px-4 py-2 text-sm font-semibold text-blue-700 shadow-sm hover:bg-blue-50 focus:ring-4 focus:ring-white/30 focus:outline-none sm:w-auto"
+                                >
+                                    <Plus className="h-4 w-4" />
+                                    Add New Role
+                                </button>
+                            </>
                         ) : undefined
                     }
                 />

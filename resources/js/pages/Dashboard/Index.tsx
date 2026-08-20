@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import AdminLayout from '@/layouts/admin-layout';
 import { Head, Link, router } from '@inertiajs/react';
 import {
@@ -23,6 +23,9 @@ import {
     ShieldCheck,
     Globe2,
     CheckSquare,
+    Search,
+    Phone,
+    Filter,
 } from 'lucide-react';
 
 interface HOItem {
@@ -72,6 +75,39 @@ interface ActionQueueItem {
     url: string;
 }
 
+export interface HOManager {
+    id: number;
+    tier: 'rm' | 'zm' | 'senior' | 'bm';
+    manager_id?: number | null;
+    manager_name: string;
+    manager_phone?: string | null;
+    manager_role: string;
+    unit_name: string;
+    unit_code: string;
+    parent_name: string;
+    admission_pending: number;
+    loan_pending: number;
+    total_pending: number;
+    loan_amount: number;
+    branches_count?: number | null;
+    areas_count?: number | null;
+}
+
+export interface HOManagersSummary {
+    rm_list: HOManager[];
+    zm_list: HOManager[];
+    senior_list: HOManager[];
+    bm_list: HOManager[];
+    total_rm: number;
+    total_zm: number;
+    total_senior: number;
+    total_bm: number;
+    rm_total_pending: number;
+    zm_total_pending: number;
+    senior_total_pending: number;
+    bm_total_pending: number;
+}
+
 interface Props {
     period: 'today' | 'monthly' | 'date_to_date';
     dateFrom: string | null;
@@ -79,6 +115,7 @@ interface Props {
     dashboardType: string;
     hoStats: HOStats;
     hoActionQueue: ActionQueueItem[];
+    hoManagersSummary?: HOManagersSummary;
     user: {
         id: number;
         name: string;
@@ -183,11 +220,40 @@ export default function HeadOfficeDashboard({
     dateTo,
     hoStats,
     hoActionQueue,
+    hoManagersSummary,
     user,
 }: Props) {
     const [periodSelect, setPeriodSelect] = useState<'today' | 'monthly' | 'date_to_date'>(period);
     const [fromDate, setFromDate] = useState(dateFrom ?? '');
     const [toDate, setToDate] = useState(dateTo ?? '');
+
+    const [tierTab, setTierTab] = useState<'rm' | 'zm' | 'senior' | 'bm'>('rm');
+    const [searchManager, setSearchManager] = useState('');
+    const [statusFilterTab, setStatusFilterTab] = useState<'all' | 'pending' | 'zero'>('all');
+
+    const activeList = useMemo(() => {
+        if (!hoManagersSummary) return [];
+        if (tierTab === 'rm') return hoManagersSummary.rm_list || [];
+        if (tierTab === 'zm') return hoManagersSummary.zm_list || [];
+        if (tierTab === 'senior') return hoManagersSummary.senior_list || [];
+        if (tierTab === 'bm') return hoManagersSummary.bm_list || [];
+        return [];
+    }, [hoManagersSummary, tierTab]);
+
+    const filteredManagers = useMemo(() => {
+        return activeList.filter((mgr) => {
+            if (statusFilterTab === 'pending' && mgr.total_pending === 0) return false;
+            if (statusFilterTab === 'zero' && mgr.total_pending > 0) return false;
+            if (!searchManager) return true;
+            const query = searchManager.toLowerCase();
+            return (
+                mgr.manager_name.toLowerCase().includes(query) ||
+                mgr.unit_name.toLowerCase().includes(query) ||
+                mgr.unit_code.toLowerCase().includes(query) ||
+                mgr.parent_name.toLowerCase().includes(query)
+            );
+        });
+    }, [activeList, statusFilterTab, searchManager]);
 
     useEffect(() => {
         setPeriodSelect(period);
@@ -797,6 +863,337 @@ export default function HeadOfficeDashboard({
                         </div>
                     </div>
                 </div>
+
+                {/* 5. ALL-TIERS MANAGERS & APPROVERS NAME-BASED PENDING MONITOR (RM to Senior Approvers & BM) */}
+                {hoManagersSummary && (
+                    <div className="bg-white rounded-2xl border border-slate-200/90 shadow-2xs p-4 space-y-4">
+                        {/* Section Header */}
+                        <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3 pb-3 border-b border-slate-100">
+                            <div className="flex items-center gap-2.5">
+                                <div className="w-8 h-8 rounded-xl bg-gradient-to-tr from-purple-600 to-indigo-600 text-white flex items-center justify-center shadow-xs shrink-0">
+                                    <Users size={16} />
+                                </div>
+                                <div>
+                                    <div className="flex items-center gap-2">
+                                        <h3 className="text-sm sm:text-base font-bold text-slate-800 tracking-tight">
+                                            কর্মকর্তা ও অনুমোদকভিত্তিক কেন্দ্রীয় পেন্ডিং মনিটর
+                                        </h3>
+                                        <span className="text-[10px] font-bold px-2 py-0.5 bg-purple-50 text-purple-700 rounded-md border border-purple-200">
+                                            সকল স্তর (RM ➔ ZM ➔ সিনিয়র অনুমোদক ➔ BM)
+                                        </span>
+                                    </div>
+                                    <p className="text-[11px] text-slate-400 font-medium mt-0.5">
+                                        রিজিওনাল ম্যানেজার (RM) থেকে শুরু করে হেড অফিস পর্যন্ত সকল দায়িত্বপ্রাপ্ত কর্মকর্তার নামভিত্তিক পেন্ডিং আবেদনের লাইভ স্থিতি
+                                    </p>
+                                </div>
+                            </div>
+
+                            {/* Main Tier Selection Tabs */}
+                            <div className="flex items-center bg-slate-100 p-1 rounded-xl text-xs font-bold gap-1 flex-wrap">
+                                <button
+                                    type="button"
+                                    onClick={() => { setTierTab('rm'); setSearchManager(''); }}
+                                    className={`px-3 py-1.5 rounded-lg transition-all flex items-center gap-1.5 ${
+                                        tierTab === 'rm'
+                                            ? 'bg-white text-purple-700 shadow-2xs font-extrabold'
+                                            : 'text-slate-600 hover:text-slate-900'
+                                    }`}
+                                >
+                                    <span>আঞ্চলিক ব্যবস্থাপক (RM)</span>
+                                    <span className={`text-[10px] px-1.5 py-0.2 rounded-full ${tierTab === 'rm' ? 'bg-purple-100 text-purple-800' : 'bg-slate-200 text-slate-700'}`}>
+                                        {hoManagersSummary.total_rm}
+                                    </span>
+                                </button>
+
+                                <button
+                                    type="button"
+                                    onClick={() => { setTierTab('zm'); setSearchManager(''); }}
+                                    className={`px-3 py-1.5 rounded-lg transition-all flex items-center gap-1.5 ${
+                                        tierTab === 'zm'
+                                            ? 'bg-white text-purple-700 shadow-2xs font-extrabold'
+                                            : 'text-slate-600 hover:text-slate-900'
+                                    }`}
+                                >
+                                    <span>জোনাল ম্যানেজার (ZM)</span>
+                                    <span className={`text-[10px] px-1.5 py-0.2 rounded-full ${tierTab === 'zm' ? 'bg-purple-100 text-purple-800' : 'bg-slate-200 text-slate-700'}`}>
+                                        {hoManagersSummary.total_zm}
+                                    </span>
+                                </button>
+
+                                <button
+                                    type="button"
+                                    onClick={() => { setTierTab('senior'); setSearchManager(''); }}
+                                    className={`px-3 py-1.5 rounded-lg transition-all flex items-center gap-1.5 ${
+                                        tierTab === 'senior'
+                                            ? 'bg-white text-purple-700 shadow-2xs font-extrabold'
+                                            : 'text-slate-600 hover:text-slate-900'
+                                    }`}
+                                >
+                                    <span>উর্ধ্বতন অনুমোদক (ADMF/DMF/ED)</span>
+                                    <span className={`text-[10px] px-1.5 py-0.2 rounded-full ${tierTab === 'senior' ? 'bg-purple-100 text-purple-800' : 'bg-slate-200 text-slate-700'}`}>
+                                        {hoManagersSummary.total_senior}
+                                    </span>
+                                </button>
+
+                                <button
+                                    type="button"
+                                    onClick={() => { setTierTab('bm'); setSearchManager(''); }}
+                                    className={`px-3 py-1.5 rounded-lg transition-all flex items-center gap-1.5 ${
+                                        tierTab === 'bm'
+                                            ? 'bg-white text-purple-700 shadow-2xs font-extrabold'
+                                            : 'text-slate-600 hover:text-slate-900'
+                                    }`}
+                                >
+                                    <span>শাখা ব্যবস্থাপক (BM)</span>
+                                    <span className={`text-[10px] px-1.5 py-0.2 rounded-full ${tierTab === 'bm' ? 'bg-purple-100 text-purple-800' : 'bg-slate-200 text-slate-700'}`}>
+                                        {hoManagersSummary.total_bm}
+                                    </span>
+                                </button>
+                            </div>
+                        </div>
+
+                        {/* Search & Sub-Filter Toolbar */}
+                        <div className="flex flex-wrap items-center justify-between gap-2.5 pt-1">
+                            <div className="relative min-w-[220px] max-w-sm flex-1">
+                                <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 w-3.5 h-3.5" />
+                                <input
+                                    type="text"
+                                    value={searchManager}
+                                    onChange={(e) => setSearchManager(e.target.value)}
+                                    placeholder="কর্মকর্তা, অঞ্চল, জোন বা শাখার নাম খুঁজুন..."
+                                    className="w-full pl-8 pr-3 py-1.5 text-xs bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-purple-500/20 focus:border-purple-500 font-medium"
+                                />
+                                {searchManager && (
+                                    <button
+                                        type="button"
+                                        onClick={() => setSearchManager('')}
+                                        className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 text-xs"
+                                    >
+                                        ✕
+                                    </button>
+                                )}
+                            </div>
+
+                            <div className="flex items-center bg-slate-100 p-1 rounded-xl text-[11px] font-bold">
+                                <button
+                                    type="button"
+                                    onClick={() => setStatusFilterTab('all')}
+                                    className={`px-2.5 py-1 rounded-lg transition-all ${
+                                        statusFilterTab === 'all'
+                                            ? 'bg-white text-slate-900 shadow-2xs font-extrabold'
+                                            : 'text-slate-600 hover:text-slate-900'
+                                    }`}
+                                >
+                                    সব ({activeList.length})
+                                </button>
+                                <button
+                                    type="button"
+                                    onClick={() => setStatusFilterTab('pending')}
+                                    className={`px-2.5 py-1 rounded-lg transition-all ${
+                                        statusFilterTab === 'pending'
+                                            ? 'bg-amber-500 text-white shadow-2xs font-extrabold'
+                                            : 'text-slate-600 hover:text-amber-600'
+                                    }`}
+                                >
+                                    পেন্ডিং আছে ({activeList.filter((m) => m.total_pending > 0).length})
+                                </button>
+                                <button
+                                    type="button"
+                                    onClick={() => setStatusFilterTab('zero')}
+                                    className={`px-2.5 py-1 rounded-lg transition-all ${
+                                        statusFilterTab === 'zero'
+                                            ? 'bg-emerald-600 text-white shadow-2xs font-extrabold'
+                                            : 'text-slate-600 hover:text-emerald-600'
+                                    }`}
+                                >
+                                    শূন্য ({activeList.filter((m) => m.total_pending === 0).length})
+                                </button>
+                            </div>
+                        </div>
+
+                        {/* Managers Table View */}
+                        <div className="overflow-x-auto rounded-xl border border-slate-200/80">
+                            <table className="w-full text-left text-xs border-collapse">
+                                <thead>
+                                    <tr className="bg-slate-50/80 text-slate-600 border-b border-slate-200 text-[11px] font-bold uppercase tracking-wider">
+                                        <th className="py-2.5 px-3">#</th>
+                                        <th className="py-2.5 px-3">কর্মকর্তার নাম ও পদবি</th>
+                                        <th className="py-2.5 px-3">অঞ্চল / জোন / শাখা</th>
+                                        <th className="py-2.5 px-3 text-center">আওতাধীন পরিধি</th>
+                                        <th className="py-2.5 px-3 text-center">ভর্তি পেন্ডিং</th>
+                                        <th className="py-2.5 px-3 text-center">ঋণ পেন্ডিং</th>
+                                        <th className="py-2.5 px-3 text-center">সর্বমোট পেন্ডিং</th>
+                                        <th className="py-2.5 px-3 text-right">ঋণের পরিমাণ (৳)</th>
+                                        <th className="py-2.5 px-3 text-center">অবস্থা</th>
+                                    </tr>
+                                </thead>
+                                <tbody className="divide-y divide-slate-100">
+                                    {filteredManagers.length === 0 ? (
+                                        <tr>
+                                            <td colSpan={9} className="py-8 text-center text-slate-400 font-medium">
+                                                কোনো কর্মকর্তার তথ্য পাওয়া যায়নি।
+                                            </td>
+                                        </tr>
+                                    ) : (
+                                        filteredManagers.map((mgr, idx) => {
+                                            const hasPending = mgr.total_pending > 0;
+                                            const isHighLoad = mgr.total_pending >= 5;
+
+                                            return (
+                                                <tr
+                                                    key={mgr.id || idx}
+                                                    className={`hover:bg-purple-50/30 transition-colors ${
+                                                        isHighLoad ? 'bg-amber-50/20' : ''
+                                                    }`}
+                                                >
+                                                    <td className="py-2.5 px-3 text-slate-400 font-semibold">
+                                                        {idx + 1}
+                                                    </td>
+
+                                                    {/* Manager Name & Role */}
+                                                    <td className="py-2.5 px-3">
+                                                        <div className="flex items-center gap-2.5">
+                                                            <div className="w-8 h-8 rounded-xl bg-gradient-to-tr from-slate-700 to-slate-900 text-white font-bold flex items-center justify-center text-xs shadow-2xs shrink-0">
+                                                                {(mgr.manager_name || 'M')[0]}
+                                                            </div>
+                                                            <div>
+                                                                <div className="flex items-center gap-1.5">
+                                                                    <span className="font-bold text-slate-900">
+                                                                        {mgr.manager_name}
+                                                                    </span>
+                                                                    {mgr.manager_phone && (
+                                                                        <a
+                                                                            href={`tel:${mgr.manager_phone}`}
+                                                                            className="text-slate-400 hover:text-purple-600 transition-colors"
+                                                                            title={`কল করুন: ${mgr.manager_phone}`}
+                                                                        >
+                                                                            <Phone size={11} />
+                                                                        </a>
+                                                                    )}
+                                                                </div>
+                                                                <span className="text-[10px] text-slate-500 font-medium">
+                                                                    {mgr.manager_role}
+                                                                </span>
+                                                            </div>
+                                                        </div>
+                                                    </td>
+
+                                                    {/* Unit & Parent Name */}
+                                                    <td className="py-2.5 px-3">
+                                                        <div>
+                                                            <div className="flex items-center gap-1.5">
+                                                                <span className="font-bold text-slate-800">
+                                                                    {mgr.unit_name}
+                                                                </span>
+                                                                {mgr.unit_code && (
+                                                                    <span className="text-[9px] font-mono px-1.5 py-0.2 bg-slate-100 text-slate-600 rounded border border-slate-200">
+                                                                        {mgr.unit_code}
+                                                                    </span>
+                                                                )}
+                                                            </div>
+                                                            <span className="text-[10px] text-slate-400 font-medium">
+                                                                {mgr.parent_name}
+                                                            </span>
+                                                        </div>
+                                                    </td>
+
+                                                    {/* Scope Count */}
+                                                    <td className="py-2.5 px-3 text-center">
+                                                        {mgr.tier === 'zm' ? (
+                                                            <span className="text-[11px] font-semibold text-slate-600">
+                                                                {mgr.areas_count || 0} অঞ্চল • {mgr.branches_count || 0} শাখা
+                                                            </span>
+                                                        ) : mgr.tier === 'rm' ? (
+                                                            <span className="text-[11px] font-semibold text-slate-600">
+                                                                {mgr.branches_count || 0} শাখা
+                                                            </span>
+                                                        ) : mgr.tier === 'senior' ? (
+                                                            <span className="text-[11px] font-semibold text-purple-700 bg-purple-50 px-2 py-0.5 rounded-md">
+                                                                সার্বিক আর্থিক
+                                                            </span>
+                                                        ) : (
+                                                            <span className="text-[11px] font-semibold text-slate-500">
+                                                                ১ শাখা
+                                                            </span>
+                                                        )}
+                                                    </td>
+
+                                                    {/* Admission Pending */}
+                                                    <td className="py-2.5 px-3 text-center">
+                                                        <span
+                                                            className={`inline-flex items-center justify-center min-w-[24px] px-2 py-0.5 rounded-full text-xs font-bold ${
+                                                                mgr.admission_pending > 0
+                                                                    ? 'bg-amber-100 text-amber-800 border border-amber-200'
+                                                                    : 'text-slate-400'
+                                                            }`}
+                                                        >
+                                                            {mgr.admission_pending}
+                                                        </span>
+                                                    </td>
+
+                                                    {/* Loan Pending */}
+                                                    <td className="py-2.5 px-3 text-center">
+                                                        <span
+                                                            className={`inline-flex items-center justify-center min-w-[24px] px-2 py-0.5 rounded-full text-xs font-bold ${
+                                                                mgr.loan_pending > 0
+                                                                    ? 'bg-blue-100 text-blue-800 border border-blue-200'
+                                                                    : 'text-slate-400'
+                                                            }`}
+                                                        >
+                                                            {mgr.loan_pending}
+                                                        </span>
+                                                    </td>
+
+                                                    {/* Total Pending */}
+                                                    <td className="py-2.5 px-3 text-center">
+                                                        <span
+                                                            className={`inline-flex items-center justify-center min-w-[28px] px-2.5 py-0.5 rounded-full text-xs font-black ${
+                                                                isHighLoad
+                                                                    ? 'bg-rose-600 text-white shadow-2xs'
+                                                                    : hasPending
+                                                                    ? 'bg-purple-600 text-white shadow-2xs'
+                                                                    : 'bg-slate-100 text-slate-500'
+                                                            }`}
+                                                        >
+                                                            {mgr.total_pending}
+                                                        </span>
+                                                    </td>
+
+                                                    {/* Loan Amount */}
+                                                    <td className="py-2.5 px-3 text-right">
+                                                        <span className="font-bold text-slate-800">
+                                                            {mgr.loan_amount > 0 ? `৳ ${mgr.loan_amount.toLocaleString()}` : '—'}
+                                                        </span>
+                                                    </td>
+
+                                                    {/* Status Badge */}
+                                                    <td className="py-2.5 px-3 text-center">
+                                                        {isHighLoad ? (
+                                                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-bold bg-rose-50 text-rose-700 border border-rose-200">
+                                                                <span className="w-1.5 h-1.5 rounded-full bg-rose-500 animate-pulse" />
+                                                                উচ্চ চাপ ({mgr.total_pending})
+                                                            </span>
+                                                        ) : hasPending ? (
+                                                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-bold bg-amber-50 text-amber-700 border border-amber-200">
+                                                                <span className="w-1.5 h-1.5 rounded-full bg-amber-500" />
+                                                                চলমান ({mgr.total_pending})
+                                                            </span>
+                                                        ) : (
+                                                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200">
+                                                                <CheckCircle2 size={10} />
+                                                                ক্লিয়ার
+                                                            </span>
+                                                        )}
+                                                    </td>
+                                                </tr>
+                                            );
+                                        })
+                                    )}
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                )}
             </div>
         </AdminLayout>
     );

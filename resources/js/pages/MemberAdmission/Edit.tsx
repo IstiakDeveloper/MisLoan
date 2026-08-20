@@ -290,6 +290,9 @@ export default function Edit({
         });
 
     const canChangeMemberType = admission.status === 'draft';
+    const isDraftAdmission = admission.status === 'draft';
+    const saveButtonLabel = isDraftAdmission ? 'খসড়া সংরক্ষণ' : 'সংরক্ষণ';
+    const saveButtonLabelEn = isDraftAdmission ? 'খসড়া সংরক্ষণ (Save Draft)' : 'সংরক্ষণ (Save)';
 
     const handleMemberTypeChange = (legacy: boolean) => {
         if (!canChangeMemberType) return;
@@ -727,7 +730,7 @@ export default function Edit({
                                 className="inline-flex items-center justify-center gap-2 px-5 py-3 rounded-2xl bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 text-xs sm:text-sm font-bold transition-all active:scale-95 shadow-sm disabled:opacity-50"
                             >
                                 <Save className="w-4 h-4 text-amber-400" />
-                                <span>খসড়া সংরক্ষণ</span>
+                                <span>{saveButtonLabel}</span>
                             </button>
                             {for_submit && (
                                 <button
@@ -818,6 +821,7 @@ export default function Edit({
                         data={data}
                         setData={setData}
                         errors={mergedErrors}
+                        ignoreAdmissionId={admission.id}
                     />
 
                     <AddressSection
@@ -839,6 +843,7 @@ export default function Edit({
                         data={data}
                         setData={setData}
                         errors={mergedErrors}
+                        ignoreAdmissionId={admission.id}
                     />
 
                     <EconomicPropertySection
@@ -899,7 +904,7 @@ export default function Edit({
                             className="w-full sm:w-auto inline-flex items-center justify-center gap-2 px-5 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-900 text-amber-400 text-xs sm:text-sm font-bold shadow-md transition-all active:scale-95 disabled:opacity-50"
                         >
                             <Save className="w-4 h-4" />
-                            <span>খসড়া সংরক্ষণ (Save Draft)</span>
+                            <span>{saveButtonLabelEn}</span>
                         </button>
                         {for_submit && (
                             <button
@@ -924,7 +929,7 @@ export default function Edit({
                         className="flex-1 inline-flex items-center justify-center gap-1.5 py-2.5 px-3 rounded-xl bg-slate-800 text-amber-400 text-xs font-bold shadow-sm active:scale-95 transition disabled:opacity-50"
                     >
                         <Save className="w-4 h-4" />
-                        <span>খসড়া</span>
+                        <span>{isDraftAdmission ? 'খসড়া' : 'সংরক্ষণ'}</span>
                     </button>
                     {for_submit && (
                         <button

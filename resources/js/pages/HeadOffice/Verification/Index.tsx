@@ -92,6 +92,9 @@ interface VerificationItem {
     status: string;
     submitted_at?: string | null;
     created_at: string;
+    reviewed_at?: string | null;
+    reviewed_by_name?: string | null;
+    rejection_reason?: string | null;
     has_pending_issue: boolean;
     has_replied: boolean;
     issues: IssueDetail[];
@@ -290,10 +293,12 @@ export default function VerificationIndex({ items, stats, filters, permissions, 
         });
     };
 
-    // Branch / User Reply to Issue
+    // Branch / User Reply to Issue — never prefill HO's own inquiry as the branch reply
     const handleOpenReplyModal = (item: VerificationItem) => {
+        const hoText = (item.latest_issue_description || '').trim();
+        const existingReply = (item.latest_reply_message || '').trim();
         setReplyModalItem(item);
-        setReplyText(item.latest_reply_message || '');
+        setReplyText(existingReply && existingReply !== hoText ? existingReply : '');
     };
 
     const handleSendReply = (e: React.FormEvent) => {
@@ -786,62 +791,14 @@ export default function VerificationIndex({ items, stats, filters, permissions, 
                                                     )}
                                                 </td>
 
-                                                {/* Unified HO Objection & Branch Reply Conversation View */}
+                                                {/* Unified HO Objection & Branch Reply Timeline */}
                                                 <td className="py-3.5 px-3 align-top">
-                                                    <div className="space-y-2">
-                                                        {/* HO Objection */}
-                                                        <div className="bg-amber-50/90 border border-amber-200 rounded-lg p-2.5 space-y-1 shadow-2xs">
-                                                            <div className="flex items-center justify-between gap-1 text-[10px]">
-                                                                <span className="inline-flex items-center gap-1 font-bold text-amber-900 bg-amber-200/70 px-1.5 py-0.5 rounded">
-                                                                    <ShieldAlert className="w-3 h-3 text-amber-700" />
-                                                                    HO:
-                                                                </span>
-                                                                <span className="text-amber-700 font-medium">
-                                                                    {item.issues[0]?.reporter_name || 'হেড অফিস'}
-                                                                </span>
-                                                            </div>
-                                                            <p className="text-xs text-amber-950 font-medium leading-relaxed">
-                                                                {item.latest_issue_description}
-                                                            </p>
-                                                        </div>
-
-                                                        {/* Branch Reply */}
-                                                        <div
-                                                            className={`rounded-lg p-2.5 space-y-1 shadow-2xs border ${
-                                                                item.latest_reply_message
-                                                                    ? 'bg-sky-50/90 border-sky-200 text-sky-950'
-                                                                    : 'bg-slate-50/80 border-slate-200 border-dashed text-slate-500'
-                                                            }`}
-                                                        >
-                                                            <div className="flex items-center justify-between gap-1 text-[10px]">
-                                                                <span
-                                                                    className={`inline-flex items-center gap-1 font-bold px-1.5 py-0.5 rounded ${
-                                                                        item.latest_reply_message
-                                                                            ? 'text-sky-900 bg-sky-200/70'
-                                                                            : 'text-slate-600 bg-slate-200/70'
-                                                                    }`}
-                                                                >
-                                                                    <CornerDownRight className="w-3 h-3" />
-                                                                    Branch:
-                                                                </span>
-                                                                {item.latest_reply_message && (
-                                                                    <span className="text-sky-700 font-medium">
-                                                                        {item.issues[0]?.responder_name || 'শাখা কর্মকর্তা'}
-                                                                    </span>
-                                                                )}
-                                                            </div>
-                                                            {item.latest_reply_message ? (
-                                                                <p className="text-xs text-sky-950 font-medium leading-relaxed">
-                                                                    {item.latest_reply_message}
-                                                                </p>
-                                                            ) : (
-                                                                <p className="text-[11px] text-slate-400 italic flex items-center gap-1">
-                                                                    <Clock className="w-3 h-3 text-slate-400" />
-                                                                    শাখার জবাব অপেক্ষমান
-                                                                </p>
-                                                            )}
-                                                        </div>
-                                                    </div>
+                                                    <VerificationThread
+                                                        item={item}
+                                                        isApproved={isApproved}
+                                                        isRejected={isRejected}
+                                                        compact
+                                                    />
                                                 </td>
 
                                                 {/* Status */}
@@ -1183,52 +1140,21 @@ export default function VerificationIndex({ items, stats, filters, permissions, 
                             </button>
                         </div>
 
-                        {/* Modal Body: Issue list */}
+                        {/* Modal Body: chronological timeline */}
                         <div className="flex-1 overflow-y-auto space-y-3 pr-1">
-                            {selectedItemForHistory.issues.length === 0 ? (
+                            {selectedItemForHistory.issues.length === 0 &&
+                            !selectedItemForHistory.latest_issue_description ? (
                                 <p className="text-xs text-slate-400 text-center py-6">কোনো লিপিবদ্ধ আপত্তি নেই</p>
                             ) : (
-                                selectedItemForHistory.issues.map((issue) => (
-                                    <div
-                                        key={issue.id}
-                                        className="rounded-xl border border-slate-200 p-3.5 space-y-2 bg-slate-50/50"
-                                    >
-                                        <div className="flex items-center justify-between gap-2">
-                                            <div className="flex items-center gap-1.5 text-xs font-bold text-amber-900">
-                                                <AlertCircle className="w-3.5 h-3.5 text-amber-600" />
-                                                HO আপত্তি ({issue.reporter_name})
-                                            </div>
-                                            <span
-                                                className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
-                                                    issue.status === 'resolved'
-                                                        ? 'bg-emerald-100 text-emerald-800'
-                                                        : 'bg-amber-100 text-amber-800'
-                                                }`}
-                                            >
-                                                {issue.status === 'resolved' ? 'সমাধানকৃত' : 'তদন্তাধীন'}
-                                            </span>
-                                        </div>
-
-                                        <p className="text-xs text-slate-800 bg-white p-2.5 rounded-lg border border-slate-200">
-                                            {issue.issue_description}
-                                        </p>
-
-                                        {/* Branch reply */}
-                                        {issue.reply_message ? (
-                                            <div className="bg-sky-50 border border-sky-200 rounded-lg p-2.5 space-y-1">
-                                                <div className="text-[11px] font-bold text-sky-900 flex items-center gap-1">
-                                                    <CornerDownRight className="w-3 h-3 text-sky-600" />
-                                                    Branch জবাব ({issue.responder_name || 'শাখা কর্মকর্তা'})
-                                                </div>
-                                                <p className="text-xs text-sky-950">{issue.reply_message}</p>
-                                            </div>
-                                        ) : (
-                                            <div className="text-[11px] text-slate-400 italic">
-                                                শাখা থেকে এখনও কোনো জবাব পাওয়া যায়নি।
-                                            </div>
-                                        )}
-                                    </div>
-                                ))
+                                <VerificationThread
+                                    item={selectedItemForHistory}
+                                    isApproved={
+                                        selectedItemForHistory.status === 'approved' ||
+                                        selectedItemForHistory.status === 'pending_disbursement' ||
+                                        selectedItemForHistory.status === 'disbursed'
+                                    }
+                                    isRejected={selectedItemForHistory.status === 'rejected'}
+                                />
                             )}
 
                             {/* Add new issue form (Head Office only) */}
@@ -1261,5 +1187,140 @@ export default function VerificationIndex({ items, stats, filters, permissions, 
                 </div>
             )}
         </AdminLayout>
+    );
+}
+
+function VerificationThread({
+    item,
+    isApproved,
+    isRejected,
+    compact = false,
+}: {
+    item: VerificationItem;
+    isApproved: boolean;
+    isRejected: boolean;
+    compact?: boolean;
+}) {
+    const issues =
+        item.issues.length > 0
+            ? [...item.issues].sort((a, b) => (a.created_at || '').localeCompare(b.created_at || ''))
+            : [
+                  {
+                      id: 0,
+                      issue_description: item.latest_issue_description,
+                      reporter_name: 'হেড অফিস',
+                      status: item.has_pending_issue ? 'pending' : 'resolved',
+                      reply_message: item.latest_reply_message,
+                      responder_name: null,
+                      created_at: item.created_at,
+                      replied_at: null,
+                  } satisfies IssueDetail,
+              ];
+
+    const textClass = compact ? 'text-xs' : 'text-sm';
+
+    return (
+        <div className="relative space-y-2 pl-3">
+            <div className="absolute left-[5px] top-2 bottom-2 w-px bg-slate-200" />
+
+            {issues.map((issue, index) => (
+                <div key={issue.id || `round-${index}`} className="space-y-2">
+                    <div className="relative bg-amber-50/90 border border-amber-200 rounded-lg p-2.5 space-y-1 shadow-2xs">
+                        <div className="absolute -left-[9px] top-3 w-2.5 h-2.5 rounded-full bg-amber-500 border-2 border-white" />
+                        <div className="flex items-center justify-between gap-1 text-[10px]">
+                            <span className="inline-flex items-center gap-1 font-bold text-amber-900 bg-amber-200/70 px-1.5 py-0.5 rounded">
+                                <ShieldAlert className="w-3 h-3 text-amber-700" />
+                                HO আপত্তি
+                            </span>
+                            <span className="text-amber-700 font-medium truncate">
+                                {issue.reporter_name || 'হেড অফিস'}
+                                {issue.created_at ? ` · ${formatDateTime(issue.created_at)}` : ''}
+                            </span>
+                        </div>
+                        <p className={`${textClass} text-amber-950 font-medium leading-relaxed`}>
+                            {issue.issue_description}
+                        </p>
+                    </div>
+
+                    <div
+                        className={`relative rounded-lg p-2.5 space-y-1 shadow-2xs border ${
+                            issue.reply_message
+                                ? 'bg-sky-50/90 border-sky-200 text-sky-950'
+                                : 'bg-slate-50/80 border-slate-200 border-dashed text-slate-500'
+                        }`}
+                    >
+                        <div
+                            className={`absolute -left-[9px] top-3 w-2.5 h-2.5 rounded-full border-2 border-white ${
+                                issue.reply_message ? 'bg-sky-500' : 'bg-slate-300'
+                            }`}
+                        />
+                        <div className="flex items-center justify-between gap-1 text-[10px]">
+                            <span
+                                className={`inline-flex items-center gap-1 font-bold px-1.5 py-0.5 rounded ${
+                                    issue.reply_message
+                                        ? 'text-sky-900 bg-sky-200/70'
+                                        : 'text-slate-600 bg-slate-200/70'
+                                }`}
+                            >
+                                <CornerDownRight className="w-3 h-3" />
+                                Branch জবাব
+                            </span>
+                            {issue.reply_message && (
+                                <span className="text-sky-700 font-medium truncate">
+                                    {issue.responder_name || 'শাখা কর্মকর্তা'}
+                                    {issue.replied_at ? ` · ${formatDateTime(issue.replied_at)}` : ''}
+                                </span>
+                            )}
+                        </div>
+                        {issue.reply_message ? (
+                            <p className={`${textClass} text-sky-950 font-medium leading-relaxed`}>
+                                {issue.reply_message}
+                            </p>
+                        ) : (
+                            <p className="text-[11px] text-slate-400 italic flex items-center gap-1">
+                                <Clock className="w-3 h-3 text-slate-400" />
+                                শাখার জবাব অপেক্ষমান
+                            </p>
+                        )}
+                    </div>
+                </div>
+            ))}
+
+            {isApproved && (
+                <div className="relative bg-emerald-50 border border-emerald-200 rounded-lg p-2.5 space-y-1">
+                    <div className="absolute -left-[9px] top-3 w-2.5 h-2.5 rounded-full bg-emerald-500 border-2 border-white" />
+                    <div className="flex items-center justify-between gap-1 text-[10px]">
+                        <span className="inline-flex items-center gap-1 font-bold text-emerald-900 bg-emerald-200/70 px-1.5 py-0.5 rounded">
+                            <CheckCircle2 className="w-3 h-3" />
+                            HO অনুমোদন
+                        </span>
+                        <span className="text-emerald-700 font-medium truncate">
+                            {item.reviewed_by_name || 'হেড অফিস'}
+                            {item.reviewed_at ? ` · ${formatDateTime(item.reviewed_at)}` : ''}
+                        </span>
+                    </div>
+                    <p className={`${textClass} text-emerald-900 font-medium`}>আবেদন অনুমোদিত হয়েছে</p>
+                </div>
+            )}
+
+            {isRejected && (
+                <div className="relative bg-rose-50 border border-rose-200 rounded-lg p-2.5 space-y-1">
+                    <div className="absolute -left-[9px] top-3 w-2.5 h-2.5 rounded-full bg-rose-500 border-2 border-white" />
+                    <div className="flex items-center justify-between gap-1 text-[10px]">
+                        <span className="inline-flex items-center gap-1 font-bold text-rose-900 bg-rose-200/70 px-1.5 py-0.5 rounded">
+                            <XCircle className="w-3 h-3" />
+                            HO বাতিল
+                        </span>
+                        <span className="text-rose-700 font-medium truncate">
+                            {item.reviewed_by_name || 'হেড অফিস'}
+                            {item.reviewed_at ? ` · ${formatDateTime(item.reviewed_at)}` : ''}
+                        </span>
+                    </div>
+                    <p className={`${textClass} text-rose-900 font-medium leading-relaxed`}>
+                        {item.rejection_reason || 'আবেদন বাতিল করা হয়েছে'}
+                    </p>
+                </div>
+            )}
+        </div>
     );
 }

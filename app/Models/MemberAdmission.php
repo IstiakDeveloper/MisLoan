@@ -338,7 +338,38 @@ class MemberAdmission extends Model
 
     public function canBeEdited(): bool
     {
-        return in_array($this->status, ['draft', 'submitted', 'under_review', 'needs_revision', 'rejected']);
+        return in_array($this->status, \App\Support\AdmissionFormVisibility::staffEditableStatuses(), true);
+    }
+
+    public function hasDisbursedLoan(): bool
+    {
+        if (array_key_exists('has_disbursed_loan', $this->attributes)) {
+            return (bool) $this->getAttribute('has_disbursed_loan');
+        }
+
+        return $this->loanApplications()
+            ->where('status', LoanApplication::STATUS_DISBURSED)
+            ->exists();
+    }
+
+    /**
+     * Branch User (accountant) may edit until a loan is disbursed.
+     * FO / BM keep the existing draft-to-revision window. HO / SuperAdmin: any status.
+     */
+    public function canBeEditedBy(?User $user): bool
+    {
+        if (! $user) {
+            return false;
+        }
+
+        $user->loadMissing('role');
+
+        return \App\Support\AdmissionFormVisibility::canEditAdmissionForm(
+            $user->role?->name,
+            (string) $this->status,
+            $this->hasDisbursedLoan(),
+            (bool) ($user->has_all_access || $user->isSuperAdmin() || $user->isHeadOffice())
+        );
     }
 
     public function getFullNameAttribute(): string
@@ -460,5 +491,86 @@ class MemberAdmission extends Model
     public static function generateApplicationNumber(?int $branchId = null): string
     {
         return \App\Services\MemberCodeService::generateNextMemberCode($branchId);
+    }
+
+    /**
+     * Digits-only identity (NID / Smart Card). Empty if nothing usable.
+     */
+    public static function normalizeIdentityNumber(?string $value): string
+    {
+        return preg_replace('/\D+/', '', (string) $value) ?? '';
+    }
+
+    /**
+     * Normalize BD mobile to 01XXXXXXXXX when possible.
+     */
+    public static function normalizeMobileNumber(?string $value): string
+    {
+        $digits = preg_replace('/\D+/', '', (string) $value) ?? '';
+        if ($digits === '') {
+            return '';
+        }
+
+        if (str_starts_with($digits, '880') && strlen($digits) >= 13) {
+            $digits = substr($digits, 3);
+        } elseif (str_starts_with($digits, '88') && strlen($digits) >= 13) {
+            $digits = substr($digits, 2);
+        }
+
+        if (strlen($digits) === 10 && str_starts_with($digits, '1')) {
+            $digits = '0'.$digits;
+        }
+
+        return $digits;
+    }
+
+    /**
+     * Another admission already uses this NID or Smart Card (either field).
+     */
+    public static function findDuplicateByIdentity(?string $value, ?int $ignoreId = null): ?self
+    {
+        $normalized = self::normalizeIdentityNumber($value);
+        if ($normalized === '') {
+            return null;
+        }
+
+        $strip = "REPLACE(REPLACE(REPLACE(REPLACE(IFNULL(%s, ''), ' ', ''), '-', ''), '/', ''), '.', '')";
+
+        return static::query()
+            ->when($ignoreId, fn ($q) => $q->where('id', '!=', $ignoreId))
+            ->where(function ($q) use ($normalized, $strip) {
+                $q->whereRaw(sprintf($strip, 'nid_number').' = ?', [$normalized])
+                    ->orWhereRaw(sprintf($strip, 'smart_card_number').' = ?', [$normalized]);
+            })
+            ->first();
+    }
+
+    /**
+     * Another admission already uses this mobile number.
+     */
+    public static function findDuplicateByMobile(?string $value, ?int $ignoreId = null): ?self
+    {
+        $normalized = self::normalizeMobileNumber($value);
+        if ($normalized === '' || strlen($normalized) < 10) {
+            return null;
+        }
+
+        $last10 = strlen($normalized) >= 10 ? substr($normalized, -10) : $normalized;
+
+        $matches = static::query()
+            ->when($ignoreId, fn ($q) => $q->where('id', '!=', $ignoreId))
+            ->whereNotNull('mobile_number')
+            ->where('mobile_number', '!=', '')
+            ->where(function ($q) use ($value, $normalized, $last10) {
+                $raw = trim((string) $value);
+                $q->where('mobile_number', $raw)
+                    ->orWhere('mobile_number', $normalized)
+                    ->orWhere('mobile_number', 'like', '%'.$last10);
+            })
+            ->get();
+
+        return $matches->first(
+            fn (self $row) => self::normalizeMobileNumber($row->mobile_number) === $normalized
+        );
     }
 }

@@ -6,6 +6,8 @@ use App\Models\LoanApplicationApproval;
 use App\Models\MemberAdmission;
 use App\Models\MemberAdmissionApproval;
 use App\Services\ApprovalService;
+use App\Support\LoanFormVisibility;
+use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Inertia\Inertia;
 
@@ -254,21 +256,8 @@ class ApprovalController extends Controller
                 (float) $request->approved_amount
             );
         } catch (\Exception $e) {
-            if ($e->getMessage() === 'অনুমোদন/ফরওয়ার্ড করার আগে সরেজমিন তদন্ত প্রতিবেদন (ফর্ম ৪) পূরণ করতে হবে।') {
-                $loan = $loanApproval->loanApplication;
-                $params = array_filter([
-                    'application_id' => $loan?->id,
-                    'product_id' => $loan?->loan_product_id,
-                    'category_id' => $loan?->loan_category_id,
-                    'amount' => $loan?->requested_amount,
-                    'member_id' => $loan?->member_admission_id,
-                    'resume_approval_id' => $loanApproval->id,
-                    'resume_approved_amount' => (string) round((float) $request->approved_amount),
-                    'resume_comments' => $request->comments,
-                ], fn ($value) => $value !== null && $value !== '');
-
-                return redirect()->to('/member/loan-applications/forms/field-investigation?'.http_build_query($params))
-                    ->with('success', 'প্রথমে সরেজমিন তদন্ত প্রতিবেদন পূরণ করুন। সংরক্ষণ করলে অনুমোদন স্বয়ংক্রিয়ভাবে সম্পন্ন হবে।');
+            if (LoanFormVisibility::isBmFormIncompleteMessage($e->getMessage())) {
+                return $this->redirectToFieldInvestigationForResume($loanApproval, $request);
             }
             return back()->with('error', $e->getMessage());
         }
@@ -328,11 +317,19 @@ class ApprovalController extends Controller
         $loan = $loanApproval->loanApplication;
         $aboveCeiling = (float) ($loan?->requested_amount ?? 0) >= \App\Services\ApprovalService::BRANCH_MANAGER_LOAN_CEILING;
 
-        $success = $this->approvalService->forwardLoanToApprover(
-            $loanApproval,
-            (int) $request->forward_to_user_id,
-            $request->comments
-        );
+        try {
+            $success = $this->approvalService->forwardLoanToApprover(
+                $loanApproval,
+                (int) $request->forward_to_user_id,
+                $request->comments
+            );
+        } catch (\Exception $e) {
+            if (LoanFormVisibility::isBmFormIncompleteMessage($e->getMessage())) {
+                return $this->redirectToFieldInvestigationForResume($loanApproval, $request);
+            }
+
+            return back()->with('error', $e->getMessage());
+        }
 
         if ($success) {
             $message = 'ঋণ আবেদন নির্বাচিত অনুমোদনকারীর কাছে ফরওয়ার্ড হয়েছে।';
@@ -344,6 +341,27 @@ class ApprovalController extends Controller
         }
 
         return back()->with('error', 'ফরওয়ার্ড করা যাচ্ছে না।');
+    }
+
+    private function redirectToFieldInvestigationForResume(LoanApplicationApproval $loanApproval, Request $request): RedirectResponse
+    {
+        $loan = $loanApproval->loanApplication;
+        $params = array_filter([
+            'application_id' => $loan?->id,
+            'product_id' => $loan?->loan_product_id,
+            'category_id' => $loan?->loan_category_id,
+            'amount' => $loan?->requested_amount,
+            'member_id' => $loan?->member_admission_id,
+            'resume_approval_id' => $loanApproval->id,
+            'resume_approved_amount' => $request->filled('approved_amount')
+                ? (string) round((float) $request->approved_amount)
+                : '',
+            'resume_comments' => $request->input('comments'),
+            'resume_forward_to_user_id' => $request->input('forward_to_user_id'),
+        ], fn ($value) => $value !== null && $value !== '');
+
+        return redirect()->to('/member/loan-applications/forms/field-investigation?'.http_build_query($params))
+            ->with('success', 'প্রথমে সরেজমিন তদন্ত প্রতিবেদন পূরণ/আপডেট করুন। সংরক্ষণ করলে অনুমোদন স্বয়ংক্রিয়ভাবে সম্পন্ন হবে।');
     }
 
     /**

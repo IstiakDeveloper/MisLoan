@@ -363,14 +363,6 @@ export default function ApprovalForm({
             return annual > 0 ? String(Math.round(annual * years)) : '';
         })(),
         est_other_income_desc: '', est_other_income_amount: '',
-        loan_duration_months: loanProduct?.duration_months
-            ? String(loanProduct.duration_months)
-            : (loanProduct?.loan_duration_months ? String(loanProduct.loan_duration_months) : ''),
-        applied_service_charge_rate: loanProduct?.interest_rate != null && loanProduct?.interest_rate !== ''
-            ? String(loanProduct.interest_rate)
-            : (loanProduct?.service_charge != null && loanProduct?.service_charge !== ''
-                ? String(loanProduct.service_charge)
-                : ''),
         installment_type: computedInstallment.installment_type,
         installment_principal: computedInstallment.installment_principal,
         installment_service_charge: computedInstallment.installment_service_charge,
@@ -380,6 +372,8 @@ export default function ApprovalForm({
                 ? String(loanProduct.number_of_installments)
                 : (loanProduct?.duration_months ? String(loanProduct.duration_months) : '')),
         last_installment_amount: computedInstallment.last_installment_amount,
+        last_installment_principal: computedInstallment.last_installment_principal,
+        last_installment_service_charge: computedInstallment.last_installment_service_charge,
         total_principal: computedInstallment.total_principal,
         total_service_charge: computedInstallment.total_service_charge,
         total_payable: computedInstallment.total_payable,
@@ -416,6 +410,14 @@ export default function ApprovalForm({
         ...(savedData || {}),
         // Always recompute schedule from product factors — never keep stale draft values
         ...computedInstallment,
+        loan_duration_months: loanProduct?.duration_months
+            ? String(loanProduct.duration_months)
+            : (loanProduct?.loan_duration_months ? String(loanProduct.loan_duration_months) : ''),
+        applied_service_charge_rate: loanProduct?.interest_rate != null && loanProduct?.interest_rate !== ''
+            ? String(loanProduct.interest_rate)
+            : (loanProduct?.service_charge != null && loanProduct?.service_charge !== ''
+                ? String(loanProduct.service_charge)
+                : ''),
         annual_net_profit:
             durationNetFromAdmission ||
             String((savedData as any)?.annual_net_profit || '') ||
@@ -474,9 +476,13 @@ export default function ApprovalForm({
             delete restored.installment_total;
             delete restored.number_of_installments;
             delete restored.last_installment_amount;
+            delete restored.last_installment_principal;
+            delete restored.last_installment_service_charge;
             delete restored.total_principal;
             delete restored.total_service_charge;
             delete restored.total_payable;
+            delete restored.applied_service_charge_rate;
+            delete restored.loan_duration_months;
             setData((prev) => {
                 const merged = { ...prev, ...restored };
                 return {
