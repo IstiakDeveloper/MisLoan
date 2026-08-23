@@ -1680,27 +1680,30 @@ class LoanApplicationController extends Controller
             return back()->withErrors(['error' => 'বিতরণের আগে জামিনদার অঙ্গীকার (ফর্ম ২) ও মৃত্যুঝুঁকি তহবিল (ফর্ম ৩) পূরণ করতে হবে।']);
         }
 
-        $maxAllowed = (float) ($application->approved_amount ?? $application->requested_amount ?? 0);
+        $approvedAmount = (float) ($application->approved_amount ?? $application->requested_amount ?? 0);
+        $loanProduct = $application->loanProduct;
+        $productMax = (float) ($loanProduct?->max_amount ?? 0);
+        $maxLimit = $productMax > 0 ? $productMax : 99999999;
 
         $validated = $request->validate([
             'disbursed_amount' => [
                 'nullable',
                 'numeric',
                 'min:1',
-                'max:' . ($maxAllowed > 0 ? $maxAllowed : 99999999),
+                'max:' . $maxLimit,
             ],
             'disbursement_method' => ['nullable', 'string', 'max:50'],
             'disbursement_reference' => ['nullable', 'string', 'max:100'],
         ], [
-            'disbursed_amount.max' => 'বিতরণকৃত ঋণের পরিমাণ অনুমোদিত ঋণের (৳' . number_format($maxAllowed) . ') চেয়ে বেশি হতে পারবে না।',
+            'disbursed_amount.max' => $productMax > 0
+                ? 'বিতরণকৃত ঋণের পরিমাণ প্রডাক্টের সর্বোচ্চ সীমার (৳' . number_format($productMax) . ') চেয়ে বেশি হতে পারবে না।'
+                : 'বিতরণকৃত ঋণের পরিমাণ অতিরিক্ত বেশি হতে পারবে না।',
             'disbursed_amount.min' => 'বিতরণকৃত ঋণের পরিমাণ অন্তত ১ টাকা হতে হবে।',
         ]);
 
         $disbursedAmount = isset($validated['disbursed_amount']) && (float) $validated['disbursed_amount'] > 0
             ? (float) $validated['disbursed_amount']
-            : $maxAllowed;
-
-        $loanProduct = $application->loanProduct;
+            : $approvedAmount;
 
         // Re-calculate service charge & installment amount if applicable
         $newInstallmentAmount = $application->installment_amount;
@@ -1817,7 +1820,7 @@ class LoanApplicationController extends Controller
                     'আবেদন নং' => $application->application_no,
                     'সদস্যের নাম' => $application->memberAdmission?->applicant_name_bn ?: ($application->memberAdmission?->applicant_name_en ?? 'N/A'),
                     'বিতরণকৃত ঋণ' => number_format($disbursedAmount) . ' টাকা',
-                    'অনুমোদিত ঋণ' => number_format($maxAllowed) . ' টাকা',
+                    'অনুমোদিত ঋণ' => number_format($approvedAmount) . ' টাকা',
                     'বিতরণের তারিখ' => now()->format('Y-m-d H:i'),
                 ]
             );

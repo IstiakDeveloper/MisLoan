@@ -623,12 +623,6 @@ export default function Show({ application, routes }: Props) {
             setDisburseError('অনুগ্রহ করে সঠিক বিতরণ পরিমাণ লিখুন।');
             return;
         }
-        if (amt > maxDisburseAmount) {
-            setDisburseError(
-                `বিতরণকৃত ঋণের পরিমাণ অনুমোদিত ঋণের (৳${maxDisburseAmount.toLocaleString('bn-BD')}) চেয়ে বেশি হতে পারবে না।`
-            );
-            return;
-        }
         setDisburseError(null);
         setSubmittingDisburse(true);
         router.patch(
@@ -2088,15 +2082,14 @@ export default function Show({ application, routes }: Props) {
                                     <input
                                         type="number"
                                         min="1"
-                                        max={maxDisburseAmount}
                                         step="any"
                                         value={disburseAmount}
                                         onChange={(e) => {
                                             const val = e.target.value;
                                             setDisburseAmount(val);
                                             const num = parseFloat(val);
-                                            if (!isNaN(num) && num > maxDisburseAmount) {
-                                                setDisburseError(`অনুমোদিত ঋণের চেয়ে বেশি (সর্বোচ্চ ৳${maxDisburseAmount.toLocaleString('bn-BD')}) দেওয়া যাবে না`);
+                                            if (!isNaN(num) && num <= 0) {
+                                                setDisburseError('বিতরণকৃত ঋণের পরিমাণ অন্তত ১ টাকা হতে হবে।');
                                             } else {
                                                 setDisburseError(null);
                                             }
@@ -2106,6 +2099,12 @@ export default function Show({ application, routes }: Props) {
                                         required
                                     />
                                 </div>
+                                {parseFloat(disburseAmount) > maxDisburseAmount && (
+                                    <div className="mt-1.5 flex items-center gap-1.5 text-xs text-amber-700 bg-amber-50 border border-amber-200 px-2.5 py-1 rounded-lg">
+                                        <AlertCircle className="w-3.5 h-3.5 shrink-0 text-amber-600" />
+                                        <span>অনুমোদিত পরিমাণের চেয়ে <strong>৳{(parseFloat(disburseAmount) - maxDisburseAmount).toLocaleString('bn-BD')}</strong> বেশি বিতরণ করা হচ্ছে।</span>
+                                    </div>
+                                )}
                                 {disburseError ? (
                                     <p className="text-xs text-rose-600 font-semibold mt-1.5 flex items-center gap-1">
                                         <AlertCircle className="w-3.5 h-3.5 shrink-0" />
@@ -2113,7 +2112,7 @@ export default function Show({ application, routes }: Props) {
                                     </p>
                                 ) : (
                                     <p className="text-[11px] text-slate-500 mt-1.5 leading-relaxed">
-                                        💡 সদস্য কম টাকা নিতে চাইলে এখানে পরিমাণ কমিয়ে দিন। এটি সেভ হলে সংশ্লিষ্ট সকল ফর্ম ও কিস্তির হিসাব স্বয়ংক্রিয়ভাবে আপডেট হবে।
+                                        💡 সদস্য কম বা বেশি টাকা নিতে চাইলে এখানে পরিমাণ পরিবর্তন করুন। এটি সেভ হলে সংশ্লিষ্ট সকল ফর্ম ও কিস্তির হিসাব স্বয়ংক্রিয়ভাবে আপডেট হবে।
                                     </p>
                                 )}
                             </div>
@@ -2159,7 +2158,7 @@ export default function Show({ application, routes }: Props) {
                                 <Button
                                     type="submit"
                                     className="bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold shadow-xs px-4"
-                                    disabled={submittingDisburse || !!disburseError || !disburseAmount || parseFloat(disburseAmount) <= 0 || parseFloat(disburseAmount) > maxDisburseAmount}
+                                    disabled={submittingDisburse || !!disburseError || !disburseAmount || parseFloat(disburseAmount) <= 0}
                                 >
                                     {submittingDisburse ? 'বিতরণ হচ্ছে...' : 'বিতরণ নিশ্চিত করুন'}
                                 </Button>
