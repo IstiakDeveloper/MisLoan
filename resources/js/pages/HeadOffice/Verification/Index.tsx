@@ -33,6 +33,7 @@ import {
     Ban,
     XCircle,
     RotateCcw,
+    Lock,
 } from 'lucide-react';
 
 interface Zone {
@@ -139,6 +140,7 @@ interface Props {
         can_reject: boolean;
         can_reply: boolean;
         is_head_office: boolean;
+        is_zone_manager?: boolean;
         role: string;
     };
     zones: Zone[];
@@ -394,8 +396,8 @@ export default function VerificationIndex({ items, stats, filters, permissions, 
                         </h1>
                         <p className="text-sm text-indigo-200 mt-0.5">
                             {permissions.can_approve
-                                ? 'হেড অফিসের আপত্তি ও তদন্তাধীন আবেদনের জবাব পর্যালোচনা ও দ্রুত অনুমোদন'
-                                : 'আপত্তিযুক্ত আবেদনের কারণ দেখুন, জবাব প্রেরণ করুন অথবা বাতিল করুন'}
+                                ? 'হেড অফিসের আপত্তি ও তদন্তাধীন আবেদনের জোনাল ব্যাখ্যা পর্যালোচনা ও দ্রুত অনুমোদন'
+                                : 'আপত্তিযুক্ত আবেদনের কারণ ও জোনাল ব্যাখ্যা পর্যবেক্ষণ করুন'}
                         </p>
                     </div>
                     <div className="relative z-10 flex flex-wrap items-center gap-2 shrink-0">
@@ -471,7 +473,7 @@ export default function VerificationIndex({ items, stats, filters, permissions, 
                     >
                         <div className="text-xl font-bold tabular-nums leading-none text-sky-700">{stats?.branch_replied ?? 0}</div>
                         <div className="text-[11px] font-medium text-sky-900 mt-1">
-                            শাখা জবাব দিয়েছে
+                            জোনাল ব্যাখ্যা প্রাপ্ত
                         </div>
                     </button>
 
@@ -817,7 +819,7 @@ export default function VerificationIndex({ items, stats, filters, permissions, 
                                                         </span>
                                                     ) : item.has_replied ? (
                                                         <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-sky-100 text-sky-800 border border-sky-300">
-                                                            <CheckCheck className="w-3 h-3" /> জবাব দেওয়া হয়েছে
+                                                            <CheckCheck className="w-3 h-3" /> জোনাল ব্যাখ্যা দেওয়া হয়েছে
                                                         </span>
                                                     ) : (
                                                         <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-medium bg-slate-100 text-slate-700">
@@ -829,20 +831,31 @@ export default function VerificationIndex({ items, stats, filters, permissions, 
                                                 {/* Actions */}
                                                 <td className="py-3.5 px-3 text-center align-top">
                                                     <div className="flex items-center justify-center gap-1.5 flex-wrap">
-                                                        {/* Branch/User Reply Button (Only for Branch User / non-HO) */}
+                                                        {/* Zonal Manager Reply Button */}
                                                         {!permissions.is_head_office && permissions.can_reply && !isApproved && !isRejected && (
                                                             <button
                                                                 type="button"
                                                                 onClick={() => handleOpenReplyModal(item)}
                                                                 className="px-2.5 py-1.5 bg-sky-600 hover:bg-sky-700 text-white rounded-lg text-xs font-semibold flex items-center gap-1 shadow-sm transition"
-                                                                title="আপত্তির জবাব প্রদান করুন"
+                                                                title="জোনাল ব্যাখ্যা / আপত্তির জবাব প্রদান করুন"
                                                             >
                                                                 <Reply className="w-3.5 h-3.5" />
-                                                                {item.has_replied ? 'জবাব সংশোধন' : 'জবাব দিন'}
+                                                                {item.has_replied ? 'ব্যাখ্যা সংশোধন' : 'ব্যাখ্যা/জবাব দিন'}
                                                             </button>
                                                         )}
 
-                                                        {/* Head Office 1-Click Approve (ONLY when Branch has replied!) */}
+                                                        {/* Non-ZM Branch / User Indicator: only ZM can reply */}
+                                                        {!permissions.is_head_office && !permissions.can_reply && !isApproved && !isRejected && (
+                                                            <span
+                                                                className="inline-flex items-center gap-1 px-2.5 py-1 bg-amber-50 text-amber-900 border border-amber-200/80 rounded-lg text-[11px] font-medium"
+                                                                title="হেড অফিসের আপত্তির প্রেক্ষিতে শুধুমাত্র জোনাল ম্যানেজার (ZM) ব্যাখ্যা প্রদান করতে পারবেন"
+                                                            >
+                                                                <Lock className="w-3 h-3 text-amber-600 shrink-0" />
+                                                                শুধুমাত্র ZM জবাব দিতে পারবেন
+                                                            </span>
+                                                        )}
+
+                                                        {/* Head Office 1-Click Approve (ONLY when Zonal reply received!) */}
                                                         {permissions.can_approve && !isApproved && !isRejected && item.has_replied && (
                                                             <button
                                                                 type="button"
@@ -923,7 +936,7 @@ export default function VerificationIndex({ items, stats, filters, permissions, 
                 </div>
             </div>
 
-            {/* Reply Modal (Branch Users / Approvers) */}
+            {/* Reply Modal (Zonal Manager) */}
             {replyModalItem && (
                 <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs">
                     <div className="bg-white rounded-2xl max-w-lg w-full p-5 shadow-2xl border border-slate-200 space-y-4 animate-in fade-in zoom-in duration-150">
@@ -933,9 +946,9 @@ export default function VerificationIndex({ items, stats, filters, permissions, 
                                     <Reply className="w-5 h-5" />
                                 </div>
                                 <div>
-                                    <h3 className="font-bold text-slate-900 text-sm">আপত্তির জবাব / ব্যাখ্যা প্রদান</h3>
+                                    <h3 className="font-bold text-slate-900 text-sm">জোনাল ম্যানেজারের ব্যাখ্যা / জবাব প্রদান</h3>
                                     <p className="text-xs text-slate-500">
-                                        আবেদন নং: <span className="font-mono font-bold text-indigo-700">{replyModalItem.application_no}</span> ({replyModalItem.applicant_name})
+                                        আবেদন নং: <span className="font-mono font-bold text-indigo-700">{replyModalItem.application_no}</span> ({replyModalItem.applicant_name}) {replyModalItem.zone_name ? `· জোন: ${replyModalItem.zone_name}` : ''}
                                     </p>
                                 </div>
                             </div>
@@ -952,7 +965,7 @@ export default function VerificationIndex({ items, stats, filters, permissions, 
                         <div className="bg-amber-50 rounded-xl p-3 text-xs border border-amber-200 space-y-1">
                             <div className="font-bold text-amber-900 flex items-center gap-1">
                                 <AlertCircle className="w-3.5 h-3.5 text-amber-600" />
-                                HO এর আপত্তি:
+                                হেড অফিসের আপত্তি / পর্যবেক্ষণ:
                             </div>
                             <p className="text-amber-950 font-medium leading-relaxed">{replyModalItem.latest_issue_description}</p>
                         </div>
@@ -961,12 +974,12 @@ export default function VerificationIndex({ items, stats, filters, permissions, 
                         <form onSubmit={handleSendReply} className="space-y-3">
                             <div>
                                 <label className="block text-xs font-bold text-slate-700 mb-1">
-                                    শাখার জবাব / সমাধানের বিবরণ (Branch Reply):
+                                    জোনাল ব্যাখ্যা / সমাধানের বিবরণ (Zonal Manager Reply):
                                 </label>
                                 <textarea
                                     value={replyText}
                                     onChange={(e) => setReplyText(e.target.value)}
-                                    placeholder="আপত্তির প্রেক্ষিতে স্পষ্ট ব্যাখ্যা বা সংশোধনের বিবরণ এখানে লিখুন..."
+                                    placeholder="হেড অফিসের আপত্তির প্রেক্ষিতে জোন থেকে স্পষ্ট ব্যাখ্যা বা সমাধানের বিবরণ এখানে লিখুন..."
                                     rows={4}
                                     required
                                     className="w-full text-xs p-3 border border-slate-300 rounded-xl focus:ring-2 focus:ring-sky-500/20 focus:border-sky-500"
@@ -988,7 +1001,7 @@ export default function VerificationIndex({ items, stats, filters, permissions, 
                                     className="px-4 py-2 text-xs font-semibold bg-sky-600 hover:bg-sky-700 text-white rounded-lg shadow-sm transition flex items-center gap-1.5"
                                 >
                                     <Send className="w-3.5 h-3.5" />
-                                    {isSubmitting ? 'প্রেরণ হচ্ছে...' : 'জবাব প্রেরণ করুন'}
+                                    {isSubmitting ? 'প্রেরণ হচ্ছে...' : 'জোনাল ব্যাখ্যা প্রেরণ করুন'}
                                 </button>
                             </div>
                         </form>
@@ -1263,11 +1276,11 @@ function VerificationThread({
                                 }`}
                             >
                                 <CornerDownRight className="w-3 h-3" />
-                                Branch জবাব
+                                Zonal ব্যাখ্যা
                             </span>
                             {issue.reply_message && (
                                 <span className="text-sky-700 font-medium truncate">
-                                    {issue.responder_name || 'শাখা কর্মকর্তা'}
+                                    {issue.responder_name || 'জোনাল ম্যানেজার'}
                                     {issue.replied_at ? ` · ${formatDateTime(issue.replied_at)}` : ''}
                                 </span>
                             )}
@@ -1279,7 +1292,7 @@ function VerificationThread({
                         ) : (
                             <p className="text-[11px] text-slate-400 italic flex items-center gap-1">
                                 <Clock className="w-3 h-3 text-slate-400" />
-                                শাখার জবাব অপেক্ষমান
+                                জোনাল ব্যাখ্যা অপেক্ষমান
                             </p>
                         )}
                     </div>

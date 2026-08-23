@@ -240,10 +240,11 @@ class HeadOfficeVerificationController extends Controller
         $admissionList = ($type === 'loan') ? collect() : $admissionQuery->get();
         $loanList = ($type === 'admission') ? collect() : $loanQuery->get();
 
-        // Permissions
+        // Permissions: Only Zonal Managers (or super admins with full access) can reply
         $canApprove = $authUser->has_all_access || $authUser->isSuperAdmin() || $authUser->isHeadOffice() || $authUser->isEd();
         $canReject = $canApprove || in_array($roleName, ['branch_manager', 'area_manager', 'zone_manager', 'admf', 'dmf'], true);
-        $canReply = true;
+        $isZoneManager = in_array($roleName, [Role::ZONE_MANAGER, 'zone_manager'], true) || $authUser->has_all_access || $authUser->isSuperAdmin();
+        $canReply = $isZoneManager;
         $isHoAdmin = $canApprove;
 
         // Standardize into unified Verification Items
@@ -469,6 +470,7 @@ class HeadOfficeVerificationController extends Controller
                 'can_reject' => $canReject,
                 'can_reply' => $canReply,
                 'is_head_office' => $isHoAdmin,
+                'is_zone_manager' => $isZoneManager,
                 'role' => $roleName,
             ],
             'zones' => $orgFilters['zones'],
@@ -478,18 +480,25 @@ class HeadOfficeVerificationController extends Controller
     }
 
     /**
-     * Branch user / Approver reply to an issue
+     * Zonal Manager reply/explanation to an issue raised by Head Office
      */
     public function replyIssue(Request $request)
     {
+        $authUser = auth()->user();
+        $authUser->loadMissing('role');
+        $roleName = strtolower($authUser->role->name ?? '');
+        $canReply = in_array($roleName, [Role::ZONE_MANAGER, 'zone_manager'], true) || $authUser->has_all_access || $authUser->isSuperAdmin();
+
+        if (!$canReply) {
+            return back()->with('error', 'শুধুমাত্র জোনাল ম্যানেজার (Zonal Manager) আপত্তির ব্যাখ্যা/জবাব প্রদান করতে পারবেন।');
+        }
+
         $validated = $request->validate([
             'item_type' => 'required|in:admission,loan',
             'raw_id' => 'required|integer',
             'issue_id' => 'nullable|integer',
             'reply_message' => 'required|string|max:2000',
         ]);
-
-        $authUser = auth()->user();
 
         if ($validated['item_type'] === 'admission') {
             $admission = MemberAdmission::findOrFail($validated['raw_id']);
@@ -535,15 +544,15 @@ class HeadOfficeVerificationController extends Controller
                 app(NotificationService::class)->send(
                     users: $headOfficeUsers,
                     type: 'member_admission',
-                    title: 'সদস্য ভর্তির আপত্তিতে শাখার জবাব এসেছে',
-                    message: "সদস্য আবেদন নং {$admission->application_no} ({$admission->applicant_name_bn}) এর আপত্তিতে শাখা থেকে জবাব প্রদান করা হয়েছে: \"{$validated['reply_message']}\"",
+                    title: 'সদস্য ভর্তির আপত্তিতে জোনাল ব্যাখ্যা এসেছে',
+                    message: "সদস্য আবেদন নং {$admission->application_no} ({$admission->applicant_name_bn}) এর আপত্তিতে জোনাল ম্যানেজার ({$authUser->name}) থেকে ব্যাখ্যা প্রদান করা হয়েছে: \"{$validated['reply_message']}\"",
                     notifiable: $admission,
                     actionUrl: "/head-office/verifications",
                     details: [
                         'আবেদন নং' => $admission->application_no,
                         'শাখা' => $admission->branch?->name ?? 'N/A',
-                        'জবাবদাতা' => $authUser->name,
-                        'জবাব' => $validated['reply_message'],
+                        'জবাবদাতা' => "{$authUser->name} (জোনাল ম্যানেজার)",
+                        'ব্যাখ্যা' => $validated['reply_message'],
                     ]
                 );
             }
@@ -590,21 +599,21 @@ class HeadOfficeVerificationController extends Controller
                 app(NotificationService::class)->send(
                     users: $headOfficeUsers,
                     type: 'loan_application',
-                    title: 'ঋণ আবেদনের আপত্তিতে শাখার জবাব এসেছে',
-                    message: "ঋণ আবেদন নং {$loan->application_no} ({$loan->memberAdmission?->applicant_name_bn}) এর আপত্তিতে শাখা থেকে জবাব প্রদান করা হয়েছে: \"{$validated['reply_message']}\"",
+                    title: 'ঋণ আবেদনের আপত্তিতে জোনাল ব্যাখ্যা এসেছে',
+                    message: "ঋণ আবেদন নং {$loan->application_no} ({$loan->memberAdmission?->applicant_name_bn}) এর আপত্তিতে জোনাল ম্যানেজার ({$authUser->name}) থেকে ব্যাখ্যা প্রদান করা হয়েছে: \"{$validated['reply_message']}\"",
                     notifiable: $loan,
                     actionUrl: "/head-office/verifications",
                     details: [
                         'আবেদন নং' => $loan->application_no,
                         'শাখা' => $loan->branch?->name ?? 'N/A',
-                        'জবাবদাতা' => $authUser->name,
-                        'জবাব' => $validated['reply_message'],
+                        'জবাবদাতা' => "{$authUser->name} (জোনাল ম্যানেজার)",
+                        'ব্যাখ্যা' => $validated['reply_message'],
                     ]
                 );
             }
         }
 
-        return back()->with('success', 'আপনার জবাব সফলভাবে প্রেরণ করা হয়েছে।');
+        return back()->with('success', 'জোনাল ব্যাখ্যা সফলভাবে প্রেরণ করা হয়েছে।');
     }
 
     /**
@@ -671,7 +680,7 @@ class HeadOfficeVerificationController extends Controller
         $hasBranchReply = !empty($parsed['branch_reply']) || $admission->issues()->whereNotNull('resolution_note')->exists();
 
         if (!$hasBranchReply && $admission->issues()->where('status', 'pending')->exists()) {
-            return back()->with('error', 'ব্রাঞ্চ থেকে জবাব না পাওয়া পর্যন্ত অনুমোদন করা যাবে না।');
+            return back()->with('error', 'জোন থেকে ব্যাখ্যা/জবাব না পাওয়া পর্যন্ত অনুমোদন করা যাবে না।');
         }
 
         $authUser = auth()->user();
@@ -745,7 +754,7 @@ class HeadOfficeVerificationController extends Controller
         $hasBranchReply = !empty($parsed['branch_reply']) || $loanApplication->issues()->whereNotNull('response_message')->exists();
 
         if (!$hasBranchReply && $loanApplication->issues()->where('status', 'pending')->exists()) {
-            return back()->with('error', 'ব্রাঞ্চ থেকে জবাব না পাওয়া পর্যন্ত অনুমোদন করা যাবে না।');
+            return back()->with('error', 'জোন থেকে ব্যাখ্যা/জবাব না পাওয়া পর্যন্ত অনুমোদন করা যাবে না।');
         }
 
         $authUser = auth()->user();
