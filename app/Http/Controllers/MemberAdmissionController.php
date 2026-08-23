@@ -143,6 +143,39 @@ class MemberAdmissionController extends Controller
         }
     }
 
+    /**
+     * House/livestock counts are NOT NULL with default 0. Empty form inputs become
+     * null ('' → null), which MySQL strict mode rejects instead of applying the default.
+     *
+     * @param  array<string, mixed>  $data
+     * @return array<string, mixed>
+     */
+    private function coerceNotNullCounts(array $data, bool $fillMissing = false): array
+    {
+        $countFields = [
+            'mud_house_count',
+            'tin_house_count',
+            'brick_house_count',
+            'semi_brick_house_count',
+            'cow_buffalo_count',
+            'goat_sheep_count',
+            'duck_chicken_count',
+            'other_livestock_count',
+        ];
+
+        foreach ($countFields as $field) {
+            $missing = !array_key_exists($field, $data);
+            if ($missing && !$fillMissing) {
+                continue;
+            }
+            if ($missing || $data[$field] === null || $data[$field] === '') {
+                $data[$field] = 0;
+            }
+        }
+
+        return $data;
+    }
+
     private function isDraftSave(Request $request): bool
     {
         return $request->boolean('draft') || $request->query('draft') == '1';
@@ -840,6 +873,8 @@ class MemberAdmissionController extends Controller
                 unset($admissionData['application_no']);
             }
 
+            $admissionData = $this->coerceNotNullCounts($admissionData, true);
+
             // মোট জমির পরিমাণ ও মূল্য (আবাদযোগ্য + অনাবাদি)
             $admissionData['total_land_amount'] = ($admissionData['cultivable_land_amount'] ?? 0) + ($admissionData['non_cultivable_land_amount'] ?? 0);
             $admissionData['total_land_value'] = ($admissionData['cultivable_land_value'] ?? 0) + ($admissionData['non_cultivable_land_value'] ?? 0);
@@ -1277,6 +1312,8 @@ class MemberAdmissionController extends Controller
             $nonCultivableValue = $updateData['non_cultivable_land_value'] ?? $memberAdmission->non_cultivable_land_value ?? 0;
             $updateData['total_land_amount'] = $cultivableAmount + $nonCultivableAmount;
             $updateData['total_land_value'] = $cultivableValue + $nonCultivableValue;
+
+            $updateData = $this->coerceNotNullCounts($updateData);
 
             // Legacy draft: final save (not draft) → auto-approve
             $legacyAutoApproved = false;

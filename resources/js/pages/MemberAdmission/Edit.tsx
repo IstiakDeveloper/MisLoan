@@ -63,6 +63,18 @@ function toNumChange(val: string): number | string {
     return isNaN(num) ? '' : num;
 }
 
+/** DB NOT NULL integer columns — empty input must be 0, never null. */
+const ZERO_COUNT_FIELDS = [
+    'mud_house_count',
+    'tin_house_count',
+    'brick_house_count',
+    'semi_brick_house_count',
+    'cow_buffalo_count',
+    'goat_sheep_count',
+    'duck_chicken_count',
+    'other_livestock_count',
+] as const;
+
 const FIELD_NAMES_BN: Record<string, string> = {
     application_no: 'সদস্য নং / আবেদন নম্বর',
     branch_id: 'শাখা (Branch)',
@@ -523,6 +535,13 @@ export default function Edit({
                 return;
             }
 
+            if (
+                ZERO_COUNT_FIELDS.includes(key as (typeof ZERO_COUNT_FIELDS)[number]) &&
+                (val === null || val === undefined || val === '')
+            ) {
+                formData.append(key, '0');
+                return;
+            }
             if (val === null || val === undefined) return;
             if (
                 (key === 'branch_id' ||
