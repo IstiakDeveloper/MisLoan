@@ -44,7 +44,6 @@ Route::middleware(['auth', 'verified'])->group(function () {
     Route::get('portfolio-handover', [PortfolioHandoverController::class, 'index'])->name('portfolio-handover.index');
     Route::post('portfolio-handover', [PortfolioHandoverController::class, 'store'])->name('portfolio-handover.store');
 
-    // Site maintenance toggle (Super Admin only)
     Route::post('admin/maintenance/toggle', [MaintenanceController::class, 'toggle'])->name('admin.maintenance.toggle');
 
     // Profile completion (required before using app if phone/pin/signature missing)
@@ -348,7 +347,7 @@ Route::middleware(['auth', 'verified'])->group(function () {
         Route::delete('loans/bulk', [HeadOfficeLoanController::class, 'bulkDestroy'])->name('loans.bulk-destroy');
         Route::delete('loans/{loanApplication}', [HeadOfficeLoanController::class, 'destroy'])->name('loans.destroy');
 
-        // Head Office Savings Applications (view only; no HO approval)
+        // Head Office Savings Applications (no HO approval)
         Route::get('savings-applications', [HeadOfficeSavingsController::class, 'index'])->name('savings-applications');
         Route::get('savings-applications/{id}', [HeadOfficeSavingsController::class, 'show'])->name('savings-applications.show');
 
