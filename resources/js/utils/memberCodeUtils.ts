@@ -97,35 +97,102 @@ export function liveMemberCode(member: any): string {
 }
 
 /**
- * Always prefer the current member code over values saved in loan-form JSON / local drafts.
+ * Always prefer the current member identity over values saved in loan-form JSON / local drafts.
  */
 export function withLiveMemberCode<T extends Record<string, any>>(data: T, member: any): T {
-    const code = liveMemberCode(member);
-    if (!code || !data) {
+    if (!data) {
         return data;
     }
 
     const next: Record<string, any> = { ...data };
+    const code = liveMemberCode(member);
+    const name = String(member?.applicant_name_bn || member?.applicant_name_en || '').trim();
+    const father = String(
+        member?.father_name_bn || member?.spouse_name_bn || member?.father_name_en || '',
+    ).trim();
+    const mother = String(member?.mother_name_bn || member?.mother_name_en || '').trim();
+    const nid = String(member?.nid_number || member?.smart_card_number || '').trim();
+    const mobile = String(member?.mobile_number || '').trim();
+    const samityName = String(
+        member?.samity?.samity_name_bn || member?.samity?.samity_name || '',
+    ).trim();
+    const samityCode = String(member?.samity?.samity_code || member?.samity?.id || '').trim();
+    const village = String(member?.present_village_road || member?.permanent_village_road || '').trim();
+    const union = String(member?.present_union || member?.permanent_union || '').trim();
+    const upazila = String(member?.present_upazila || member?.permanent_upazila || '').trim();
+    const district = String(member?.present_district || member?.permanent_district || '').trim();
+    const postOffice = String(member?.present_post_code || member?.permanent_post_code || '').trim();
+    const project = String(member?.project_name || '').trim();
+    const guardian = String(member?.guardian_name || father).trim();
+    const guarantorName = String(member?.guarantor_name || '').trim();
+    const guarantorMobile = String(member?.guarantor_mobile || '').trim();
+    const addressLine3 = [upazila, district].filter(Boolean).join(', ');
 
-    if ('member_code' in next) {
-        next.member_code = code;
+    const assign = (key: string, value: string) => {
+        if (key in next && value !== '') {
+            next[key] = value;
+        }
+    };
+
+    if (code) {
+        assign('member_code', code);
+        assign('member_no', code);
+        assign('loan_recipient_code1', code);
+        assign('loan_recipient_code2', code);
+        if ('member_name_code' in next) {
+            next.member_name_code = [name || String(next.member_name_code || '').split(' / ')[0], code]
+                .map((p) => String(p).trim())
+                .filter(Boolean)
+                .join(' / ');
+        }
     }
-    if ('member_no' in next) {
-        next.member_no = code;
-    }
-    if ('loan_recipient_code1' in next) {
-        next.loan_recipient_code1 = code;
-    }
-    if ('loan_recipient_code2' in next) {
-        next.loan_recipient_code2 = code;
-    }
-    if ('member_name_code' in next) {
-        const name =
-            member?.applicant_name_bn ||
-            member?.applicant_name_en ||
-            String(next.member_name_code || '').split(' / ')[0] ||
-            '';
-        next.member_name_code = [String(name).trim(), code].filter(Boolean).join(' / ');
+
+    assign('member_name', name);
+    assign('member_name_bn', name);
+    assign('member_name_detail', name);
+    assign('loan_recipient_name', name);
+    assign('applicant_signature_name', name);
+    assign('father_husband_name', father);
+    assign('member_father_or_spouse', father);
+    assign('mother_name', mother);
+    assign('nid_number', nid);
+    assign('nid_smart_card', nid);
+    assign('member_nid', nid);
+    assign('mobile_number', mobile);
+    assign('member_mobile', mobile);
+    assign('samity_name', samityName);
+    assign('committee_name', samityName);
+    assign('samity_code', samityCode);
+    assign('committee_code', samityCode);
+    assign('village', village);
+    assign('member_village', village);
+    assign('guarantor_village', village);
+    assign('union', union);
+    assign('upazila', upazila);
+    assign('member_upazila', upazila);
+    assign('district', district);
+    assign('member_district', district);
+    assign('post_office', postOffice);
+    assign('member_post_office', postOffice);
+    assign('permanent_address_line1', String(member?.permanent_village_road || village).trim());
+    assign('permanent_address_line2', String(member?.permanent_post_code || postOffice).trim());
+    assign('permanent_address_line3', addressLine3);
+    assign('current_address_line1', village);
+    assign('current_address_line2', postOffice);
+    assign('current_address_line3', addressLine3);
+    assign('project_name', project);
+    assign('proposed_project_name', project);
+    assign('loan_purpose', project);
+    assign('loan_program_name', project);
+    assign('est_main_income_desc', project);
+    assign('guardian_name', guardian);
+    assign('guarantor_name', guarantorName);
+    assign('guarantor_1_name', guarantorName);
+    assign('guarantor_mobile', guarantorMobile);
+    assign('guarantor_1_mobile', guarantorMobile);
+
+    if ('samity_name_code' in next && (samityName || samityCode)) {
+        next.samity_name_code = [samityName, samityCode].filter(Boolean).join(' / ');
     }
 
     return next as T;

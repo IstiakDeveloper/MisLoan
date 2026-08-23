@@ -14,7 +14,7 @@ class CheckHeadOffice
      * ED / ADMF / DMF / Area / Zone managers: view access (GET only),
      * scoped to assigned zone/area in controllers when not has_all_access.
      *
-     * @param  \Closure(\Illuminate\Http\Request): (\Symfony\Component\HttpFoundation\Response)  $next
+     * @param  Closure(Request): (Response)  $next
      */
     public function handle(Request $request, Closure $next): Response
     {
@@ -30,7 +30,7 @@ class CheckHeadOffice
         ];
 
         $allowedRoles = array_merge(
-            [Role::SUPER_ADMIN, Role::HEAD_OFFICE],
+            [Role::SUPER_ADMIN, Role::HEAD_OFFICE, Role::CSO],
             $viewOnlyRoles
         );
 

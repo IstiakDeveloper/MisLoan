@@ -8,6 +8,10 @@ use App\Models\LoanApplicationIssue;
 use App\Models\MemberAdmission;
 use App\Models\MemberAdmissionApproval;
 use App\Models\MemberAdmissionIssue;
+use App\Models\Notification;
+use App\Models\Role;
+use App\Services\ApprovalService;
+use App\Services\CmoAllocationService;
 use Carbon\Carbon;
 use Illuminate\Foundation\Inspiring;
 use Illuminate\Http\Request;
@@ -66,7 +70,7 @@ class HandleInertiaRequests extends Middleware
         if ($request->user()) {
             $user = $request->user();
 
-            $avatarUrl = $user->profile_photo ? '/storage/' . ltrim($user->profile_photo, '/') : null;
+            $avatarUrl = $user->profile_photo ? '/storage/'.ltrim($user->profile_photo, '/') : null;
 
             // Build user data manually without loading relationships
             $userData = [
@@ -163,6 +167,24 @@ class HandleInertiaRequests extends Middleware
                     Log::error('Error loading branch in HandleInertiaRequests: '.$e->getMessage());
                 }
             }
+
+            if (($userData['role']['name'] ?? '') === \App\Models\Role::CSO) {
+                try {
+                    $areaIds = app(\App\Services\CsoAllocationService::class)->getAssignedAreaIdsForUser($user);
+                    $userData['cso_areas'] = DB::table('areas')
+                        ->whereIn('id', $areaIds)
+                        ->select('id', 'name', 'code')
+                        ->get()
+                        ->map(fn ($a) => [
+                            'id' => $a->id,
+                            'name' => $this->sanitizeString($a->name ?? ''),
+                            'code' => $this->sanitizeString($a->code ?? ''),
+                        ])
+                        ->toArray();
+                } catch (\Exception $e) {
+                    $userData['cso_areas'] = [];
+                }
+            }
         }
 
         // Calculate badge counts for Head Office / SuperAdmin / organizational viewers
@@ -178,6 +200,7 @@ class HandleInertiaRequests extends Middleware
             || in_array($roleNameForBadges, [
                 'super_admin',
                 'head_office',
+                'cso',
                 'ed',
                 'admf',
                 'dmf',
@@ -266,7 +289,7 @@ class HandleInertiaRequests extends Middleware
                 $repliedAdmissionCount = MemberAdmission::whereNotIn('status', ['approved', 'rejected', 'cancelled'])
                     ->where(function ($q) {
                         $q->whereHas('issues', fn ($iq) => $iq->whereNotNull('resolution_note')->where('resolution_note', '!=', ''))
-                          ->orWhere(fn ($sq) => $sq->whereNotNull('revision_comments')->where('revision_comments', '!=', '')->where('status', 'pending_head_office'));
+                            ->orWhere(fn ($sq) => $sq->whereNotNull('revision_comments')->where('revision_comments', '!=', '')->where('status', 'pending_head_office'));
                     })
                     ->count();
 
@@ -309,9 +332,9 @@ class HandleInertiaRequests extends Middleware
             ! ($userData['has_all_access'] ?? false)
             || in_array($roleNameForBadges, ['ed', 'admf', 'dmf', 'area_manager', 'zone_manager'], true)
         )) {
-            $approvalService = app(\App\Services\ApprovalService::class);
+            $approvalService = app(ApprovalService::class);
             $memberCount = $approvalService->getPendingApprovalsForUser($request->user())->count();
-            $loanCount = \App\Models\LoanApplicationApproval::where('user_id', $request->user()->id)
+            $loanCount = LoanApplicationApproval::where('user_id', $request->user()->id)
                 ->where('status', 'pending')
                 ->whereHas('loanApplication', fn ($q) => $q->whereIn('status', ['submitted', 'under_review']))
                 ->count();
@@ -321,8 +344,8 @@ class HandleInertiaRequests extends Middleware
         $notifications = [];
         $unreadNotificationsCount = 0;
         if ($request->user()) {
-            $unreadNotificationsCount = \App\Models\Notification::where('user_id', $request->user()->id)->unread()->count();
-            $notifications = \App\Models\Notification::where('user_id', $request->user()->id)
+            $unreadNotificationsCount = Notification::where('user_id', $request->user()->id)->unread()->count();
+            $notifications = Notification::where('user_id', $request->user()->id)
                 ->orderBy('created_at', 'desc')
                 ->take(8)
                 ->get();

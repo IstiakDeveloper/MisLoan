@@ -32,16 +32,26 @@ class Role extends Model
     }
 
     const SUPER_ADMIN = 'super_admin';
+
     const HEAD_OFFICE = 'head_office';
+
     const ZONE_MANAGER = 'zone_manager';
+
     const AREA_MANAGER = 'area_manager';
+
     const BRANCH_MANAGER = 'branch_manager';
+
     const BRANCH_USER = 'branch_user';
+
     const FIELD_OFFICER = 'field_officer';
+
+    const CSO = 'cso';
 
     /** Team Vittik Onumodon (Financial Approval) - branch can select these for approval */
     const ADMF = 'admf';  // Assistant Director Microfinance
+
     const DMF = 'dmf';    // Director Microfinance
+
     const ED = 'ed';      // Executive Director
 
     public static function approverRoleNames(): array

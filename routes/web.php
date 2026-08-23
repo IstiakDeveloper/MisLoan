@@ -2,6 +2,7 @@
 
 use App\Http\Controllers\ApprovalController;
 use App\Http\Controllers\DashboardController;
+use App\Http\Controllers\HeadOffice\CsoDutyRosterController;
 use App\Http\Controllers\HeadOfficeAdmissionController;
 use App\Http\Controllers\HeadOfficeLoanController;
 use App\Http\Controllers\HeadOfficeSavingsController;
@@ -12,6 +13,7 @@ use App\Http\Controllers\LoanApplicationController;
 use App\Http\Controllers\LoanCategoryController;
 use App\Http\Controllers\LoanProductController;
 use App\Http\Controllers\MaintenanceController;
+use App\Http\Controllers\Member\SavingsApplicationController;
 use App\Http\Controllers\MemberAdmissionController;
 use App\Http\Controllers\MemberCategoryController;
 use App\Http\Controllers\NotificationController;
@@ -24,6 +26,7 @@ use App\Http\Controllers\SavingsProductController;
 use App\Http\Controllers\TeamBasedApprovalController;
 use App\Http\Controllers\TeamBasedApprovalPrintController;
 use App\Http\Controllers\UserController;
+use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\Redirect;
 use Illuminate\Support\Facades\Route;
 use Inertia\Inertia;
@@ -254,60 +257,60 @@ Route::middleware(['auth', 'verified'])->group(function () {
     Route::prefix('member')->name('member.')->middleware('auth')->group(function () {
         // Loan Applications
         Route::prefix('loan-applications')->name('loan-applications.')->group(function () {
-            Route::get('/', [\App\Http\Controllers\Member\LoanApplicationController::class, 'index'])->name('index');
-            Route::get('products', [\App\Http\Controllers\Member\LoanApplicationController::class, 'getProducts'])->name('products');
-            Route::get('search-members', [\App\Http\Controllers\Member\LoanApplicationController::class, 'searchMembers'])->name('search-members');
-            Route::get('samities-for-branch', [\App\Http\Controllers\Member\LoanApplicationController::class, 'samitiesForBranch'])->name('samities-for-branch');
-            Route::post('start-legacy-application', [\App\Http\Controllers\Member\LoanApplicationController::class, 'startLegacyApplication'])->name('start-legacy-application');
-            Route::get('form-selection', [\App\Http\Controllers\Member\LoanApplicationController::class, 'formSelection'])->name('form-selection');
+            Route::get('/', [App\Http\Controllers\Member\LoanApplicationController::class, 'index'])->name('index');
+            Route::get('products', [App\Http\Controllers\Member\LoanApplicationController::class, 'getProducts'])->name('products');
+            Route::get('search-members', [App\Http\Controllers\Member\LoanApplicationController::class, 'searchMembers'])->name('search-members');
+            Route::get('samities-for-branch', [App\Http\Controllers\Member\LoanApplicationController::class, 'samitiesForBranch'])->name('samities-for-branch');
+            Route::post('start-legacy-application', [App\Http\Controllers\Member\LoanApplicationController::class, 'startLegacyApplication'])->name('start-legacy-application');
+            Route::get('form-selection', [App\Http\Controllers\Member\LoanApplicationController::class, 'formSelection'])->name('form-selection');
 
             // Form routes
             Route::prefix('forms')->name('forms.')->group(function () {
-                Route::get('loan-agreement', [\App\Http\Controllers\Member\LoanApplicationController::class, 'loanAgreement'])->name('loan-agreement');
-                Route::post('loan-agreement/save-draft', [\App\Http\Controllers\Member\LoanApplicationController::class, 'saveLoanAgreementDraft'])->name('loan-agreement.save-draft');
-                Route::get('guarantor-commitment', [\App\Http\Controllers\Member\LoanApplicationController::class, 'guarantorCommitment'])->name('guarantor-commitment');
-                Route::post('guarantor-commitment/save-draft', [\App\Http\Controllers\Member\LoanApplicationController::class, 'saveGuarantorCommitmentDraft'])->name('guarantor-commitment.save-draft');
-                Route::get('death-risk-fund', [\App\Http\Controllers\Member\LoanApplicationController::class, 'deathRiskFund'])->name('death-risk-fund');
-                Route::post('death-risk-fund/save-draft', [\App\Http\Controllers\Member\LoanApplicationController::class, 'saveDeathRiskFundDraft'])->name('death-risk-fund.save-draft');
-                Route::get('field-investigation', [\App\Http\Controllers\Member\LoanApplicationController::class, 'fieldInvestigation'])->name('field-investigation');
-                Route::post('field-investigation/save-draft', [\App\Http\Controllers\Member\LoanApplicationController::class, 'saveFieldInvestigationDraft'])->name('field-investigation.save-draft');
-                Route::get('loan-application-approval', [\App\Http\Controllers\Member\LoanApplicationController::class, 'loanApplicationApproval'])->name('loan-application-approval');
-                Route::post('loan-application-approval/save-draft', [\App\Http\Controllers\Member\LoanApplicationController::class, 'saveLoanApplicationApprovalDraft'])->name('loan-application-approval.save-draft');
+                Route::get('loan-agreement', [App\Http\Controllers\Member\LoanApplicationController::class, 'loanAgreement'])->name('loan-agreement');
+                Route::post('loan-agreement/save-draft', [App\Http\Controllers\Member\LoanApplicationController::class, 'saveLoanAgreementDraft'])->name('loan-agreement.save-draft');
+                Route::get('guarantor-commitment', [App\Http\Controllers\Member\LoanApplicationController::class, 'guarantorCommitment'])->name('guarantor-commitment');
+                Route::post('guarantor-commitment/save-draft', [App\Http\Controllers\Member\LoanApplicationController::class, 'saveGuarantorCommitmentDraft'])->name('guarantor-commitment.save-draft');
+                Route::get('death-risk-fund', [App\Http\Controllers\Member\LoanApplicationController::class, 'deathRiskFund'])->name('death-risk-fund');
+                Route::post('death-risk-fund/save-draft', [App\Http\Controllers\Member\LoanApplicationController::class, 'saveDeathRiskFundDraft'])->name('death-risk-fund.save-draft');
+                Route::get('field-investigation', [App\Http\Controllers\Member\LoanApplicationController::class, 'fieldInvestigation'])->name('field-investigation');
+                Route::post('field-investigation/save-draft', [App\Http\Controllers\Member\LoanApplicationController::class, 'saveFieldInvestigationDraft'])->name('field-investigation.save-draft');
+                Route::get('loan-application-approval', [App\Http\Controllers\Member\LoanApplicationController::class, 'loanApplicationApproval'])->name('loan-application-approval');
+                Route::post('loan-application-approval/save-draft', [App\Http\Controllers\Member\LoanApplicationController::class, 'saveLoanApplicationApprovalDraft'])->name('loan-application-approval.save-draft');
             });
 
-            Route::get('create/{productId?}', [\App\Http\Controllers\Member\LoanApplicationController::class, 'create'])->name('create');
-            Route::get('export/excel', [\App\Http\Controllers\Member\LoanApplicationController::class, 'exportExcel'])->name('export.excel');
-            Route::post('/', [\App\Http\Controllers\Member\LoanApplicationController::class, 'store'])->name('store');
-            Route::post('send-to-head-office-bulk', [\App\Http\Controllers\Member\LoanApplicationController::class, 'sendToHeadOfficeBulk'])->name('send-to-head-office-bulk');
-            Route::get('{id}', [\App\Http\Controllers\Member\LoanApplicationController::class, 'show'])->name('show');
-            Route::get('{id}/edit', [\App\Http\Controllers\Member\LoanApplicationController::class, 'edit'])->name('edit');
-            Route::put('{id}', [\App\Http\Controllers\Member\LoanApplicationController::class, 'update'])->name('update');
-            Route::patch('{id}/submit', [\App\Http\Controllers\Member\LoanApplicationController::class, 'submit'])->name('submit');
-            Route::patch('{id}/send-to-head-office', [\App\Http\Controllers\Member\LoanApplicationController::class, 'sendToHeadOffice'])->name('send-to-head-office');
-            Route::patch('{id}/disburse', [\App\Http\Controllers\Member\LoanApplicationController::class, 'disburse'])->name('disburse');
-            Route::patch('{id}/update-member-code', [\App\Http\Controllers\Member\LoanApplicationController::class, 'updateMemberCode'])->name('update-member-code');
-            Route::patch('{id}/update-loan-product', [\App\Http\Controllers\Member\LoanApplicationController::class, 'updateLoanProduct'])->name('update-loan-product');
-            Route::post('{id}/unlock-edit', [\App\Http\Controllers\Member\LoanApplicationController::class, 'unlockEdit'])->name('unlock-edit');
-            Route::get('{id}/print', [\App\Http\Controllers\Member\LoanApplicationController::class, 'print'])->name('print');
-            Route::delete('{id}', [\App\Http\Controllers\Member\LoanApplicationController::class, 'destroy'])->name('destroy');
+            Route::get('create/{productId?}', [App\Http\Controllers\Member\LoanApplicationController::class, 'create'])->name('create');
+            Route::get('export/excel', [App\Http\Controllers\Member\LoanApplicationController::class, 'exportExcel'])->name('export.excel');
+            Route::post('/', [App\Http\Controllers\Member\LoanApplicationController::class, 'store'])->name('store');
+            Route::post('send-to-head-office-bulk', [App\Http\Controllers\Member\LoanApplicationController::class, 'sendToHeadOfficeBulk'])->name('send-to-head-office-bulk');
+            Route::get('{id}', [App\Http\Controllers\Member\LoanApplicationController::class, 'show'])->name('show');
+            Route::get('{id}/edit', [App\Http\Controllers\Member\LoanApplicationController::class, 'edit'])->name('edit');
+            Route::put('{id}', [App\Http\Controllers\Member\LoanApplicationController::class, 'update'])->name('update');
+            Route::patch('{id}/submit', [App\Http\Controllers\Member\LoanApplicationController::class, 'submit'])->name('submit');
+            Route::patch('{id}/send-to-head-office', [App\Http\Controllers\Member\LoanApplicationController::class, 'sendToHeadOffice'])->name('send-to-head-office');
+            Route::patch('{id}/disburse', [App\Http\Controllers\Member\LoanApplicationController::class, 'disburse'])->name('disburse');
+            Route::patch('{id}/update-member-code', [App\Http\Controllers\Member\LoanApplicationController::class, 'updateMemberCode'])->name('update-member-code');
+            Route::patch('{id}/update-loan-product', [App\Http\Controllers\Member\LoanApplicationController::class, 'updateLoanProduct'])->name('update-loan-product');
+            Route::post('{id}/unlock-edit', [App\Http\Controllers\Member\LoanApplicationController::class, 'unlockEdit'])->name('unlock-edit');
+            Route::get('{id}/print', [App\Http\Controllers\Member\LoanApplicationController::class, 'print'])->name('print');
+            Route::delete('{id}', [App\Http\Controllers\Member\LoanApplicationController::class, 'destroy'])->name('destroy');
 
             // Issue resolution routes
-            Route::post('{applicationId}/issues/{issueId}/resolve', [\App\Http\Controllers\Member\LoanApplicationController::class, 'resolveIssue'])->name('issues.resolve');
-            Route::post('{applicationId}/issues/{issueId}/reject', [\App\Http\Controllers\Member\LoanApplicationController::class, 'rejectIssue'])->name('issues.reject');
+            Route::post('{applicationId}/issues/{issueId}/resolve', [App\Http\Controllers\Member\LoanApplicationController::class, 'resolveIssue'])->name('issues.resolve');
+            Route::post('{applicationId}/issues/{issueId}/reject', [App\Http\Controllers\Member\LoanApplicationController::class, 'rejectIssue'])->name('issues.reject');
         });
 
         // Savings Applications
         Route::prefix('savings-applications')->name('savings-applications.')->group(function () {
-            Route::get('/', [\App\Http\Controllers\Member\SavingsApplicationController::class, 'index'])->name('index');
-            Route::get('search-members', [\App\Http\Controllers\Member\SavingsApplicationController::class, 'searchMembers'])->name('search-members');
-            Route::get('create/{productId}', [\App\Http\Controllers\Member\SavingsApplicationController::class, 'create'])->name('create');
-            Route::post('/', [\App\Http\Controllers\Member\SavingsApplicationController::class, 'store'])->name('store');
-            Route::post('{id}/save-form', [\App\Http\Controllers\Member\SavingsApplicationController::class, 'saveForm'])->name('save-form');
-            Route::get('{id}', [\App\Http\Controllers\Member\SavingsApplicationController::class, 'show'])->name('show');
-            Route::delete('{id}', [\App\Http\Controllers\Member\SavingsApplicationController::class, 'destroy'])->name('destroy');
-            Route::patch('{id}/submit', [\App\Http\Controllers\Member\SavingsApplicationController::class, 'submit'])->name('submit');
-            Route::patch('{id}/approve', [\App\Http\Controllers\Member\SavingsApplicationController::class, 'approve'])->name('approve');
-            Route::patch('{id}/reject', [\App\Http\Controllers\Member\SavingsApplicationController::class, 'reject'])->name('reject');
+            Route::get('/', [SavingsApplicationController::class, 'index'])->name('index');
+            Route::get('search-members', [SavingsApplicationController::class, 'searchMembers'])->name('search-members');
+            Route::get('create/{productId}', [SavingsApplicationController::class, 'create'])->name('create');
+            Route::post('/', [SavingsApplicationController::class, 'store'])->name('store');
+            Route::post('{id}/save-form', [SavingsApplicationController::class, 'saveForm'])->name('save-form');
+            Route::get('{id}', [SavingsApplicationController::class, 'show'])->name('show');
+            Route::delete('{id}', [SavingsApplicationController::class, 'destroy'])->name('destroy');
+            Route::patch('{id}/submit', [SavingsApplicationController::class, 'submit'])->name('submit');
+            Route::patch('{id}/approve', [SavingsApplicationController::class, 'approve'])->name('approve');
+            Route::patch('{id}/reject', [SavingsApplicationController::class, 'reject'])->name('reject');
         });
     });
 
@@ -373,6 +376,11 @@ Route::middleware(['auth', 'verified'])->group(function () {
         Route::get('team-based-approvals/items/{item}/edit', [HeadOfficeTeamBasedApprovalController::class, 'editItem'])->name('team-based-approvals.items.edit');
         Route::put('team-based-approvals/items/{item}', [HeadOfficeTeamBasedApprovalController::class, 'updateItem'])->name('team-based-approvals.items.update');
         Route::delete('team-based-approvals/items/{item}', [HeadOfficeTeamBasedApprovalController::class, 'destroyItem'])->name('team-based-approvals.items.destroy');
+
+        // CSO Duty Roster (Daily Area Allocation)
+        Route::get('cso-duty-roster', [CsoDutyRosterController::class, 'index'])->name('cso-duty-roster');
+        Route::post('cso-duty-roster', [CsoDutyRosterController::class, 'save'])->name('cso-duty-roster.save');
+        Route::post('cso-duty-roster/reset', [CsoDutyRosterController::class, 'reset'])->name('cso-duty-roster.reset');
     });
 
     // Team Based Approval Report - Head Office, SuperAdmin, ED
@@ -442,14 +450,14 @@ Route::middleware(['auth', 'verified'])->group(function () {
 
 Route::get('/storage-link', function () {
     try {
-        \Illuminate\Support\Facades\Artisan::call('storage:link');
+        Artisan::call('storage:link');
 
         return response()->json([
             'success' => true,
             'message' => 'Storage link created successfully!',
-            'output' => \Illuminate\Support\Facades\Artisan::output(),
+            'output' => Artisan::output(),
         ]);
-    } catch (\Exception $e) {
+    } catch (Exception $e) {
         return response()->json([
             'success' => false,
             'message' => 'Failed to create storage link',
@@ -460,14 +468,14 @@ Route::get('/storage-link', function () {
 
 Route::get('/migrate', function () {
     try {
-        \Illuminate\Support\Facades\Artisan::call('migrate', ['--force' => true]);
+        Artisan::call('migrate', ['--force' => true]);
 
         return response()->json([
             'success' => true,
             'message' => 'Migration completed successfully!',
-            'output' => \Illuminate\Support\Facades\Artisan::output(),
+            'output' => Artisan::output(),
         ]);
-    } catch (\Exception $e) {
+    } catch (Exception $e) {
         return response()->json([
             'success' => false,
             'message' => 'Migration failed',
@@ -479,21 +487,21 @@ Route::get('/migrate', function () {
 Route::get('/clear', function () {
     try {
         $output = [];
-        \Illuminate\Support\Facades\Artisan::call('config:clear');
-        $output['config'] = trim(\Illuminate\Support\Facades\Artisan::output());
-        \Illuminate\Support\Facades\Artisan::call('cache:clear');
-        $output['cache'] = trim(\Illuminate\Support\Facades\Artisan::output());
-        \Illuminate\Support\Facades\Artisan::call('view:clear');
-        $output['view'] = trim(\Illuminate\Support\Facades\Artisan::output());
-        \Illuminate\Support\Facades\Artisan::call('route:clear');
-        $output['route'] = trim(\Illuminate\Support\Facades\Artisan::output());
+        Artisan::call('config:clear');
+        $output['config'] = trim(Artisan::output());
+        Artisan::call('cache:clear');
+        $output['cache'] = trim(Artisan::output());
+        Artisan::call('view:clear');
+        $output['view'] = trim(Artisan::output());
+        Artisan::call('route:clear');
+        $output['route'] = trim(Artisan::output());
 
         return response()->json([
             'success' => true,
             'message' => 'Config, cache, view & route cleared successfully.',
             'output' => $output,
         ]);
-    } catch (\Exception $e) {
+    } catch (Exception $e) {
         return response()->json([
             'success' => false,
             'message' => 'Clear failed',

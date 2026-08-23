@@ -2,20 +2,23 @@
 
 namespace App\Http\Controllers;
 
-use App\Models\MemberAdmission;
 use App\Models\Branch;
+use App\Models\LoanApplication;
+use App\Models\MemberAdmission;
+use App\Models\MemberCategory;
 use App\Models\Role;
 use App\Models\Samity;
-use App\Models\MemberCategory;
 use App\Models\User;
 use App\Services\ApprovalService;
 use App\Services\ImageCompressionService;
+use App\Services\MemberAdmissionLoanSyncService;
+use App\Services\MemberCodeService;
 use App\Services\NotificationService;
 use App\Support\AdmissionFormVisibility;
 use App\Support\RoleListWorkQueue;
-use Carbon\Carbon;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Validator;
 use Illuminate\Validation\ValidationException;
 use Inertia\Inertia;
 use PhpOffice\PhpSpreadsheet\Cell\Coordinate;
@@ -110,7 +113,7 @@ class MemberAdmissionController extends Controller
 
         $merged = [];
         foreach ($nullableKeys as $key) {
-            if (!$request->exists($key)) {
+            if (! $request->exists($key)) {
                 continue;
             }
             $value = $request->input($key);
@@ -164,8 +167,8 @@ class MemberAdmissionController extends Controller
         ];
 
         foreach ($countFields as $field) {
-            $missing = !array_key_exists($field, $data);
-            if ($missing && !$fillMissing) {
+            $missing = ! array_key_exists($field, $data);
+            if ($missing && ! $fillMissing) {
                 continue;
             }
             if ($missing || $data[$field] === null || $data[$field] === '') {
@@ -267,7 +270,7 @@ class MemberAdmissionController extends Controller
         }
 
         $gender = $member['gender'] ?? null;
-        if (!in_array($gender, ['male', 'female', 'other'], true)) {
+        if (! in_array($gender, ['male', 'female', 'other'], true)) {
             $gender = 'other';
         }
 
@@ -304,13 +307,13 @@ class MemberAdmissionController extends Controller
     private function syncFamilyMembers(MemberAdmission $admission, ?array $familyMembers): void
     {
         $admission->familyMembers()->delete();
-        if (empty($familyMembers) || !is_array($familyMembers)) {
+        if (empty($familyMembers) || ! is_array($familyMembers)) {
             return;
         }
 
         $sl = 0;
         foreach ($familyMembers as $member) {
-            if (!is_array($member)) {
+            if (! is_array($member)) {
                 continue;
             }
             $row = $this->buildFamilyMemberRow($sl + 1, $member);
@@ -343,7 +346,7 @@ class MemberAdmissionController extends Controller
         ]);
 
         // Records stay on the branch; field officers only see their own in that branch.
-        if (!$user->has_all_access) {
+        if (! $user->has_all_access) {
             $query->whereIn('branch_id', $user->getAccessibleBranches()->pluck('id'));
         }
         if ($isFieldOfficer) {
@@ -352,7 +355,7 @@ class MemberAdmissionController extends Controller
 
         // Build stats query with active date, branch, and search filters (excluding status filter for stats)
         $statsQuery = MemberAdmission::query();
-        if (!$user->has_all_access) {
+        if (! $user->has_all_access) {
             $statsQuery->whereIn('branch_id', $user->getAccessibleBranches()->pluck('id'));
         }
         if ($isFieldOfficer) {
@@ -364,7 +367,7 @@ class MemberAdmissionController extends Controller
         }
 
         if ($request->filled('search')) {
-            \App\Services\MemberCodeService::applyAdmissionSearch($statsQuery, $request->search);
+            MemberCodeService::applyAdmissionSearch($statsQuery, $request->search);
         }
 
         $this->applyCoalesceDateRange($statsQuery, $fromDate, $toDate, 'COALESCE(reviewed_at, submitted_at, created_at)');
@@ -390,7 +393,7 @@ class MemberAdmissionController extends Controller
         }
 
         if ($request->filled('search')) {
-            \App\Services\MemberCodeService::applyAdmissionSearch($query, $request->search);
+            MemberCodeService::applyAdmissionSearch($query, $request->search);
         }
 
         $this->applyCoalesceDateRange($query, $fromDate, $toDate, 'COALESCE(reviewed_at, submitted_at, created_at)');
@@ -398,7 +401,7 @@ class MemberAdmissionController extends Controller
         $perPage = $this->resolvePerPage($request);
         $query->withExists([
             'loanApplications as has_disbursed_loan' => function ($q) {
-                $q->where('status', \App\Models\LoanApplication::STATUS_DISBURSED);
+                $q->where('status', LoanApplication::STATUS_DISBURSED);
             },
         ]);
         $admissions = $query->orderByRaw('COALESCE(reviewed_at, submitted_at, created_at) desc')->paginate($perPage)->withQueryString();
@@ -408,12 +411,12 @@ class MemberAdmissionController extends Controller
             $arr['tracking_state'] = $admission->getTrackingState();
             $activeLoan = $admission->loanApplications()
                 ->whereIn('status', [
-                    \App\Models\LoanApplication::STATUS_SUBMITTED,
-                    \App\Models\LoanApplication::STATUS_UNDER_REVIEW,
-                    \App\Models\LoanApplication::STATUS_READY_FOR_HEAD_OFFICE,
-                    \App\Models\LoanApplication::STATUS_PENDING_HEAD_OFFICE,
-                    \App\Models\LoanApplication::STATUS_PENDING_DISBURSEMENT,
-                    \App\Models\LoanApplication::STATUS_DISBURSED,
+                    LoanApplication::STATUS_SUBMITTED,
+                    LoanApplication::STATUS_UNDER_REVIEW,
+                    LoanApplication::STATUS_READY_FOR_HEAD_OFFICE,
+                    LoanApplication::STATUS_PENDING_HEAD_OFFICE,
+                    LoanApplication::STATUS_PENDING_DISBURSEMENT,
+                    LoanApplication::STATUS_DISBURSED,
                 ])
                 ->latest('id')
                 ->first();
@@ -427,6 +430,7 @@ class MemberAdmissionController extends Controller
                 $hasDisbursedLoan,
                 $this->canManageAnyStatus()
             );
+
             return $arr;
         });
 
@@ -464,7 +468,7 @@ class MemberAdmissionController extends Controller
             'approvals.user',
         ]);
 
-        if (!$user->has_all_access) {
+        if (! $user->has_all_access) {
             $query->whereIn('branch_id', $user->getAccessibleBranches()->pluck('id'));
         }
         if ($isFieldOfficer) {
@@ -480,12 +484,12 @@ class MemberAdmissionController extends Controller
 
         if ($request->filled('search')) {
             $search = $request->search;
-            $query->where(function($q) use ($search) {
+            $query->where(function ($q) use ($search) {
                 $q->where('application_no', 'like', "%{$search}%")
-                  ->orWhere('applicant_name_en', 'like', "%{$search}%")
-                  ->orWhere('applicant_name_bn', 'like', "%{$search}%")
-                  ->orWhere('mobile_number', 'like', "%{$search}%")
-                  ->orWhere('nid_number', 'like', "%{$search}%");
+                    ->orWhere('applicant_name_en', 'like', "%{$search}%")
+                    ->orWhere('applicant_name_bn', 'like', "%{$search}%")
+                    ->orWhere('mobile_number', 'like', "%{$search}%")
+                    ->orWhere('nid_number', 'like', "%{$search}%");
             });
         }
 
@@ -507,7 +511,7 @@ class MemberAdmissionController extends Controller
             'needs_revision' => 'সংশোধন',
         ];
 
-        $spreadsheet = new Spreadsheet();
+        $spreadsheet = new Spreadsheet;
         $sheet = $spreadsheet->getActiveSheet();
         $sheet->setTitle('ভর্তি আবেদন');
 
@@ -590,7 +594,7 @@ class MemberAdmissionController extends Controller
             $sheet->getColumnDimension(Coordinate::stringFromColumnIndex($col))->setAutoSize(true);
         }
 
-        $filename = 'member_admissions_' . date('Y_m_d_His') . '.xlsx';
+        $filename = 'member_admissions_'.date('Y_m_d_His').'.xlsx';
         $writer = new Xlsx($spreadsheet);
 
         return response()->streamDownload(function () use ($writer) {
@@ -772,7 +776,7 @@ class MemberAdmissionController extends Controller
 
         $isLegacy = $request->boolean('is_legacy');
         // loan_dofa only required on final submit (not draft)
-        if ($isLegacy && !$saveAsDraft && empty($validated['loan_dofa'])) {
+        if ($isLegacy && ! $saveAsDraft && empty($validated['loan_dofa'])) {
             return back()->withInput()->withErrors([
                 'loan_dofa' => 'পুরাতন সদস্যের জন্য ঋণের দফা দেওয়া বাধ্যতামূলক।',
             ]);
@@ -848,9 +852,9 @@ class MemberAdmissionController extends Controller
 
             // Remove file objects from data
             unset($admissionData['customer_photo'], $admissionData['customer_nid_photo'],
-                  $admissionData['customer_nid_back_photo'],
-                  $admissionData['guardian_photo'], $admissionData['guardian_nid_photo'],
-                  $admissionData['applicant_signature']);
+                $admissionData['customer_nid_back_photo'],
+                $admissionData['guardian_photo'], $admissionData['guardian_nid_photo'],
+                $admissionData['applicant_signature']);
 
             $admissionData['created_by'] = auth()->id();
             $admissionData['assigned_officer_id'] = auth()->id();
@@ -860,7 +864,7 @@ class MemberAdmissionController extends Controller
             $admissionData['is_legacy'] = $isLegacy;
             $admissionData['loan_dofa'] = $isLegacy ? ($validated['loan_dofa'] ?? null) : null;
             $admissionData['nid_both_sides'] = $request->boolean('nid_both_sides');
-            if (!$admissionData['nid_both_sides']) {
+            if (! $admissionData['nid_both_sides']) {
                 $admissionData['customer_nid_back_photo_path'] = null;
             }
             $admissionData['permanent_address_same'] = (bool) ($admissionData['permanent_address_same'] ?? false);
@@ -887,10 +891,10 @@ class MemberAdmissionController extends Controller
             }
 
             // Draft = always draft status; legacy final submit auto-approves
-            if ($saveAsDraft || !$isLegacy) {
+            if ($saveAsDraft || ! $isLegacy) {
                 $admissionData['status'] = 'draft';
             }
-            if ($isLegacy && !$saveAsDraft) {
+            if ($isLegacy && ! $saveAsDraft) {
                 $admissionData['status'] = 'approved';
                 $admissionData['submitted_by'] = $authUser->id;
                 $admissionData['submitted_at'] = now();
@@ -904,7 +908,7 @@ class MemberAdmissionController extends Controller
             $this->syncFamilyMembers($admission, $validated['family_members'] ?? null);
 
             // Save other assets
-            if (!empty($validated['other_assets'])) {
+            if (! empty($validated['other_assets'])) {
                 foreach ($validated['other_assets'] as $index => $asset) {
                     $admission->otherAssets()->create([
                         'sl_no' => $index + 1,
@@ -917,17 +921,17 @@ class MemberAdmissionController extends Controller
 
             DB::commit();
 
-            if ($isLegacy && !$saveAsDraft) {
+            if ($isLegacy && ! $saveAsDraft) {
                 return redirect()->route('member-admissions.index')
-                    ->with('success', 'পুরাতন সদস্যের ভর্তি স্বয়ংক্রিয়ভাবে অনুমোদিত হয়েছে! আবেদন নং: ' . $admission->application_no);
+                    ->with('success', 'পুরাতন সদস্যের ভর্তি স্বয়ংক্রিয়ভাবে অনুমোদিত হয়েছে! আবেদন নং: '.$admission->application_no);
             }
 
             return redirect()->route('member-admissions.index')
-                ->with('success', 'Member admission created successfully! Application No: ' . $admission->application_no);
+                ->with('success', 'Member admission created successfully! Application No: '.$admission->application_no);
 
         } catch (\Exception $e) {
             DB::rollBack();
-            $message = 'খসড়া সংরক্ষণ করা যায়নি: ' . $e->getMessage() . ' — আপনার দেওয়া তথ্য মুছে যায়নি, আবার চেষ্টা করুন।';
+            $message = 'খসড়া সংরক্ষণ করা যায়নি: '.$e->getMessage().' — আপনার দেওয়া তথ্য মুছে যায়নি, আবার চেষ্টা করুন।';
 
             return back()->withInput()->withErrors([
                 'draft_save' => $message,
@@ -979,7 +983,7 @@ class MemberAdmissionController extends Controller
 
     public function edit(Request $request, MemberAdmission $memberAdmission)
     {
-        if (!$this->userCanEditAdmission($memberAdmission)) {
+        if (! $this->userCanEditAdmission($memberAdmission)) {
             return $this->admissionNotEditableResponse($memberAdmission);
         }
 
@@ -1008,7 +1012,7 @@ class MemberAdmissionController extends Controller
 
     public function update(Request $request, MemberAdmission $memberAdmission)
     {
-        if (!$this->userCanEditAdmission($memberAdmission)) {
+        if (! $this->userCanEditAdmission($memberAdmission)) {
             return $this->admissionNotEditableResponse($memberAdmission);
         }
 
@@ -1016,7 +1020,7 @@ class MemberAdmissionController extends Controller
         $saveAsDraft = $this->isDraftSave($request);
 
         $validated = $request->validate([
-            'application_no' => 'nullable|string|max:50|unique:member_admissions,application_no,' . $memberAdmission->id,
+            'application_no' => 'nullable|string|max:50|unique:member_admissions,application_no,'.$memberAdmission->id,
             'branch_id' => 'nullable|exists:branches,id',
             'samity_id' => 'nullable|exists:samities,id',
             'member_category_id' => 'nullable|exists:member_categories,id',
@@ -1166,7 +1170,7 @@ class MemberAdmissionController extends Controller
         }
 
         // loan_dofa only required on final submit (not draft)
-        if ($isLegacy && !$saveAsDraft && empty($validated['loan_dofa']) && empty($memberAdmission->loan_dofa)) {
+        if ($isLegacy && ! $saveAsDraft && empty($validated['loan_dofa']) && empty($memberAdmission->loan_dofa)) {
             return back()->withInput()->withErrors([
                 'loan_dofa' => 'পুরাতন সদস্যের জন্য ঋণের দফা দেওয়া বাধ্যতামূলক।',
             ]);
@@ -1200,7 +1204,7 @@ class MemberAdmissionController extends Controller
                 $updateData['want_sms_service'] = (bool) $updateData['want_sms_service'];
             }
             $updateData['nid_both_sides'] = $request->boolean('nid_both_sides');
-            if (!$updateData['nid_both_sides'] && !$request->hasFile('customer_nid_back_photo')) {
+            if (! $updateData['nid_both_sides'] && ! $request->hasFile('customer_nid_back_photo')) {
                 if ($memberAdmission->customer_nid_back_photo_path) {
                     $oldPathsToDelete[] = $memberAdmission->customer_nid_back_photo_path;
                 }
@@ -1210,7 +1214,7 @@ class MemberAdmissionController extends Controller
             // Compress NEW file first; only delete old file after DB commit succeeds
             if ($request->hasFile('customer_photo')) {
                 $compressedPath = $compressionService->compressPhoto($request->file('customer_photo'), 'admissions/customer_photos');
-                if (!$compressedPath) {
+                if (! $compressedPath) {
                     throw new \Exception('সদস্যের ছবি প্রসেস করা যায়নি। অন্য ছবি দিয়ে আবার চেষ্টা করুন। আগের ছবি ও খসড়া অপরিবর্তিত আছে।');
                 }
                 if ($memberAdmission->customer_photo_path) {
@@ -1221,7 +1225,7 @@ class MemberAdmissionController extends Controller
 
             if ($request->hasFile('customer_nid_photo')) {
                 $compressedPath = $compressionService->compressDocument($request->file('customer_nid_photo'), 'admissions/customer_nids');
-                if (!$compressedPath) {
+                if (! $compressedPath) {
                     throw new \Exception('সদস্যের NID ছবি প্রসেস করা যায়নি। অন্য ছবি/ফাইল দিয়ে আবার চেষ্টা করুন। আগের ছবি ও খসড়া অপরিবর্তিত আছে।');
                 }
                 if ($memberAdmission->customer_nid_photo_path) {
@@ -1232,7 +1236,7 @@ class MemberAdmissionController extends Controller
 
             if ($request->boolean('nid_both_sides') && $request->hasFile('customer_nid_back_photo')) {
                 $compressedPath = $compressionService->compressDocument($request->file('customer_nid_back_photo'), 'admissions/customer_nids');
-                if (!$compressedPath) {
+                if (! $compressedPath) {
                     throw new \Exception('সদস্যের NID পেছনের পাশের ছবি প্রসেস করা যায়নি। অন্য ছবি/ফাইল দিয়ে আবার চেষ্টা করুন। আগের ছবি ও খসড়া অপরিবর্তিত আছে।');
                 }
                 if ($memberAdmission->customer_nid_back_photo_path) {
@@ -1243,7 +1247,7 @@ class MemberAdmissionController extends Controller
 
             if ($request->hasFile('guardian_photo')) {
                 $compressedPath = $compressionService->compressPhoto($request->file('guardian_photo'), 'admissions/guardian_photos');
-                if (!$compressedPath) {
+                if (! $compressedPath) {
                     throw new \Exception('অভিভাবকের ছবি প্রসেস করা যায়নি। অন্য ছবি দিয়ে আবার চেষ্টা করুন। আগের ছবি ও খসড়া অপরিবর্তিত আছে।');
                 }
                 if ($memberAdmission->guardian_photo_path) {
@@ -1254,7 +1258,7 @@ class MemberAdmissionController extends Controller
 
             if ($request->hasFile('guardian_nid_photo')) {
                 $compressedPath = $compressionService->compressDocument($request->file('guardian_nid_photo'), 'admissions/guardian_nids');
-                if (!$compressedPath) {
+                if (! $compressedPath) {
                     throw new \Exception('অভিভাবকের NID ছবি প্রসেস করা যায়নি। অন্য ছবি/ফাইল দিয়ে আবার চেষ্টা করুন। আগের ছবি ও খসড়া অপরিবর্তিত আছে।');
                 }
                 if ($memberAdmission->guardian_nid_photo_path) {
@@ -1265,7 +1269,7 @@ class MemberAdmissionController extends Controller
 
             if ($request->hasFile('applicant_signature')) {
                 $compressedPath = $compressionService->compressPhoto($request->file('applicant_signature'), 'signatures/applicants');
-                if (!$compressedPath) {
+                if (! $compressedPath) {
                     throw new \Exception('স্বাক্ষরের ছবি প্রসেস করা যায়নি। অন্য ছবি দিয়ে আবার চেষ্টা করুন। আগের ছবি ও খসড়া অপরিবর্তিত আছে।');
                 }
                 if ($memberAdmission->applicant_signature_path) {
@@ -1284,7 +1288,7 @@ class MemberAdmissionController extends Controller
                 'applicant_signature' => 'applicant_signature_path',
             ];
             foreach ($clearablePhotos as $field => $pathColumn) {
-                if ($request->boolean("clear_{$field}") && !$request->hasFile($field)) {
+                if ($request->boolean("clear_{$field}") && ! $request->hasFile($field)) {
                     if ($memberAdmission->{$pathColumn}) {
                         $oldPathsToDelete[] = $memberAdmission->{$pathColumn};
                     }
@@ -1294,9 +1298,9 @@ class MemberAdmissionController extends Controller
 
             // Remove file objects from data
             unset($updateData['customer_photo'], $updateData['customer_nid_photo'],
-                  $updateData['customer_nid_back_photo'],
-                  $updateData['guardian_photo'], $updateData['guardian_nid_photo'],
-                  $updateData['applicant_signature']);
+                $updateData['customer_nid_back_photo'],
+                $updateData['guardian_photo'], $updateData['guardian_nid_photo'],
+                $updateData['applicant_signature']);
 
             $authUser = auth()->user();
             $authUser->loadMissing('role');
@@ -1317,7 +1321,7 @@ class MemberAdmissionController extends Controller
 
             // Legacy draft: final save (not draft) → auto-approve
             $legacyAutoApproved = false;
-            if ($isLegacy && !$saveAsDraft && $memberAdmission->isDraft()) {
+            if ($isLegacy && ! $saveAsDraft && $memberAdmission->isDraft()) {
                 $updateData['status'] = 'approved';
                 $updateData['submitted_by'] = auth()->id();
                 $updateData['submitted_at'] = now();
@@ -1335,7 +1339,7 @@ class MemberAdmissionController extends Controller
 
             // Update other assets
             $memberAdmission->otherAssets()->delete();
-            if (!empty($validated['other_assets'])) {
+            if (! empty($validated['other_assets'])) {
                 foreach ($validated['other_assets'] as $index => $asset) {
                     $memberAdmission->otherAssets()->create([
                         'sl_no' => $index + 1,
@@ -1345,6 +1349,9 @@ class MemberAdmissionController extends Controller
                     ]);
                 }
             }
+
+            $memberAdmission->load(['samity', 'familyMembers', 'otherAssets']);
+            app(MemberAdmissionLoanSyncService::class)->syncBoundLoans($memberAdmission);
 
             DB::commit();
 
@@ -1367,7 +1374,7 @@ class MemberAdmissionController extends Controller
 
         } catch (\Exception $e) {
             DB::rollBack();
-            $message = 'খসড়া আপডেট করা যায়নি: ' . $e->getMessage() . ' — আগের সংরক্ষিত তথ্য মুছে যায়নি।';
+            $message = 'খসড়া আপডেট করা যায়নি: '.$e->getMessage().' — আগের সংরক্ষিত তথ্য মুছে যায়নি।';
 
             return back()->withInput()->withErrors([
                 'draft_save' => $message,
@@ -1378,7 +1385,7 @@ class MemberAdmissionController extends Controller
     public function destroy(MemberAdmission $memberAdmission)
     {
         // Only draft admissions can be deleted
-        if (!$memberAdmission->isDraft()) {
+        if (! $memberAdmission->isDraft()) {
             return back()->with('error', 'Only draft admissions can be deleted!');
         }
 
@@ -1391,7 +1398,7 @@ class MemberAdmissionController extends Controller
     {
         $user = auth()->user();
         $user->loadMissing('role');
-        if (!$memberAdmission->isDraft()) {
+        if (! $memberAdmission->isDraft()) {
             return back()->with('error', 'Only draft admissions can be submitted!');
         }
 
@@ -1455,7 +1462,7 @@ class MemberAdmissionController extends Controller
             }
         }
 
-        $validator = \Illuminate\Support\Facades\Validator::make($data, $rules, $messages);
+        $validator = Validator::make($data, $rules, $messages);
 
         if ($validator->fails()) {
             return redirect()->route('member-admissions.edit', [
@@ -1488,7 +1495,7 @@ class MemberAdmissionController extends Controller
         $selfName = trim((string) ($selfMember?->member_name ?? ''));
         $selfAge = $selfMember?->age_years;
         if (
-            !$selfMember
+            ! $selfMember
             || $selfName === ''
             || $selfName === 'নাম নেই'
             || $selfAge === null
@@ -1599,7 +1606,7 @@ class MemberAdmissionController extends Controller
         DB::transaction(function () use ($memberAdmission, $request) {
             // Append revision note to revision_comments with timestamp and user
             $currentComments = $memberAdmission->revision_comments ?? '';
-            $newComment = "\n\n--- Branch Revision Note (" . now()->format('Y-m-d H:i') . " by " . auth()->user()->name . ") ---\n";
+            $newComment = "\n\n--- Branch Revision Note (".now()->format('Y-m-d H:i').' by '.auth()->user()->name.") ---\n";
             $newComment .= $request->revision_note;
 
             // Mark all branch approvals as approved (no need to re-approve by branch)
@@ -1617,7 +1624,7 @@ class MemberAdmissionController extends Controller
             $authUser = auth()->user();
             $memberAdmission->update([
                 'status' => 'pending_head_office',
-                'revision_comments' => $currentComments . $newComment,
+                'revision_comments' => $currentComments.$newComment,
                 'submitted_by' => $authUser->id,
                 'submitted_at' => now(),
             ]);
@@ -1627,7 +1634,7 @@ class MemberAdmissionController extends Controller
         $headOfficeUsers = User::where('is_active', 1)
             ->where(function ($q) {
                 $q->where('has_all_access', 1)
-                  ->orWhereHas('role', fn ($r) => $r->whereIn('name', ['super_admin', 'head_office', 'ed']));
+                    ->orWhereHas('role', fn ($r) => $r->whereIn('name', ['super_admin', 'head_office', 'ed']));
             })->get();
 
         if ($headOfficeUsers->isNotEmpty()) {
@@ -1678,7 +1685,7 @@ class MemberAdmissionController extends Controller
         $headOfficeUsers = User::where('is_active', 1)
             ->where(function ($q) {
                 $q->where('has_all_access', 1)
-                  ->orWhereHas('role', fn ($r) => $r->whereIn('name', ['super_admin', 'head_office', 'ed']));
+                    ->orWhereHas('role', fn ($r) => $r->whereIn('name', ['super_admin', 'head_office', 'ed']));
             })->get();
 
         if ($headOfficeUsers->isNotEmpty()) {
@@ -1809,7 +1816,7 @@ class MemberAdmissionController extends Controller
         }
 
         $memberAdmission->loadMissing('branch');
-        $normalizedCode = \App\Services\MemberCodeService::normalizeMemberCode(
+        $normalizedCode = MemberCodeService::normalizeMemberCode(
             $request->input('member_code'),
             $memberAdmission->branch_id,
             $memberAdmission->branch?->code
@@ -1831,7 +1838,7 @@ class MemberAdmissionController extends Controller
                 'application_no' => $normalizedCode,
             ]);
 
-            \App\Services\MemberCodeService::syncRelatedRecords(
+            MemberCodeService::syncRelatedRecords(
                 (int) $memberAdmission->id,
                 $normalizedCode,
                 $oldCode,
@@ -1839,6 +1846,6 @@ class MemberAdmissionController extends Controller
             );
         });
 
-        return back()->with('success', 'মেম্বার কোড সফলভাবে আপডেট করা হয়েছে: ' . $normalizedCode);
+        return back()->with('success', 'মেম্বার কোড সফলভাবে আপডেট করা হয়েছে: '.$normalizedCode);
     }
 }

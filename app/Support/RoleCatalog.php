@@ -47,6 +47,20 @@ class RoleCatalog
                 ],
             ],
             [
+                'name' => 'cso',
+                'display_name' => 'Customer Service Officer (CSO)',
+                'description' => 'Customer Service Officer - verifies and monitors loan & admission applications for daily assigned areas',
+                'permissions' => [
+                    'view_assigned_applications',
+                    'view_all_applications',
+                    'request_corrections',
+                    'verify_applications',
+                    'view_all_reports',
+                    'generate_reports',
+                    'receive_notifications',
+                ],
+            ],
+            [
                 'name' => 'zone_manager',
                 'display_name' => 'Zone Manager',
                 'description' => 'Zone manager',

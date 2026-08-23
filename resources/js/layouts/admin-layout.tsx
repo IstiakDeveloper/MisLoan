@@ -35,6 +35,7 @@ import {
     SearchCheck,
     ExternalLink,
     Sparkles,
+    CalendarDays,
 } from 'lucide-react';
 import { useIsMobile } from '@/hooks/use-mobile';
 import { usePwaInstallPrompt } from '@/hooks/usePwaInstallPrompt';
@@ -50,6 +51,7 @@ interface User {
     branch_id?: number | null;
     profile_photo?: string | null;
     avatar?: string | null;
+    cso_areas?: Array<{ id: number; name: string; code: string }>;
 }
 
 interface Flash {
@@ -77,7 +79,7 @@ interface AdminLayoutProps {
     children: ReactNode;
 }
 
-const SETUP_PATHS = ['/loan-categories', '/loan-products', '/savings-products', '/organizations', '/samities', '/member-categories', '/users', '/roles'];
+const SETUP_PATHS = ['/loan-categories', '/loan-products', '/savings-products', '/organizations', '/samities', '/member-categories', '/users', '/roles', '/head-office/cso-duty-roster'];
 const REPORT_PATHS = ['/head-office/team-based-approvals/report'];
 const TEAM_BASED_REPORT_HREF = '/head-office/team-based-approvals/report';
 
@@ -98,6 +100,7 @@ function isGmailAddress(email?: string | null): boolean {
 
 function getPageTitle(currentPath: string): string {
     if (currentPath === '/dashboard') return 'Dashboard';
+    if (currentPath.includes('/cso-duty-roster')) return 'CSO Duty Roster';
     if (currentPath.includes('/member-admissions') || currentPath.includes('/admission-members')) return 'Member Admissions';
     if (currentPath.includes('/loan-applications')) return 'Loan Applications';
     if (currentPath.includes('/savings-applications')) return 'Savings Applications';
@@ -210,11 +213,12 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
     const isFieldOfficer = roleName === 'field_officer';
     const isSuperAdmin = roleName === 'super_admin';
     const isHeadOfficeRole = roleName === 'head_office';
+    const isCsoRole = roleName === 'cso';
     const isEdRole = roleName === 'ed';
-    // Head Office / Super Admin do not approve via /approvals — hide Pending Approvals UI
-    const showPendingApprovalsNav = !isHeadOfficeRole && !isSuperAdmin;
+    // Head Office / Super Admin / CSO do not approve via /approvals — hide Pending Approvals UI
+    const showPendingApprovalsNav = !isHeadOfficeRole && !isSuperAdmin && !isCsoRole;
     const canViewTeamBasedReport = auth.user.has_all_access || isSuperAdmin || isHeadOfficeRole || isEdRole;
-    const showConfigurationSection = (!isBranchRole && !isTeamApproverRole) || isEdRole;
+    const showConfigurationSection = (!isBranchRole && !isTeamApproverRole && !isCsoRole) || isEdRole;
     const { canInstall, promptInstall, isInstalled, isStandalone, platform } = usePwaInstallPrompt();
 
     const handleMaintenanceToggle = () => {
@@ -291,6 +295,7 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
     ];
 
     const headOfficeSetupItems = [
+        { name: 'CSO Duty Roster', href: '/head-office/cso-duty-roster', icon: CalendarDays },
         { name: 'Loan Categories', href: '/loan-categories', icon: ListTree },
         { name: 'Loan Products', href: '/loan-products', icon: Coins },
         { name: 'Savings Products', href: '/savings-products', icon: Wallet },
@@ -339,6 +344,19 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
             return groups;
         }
 
+        // CSO: Monitoring & verification operations on assigned daily areas
+        if (isCsoRole) {
+            const dashboardItem = headOfficeMainItems.find(m => m.href === '/dashboard');
+            const operationsItems = headOfficeMainItems.filter(m =>
+                ['/head-office/admission-members', '/head-office/loan-applications', '/verifications', '/head-office/savings-applications'].includes(m.href)
+            );
+
+            const groups = [];
+            if (dashboardItem) groups.push({ title: 'Overview', items: [dashboardItem] });
+            if (operationsItems.length > 0) groups.push({ title: 'Monitoring & Verification', items: operationsItems });
+            return groups;
+        }
+
         // ED: keep approver queues + full Head Office navigation
         if (isEdRole) {
             const dashboardItem = headOfficeMainItems.find(m => m.href === '/dashboard');
@@ -378,7 +396,7 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
         if (operationsItems.length > 0) groups.push({ title: 'Operations', items: operationsItems });
         if (approvalsItems.length > 0) groups.push({ title: 'Approvals', items: approvalsItems });
         return groups;
-    }, [isBranchRole, isEdRole, isTeamApproverRole, branchMenuItems, approverMenuItems, approverOperationsItems, headOfficeMainItems]);
+    }, [isBranchRole, isCsoRole, isEdRole, isTeamApproverRole, branchMenuItems, approverMenuItems, approverOperationsItems, headOfficeMainItems]);
 
     // Compute items for mobile bottom nav (Pending Approvals prioritized for roles that approve)
     const mobileBottomNavItems = useMemo(() => {
@@ -977,6 +995,34 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
                                         <User className="w-3.5 h-3.5" />
                                         প্রোফাইল আপডেট
                                     </Link>
+                                </div>
+                            </div>
+                        )}
+                        {isCsoRole && (
+                            <div className="mx-4 mt-3 sm:mx-6 sm:mt-4 p-3 sm:p-3.5 bg-gradient-to-r from-blue-600 via-indigo-600 to-indigo-700 text-white rounded-2xl shadow-md shadow-blue-500/10 flex flex-wrap items-center justify-between gap-3 border border-indigo-400/30">
+                                <div className="flex items-center gap-3">
+                                    <div className="w-8 h-8 rounded-xl bg-white/20 flex items-center justify-center text-white backdrop-blur-xs shrink-0 shadow-inner">
+                                        <Shield className="w-4 h-4 stroke-[2.2]" />
+                                    </div>
+                                    <div>
+                                        <p className="text-[10.5px] font-bold tracking-wider uppercase text-blue-200">Today's Assigned Monitoring Areas</p>
+                                        <div className="flex flex-wrap items-center gap-1.5 mt-1">
+                                            {auth.user.cso_areas && auth.user.cso_areas.length > 0 ? (
+                                                auth.user.cso_areas.map((area) => (
+                                                    <span key={area.id} className="px-2.5 py-0.5 bg-white/20 text-white rounded-lg text-xs font-bold backdrop-blur-xs border border-white/25 shadow-xs">
+                                                        {area.name}
+                                                    </span>
+                                                ))
+                                            ) : (
+                                                <span className="text-xs text-blue-200 italic">No areas assigned for today</span>
+                                            )}
+                                        </div>
+                                    </div>
+                                </div>
+                                <div className="flex items-center gap-2">
+                                    <span className="text-[11px] font-semibold px-2.5 py-1 bg-white/10 rounded-full border border-white/20 text-blue-100 backdrop-blur-xs">
+                                        Customer Service Officer (CSO)
+                                    </span>
                                 </div>
                             </div>
                         )}

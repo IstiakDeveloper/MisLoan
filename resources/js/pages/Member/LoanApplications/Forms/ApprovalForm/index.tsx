@@ -22,6 +22,7 @@ import { getRequiredSavingsPercent } from '@/components/LoanApplications/General
 import { afterLoanFormSaveUrl } from '@/utils/loanFormNavigation';
 import { getLoanYears, scaleAnnualToLoanYears } from './FormPage3';
 import { calculateLoanSchedule, installmentFormFields } from '@/utils/loanInterest';
+import { withLiveMemberCode } from '@/utils/memberCodeUtils';
 
 export const toInputDate = (value: string | null | undefined): string => {
     if (value == null || value === '') return '';
@@ -256,7 +257,7 @@ export default function ApprovalForm({
         loanCategory,
     );
 
-    const { data, setData, processing } = useForm<LoanApplicationApprovalData>({
+    const { data, setData, processing } = useForm<LoanApplicationApprovalData>(withLiveMemberCode({
         category_name: categoryName,
         branch_address: branch?.address || '',
         application_date: new Date().toISOString().split('T')[0],
@@ -465,7 +466,7 @@ export default function ApprovalForm({
             String((savedData as any)?.educational_qualification || '').trim() ||
             selfFromFamily.educational_qualification,
         member_code: member?.application_no || String((savedData as any)?.member_code || ''),
-    });
+    }, member));
 
     useEffect(() => {
         const local = loadLoanDraftLocal<Partial<LoanApplicationApprovalData>>(draftKey);
@@ -486,7 +487,7 @@ export default function ApprovalForm({
             delete restored.loan_duration_months;
             setData((prev) => {
                 const merged = { ...prev, ...restored };
-                return {
+                return withLiveMemberCode({
                     ...merged,
                     loan_approval_date: String(merged.loan_approval_date || '').trim() || prev.loan_approval_date,
                     loan_disbursement_date: String(merged.loan_disbursement_date || '').trim() || prev.loan_disbursement_date,
@@ -526,7 +527,7 @@ export default function ApprovalForm({
                     est_main_income_amount:
                         durationNetFromAdmission || merged.est_main_income_amount,
                     member_code: member?.application_no || merged.member_code || prev.member_code,
-                };
+                }, member);
             });
             setLocalRestored(true);
         }
@@ -752,11 +753,11 @@ export default function ApprovalForm({
             loanCategory,
         ],
     );
-    const previewData = {
+    const previewData = withLiveMemberCode({
         ...data,
         ...liveInstallment,
         member_code: member?.application_no || data.member_code,
-    };
+    }, member);
 
     if (onlyPreview) {
         return (

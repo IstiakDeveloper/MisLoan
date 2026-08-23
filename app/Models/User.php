@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Services\CsoAllocationService;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
@@ -149,6 +150,15 @@ class User extends Authenticatable
             return Branch::all();
         }
 
+        if ($this->isCso()) {
+            $areaIds = app(CsoAllocationService::class)->getAssignedAreaIdsForUser($this);
+            if (empty($areaIds)) {
+                return collect();
+            }
+
+            return Branch::whereIn('area_id', $areaIds)->get();
+        }
+
         // Check multi-assignment first
         if ($this->branches()->exists()) {
             return $this->branches;
@@ -248,6 +258,14 @@ class User extends Authenticatable
     public function isHeadOffice(): bool
     {
         return $this->role?->name === Role::HEAD_OFFICE;
+    }
+
+    /**
+     * Check if user is Customer Service Officer (CSO)
+     */
+    public function isCso(): bool
+    {
+        return $this->role?->name === Role::CSO;
     }
 
     public function isBranchAccount(): bool
