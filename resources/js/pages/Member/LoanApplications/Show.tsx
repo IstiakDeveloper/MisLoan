@@ -173,6 +173,30 @@ const FORM_FILLERS: Record<number, string> = {
     5: 'ফিল্ড অফিসার / শাখা ব্যবহারকারী (বিতরণের আগে)',
 };
 
+interface LoanProductOption {
+    id: number;
+    loan_category_id: number;
+    product_name: string;
+    product_name_bn?: string;
+    product_code?: string;
+    interest_rate?: number;
+    duration_months?: number;
+    installment_type?: string;
+    number_of_installments?: number;
+    min_amount?: number;
+    max_amount?: number;
+    is_active?: boolean;
+}
+
+interface LoanCategoryOption {
+    id: number;
+    category_name: string;
+    category_name_bn?: string;
+    category_code?: string;
+    is_active?: boolean;
+    loan_products?: LoanProductOption[];
+}
+
 interface Props {
     application: LoanApplication;
     routes: {
@@ -181,7 +205,9 @@ interface Props {
         print: string;
         submit: string;
         disburse?: string;
+        updateLoanProduct?: string;
     };
+    categories?: LoanCategoryOption[];
 }
 
 const FORM_ROUTES: Record<number, string> = {
@@ -216,7 +242,7 @@ const PIPELINE_STAGES = [
     { key: 'disbursed', label: '৫. বিতরণ সম্পন্ন', desc: 'ঋণ বিতরণ' },
 ];
 
-export default function Show({ application, routes }: Props) {
+export default function Show({ application, routes, categories = [] }: Props) {
     const pageAuth = usePage().props.auth as { user?: { role?: { name: string } } } | undefined;
     const isBranchUser = pageAuth?.user?.role?.name === 'branch_user';
     const isBranchManager = pageAuth?.user?.role?.name === 'branch_manager' || pageAuth?.user?.role?.name === 'super_admin';
@@ -253,6 +279,60 @@ export default function Show({ application, routes }: Props) {
         const p = parseMemberCode(application.member_admission?.application_no, branchPrefix);
         setSerialInput(p.serial);
     }, [application.member_admission?.application_no, branchPrefix]);
+
+    // Loan Product Change Modal State
+    const [loanProductModalOpen, setLoanProductModalOpen] = useState(false);
+    const [selectedCategoryId, setSelectedCategoryId] = useState<string>(
+        String(application.loan_category_id || (application as any).loan_category?.id || '')
+    );
+    const [selectedProductId, setSelectedProductId] = useState<string>(
+        String(application.loan_product_id || (application as any).loan_product?.id || '')
+    );
+    const [submittingLoanProduct, setSubmittingLoanProduct] = useState(false);
+
+    useEffect(() => {
+        setSelectedCategoryId(String(application.loan_category_id || (application as any).loan_category?.id || ''));
+        setSelectedProductId(String(application.loan_product_id || (application as any).loan_product?.id || ''));
+    }, [application.loan_category_id, application.loan_product_id]);
+
+    const openLoanProductModal = () => {
+        setSelectedCategoryId(String(application.loan_category_id || (application as any).loan_category?.id || ''));
+        setSelectedProductId(String(application.loan_product_id || (application as any).loan_product?.id || ''));
+        setLoanProductModalOpen(true);
+    };
+
+    const handleCategoryChange = (catId: string) => {
+        setSelectedCategoryId(catId);
+        const cat = categories.find((c) => String(c.id) === catId);
+        const firstProd = cat?.loan_products?.[0];
+        setSelectedProductId(firstProd ? String(firstProd.id) : '');
+    };
+
+    const modalActiveCategory = categories.find((c) => String(c.id) === String(selectedCategoryId));
+    const modalCategoryProducts = modalActiveCategory?.loan_products || [];
+    const modalActiveProduct = modalCategoryProducts.find((p) => String(p.id) === String(selectedProductId));
+
+    const handleLoanProductSubmit = (e: React.FormEvent) => {
+        e.preventDefault();
+        if (!selectedCategoryId || !selectedProductId) return;
+        setSubmittingLoanProduct(true);
+        router.patch(
+            `/member/loan-applications/${application.id}/update-loan-product`,
+            {
+                loan_category_id: selectedCategoryId,
+                loan_product_id: selectedProductId,
+            },
+            {
+                preserveScroll: true,
+                onSuccess: () => {
+                    setLoanProductModalOpen(false);
+                },
+                onFinish: () => {
+                    setSubmittingLoanProduct(false);
+                },
+            }
+        );
+    };
 
     // Disbursement Modal State
     const maxDisburseAmount =
@@ -1241,8 +1321,20 @@ export default function Show({ application, routes }: Props) {
                             <div className="p-2 sm:p-2.5 bg-indigo-50 text-indigo-600 rounded-xl shrink-0">
                                 <CreditCard className="w-4 h-4 sm:w-5 sm:h-5" />
                             </div>
-                            <div className="min-w-0">
-                                <p className="text-[10px] sm:text-[11px] font-semibold uppercase tracking-wider text-slate-400">ঋণ প্রোডাক্ট</p>
+                            <div className="min-w-0 flex-1">
+                                <div className="flex items-center justify-between gap-1">
+                                    <p className="text-[10px] sm:text-[11px] font-semibold uppercase tracking-wider text-slate-400">ঋণ প্রোডাক্ট</p>
+                                    {application.status !== 'disbursed' && (isBranchUser || isBranchManager) && (
+                                        <button
+                                            type="button"
+                                            onClick={openLoanProductModal}
+                                            className="inline-flex items-center gap-1 text-[10px] bg-indigo-50 hover:bg-indigo-100 text-indigo-700 px-1.5 py-0.5 rounded border border-indigo-200 font-semibold cursor-pointer transition shadow-2xs"
+                                            title="ঋণ প্রোডাক্ট পরিবর্তন করুন"
+                                        >
+                                            <Edit className="w-2.5 h-2.5 text-indigo-600" /> পরিবর্তন
+                                        </button>
+                                    )}
+                                </div>
                                 <p className="text-xs sm:text-sm font-bold text-slate-900 truncate">
                                     {application.loan_product?.product_name_bn || application.loan_product?.product_name || '-'}
                                 </p>
@@ -1737,10 +1829,20 @@ export default function Show({ application, routes }: Props) {
                                 </Card>
 
                                 <Card className="border-slate-200/80 shadow-xs">
-                                    <CardHeader className="bg-slate-50/60 pb-3 border-b">
+                                    <CardHeader className="bg-slate-50/60 pb-3 border-b flex flex-row items-center justify-between">
                                         <CardTitle className="text-sm sm:text-base font-bold text-slate-900 flex items-center gap-2">
                                             <Banknote className="w-4 h-4 sm:w-5 sm:h-5 text-emerald-600" /> ঋণ বিবরণ ও শর্তাবলী
                                         </CardTitle>
+                                        {application.status !== 'disbursed' && (isBranchUser || isBranchManager) && (
+                                            <Button
+                                                size="sm"
+                                                variant="outline"
+                                                className="text-xs h-8 border-indigo-200 text-indigo-700 hover:bg-indigo-50 font-semibold"
+                                                onClick={openLoanProductModal}
+                                            >
+                                                <Edit className="w-3.5 h-3.5 mr-1" /> ঋণ প্রোডাক্ট পরিবর্তন
+                                            </Button>
+                                        )}
                                     </CardHeader>
                                     <CardContent className="p-3.5 sm:p-4 space-y-2.5 sm:space-y-3 text-xs sm:text-sm">
                                         <div className="flex justify-between py-1.5 border-b border-slate-100">
@@ -2208,7 +2310,7 @@ export default function Show({ application, routes }: Props) {
                                         value={serialInput}
                                         onChange={(e) => setSerialInput(toEnglishDigits(e.target.value).replace(/\D/g, '').slice(0, 6))}
                                         onBlur={() => {
-                                            if (serialInput) setSerialInput(serialInput.padStart(6, '0'));
+                                             if (serialInput) setSerialInput(serialInput.padStart(6, '0'));
                                         }}
                                         maxLength={6}
                                         className="w-full border-0 px-3.5 py-2 text-sm font-mono font-bold text-indigo-700 focus:outline-hidden focus:ring-0"
@@ -2234,6 +2336,141 @@ export default function Show({ application, routes }: Props) {
                                 >
                                     {submittingMemberCode ? 'আপডেট হচ্ছে...' : 'কোড আপডেট করুন'}
                                 </button>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+            )}
+
+            {/* Loan Product Change Modal */}
+            {loanProductModalOpen && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-xs p-4 print:hidden">
+                    <div className="w-full max-w-lg rounded-2xl bg-white shadow-2xl overflow-hidden border border-slate-200 animate-in fade-in zoom-in-95 duration-150">
+                        <div className="border-b px-5 py-4 bg-gradient-to-r from-indigo-600 to-indigo-700 text-white flex items-center justify-between">
+                            <div>
+                                <h3 className="text-base font-bold flex items-center gap-2">
+                                    <CreditCard className="w-5 h-5 text-indigo-200" /> ঋণ প্রোডাক্ট ও ক্যাটাগরি পরিবর্তন
+                                </h3>
+                                <p className="text-xs text-indigo-100 mt-0.5">আবেদন নং: {application.application_no}</p>
+                            </div>
+                            <button
+                                type="button"
+                                onClick={() => setLoanProductModalOpen(false)}
+                                className="text-white/80 hover:text-white p-1 rounded-lg hover:bg-white/10 transition cursor-pointer"
+                            >
+                                <X className="w-5 h-5" />
+                            </button>
+                        </div>
+                        <form onSubmit={handleLoanProductSubmit} className="p-5 space-y-4">
+                            {/* Current Product Info Banner */}
+                            <div className="bg-slate-50 border border-slate-200/80 rounded-xl p-3 space-y-1 text-xs">
+                                <p className="text-slate-500 font-semibold uppercase tracking-wider text-[10px]">বর্তমান প্রোডাক্ট ও ক্যাটাগরি</p>
+                                <p className="font-bold text-slate-800 text-sm">
+                                    {application.loan_product?.product_name_bn || application.loan_product?.product_name || '-'}
+                                    <span className="text-xs font-normal text-slate-500 ml-1.5">
+                                        ({application.loan_category?.category_name_bn || application.loan_category?.category_name || '-'})
+                                    </span>
+                                </p>
+                            </div>
+
+                            {/* Loan Category Select */}
+                            <div>
+                                <label className="block text-xs font-bold text-slate-700 mb-1">
+                                    ঋণ ক্যাটাগরি নির্বাচন করুন: <span className="text-rose-500">*</span>
+                                </label>
+                                <select
+                                    value={selectedCategoryId}
+                                    onChange={(e) => handleCategoryChange(e.target.value)}
+                                    className="w-full rounded-xl border border-slate-300 px-3.5 py-2.5 text-sm bg-white font-semibold focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 shadow-xs cursor-pointer"
+                                    required
+                                >
+                                    <option value="">ক্যাটাগরি নির্বাচন করুন...</option>
+                                    {categories.map((cat) => (
+                                        <option key={cat.id} value={cat.id}>
+                                            {cat.category_name_bn || cat.category_name} {cat.category_code ? `(${cat.category_code})` : ''}
+                                        </option>
+                                    ))}
+                                </select>
+                            </div>
+
+                            {/* Loan Product Select */}
+                            <div>
+                                <label className="block text-xs font-bold text-slate-700 mb-1">
+                                    নতুন ঋণ প্রোডাক্ট নির্বাচন করুন: <span className="text-rose-500">*</span>
+                                </label>
+                                <select
+                                    value={selectedProductId}
+                                    onChange={(e) => setSelectedProductId(e.target.value)}
+                                    disabled={!selectedCategoryId || modalCategoryProducts.length === 0}
+                                    className="w-full rounded-xl border border-slate-300 px-3.5 py-2.5 text-sm bg-white font-bold text-indigo-900 focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 shadow-xs disabled:bg-slate-100 disabled:text-slate-400 cursor-pointer"
+                                    required
+                                >
+                                    <option value="">
+                                        {modalCategoryProducts.length === 0 ? 'এই ক্যাটাগরিতে কোনো সক্রিয় প্রোডাক্ট নেই' : 'প্রোডাক্ট নির্বাচন করুন...'}
+                                    </option>
+                                    {modalCategoryProducts.map((prod) => (
+                                        <option key={prod.id} value={prod.id}>
+                                            {prod.product_name_bn || prod.product_name} {prod.product_code ? `[${prod.product_code}]` : ''}
+                                        </option>
+                                    ))}
+                                </select>
+                            </div>
+
+                            {/* Selected Product Specs Preview */}
+                            {modalActiveProduct && (
+                                <div className="bg-indigo-50/70 border border-indigo-200/80 rounded-xl p-3.5 space-y-2 text-xs text-indigo-950 animate-in fade-in duration-100">
+                                    <p className="font-bold text-indigo-900 text-xs flex items-center gap-1.5">
+                                        <Info className="w-4 h-4 text-indigo-600" /> নতুন প্রোডাক্টের বিবরণ ও শর্তাবলী:
+                                    </p>
+                                    <div className="grid grid-cols-2 gap-2 pt-1 border-t border-indigo-200/60 text-[11px]">
+                                        <div>
+                                            <span className="text-slate-500 font-medium">কিস্তির ধরন:</span>{' '}
+                                            <span className="font-bold text-slate-800">
+                                                {modalActiveProduct.installment_type === 'weekly' ? 'সাপ্তাহিক (Weekly)' : modalActiveProduct.installment_type === 'monthly' ? 'মাসিক (Monthly)' : modalActiveProduct.installment_type || '-'}
+                                            </span>
+                                        </div>
+                                        <div>
+                                            <span className="text-slate-500 font-medium">মেয়াদ:</span>{' '}
+                                            <span className="font-bold text-slate-800">{modalActiveProduct.duration_months || 12} মাস</span>
+                                        </div>
+                                        <div>
+                                            <span className="text-slate-500 font-medium">মোট কিস্তি:</span>{' '}
+                                            <span className="font-bold text-slate-800">{modalActiveProduct.number_of_installments || '-'} টি</span>
+                                        </div>
+                                        <div>
+                                            <span className="text-slate-500 font-medium">সুদের হার:</span>{' '}
+                                            <span className="font-bold text-emerald-700">{modalActiveProduct.interest_rate || 0}%</span>
+                                        </div>
+                                    </div>
+                                    {Number(modalActiveProduct.max_amount || 0) > 0 && (
+                                        <p className="text-[10px] text-slate-600 mt-1">
+                                            ঋণ সীমা: ৳{Number(modalActiveProduct.min_amount || 0).toLocaleString('bn-BD')} হতে ৳{Number(modalActiveProduct.max_amount || 0).toLocaleString('bn-BD')} পর্যন্ত
+                                        </p>
+                                    )}
+                                </div>
+                            )}
+
+                            <p className="text-[11px] text-slate-500 leading-relaxed">
+                                💡 প্রোডাক্ট পরিবর্তন করলে আবেদনপত্রের কিস্তির ধরন, মেয়াদ এবং সংশ্লিষ্ট ফর্মগুলোর প্রোডাক্ট রেফারেন্স তথ্য স্বয়ংক্রিয়ভাবে আপডেট হবে।
+                            </p>
+
+                            <div className="flex justify-end gap-2 pt-3 border-t">
+                                <Button
+                                    type="button"
+                                    variant="outline"
+                                    className="rounded-xl text-xs"
+                                    onClick={() => setLoanProductModalOpen(false)}
+                                    disabled={submittingLoanProduct}
+                                >
+                                    বাতিল
+                                </Button>
+                                <Button
+                                    type="submit"
+                                    className="bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-bold shadow-xs px-4"
+                                    disabled={submittingLoanProduct || !selectedCategoryId || !selectedProductId || (String(selectedProductId) === String(application.loan_product_id) && String(selectedCategoryId) === String(application.loan_category_id))}
+                                >
+                                    {submittingLoanProduct ? 'পরিবর্তন হচ্ছে...' : 'প্রোডাক্ট পরিবর্তন করুন'}
+                                </Button>
                             </div>
                         </form>
                     </div>

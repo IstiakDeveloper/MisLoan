@@ -1391,14 +1391,25 @@ class LoanApplicationController extends Controller
 
         $this->attachFormMeta($application, request()->user(), null, true);
 
+        $categories = LoanCategory::where('is_active', true)
+            ->with(['loanProducts' => function ($query) {
+                $query->where('is_active', true)
+                    ->orderBy('display_order')
+                    ->orderBy('product_name');
+            }])
+            ->orderBy('display_order')
+            ->get();
+
         return Inertia::render('Member/LoanApplications/Show', [
             'application' => $application,
+            'categories' => $categories,
             'routes' => [
                 'index' => route('member.loan-applications.index'),
                 'edit' => route('member.loan-applications.edit', $application->id),
                 'print' => route('member.loan-applications.print', $application->id),
                 'submit' => route('member.loan-applications.submit', $application->id),
                 'disburse' => route('member.loan-applications.disburse', $application->id),
+                'updateLoanProduct' => route('member.loan-applications.update-loan-product', $application->id),
             ],
         ]);
     }
@@ -2851,5 +2862,82 @@ class LoanApplicationController extends Controller
         });
 
         return back()->with('success', 'মেম্বার কোড সফলভাবে আপডেট করা হয়েছে: ' . $normalizedCode);
+    }
+
+    /**
+     * Update Loan Product & Category for a Loan Application before disbursement.
+     */
+    public function updateLoanProduct(Request $request, $id)
+    {
+        $user = $request->user();
+        $application = LoanApplication::with(['memberAdmission', 'branch', 'loanProduct', 'loanCategory'])->findOrFail($id);
+        $this->ensureApplicationAccessibleToUser($application, $user);
+
+        if ($application->status === LoanApplication::STATUS_DISBURSED) {
+            return back()->withErrors(['error' => 'ঋণ বিতরণ সম্পন্ন হওয়ার পর ঋণ প্রোডাক্ট পরিবর্তন করা যাবে না।']);
+        }
+
+        $validated = $request->validate([
+            'loan_category_id' => 'required|exists:loan_categories,id',
+            'loan_product_id' => 'required|exists:loan_products,id',
+        ], [
+            'loan_category_id.required' => 'ঋণ ক্যাটাগরি নির্বাচন করুন।',
+            'loan_category_id.exists' => 'নির্বাচিত ক্যাটাগরিটি সঠিক নয়।',
+            'loan_product_id.required' => 'ঋণ প্রোডাক্ট নির্বাচন করুন।',
+            'loan_product_id.exists' => 'নির্বাচিত ঋণ প্রোডাক্টটি সঠিক নয়।',
+        ]);
+
+        $newProduct = LoanProduct::where('id', $validated['loan_product_id'])
+            ->where('loan_category_id', $validated['loan_category_id'])
+            ->where('is_active', true)
+            ->first();
+
+        if (!$newProduct) {
+            return back()->withErrors(['loan_product_id' => 'নির্বাচিত ক্যাটাগরির অধীনে এই ঋণ প্রোডাক্টটি পাওয়া যায়নি বা নিষ্ক্রিয়।']);
+        }
+
+        $effectiveAmount = (float) ($application->disbursed_amount ?? $application->approved_amount ?? $application->requested_amount ?? 0);
+        $formType = ($newProduct->installment_type === 'weekly' ? 1 : 2);
+        $numberOfInstallments = (int) ($newProduct->number_of_installments ?: $application->number_of_installments ?: 1);
+        $loanTermMonths = (int) ($newProduct->duration_months ?: $application->loan_term_months ?: 12);
+        $repaymentFreq = $newProduct->installment_type === 'weekly' ? 'weekly' : 'monthly';
+
+        $newInstallmentAmount = $application->installment_amount;
+        if ($effectiveAmount > 0 && $numberOfInstallments > 0) {
+            $totServiceCharge = $this->calculateTotalServiceCharge($effectiveAmount, $newProduct);
+            $totalRepayable = $effectiveAmount + $totServiceCharge;
+            $newInstallmentAmount = round($totalRepayable / $numberOfInstallments, 2);
+        }
+
+        DB::transaction(function () use ($application, $validated, $newProduct, $formType, $numberOfInstallments, $loanTermMonths, $repaymentFreq, $newInstallmentAmount, $effectiveAmount) {
+            $updateData = [
+                'loan_category_id' => $validated['loan_category_id'],
+                'loan_product_id' => $validated['loan_product_id'],
+                'form_type' => $formType,
+                'repayment_frequency' => $repaymentFreq,
+                'number_of_installments' => $numberOfInstallments,
+                'loan_term_months' => $loanTermMonths,
+                'installment_amount' => $newInstallmentAmount,
+            ];
+
+            // If loan agreement data exists, synchronize product details in it
+            $agreementData = is_array($application->loan_agreement_data) ? $application->loan_agreement_data : [];
+            if (!empty($agreementData)) {
+                $totServiceCharge = $this->calculateTotalServiceCharge($effectiveAmount, $newProduct);
+                $totalRepayable = $effectiveAmount + $totServiceCharge;
+                $agreementData['product_name'] = $newProduct->product_name_bn ?: $newProduct->product_name;
+                $agreementData['service_charge'] = $totServiceCharge;
+                $agreementData['total_amount'] = $totalRepayable;
+                $agreementData['number_of_installments'] = $numberOfInstallments;
+                $agreementData['installment_amount'] = $newInstallmentAmount;
+                $agreementData['last_installment_amount'] = $newInstallmentAmount;
+                $updateData['loan_agreement_data'] = $agreementData;
+            }
+
+            $application->update($updateData);
+        });
+
+        $productLabel = $newProduct->product_name_bn ?: $newProduct->product_name;
+        return back()->with('success', "ঋণ প্রোডাক্ট সফলভাবে পরিবর্তন করা হয়েছে: {$productLabel}");
     }
 }
