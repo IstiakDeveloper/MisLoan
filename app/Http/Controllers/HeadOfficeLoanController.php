@@ -326,16 +326,32 @@ class HeadOfficeLoanController extends Controller
 
             $savingsGeneral = $businessPlan['general_savings_amount']
                 ?? $assetInfo['general_savings_amount']
-                ?? $assetInfo['savings_amount']
-                ?? $loan->savings_amount
                 ?? null;
+
+            if ($savingsGeneral === null) {
+                $savingsGeneral = $assetInfo['savings_amount']
+                    ?? $loan->savings_amount
+                    ?? $businessPlan['savings_amount']
+                    ?? null;
+            }
 
             $savingsOther = (!empty($businessPlan['is_against_savings']) ? ($businessPlan['against_savings_amount'] ?? 0) : 0)
                 + (!empty($assetInfo['is_against_savings']) ? ($assetInfo['against_savings_amount'] ?? 0) : 0);
 
             $savingsGeneralNum = $savingsGeneral !== null && $savingsGeneral !== '' ? (float) $savingsGeneral : 0;
             $savingsOtherNum = (float) $savingsOther;
-            $savingsTotal = $savingsGeneralNum + $savingsOtherNum;
+
+            $explicitTotal = $businessPlan['savings_amount']
+                ?? $assetInfo['savings_amount']
+                ?? $loan->savings_amount
+                ?? $businessPlan['total_savings']
+                ?? $assetInfo['total_savings']
+                ?? $businessPlan['movable_savings']
+                ?? $assetInfo['movable_savings']
+                ?? null;
+
+            $explicitTotalNum = $explicitTotal !== null && $explicitTotal !== '' ? (float) $explicitTotal : 0;
+            $savingsTotal = max($explicitTotalNum, $savingsGeneralNum + $savingsOtherNum);
 
             $requested = (float) ($loan->requested_amount ?? 0);
             $generalPercent = $requested > 0 ? round(($savingsGeneralNum / $requested) * 100, 1) : 0;

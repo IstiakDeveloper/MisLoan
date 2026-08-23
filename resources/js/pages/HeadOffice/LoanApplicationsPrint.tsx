@@ -194,20 +194,39 @@ export default function LoanApplicationsPrint({ loans, filters, zones, areas, br
         return name || details || '—';
     };
 
-    const getMemberNameWithDofa = (loan: LoanApplication) => {
-        const name =
+    const getMemberName = (loan: LoanApplication) => {
+        return (
             loan.member_admission?.applicant_name_bn ||
             loan.member_admission?.applicant_name_en ||
             loan.legacy_member_snapshot?.applicant_name_bn ||
             loan.legacy_member_snapshot?.applicant_name_en ||
-            '—';
+            '—'
+        );
+    };
+
+    const getDofa = (loan: LoanApplication) => {
+        const bp = typeof loan.business_plan === 'object' && loan.business_plan !== null ? loan.business_plan : {};
+        const ai = typeof loan.asset_info === 'object' && loan.asset_info !== null ? loan.asset_info : {};
+        const snap = typeof loan.legacy_member_snapshot === 'object' && loan.legacy_member_snapshot !== null ? loan.legacy_member_snapshot : {};
+
+        const dofaVal =
+            loan.member_admission?.loan_dofa ??
+            snap.loan_dofa ??
+            ai.loan_round ??
+            bp.loan_round ??
+            ai.current_loan_round ??
+            bp.current_loan_round;
+
+        if (dofaVal !== undefined && dofaVal !== null && dofaVal !== '') {
+            const num = Number(dofaVal);
+            return isNaN(num) ? String(dofaVal) : num.toLocaleString('bn-BD');
+        }
 
         const isLegacy = loan.member_admission?.is_legacy ?? (loan.legacy_member_snapshot != null);
-        const dofa = isLegacy
-            ? (loan.member_admission?.loan_dofa ?? loan.legacy_member_snapshot?.loan_dofa ?? loan.asset_info?.loan_round ?? 1)
-            : null;
-
-        return { name, isLegacy, dofa };
+        if (isLegacy) {
+            return '১';
+        }
+        return '১';
     };
 
     const getMemberShortCode = (loan: LoanApplication) => {
@@ -225,10 +244,37 @@ export default function LoanApplicationsPrint({ loans, filters, zones, areas, br
         if (general === undefined || general === null) {
             const bp = typeof loan.business_plan === 'object' && loan.business_plan !== null ? loan.business_plan : {};
             const ai = typeof loan.asset_info === 'object' && loan.asset_info !== null ? loan.asset_info : {};
-            general = Number(bp.general_savings_amount ?? ai.general_savings_amount ?? ai.savings_amount ?? loan.savings_amount ?? 0);
+            general = Number(bp.general_savings_amount ?? ai.general_savings_amount ?? null);
+            if (general === null || isNaN(general) || general === 0) {
+                general = Number(ai.savings_amount ?? loan.savings_amount ?? bp.savings_amount ?? 0);
+            }
         }
         if (!general || Number(general) === 0) return '—';
         return Number(general).toLocaleString('bn-BD');
+    };
+
+    const getTotalSavings = (loan: LoanApplication) => {
+        let total = loan.savings_total;
+        if (total === undefined || total === null) {
+            const bp = typeof loan.business_plan === 'object' && loan.business_plan !== null ? loan.business_plan : {};
+            const ai = typeof loan.asset_info === 'object' && loan.asset_info !== null ? loan.asset_info : {};
+            const general = Number(bp.general_savings_amount ?? ai.general_savings_amount ?? 0);
+            const other = (Boolean(bp.is_against_savings) ? Number(bp.against_savings_amount || 0) : 0)
+                + (Boolean(ai.is_against_savings) ? Number(ai.against_savings_amount || 0) : 0);
+            const explicitTotal = Number(
+                bp.savings_amount ??
+                ai.savings_amount ??
+                loan.savings_amount ??
+                bp.total_savings ??
+                ai.total_savings ??
+                bp.movable_savings ??
+                ai.movable_savings ??
+                0
+            );
+            total = Math.max(explicitTotal || 0, (general || 0) + (other || 0));
+        }
+        if (!total || Number(total) === 0) return '—';
+        return Number(total).toLocaleString('bn-BD');
     };
 
     const getLastRepaidLoanAmount = (loan: LoanApplication) => {
@@ -460,32 +506,36 @@ export default function LoanApplicationsPrint({ loans, filters, zones, areas, br
                         font-size: 7.5px;
                     }
 
-                    /* Column widths - 16 columns for A4 Landscape */
-                    .col-sl { width: 2.5%; }
+                    /* Column widths - 18 columns for A4 Landscape */
+                    .col-sl { width: 2.2%; }
                     .col-branch { width: 5.5%; }
-                    .col-type { width: 9%; }
-                    .col-samity { width: 7%; }
-                    .col-member-name { width: 8%; }
+                    .col-type { width: 8.3%; }
+                    .col-samity { width: 6.5%; }
+                    .col-member-name { width: 7.5%; }
+                    .col-dofa { width: 2.5%; }
                     .col-member-code { width: 4.5%; }
                     .col-mobile { width: 5.5%; }
-                    .col-savings { width: 5.5%; }
-                    .col-requested { width: 6.5%; }
-                    .col-approved { width: 6%; }
-                    .col-term { width: 4.5%; }
-                    .col-project { width: 7%; }
+                    .col-savings-general { width: 4.5%; }
+                    .col-savings-total { width: 4.5%; }
+                    .col-requested { width: 6%; }
+                    .col-approved { width: 5.5%; }
+                    .col-term { width: 4%; }
+                    .col-project { width: 6.5%; }
                     .col-approval-date { width: 5.5%; }
                     .col-disburse-date { width: 5.5%; }
-                    .col-approver { width: 7.5%; }
-                    .col-remarks { width: 14%; }
+                    .col-approver { width: 7%; }
+                    .col-remarks { width: 13%; }
 
                     td.col-sl { text-align: center; }
                     td.col-branch { text-align: left; }
                     td.col-type { text-align: left; }
                     td.col-samity { text-align: left; }
                     td.col-member-name { text-align: left; }
+                    td.col-dofa { text-align: center; font-weight: bold; }
                     td.col-member-code { text-align: center; font-family: monospace; font-weight: bold; font-size: 7px; }
                     td.col-mobile { text-align: center; font-size: 7px; }
-                    td.col-savings { text-align: right; font-weight: 600; }
+                    td.col-savings-general { text-align: right; }
+                    td.col-savings-total { text-align: right; font-weight: 600; }
                     td.col-requested { text-align: right; font-weight: bold; }
                     td.col-approved { text-align: right; font-weight: bold; }
                     td.col-term { text-align: center; }
@@ -556,7 +606,7 @@ export default function LoanApplicationsPrint({ loans, filters, zones, areas, br
                     </table>
                 </div>
 
-                {/* Main Table - 16 Columns */}
+                {/* Main Table - 18 Columns */}
                 <table>
                     <thead>
                         <tr>
@@ -564,10 +614,12 @@ export default function LoanApplicationsPrint({ loans, filters, zones, areas, br
                             <th className="col-branch">শাখার নাম</th>
                             <th className="col-type">ঋণের ধরন</th>
                             <th className="col-samity">সমিতির নাম (কোড)</th>
-                            <th className="col-member-name">সদস্যের নাম (দফা)</th>
+                            <th className="col-member-name">সদস্যের নাম</th>
+                            <th className="col-dofa">দফা</th>
                             <th className="col-member-code">সদস্য কোড</th>
                             <th className="col-mobile">মোবাইল নাম্বার</th>
-                            <th className="col-savings">সাধারণ সঞ্চয়</th>
+                            <th className="col-savings-general">সাধারণ সঞ্চয়</th>
+                            <th className="col-savings-total">মোট সঞ্চয়</th>
                             <th className="col-requested">সর্বশেষ পরিশোধিত ঋণ</th>
                             <th className="col-approved">অনুমোদিত ঋণের পরিমাণ</th>
                             <th className="col-term">ঋণের মেয়াদ</th>
@@ -581,13 +633,12 @@ export default function LoanApplicationsPrint({ loans, filters, zones, areas, br
                     <tbody>
                         {loans.length === 0 ? (
                             <tr>
-                                <td colSpan={16} style={{ textAlign: 'center', padding: '12px' }}>
+                                <td colSpan={18} style={{ textAlign: 'center', padding: '12px' }}>
                                     কোনো ঋণ আবেদন পাওয়া যায়নি
                                 </td>
                             </tr>
                         ) : (
                             loans.map((loan, index) => {
-                                const memberInfo = getMemberNameWithDofa(loan);
                                 return (
                                     <tr key={loan.id}>
                                         <td className="col-sl">{index + 1}</td>
@@ -595,20 +646,13 @@ export default function LoanApplicationsPrint({ loans, filters, zones, areas, br
                                         <td className="col-type">{formatLoanCategoryTerm(loan)}</td>
                                         <td className="col-samity">{formatSamityNameWithCode(loan.samity)}</td>
                                         <td className="col-member-name">
-                                            <span style={{ fontWeight: 'bold' }}>{memberInfo.name}</span>
-                                            {memberInfo.dofa ? (
-                                                <span style={{ fontSize: '7px', color: '#b45309', marginLeft: '3px', fontWeight: 'bold' }}>
-                                                    (দফা: {memberInfo.dofa})
-                                                </span>
-                                            ) : (
-                                                <span style={{ fontSize: '7px', color: '#047857', marginLeft: '3px', fontWeight: 'bold' }}>
-                                                    (নতুন)
-                                                </span>
-                                            )}
+                                            <span style={{ fontWeight: 'bold' }}>{getMemberName(loan)}</span>
                                         </td>
+                                        <td className="col-dofa">{getDofa(loan)}</td>
                                         <td className="col-member-code">{getMemberShortCode(loan)}</td>
                                         <td className="col-mobile">{getMobile(loan)}</td>
-                                        <td className="col-savings">{getGeneralSavings(loan)}</td>
+                                        <td className="col-savings-general">{getGeneralSavings(loan)}</td>
+                                        <td className="col-savings-total">{getTotalSavings(loan)}</td>
                                         <td className="col-requested">{getLastRepaidLoanAmount(loan)}</td>
                                         <td className="col-approved">{loan.approved_amount ? formatAmount(loan.approved_amount) : '—'}</td>
                                         <td className="col-term">{getLoanTerm(loan)}</td>
