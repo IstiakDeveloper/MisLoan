@@ -43,6 +43,7 @@ interface User {
     branches?: Branch[];
     is_active: boolean;
     has_all_access: boolean;
+    account_type?: string | null;
     signature?: string | null;
 }
 
@@ -98,6 +99,7 @@ export default function UserModal({ isOpen, onClose, user, roles, zones, areas, 
     const isZoneManager = selectedRole?.name === 'zone_manager';
     const isAreaManager = selectedRole?.name === 'area_manager';
     const isApproverRole = selectedRole?.name === 'admf' || selectedRole?.name === 'dmf' || selectedRole?.name === 'ed';
+    const isBranchAccount = user?.account_type === 'branch';
 
     // Filter branches for search
     const filteredSearchBranches = branches.filter(b =>
@@ -399,42 +401,64 @@ export default function UserModal({ isOpen, onClose, user, roles, zones, areas, 
                         </div>
                     </div>
 
-                    {/* Password Section */}
+                    {/* Password / PIN Section */}
                     <div>
-                        <h4 className="text-sm font-semibold text-gray-900 mb-3">Password</h4>
+                        <h4 className="mb-3 text-sm font-semibold text-gray-900">
+                            {isBranchAccount ? 'Branch Login PIN' : 'Password'}
+                        </h4>
                         {user && (
-                            <p className="text-xs text-gray-500 mb-3">
-                                Leave blank to keep the current password.
+                            <p className="mb-3 text-xs text-gray-500">
+                                {isBranchAccount
+                                    ? 'Leave blank to keep the current branch PIN. Enter 4-12 digits to change it.'
+                                    : 'Leave blank to keep the current password.'}
                             </p>
                         )}
                         <div className="grid grid-cols-2 gap-4">
                             <div>
-                                <label htmlFor="password" className="block text-sm font-medium text-gray-700 mb-1">
-                                    Password {!user && <span className="text-red-500">*</span>}
+                                <label htmlFor="password" className="mb-1 block text-sm font-medium text-gray-700">
+                                    {isBranchAccount ? 'PIN' : 'Password'} {!user && <span className="text-red-500">*</span>}
                                 </label>
                                 <input
                                     id="password"
-                                    type="password"
+                                    type={isBranchAccount ? 'text' : 'password'}
+                                    inputMode={isBranchAccount ? 'numeric' : undefined}
+                                    maxLength={isBranchAccount ? 12 : undefined}
                                     value={data.password}
-                                    onChange={(e) => setData('password', e.target.value)}
-                                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
-                                    placeholder="••••••••"
+                                    onChange={(e) =>
+                                        setData(
+                                            'password',
+                                            isBranchAccount
+                                                ? e.target.value.replace(/\D/g, '').slice(0, 12)
+                                                : e.target.value,
+                                        )
+                                    }
+                                    className="w-full rounded-lg border border-gray-300 px-3 py-2 transition-all focus:border-transparent focus:ring-2 focus:ring-blue-500"
+                                    placeholder={isBranchAccount ? '4-12 digits' : '••••••••'}
                                     required={!user}
                                 />
-                                {errors.password && <p className="text-red-500 text-sm mt-1">{errors.password}</p>}
+                                {errors.password && <p className="mt-1 text-sm text-red-500">{errors.password}</p>}
                             </div>
 
                             <div>
-                                <label htmlFor="password_confirmation" className="block text-sm font-medium text-gray-700 mb-1">
-                                    Confirm Password {!user && <span className="text-red-500">*</span>}
+                                <label htmlFor="password_confirmation" className="mb-1 block text-sm font-medium text-gray-700">
+                                    {isBranchAccount ? 'Confirm PIN' : 'Confirm Password'} {!user && <span className="text-red-500">*</span>}
                                 </label>
                                 <input
                                     id="password_confirmation"
-                                    type="password"
+                                    type={isBranchAccount ? 'text' : 'password'}
+                                    inputMode={isBranchAccount ? 'numeric' : undefined}
+                                    maxLength={isBranchAccount ? 12 : undefined}
                                     value={data.password_confirmation}
-                                    onChange={(e) => setData('password_confirmation', e.target.value)}
-                                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
-                                    placeholder="••••••••"
+                                    onChange={(e) =>
+                                        setData(
+                                            'password_confirmation',
+                                            isBranchAccount
+                                                ? e.target.value.replace(/\D/g, '').slice(0, 12)
+                                                : e.target.value,
+                                        )
+                                    }
+                                    className="w-full rounded-lg border border-gray-300 px-3 py-2 transition-all focus:border-transparent focus:ring-2 focus:ring-blue-500"
+                                    placeholder={isBranchAccount ? 'Re-enter PIN' : '••••••••'}
                                     required={!user}
                                 />
                             </div>

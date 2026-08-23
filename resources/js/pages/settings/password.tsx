@@ -20,19 +20,24 @@ const breadcrumbs: BreadcrumbItem[] = [
     },
 ];
 
-export default function Password() {
+export default function Password({ isBranchAccount = false }: { isBranchAccount?: boolean }) {
     const passwordInput = useRef<HTMLInputElement>(null);
     const currentPasswordInput = useRef<HTMLInputElement>(null);
+    const credentialLabel = isBranchAccount ? 'PIN' : 'password';
 
     return (
         <AppLayout breadcrumbs={breadcrumbs}>
-            <Head title="Password settings" />
+            <Head title={isBranchAccount ? 'PIN settings' : 'Password settings'} />
 
             <SettingsLayout>
                 <div className="space-y-6">
                     <HeadingSmall
-                        title="Update password"
-                        description="Ensure your account is using a long, random password to stay secure"
+                        title={isBranchAccount ? 'Update branch PIN' : 'Update password'}
+                        description={
+                            isBranchAccount
+                                ? 'This PIN is what you enter on the Branch login screen'
+                                : 'Ensure your account is using a long, random password to stay secure'
+                        }
                     />
 
                     <Form
@@ -61,7 +66,7 @@ export default function Password() {
                             <>
                                 <div className="grid gap-2">
                                     <Label htmlFor="current_password">
-                                        Current password
+                                        Current {credentialLabel}
                                     </Label>
 
                                     <Input
@@ -71,7 +76,9 @@ export default function Password() {
                                         type="password"
                                         className="mt-1 block w-full"
                                         autoComplete="current-password"
-                                        placeholder="Current password"
+                                        placeholder={`Current ${credentialLabel}`}
+                                        inputMode={isBranchAccount ? 'numeric' : undefined}
+                                        maxLength={isBranchAccount ? 12 : undefined}
                                     />
 
                                     <InputError
@@ -81,7 +88,7 @@ export default function Password() {
 
                                 <div className="grid gap-2">
                                     <Label htmlFor="password">
-                                        New password
+                                        New {credentialLabel}
                                     </Label>
 
                                     <Input
@@ -91,7 +98,9 @@ export default function Password() {
                                         type="password"
                                         className="mt-1 block w-full"
                                         autoComplete="new-password"
-                                        placeholder="New password"
+                                        placeholder={isBranchAccount ? '4-12 digits' : 'New password'}
+                                        inputMode={isBranchAccount ? 'numeric' : undefined}
+                                        maxLength={isBranchAccount ? 12 : undefined}
                                     />
 
                                     <InputError message={errors.password} />
@@ -99,7 +108,7 @@ export default function Password() {
 
                                 <div className="grid gap-2">
                                     <Label htmlFor="password_confirmation">
-                                        Confirm password
+                                        Confirm {credentialLabel}
                                     </Label>
 
                                     <Input
@@ -108,7 +117,9 @@ export default function Password() {
                                         type="password"
                                         className="mt-1 block w-full"
                                         autoComplete="new-password"
-                                        placeholder="Confirm password"
+                                        placeholder={isBranchAccount ? 'Re-enter PIN' : 'Confirm password'}
+                                        inputMode={isBranchAccount ? 'numeric' : undefined}
+                                        maxLength={isBranchAccount ? 12 : undefined}
                                     />
 
                                     <InputError
@@ -121,7 +132,7 @@ export default function Password() {
                                         disabled={processing}
                                         data-test="update-password-button"
                                     >
-                                        Save password
+                                        {isBranchAccount ? 'Save PIN' : 'Save password'}
                                     </Button>
 
                                     <Transition
@@ -144,3 +155,4 @@ export default function Password() {
         </AppLayout>
     );
 }
+

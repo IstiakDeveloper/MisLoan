@@ -58,6 +58,7 @@ interface UserProfile {
     zone?: Zone | null;
     area?: Area | null;
     branch?: Branch | null;
+    account_type?: string | null;
 }
 
 interface Props {
@@ -67,6 +68,7 @@ interface Props {
 export default function Edit({ user }: Props) {
     const page = usePage() as { props: { flash?: { success?: string; error?: string } } };
     const flashSuccess = page.props.flash?.success;
+    const isBranchAccount = user.account_type === 'branch';
 
     const [isPasswordModalOpen, setIsPasswordModalOpen] = useState(false);
     const [showCurrentPassword, setShowCurrentPassword] = useState(false);
@@ -162,7 +164,7 @@ export default function Edit({ user }: Props) {
                                 className="flex items-center gap-2 rounded-xl border border-white/20 bg-white/15 px-4 py-2 text-xs font-semibold text-white backdrop-blur-md transition hover:bg-white/25 active:scale-98"
                             >
                                 <KeyRound className="size-4" />
-                                Change Password
+                                {isBranchAccount ? 'Change PIN' : 'Change Password'}
                             </button>
                         </div>
                     </div>
@@ -532,7 +534,9 @@ export default function Edit({ user }: Props) {
                                 Account Security
                             </h3>
                             <p className="mb-4 text-xs text-slate-500">
-                                Keep your password updated and secure
+                                {isBranchAccount
+                                    ? 'Keep your branch login PIN updated and secure'
+                                    : 'Keep your password updated and secure'}
                             </p>
 
                             <button
@@ -541,7 +545,7 @@ export default function Edit({ user }: Props) {
                                 className="flex w-full items-center justify-center gap-2 rounded-xl bg-slate-900 px-4 py-2.5 text-xs font-semibold text-white shadow-sm transition hover:bg-slate-800 active:scale-98"
                             >
                                 <Lock className="size-4" />
-                                Change Password
+                                {isBranchAccount ? 'Change PIN' : 'Change Password'}
                             </button>
                         </div>
                     </div>
@@ -557,10 +561,12 @@ export default function Edit({ user }: Props) {
                                 <ShieldCheck className="size-5 text-blue-600" />
                                 <div>
                                     <h3 className="font-bold text-slate-900">
-                                        Change Password
+                                        {isBranchAccount ? 'Change PIN' : 'Change Password'}
                                     </h3>
                                     <p className="text-xs text-slate-500">
-                                        Update your account login password
+                                        {isBranchAccount
+                                            ? 'This PIN is used on the Branch login screen'
+                                            : 'Update your account login password'}
                                     </p>
                                 </div>
                             </div>
@@ -582,18 +588,30 @@ export default function Edit({ user }: Props) {
 
                             <div>
                                 <label className="mb-1 block text-xs font-semibold text-slate-700">
-                                    Current Password <span className="text-red-500">*</span>
+                                    {isBranchAccount ? 'Current PIN' : 'Current Password'}{' '}
+                                    <span className="text-red-500">*</span>
                                 </label>
                                 <div className="relative">
                                     <input
                                         type={showCurrentPassword ? 'text' : 'password'}
                                         value={passwordForm.data.current_password}
                                         onChange={(e) =>
-                                            passwordForm.setData('current_password', e.target.value)
+                                            passwordForm.setData(
+                                                'current_password',
+                                                isBranchAccount
+                                                    ? e.target.value.replace(/\D/g, '').slice(0, 12)
+                                                    : e.target.value,
+                                            )
                                         }
                                         className="h-10 w-full rounded-xl border border-slate-300 bg-white pr-10 pl-3.5 text-sm text-slate-900 outline-none focus:border-blue-500 focus:ring-4 focus:ring-blue-100"
                                         required
-                                        placeholder="Enter current password"
+                                        inputMode={isBranchAccount ? 'numeric' : undefined}
+                                        maxLength={isBranchAccount ? 12 : undefined}
+                                        placeholder={
+                                            isBranchAccount
+                                                ? 'Enter current PIN'
+                                                : 'Enter current password'
+                                        }
                                     />
                                     <button
                                         type="button"
@@ -612,18 +630,26 @@ export default function Edit({ user }: Props) {
                             <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                                 <div>
                                     <label className="mb-1 block text-xs font-semibold text-slate-700">
-                                        New Password <span className="text-red-500">*</span>
+                                        {isBranchAccount ? 'New PIN' : 'New Password'}{' '}
+                                        <span className="text-red-500">*</span>
                                     </label>
                                     <div className="relative">
                                         <input
                                             type={showNewPassword ? 'text' : 'password'}
                                             value={passwordForm.data.password}
                                             onChange={(e) =>
-                                                passwordForm.setData('password', e.target.value)
+                                                passwordForm.setData(
+                                                    'password',
+                                                    isBranchAccount
+                                                        ? e.target.value.replace(/\D/g, '').slice(0, 12)
+                                                        : e.target.value,
+                                                )
                                             }
                                             className="h-10 w-full rounded-xl border border-slate-300 bg-white pr-10 pl-3.5 text-sm text-slate-900 outline-none focus:border-blue-500 focus:ring-4 focus:ring-blue-100"
                                             required
-                                            placeholder="New password"
+                                            inputMode={isBranchAccount ? 'numeric' : undefined}
+                                            maxLength={isBranchAccount ? 12 : undefined}
+                                            placeholder={isBranchAccount ? '4-12 digits' : 'New password'}
                                         />
                                         <button
                                             type="button"
@@ -646,7 +672,8 @@ export default function Edit({ user }: Props) {
 
                                 <div>
                                     <label className="mb-1 block text-xs font-semibold text-slate-700">
-                                        Confirm Password <span className="text-red-500">*</span>
+                                        {isBranchAccount ? 'Confirm PIN' : 'Confirm Password'}{' '}
+                                        <span className="text-red-500">*</span>
                                     </label>
                                     <div className="relative">
                                         <input
@@ -655,12 +682,16 @@ export default function Edit({ user }: Props) {
                                             onChange={(e) =>
                                                 passwordForm.setData(
                                                     'password_confirmation',
-                                                    e.target.value,
+                                                    isBranchAccount
+                                                        ? e.target.value.replace(/\D/g, '').slice(0, 12)
+                                                        : e.target.value,
                                                 )
                                             }
                                             className="h-10 w-full rounded-xl border border-slate-300 bg-white pr-10 pl-3.5 text-sm text-slate-900 outline-none focus:border-blue-500 focus:ring-4 focus:ring-blue-100"
                                             required
-                                            placeholder="Confirm password"
+                                            inputMode={isBranchAccount ? 'numeric' : undefined}
+                                            maxLength={isBranchAccount ? 12 : undefined}
+                                            placeholder={isBranchAccount ? 'Re-enter PIN' : 'Confirm password'}
                                         />
                                         <button
                                             type="button"
@@ -691,7 +722,11 @@ export default function Edit({ user }: Props) {
                                     className="flex items-center gap-2 rounded-xl bg-blue-600 px-5 py-2 text-xs font-semibold text-white shadow-sm hover:bg-blue-700 active:scale-98 disabled:opacity-60"
                                 >
                                     <ShieldCheck className="size-4" />
-                                    {passwordForm.processing ? 'Updating...' : 'Update Password'}
+                                    {passwordForm.processing
+                                        ? 'Updating...'
+                                        : isBranchAccount
+                                          ? 'Update PIN'
+                                          : 'Update Password'}
                                 </button>
                             </div>
                         </form>

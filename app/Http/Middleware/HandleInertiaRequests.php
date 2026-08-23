@@ -11,7 +11,7 @@ use App\Models\MemberAdmissionIssue;
 use App\Models\Notification;
 use App\Models\Role;
 use App\Services\ApprovalService;
-use App\Services\CmoAllocationService;
+use App\Services\CsoAllocationService;
 use Carbon\Carbon;
 use Illuminate\Foundation\Inspiring;
 use Illuminate\Http\Request;
@@ -85,6 +85,7 @@ class HandleInertiaRequests extends Middleware
                 'has_all_access' => (bool) $user->has_all_access,
                 'is_read_only' => $user->isReadOnlyAdmin(),
                 'is_active' => (bool) $user->is_active,
+                'account_type' => $user->account_type ?? 'staff',
                 'needs_portfolio_handover' => $user->needsPortfolioHandover(),
                 'role' => null,
                 'zone' => null,
@@ -168,9 +169,9 @@ class HandleInertiaRequests extends Middleware
                 }
             }
 
-            if (($userData['role']['name'] ?? '') === \App\Models\Role::CSO) {
+            if (($userData['role']['name'] ?? '') === Role::CSO) {
                 try {
-                    $areaIds = app(\App\Services\CsoAllocationService::class)->getAssignedAreaIdsForUser($user);
+                    $areaIds = app(CsoAllocationService::class)->getAssignedAreaIdsForUser($user);
                     $userData['cso_areas'] = DB::table('areas')
                         ->whereIn('id', $areaIds)
                         ->select('id', 'name', 'code')

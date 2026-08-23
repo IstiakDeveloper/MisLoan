@@ -3,6 +3,7 @@
 namespace App\Actions\Fortify;
 
 use App\Models\User;
+use App\Services\BranchAccountService;
 use Illuminate\Support\Facades\Validator;
 use Laravel\Fortify\Contracts\ResetsUserPasswords;
 
@@ -17,12 +18,18 @@ class ResetUserPassword implements ResetsUserPasswords
      */
     public function reset(User $user, array $input): void
     {
-        Validator::make($input, [
-            'password' => $this->passwordRules(),
-        ])->validate();
+        $isBranchAccount = $user->isBranchAccount();
 
-        $user->forceFill([
-            'password' => $input['password'],
-        ])->save();
+        Validator::make(
+            $input,
+            [
+                'password' => $isBranchAccount
+                    ? BranchAccountService::loginPinRules()
+                    : $this->passwordRules(),
+            ],
+            $isBranchAccount ? BranchAccountService::loginPinMessages() : [],
+        )->validate();
+
+        app(BranchAccountService::class)->updatePasswordOrPin($user, $input['password']);
     }
 }

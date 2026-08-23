@@ -5,7 +5,9 @@ namespace App\Services;
 use App\Models\Branch;
 use App\Models\Role;
 use App\Models\User;
+use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Str;
+use Illuminate\Validation\ValidationException;
 
 class BranchAccountService
 {
@@ -67,6 +69,94 @@ class BranchAccountService
         }
 
         return $user->fresh(['role']);
+    }
+
+    /**
+     * Login PIN rules used wherever a branch account "password" is changed.
+     *
+     * @return list<string>
+     */
+    public static function loginPinRules(bool $required = true, bool $confirmed = true): array
+    {
+        $rules = [
+            $required ? 'required' : 'nullable',
+            'string',
+            'min:4',
+            'max:12',
+            'regex:/^[0-9]+$/',
+        ];
+
+        if ($confirmed) {
+            $rules[] = 'confirmed';
+        }
+
+        return $rules;
+    }
+
+    /**
+     * @return array<string, string>
+     */
+    public static function loginPinMessages(): array
+    {
+        $message = 'The branch login PIN must be 4 to 12 digits.';
+
+        return [
+            'password.regex' => $message,
+            'password.min' => $message,
+            'password.max' => $message,
+        ];
+    }
+
+    public function resolveBranch(User $user): ?Branch
+    {
+        if (! $user->isBranchAccount()) {
+            return null;
+        }
+
+        $linked = Branch::query()->where('branch_user_id', $user->id)->first();
+        if ($linked) {
+            return $linked;
+        }
+
+        $user->loadMissing('branch');
+
+        return $user->branch;
+    }
+
+    public function verifyCurrentPin(User $user, string $pin): bool
+    {
+        $branch = $this->resolveBranch($user);
+
+        if ($branch && $branch->hasLoginPin() && $branch->verifyLoginPin($pin)) {
+            return true;
+        }
+
+        return Hash::check($pin, (string) $user->password);
+    }
+
+    public function updateLoginPin(User $user, string $pin): void
+    {
+        $branch = $this->resolveBranch($user);
+        if (! $branch) {
+            throw ValidationException::withMessages([
+                'password' => 'This branch account is not linked to a branch, so the login PIN cannot be updated.',
+            ]);
+        }
+
+        $branch->forceFill([
+            'login_pin' => Hash::make($pin),
+        ])->saveQuietly();
+    }
+
+    public function updatePasswordOrPin(User $user, string $plainPassword): void
+    {
+        $user->forceFill([
+            'password' => $plainPassword,
+        ])->save();
+
+        if ($user->isBranchAccount()) {
+            $this->updateLoginPin($user, $plainPassword);
+        }
     }
 
     public function migrateLegacyBranchUsers(): int

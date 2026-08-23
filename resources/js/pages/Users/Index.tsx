@@ -84,6 +84,7 @@ interface User {
     branches?: Branch[];
     is_active: boolean;
     has_all_access: boolean;
+    account_type?: string | null;
     signature?: string | null;
 }
 

@@ -2,11 +2,14 @@
 
 namespace App\Http\Controllers;
 
+use App\Mail\BranchUsersSummaryMail;
+use App\Mail\UserCredentialsMail;
 use App\Models\Area;
 use App\Models\Branch;
 use App\Models\Role;
 use App\Models\User;
 use App\Models\Zone;
+use App\Services\BranchAccountService;
 use App\Services\HrmUserSyncService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
@@ -168,7 +171,9 @@ class UserController extends Controller
             'username' => 'required|string|max:255|unique:users,username,'.$user->id,
             'email' => 'required|string|email|max:255|unique:users,email,'.$user->id,
             'phone' => 'nullable|string|max:20|unique:users,phone,'.$user->id,
-            'password' => ['nullable', 'confirmed', Password::defaults()],
+            'password' => $user->isBranchAccount()
+                ? BranchAccountService::loginPinRules(required: false)
+                : ['nullable', 'confirmed', Password::defaults()],
             'role_id' => 'required|exists:roles,id',
             'zone_id' => 'nullable|exists:zones,id',
             'area_id' => 'nullable|exists:areas,id',
@@ -188,13 +193,10 @@ class UserController extends Controller
             $rules['signature'] = 'nullable|image|mimes:jpeg,png,jpg,gif|max:2048';
         }
 
-        $validated = $request->validate($rules);
+        $validated = $request->validate($rules, $user->isBranchAccount() ? BranchAccountService::loginPinMessages() : []);
 
-        if (! empty($validated['password'])) {
-            $validated['password'] = Hash::make($validated['password']);
-        } else {
-            unset($validated['password']);
-        }
+        $plainPassword = $validated['password'] ?? null;
+        unset($validated['password']);
 
         // Handle signature upload for super admin / full-access users
         if (Auth::user()?->has_all_access && $request->hasFile('signature')) {
@@ -215,13 +217,17 @@ class UserController extends Controller
             'branch_id' => $validated['branch_id'] ?? null,
             'is_active' => $validated['is_active'] ?? true,
             'has_all_access' => $validated['has_all_access'] ?? false,
-        ] + (isset($validated['password']) ? ['password' => $validated['password']] : []);
+        ];
 
         if (isset($validated['signature'])) {
             $updateData['signature'] = $validated['signature'];
         }
 
         $user->update($updateData);
+
+        if (filled($plainPassword)) {
+            app(BranchAccountService::class)->updatePasswordOrPin($user, $plainPassword);
+        }
 
         // Sync multi-assignments
         $user->zones()->sync($validated['zone_ids'] ?? []);
@@ -257,15 +263,22 @@ class UserController extends Controller
 
     public function resetPassword(Request $request, User $user)
     {
-        $validated = $request->validate([
-            'password' => ['required', 'confirmed', Password::defaults()],
-        ]);
+        $validated = $request->validate(
+            [
+                'password' => $user->isBranchAccount()
+                    ? BranchAccountService::loginPinRules()
+                    : ['required', 'confirmed', Password::defaults()],
+            ],
+            $user->isBranchAccount() ? BranchAccountService::loginPinMessages() : [],
+        );
 
-        $user->update([
-            'password' => Hash::make($validated['password']),
-        ]);
+        app(BranchAccountService::class)->updatePasswordOrPin($user, $validated['password']);
 
-        return back()->with('success', 'Password reset successfully.');
+        $message = $user->isBranchAccount()
+            ? 'Branch login PIN reset successfully.'
+            : 'Password reset successfully.';
+
+        return back()->with('success', $message);
     }
 
     public function sendCredentials(User $user)
@@ -277,7 +290,7 @@ class UserController extends Controller
         $plainPassword = '12345678';
 
         try {
-            Mail::to($user->email)->send(new \App\Mail\UserCredentialsMail($user, $plainPassword));
+            Mail::to($user->email)->send(new UserCredentialsMail($user, $plainPassword));
 
             return back()->with('success', 'Login credentials email sent.');
         } catch (\Throwable $e) {
@@ -302,7 +315,7 @@ class UserController extends Controller
 
         foreach ($users as $user) {
             try {
-                Mail::to($user->email)->send(new \App\Mail\UserCredentialsMail($user, $plainPassword));
+                Mail::to($user->email)->send(new UserCredentialsMail($user, $plainPassword));
                 $sent++;
             } catch (\Throwable $e) {
                 $lastError = $e->getMessage();
@@ -353,7 +366,7 @@ class UserController extends Controller
                 }
 
                 try {
-                    Mail::to($branch->email)->send(new \App\Mail\BranchUsersSummaryMail($branch, $users));
+                    Mail::to($branch->email)->send(new BranchUsersSummaryMail($branch, $users));
                     $totalSent++;
                 } catch (\Throwable $e) {
                     // Continue with other branches; collect minimal info
@@ -397,7 +410,7 @@ class UserController extends Controller
         }
 
         try {
-            Mail::to($toEmail)->send(new \App\Mail\BranchUsersSummaryMail($branch, $users));
+            Mail::to($toEmail)->send(new BranchUsersSummaryMail($branch, $users));
 
             return back()->with(
                 'success',
