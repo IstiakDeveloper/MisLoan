@@ -35,6 +35,12 @@ class HeadOfficeVerificationController extends Controller
         $today = now()->toDateString();
         $dateFrom = $request->has('date_from') ? $request->input('date_from') : ($isBranchOrApprover ? null : $today);
         $dateTo = $request->has('date_to') ? $request->input('date_to') : ($isBranchOrApprover ? null : $today);
+
+        // If date_from is given without date_to, default date_to to date_from (single date filter)
+        if ($dateFrom && !$dateTo) {
+            $dateTo = $dateFrom;
+        }
+
         $startOfDay = $dateFrom ? Carbon::parse($dateFrom)->startOfDay() : null;
         $endOfDay = $dateTo ? Carbon::parse($dateTo)->endOfDay() : null;
 
@@ -67,11 +73,10 @@ class HeadOfficeVerificationController extends Controller
             $admissionQuery->assignedToOfficer((int) $authUser->id);
         }
 
-        // Date filter - checks latest action / submission / issue / reply / returned dates
+        // Date filter - checks verification action & sent dates (excluding draft created_at)
         if ($dateFrom && $dateTo) {
             $admissionQuery->where(function ($q) use ($startOfDay, $endOfDay) {
                 $q->whereBetween('submitted_at', [$startOfDay, $endOfDay])
-                  ->orWhereBetween('created_at', [$startOfDay, $endOfDay])
                   ->orWhereBetween('returned_at', [$startOfDay, $endOfDay])
                   ->orWhereBetween('reviewed_at', [$startOfDay, $endOfDay])
                   ->orWhereHas('issues', function ($iq) use ($startOfDay, $endOfDay) {
@@ -82,7 +87,6 @@ class HeadOfficeVerificationController extends Controller
         } elseif ($dateFrom) {
             $admissionQuery->where(function ($q) use ($startOfDay) {
                 $q->where('submitted_at', '>=', $startOfDay)
-                  ->orWhere('created_at', '>=', $startOfDay)
                   ->orWhere('returned_at', '>=', $startOfDay)
                   ->orWhere('reviewed_at', '>=', $startOfDay)
                   ->orWhereHas('issues', function ($iq) use ($startOfDay) {
@@ -93,7 +97,6 @@ class HeadOfficeVerificationController extends Controller
         } elseif ($dateTo) {
             $admissionQuery->where(function ($q) use ($endOfDay) {
                 $q->where('submitted_at', '<=', $endOfDay)
-                  ->orWhere('created_at', '<=', $endOfDay)
                   ->orWhere('returned_at', '<=', $endOfDay)
                   ->orWhere('reviewed_at', '<=', $endOfDay)
                   ->orWhereHas('issues', function ($iq) use ($endOfDay) {
@@ -161,11 +164,10 @@ class HeadOfficeVerificationController extends Controller
             $loanQuery->where('submitted_by', $authUser->id);
         }
 
-        // Date filter - checks latest action / submission / issue / reply dates
+        // Date filter - checks verification action & sent dates (excluding draft created_at)
         if ($dateFrom && $dateTo) {
             $loanQuery->where(function ($q) use ($startOfDay, $endOfDay) {
                 $q->whereBetween('submitted_at', [$startOfDay, $endOfDay])
-                  ->orWhereBetween('created_at', [$startOfDay, $endOfDay])
                   ->orWhereBetween('reviewed_at', [$startOfDay, $endOfDay])
                   ->orWhereHas('issues', function ($iq) use ($startOfDay, $endOfDay) {
                       $iq->whereBetween('created_at', [$startOfDay, $endOfDay])
@@ -175,7 +177,6 @@ class HeadOfficeVerificationController extends Controller
         } elseif ($dateFrom) {
             $loanQuery->where(function ($q) use ($startOfDay) {
                 $q->where('submitted_at', '>=', $startOfDay)
-                  ->orWhere('created_at', '>=', $startOfDay)
                   ->orWhere('reviewed_at', '>=', $startOfDay)
                   ->orWhereHas('issues', function ($iq) use ($startOfDay) {
                       $iq->where('created_at', '>=', $startOfDay)
@@ -185,7 +186,6 @@ class HeadOfficeVerificationController extends Controller
         } elseif ($dateTo) {
             $loanQuery->where(function ($q) use ($endOfDay) {
                 $q->where('submitted_at', '<=', $endOfDay)
-                  ->orWhere('created_at', '<=', $endOfDay)
                   ->orWhere('reviewed_at', '<=', $endOfDay)
                   ->orWhereHas('issues', function ($iq) use ($endOfDay) {
                       $iq->where('created_at', '<=', $endOfDay)
@@ -291,14 +291,15 @@ class HeadOfficeVerificationController extends Controller
                 || !empty($parsed['branch_reply'])
                 || !empty($latestMapped['reply_message']);
 
-            $latestActionAt = collect([
-                $admission->submitted_at,
-                $admission->created_at,
+            $sentDate = collect([
+                $latestIssue?->resolved_at,
+                $latestIssue?->created_at,
                 $admission->returned_at,
                 $admission->reviewed_at,
-                $latestIssue?->created_at,
-                $latestIssue?->resolved_at,
+                $admission->submitted_at,
             ])->filter()->max();
+
+            $effectiveActionAt = $sentDate ?: $admission->submitted_at ?: $admission->created_at;
 
             $verificationItems->push([
                 'id' => 'admission_' . $admission->id,
@@ -318,9 +319,12 @@ class HeadOfficeVerificationController extends Controller
                 'zone_name' => $admission->branch?->area?->zone?->name ?? '—',
                 'samity_name' => $admission->samity?->samity_name ?? '—',
                 'status' => $admission->status,
-                'submitted_at' => $latestActionAt ? Carbon::parse($latestActionAt)->toIso8601String() : null,
+                'submitted_at' => $admission->submitted_at ? Carbon::parse($admission->submitted_at)->toIso8601String() : null,
+                'sent_at' => $sentDate ? Carbon::parse($sentDate)->toIso8601String() : null,
+                'issue_date' => $latestIssue?->created_at ? Carbon::parse($latestIssue->created_at)->toIso8601String() : null,
+                'reply_date' => $latestIssue?->resolved_at ? Carbon::parse($latestIssue->resolved_at)->toIso8601String() : null,
                 'created_at' => $admission->created_at->toIso8601String(),
-                'latest_action_at' => $latestActionAt ? Carbon::parse($latestActionAt)->toIso8601String() : $admission->created_at->toIso8601String(),
+                'latest_action_at' => Carbon::parse($effectiveActionAt)->toIso8601String(),
                 'reviewed_at' => $admission->reviewed_at ? Carbon::parse($admission->reviewed_at)->toIso8601String() : null,
                 'reviewed_by_name' => $admission->reviewedBy?->name ?? null,
                 'rejection_reason' => $admission->rejection_reason,
@@ -376,13 +380,14 @@ class HeadOfficeVerificationController extends Controller
                 || !empty($parsed['branch_reply'])
                 || !empty($latestMapped['reply_message']);
 
-            $latestActionAt = collect([
-                $loan->submitted_at,
-                $loan->created_at,
-                $loan->reviewed_at,
-                $latestIssue?->created_at,
+            $sentDate = collect([
                 $latestIssue?->responded_at,
+                $latestIssue?->created_at,
+                $loan->reviewed_at,
+                $loan->submitted_at,
             ])->filter()->max();
+
+            $effectiveActionAt = $sentDate ?: $loan->submitted_at ?: $loan->created_at;
 
             $verificationItems->push([
                 'id' => 'loan_' . $loan->id,
@@ -402,9 +407,12 @@ class HeadOfficeVerificationController extends Controller
                 'zone_name' => $loan->branch?->area?->zone?->name ?? '—',
                 'samity_name' => $loan->samity?->samity_name ?? '—',
                 'status' => $loan->status,
-                'submitted_at' => $latestActionAt ? Carbon::parse($latestActionAt)->toIso8601String() : null,
+                'submitted_at' => $loan->submitted_at ? Carbon::parse($loan->submitted_at)->toIso8601String() : null,
+                'sent_at' => $sentDate ? Carbon::parse($sentDate)->toIso8601String() : null,
+                'issue_date' => $latestIssue?->created_at ? Carbon::parse($latestIssue->created_at)->toIso8601String() : null,
+                'reply_date' => $latestIssue?->responded_at ? Carbon::parse($latestIssue->responded_at)->toIso8601String() : null,
                 'created_at' => $loan->created_at->toIso8601String(),
-                'latest_action_at' => $latestActionAt ? Carbon::parse($latestActionAt)->toIso8601String() : $loan->created_at->toIso8601String(),
+                'latest_action_at' => Carbon::parse($effectiveActionAt)->toIso8601String(),
                 'reviewed_at' => $loan->reviewed_at ? Carbon::parse($loan->reviewed_at)->toIso8601String() : null,
                 'reviewed_by_name' => $loan->reviewedBy?->name ?? null,
                 'rejection_reason' => $loan->rejection_reason,
@@ -417,6 +425,24 @@ class HeadOfficeVerificationController extends Controller
                 'view_url' => $viewUrl,
                 'amount' => $loan->approved_amount ?: $loan->requested_amount,
             ]);
+        }
+
+        // Strict filtering by effective action/sent date range when date filters are specified
+        if ($startOfDay && $endOfDay) {
+            $verificationItems = $verificationItems->filter(function ($item) use ($startOfDay, $endOfDay) {
+                $dt = Carbon::parse($item['latest_action_at']);
+                return $dt->between($startOfDay, $endOfDay);
+            });
+        } elseif ($startOfDay) {
+            $verificationItems = $verificationItems->filter(function ($item) use ($startOfDay) {
+                $dt = Carbon::parse($item['latest_action_at']);
+                return $dt->gte($startOfDay);
+            });
+        } elseif ($endOfDay) {
+            $verificationItems = $verificationItems->filter(function ($item) use ($endOfDay) {
+                $dt = Carbon::parse($item['latest_action_at']);
+                return $dt->lte($endOfDay);
+            });
         }
 
         // Sort items by Branch Code in branch serial order, then by latest action date

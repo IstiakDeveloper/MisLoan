@@ -92,6 +92,10 @@ interface VerificationItem {
     samity_name: string;
     status: string;
     submitted_at?: string | null;
+    sent_at?: string | null;
+    issue_date?: string | null;
+    reply_date?: string | null;
+    latest_action_at?: string;
     created_at: string;
     reviewed_at?: string | null;
     reviewed_by_name?: string | null;
@@ -222,39 +226,80 @@ export default function VerificationIndex({ items, stats, filters, permissions, 
         ...overrides,
     });
 
+    const executeFilter = (overrides: Record<string, string> = {}) => {
+        router.get('/verifications', filterPayload({ page: '1', ...overrides }), {
+            preserveState: true,
+            replace: true,
+        });
+    };
+
+    // Debounce search query
+    useEffect(() => {
+        if (searchQuery === (filters.search || '')) return;
+        const handler = setTimeout(() => {
+            executeFilter({ search: searchQuery });
+        }, 400);
+        return () => clearTimeout(handler);
+    }, [searchQuery]);
+
     const handleSearch = (e: React.FormEvent) => {
         e.preventDefault();
-        router.get('/verifications', filterPayload(), { preserveState: true });
+        executeFilter();
+    };
+
+    const handleDateFromChange = (val: string) => {
+        setDateFrom(val);
+        let nextTo = dateTo;
+        if (!dateTo || dateTo === dateFrom) {
+            nextTo = val;
+            setDateTo(val);
+        }
+        executeFilter({ date_from: val, date_to: nextTo });
+    };
+
+    const handleDateToChange = (val: string) => {
+        setDateTo(val);
+        executeFilter({ date_to: val });
+    };
+
+    const handleZoneChange = (val: string) => {
+        setSelectedZone(val);
+        setSelectedArea('');
+        setSelectedBranch('');
+        executeFilter({ zone_id: val, area_id: '', branch_id: '' });
+    };
+
+    const handleAreaChange = (val: string) => {
+        setSelectedArea(val);
+        setSelectedBranch('');
+        executeFilter({ area_id: val, branch_id: '' });
+    };
+
+    const handleBranchChange = (val: string) => {
+        setSelectedBranch(val);
+        executeFilter({ branch_id: val });
     };
 
     const handleTypeChange = (newType: string) => {
         setTypeFilter(newType);
-        router.get('/verifications', filterPayload({ type: newType, page: '1' }), { preserveState: true });
+        executeFilter({ type: newType });
     };
 
     const handleStatusChange = (newStatus: string) => {
         setIssueStatusFilter(newStatus);
-        router.get('/verifications', filterPayload({ issue_status: newStatus, page: '1' }), { preserveState: true });
+        executeFilter({ issue_status: newStatus });
     };
 
     const handleTodayFilter = () => {
         setDateFrom(today);
         setDateTo(today);
-        router.get(
-            '/verifications',
-            filterPayload({ date_from: today, date_to: today, page: '1' }),
-            { preserveState: true }
-        );
+        executeFilter({ date_from: today, date_to: today });
     };
 
     const handleAllDatesFilter = () => {
         setDateFrom('');
         setDateTo('');
-        router.get(
-            '/verifications',
-            filterPayload({ date_from: '', date_to: '', page: '1' }),
-            { preserveState: true }
-        );
+        executeFilter({ date_from: '', date_to: '' });
     };
 
     const clearFilters = () => {
@@ -269,7 +314,7 @@ export default function VerificationIndex({ items, stats, filters, permissions, 
         router.get(
             '/verifications',
             { date_from: '', date_to: '' },
-            { preserveState: true }
+            { preserveState: true, replace: true }
         );
     };
 
@@ -588,7 +633,7 @@ export default function VerificationIndex({ items, stats, filters, permissions, 
                             <input
                                 type="date"
                                 value={dateFrom}
-                                onChange={(e) => setDateFrom(e.target.value)}
+                                onChange={(e) => handleDateFromChange(e.target.value)}
                                 className="px-2.5 py-2 text-sm border border-indigo-200 rounded-lg bg-white focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-400"
                                 title="হতে তারিখ"
                                 placeholder="হতে তারিখ"
@@ -597,7 +642,7 @@ export default function VerificationIndex({ items, stats, filters, permissions, 
                             <input
                                 type="date"
                                 value={dateTo}
-                                onChange={(e) => setDateTo(e.target.value)}
+                                onChange={(e) => handleDateToChange(e.target.value)}
                                 className="px-2.5 py-2 text-sm border border-indigo-200 rounded-lg bg-white focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-400"
                                 title="পর্যন্ত তারিখ"
                                 placeholder="পর্যন্ত তারিখ"
@@ -607,7 +652,7 @@ export default function VerificationIndex({ items, stats, filters, permissions, 
                         {zones.length > 0 && (
                             <select
                                 value={selectedZone}
-                                onChange={(e) => setSelectedZone(e.target.value)}
+                                onChange={(e) => handleZoneChange(e.target.value)}
                                 className="px-2.5 py-2 text-sm border border-indigo-200 rounded-lg bg-white"
                             >
                                 <option value="">সব জোন</option>
@@ -622,7 +667,7 @@ export default function VerificationIndex({ items, stats, filters, permissions, 
                         {areas.length > 0 && (
                             <select
                                 value={selectedArea}
-                                onChange={(e) => setSelectedArea(e.target.value)}
+                                onChange={(e) => handleAreaChange(e.target.value)}
                                 disabled={!selectedZone && filteredAreas.length === 0}
                                 className="px-2.5 py-2 text-sm border border-indigo-200 rounded-lg bg-white disabled:bg-slate-100"
                             >
@@ -638,7 +683,7 @@ export default function VerificationIndex({ items, stats, filters, permissions, 
                         {branches.length > 0 && (
                             <select
                                 value={selectedBranch}
-                                onChange={(e) => setSelectedBranch(e.target.value)}
+                                onChange={(e) => handleBranchChange(e.target.value)}
                                 disabled={!selectedZone && !selectedArea && filteredBranches.length === 0}
                                 className="px-2.5 py-2 text-sm border border-indigo-200 rounded-lg bg-white disabled:bg-slate-100"
                             >
@@ -653,7 +698,7 @@ export default function VerificationIndex({ items, stats, filters, permissions, 
 
                         <select
                             value={issueStatusFilter}
-                            onChange={(e) => setIssueStatusFilter(e.target.value)}
+                            onChange={(e) => handleStatusChange(e.target.value)}
                             className="px-2.5 py-2 text-sm border border-indigo-200 rounded-lg bg-white font-medium"
                         >
                             <option value="all">সব স্ট্যাটাস</option>
@@ -664,19 +709,12 @@ export default function VerificationIndex({ items, stats, filters, permissions, 
                             <option value="rejected">বাতিলকৃত</option>
                         </select>
 
-                        <button
-                            type="submit"
-                            className="px-3.5 py-2 text-sm bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 font-semibold flex items-center gap-1.5 shadow-sm shadow-indigo-200"
-                        >
-                            <Filter className="w-3.5 h-3.5" />
-                            Apply
-                        </button>
-
                         {hasActiveFilters && (
                             <button
                                 type="button"
                                 onClick={clearFilters}
                                 className="px-3 py-2 text-sm bg-white text-slate-600 border border-indigo-200 rounded-lg hover:bg-indigo-50 font-medium flex items-center gap-1.5"
+                                title="ফিল্টার রিসেট করুন"
                             >
                                 <X className="w-3.5 h-3.5" />
                                 Clear
@@ -763,9 +801,15 @@ export default function VerificationIndex({ items, stats, filters, permissions, 
                                                             {item.application_no}
                                                         </span>
                                                     </div>
-                                                    <div className="text-[10px] text-slate-500 mt-1 font-medium flex items-center gap-1" title="সর্বশেষ অ্যাকশন / জমাদানের তারিখ">
+                                                    <div className="text-[10px] text-slate-500 mt-1 font-medium flex items-center gap-1" title={`পাঠানোর / অ্যাকশন তারিখ: ${item.sent_at ? formatDate(item.sent_at) : (item.submitted_at ? formatDate(item.submitted_at) : formatDate(item.created_at))}`}>
                                                         <CalendarDays className="w-3 h-3 text-indigo-400 shrink-0" />
-                                                        <span>{item.submitted_at ? formatDate(item.submitted_at) : formatDate(item.created_at)}</span>
+                                                        <span>
+                                                            {item.sent_at
+                                                                ? formatDate(item.sent_at)
+                                                                : item.submitted_at
+                                                                ? formatDate(item.submitted_at)
+                                                                : formatDate(item.created_at)}
+                                                        </span>
                                                     </div>
                                                     <div className="text-[10px] text-slate-500 mt-0.5 font-medium">
                                                         {item.category_name}
