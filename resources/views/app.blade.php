@@ -33,16 +33,7 @@
 
         <title inertia>{{ str_replace('MisLoan', 'Mis Loan', config('app.name', 'Mis Loan')) }}</title>
 
-        <meta name="theme-color" content="#008030">
-        <link rel="manifest" href="/manifest.webmanifest">
-        <link rel="icon" href="/favicon.ico" sizes="32x32">
-        <link rel="icon" href="/favicon.svg" type="image/svg+xml">
-        <link rel="icon" href="/favicon-16x16.png" type="image/png" sizes="16x16">
-        <link rel="icon" href="/favicon-32x32.png" type="image/png" sizes="32x32">
-        <link rel="icon" href="/icons/icon-192.png" type="image/png" sizes="192x192">
-        <link rel="icon" href="/icons/icon-512.png" type="image/png" sizes="512x512">
-        <link rel="apple-touch-icon" href="/apple-touch-icon.png" sizes="180x180">
-        <link rel="mask-icon" href="/favicon.svg" color="#008030">
+        @include('partials.pwa-head')
 
         <link rel="preconnect" href="https://fonts.bunny.net">
         <link href="https://fonts.bunny.net/css?family=instrument-sans:400,500,600" rel="stylesheet" />

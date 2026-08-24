@@ -1,4 +1,4 @@
-const CACHE_NAME = 'mis-loan-v4';
+const CACHE_NAME = 'mis-loan-v6';
 
 const offlinePage = () =>
   new Response(
@@ -30,8 +30,19 @@ const offlinePage = () =>
   );
 
 self.addEventListener('install', (event) => {
-  self.skipWaiting();
-  event.waitUntil(caches.open(CACHE_NAME).then(() => {}));
+  event.waitUntil(
+    caches.open(CACHE_NAME).then(() => {
+      if (!self.registration.active) {
+        return self.skipWaiting();
+      }
+    })
+  );
+});
+
+self.addEventListener('message', (event) => {
+  if (event.data && event.data.type === 'SKIP_WAITING') {
+    self.skipWaiting();
+  }
 });
 
 self.addEventListener('activate', (event) => {
@@ -57,11 +68,17 @@ function shouldSkipNavigationCache(url) {
 }
 
 function cachePut(cache, req, res) {
-  if (res && res.status === 200 && res.type === 'basic' && req.url.startsWith(self.location.origin)) {
-    try {
-      cache.put(req, res.clone());
-    } catch (_) {}
+  if (!res || res.status !== 200 || res.type !== 'basic' || !req.url.startsWith(self.location.origin)) {
+    return;
   }
+
+  try {
+    const path = new URL(req.url).pathname;
+    if (path === '/sw.js' || path === '/manifest.webmanifest') {
+      return;
+    }
+    cache.put(req, res.clone());
+  } catch (_) {}
 }
 
 self.addEventListener('fetch', (event) => {
@@ -108,7 +125,7 @@ self.addEventListener('push', (event) => {
   const options = {
     body: data.body || '',
     icon: '/icons/icon-192.png',
-    badge: '/icons/icon-192.png',
+    badge: '/icons/icon-96.png',
     data: { url: data.url || '/login' },
   };
   event.waitUntil(self.registration.showNotification(title, options));

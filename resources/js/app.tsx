@@ -4,10 +4,11 @@ import { createInertiaApp, router } from '@inertiajs/react';
 import { resolvePageComponent } from 'laravel-vite-plugin/inertia-helpers';
 import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
-import { initializeTheme } from './hooks/use-appearance';
+import PwaUpdateBanner from './components/PwaUpdateBanner';
 import { AuthProvider } from './contexts/AuthContext';
-import { stripWholeNumberDecimals } from './utils/formatAmount';
+import { initializeTheme } from './hooks/use-appearance';
 import { syncCsrfMetaToken } from './lib/csrf';
+import { stripWholeNumberDecimals } from './utils/formatAmount';
 
 const rawAppName = import.meta.env.VITE_APP_NAME || 'Mis Loan';
 const appName = rawAppName === 'MisLoan' ? 'Mis Loan' : rawAppName;
@@ -61,6 +62,7 @@ createInertiaApp({
         root.render(
             <StrictMode>
                 <AuthProvider>
+                    <PwaUpdateBanner />
                     <App {...props} />
                 </AuthProvider>
             </StrictMode>,
@@ -73,13 +75,3 @@ createInertiaApp({
 
 // This will set light / dark mode on load...
 initializeTheme();
-
-if ('serviceWorker' in navigator) {
-    window.addEventListener('load', () => {
-        navigator.serviceWorker
-            .register('/sw.js')
-            .catch(() => {
-                // ignore registration errors
-            });
-    });
-}
