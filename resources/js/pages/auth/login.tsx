@@ -94,6 +94,8 @@ export default function Login({
                                 <img
                                     src="/icons/logo.png"
                                     alt="MisLoan"
+                                    width={1119}
+                                    height={1081}
                                     className="w-64 max-w-full rounded-3xl bg-white p-5 shadow-2xl object-contain"
                                 />
                             </div>
@@ -125,6 +127,9 @@ export default function Login({
                             <img
                                 src="/icons/logo.png"
                                 alt="MisLoan"
+                                width={1119}
+                                height={1081}
+                                fetchPriority="high"
                                 className="mx-auto mb-4 h-28 w-auto object-contain"
                             />
                             <p className="text-gray-500 dark:text-gray-400 text-sm mt-1">Microfinance Information System</p>

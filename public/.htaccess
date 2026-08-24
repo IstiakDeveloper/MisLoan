@@ -1,3 +1,10 @@
+<IfModule mod_headers.c>
+    # Hashed Vite files can be cached for a year; the filename changes on rebuild.
+    <If "%{REQUEST_URI} =~ m#^/build/assets/#">
+        Header set Cache-Control "public, max-age=31536000, immutable"
+    </If>
+</IfModule>
+
 <IfModule mod_rewrite.c>
     <IfModule mod_negotiation.c>
         Options -MultiViews -Indexes

@@ -20,6 +20,8 @@ export default function AuthSimpleLayout({
                             <img
                                 src="/icons/logo.png"
                                 alt="MisLoan"
+                                width={1119}
+                                height={1081}
                                 className="mb-1 h-20 w-auto object-contain"
                             />
                         </div>
