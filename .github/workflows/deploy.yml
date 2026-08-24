@@ -64,7 +64,7 @@ jobs:
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
         run: |
           TEXT=$(cat <<EOF
-          ✅ HRM deploy SUCCESS
+          ✅ MISLoan deploy SUCCESS
           Branch: ${{ github.ref_name }}
           Commit: ${{ github.sha }}
           By: ${{ github.actor }}
@@ -82,7 +82,7 @@ jobs:
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
         run: |
           TEXT=$(cat <<EOF
-          ❌ HRM deploy FAILED
+          ❌ MISLoan deploy FAILED
           Branch: ${{ github.ref_name }}
           Commit: ${{ github.sha }}
           By: ${{ github.actor }}
