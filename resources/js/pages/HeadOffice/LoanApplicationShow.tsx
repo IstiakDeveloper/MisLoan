@@ -410,10 +410,15 @@ export default function LoanApplicationShow({ loan, flash }: Props) {
         });
     };
 
+    const issues = loan.issues ?? [];
+    const pendingIssues = issues.filter((issue) => issue.status === 'pending');
+    const unansweredIssues = issues.filter((issue) => issue.status === 'pending' && !issue.response_message);
+    const hasRepliedIssues = issues.some((issue) => Boolean(issue.response_message));
+
     const handleApprove = () => {
-        const pendingIssuesList = loan.issues?.filter(issue => issue.status === 'pending') || [];
-        if (pendingIssuesList.length > 0) {
-            alert('পেন্ডিং সমস্যা থাকলে অনুমোদন করা যাবে না।');
+        const unansweredIssuesList = loan.issues?.filter(issue => issue.status === 'pending' && !issue.response_message) || [];
+        if (unansweredIssuesList.length > 0) {
+            alert('জোন থেকে ব্যাখ্যা/জবাব না পাওয়া পর্যন্ত অনুমোদন করা যাবে না।');
             return;
         }
         if (confirm('এই ঋণ আবেদন অনুমোদন করবেন?')) {
@@ -444,8 +449,6 @@ export default function LoanApplicationShow({ loan, flash }: Props) {
     const loanProduct = loan.loan_product || loan.loanProduct;
     const loanCategory = loan.loan_category || loan.loanCategory;
     const applicant = loan.submittedBy || loan.submitted_by;
-    const issues = loan.issues ?? [];
-    const pendingIssues = issues.filter((issue) => issue.status === 'pending');
 
     /** Calculate stage index for timeline pipeline */
     const getStageIndex = () => {
@@ -472,13 +475,22 @@ export default function LoanApplicationShow({ loan, flash }: Props) {
 
     /** Get rich plain Bengali explanation of current pending state for Head Office */
     const getPendingStatusExplanation = () => {
-        if (pendingIssues.length > 0) {
+        if (unansweredIssues.length > 0) {
             return {
                 title: 'পেন্ডিং অবস্থা: হেড অফিসের পর্যবেক্ষণ/সমস্যা প্রেরিত',
-                desc: `হেড অফিস থেকে ${pendingIssues.length} টি সমস্যা/পর্যবেক্ষণ পাঠানো হয়েছে। শাখা থেকে উত্তর দেওয়ার পর পুনরায় অনুমোদন করা যাবে।`,
+                desc: `হেড অফিস থেকে ${unansweredIssues.length} টি সমস্যা/পর্যবেক্ষণ পাঠানো হয়েছে। জোন থেকে উত্তর দেওয়ার পর পুনরায় অনুমোদন করা যাবে।`,
                 badgeColor: 'bg-rose-100 text-rose-800 border-rose-300',
                 cardBg: 'bg-rose-50/90 border-rose-200 text-rose-950',
                 iconColor: 'text-rose-600',
+            };
+        }
+        if (pendingIssues.length > 0) {
+            return {
+                title: 'পেন্ডিং অবস্থা: জোনাল ব্যাখ্যা প্রাপ্ত — অনুমোদনের জন্য প্রস্তুত',
+                desc: 'আপত্তির প্রেক্ষিতে জোনাল ম্যানেজারের ব্যাখ্যা পাওয়া গেছে। পর্যালোচনা করে এখন অনুমোদন সম্পন্ন করতে পারেন।',
+                badgeColor: 'bg-sky-100 text-sky-800 border-sky-300',
+                cardBg: 'bg-sky-50/90 border-sky-200 text-sky-950',
+                iconColor: 'text-sky-600',
             };
         }
         switch (loan.status) {
@@ -802,7 +814,7 @@ export default function LoanApplicationShow({ loan, flash }: Props) {
 
                             {loan.status === 'pending_head_office' && (
                                 <>
-                                    {pendingIssues.length === 0 && (
+                                    {unansweredIssues.length === 0 && (
                                         <Button 
                                             onClick={handleApprove} 
                                             className="bg-emerald-600 hover:bg-emerald-700 text-white shadow-xs font-bold rounded-xl text-xs sm:text-sm h-9 sm:h-10"
@@ -892,7 +904,7 @@ export default function LoanApplicationShow({ loan, flash }: Props) {
                                 </div>
                                 <p className="text-xs text-slate-700 leading-relaxed">{pendingStatusInfo.desc}</p>
 
-                                {loan.status === 'pending_head_office' && pendingIssues.length === 0 && (
+                                {loan.status === 'pending_head_office' && unansweredIssues.length === 0 && (
                                     <div className="mt-3 flex flex-wrap items-center gap-2">
                                         <Button
                                             size="sm"

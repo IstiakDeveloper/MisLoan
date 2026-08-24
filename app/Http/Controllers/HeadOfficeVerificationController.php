@@ -287,7 +287,9 @@ class HeadOfficeVerificationController extends Controller
                 $latestIssue?->resolution_note,
                 $admission->revision_comments
             );
-            $hasReplied = $mappedIssues->contains(fn ($i) => !empty($i['reply_message']));
+            $hasReplied = $mappedIssues->contains(fn ($i) => !empty($i['reply_message']))
+                || !empty($parsed['branch_reply'])
+                || !empty($latestMapped['reply_message']);
 
             $latestActionAt = collect([
                 $admission->submitted_at,
@@ -370,7 +372,9 @@ class HeadOfficeVerificationController extends Controller
                 $latestIssue?->response_message,
                 $loan->revision_comments ?? null
             );
-            $hasReplied = $mappedIssues->contains(fn ($i) => !empty($i['reply_message']));
+            $hasReplied = $mappedIssues->contains(fn ($i) => !empty($i['reply_message']))
+                || !empty($parsed['branch_reply'])
+                || !empty($latestMapped['reply_message']);
 
             $latestActionAt = collect([
                 $loan->submitted_at,

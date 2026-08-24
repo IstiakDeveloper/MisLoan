@@ -465,7 +465,6 @@ export default function ApprovalForm({
         educational_qualification:
             String((savedData as any)?.educational_qualification || '').trim() ||
             selfFromFamily.educational_qualification,
-        member_code: member?.application_no || String((savedData as any)?.member_code || ''),
     }, member));
 
     useEffect(() => {

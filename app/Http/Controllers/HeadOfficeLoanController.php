@@ -725,8 +725,11 @@ class HeadOfficeLoanController extends Controller
             return back()->with('error', 'শুধুমাত্র হেড অফিসে প্রেরিত আবেদন অনুমোদন করা যাবে।');
         }
 
-        if ($loanApplication->issues()->where('status', 'pending')->exists()) {
-            return back()->with('error', 'পেন্ডিং সমস্যা থাকলে অনুমোদন করা যাবে না।');
+        // Only block if there are unanswered pending issues (without response from Zonal Manager/Branch)
+        if ($loanApplication->issues()->where('status', 'pending')->where(function ($q) {
+            $q->whereNull('response_message')->orWhere('response_message', '');
+        })->exists()) {
+            return back()->with('error', 'জোন থেকে ব্যাখ্যা/জবাব না পাওয়া পর্যন্ত অনুমোদন করা যাবে না।');
         }
 
         $loanApplication->loadMissing('loanProduct');
@@ -734,6 +737,13 @@ class HeadOfficeLoanController extends Controller
             is_array($loanApplication->business_plan) ? $loanApplication->business_plan : [],
             now()->toDateString(),
         );
+
+        // Close/resolve any pending issues now that Head Office is approving
+        $loanApplication->issues()->where('status', 'pending')->update([
+            'status' => 'resolved',
+            'responded_at' => now(),
+            'responded_by' => auth()->id(),
+        ]);
 
         $update = [
             'status' => LoanApplication::STATUS_PENDING_DISBURSEMENT,

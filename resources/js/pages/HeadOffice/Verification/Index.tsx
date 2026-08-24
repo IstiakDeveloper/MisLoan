@@ -855,13 +855,13 @@ export default function VerificationIndex({ items, stats, filters, permissions, 
                                                             </span>
                                                         )}
 
-                                                        {/* Head Office 1-Click Approve (ONLY when Zonal reply received!) */}
-                                                        {permissions.can_approve && !isApproved && !isRejected && item.has_replied && (
+                                                        {/* Head Office 1-Click Approve (when Zonal reply received or no pending issue) */}
+                                                        {permissions.can_approve && !isApproved && !isRejected && (item.has_replied || !item.has_pending_issue) && (
                                                             <button
                                                                 type="button"
                                                                 onClick={() => handleOneClickApprove(item)}
                                                                 className="px-2.5 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-semibold flex items-center gap-1 shadow-sm transition"
-                                                                title="১ ক্লিকে অনুমোদন করুন (শাখার জবাব পাওয়ার পর)"
+                                                                title="১ ক্লিকে অনুমোদন করুন (জোনাল ব্যাখ্যা পাওয়ার পর)"
                                                             >
                                                                 <Check className="w-3.5 h-3.5" />
                                                                 অনুমোদন

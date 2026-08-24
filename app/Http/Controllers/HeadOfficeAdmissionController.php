@@ -815,10 +815,19 @@ class HeadOfficeAdmissionController extends Controller
      */
     public function approveSingle(MemberAdmission $admission)
     {
-        // Check if has pending issues
-        if ($admission->issues()->where('status', 'pending')->exists()) {
-            return back()->with('error', 'Cannot approve admission with pending issues!');
+        // Only block if has unanswered pending issues
+        if ($admission->issues()->where('status', 'pending')->where(function ($q) {
+            $q->whereNull('resolution_note')->orWhere('resolution_note', '');
+        })->exists()) {
+            return back()->with('error', 'জোন থেকে ব্যাখ্যা/জবাব না পাওয়া পর্যন্ত অনুমোদন করা যাবে না।');
         }
+
+        // Close/resolve any pending issues now that Head Office is approving
+        $admission->issues()->where('status', 'pending')->update([
+            'status' => 'resolved',
+            'resolved_at' => now(),
+            'resolved_by' => auth()->id(),
+        ]);
 
         $admission->update([
             'status' => 'approved',

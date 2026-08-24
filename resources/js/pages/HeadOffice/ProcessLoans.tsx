@@ -349,8 +349,9 @@ export default function ProcessLoans({ loans, filters, zones = [], areas = [], b
     };
 
     const handleApproveSingle = (loan: Loan) => {
-        if (loan.issues.length > 0) {
-            alert('আবেদনটিতে পেন্ডিং সমস্যা রয়েছে! অনুমোদন করার আগে সমস্যা সমাধান করুন।');
+        const hasUnansweredIssues = loan.issues && loan.issues.some((i: any) => i.status === 'pending' && !i.response_message);
+        if (hasUnansweredIssues) {
+            alert('আবেদনটিতে উত্তরবিহীন সমস্যা রয়েছে! জোন থেকে ব্যাখ্যা পাওয়ার পর অনুমোদন করুন।');
             return;
         }
 
@@ -829,7 +830,9 @@ export default function ProcessLoans({ loans, filters, zones = [], areas = [], b
                                 </thead>
                                 <tbody className="divide-y divide-slate-100 text-xs">
                                     {displayedLoans.map((loan) => {
-                                        const hasIssues = loan.issues.length > 0;
+                                        const unansweredIssues = (loan.issues || []).filter((i: any) => i.status === 'pending' && !i.response_message);
+                                        const hasUnansweredIssues = unansweredIssues.length > 0;
+                                        const hasAnyIssues = (loan.issues || []).length > 0;
                                         const isRevised = (loan.revision_count || 0) > 0;
                                         const isSelected = selectedIds.includes(loan.id);
 
@@ -938,24 +941,36 @@ export default function ProcessLoans({ loans, filters, zones = [], areas = [], b
 
                                                 {/* Issues Status */}
                                                 <td className="py-3 px-4 align-top max-w-xs">
-                                                    {hasIssues ? (
+                                                    {hasAnyIssues ? (
                                                         <div className="space-y-1">
                                                             {loan.issues.map((issue) => (
                                                                 <div
                                                                     key={issue.id}
-                                                                    className="p-1.5 bg-amber-50 border border-amber-200/80 rounded-lg text-xs flex items-start justify-between gap-1.5"
+                                                                    className={`p-1.5 rounded-lg text-xs flex items-start justify-between gap-1.5 border ${
+                                                                        issue.response_message
+                                                                            ? 'bg-sky-50 border-sky-200'
+                                                                            : 'bg-amber-50 border-amber-200/80'
+                                                                    }`}
                                                                 >
-                                                                    <div className="space-y-0.5">
-                                                                        <p className="text-amber-900 font-medium leading-tight text-[11px]">
+                                                                    <div className="space-y-0.5 min-w-0 flex-1">
+                                                                        <p className={`font-medium leading-tight text-[11px] ${
+                                                                            issue.response_message ? 'text-sky-950' : 'text-amber-900'
+                                                                        }`}>
                                                                             {issue.issue_description}
                                                                         </p>
-                                                                        <p className="text-[9px] text-amber-600">
-                                                                            রিপোর্টার: {issue.reporter?.name || 'User'}
-                                                                        </p>
+                                                                        {issue.response_message ? (
+                                                                            <p className="text-[10px] text-sky-700 bg-sky-100/80 px-1.5 py-0.5 rounded mt-1">
+                                                                                <span className="font-bold">জোনাল উত্তর:</span> {issue.response_message}
+                                                                            </p>
+                                                                        ) : (
+                                                                            <p className="text-[9px] text-amber-600">
+                                                                                রিপোর্টার: {issue.reporter?.name || 'User'} (উত্তরের অপেক্ষায়)
+                                                                            </p>
+                                                                        )}
                                                                     </div>
                                                                     <button
                                                                         onClick={() => handleDeleteIssue(issue.id)}
-                                                                        className="text-amber-500 hover:text-red-600 p-0.5 transition"
+                                                                        className="text-slate-400 hover:text-red-600 p-0.5 transition shrink-0"
                                                                         title="সমস্যাটি মুছে ফেলুন"
                                                                     >
                                                                         <X className="w-3 h-3" />
@@ -998,9 +1013,9 @@ export default function ProcessLoans({ loans, filters, zones = [], areas = [], b
                                                         {/* Approve */}
                                                         <button
                                                             onClick={() => handleApproveSingle(loan)}
-                                                            disabled={hasIssues}
+                                                            disabled={hasUnansweredIssues}
                                                             className="px-2.5 py-1 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold rounded-lg shadow-sm transition disabled:opacity-40 disabled:cursor-not-allowed flex items-center gap-1"
-                                                            title={hasIssues ? "সমস্যা থাকা অবস্থায় অনুমোদন সম্ভব নয়" : "অনুমোদন করুন"}
+                                                            title={hasUnansweredIssues ? "জোন থেকে ব্যাখ্যা না আসা পর্যন্ত অনুমোদন সম্ভব নয়" : "অনুমোদন করুন"}
                                                         >
                                                             <CheckCircle2 className="w-3 h-3" />
                                                             অনুমোদন
