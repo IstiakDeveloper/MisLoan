@@ -7,6 +7,7 @@ import { numberToWordsBangla } from './ApprovalForm/PrintPreview';
 import { afterLoanFormSaveUrl } from '@/utils/loanFormNavigation';
 import { useAutoFitPrint } from '@/hooks/useAutoFitPrint';
 import { withLiveMemberCode } from '@/utils/memberCodeUtils';
+import { fileToCompressedDataUrl } from '@/utils/imageUpload';
 
 interface DeathRiskFundData {
     // Branch & Date
@@ -546,19 +547,16 @@ export default function DeathRiskFund({
         }
     }, [savedData, baseAmount, memberPhotoUrl, guardianPhotoUrl]);
 
-    const handleImageUpload = (field: string, file: File | null) => {
+    const handleImageUpload = async (field: string, file: File | null) => {
         if (!file) return;
 
-        if (!file.type.match(/image\/(png|jpg|jpeg)/)) {
-            alert('শুধুমাত্র PNG, JPG বা JPEG ফাইল আপলোড করুন');
+        const result = await fileToCompressedDataUrl(file, { maxWidth: 800 });
+        if (!result.ok) {
+            alert(result.error);
             return;
         }
 
-        const reader = new FileReader();
-        reader.onloadend = () => {
-            setData(field as any, reader.result as string);
-        };
-        reader.readAsDataURL(file);
+        setData(field as any, result.dataUrl);
     };
 
     const removeImage = (field: string) => {

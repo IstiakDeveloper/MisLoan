@@ -2,7 +2,7 @@
 export const MAX_ADMISSION_UPLOAD_BYTES = 10 * 1024 * 1024;
 
 /** Prefer keeping compressed images under this size for reliable draft saves. */
-const TARGET_MAX_BYTES = 1.5 * 1024 * 1024;
+const TARGET_MAX_BYTES = 200 * 1024;
 
 export type PrepareUploadResult =
     | { ok: true; file: File; message: string }
@@ -78,15 +78,6 @@ export async function prepareAdmissionUploadFile(
         };
     }
 
-    // Already small enough — keep original (preserve PNG transparency when tiny)
-    if (file.size <= TARGET_MAX_BYTES && file.size <= 512 * 1024) {
-        return {
-            ok: true,
-            file,
-            message: `✓ সফল নির্বাচন (${formatSize(file.size)})`,
-        };
-    }
-
     try {
         const img = await loadImage(file);
         let width = img.naturalWidth || img.width;
@@ -119,11 +110,11 @@ export async function prepareAdmissionUploadFile(
         ctx.fillRect(0, 0, width, height);
         ctx.drawImage(img, 0, 0, width, height);
 
-        let quality = 0.82;
+        let quality = 0.78;
         let blob = await canvasToJpegBlob(canvas, quality);
 
         while (blob && blob.size > TARGET_MAX_BYTES && quality > 0.45) {
-            quality -= 0.1;
+            quality -= 0.08;
             blob = await canvasToJpegBlob(canvas, quality);
         }
 

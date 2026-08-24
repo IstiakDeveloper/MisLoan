@@ -22,6 +22,7 @@ import {
     Shield,
 } from 'lucide-react';
 import React, { ChangeEvent, useRef, useState } from 'react';
+import { prepareAdmissionUploadFile } from '@/utils/imageUpload';
 
 interface Role {
     id: number;
@@ -102,20 +103,36 @@ export default function Edit({ user }: Props) {
         password_confirmation: '',
     });
 
-    const handlePhotoSelect = (e: ChangeEvent<HTMLInputElement>) => {
+    const handlePhotoSelect = async (e: ChangeEvent<HTMLInputElement>) => {
         const file = e.target.files?.[0];
-        if (file) {
-            setData('profile_photo', file);
-            setPhotoPreview(URL.createObjectURL(file));
+        if (!file) {
+            return;
         }
+
+        const result = await prepareAdmissionUploadFile(file, { maxWidth: 400 });
+        if (!result.ok) {
+            alert(result.error);
+            return;
+        }
+
+        setData('profile_photo', result.file);
+        setPhotoPreview(URL.createObjectURL(result.file));
     };
 
-    const handleSignatureSelect = (e: ChangeEvent<HTMLInputElement>) => {
+    const handleSignatureSelect = async (e: ChangeEvent<HTMLInputElement>) => {
         const file = e.target.files?.[0];
-        if (file) {
-            setData('signature', file);
-            setSignaturePreview(URL.createObjectURL(file));
+        if (!file) {
+            return;
         }
+
+        const result = await prepareAdmissionUploadFile(file, { maxWidth: 1000 });
+        if (!result.ok) {
+            alert(result.error);
+            return;
+        }
+
+        setData('signature', result.file);
+        setSignaturePreview(URL.createObjectURL(result.file));
     };
 
     const handleSubmit = (e: React.FormEvent) => {

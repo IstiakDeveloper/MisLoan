@@ -7,6 +7,7 @@ import { formatDateBangla } from '@/utils/dateUtils';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
+import { fileToCompressedDataUrl } from '@/utils/imageUpload';
 
 interface SavingsFormData {
     // Office use
@@ -349,30 +350,32 @@ export default function SavingsApplicationForm({ memberAdmission, savingsProduct
         }
     }, [existingApplication]);
 
-    const handleImageUpload = (field: string, file: File | null) => {
+    const handleImageUpload = async (field: string, file: File | null) => {
         if (!file) return;
-        
-        const reader = new FileReader();
-        reader.onloadend = () => {
-            const base64String = reader.result as string;
-            setData(field as any, base64String);
-            setImagePreview(prev => ({ ...prev, [field]: base64String }));
-        };
-        reader.readAsDataURL(file);
+
+        const result = await fileToCompressedDataUrl(file, { maxWidth: 800 });
+        if (!result.ok) {
+            alert(result.error);
+            return;
+        }
+
+        setData(field as any, result.dataUrl);
+        setImagePreview(prev => ({ ...prev, [field]: result.dataUrl }));
     };
 
-    const handleNomineeImageUpload = (index: number, field: 'photo' | 'signature', file: File | null) => {
+    const handleNomineeImageUpload = async (index: number, field: 'photo' | 'signature', file: File | null) => {
         if (!file) return;
-        
-        const reader = new FileReader();
-        reader.onloadend = () => {
-            const base64String = reader.result as string;
-            const updatedNominees = [...data.nominees];
-            updatedNominees[index] = { ...updatedNominees[index], [field]: base64String };
-            setData('nominees', updatedNominees);
-            setImagePreview(prev => ({ ...prev, [`nominee_${index}_${field}`]: base64String }));
-        };
-        reader.readAsDataURL(file);
+
+        const result = await fileToCompressedDataUrl(file, { maxWidth: 800 });
+        if (!result.ok) {
+            alert(result.error);
+            return;
+        }
+
+        const updatedNominees = [...data.nominees];
+        updatedNominees[index] = { ...updatedNominees[index], [field]: result.dataUrl };
+        setData('nominees', updatedNominees);
+        setImagePreview(prev => ({ ...prev, [`nominee_${index}_${field}`]: result.dataUrl }));
     };
 
     const validateForm = (): { valid: boolean; errors: Record<string, string> } => {

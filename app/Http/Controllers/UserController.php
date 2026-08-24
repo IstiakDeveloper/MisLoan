@@ -11,7 +11,9 @@ use App\Models\User;
 use App\Models\Zone;
 use App\Services\BranchAccountService;
 use App\Services\HrmUserSyncService;
+use App\Services\ImageCompressionService;
 use Illuminate\Http\Request;
+use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Mail;
@@ -203,7 +205,9 @@ class UserController extends Controller
             if ($user->signature) {
                 Storage::disk('public')->delete($user->signature);
             }
-            $validated['signature'] = $request->file('signature')->store('signatures/users', 'public');
+            $validated['signature'] = $this->storeCompressedSignature(
+                $request->file('signature'),
+            );
         }
 
         $updateData = [
@@ -441,10 +445,17 @@ class UserController extends Controller
                 Storage::disk('public')->delete($user->signature);
             }
 
-            $path = $request->file('signature')->store('signatures/users', 'public');
+            $path = $this->storeCompressedSignature($request->file('signature'));
             $user->update(['signature' => $path]);
         }
 
         return back()->with('success', 'User signature updated successfully.');
+    }
+
+    private function storeCompressedSignature(UploadedFile $file): string
+    {
+        $path = app(ImageCompressionService::class)->compressSignature($file, 'signatures/users');
+
+        return $path !== false ? $path : $file->store('signatures/users', 'public');
     }
 }

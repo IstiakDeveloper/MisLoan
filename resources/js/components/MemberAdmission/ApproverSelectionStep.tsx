@@ -90,7 +90,7 @@ export default function ApproverSelectionStep({
 
         const isNidOrDoc = field.includes('nid');
         const result = await prepareAdmissionUploadFile(file, {
-            maxWidth: isNidOrDoc ? 1600 : 800,
+            maxWidth: isNidOrDoc ? 1280 : 800,
         });
 
         if (!result.ok) {

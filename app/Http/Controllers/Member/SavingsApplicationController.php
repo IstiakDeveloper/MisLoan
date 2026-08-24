@@ -3,13 +3,16 @@
 namespace App\Http\Controllers\Member;
 
 use App\Http\Controllers\Controller;
+use App\Models\Branch;
+use App\Models\MemberAdmission;
 use App\Models\SavingsApplication;
 use App\Models\SavingsProduct;
-use App\Models\MemberAdmission;
+use App\Services\ImageCompressionService;
+use App\Services\MemberCodeService;
 use Illuminate\Http\Request;
-use Inertia\Inertia;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
+use Inertia\Inertia;
 
 class SavingsApplicationController extends Controller
 {
@@ -23,14 +26,14 @@ class SavingsApplicationController extends Controller
             return null;
         }
         // Already a short path (e.g. from previous save)
-        if (strlen($value) < 500 && !str_starts_with($value, 'data:')) {
+        if (strlen($value) < 500 && ! str_starts_with($value, 'data:')) {
             return $value;
         }
-        if (!str_starts_with($value, 'data:image')) {
+        if (! str_starts_with($value, 'data:image')) {
             return $value;
         }
         // data:image/jpeg;base64,XXXX
-        if (!preg_match('#^data:image/(\w+);base64,(.+)$#', $value, $m)) {
+        if (! preg_match('#^data:image/(\w+);base64,(.+)$#', $value, $m)) {
             return null;
         }
         $ext = $m[1] === 'jpeg' ? 'jpg' : $m[1];
@@ -38,10 +41,18 @@ class SavingsApplicationController extends Controller
         if ($data === false) {
             return null;
         }
-        $dir = 'savings-applications' . ($subDir ? '/' . $subDir : '');
-        $filename = $prefix . '_' . uniqid() . '.' . $ext;
-        $path = $dir . '/' . $filename;
+        $dir = 'savings-applications'.($subDir ? '/'.$subDir : '');
+        $originalName = $prefix.'.'.$ext;
+
+        $compressed = app(ImageCompressionService::class)->compressBinary($data, $dir, $originalName);
+        if ($compressed !== false) {
+            return $compressed;
+        }
+
+        $filename = $prefix.'_'.uniqid().'.'.$ext;
+        $path = $dir.'/'.$filename;
         Storage::disk('public')->put($path, $data);
+
         return $path;
     }
 
@@ -56,7 +67,8 @@ class SavingsApplicationController extends Controller
         if (str_starts_with($value, 'data:') || str_starts_with($value, 'http')) {
             return $value;
         }
-        return asset('storage/' . ltrim($value, '/'));
+
+        return asset('storage/'.ltrim($value, '/'));
     }
 
     /**
@@ -67,23 +79,24 @@ class SavingsApplicationController extends Controller
         $subDir = $applicationId ? (string) $applicationId : '';
         $out = $validated;
         foreach (['applicant_photo', 'applicant_signature', 'officer_signature', 'accountant_signature', 'branch_manager_signature'] as $key) {
-            if (!empty($out[$key])) {
+            if (! empty($out[$key])) {
                 $stored = $this->storeImageOrPath($out[$key], $subDir, $key);
                 $out[$key] = $stored ?? (str_starts_with($out[$key], 'data:') ? null : $out[$key]);
             }
         }
-        if (!empty($out['nominee_info']) && is_array($out['nominee_info'])) {
+        if (! empty($out['nominee_info']) && is_array($out['nominee_info'])) {
             foreach ($out['nominee_info'] as $i => $nominee) {
-                if (!empty($nominee['photo'])) {
-                    $stored = $this->storeImageOrPath($nominee['photo'], $subDir, 'nominee_photo_' . $i);
+                if (! empty($nominee['photo'])) {
+                    $stored = $this->storeImageOrPath($nominee['photo'], $subDir, 'nominee_photo_'.$i);
                     $out['nominee_info'][$i]['photo'] = $stored ?? (str_starts_with($nominee['photo'], 'data:') ? null : $nominee['photo']);
                 }
-                if (!empty($nominee['signature'])) {
-                    $stored = $this->storeImageOrPath($nominee['signature'], $subDir, 'nominee_sig_' . $i);
+                if (! empty($nominee['signature'])) {
+                    $stored = $this->storeImageOrPath($nominee['signature'], $subDir, 'nominee_sig_'.$i);
                     $out['nominee_info'][$i]['signature'] = $stored ?? (str_starts_with($nominee['signature'], 'data:') ? null : $nominee['signature']);
                 }
             }
         }
+
         return $out;
     }
 
@@ -114,22 +127,22 @@ class SavingsApplicationController extends Controller
                 'status', 'deposit_amount', 'monthly_installment', 'maturity_amount', 'maturity_date',
                 'created_at', 'submitted_at',
             ])
-            ->when(!$user->has_all_access, function ($q) use ($user) {
+            ->when(! $user->has_all_access, function ($q) use ($user) {
                 $q->whereIn('branch_id', $user->getAccessibleBranches()->pluck('id'));
             })
             ->where(function ($q) use ($user) {
                 $q->where('status', '!=', 'draft')
-                  ->orWhere('submitted_by', $user->id);
+                    ->orWhere('submitted_by', $user->id);
             });
 
         if ($dateFrom) {
-            $query->where('created_at', '>=', $dateFrom . ' 00:00:00');
+            $query->where('created_at', '>=', $dateFrom.' 00:00:00');
         }
         if ($dateTo) {
-            $query->where('created_at', '<=', $dateTo . ' 23:59:59');
+            $query->where('created_at', '<=', $dateTo.' 23:59:59');
         }
         if ($search !== '') {
-            \App\Services\MemberCodeService::applySavingsSearch($query, $search);
+            MemberCodeService::applySavingsSearch($query, $search);
         }
 
         $applications = $query->orderBy('created_at', 'desc')->paginate(20);
@@ -146,7 +159,7 @@ class SavingsApplicationController extends Controller
     public function searchMembers(Request $request)
     {
         $user = $request->user();
-        if (!$user || !$user->branch_id) {
+        if (! $user || ! $user->branch_id) {
             return response()->json(['members' => []]);
         }
 
@@ -158,7 +171,7 @@ class SavingsApplicationController extends Controller
         $members = MemberAdmission::where('branch_id', $user->branch_id)
             ->where('status', 'approved')
             ->where(function ($q) use ($query) {
-                \App\Services\MemberCodeService::applyAdmissionSearch($q, $query);
+                MemberCodeService::applyAdmissionSearch($q, $query);
             })
             ->select([
                 'id', 'application_no', 'applicant_name_en', 'applicant_name_bn',
@@ -186,7 +199,7 @@ class SavingsApplicationController extends Controller
             return redirect()->route('member.savings-applications.index')
                 ->with('error', 'জি. সঞ্চয় (G. Savings) এর জন্য এই আবেদন ফ্লো ব্যবহার করা হয় না।');
         }
-        $branch = \App\Models\Branch::with('area:id,name')->where('id', $user->branch_id)->first();
+        $branch = Branch::with('area:id,name')->where('id', $user->branch_id)->first();
 
         $memberAdmission = null;
         if ($request->filled('member_id')) {
@@ -210,7 +223,7 @@ class SavingsApplicationController extends Controller
                 $existingApplication['officer_signature'] = $this->imagePathToUrl($existingApplication['officer_signature'] ?? null);
                 $existingApplication['accountant_signature'] = $this->imagePathToUrl($existingApplication['accountant_signature'] ?? null);
                 $existingApplication['branch_manager_signature'] = $this->imagePathToUrl($existingApplication['branch_manager_signature'] ?? null);
-                if (!empty($existingApplication['nominee_info']) && is_array($existingApplication['nominee_info'])) {
+                if (! empty($existingApplication['nominee_info']) && is_array($existingApplication['nominee_info'])) {
                     foreach ($existingApplication['nominee_info'] as $i => $n) {
                         $existingApplication['nominee_info'][$i]['photo'] = $this->imagePathToUrl($n['photo'] ?? null);
                         $existingApplication['nominee_info'][$i]['signature'] = $this->imagePathToUrl($n['signature'] ?? null);
@@ -274,7 +287,7 @@ class SavingsApplicationController extends Controller
 
         if ($validated['deposit_amount'] < $product->min_amount || ($product->max_amount && $validated['deposit_amount'] > $product->max_amount)) {
             return back()->withErrors([
-                'deposit_amount' => 'জমার পরিমাণ ' . $product->min_amount . ' - ' . ($product->max_amount ?? 'সর্বোচ্চ') . ' এর মধ্যে হতে হবে।',
+                'deposit_amount' => 'জমার পরিমাণ '.$product->min_amount.' - '.($product->max_amount ?? 'সর্বোচ্চ').' এর মধ্যে হতে হবে।',
             ])->withInput();
         }
 
@@ -326,10 +339,12 @@ class SavingsApplicationController extends Controller
                 'nominee_info' => $validated['nominee_info'] ?? null,
             ]);
             DB::commit();
+
             return redirect()->route('member.savings-applications.show', $app->id)
-                ->with('success', 'আবেদন সংরক্ষণ হয়েছে। আবেদন নং: ' . $app->application_no);
+                ->with('success', 'আবেদন সংরক্ষণ হয়েছে। আবেদন নং: '.$app->application_no);
         } catch (\Exception $e) {
             DB::rollBack();
+
             return back()->withErrors(['error' => $e->getMessage()])->withInput();
         }
     }
@@ -340,7 +355,7 @@ class SavingsApplicationController extends Controller
     public function saveForm(Request $request, $id)
     {
         $application = SavingsApplication::findOrFail($id);
-        if (!$application->canBeEdited()) {
+        if (! $application->canBeEdited()) {
             return back()->withErrors(['error' => 'এই আবেদন সম্পাদনা করা যাবে না।']);
         }
 
@@ -375,7 +390,7 @@ class SavingsApplicationController extends Controller
             'nominee_info.*.signature' => 'nullable|string',
         ]);
 
-        if (!empty($validated['duration_months'])) {
+        if (! empty($validated['duration_months'])) {
             $validated['maturity_date'] = now()->addMonths((int) $validated['duration_months']);
             $product = $application->savingsProduct;
             if ($product) {
@@ -387,6 +402,7 @@ class SavingsApplicationController extends Controller
         }
         $validated = $this->processImageFields($validated, $application->id);
         $application->update($validated);
+
         return back()->with('success', 'ড্রাফট সংরক্ষণ হয়েছে।');
     }
 
@@ -407,7 +423,7 @@ class SavingsApplicationController extends Controller
         $app['officer_signature'] = $this->imagePathToUrl($app['officer_signature'] ?? null);
         $app['accountant_signature'] = $this->imagePathToUrl($app['accountant_signature'] ?? null);
         $app['branch_manager_signature'] = $this->imagePathToUrl($app['branch_manager_signature'] ?? null);
-        if (!empty($app['nominee_info']) && is_array($app['nominee_info'])) {
+        if (! empty($app['nominee_info']) && is_array($app['nominee_info'])) {
             foreach ($app['nominee_info'] as $i => $n) {
                 $app['nominee_info'][$i]['photo'] = $this->imagePathToUrl($n['photo'] ?? null);
                 $app['nominee_info'][$i]['signature'] = $this->imagePathToUrl($n['signature'] ?? null);
@@ -422,10 +438,11 @@ class SavingsApplicationController extends Controller
     public function submit($id)
     {
         $application = SavingsApplication::findOrFail($id);
-        if (!$application->canBeEdited()) {
+        if (! $application->canBeEdited()) {
             return back()->withErrors(['error' => 'এই আবেদন জমা দেওয়া যাবে না।']);
         }
         $application->update(['status' => 'submitted', 'submitted_at' => now()]);
+
         return redirect()->route('member.savings-applications.show', $application->id)
             ->with('success', 'আবেদন জমা দেওয়া হয়েছে।');
     }
@@ -450,6 +467,7 @@ class SavingsApplicationController extends Controller
             'reviewed_at' => now(),
             'rejection_reason' => null,
         ]);
+
         return redirect()->route('member.savings-applications.show', $application->id)
             ->with('success', 'সঞ্চয় আবেদন অনুমোদন হয়েছে।');
     }
@@ -473,6 +491,7 @@ class SavingsApplicationController extends Controller
             'reviewed_at' => now(),
             'rejection_reason' => $request->input('rejection_reason'),
         ]);
+
         return redirect()->route('member.savings-applications.show', $application->id)
             ->with('success', 'আবেদন প্রত্যাখ্যান হয়েছে।');
     }
@@ -480,10 +499,11 @@ class SavingsApplicationController extends Controller
     public function destroy($id)
     {
         $application = SavingsApplication::findOrFail($id);
-        if (!in_array($application->status, ['draft', 'submitted'])) {
+        if (! in_array($application->status, ['draft', 'submitted'])) {
             return back()->withErrors(['error' => 'শুধুমাত্র খসড়া/জমা আবেদন মুছতে পারবেন।']);
         }
         $application->delete();
+
         return redirect()->route('member.savings-applications.index')->with('success', 'আবেদন মুছে ফেলা হয়েছে।');
     }
 }

@@ -1,6 +1,7 @@
 import React from 'react';
 import { Head, useForm } from '@inertiajs/react';
 import { User, Save, Upload, AlertCircle } from 'lucide-react';
+import { prepareAdmissionUploadFile } from '@/utils/imageUpload';
 
 interface Props {
     user: {
@@ -96,7 +97,21 @@ export default function Complete({ user }: Props) {
                             <input
                                 type="file"
                                 accept="image/*"
-                                onChange={(e) => setData('signature', e.target.files?.[0] ?? null)}
+                                onChange={async (e) => {
+                                    const file = e.target.files?.[0];
+                                    if (!file) {
+                                        setData('signature', null);
+                                        return;
+                                    }
+
+                                    const result = await prepareAdmissionUploadFile(file, { maxWidth: 1000 });
+                                    if (!result.ok) {
+                                        alert(result.error);
+                                        return;
+                                    }
+
+                                    setData('signature', result.file);
+                                }}
                                 className="hidden"
                             />
                         </label>

@@ -5,8 +5,10 @@ namespace App\Http\Controllers;
 use App\Http\Requests\Settings\PasswordUpdateRequest;
 use App\Models\User;
 use App\Services\BranchAccountService;
+use App\Services\ImageCompressionService;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Storage;
 use Inertia\Inertia;
@@ -34,7 +36,7 @@ class ProfileController extends Controller
     /**
      * Store completed profile (phone, pin, signature required). Then redirect to dashboard.
      */
-    public function completeStore(Request $request): RedirectResponse
+    public function completeStore(Request $request, ImageCompressionService $compression): RedirectResponse
     {
         $user = $request->user();
 
@@ -52,7 +54,12 @@ class ProfileController extends Controller
             if ($user->signature) {
                 Storage::disk('public')->delete($user->signature);
             }
-            $validated['signature'] = $request->file('signature')->store('signatures/users', 'public');
+            $validated['signature'] = $this->storeCompressed(
+                $compression,
+                $request->file('signature'),
+                'signatures/users',
+                'signature',
+            );
         } else {
             unset($validated['signature']);
         }
@@ -71,7 +78,7 @@ class ProfileController extends Controller
         ]);
     }
 
-    public function update(Request $request)
+    public function update(Request $request, ImageCompressionService $compression)
     {
         $user = $request->user();
 
@@ -84,20 +91,28 @@ class ProfileController extends Controller
             'signature' => 'nullable|image|mimes:jpeg,png,jpg,webp,gif|max:2048',
         ]);
 
-        // Handle profile photo upload
         if ($request->hasFile('profile_photo')) {
             if ($user->profile_photo) {
                 Storage::disk('public')->delete($user->profile_photo);
             }
-            $validated['profile_photo'] = $request->file('profile_photo')->store('avatars/users', 'public');
+            $validated['profile_photo'] = $this->storeCompressed(
+                $compression,
+                $request->file('profile_photo'),
+                'avatars/users',
+                'avatar',
+            );
         }
 
-        // Handle signature upload
         if ($request->hasFile('signature')) {
             if ($user->signature) {
                 Storage::disk('public')->delete($user->signature);
             }
-            $validated['signature'] = $request->file('signature')->store('signatures/users', 'public');
+            $validated['signature'] = $this->storeCompressed(
+                $compression,
+                $request->file('signature'),
+                'signatures/users',
+                'signature',
+            );
         }
 
         $user->update($validated);
@@ -117,5 +132,19 @@ class ProfileController extends Controller
 
         return redirect()->route('profile.edit')
             ->with('success', $message);
+    }
+
+    private function storeCompressed(
+        ImageCompressionService $compression,
+        UploadedFile $file,
+        string $directory,
+        string $kind,
+    ): string {
+        $path = match ($kind) {
+            'avatar' => $compression->compressAvatar($file, $directory),
+            default => $compression->compressSignature($file, $directory),
+        };
+
+        return $path !== false ? $path : $file->store($directory, 'public');
     }
 }
