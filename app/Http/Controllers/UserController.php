@@ -192,7 +192,7 @@ class UserController extends Controller
 
         // Only super admin / full-access users can update another user's signature
         if (Auth::user()?->has_all_access) {
-            $rules['signature'] = 'nullable|image|mimes:jpeg,png,jpg,gif|max:2048';
+            $rules['signature'] = 'nullable|image|mimes:jpeg,png,jpg,webp,gif|max:2048';
         }
 
         $validated = $request->validate($rules, $user->isBranchAccount() ? BranchAccountService::loginPinMessages() : []);
@@ -437,7 +437,7 @@ class UserController extends Controller
         }
 
         $validated = $request->validate([
-            'signature' => 'required|image|mimes:jpeg,png,jpg,gif|max:2048',
+            'signature' => 'required|image|mimes:jpeg,png,jpg,webp,gif|max:2048',
         ]);
 
         if ($request->hasFile('signature')) {

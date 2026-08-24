@@ -15,9 +15,11 @@ use Illuminate\Support\Facades\Storage;
 
 class CompressExistingImagesCommand extends Command
 {
-    protected $signature = 'images:compress-existing {--dry-run : List files that would be compressed without writing}';
+    protected $signature = 'images:compress-existing
+                            {--dry-run : List files that would be compressed without writing}
+                            {--only-unconverted : Skip files already in WebP (or JPEG fallback) so daily runs do not re-encode}';
 
-    protected $description = 'Re-compress stored public images to small JPEGs and update database paths';
+    protected $description = 'Compress stored public images to WebP and update database paths';
 
     public function handle(ImageCompressionService $compression): int
     {
@@ -40,6 +42,13 @@ class CompressExistingImagesCommand extends Command
         foreach ($files as $path) {
             $settings = $this->settingsFor($path);
             $before = $disk->size($path);
+            $extension = strtolower(pathinfo($path, PATHINFO_EXTENSION));
+
+            if ($this->shouldSkipConverted($extension)) {
+                $skipped++;
+
+                continue;
+            }
 
             if ($this->option('dry-run')) {
                 $this->line(sprintf('%s (%s)', $path, $this->formatBytes($before)));
@@ -132,6 +141,18 @@ class CompressExistingImagesCommand extends Command
             'quality' => 75,
             'maxBytes' => ImageCompressionService::PHOTO_MAX_BYTES,
         ];
+    }
+
+    private function shouldSkipConverted(string $extension): bool
+    {
+        if (! $this->option('only-unconverted')) {
+            return false;
+        }
+
+        $target = ImageCompressionService::outputExtension();
+
+        return $extension === $target
+            || ($target === 'jpg' && $extension === 'jpeg');
     }
 
     private function replacePath(string $oldPath, string $newPath): void

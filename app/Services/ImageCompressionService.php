@@ -27,8 +27,18 @@ class ImageCompressionService
 
     public const AVATAR_MAX_BYTES = 80_000;
 
+    public static function supportsWebp(): bool
+    {
+        return function_exists('imagewebp');
+    }
+
+    public static function outputExtension(): string
+    {
+        return self::supportsWebp() ? 'webp' : 'jpg';
+    }
+
     /**
-     * Compress an uploaded image to JPEG and store it on the public disk.
+     * Compress an uploaded image to WebP (JPEG fallback) and store it on the public disk.
      */
     public function compressAndStore(
         UploadedFile $file,
@@ -59,10 +69,10 @@ class ImageCompressionService
             $resized = $this->resize($source, $maxWidth);
             imagedestroy($source);
 
-            $filename = time().'_'.uniqid().'.jpg';
+            $filename = time().'_'.uniqid().'.'.self::outputExtension();
             $path = trim($directory, '/').'/'.$filename;
 
-            if (! $this->writeJpeg($resized, $path, $quality, $maxBytes)) {
+            if (! $this->writeCompressedImage($resized, $path, $quality, $maxBytes)) {
                 imagedestroy($resized);
 
                 return false;
@@ -111,7 +121,7 @@ class ImageCompressionService
     }
 
     /**
-     * Compress raw image bytes (e.g. a decoded data URL) and store as JPEG.
+     * Compress raw image bytes (e.g. a decoded data URL) and store as WebP/JPEG.
      */
     public function compressBinary(string $contents, string $directory, string $originalName = 'image.jpg'): string|false
     {
@@ -156,9 +166,11 @@ class ImageCompressionService
         $info = @getimagesize($absolutePath);
         $currentSize = Storage::disk(self::DISK)->size($relativePath);
 
+        $targetExtension = self::outputExtension();
+
         if (
             $info !== false
-            && in_array($extension, ['jpg', 'jpeg'], true)
+            && $extension === $targetExtension
             && $info[0] <= $maxWidth
             && $currentSize <= $maxBytes
         ) {
@@ -175,13 +187,13 @@ class ImageCompressionService
 
         $directory = trim(dirname($relativePath), '.');
         $stem = pathinfo($relativePath, PATHINFO_FILENAME);
-        $newPath = ($directory === '' ? '' : $directory.'/').$stem.'.jpg';
+        $newPath = ($directory === '' ? '' : $directory.'/').$stem.'.'.$targetExtension;
 
         if ($newPath !== $relativePath && Storage::disk(self::DISK)->exists($newPath)) {
-            $newPath = ($directory === '' ? '' : $directory.'/').$stem.'_'.Str::lower(Str::random(6)).'.jpg';
+            $newPath = ($directory === '' ? '' : $directory.'/').$stem.'_'.Str::lower(Str::random(6)).'.'.$targetExtension;
         }
 
-        if (! $this->writeJpeg($resized, $newPath, $quality, $maxBytes)) {
+        if (! $this->writeCompressedImage($resized, $newPath, $quality, $maxBytes)) {
             imagedestroy($resized);
 
             return false;
@@ -269,7 +281,7 @@ class ImageCompressionService
     /**
      * @param  \GdImage  $image
      */
-    private function writeJpeg(mixed $image, string $path, int $quality, int $maxBytes): bool
+    private function writeCompressedImage(mixed $image, string $path, int $quality, int $maxBytes): bool
     {
         $directory = dirname($path);
         if ($directory !== '.' && $directory !== '') {
@@ -283,11 +295,11 @@ class ImageCompressionService
         }
 
         $currentQuality = max(40, min(90, $quality));
-        imagejpeg($image, $fullPath, $currentQuality);
+        $this->encodeImage($image, $fullPath, $currentQuality);
 
         while (is_file($fullPath) && filesize($fullPath) > $maxBytes && $currentQuality > 45) {
             $currentQuality -= 8;
-            imagejpeg($image, $fullPath, $currentQuality);
+            $this->encodeImage($image, $fullPath, $currentQuality);
         }
 
         $width = imagesx($image);
@@ -300,11 +312,25 @@ class ImageCompressionService
             $white = imagecolorallocate($smaller, 255, 255, 255);
             imagefilledrectangle($smaller, 0, 0, $width, $height, $white);
             imagecopyresampled($smaller, $image, 0, 0, 0, 0, $width, $height, imagesx($image), imagesy($image));
-            imagejpeg($smaller, $fullPath, $currentQuality);
+            $this->encodeImage($smaller, $fullPath, $currentQuality);
             imagedestroy($smaller);
         }
 
         return is_file($fullPath) && filesize($fullPath) > 0;
+    }
+
+    /**
+     * @param  \GdImage  $image
+     */
+    private function encodeImage(mixed $image, string $fullPath, int $quality): void
+    {
+        if (self::supportsWebp()) {
+            imagewebp($image, $fullPath, $quality);
+
+            return;
+        }
+
+        imagejpeg($image, $fullPath, $quality);
     }
 
     private function storePdf(UploadedFile $file, string $directory): string

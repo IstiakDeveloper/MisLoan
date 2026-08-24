@@ -29,17 +29,26 @@ function loadImage(file: File): Promise<HTMLImageElement> {
     });
 }
 
-async function canvasToJpegBlob(
+async function canvasToBlob(
     canvas: HTMLCanvasElement,
+    mime: string,
     quality: number
 ): Promise<Blob | null> {
     return new Promise((resolve) => {
-        canvas.toBlob((blob) => resolve(blob), 'image/jpeg', quality);
+        canvas.toBlob((blob) => resolve(blob), mime, quality);
     });
 }
 
+function prefersWebp(): boolean {
+    const canvas = document.createElement('canvas');
+    canvas.width = 1;
+    canvas.height = 1;
+
+    return canvas.toDataURL('image/webp').startsWith('data:image/webp');
+}
+
 /**
- * Resize + JPEG-compress an image in the browser before upload.
+ * Resize + WebP-compress an image in the browser before upload (JPEG fallback).
  * PDFs are passed through if under the size limit.
  */
 export async function prepareAdmissionUploadFile(
@@ -74,7 +83,7 @@ export async function prepareAdmissionUploadFile(
     if (!isImage) {
         return {
             ok: false,
-            error: 'শুধু JPG, PNG বা PDF ফাইল আপলোড করা যাবে।',
+            error: 'শুধু JPG, PNG, WebP বা PDF ফাইল আপলোড করা যাবে।',
         };
     }
 
@@ -110,12 +119,14 @@ export async function prepareAdmissionUploadFile(
         ctx.fillRect(0, 0, width, height);
         ctx.drawImage(img, 0, 0, width, height);
 
+        const mime = prefersWebp() ? 'image/webp' : 'image/jpeg';
+        const extension = mime === 'image/webp' ? 'webp' : 'jpg';
         let quality = 0.78;
-        let blob = await canvasToJpegBlob(canvas, quality);
+        let blob = await canvasToBlob(canvas, mime, quality);
 
         while (blob && blob.size > TARGET_MAX_BYTES && quality > 0.45) {
             quality -= 0.08;
-            blob = await canvasToJpegBlob(canvas, quality);
+            blob = await canvasToBlob(canvas, mime, quality);
         }
 
         if (!blob) {
@@ -133,8 +144,8 @@ export async function prepareAdmissionUploadFile(
         }
 
         const baseName = file.name.replace(/\.[^.]+$/, '') || 'photo';
-        const compressed = new File([blob], `${baseName}.jpg`, {
-            type: 'image/jpeg',
+        const compressed = new File([blob], `${baseName}.${extension}`, {
+            type: mime,
             lastModified: Date.now(),
         });
 

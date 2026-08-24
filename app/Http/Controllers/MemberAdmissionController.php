@@ -729,17 +729,17 @@ class MemberAdmissionController extends Controller
             'guardian_name' => 'nullable|string|max:255',
 
             // Customer Documents (Optional) - Max 10MB (will be compressed)
-            'customer_photo' => 'nullable|image|mimes:jpeg,png,jpg|max:10240',
-            'customer_nid_photo' => 'nullable|file|mimes:jpeg,png,jpg,pdf|max:10240',
-            'customer_nid_back_photo' => 'nullable|file|mimes:jpeg,png,jpg,pdf|max:10240',
+            'customer_photo' => 'nullable|image|mimes:jpeg,png,jpg,webp|max:10240',
+            'customer_nid_photo' => 'nullable|file|mimes:jpeg,png,jpg,webp,pdf|max:10240',
+            'customer_nid_back_photo' => 'nullable|file|mimes:jpeg,png,jpg,webp,pdf|max:10240',
             'nid_both_sides' => 'nullable|boolean',
 
             // Guardian Documents (Optional) - Max 10MB (will be compressed)
-            'guardian_photo' => 'nullable|image|mimes:jpeg,png,jpg|max:10240',
-            'guardian_nid_photo' => 'nullable|file|mimes:jpeg,png,jpg,pdf|max:10240',
+            'guardian_photo' => 'nullable|image|mimes:jpeg,png,jpg,webp|max:10240',
+            'guardian_nid_photo' => 'nullable|file|mimes:jpeg,png,jpg,webp,pdf|max:10240',
 
             // Applicant Signature - Max 10MB (will be compressed)
-            'applicant_signature' => 'nullable|image|mimes:jpeg,png,jpg,gif|max:10240',
+            'applicant_signature' => 'nullable|image|mimes:jpeg,png,jpg,webp,gif|max:10240',
 
             // Family Members
             'family_members' => 'nullable|array',
@@ -1117,17 +1117,17 @@ class MemberAdmissionController extends Controller
             'guardian_name' => 'nullable|string|max:255',
 
             // Customer Documents (Optional) - Max 10MB (will be compressed)
-            'customer_photo' => 'nullable|image|mimes:jpeg,png,jpg|max:10240',
-            'customer_nid_photo' => 'nullable|file|mimes:jpeg,png,jpg,pdf|max:10240',
-            'customer_nid_back_photo' => 'nullable|file|mimes:jpeg,png,jpg,pdf|max:10240',
+            'customer_photo' => 'nullable|image|mimes:jpeg,png,jpg,webp|max:10240',
+            'customer_nid_photo' => 'nullable|file|mimes:jpeg,png,jpg,webp,pdf|max:10240',
+            'customer_nid_back_photo' => 'nullable|file|mimes:jpeg,png,jpg,webp,pdf|max:10240',
             'nid_both_sides' => 'nullable|boolean',
 
             // Guardian Documents (Optional) - Max 10MB (will be compressed)
-            'guardian_photo' => 'nullable|image|mimes:jpeg,png,jpg|max:10240',
-            'guardian_nid_photo' => 'nullable|file|mimes:jpeg,png,jpg,pdf|max:10240',
+            'guardian_photo' => 'nullable|image|mimes:jpeg,png,jpg,webp|max:10240',
+            'guardian_nid_photo' => 'nullable|file|mimes:jpeg,png,jpg,webp,pdf|max:10240',
 
             // Applicant Signature - Max 10MB (will be compressed)
-            'applicant_signature' => 'nullable|image|mimes:jpeg,png,jpg,gif|max:10240',
+            'applicant_signature' => 'nullable|image|mimes:jpeg,png,jpg,webp,gif|max:10240',
 
             // Family Members
             'family_members' => 'nullable|array',

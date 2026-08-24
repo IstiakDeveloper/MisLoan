@@ -41,8 +41,8 @@ class ProfileController extends Controller
         $user = $request->user();
 
         $signatureRule = $user->signature
-            ? 'nullable|image|mimes:jpeg,png,jpg,gif|max:2048'
-            : 'required|image|mimes:jpeg,png,jpg,gif|max:2048';
+            ? 'nullable|image|mimes:jpeg,png,jpg,webp,gif|max:2048'
+            : 'required|image|mimes:jpeg,png,jpg,webp,gif|max:2048';
 
         $validated = $request->validate([
             'phone' => 'required|string|max:20',

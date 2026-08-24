@@ -346,7 +346,7 @@ export default function ApproverSelectionStep({
                         previewSrc={getPreviewSource('customer_photo', customerPhoto)}
                         error={errors.customer_photo}
                         statusMsg={uploadStatus.customer_photo}
-                        accept="image/jpeg,image/png,image/jpg"
+                        accept="image/jpeg,image/png,image/jpg,image/webp"
                         icon={<User className="h-3.5 w-3.5" />}
                         accent="blue"
                         onFileSelect={(file) => handleFileChange('customer_photo', file)}
@@ -361,7 +361,7 @@ export default function ApproverSelectionStep({
                         previewSrc={getPreviewSource('customer_nid_photo', customerNidPhoto)}
                         error={errors.customer_nid_photo || errors.customer_nid_photo_path}
                         statusMsg={uploadStatus.customer_nid_photo}
-                        accept=".jpg,.jpeg,.png,.pdf,image/jpeg,image/png,image/jpg,application/pdf"
+                        accept=".jpg,.jpeg,.png,.webp,.pdf,image/jpeg,image/png,image/jpg,image/webp,application/pdf"
                         icon={<CreditCard className="h-3.5 w-3.5" />}
                         accent="emerald"
                         onFileSelect={(file) => handleFileChange('customer_nid_photo', file)}
@@ -383,7 +383,7 @@ export default function ApproverSelectionStep({
                                 errors.customer_nid_back_photo_path
                             }
                             statusMsg={uploadStatus.customer_nid_back_photo}
-                            accept=".jpg,.jpeg,.png,.pdf,image/jpeg,image/png,image/jpg,application/pdf"
+                            accept=".jpg,.jpeg,.png,.webp,.pdf,image/jpeg,image/png,image/jpg,image/webp,application/pdf"
                             icon={<CreditCard className="h-3.5 w-3.5" />}
                             accent="teal"
                             onFileSelect={(file) =>
@@ -401,7 +401,7 @@ export default function ApproverSelectionStep({
                         previewSrc={getPreviewSource('guardian_photo', guardianPhoto)}
                         error={errors.guardian_photo}
                         statusMsg={uploadStatus.guardian_photo}
-                        accept="image/jpeg,image/png,image/jpg"
+                        accept="image/jpeg,image/png,image/jpg,image/webp"
                         icon={<Shield className="h-3.5 w-3.5" />}
                         accent="violet"
                         onFileSelect={(file) => handleFileChange('guardian_photo', file)}
@@ -416,7 +416,7 @@ export default function ApproverSelectionStep({
                         previewSrc={getPreviewSource('guardian_nid_photo', guardianNidPhoto)}
                         error={errors.guardian_nid_photo}
                         statusMsg={uploadStatus.guardian_nid_photo}
-                        accept=".jpg,.jpeg,.png,.pdf,image/jpeg,image/png,image/jpg,application/pdf"
+                        accept=".jpg,.jpeg,.png,.webp,.pdf,image/jpeg,image/png,image/jpg,image/webp,application/pdf"
                         icon={<CreditCard className="h-3.5 w-3.5" />}
                         accent="indigo"
                         onFileSelect={(file) => handleFileChange('guardian_nid_photo', file)}
