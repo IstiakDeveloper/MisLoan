@@ -121,6 +121,8 @@ Route::middleware(['auth', 'verified'])->group(function () {
         Route::post('users/send-branch-summary', [UserController::class, 'sendBranchSummary'])->name('users.send-branch-summary');
     });
 
+
+
     // Samity Management Routes - Only for SuperAdmin/Head Office
     Route::prefix('samities')->name('samities.')->middleware('head.office')->group(function () {
         Route::get('/', [SamityController::class, 'index'])->name('index');
