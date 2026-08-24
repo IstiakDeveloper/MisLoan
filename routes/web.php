@@ -49,7 +49,7 @@ Route::middleware(['auth', 'verified'])->group(function () {
 
     Route::post('admin/maintenance/toggle', [MaintenanceController::class, 'toggle'])->name('admin.maintenance.toggle');
 
-    // Profile completion (required before using app if phone/pin/signature missing)
+    // Profile completion (before using app if phone/pin/signature missing)
     Route::get('profile/complete', [ProfileController::class, 'complete'])->name('profile.complete');
     Route::post('profile/complete', [ProfileController::class, 'completeStore'])->name('profile.complete.store');
 
@@ -60,7 +60,6 @@ Route::middleware(['auth', 'verified'])->group(function () {
         ->middleware('throttle:6,1')
         ->name('profile.password.update');
 
-    // Notification Routes - For all authenticated users
     Route::prefix('notifications')->name('notifications.')->middleware('auth')->group(function () {
         Route::get('/', [NotificationController::class, 'index'])->name('index');
         Route::get('{notification}', [NotificationController::class, 'show'])->name('show');
