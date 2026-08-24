@@ -512,7 +512,6 @@ export default function LoanApplicationsPrint({ loans, filters, zones, areas, br
                     .col-type { width: 8.3%; }
                     .col-samity { width: 6.5%; }
                     .col-member-name { width: 7.5%; }
-                    .col-dofa { width: 2.5%; }
                     .col-member-code { width: 4.5%; }
                     .col-mobile { width: 5.5%; }
                     .col-savings-general { width: 4.5%; }
@@ -520,6 +519,7 @@ export default function LoanApplicationsPrint({ loans, filters, zones, areas, br
                     .col-requested { width: 6%; }
                     .col-approved { width: 5.5%; }
                     .col-term { width: 4%; }
+                    .col-dofa { width: 2.5%; }
                     .col-project { width: 6.5%; }
                     .col-approval-date { width: 5.5%; }
                     .col-disburse-date { width: 5.5%; }
@@ -531,7 +531,6 @@ export default function LoanApplicationsPrint({ loans, filters, zones, areas, br
                     td.col-type { text-align: left; }
                     td.col-samity { text-align: left; }
                     td.col-member-name { text-align: left; }
-                    td.col-dofa { text-align: center; font-weight: bold; }
                     td.col-member-code { text-align: center; font-family: monospace; font-weight: bold; font-size: 7px; }
                     td.col-mobile { text-align: center; font-size: 7px; }
                     td.col-savings-general { text-align: right; }
@@ -539,6 +538,7 @@ export default function LoanApplicationsPrint({ loans, filters, zones, areas, br
                     td.col-requested { text-align: right; font-weight: bold; }
                     td.col-approved { text-align: right; font-weight: bold; }
                     td.col-term { text-align: center; }
+                    td.col-dofa { text-align: center; font-weight: bold; }
                     td.col-project { text-align: left; }
                     td.col-approval-date { text-align: center; font-size: 7px; }
                     td.col-disburse-date { text-align: center; font-size: 7px; }
@@ -615,7 +615,6 @@ export default function LoanApplicationsPrint({ loans, filters, zones, areas, br
                             <th className="col-type">ঋণের ধরন</th>
                             <th className="col-samity">সমিতির নাম (কোড)</th>
                             <th className="col-member-name">সদস্যের নাম</th>
-                            <th className="col-dofa">দফা</th>
                             <th className="col-member-code">সদস্য কোড</th>
                             <th className="col-mobile">মোবাইল নাম্বার</th>
                             <th className="col-savings-general">সাধারণ সঞ্চয়</th>
@@ -623,6 +622,7 @@ export default function LoanApplicationsPrint({ loans, filters, zones, areas, br
                             <th className="col-requested">সর্বশেষ পরিশোধিত ঋণ</th>
                             <th className="col-approved">অনুমোদিত ঋণের পরিমাণ</th>
                             <th className="col-term">ঋণের মেয়াদ</th>
+                            <th className="col-dofa">দফা</th>
                             <th className="col-project">প্রকল্পের নাম</th>
                             <th className="col-approval-date">অনুমোদনের তারিখ</th>
                             <th className="col-disburse-date">বিতরনের তারিখ</th>
@@ -648,7 +648,6 @@ export default function LoanApplicationsPrint({ loans, filters, zones, areas, br
                                         <td className="col-member-name">
                                             <span style={{ fontWeight: 'bold' }}>{getMemberName(loan)}</span>
                                         </td>
-                                        <td className="col-dofa">{getDofa(loan)}</td>
                                         <td className="col-member-code">{getMemberShortCode(loan)}</td>
                                         <td className="col-mobile">{getMobile(loan)}</td>
                                         <td className="col-savings-general">{getGeneralSavings(loan)}</td>
@@ -656,6 +655,7 @@ export default function LoanApplicationsPrint({ loans, filters, zones, areas, br
                                         <td className="col-requested">{getLastRepaidLoanAmount(loan)}</td>
                                         <td className="col-approved">{loan.approved_amount ? formatAmount(loan.approved_amount) : '—'}</td>
                                         <td className="col-term">{getLoanTerm(loan)}</td>
+                                        <td className="col-dofa">{getDofa(loan)}</td>
                                         <td className="col-project">{getProjectName(loan)}</td>
                                         <td className="col-approval-date">{getApprovalDate(loan)}</td>
                                         <td className="col-disburse-date">{getDisbursementDate(loan)}</td>
