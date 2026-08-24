@@ -325,7 +325,7 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
             case 'success': return 'border-l-4 border-l-emerald-500 border-slate-200 bg-white/95 text-emerald-800 shadow-xl shadow-emerald-500/10';
             case 'error': return 'border-l-4 border-l-rose-500 border-slate-200 bg-white/95 text-rose-800 shadow-xl shadow-rose-500/10';
             case 'warning': return 'border-l-4 border-l-amber-500 border-slate-200 bg-white/95 text-amber-800 shadow-xl shadow-amber-500/10';
-            case 'info': return 'border-l-4 border-l-blue-500 border-slate-200 bg-white/95 text-blue-800 shadow-xl shadow-blue-500/10';
+            case 'info': return 'border-l-4 border-l-brand border-slate-200 bg-white/95 text-brand-dark shadow-xl shadow-brand/10';
             default: return 'border-l-4 border-l-slate-500 border-slate-200 bg-white/95 text-slate-800 shadow-xl shadow-slate-500/10';
         }
     };
@@ -444,7 +444,7 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
     const currentTitle = getPageTitle(path);
 
     return (
-        <div className="min-h-screen bg-[#f8fafc] print:bg-white text-slate-800 antialiased font-sans flex flex-col selection:bg-blue-600 selection:text-white">
+        <div className="min-h-screen bg-[#f8fafc] print:bg-white text-slate-800 antialiased font-sans flex flex-col selection:bg-brand selection:text-white">
             {/* Flash Messages (Toasts) */}
             {flashMessage && (
                 <div
@@ -454,7 +454,7 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
                         flashMessage.type === 'success' ? 'bg-emerald-100 text-emerald-700' :
                         flashMessage.type === 'error' ? 'bg-rose-100 text-rose-700' :
                         flashMessage.type === 'warning' ? 'bg-amber-100 text-amber-700' :
-                        'bg-blue-100 text-blue-700'
+                        'bg-brand-soft text-brand-dark'
                     }`}>
                         {getFlashIcon(flashMessage.type)}
                     </div>
@@ -488,29 +488,22 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
             >
                 {/* Logo and Brand Header */}
                 {sidebarOpen ? (
-                    <div className="bg-gradient-to-r from-blue-600 via-indigo-600 to-blue-700 text-white rounded-2xl p-3 m-2.5 flex items-center justify-between shadow-md shadow-blue-600/20 border border-blue-500/30 relative overflow-hidden">
-                        <div className="absolute -right-3 -top-3 w-14 h-14 bg-white/15 rounded-full blur-md" />
+                    <div className="bg-white rounded-2xl p-2.5 m-2.5 flex items-center justify-between shadow-sm shadow-brand/10 border border-brand/20 relative overflow-hidden">
                         <Link
                             href="/dashboard"
-                            className="flex items-center gap-2.5 min-w-0 z-10 rounded-lg outline-none focus:outline-none group"
+                            className="flex items-center gap-2 min-w-0 z-10 rounded-lg outline-none focus:outline-none group"
                             aria-label="Go to dashboard"
                         >
-                            <div className="w-8 h-8 rounded-xl bg-white/20 backdrop-blur-xs flex items-center justify-center text-white shrink-0 shadow-inner group-hover:scale-105 transition-transform duration-200">
-                                <Building2 className="w-4 h-4 stroke-[2.2]" />
-                            </div>
-                            <div className="min-w-0">
-                                <span className="text-[13px] font-black tracking-tight block leading-tight text-white drop-shadow-xs">
-                                    MIS Loan
-                                </span>
-                                <span className="text-[9.5px] text-blue-100 font-semibold block leading-tight opacity-90">
-                                    Management Panel
-                                </span>
-                            </div>
+                            <img
+                                src="/icons/logo.png"
+                                alt="MisLoan"
+                                className="h-11 w-auto max-w-[148px] object-contain group-hover:scale-[1.02] transition-transform duration-200"
+                            />
                         </Link>
                         <button
                             type="button"
                             onClick={() => setSidebarOpen(false)}
-                            className="p-1 rounded-lg hover:bg-white/20 text-blue-100 hover:text-white transition-colors z-10"
+                            className="p-1 rounded-lg hover:bg-brand-softer text-brand-muted hover:text-brand-dark transition-colors z-10 shrink-0"
                             aria-label="Collapse sidebar"
                         >
                             <Menu className="w-4 h-4" />
@@ -521,10 +514,10 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
                         <button
                             type="button"
                             onClick={() => setSidebarOpen(true)}
-                            className="w-9 h-9 rounded-xl bg-gradient-to-r from-blue-600 to-indigo-600 text-white flex items-center justify-center shadow-md shadow-blue-600/20 hover:scale-105 transition-all duration-200 border border-blue-500/30"
+                            className="w-10 h-10 rounded-xl bg-white flex items-center justify-center shadow-sm shadow-brand/15 hover:scale-105 transition-all duration-200 border border-brand/20 overflow-hidden p-0.5"
                             aria-label="Expand sidebar"
                         >
-                            <Building2 className="w-4.5 h-4.5 stroke-[2.2]" />
+                            <img src="/icons/logo.png" alt="MisLoan" className="h-full w-full object-contain" />
                         </button>
                     </div>
                 )}
@@ -550,13 +543,13 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
                                                 onClick={() => isMobile && setSidebarOpen(false)}
                                                 className={`group relative flex items-center justify-between gap-2 px-2.5 py-2 rounded-xl text-[12.5px] font-medium transition-all duration-200 ${
                                                     isActive
-                                                        ? 'bg-gradient-to-r from-blue-600 to-indigo-600 text-white shadow-sm shadow-blue-600/20 font-bold'
-                                                        : 'text-slate-600 hover:text-blue-600 hover:bg-blue-50/80 hover:translate-x-0.5'
+                                                        ? 'bg-gradient-to-r from-brand to-brand-dark text-white shadow-sm shadow-brand/20 font-bold'
+                                                        : 'text-slate-600 hover:text-brand hover:bg-brand-softer hover:translate-x-0.5'
                                                 }`}
                                             >
                                                 <div className="flex items-center gap-2.5 min-w-0">
                                                     <item.icon className={`w-4 h-4 shrink-0 stroke-[1.75] transition-transform duration-200 ${
-                                                        isActive ? 'text-white' : 'text-slate-400 group-hover:text-blue-600 group-hover:scale-105'
+                                                        isActive ? 'text-white' : 'text-slate-400 group-hover:text-brand group-hover:scale-105'
                                                     }`} />
                                                     {sidebarOpen && <span className="truncate">{item.name}</span>}
                                                 </div>
@@ -595,20 +588,20 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
                                     onClick={() => setReportExpanded(!reportExpanded)}
                                     className={`group flex w-full items-center justify-between gap-2 px-2.5 py-2 rounded-xl text-[12.5px] font-medium transition-all duration-200 ${
                                         REPORT_PATHS.some(p => path.startsWith(p))
-                                            ? 'bg-blue-50 text-blue-700 font-bold border border-blue-200/60'
-                                            : 'text-slate-600 hover:text-blue-600 hover:bg-blue-50/60'
+                                            ? 'bg-brand-softer text-brand-dark font-bold border border-brand/25'
+                                            : 'text-slate-600 hover:text-brand hover:bg-brand-softer'
                                     }`}
                                 >
                                     <div className="flex items-center gap-2.5 min-w-0">
-                                        <BarChart3 className="w-4 h-4 shrink-0 stroke-[1.75] text-slate-400 group-hover:text-blue-600" />
+                                        <BarChart3 className="w-4 h-4 shrink-0 stroke-[1.75] text-slate-400 group-hover:text-brand" />
                                         {sidebarOpen && <span className="truncate">Reports</span>}
                                     </div>
                                     {sidebarOpen && (
-                                        <ChevronDown className={`w-3.5 h-3.5 shrink-0 text-slate-400 transition-transform duration-200 ${reportExpanded ? 'rotate-180 text-blue-600' : ''}`} />
+                                        <ChevronDown className={`w-3.5 h-3.5 shrink-0 text-slate-400 transition-transform duration-200 ${reportExpanded ? 'rotate-180 text-brand' : ''}`} />
                                     )}
                                 </button>
                                 {reportExpanded && sidebarOpen && (
-                                    <ul className="mt-1 ml-3.5 pl-2.5 border-l-2 border-blue-100 space-y-0.5 animate-in fade-in slide-in-from-top-1 duration-150 relative">
+                                    <ul className="mt-1 ml-3.5 pl-2.5 border-l-2 border-brand-soft space-y-0.5 animate-in fade-in slide-in-from-top-1 duration-150 relative">
                                         {headOfficeReportItems.map((item) => {
                                             const isActive = path === item.href;
                                             return (
@@ -618,11 +611,11 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
                                                         onClick={() => isMobile && setSidebarOpen(false)}
                                                         className={`group flex items-center gap-2 px-2 py-1.5 rounded-lg text-[11.5px] font-medium transition-all ${
                                                             isActive
-                                                                ? 'bg-blue-100/70 text-blue-700 font-bold'
-                                                                : 'text-slate-500 hover:text-blue-600 hover:bg-blue-50/50'
+                                                                ? 'bg-brand-soft text-brand-dark font-bold'
+                                                                : 'text-slate-500 hover:text-brand hover:bg-brand-softer'
                                                         }`}
                                                     >
-                                                        <item.icon className="w-3.5 h-3.5 shrink-0 stroke-[1.75] text-slate-400 group-hover:text-blue-600" />
+                                                        <item.icon className="w-3.5 h-3.5 shrink-0 stroke-[1.75] text-slate-400 group-hover:text-brand" />
                                                         <span className="truncate">{item.name}</span>
                                                     </Link>
                                                 </li>
@@ -648,20 +641,20 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
                                     onClick={() => setSetupExpanded(!setupExpanded)}
                                     className={`group flex w-full items-center justify-between gap-2 px-2.5 py-2 rounded-xl text-[12.5px] font-medium transition-all duration-200 ${
                                         SETUP_PATHS.some(p => path.startsWith(p))
-                                            ? 'bg-blue-50 text-blue-700 font-bold border border-blue-200/60'
-                                            : 'text-slate-600 hover:text-blue-600 hover:bg-blue-50/60'
+                                            ? 'bg-brand-softer text-brand-dark font-bold border border-brand/25'
+                                            : 'text-slate-600 hover:text-brand hover:bg-brand-softer'
                                     }`}
                                 >
                                     <div className="flex items-center gap-2.5 min-w-0">
-                                        <Settings className="w-4 h-4 shrink-0 stroke-[1.75] text-slate-400 group-hover:text-blue-600" />
+                                        <Settings className="w-4 h-4 shrink-0 stroke-[1.75] text-slate-400 group-hover:text-brand" />
                                         {sidebarOpen && <span className="truncate">Configuration</span>}
                                     </div>
                                     {sidebarOpen && (
-                                        <ChevronDown className={`w-3.5 h-3.5 shrink-0 text-slate-400 transition-transform duration-200 ${setupExpanded ? 'rotate-180 text-blue-600' : ''}`} />
+                                        <ChevronDown className={`w-3.5 h-3.5 shrink-0 text-slate-400 transition-transform duration-200 ${setupExpanded ? 'rotate-180 text-brand' : ''}`} />
                                     )}
                                 </button>
                                 {setupExpanded && sidebarOpen && (
-                                    <ul className="mt-1 ml-3.5 pl-2.5 border-l-2 border-blue-100 space-y-0.5 animate-in fade-in slide-in-from-top-1 duration-150 relative font-medium">
+                                    <ul className="mt-1 ml-3.5 pl-2.5 border-l-2 border-brand-soft space-y-0.5 animate-in fade-in slide-in-from-top-1 duration-150 relative font-medium">
                                         {headOfficeSetupItems.map((item) => {
                                             const isActive = path === item.href;
                                             return (
@@ -671,11 +664,11 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
                                                         onClick={() => isMobile && setSidebarOpen(false)}
                                                         className={`group flex items-center gap-2 px-2 py-1.5 rounded-lg text-[11.5px] font-medium transition-all ${
                                                             isActive
-                                                                ? 'bg-blue-100/70 text-blue-700 font-bold'
-                                                                : 'text-slate-500 hover:text-blue-600 hover:bg-blue-50/50'
+                                                                ? 'bg-brand-soft text-brand-dark font-bold'
+                                                                : 'text-slate-500 hover:text-brand hover:bg-brand-softer'
                                                         }`}
                                                     >
-                                                        <item.icon className="w-3.5 h-3.5 shrink-0 stroke-[1.75] text-slate-400 group-hover:text-blue-600" />
+                                                        <item.icon className="w-3.5 h-3.5 shrink-0 stroke-[1.75] text-slate-400 group-hover:text-brand" />
                                                         <span className="truncate">{item.name}</span>
                                                     </Link>
                                                 </li>
@@ -732,7 +725,7 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
                     {sidebarOpen ? (
                         <div className="flex items-center justify-between gap-2 bg-white border border-slate-200/80 rounded-xl p-2 shadow-xs">
                             <Link href="/profile" className="flex items-center gap-2 min-w-0 flex-1 hover:opacity-90 transition-opacity" title="View Profile">
-                                <div className="w-8 h-8 rounded-full bg-gradient-to-tr from-blue-600 to-indigo-600 text-white flex items-center justify-center text-[11px] font-bold shrink-0 shadow-xs overflow-hidden">
+                                <div className="w-8 h-8 rounded-full bg-gradient-to-tr from-brand to-brand-dark text-white flex items-center justify-center text-[11px] font-bold shrink-0 shadow-xs overflow-hidden">
                                     {userAvatarSrc ? (
                                         <img src={userAvatarSrc} alt={auth.user?.name} className="w-full h-full object-cover" />
                                     ) : (
@@ -741,7 +734,7 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
                                 </div>
                                 <div className="min-w-0 flex-1">
                                     <p className="text-[11.5px] font-bold text-slate-800 truncate leading-tight">{auth.user?.name || 'User'}</p>
-                                    <p className="text-[9.5px] text-blue-600 font-semibold capitalize truncate mt-0.5">{auth.user?.role?.name?.replace('_', ' ') || 'Admin'}</p>
+                                    <p className="text-[9.5px] text-brand font-semibold capitalize truncate mt-0.5">{auth.user?.role?.name?.replace('_', ' ') || 'Admin'}</p>
                                 </div>
                             </Link>
                             <button
@@ -755,7 +748,7 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
                         </div>
                     ) : (
                         <div className="flex justify-center">
-                            <Link href="/profile" title="View Profile" className="w-8 h-8 rounded-full bg-gradient-to-tr from-blue-600 to-indigo-600 text-white flex items-center justify-center text-xs font-bold shadow-xs hover:scale-105 transition-transform overflow-hidden">
+                            <Link href="/profile" title="View Profile" className="w-8 h-8 rounded-full bg-gradient-to-tr from-brand to-brand-dark text-white flex items-center justify-center text-xs font-bold shadow-xs hover:scale-105 transition-transform overflow-hidden">
                                 {userAvatarSrc ? (
                                     <img src={userAvatarSrc} alt={auth.user?.name} className="w-full h-full object-cover" />
                                 ) : (
@@ -782,7 +775,7 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
                             <button
                                 type="button"
                                 onClick={() => setSidebarOpen(!sidebarOpen)}
-                                className="md:hidden p-1.5 -ml-1 text-slate-700 hover:text-blue-600 hover:bg-slate-100 rounded-lg transition-colors"
+                                className="md:hidden p-1.5 -ml-1 text-slate-700 hover:text-brand hover:bg-slate-100 rounded-lg transition-colors"
                                 aria-label="Toggle Menu"
                             >
                                 <Menu className="w-5 h-5 stroke-[1.75]" />
@@ -790,22 +783,17 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
 
                             {/* Mobile Brand Badge */}
                             <div className="md:hidden flex items-center gap-2">
-                                <div className="w-6.5 h-6.5 rounded-lg bg-gradient-to-tr from-blue-600 to-indigo-600 flex items-center justify-center text-white shadow-xs shadow-blue-600/20">
-                                    <Building2 className="w-3.5 h-3.5 stroke-[2.2]" />
-                                </div>
-                                <span className="text-xs font-extrabold text-slate-800 tracking-tight">
-                                    MIS Loan
-                                </span>
+                                <img src="/icons/logo.png" alt="MisLoan" className="h-8 w-auto max-w-[120px] object-contain" />
                             </div>
 
                             {/* Desktop Page Title & Breadcrumb */}
                             <div className="hidden md:flex items-center gap-2 text-xs font-medium text-slate-400">
-                                <div className="w-2 h-2 rounded-full bg-blue-600 animate-pulse" />
+                                <div className="w-2 h-2 rounded-full bg-brand animate-pulse" />
                                 <span className="text-slate-900 font-extrabold text-[13.5px] tracking-tight">{currentTitle}</span>
                                 {path !== '/dashboard' && (
                                     <>
                                         <span className="text-slate-300">/</span>
-                                        <span className="text-[11.5px] text-slate-500 font-medium">MIS Loan</span>
+                                        <span className="text-[11.5px] text-slate-500 font-medium">MisLoan</span>
                                     </>
                                 )}
                             </div>
@@ -817,11 +805,11 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
                             <a
                                 href="https://app.mousumibd.org"
                                 target="_self"
-                                className="inline-flex items-center justify-center gap-1.5 px-2.5 sm:px-3 py-1.5 rounded-xl bg-slate-900 text-white hover:bg-emerald-600 font-bold text-[11px] shadow-xs hover:shadow-md transition-all duration-200"
+                                className="inline-flex items-center justify-center gap-1.5 px-2.5 sm:px-3 py-1.5 rounded-xl bg-slate-900 text-white hover:bg-brand font-bold text-[11px] shadow-xs hover:shadow-md transition-all duration-200"
                                 title="Mousumi Apps Portal"
                                 aria-label="Mousumi Apps Portal"
                             >
-                                <LayoutGrid className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
+                                <LayoutGrid className="w-3.5 h-3.5 text-brand-bright shrink-0" />
                                 <span className="hidden sm:inline">Mousumi Apps</span>
                             </a>
 
@@ -843,8 +831,8 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
                                     href="/approvals"
                                     className={`relative flex items-center gap-1.5 px-2.5 py-1 rounded-xl transition-all text-xs font-bold ${
                                         path === '/approvals'
-                                            ? 'bg-gradient-to-r from-blue-600 to-indigo-600 text-white shadow-sm shadow-blue-500/20'
-                                            : 'bg-blue-50/80 text-blue-700 hover:bg-blue-600 hover:text-white border border-blue-200/70'
+                                            ? 'bg-gradient-to-r from-brand to-brand-dark text-white shadow-sm shadow-brand/20'
+                                            : 'bg-brand-softer text-brand-dark hover:bg-brand hover:text-white border border-brand/30'
                                     }`}
                                     title="Pending Approvals"
                                 >
@@ -866,10 +854,10 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
                                 <button
                                     type="button"
                                     onClick={() => setUserDropdownOpen(!userDropdownOpen)}
-                                    className="flex items-center gap-1.5 p-1 rounded-full hover:ring-2 hover:ring-blue-500/30 transition-all focus:outline-none"
+                                    className="flex items-center gap-1.5 p-1 rounded-full hover:ring-2 hover:ring-brand/30 transition-all focus:outline-none"
                                     aria-label="User menu"
                                 >
-                                    <div className="w-8 h-8 rounded-full bg-gradient-to-tr from-blue-600 to-indigo-600 text-white flex items-center justify-center text-[11px] font-extrabold shadow-sm ring-2 ring-white overflow-hidden">
+                                    <div className="w-8 h-8 rounded-full bg-gradient-to-tr from-brand to-brand-dark text-white flex items-center justify-center text-[11px] font-extrabold shadow-sm ring-2 ring-white overflow-hidden">
                                         {userAvatarSrc ? (
                                             <img src={userAvatarSrc} alt={auth.user?.name} className="w-full h-full object-cover" />
                                         ) : (
@@ -883,9 +871,9 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
                                 {userDropdownOpen && (
                                     <div className="absolute right-0 mt-2 w-64 rounded-2xl bg-white shadow-2xl border border-slate-200 z-50 overflow-hidden animate-in fade-in slide-in-from-top-2 duration-150">
                                         {/* User Header Profile */}
-                                        <div className="p-3.5 bg-gradient-to-br from-blue-50/80 via-indigo-50/50 to-white border-b border-slate-100 relative overflow-hidden">
+                                        <div className="p-3.5 bg-gradient-to-br from-brand-softer via-brand-soft to-white border-b border-slate-100 relative overflow-hidden">
                                             <div className="flex items-center gap-2.5 relative z-10">
-                                                <div className="w-9 h-9 rounded-full bg-gradient-to-tr from-blue-600 to-indigo-600 text-white flex items-center justify-center text-xs font-bold shrink-0 shadow-xs overflow-hidden">
+                                                <div className="w-9 h-9 rounded-full bg-gradient-to-tr from-brand to-brand-dark text-white flex items-center justify-center text-xs font-bold shrink-0 shadow-xs overflow-hidden">
                                                     {userAvatarSrc ? (
                                                         <img src={userAvatarSrc} alt={auth.user?.name} className="w-full h-full object-cover" />
                                                     ) : (
@@ -899,7 +887,7 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
                                                     <p className="text-[10px] text-slate-500 truncate mt-0.5 font-mono">
                                                         {auth.user?.email}
                                                     </p>
-                                                    <span className="inline-block mt-1 px-2 py-0.5 rounded-md bg-blue-100/80 text-blue-700 text-[9px] font-bold capitalize border border-blue-200/50">
+                                                    <span className="inline-block mt-1 px-2 py-0.5 rounded-md bg-brand-soft text-brand-dark text-[9px] font-bold capitalize border border-brand/25">
                                                         {auth.user?.role?.name?.replace('_', ' ') || 'Admin'}
                                                     </span>
                                                 </div>
@@ -911,9 +899,9 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
                                             <Link
                                                 href="/profile"
                                                 onClick={() => setUserDropdownOpen(false)}
-                                                className="flex items-center gap-2.5 px-3 py-2 rounded-xl text-[12px] font-semibold text-slate-700 hover:bg-blue-50 hover:text-blue-600 transition-colors"
+                                                className="flex items-center gap-2.5 px-3 py-2 rounded-xl text-[12px] font-semibold text-slate-700 hover:bg-brand-softer hover:text-brand transition-colors"
                                             >
-                                                <User className="w-3.5 h-3.5 text-blue-500" />
+                                                <User className="w-3.5 h-3.5 text-brand" />
                                                 <span>Profile & Settings</span>
                                             </Link>
 
@@ -940,7 +928,7 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
                                                     }}
                                                     className="sm:hidden flex w-full items-center gap-2.5 px-3 py-2 rounded-xl text-[12px] font-semibold text-slate-700 hover:bg-slate-50 transition-colors text-left"
                                                 >
-                                                    <Download className="w-3.5 h-3.5 text-indigo-500" />
+                                                    <Download className="w-3.5 h-3.5 text-brand" />
                                                     <span>Install Web App</span>
                                                 </button>
                                             )}
@@ -999,13 +987,13 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
                             </div>
                         )}
                         {isCsoRole && (
-                            <div className="mx-4 mt-3 sm:mx-6 sm:mt-4 p-3 sm:p-3.5 bg-gradient-to-r from-blue-600 via-indigo-600 to-indigo-700 text-white rounded-2xl shadow-md shadow-blue-500/10 flex flex-wrap items-center justify-between gap-3 border border-indigo-400/30">
+                            <div className="mx-4 mt-3 sm:mx-6 sm:mt-4 p-3 sm:p-3.5 bg-gradient-to-r from-brand via-brand-muted to-brand-dark text-white rounded-2xl shadow-md shadow-brand/10 flex flex-wrap items-center justify-between gap-3 border border-brand-bright/30">
                                 <div className="flex items-center gap-3">
                                     <div className="w-8 h-8 rounded-xl bg-white/20 flex items-center justify-center text-white backdrop-blur-xs shrink-0 shadow-inner">
                                         <Shield className="w-4 h-4 stroke-[2.2]" />
                                     </div>
                                     <div>
-                                        <p className="text-[10.5px] font-bold tracking-wider uppercase text-blue-200">Today's Assigned Monitoring Areas</p>
+                                        <p className="text-[10.5px] font-bold tracking-wider uppercase text-white/80">Today's Assigned Monitoring Areas</p>
                                         <div className="flex flex-wrap items-center gap-1.5 mt-1">
                                             {auth.user.cso_areas && auth.user.cso_areas.length > 0 ? (
                                                 auth.user.cso_areas.map((area) => (
@@ -1014,13 +1002,13 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
                                                     </span>
                                                 ))
                                             ) : (
-                                                <span className="text-xs text-blue-200 italic">No areas assigned for today</span>
+                                                <span className="text-xs text-white/80 italic">No areas assigned for today</span>
                                             )}
                                         </div>
                                     </div>
                                 </div>
                                 <div className="flex items-center gap-2">
-                                    <span className="text-[11px] font-semibold px-2.5 py-1 bg-white/10 rounded-full border border-white/20 text-blue-100 backdrop-blur-xs">
+                                    <span className="text-[11px] font-semibold px-2.5 py-1 bg-white/10 rounded-full border border-white/20 text-white/85 backdrop-blur-xs">
                                         Customer Service Officer (CSO)
                                     </span>
                                 </div>
@@ -1043,22 +1031,22 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
             {/* PWA Install Corner Widget */}
             {canInstall && showInstallDialog && (
                 <div className="fixed bottom-4 right-4 z-50 max-w-sm w-[calc(100%-2rem)] sm:w-80 bg-white/95 backdrop-blur-md rounded-2xl shadow-2xl border border-slate-200 overflow-hidden animate-in slide-in-from-bottom-5 fade-in duration-300">
-                    <div className="bg-gradient-to-r from-blue-600 via-indigo-600 to-blue-700 text-white p-3 relative overflow-hidden">
+                    <div className="bg-gradient-to-r from-brand via-brand-muted to-brand-dark text-white p-3 relative overflow-hidden">
                         <div className="absolute -right-4 -top-4 w-14 h-14 bg-white/10 rounded-full blur-md" />
                         <div className="flex items-center justify-between gap-3 relative z-10">
                             <div className="flex items-center gap-2">
-                                <div className="w-7.5 h-7.5 rounded-xl bg-white/20 flex items-center justify-center text-white shadow-inner shrink-0">
-                                    <Building2 className="w-3.5 h-3.5 stroke-[2.2]" />
+                                <div className="w-8 h-8 rounded-lg bg-white flex items-center justify-center shadow-inner shrink-0 overflow-hidden p-0.5">
+                                    <img src="/icons/logo.png" alt="MisLoan" className="h-full w-full object-contain" />
                                 </div>
                                 <div className="leading-tight">
-                                    <h3 className="text-xs font-bold tracking-tight text-white">MIS Loan Web App</h3>
-                                    <p className="text-[9.5px] text-blue-100 font-medium">Install on your device</p>
+                                    <h3 className="text-xs font-bold tracking-tight text-white">MisLoan Web App</h3>
+                                    <p className="text-[9.5px] text-white/85 font-medium">Install on your device</p>
                                 </div>
                             </div>
                             <button
                                 type="button"
                                 onClick={handleDismissInstall}
-                                className="p-1 rounded-lg hover:bg-white/15 text-blue-100 hover:text-white transition-colors"
+                                className="p-1 rounded-lg hover:bg-white/15 text-white/85 hover:text-white transition-colors"
                                 aria-label="Close"
                             >
                                 <X className="w-3.5 h-3.5" />
@@ -1068,7 +1056,7 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
 
                     <div className="p-3 bg-slate-50/50">
                         <p className="text-[11px] text-slate-600 leading-normal mb-2.5">
-                            Install MIS Loan to your home screen or desktop for a fast, app-like experience.
+                            Install MisLoan to your home screen or desktop for a fast, app-like experience.
                         </p>
 
                         <div className="flex items-center justify-end gap-2">
@@ -1086,7 +1074,7 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
                                     handleDismissInstall();
                                 }}
                                 disabled={isInstalled || isStandalone}
-                                className="inline-flex items-center gap-1.5 px-3 py-1 rounded-lg bg-gradient-to-r from-blue-600 to-indigo-600 text-white text-[11px] font-bold hover:opacity-95 disabled:opacity-50 disabled:cursor-not-allowed transition-all shadow-xs"
+                                className="inline-flex items-center gap-1.5 px-3 py-1 rounded-lg bg-gradient-to-r from-brand to-brand-dark text-white text-[11px] font-bold hover:opacity-95 disabled:opacity-50 disabled:cursor-not-allowed transition-all shadow-xs"
                             >
                                 <Download className="w-3 h-3 stroke-[2]" />
                                 Install Now
@@ -1101,7 +1089,7 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
                 <div className="fixed bottom-18 right-3.5 z-40 md:hidden animate-in fade-in slide-in-from-bottom-3 duration-300">
                     <Link
                         href="/approvals"
-                        className="group flex items-center gap-2 px-3.5 py-2 rounded-full bg-gradient-to-r from-blue-600 to-indigo-600 text-white shadow-xl shadow-blue-600/30 border border-white/20 active:scale-95 transition-all"
+                        className="group flex items-center gap-2 px-3.5 py-2 rounded-full bg-gradient-to-r from-brand to-brand-dark text-white shadow-xl shadow-brand/30 border border-white/20 active:scale-95 transition-all"
                         aria-label="Pending Approvals"
                     >
                         <div className="relative flex items-center justify-center">
@@ -1129,11 +1117,11 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
                                     key={item.name}
                                     href={item.href}
                                     className={`flex flex-col items-center justify-center w-full h-full space-y-0.5 relative py-1 transition-all ${
-                                        isActive ? 'text-blue-600 font-bold' : 'text-slate-500 hover:text-slate-800'
+                                        isActive ? 'text-brand font-bold' : 'text-slate-500 hover:text-slate-800'
                                     }`}
                                 >
                                     <div className="relative">
-                                        <Icon className={`w-4.5 h-4.5 ${isActive ? 'stroke-[2.2] text-blue-600' : 'stroke-[1.6]'}`} />
+                                        <Icon className={`w-4.5 h-4.5 ${isActive ? 'stroke-[2.2] text-brand' : 'stroke-[1.6]'}`} />
                                         {item.badge != null && item.badge > 0 && (
                                             <span className="absolute -top-1 -right-1.5 flex h-3.5 min-w-[14px] items-center justify-center rounded-full bg-rose-500 px-1 text-[8px] font-bold text-white shadow-xs">
                                                 {item.badge}
@@ -1142,7 +1130,7 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
                                     </div>
                                     <span className="text-[9.5px] text-center leading-tight max-w-[62px] truncate">{item.name}</span>
                                     {isActive && (
-                                        <span className="absolute top-0 w-6 h-0.5 bg-blue-600 rounded-full" />
+                                        <span className="absolute top-0 w-6 h-0.5 bg-brand rounded-full" />
                                     )}
                                 </Link>
                             );

@@ -80,8 +80,8 @@ export default function NotificationBell() {
                 onClick={() => setIsOpen(!isOpen)}
                 className={`relative flex items-center justify-center w-9 h-9 rounded-xl transition-all duration-200 ${
                     isOpen
-                        ? 'bg-blue-100 text-blue-700 shadow-sm'
-                        : 'bg-slate-100/90 text-slate-700 hover:bg-blue-50 hover:text-blue-600'
+                        ? 'bg-brand-soft text-brand-dark shadow-sm'
+                        : 'bg-slate-100/90 text-slate-700 hover:bg-brand-softer hover:text-brand'
                 }`}
                 title="Notifications"
                 aria-label="Notifications"
@@ -98,10 +98,10 @@ export default function NotificationBell() {
                 <div className="absolute right-0 sm:right-0 mt-2 w-[calc(100vw-2rem)] max-w-sm sm:w-96 rounded-2xl bg-white shadow-2xl border border-slate-100/90 z-50 overflow-hidden animate-in fade-in slide-in-from-top-2 duration-150">
                     <div className="flex items-center justify-between px-3.5 py-2.5 bg-slate-50/90 border-b border-slate-100">
                         <div className="flex items-center gap-2">
-                            <Bell className="w-4 h-4 text-blue-600" />
+                            <Bell className="w-4 h-4 text-brand" />
                             <h3 className="text-xs font-bold text-slate-800">নোটিফিকেশন</h3>
                             {unreadNotificationsCount > 0 && (
-                                <span className="bg-blue-100 text-blue-700 text-[10px] font-bold px-2 py-0.5 rounded-full">
+                                <span className="bg-brand-soft text-brand-dark text-[10px] font-bold px-2 py-0.5 rounded-full">
                                     {unreadNotificationsCount} নতুন
                                 </span>
                             )}
@@ -110,7 +110,7 @@ export default function NotificationBell() {
                             <button
                                 type="button"
                                 onClick={handleMarkAllRead}
-                                className="text-[11px] font-bold text-blue-600 hover:text-blue-800 flex items-center gap-1 hover:underline transition-colors"
+                                className="text-[11px] font-bold text-brand hover:text-brand-dark flex items-center gap-1 hover:underline transition-colors"
                             >
                                 <CheckCheck className="w-3.5 h-3.5" />
                                 সব পঠিত করুন
@@ -131,7 +131,7 @@ export default function NotificationBell() {
                                     onClick={(e) => handleMarkAsRead(e, item)}
                                     className={`group flex items-start gap-3 p-3.5 cursor-pointer transition-all duration-150 ${
                                         !item.is_read
-                                            ? 'bg-blue-50/40 hover:bg-blue-50/70 font-semibold'
+                                            ? 'bg-brand-softer/80 hover:bg-brand-softer font-semibold'
                                             : 'hover:bg-slate-50 opacity-90'
                                     }`}
                                 >
@@ -139,7 +139,7 @@ export default function NotificationBell() {
                                         <div
                                             className={`w-8 h-8 rounded-xl flex items-center justify-center ${
                                                 !item.is_read
-                                                    ? 'bg-blue-100 text-blue-700'
+                                                    ? 'bg-brand-soft text-brand-dark'
                                                     : 'bg-slate-100 text-slate-500'
                                             }`}
                                         >
@@ -153,7 +153,7 @@ export default function NotificationBell() {
 
                                     <div className="min-w-0 flex-1">
                                         <div className="flex items-center justify-between gap-1 mb-1">
-                                            <h4 className="text-[12px] font-bold text-slate-800 truncate group-hover:text-blue-600 transition-colors">
+                                            <h4 className="text-[12px] font-bold text-slate-800 truncate group-hover:text-brand transition-colors">
                                                 {item.title}
                                             </h4>
                                             <span className="text-[10px] text-slate-400 font-medium whitespace-nowrap">
@@ -166,7 +166,7 @@ export default function NotificationBell() {
                                     </div>
 
                                     {!item.is_read && (
-                                        <span className="mt-1.5 w-2 h-2 rounded-full bg-blue-600 flex-shrink-0" />
+                                        <span className="mt-1.5 w-2 h-2 rounded-full bg-brand flex-shrink-0" />
                                     )}
                                 </div>
                             ))
@@ -177,7 +177,7 @@ export default function NotificationBell() {
                         <Link
                             href="/notifications"
                             onClick={() => setIsOpen(false)}
-                            className="inline-flex items-center gap-1.5 text-xs font-bold text-blue-600 hover:text-blue-800 transition-colors"
+                            className="inline-flex items-center gap-1.5 text-xs font-bold text-brand hover:text-brand-dark transition-colors"
                         >
                             সকল নোটিফিকেশন দেখুন
                             <ExternalLink className="w-3 h-3" />

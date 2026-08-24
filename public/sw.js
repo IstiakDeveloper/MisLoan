@@ -1,4 +1,4 @@
-const CACHE_NAME = 'mis-loan-v3';
+const CACHE_NAME = 'mis-loan-v4';
 
 const offlinePage = () =>
   new Response(
@@ -14,8 +14,8 @@ const offlinePage = () =>
     .card { background: #fff; border-radius: 12px; padding: 2rem; max-width: 400px; text-align: center; box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1); }
     h1 { font-size: 1.25rem; margin: 0 0 0.5rem; color: #0f172a; }
     p { margin: 0 0 1.5rem; font-size: 0.875rem; color: #64748b; }
-    button { background: #2563eb; color: #fff; border: none; padding: 0.625rem 1.25rem; border-radius: 8px; font-size: 0.875rem; font-weight: 600; cursor: pointer; }
-    button:hover { background: #1d4ed8; }
+    button { background: #008030; color: #fff; border: none; padding: 0.625rem 1.25rem; border-radius: 8px; font-size: 0.875rem; font-weight: 600; cursor: pointer; }
+    button:hover { background: #004030; }
   </style>
 </head>
 <body>
@@ -107,8 +107,8 @@ self.addEventListener('push', (event) => {
   const title = data.title || 'Mis Loan';
   const options = {
     body: data.body || '',
-    icon: '/favicon.svg',
-    badge: '/favicon.svg',
+    icon: '/icons/icon-192.png',
+    badge: '/icons/icon-192.png',
     data: { url: data.url || '/login' },
   };
   event.waitUntil(self.registration.showNotification(title, options));

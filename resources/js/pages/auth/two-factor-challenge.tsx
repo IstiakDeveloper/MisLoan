@@ -53,11 +53,11 @@ export default function TwoFactorChallenge() {
 
             <div className="space-y-6">
                 <div className="flex justify-center">
-                    <div className="w-16 h-16 bg-emerald-100 dark:bg-emerald-900/30 rounded-full flex items-center justify-center">
+                    <div className="w-16 h-16 bg-brand-soft dark:bg-brand-dark/30 rounded-full flex items-center justify-center">
                         {showRecoveryInput ? (
-                            <KeyRound className="w-8 h-8 text-emerald-600 dark:text-emerald-400" />
+                            <KeyRound className="w-8 h-8 text-brand dark:text-brand-bright" />
                         ) : (
-                            <ShieldCheck className="w-8 h-8 text-emerald-600 dark:text-emerald-400" />
+                            <ShieldCheck className="w-8 h-8 text-brand dark:text-brand-bright" />
                         )}
                     </div>
                 </div>
@@ -109,7 +109,7 @@ export default function TwoFactorChallenge() {
 
                             <Button
                                 type="submit"
-                                className="w-full h-12 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700"
+                                className="w-full h-12 bg-gradient-to-r from-brand to-brand-dark hover:from-brand-muted hover:to-brand-dark"
                                 disabled={processing}
                             >
                                 {processing ? 'Verifying...' : 'Verify'}
@@ -119,7 +119,7 @@ export default function TwoFactorChallenge() {
                                 <span>or </span>
                                 <button
                                     type="button"
-                                    className="cursor-pointer text-emerald-600 hover:text-emerald-700 dark:text-emerald-400 dark:hover:text-emerald-300 underline underline-offset-4"
+                                    className="cursor-pointer text-brand hover:text-brand-dark dark:text-brand-bright dark:hover:text-brand-soft underline underline-offset-4"
                                     onClick={() => toggleRecoveryMode(clearErrors)}
                                 >
                                     {authConfigContent.toggleText}

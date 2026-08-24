@@ -18,8 +18,8 @@ export default function ForgotPassword({ status }: { status?: string }) {
             <Head title="Forgot Password - MisLoan" />
 
             {status && (
-                <div className="mb-4 rounded-xl bg-emerald-50 dark:bg-emerald-900/20 border border-emerald-200 dark:border-emerald-800 p-4">
-                    <p className="text-center text-sm text-emerald-700 dark:text-emerald-400">
+                <div className="mb-4 rounded-xl bg-brand-softer dark:bg-brand-dark/20 border border-brand-soft dark:border-brand-muted p-4">
+                    <p className="text-center text-sm text-brand-dark dark:text-brand-bright">
                         {status}
                     </p>
                 </div>
@@ -48,7 +48,7 @@ export default function ForgotPassword({ status }: { status?: string }) {
 
                             <div className="my-6">
                                 <Button
-                                    className="w-full h-12 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700"
+                                    className="w-full h-12 bg-gradient-to-r from-brand to-brand-dark hover:from-brand-muted hover:to-brand-dark"
                                     disabled={processing}
                                 >
                                     {processing && (
@@ -62,7 +62,7 @@ export default function ForgotPassword({ status }: { status?: string }) {
                 </Form>
 
                 <div className="text-center text-sm text-muted-foreground">
-                    <TextLink href={login()} className="text-emerald-600 hover:text-emerald-700 dark:text-emerald-400">
+                    <TextLink href={login()} className="text-brand hover:text-brand-dark dark:text-brand-bright">
                         Back to login
                     </TextLink>
                 </div>

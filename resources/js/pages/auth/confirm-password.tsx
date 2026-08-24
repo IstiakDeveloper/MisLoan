@@ -54,7 +54,7 @@ export default function ConfirmPassword() {
                         </div>
 
                         <Button
-                            className="w-full h-12 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700"
+                            className="w-full h-12 bg-gradient-to-r from-brand to-brand-dark hover:from-brand-muted hover:to-brand-dark"
                             disabled={processing}
                         >
                             {processing && <Spinner className="mr-2" />}
