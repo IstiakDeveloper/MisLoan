@@ -22,7 +22,7 @@ trait ScopesToAccessibleBranches
             return true;
         }
 
-        if ($user->has_all_access || $user->isSuperAdmin() || $user->isHeadOffice()) {
+        if ($user->has_all_access || $user->isSuperAdmin() || $user->isHeadOffice() || $user->isApproverRole() || $user->isEd()) {
             return false;
         }
 

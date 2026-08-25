@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Models\Area;
+use App\Models\Branch;
 use App\Models\LoanApplicationApproval;
 use App\Models\MemberAdmission;
 use App\Models\MemberAdmissionApproval;

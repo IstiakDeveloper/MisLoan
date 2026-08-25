@@ -10,8 +10,28 @@ import {
 } from 'lucide-react';
 import ListPagination from '@/components/ListPagination';
 import AutoFitTableContainer from '@/components/AutoFitTableContainer';
-import { keepListFilters } from '@/utils/branchLabel';
+import { formatBranchLabel, keepListFilters, sortBranchesByCode } from '@/utils/branchLabel';
 import SendLoanToHoModal, { HoLoanItem } from '@/components/LoanApplications/SendLoanToHoModal';
+
+interface ZoneOption {
+    id: number;
+    name: string;
+    code?: string;
+}
+
+interface AreaOption {
+    id: number;
+    name: string;
+    code?: string;
+    zone_id: number;
+}
+
+interface BranchOption {
+    id: number;
+    name: string;
+    code?: string;
+    area_id: number;
+}
 
 interface LoanProduct {
     id: number;
@@ -103,6 +123,11 @@ interface LoanApplication {
         label: string;
         pending_with_name?: string | null;
     };
+    branch?: {
+        id: number;
+        name: string;
+        code?: string;
+    };
 }
 
 interface Stats {
@@ -131,6 +156,14 @@ interface Props {
         to?: number | null;
     };
     stats: Stats;
+    zones?: ZoneOption[];
+    areas?: AreaOption[];
+    branches?: BranchOption[];
+    filters?: {
+        zone_id?: string;
+        area_id?: string;
+        branch_id?: string;
+    };
     selectedDate: string;
     dateFrom?: string;
     dateTo?: string;
@@ -194,7 +227,24 @@ interface Member {
     active_loans?: ActiveLoan[];
 }
 
-export default function Index({ categories, applications, stats, selectedDate, dateFrom, dateTo, statusFilter = 'all', searchFilter = '', perPage = 20, preselectedMember = null, workQueue, flash }: Props) {
+export default function Index({
+    categories,
+    applications,
+    stats,
+    zones = [],
+    areas = [],
+    branches = [],
+    filters,
+    selectedDate,
+    dateFrom,
+    dateTo,
+    statusFilter = 'all',
+    searchFilter = '',
+    perPage = 20,
+    preselectedMember = null,
+    workQueue,
+    flash,
+}: Props) {
     const pageAuth = usePage().props.auth as { user?: { role?: { name: string } } } | undefined;
     const roleName = pageAuth?.user?.role?.name?.toLowerCase() || '';
     const isBranchUser = roleName === 'branch_user';
@@ -212,12 +262,45 @@ export default function Index({ categories, applications, stats, selectedDate, d
     const now = new Date();
     const today = now.toISOString().split('T')[0];
     const firstDayOfMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-01`;
+    const [selectedZone, setSelectedZone] = useState(filters?.zone_id ? String(filters.zone_id) : '');
+    const [selectedArea, setSelectedArea] = useState(filters?.area_id ? String(filters.area_id) : '');
+    const [selectedBranch, setSelectedBranch] = useState(filters?.branch_id ? String(filters.branch_id) : '');
     const [currentDateFrom, setCurrentDateFrom] = useState(dateFrom || '');
     const [currentDateTo, setCurrentDateTo] = useState(dateTo || '');
     const [currentStatusFilter, setCurrentStatusFilter] = useState(statusFilter || 'all');
     const [searchQuery, setSearchQuery] = useState(searchFilter);
     const [showNewModal, setShowNewModal] = useState(!!preselectedMember && canCreateLoanApplication);
     const [selectedCategory, setSelectedCategory] = useState<number | null>(null);
+
+    useEffect(() => {
+        setSelectedZone(filters?.zone_id ? String(filters.zone_id) : '');
+        setSelectedArea(filters?.area_id ? String(filters.area_id) : '');
+        setSelectedBranch(filters?.branch_id ? String(filters.branch_id) : '');
+    }, [filters?.zone_id, filters?.area_id, filters?.branch_id]);
+
+    const filteredAreas = useMemo(() => {
+        if (!selectedZone) return areas;
+        return areas.filter((a) => String(a.zone_id) === String(selectedZone));
+    }, [areas, selectedZone]);
+
+    const filteredBranches = useMemo(() => {
+        let list = branches;
+        if (selectedZone) {
+            const areaIds = new Set(filteredAreas.map((a) => String(a.id)));
+            list = list.filter((b) => areaIds.has(String(b.area_id)));
+        }
+        if (selectedArea) {
+            list = list.filter((b) => String(b.area_id) === String(selectedArea));
+        }
+        return sortBranchesByCode(list);
+    }, [branches, selectedZone, selectedArea, filteredAreas]);
+
+    const handleLocationFilterChange = (zoneVal: string, areaVal: string, branchVal: string) => {
+        setSelectedZone(zoneVal);
+        setSelectedArea(areaVal);
+        setSelectedBranch(branchVal);
+        applyListFilters({ zone_id: zoneVal, area_id: areaVal, branch_id: branchVal, page: 1 });
+    };
     const [selectedProduct, setSelectedProduct] = useState<number | null>(null);
     const [showSuccessMessage, setShowSuccessMessage] = useState(!!flash?.success);
     const [selectedIssue, setSelectedIssue] = useState<{ applicationId: number; issueId: number } | null>(null);
@@ -272,6 +355,9 @@ export default function Index({ categories, applications, stats, selectedDate, d
             date_from: currentDateFrom,
             date_to: currentDateTo,
             per_page: applications.per_page || perPage || 20,
+            zone_id: selectedZone,
+            area_id: selectedArea,
+            branch_id: selectedBranch,
             ...overrides,
         };
         const status = Object.prototype.hasOwnProperty.call(overrides, 'status')
@@ -317,6 +403,9 @@ export default function Index({ categories, applications, stats, selectedDate, d
         setCurrentDateTo('');
         setCurrentStatusFilter(workQueue?.default_status || 'all');
         setSearchQuery('');
+        setSelectedZone('');
+        setSelectedArea('');
+        setSelectedBranch('');
         router.get('/member/loan-applications', {
             per_page: applications.per_page || perPage || 20,
         }, { preserveState: true });
@@ -832,70 +921,129 @@ export default function Index({ categories, applications, stats, selectedDate, d
                         })}
                     </div>
 
-                    {/* Integrated Search & Date Toolbar */}
-                    <div className="pt-2 border-t border-slate-100 flex flex-col lg:flex-row items-stretch lg:items-center justify-between gap-2.5 text-xs">
-                        {/* Search Input Box */}
-                        <div className="relative flex-grow max-w-lg">
-                            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 pointer-events-none" />
-                            <input
-                                type="text"
-                                placeholder="সদস্য কোড, নাম, ফোন..."
-                                value={searchQuery}
-                                onChange={(e) => setSearchQuery(e.target.value)}
-                                onKeyDown={(e) => {
-                                    if (e.key === 'Enter') {
-                                        e.preventDefault();
-                                        applyListFilters({ page: 1 });
-                                    }
-                                }}
-                                className="w-full pl-9 pr-7 py-2 text-xs border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 bg-slate-50/50 transition-all font-medium"
-                            />
-                            {searchQuery && (
-                                <button
-                                    onClick={() => setSearchQuery('')}
-                                    className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
-                                >
-                                    <X className="w-3.5 h-3.5" />
-                                </button>
-                            )}
-                        </div>
+                    {/* Location, Search & Date Toolbar */}
+                    <div className="pt-2.5 border-t border-slate-100 space-y-2.5 text-xs">
+                        {/* Zone / Area / Branch Filters for Approvers & Multi-branch users */}
+                        {(zones.length > 0 || areas.length > 0 || branches.length > 0) && (
+                            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-2">
+                                {zones.length > 0 && (
+                                    <div>
+                                        <select
+                                            value={selectedZone}
+                                            onChange={(e) => handleLocationFilterChange(e.target.value, '', '')}
+                                            className="h-8.5 w-full border border-slate-300 rounded-xl px-2.5 text-xs bg-white text-slate-800 focus:outline-none focus:ring-1 focus:ring-blue-500 focus:border-blue-500 transition"
+                                        >
+                                            <option value="">সকল জোন ({zones.length})</option>
+                                            {zones.map((z) => (
+                                                <option key={z.id} value={z.id}>
+                                                    {z.name} {z.code ? `(${z.code})` : ''}
+                                                </option>
+                                            ))}
+                                        </select>
+                                    </div>
+                                )}
 
-                        {/* Date Range & Action Buttons */}
-                        <div className="flex flex-wrap items-center gap-2">
-                            <div className="flex items-center gap-1.5 bg-slate-50 border border-slate-200 p-1 rounded-xl">
+                                {areas.length > 0 && (
+                                    <div>
+                                        <select
+                                            value={selectedArea}
+                                            onChange={(e) => handleLocationFilterChange(selectedZone, e.target.value, '')}
+                                            className="h-8.5 w-full border border-slate-300 rounded-xl px-2.5 text-xs bg-white text-slate-800 focus:outline-none focus:ring-1 focus:ring-blue-500 focus:border-blue-500 transition"
+                                        >
+                                            <option value="">সকল অঞ্চল ({filteredAreas.length})</option>
+                                            {filteredAreas.map((a) => (
+                                                <option key={a.id} value={a.id}>
+                                                    {a.name} {a.code ? `(${a.code})` : ''}
+                                                </option>
+                                            ))}
+                                        </select>
+                                    </div>
+                                )}
+
+                                {branches.length > 0 && (
+                                    <div className="md:col-span-1 lg:col-span-2">
+                                        <select
+                                            value={selectedBranch}
+                                            onChange={(e) => handleLocationFilterChange(selectedZone, selectedArea, e.target.value)}
+                                            className="h-8.5 w-full border border-slate-300 rounded-xl px-2.5 text-xs bg-white text-slate-800 focus:outline-none focus:ring-1 focus:ring-blue-500 focus:border-blue-500 transition"
+                                        >
+                                            <option value="">সকল শাখা ({filteredBranches.length})</option>
+                                            {filteredBranches.map((b) => (
+                                                <option key={b.id} value={b.id}>
+                                                    {formatBranchLabel(b)}
+                                                </option>
+                                            ))}
+                                        </select>
+                                    </div>
+                                )}
+                            </div>
+                        )}
+
+                        {/* Integrated Search & Date Toolbar */}
+                        <div className="flex flex-col lg:flex-row items-stretch lg:items-center justify-between gap-2.5 text-xs">
+                            {/* Search Input Box */}
+                            <div className="relative flex-grow max-w-lg">
+                                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 pointer-events-none" />
                                 <input
-                                    type="date"
-                                    value={currentDateFrom}
-                                    onChange={(e) => setCurrentDateFrom(e.target.value)}
-                                    className="px-2 py-1 text-xs border border-slate-300 rounded-lg bg-white focus:outline-none"
-                                    title="তারিখ হতে"
+                                    type="text"
+                                    placeholder="সদস্য কোড, নাম, ফোন..."
+                                    value={searchQuery}
+                                    onChange={(e) => setSearchQuery(e.target.value)}
+                                    onKeyDown={(e) => {
+                                        if (e.key === 'Enter') {
+                                            e.preventDefault();
+                                            applyListFilters({ page: 1 });
+                                        }
+                                    }}
+                                    className="w-full pl-9 pr-7 py-2 text-xs border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 bg-slate-50/50 transition-all font-medium"
                                 />
-                                <span className="text-slate-400 text-xs font-bold">–</span>
-                                <input
-                                    type="date"
-                                    value={currentDateTo}
-                                    onChange={(e) => setCurrentDateTo(e.target.value)}
-                                    className="px-2 py-1 text-xs border border-slate-300 rounded-lg bg-white focus:outline-none"
-                                    title="তারিখ পর্যন্ত"
-                                />
+                                {searchQuery && (
+                                    <button
+                                        onClick={() => setSearchQuery('')}
+                                        className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
+                                    >
+                                        <X className="w-3.5 h-3.5" />
+                                    </button>
+                                )}
                             </div>
 
-                            <button
-                                onClick={handleDateFilterChange}
-                                className="px-4 py-2 text-xs font-bold bg-slate-800 hover:bg-slate-900 text-white rounded-xl transition shadow-2xs active:scale-95 flex items-center gap-1"
-                            >
-                                <Filter className="w-3.5 h-3.5" />
-                                <span>ফিল্টার</span>
-                            </button>
+                            {/* Date Range & Action Buttons */}
+                            <div className="flex flex-wrap items-center gap-2">
+                                <div className="flex items-center gap-1.5 bg-slate-50 border border-slate-200 p-1 rounded-xl">
+                                    <input
+                                        type="date"
+                                        value={currentDateFrom}
+                                        onChange={(e) => setCurrentDateFrom(e.target.value)}
+                                        className="px-2 py-1 text-xs border border-slate-300 rounded-lg bg-white focus:outline-none"
+                                        title="তারিখ হতে"
+                                    />
+                                    <span className="text-slate-400 text-xs font-bold">–</span>
+                                    <input
+                                        type="date"
+                                        value={currentDateTo}
+                                        onChange={(e) => setCurrentDateTo(e.target.value)}
+                                        className="px-2 py-1 text-xs border border-slate-300 rounded-lg bg-white focus:outline-none"
+                                        title="তারিখ পর্যন্ত"
+                                    />
+                                </div>
 
-                            <button
-                                onClick={resetFilters}
-                                className="px-3 py-2 text-xs font-bold text-slate-600 bg-slate-100 hover:bg-slate-200 rounded-xl transition flex items-center gap-1"
-                                title="ফিল্টার রিসেট"
-                            >
-                                <RefreshCw className="w-3.5 h-3.5" />
-                                <span>রিসেট</span>
-                            </button>
+                                <button
+                                    onClick={handleDateFilterChange}
+                                    className="px-4 py-2 text-xs font-bold bg-slate-800 hover:bg-slate-900 text-white rounded-xl transition shadow-2xs active:scale-95 flex items-center gap-1"
+                                >
+                                    <Filter className="w-3.5 h-3.5" />
+                                    <span>ফিল্টার</span>
+                                </button>
+
+                                <button
+                                    onClick={resetFilters}
+                                    className="px-3 py-2 text-xs font-bold text-slate-600 bg-slate-100 hover:bg-slate-200 rounded-xl transition flex items-center gap-1"
+                                    title="ফিল্টার রিসেট"
+                                >
+                                    <RefreshCw className="w-3.5 h-3.5" />
+                                    <span>রিসেট</span>
+                                </button>
+                            </div>
                         </div>
                     </div>
 

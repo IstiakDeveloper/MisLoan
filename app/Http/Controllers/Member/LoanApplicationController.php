@@ -6,6 +6,8 @@ use App\Http\Controllers\Concerns\AppliesRoleDefaultListFilter;
 use App\Http\Controllers\Concerns\RequiresSuperAdminDeletePin;
 use App\Http\Controllers\Concerns\ResolvesListPerPage;
 use App\Http\Controllers\Controller;
+use App\Models\Area;
+use App\Models\Branch;
 use App\Models\LoanApplication;
 use App\Models\LoanApplicationApproval;
 use App\Models\LoanApplicationIssue;
@@ -16,6 +18,7 @@ use App\Models\Role;
 use App\Models\Samity;
 use App\Models\SavingsProduct;
 use App\Models\User;
+use App\Models\Zone;
 use App\Services\ApprovalService;
 use App\Services\MemberCodeService;
 use App\Services\NotificationService;
@@ -644,12 +647,17 @@ class LoanApplicationController extends Controller
         // Get user's loan applications for date range
         $dateExpression = 'COALESCE(disbursed_at, reviewed_at, submitted_at, created_at)';
 
+        $zoneId = $request->input('zone_id');
+        $areaId = $request->input('area_id');
+        $branchId = $request->input('branch_id');
+
         // Main query: only small columns (no LOBs) so ORDER BY uses minimal sort buffer.
         $applicationsQuery = LoanApplication::with([
             'loanProduct:id,product_name,product_name_bn,product_code,installment_type',
             'loanCategory:id,category_name,category_name_bn',
             'memberAdmission:id,applicant_name_en,applicant_name_bn,application_no,nid_number,mobile_number,status,is_legacy,loan_dofa',
-            'branch:id,name,code',
+            'branch:id,name,code,area_id',
+            'branch.area:id,name,code,zone_id',
             'approvals' => function ($query) {
                 $query->select('id', 'loan_application_id', 'user_id', 'level', 'sequence', 'status')
                     ->with('user:id,name');
@@ -660,12 +668,20 @@ class LoanApplicationController extends Controller
                     ->orderBy('created_at', 'desc');
             },
         ])
-            ->when(! $user->has_all_access, function ($query) use ($user) {
+            ->when(! $user->has_all_access && ! $user->isApproverRole() && ! $user->isEd() && ! $user->isSuperAdmin() && ! $user->isHeadOffice(), function ($query) use ($user) {
                 $query->whereIn('branch_id', $user->getAccessibleBranches()->pluck('id'));
             })
             ->when($isFieldOfficer, function ($query) use ($user) {
                 $query->where('submitted_by', $user->id);
             });
+
+        if ($branchId) {
+            $applicationsQuery->where('branch_id', $branchId);
+        } elseif ($areaId) {
+            $applicationsQuery->whereHas('branch', fn ($q) => $q->where('area_id', $areaId));
+        } elseif ($zoneId) {
+            $applicationsQuery->whereHas('branch.area', fn ($q) => $q->where('zone_id', $zoneId));
+        }
 
         $this->applyCoalesceDateRange($applicationsQuery, $dateFrom, $dateTo, $dateExpression);
         $this->applyResolvedStatusFilter($applicationsQuery, $statusFilter, $user, 'loan');
@@ -717,14 +733,46 @@ class LoanApplicationController extends Controller
 
         // Base query for stats (without status filter)
         $statsBaseQuery = LoanApplication::query()
-            ->when(! $user->has_all_access, function ($query) use ($user) {
+            ->when(! $user->has_all_access && ! $user->isApproverRole() && ! $user->isEd() && ! $user->isSuperAdmin() && ! $user->isHeadOffice(), function ($query) use ($user) {
                 $query->whereIn('branch_id', $user->getAccessibleBranches()->pluck('id'));
             })
             ->when($isFieldOfficer, function ($query) use ($user) {
                 $query->where('submitted_by', $user->id);
             });
 
+        if ($branchId) {
+            $statsBaseQuery->where('branch_id', $branchId);
+        } elseif ($areaId) {
+            $statsBaseQuery->whereHas('branch', fn ($q) => $q->where('area_id', $areaId));
+        } elseif ($zoneId) {
+            $statsBaseQuery->whereHas('branch.area', fn ($q) => $q->where('zone_id', $zoneId));
+        }
+
         $this->applyCoalesceDateRange($statsBaseQuery, $dateFrom, $dateTo, $dateExpression);
+
+        $accessibleBranches = $user->getAccessibleBranches()->sortBy('code')->values();
+        if ($accessibleBranches->isEmpty()) {
+            $accessibleBranches = Branch::all()->sortBy('code')->values();
+        }
+
+        $branches = $accessibleBranches->map(fn ($b) => [
+            'id' => $b->id,
+            'name' => $b->name,
+            'code' => $b->code,
+            'area_id' => $b->area_id,
+        ])->values();
+
+        $areaIds = $branches->pluck('area_id')->filter()->unique();
+        $areas = Area::query()
+            ->whereIn('id', $areaIds)
+            ->orderBy('name')
+            ->get(['id', 'name', 'code', 'zone_id']);
+
+        $zoneIds = $areas->pluck('zone_id')->filter()->unique();
+        $zones = Zone::query()
+            ->whereIn('id', $zoneIds)
+            ->orderBy('name')
+            ->get(['id', 'name', 'code']);
 
         $stats = [
             'total' => (clone $statsBaseQuery)->where('status', '!=', 'draft')->count(),
@@ -744,6 +792,14 @@ class LoanApplicationController extends Controller
             'categories' => $categories,
             'applications' => $applications,
             'stats' => $stats,
+            'zones' => $zones,
+            'areas' => $areas,
+            'branches' => $branches,
+            'filters' => [
+                'zone_id' => $zoneId,
+                'area_id' => $areaId,
+                'branch_id' => $branchId,
+            ],
             'selectedDate' => $dateFrom, // Keep for backward compatibility
             'dateFrom' => $dateFrom,
             'dateTo' => $dateTo,
@@ -776,12 +832,24 @@ class LoanApplicationController extends Controller
             'samity',
             'submittedBy',
         ])
-            ->when(! $user->has_all_access, function ($query) use ($user) {
+            ->when(! $user->has_all_access && ! $user->isApproverRole() && ! $user->isEd() && ! $user->isSuperAdmin() && ! $user->isHeadOffice(), function ($query) use ($user) {
                 $query->whereIn('branch_id', $user->getAccessibleBranches()->pluck('id'));
             })
             ->when($isFieldOfficer, function ($query) use ($user) {
                 $query->where('submitted_by', $user->id);
             });
+
+        $zoneId = $request->input('zone_id');
+        $areaId = $request->input('area_id');
+        $branchId = $request->input('branch_id');
+
+        if ($branchId) {
+            $query->where('branch_id', $branchId);
+        } elseif ($areaId) {
+            $query->whereHas('branch', fn ($q) => $q->where('area_id', $areaId));
+        } elseif ($zoneId) {
+            $query->whereHas('branch.area', fn ($q) => $q->where('zone_id', $zoneId));
+        }
 
         $this->applyCoalesceDateRange($query, $dateFrom, $dateTo, 'COALESCE(disbursed_at, reviewed_at, submitted_at, created_at)');
         $this->applyResolvedStatusFilter($query, $statusFilter, $user, 'loan');

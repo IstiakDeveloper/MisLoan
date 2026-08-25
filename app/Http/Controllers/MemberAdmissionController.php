@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Models\Area;
 use App\Models\Branch;
 use App\Models\LoanApplication;
 use App\Models\MemberAdmission;
@@ -9,6 +10,7 @@ use App\Models\MemberCategory;
 use App\Models\Role;
 use App\Models\Samity;
 use App\Models\User;
+use App\Models\Zone;
 use App\Services\ApprovalService;
 use App\Services\ImageCompressionService;
 use App\Services\MemberAdmissionLoanSyncService;
@@ -345,8 +347,12 @@ class MemberAdmissionController extends Controller
             'approvals.user',
         ]);
 
+        $zoneId = $request->input('zone_id');
+        $areaId = $request->input('area_id');
+        $branchId = $request->input('branch_id');
+
         // List stays personal for field officers. Loans for other branch members go through ঋণ আবেদন search.
-        if (! $user->has_all_access) {
+        if (! $user->has_all_access && ! $user->isApproverRole() && ! $user->isEd() && ! $user->isSuperAdmin() && ! $user->isHeadOffice()) {
             $query->whereIn('branch_id', $user->getAccessibleBranches()->pluck('id'));
         }
         if ($isFieldOfficer) {
@@ -355,15 +361,22 @@ class MemberAdmissionController extends Controller
 
         // Build stats query with active date, branch, and search filters (excluding status filter for stats)
         $statsQuery = MemberAdmission::query();
-        if (! $user->has_all_access) {
+        if (! $user->has_all_access && ! $user->isApproverRole() && ! $user->isEd() && ! $user->isSuperAdmin() && ! $user->isHeadOffice()) {
             $statsQuery->whereIn('branch_id', $user->getAccessibleBranches()->pluck('id'));
         }
         if ($isFieldOfficer) {
             $statsQuery->assignedToOfficer((int) $user->id);
         }
 
-        if ($request->has('branch_id') && $request->branch_id) {
-            $statsQuery->where('branch_id', $request->branch_id);
+        if ($branchId) {
+            $query->where('branch_id', $branchId);
+            $statsQuery->where('branch_id', $branchId);
+        } elseif ($areaId) {
+            $query->whereHas('branch', fn ($q) => $q->where('area_id', $areaId));
+            $statsQuery->whereHas('branch', fn ($q) => $q->where('area_id', $areaId));
+        } elseif ($zoneId) {
+            $query->whereHas('branch.area', fn ($q) => $q->where('zone_id', $zoneId));
+            $statsQuery->whereHas('branch.area', fn ($q) => $q->where('zone_id', $zoneId));
         }
 
         if ($request->filled('search')) {
@@ -388,15 +401,35 @@ class MemberAdmissionController extends Controller
 
         $this->applyResolvedStatusFilter($query, $statusFilter, $user, 'admission');
 
-        if ($request->has('branch_id')) {
-            $query->where('branch_id', $request->branch_id);
-        }
-
         if ($request->filled('search')) {
             MemberCodeService::applyAdmissionSearch($query, $request->search);
         }
 
         $this->applyCoalesceDateRange($query, $fromDate, $toDate, 'COALESCE(reviewed_at, submitted_at, created_at)');
+
+        $accessibleBranches = $user->getAccessibleBranches()->sortBy('code')->values();
+        if ($accessibleBranches->isEmpty()) {
+            $accessibleBranches = Branch::all()->sortBy('code')->values();
+        }
+
+        $branches = $accessibleBranches->map(fn ($b) => [
+            'id' => $b->id,
+            'name' => $b->name,
+            'code' => $b->code,
+            'area_id' => $b->area_id,
+        ])->values();
+
+        $areaIds = $branches->pluck('area_id')->filter()->unique();
+        $areas = Area::query()
+            ->whereIn('id', $areaIds)
+            ->orderBy('name')
+            ->get(['id', 'name', 'code', 'zone_id']);
+
+        $zoneIds = $areas->pluck('zone_id')->filter()->unique();
+        $zones = Zone::query()
+            ->whereIn('id', $zoneIds)
+            ->orderBy('name')
+            ->get(['id', 'name', 'code']);
 
         $perPage = $this->resolvePerPage($request);
         $query->withExists([
@@ -436,8 +469,11 @@ class MemberAdmissionController extends Controller
 
         return Inertia::render('MemberAdmission/Index', [
             'admissions' => $admissions,
+            'zones' => $zones,
+            'areas' => $areas,
+            'branches' => $branches,
             'filters' => array_merge(
-                $request->only(['branch_id', 'search']),
+                $request->only(['branch_id', 'area_id', 'zone_id', 'search']),
                 [
                     'status' => $workQueue['status_param'],
                     'per_page' => $perPage,
@@ -468,15 +504,23 @@ class MemberAdmissionController extends Controller
             'approvals.user',
         ]);
 
-        if (! $user->has_all_access) {
+        if (! $user->has_all_access && ! $user->isApproverRole() && ! $user->isEd() && ! $user->isSuperAdmin() && ! $user->isHeadOffice()) {
             $query->whereIn('branch_id', $user->getAccessibleBranches()->pluck('id'));
         }
         if ($isFieldOfficer) {
             $query->assignedToOfficer((int) $user->id);
         }
 
-        if ($request->has('branch_id') && $request->branch_id) {
-            $query->where('branch_id', $request->branch_id);
+        $zoneId = $request->input('zone_id');
+        $areaId = $request->input('area_id');
+        $branchId = $request->input('branch_id');
+
+        if ($branchId) {
+            $query->where('branch_id', $branchId);
+        } elseif ($areaId) {
+            $query->whereHas('branch', fn ($q) => $q->where('area_id', $areaId));
+        } elseif ($zoneId) {
+            $query->whereHas('branch.area', fn ($q) => $q->where('zone_id', $zoneId));
         }
 
         $workQueue = RoleListWorkQueue::resolveWithDates($request, false, $user);

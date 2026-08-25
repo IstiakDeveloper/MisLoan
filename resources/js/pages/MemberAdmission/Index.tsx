@@ -32,8 +32,28 @@ import {
 import { MemberAdmission } from '@/types/memberAdmission';
 import ListPagination from '@/components/ListPagination';
 import AutoFitTableContainer from '@/components/AutoFitTableContainer';
-import { keepListFilters } from '@/utils/branchLabel';
+import { formatBranchLabel, keepListFilters, sortBranchesByCode } from '@/utils/branchLabel';
 import SendAdmissionToHoModal, { HoAdmissionItem } from '@/components/MemberAdmission/SendAdmissionToHoModal';
+
+interface ZoneOption {
+    id: number;
+    name: string;
+    code?: string;
+}
+
+interface AreaOption {
+    id: number;
+    name: string;
+    code?: string;
+    zone_id: number;
+}
+
+interface BranchOption {
+    id: number;
+    name: string;
+    code?: string;
+    area_id: number;
+}
 
 interface Props {
     admissions: {
@@ -45,7 +65,13 @@ interface Props {
         from: number;
         to: number;
     };
+    zones?: ZoneOption[];
+    areas?: AreaOption[];
+    branches?: BranchOption[];
     filters: {
+        zone_id?: string;
+        area_id?: string;
+        branch_id?: string;
         status?: string;
         search?: string;
         from_date?: string;
@@ -71,7 +97,7 @@ interface Props {
     };
 }
 
-export default function Index({ admissions, filters, stats, workQueue }: Props) {
+export default function Index({ admissions, zones = [], areas = [], branches = [], filters, stats, workQueue }: Props) {
     const pageAuth = usePage().props.auth as { user?: { id?: number; role?: { name: string } } } | undefined;
     const roleName = pageAuth?.user?.role?.name?.toLowerCase() || '';
     // Only Branch User can send ready admissions to Head Office (not Branch Manager)
@@ -100,16 +126,39 @@ export default function Index({ admissions, filters, stats, workQueue }: Props) 
         admission.can_be_edited ??
         (admission.status === 'draft' || admission.status === 'rejected');
 
+    const [selectedZone, setSelectedZone] = useState(filters?.zone_id ? String(filters.zone_id) : '');
+    const [selectedArea, setSelectedArea] = useState(filters?.area_id ? String(filters.area_id) : '');
+    const [selectedBranch, setSelectedBranch] = useState(filters?.branch_id ? String(filters.branch_id) : '');
     const [searchQuery, setSearchQuery] = useState(filters.search || '');
     const [statusFilter, setStatusFilter] = useState(filters.status || 'all');
     const [fromDate, setFromDate] = useState(filters.from_date || '');
     const [toDate, setToDate] = useState(filters.to_date || '');
 
     useEffect(() => {
+        setSelectedZone(filters?.zone_id ? String(filters.zone_id) : '');
+        setSelectedArea(filters?.area_id ? String(filters.area_id) : '');
+        setSelectedBranch(filters?.branch_id ? String(filters.branch_id) : '');
         setFromDate(filters.from_date || '');
         setToDate(filters.to_date || '');
         setStatusFilter(filters.status || 'all');
-    }, [filters.from_date, filters.to_date, filters.status]);
+    }, [filters?.zone_id, filters?.area_id, filters?.branch_id, filters.from_date, filters.to_date, filters.status]);
+
+    const filteredAreas = useMemo(() => {
+        if (!selectedZone) return areas;
+        return areas.filter((a) => String(a.zone_id) === String(selectedZone));
+    }, [areas, selectedZone]);
+
+    const filteredBranches = useMemo(() => {
+        let list = branches;
+        if (selectedZone) {
+            const areaIds = new Set(filteredAreas.map((a) => String(a.id)));
+            list = list.filter((b) => areaIds.has(String(b.area_id)));
+        }
+        if (selectedArea) {
+            list = list.filter((b) => String(b.area_id) === String(selectedArea));
+        }
+        return sortBranchesByCode(list);
+    }, [branches, selectedZone, selectedArea, filteredAreas]);
 
     const [showRejectModal, setShowRejectModal] = useState(false);
     const [showResubmitModal, setShowResubmitModal] = useState(false);
@@ -247,14 +296,32 @@ export default function Index({ admissions, filters, stats, workQueue }: Props) 
     const today = new Date().toISOString().split('T')[0];
     const isTodayFilter = fromDate === today && toDate === today;
 
-    const buildParams = () => {
+    const buildParams = (override: Record<string, string> = {}) => {
         const params: Record<string, string> = {};
-        if (searchQuery) params.search = searchQuery;
-        params.status = statusFilter || 'all';
-        if (fromDate) params.from_date = fromDate;
-        if (toDate) params.to_date = toDate;
+        const z = override.zone_id !== undefined ? override.zone_id : selectedZone;
+        const a = override.area_id !== undefined ? override.area_id : selectedArea;
+        const b = override.branch_id !== undefined ? override.branch_id : selectedBranch;
+        const s = override.search !== undefined ? override.search : searchQuery;
+        const st = override.status !== undefined ? override.status : statusFilter;
+        const fd = override.from_date !== undefined ? override.from_date : fromDate;
+        const td = override.to_date !== undefined ? override.to_date : toDate;
+
+        if (z) params.zone_id = z;
+        if (a) params.area_id = a;
+        if (b) params.branch_id = b;
+        if (s) params.search = s;
+        params.status = st || 'all';
+        if (fd) params.from_date = fd;
+        if (td) params.to_date = td;
         params.per_page = String(admissions.per_page || filters.per_page || 20);
         return params;
+    };
+
+    const handleLocationFilterChange = (zoneVal: string, areaVal: string, branchVal: string) => {
+        setSelectedZone(zoneVal);
+        setSelectedArea(areaVal);
+        setSelectedBranch(branchVal);
+        router.get('/member-admissions', buildParams({ zone_id: zoneVal, area_id: areaVal, branch_id: branchVal }), { preserveState: true });
     };
 
     const handleTodayFilter = () => {
@@ -613,64 +680,126 @@ export default function Index({ admissions, filters, stats, workQueue }: Props) 
                         })}
                     </div>
 
-                    {/* Integrated Search & Date Toolbar */}
-                    <form onSubmit={handleSearch} className="pt-2 border-t border-slate-100 flex flex-col lg:flex-row items-stretch lg:items-center justify-between gap-2.5">
-                        {/* Search Input Box */}
-                        <div className="relative flex-grow max-w-lg">
-                            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 pointer-events-none" />
-                            <input
-                                type="text"
-                                value={searchQuery}
-                                onChange={(e) => setSearchQuery(e.target.value)}
-                                placeholder="সদস্য নাম্বার, নাম, মোবাইল, এনআইডি খুঁজুন..."
-                                className="w-full pl-9 pr-4 py-2 text-xs border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 bg-slate-50/50 transition-all font-medium"
-                            />
-                        </div>
+                    {/* Location, Search & Date Toolbar */}
+                    <div className="pt-2.5 border-t border-slate-100 space-y-2.5">
+                        {/* Zone / Area / Branch Filters for Approvers & Multi-branch users */}
+                        {(zones.length > 0 || areas.length > 0 || branches.length > 0) && (
+                            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-2">
+                                {zones.length > 0 && (
+                                    <div>
+                                        <select
+                                            value={selectedZone}
+                                            onChange={(e) => handleLocationFilterChange(e.target.value, '', '')}
+                                            className="h-8.5 w-full border border-slate-300 rounded-xl px-2.5 text-xs bg-white text-slate-800 focus:outline-none focus:ring-1 focus:ring-blue-500 focus:border-blue-500 transition"
+                                        >
+                                            <option value="">সকল জোন ({zones.length})</option>
+                                            {zones.map((z) => (
+                                                <option key={z.id} value={z.id}>
+                                                    {z.name} {z.code ? `(${z.code})` : ''}
+                                                </option>
+                                            ))}
+                                        </select>
+                                    </div>
+                                )}
 
-                        {/* Date Range & Controls */}
-                        <div className="flex flex-wrap items-center gap-2">
-                            <div className="flex items-center gap-1.5 bg-slate-50 border border-slate-200 p-1 rounded-xl">
+                                {areas.length > 0 && (
+                                    <div>
+                                        <select
+                                            value={selectedArea}
+                                            onChange={(e) => handleLocationFilterChange(selectedZone, e.target.value, '')}
+                                            className="h-8.5 w-full border border-slate-300 rounded-xl px-2.5 text-xs bg-white text-slate-800 focus:outline-none focus:ring-1 focus:ring-blue-500 focus:border-blue-500 transition"
+                                        >
+                                            <option value="">সকল অঞ্চল ({filteredAreas.length})</option>
+                                            {filteredAreas.map((a) => (
+                                                <option key={a.id} value={a.id}>
+                                                    {a.name} {a.code ? `(${a.code})` : ''}
+                                                </option>
+                                            ))}
+                                        </select>
+                                    </div>
+                                )}
+
+                                {branches.length > 0 && (
+                                    <div className="md:col-span-1 lg:col-span-2">
+                                        <select
+                                            value={selectedBranch}
+                                            onChange={(e) => handleLocationFilterChange(selectedZone, selectedArea, e.target.value)}
+                                            className="h-8.5 w-full border border-slate-300 rounded-xl px-2.5 text-xs bg-white text-slate-800 focus:outline-none focus:ring-1 focus:ring-blue-500 focus:border-blue-500 transition"
+                                        >
+                                            <option value="">সকল শাখা ({filteredBranches.length})</option>
+                                            {filteredBranches.map((b) => (
+                                                <option key={b.id} value={b.id}>
+                                                    {formatBranchLabel(b)}
+                                                </option>
+                                            ))}
+                                        </select>
+                                    </div>
+                                )}
+                            </div>
+                        )}
+
+                        {/* Search & Date Controls */}
+                        <form onSubmit={handleSearch} className="flex flex-col lg:flex-row items-stretch lg:items-center justify-between gap-2.5">
+                            {/* Search Input Box */}
+                            <div className="relative flex-grow max-w-lg">
+                                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 pointer-events-none" />
                                 <input
-                                    type="date"
-                                    value={fromDate}
-                                    onChange={(e) => setFromDate(e.target.value)}
-                                    className="px-2 py-1 text-xs border border-slate-300 rounded-lg bg-white focus:outline-none"
-                                    title="তারিখ থেকে"
-                                />
-                                <span className="text-slate-400 text-xs font-bold">–</span>
-                                <input
-                                    type="date"
-                                    value={toDate}
-                                    onChange={(e) => setToDate(e.target.value)}
-                                    className="px-2 py-1 text-xs border border-slate-300 rounded-lg bg-white focus:outline-none"
-                                    title="তারিখ পর্যন্ত"
+                                    type="text"
+                                    value={searchQuery}
+                                    onChange={(e) => setSearchQuery(e.target.value)}
+                                    placeholder="সদস্য নাম্বার, নাম, মোবাইল, এনআইডি খুঁজুন..."
+                                    className="w-full pl-9 pr-4 py-2 text-xs border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 bg-slate-50/50 transition-all font-medium"
                                 />
                             </div>
 
-                            <button
-                                type="submit"
-                                className="px-4 py-2 text-xs font-bold bg-slate-800 hover:bg-slate-900 text-white rounded-xl transition shadow-2xs active:scale-95"
-                            >
-                                খুঁজুন
-                            </button>
+                            {/* Date Range & Controls */}
+                            <div className="flex flex-wrap items-center gap-2">
+                                <div className="flex items-center gap-1.5 bg-slate-50 border border-slate-200 p-1 rounded-xl">
+                                    <input
+                                        type="date"
+                                        value={fromDate}
+                                        onChange={(e) => setFromDate(e.target.value)}
+                                        className="px-2 py-1 text-xs border border-slate-300 rounded-lg bg-white focus:outline-none"
+                                        title="তারিখ থেকে"
+                                    />
+                                    <span className="text-slate-400 text-xs font-bold">–</span>
+                                    <input
+                                        type="date"
+                                        value={toDate}
+                                        onChange={(e) => setToDate(e.target.value)}
+                                        className="px-2 py-1 text-xs border border-slate-300 rounded-lg bg-white focus:outline-none"
+                                        title="তারিখ পর্যন্ত"
+                                    />
+                                </div>
 
-                            {(searchQuery || statusFilter || fromDate || toDate) && (
                                 <button
-                                    type="button"
-                                    onClick={() => {
-                                        setSearchQuery('');
-                                        setStatusFilter('');
-                                        setFromDate('');
-                                        setToDate('');
-                                        router.get('/member-admissions');
-                                    }}
-                                    className="px-3 py-2 text-xs font-bold text-slate-600 bg-slate-100 hover:bg-slate-200 rounded-xl transition"
+                                    type="submit"
+                                    className="px-4 py-2 text-xs font-bold bg-slate-800 hover:bg-slate-900 text-white rounded-xl transition shadow-2xs active:scale-95"
                                 >
-                                    রিসেট
+                                    খুঁজুন
                                 </button>
-                            )}
-                        </div>
-                    </form>
+
+                                {(searchQuery || statusFilter !== 'all' || fromDate || toDate || selectedZone || selectedArea || selectedBranch) && (
+                                    <button
+                                        type="button"
+                                        onClick={() => {
+                                            setSearchQuery('');
+                                            setStatusFilter('');
+                                            setFromDate('');
+                                            setToDate('');
+                                            setSelectedZone('');
+                                            setSelectedArea('');
+                                            setSelectedBranch('');
+                                            router.get('/member-admissions');
+                                        }}
+                                        className="px-3 py-2 text-xs font-bold text-slate-600 bg-slate-100 hover:bg-slate-200 rounded-xl transition"
+                                    >
+                                        রিসেট
+                                    </button>
+                                )}
+                            </div>
+                        </form>
+                    </div>
 
                     {/* Bulk Selection Notification Bar */}
                     {isBranchUser && readyForHoIds.length > 0 && (
