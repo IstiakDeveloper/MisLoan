@@ -32,8 +32,11 @@ class ApprovalController extends Controller
         $areaId = $request->input('area_id');
         $branchId = $request->input('branch_id');
 
-        $pendingApprovals = $this->approvalService->getPendingApprovalsForUser($user);
-        $pendingLoanApprovals = $this->approvalService->getPendingLoanApprovalsForUser($user);
+        $rawPendingApprovals = $this->approvalService->getPendingApprovalsForUser($user);
+        $rawPendingLoanApprovals = $this->approvalService->getPendingLoanApprovalsForUser($user);
+
+        $pendingApprovals = $rawPendingApprovals;
+        $pendingLoanApprovals = $rawPendingLoanApprovals;
 
         if ($branchId) {
             $pendingApprovals = $pendingApprovals->filter(fn ($a) => (string) ($a->memberAdmission?->branch_id) === (string) $branchId)->values();
@@ -49,6 +52,21 @@ class ApprovalController extends Controller
         }
 
         $accessibleBranches = $user->getAccessibleBranches()->sortBy('code')->values();
+
+        // Also ensure all branches with pending approvals for this user are available in the filters
+        $pendingBranchIds = $rawPendingApprovals->pluck('memberAdmission.branch_id')
+            ->merge($rawPendingLoanApprovals->pluck('loanApplication.branch_id'))
+            ->filter()
+            ->unique();
+        if ($pendingBranchIds->isNotEmpty()) {
+            $extraBranches = Branch::whereIn('id', $pendingBranchIds)->get();
+            $accessibleBranches = $accessibleBranches->merge($extraBranches)->unique('id')->sortBy('code')->values();
+        }
+
+        if ($accessibleBranches->isEmpty()) {
+            $accessibleBranches = Branch::all()->sortBy('code')->values();
+        }
+
         $branches = $accessibleBranches->map(fn ($b) => [
             'id' => $b->id,
             'name' => $b->name,
@@ -219,7 +237,12 @@ class ApprovalController extends Controller
         $success = $this->approvalService->forwardToApprover($approval, (int) $request->forward_to_user_id, $request->comments);
 
         if ($success) {
-            return $this->redirectToListPreservingFilters('approvals.index', 'Application forwarded to selected approver.');
+            $freshAdmission = $approval->memberAdmission()->first();
+            $message = $freshAdmission?->status === 'ready_for_head_office'
+                ? 'সদস্য আবেদনটি ফরোয়ার্ড ও স্বয়ংক্রিয়ভাবে অনুমোদিত হয়েছে। শাখা থেকে এখন হেড অফিসে পাঠানো যাবে।'
+                : 'সদস্য আবেদনটি পর্যালোচনার জন্য উচ্চতর কর্মকর্তার কাছে ফরোয়ার্ড করা হয়েছে।';
+
+            return $this->redirectToListPreservingFilters('approvals.index', $message);
         }
 
         return back()->with('error', 'Unable to forward this application.');

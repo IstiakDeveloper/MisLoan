@@ -245,12 +245,12 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
     const branchMenuItemsFull = [
         { name: 'Dashboard', href: '/dashboard', icon: LayoutDashboard },
         { name: 'Member Admissions', href: '/member-admissions', icon: UserPlus },
-        { name: 'Cluster Handover', href: '/cluster-handover', icon: Users, badge: badgeCounts.pendingClusterHandovers || 0 },
         { name: 'Loan Applications', href: '/member/loan-applications', icon: Banknote },
         { name: 'Verification', href: '/verifications', icon: SearchCheck, badge: badgeCounts.pendingVerifications || 0 },
         { name: 'Savings Applications', href: '/member/savings-applications', icon: PiggyBank },
         { name: 'Team Based Approval', href: '/team-based-approvals', icon: FileCheck },
         { name: 'Pending Approvals', href: '/approvals', icon: ClipboardCheck, badge: badgeCounts.pendingApprovals || 0 },
+        { name: 'Cluster Handover', href: '/cluster-handover', icon: Users, badge: badgeCounts.pendingClusterHandovers || 0 },
     ];
 
     // Field officer: admissions plus loan applications for their approved members + verifications
@@ -339,11 +339,13 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
             const dashboardItem = branchMenuItems.find(m => m.href === '/dashboard');
             const operationsItems = branchMenuItems.filter(m => ['/member-admissions', '/member/loan-applications', '/verifications', '/member/savings-applications'].includes(m.href));
             const approvalsItems = branchMenuItems.filter(m => ['/team-based-approvals', '/approvals'].includes(m.href));
+            const clusterItem = branchMenuItems.find(m => m.href === '/cluster-handover');
 
             const groups = [];
             if (dashboardItem) groups.push({ title: 'Overview', items: [dashboardItem] });
             if (operationsItems.length > 0) groups.push({ title: 'Operations', items: operationsItems });
             if (approvalsItems.length > 0) groups.push({ title: 'Approvals', items: approvalsItems });
+            if (clusterItem) groups.push({ title: 'Handover', items: [clusterItem] });
             return groups;
         }
 

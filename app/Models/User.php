@@ -153,7 +153,7 @@ class User extends Authenticatable
      */
     public function getAccessibleBranches()
     {
-        if ($this->has_all_access) {
+        if ($this->has_all_access || $this->isSuperAdmin() || $this->isHeadOffice()) {
             return Branch::all();
         }
 
@@ -196,6 +196,11 @@ class User extends Authenticatable
             return Branch::where('id', $this->branch_id)->get();
         }
 
+        // Approver roles (ADMF, DMF, ED) without specific assignment get full organization access
+        if ($this->isApproverRole() || $this->isEd()) {
+            return Branch::all();
+        }
+
         return collect();
     }
 
@@ -204,7 +209,7 @@ class User extends Authenticatable
      */
     public function canAccessBranch(int $branchId): bool
     {
-        if ($this->has_all_access) {
+        if ($this->has_all_access || $this->isSuperAdmin() || $this->isHeadOffice()) {
             return true;
         }
 
