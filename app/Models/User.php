@@ -299,6 +299,14 @@ class User extends Authenticatable
     }
 
     /**
+     * Check if user is an Approver (ADMF, DMF, ED)
+     */
+    public function isApproverRole(): bool
+    {
+        return in_array($this->role?->name, Role::approverRoleNames(), true);
+    }
+
+    /**
      * Approver / manager roles that may view HO lists (scoped to assignment).
      */
     public function isOrganizationalViewer(): bool
