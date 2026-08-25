@@ -2,29 +2,29 @@
 
 namespace App\Http\Controllers;
 
-use App\Models\LoanApplication;
-use App\Support\LoanFormVisibility;
-use App\Models\LoanApplicationIssue;
-use App\Models\Zone;
 use App\Models\Area;
 use App\Models\Branch;
+use App\Models\LoanApplication;
+use App\Models\LoanApplicationIssue;
 use App\Models\Role;
 use App\Models\User;
+use App\Models\Zone;
 use App\Services\ApprovalService;
 use App\Services\MemberCodeService;
 use App\Services\NotificationService;
+use App\Support\LoanFormVisibility;
 use App\Support\RoleListWorkQueue;
-use Illuminate\Http\Request;
-use Inertia\Inertia;
-use Illuminate\Support\Facades\DB;
 use Carbon\Carbon;
+use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
+use Inertia\Inertia;
 
 class HeadOfficeLoanController extends Controller
 {
     use Concerns\AppliesRoleDefaultListFilter;
-    use Concerns\ScopesToAccessibleBranches;
     use Concerns\RequiresSuperAdminDeletePin;
     use Concerns\ResolvesListPerPage;
+    use Concerns\ScopesToAccessibleBranches;
 
     /**
      * Display loan applications (all for HO; assigned zone/area for approvers/managers)
@@ -46,23 +46,23 @@ class HeadOfficeLoanController extends Controller
             'loanCategory:id,category_name,category_name_bn',
             'memberAdmission:id,applicant_name_en,applicant_name_bn,nid_number,mobile_number,application_no,is_legacy,loan_dofa',
             'samity:id,samity_name,samity_name_bn',
-            'submittedBy:id,name'
+            'submittedBy:id,name',
         ])
-        ->select([
-            'id',
-            'application_no',
-            'member_admission_id',
-            'loan_product_id',
-            'loan_category_id',
-            'branch_id',
-            'samity_id',
-            'status',
-            'requested_amount',
-            'approved_amount',
-            'created_at',
-            'submitted_at',
-            'printed_at',
-        ]);
+            ->select([
+                'id',
+                'application_no',
+                'member_admission_id',
+                'loan_product_id',
+                'loan_category_id',
+                'branch_id',
+                'samity_id',
+                'status',
+                'requested_amount',
+                'approved_amount',
+                'created_at',
+                'submitted_at',
+                'printed_at',
+            ]);
 
         $this->applyAccessibleBranchScope($query);
         $this->applyHeadOfficeStageVisibility($query);
@@ -70,14 +70,14 @@ class HeadOfficeLoanController extends Controller
 
         // Zone filter
         if ($request->has('zone_id') && $request->zone_id) {
-            $query->whereHas('branch.area', function($q) use ($request) {
+            $query->whereHas('branch.area', function ($q) use ($request) {
                 $q->where('zone_id', $request->zone_id);
             });
         }
 
         // Area filter
         if ($request->has('area_id') && $request->area_id) {
-            $query->whereHas('branch', function($q) use ($request) {
+            $query->whereHas('branch', function ($q) use ($request) {
                 $q->where('area_id', $request->area_id);
             });
         }
@@ -91,13 +91,13 @@ class HeadOfficeLoanController extends Controller
 
         // Search filter
         if ($request->has('search') && $request->search) {
-            \App\Services\MemberCodeService::applyLoanSearch($query, $request->search);
+            MemberCodeService::applyLoanSearch($query, $request->search);
         }
 
         // Had issues filter (for loans that went through revision)
         if ($request->has('had_issues') && $request->had_issues) {
             if ($request->had_issues === 'yes') {
-                $query->whereHas('issues', function($q) {
+                $query->whereHas('issues', function ($q) {
                     $q->where('status', '!=', 'pending');
                 });
             } elseif ($request->had_issues === 'no') {
@@ -123,13 +123,13 @@ class HeadOfficeLoanController extends Controller
 
         // Apply zone/area/branch filters to stats
         if ($request->has('zone_id') && $request->zone_id) {
-            $statsQuery->whereHas('branch.area', function($q) use ($request) {
+            $statsQuery->whereHas('branch.area', function ($q) use ($request) {
                 $q->where('zone_id', $request->zone_id);
             });
         }
 
         if ($request->has('area_id') && $request->area_id) {
-            $statsQuery->whereHas('branch', function($q) use ($request) {
+            $statsQuery->whereHas('branch', function ($q) use ($request) {
                 $q->where('area_id', $request->area_id);
             });
         }
@@ -140,7 +140,7 @@ class HeadOfficeLoanController extends Controller
 
         if ($request->has('had_issues') && $request->had_issues) {
             if ($request->had_issues === 'yes') {
-                $statsQuery->whereHas('issues', function($q) {
+                $statsQuery->whereHas('issues', function ($q) {
                     $q->where('status', '!=', 'pending');
                 });
             } elseif ($request->had_issues === 'no') {
@@ -150,15 +150,15 @@ class HeadOfficeLoanController extends Controller
 
         if ($request->has('search') && $request->search) {
             $search = $request->search;
-            $statsQuery->where(function($q) use ($search) {
+            $statsQuery->where(function ($q) use ($search) {
                 $q->where('application_no', 'like', "%{$search}%")
-                  ->orWhereHas('memberAdmission', function($mq) use ($search) {
-                      $mq->where('applicant_name_en', 'like', "%{$search}%")
-                        ->orWhere('applicant_name_bn', 'like', "%{$search}%")
-                        ->orWhere('mobile_number', 'like', "%{$search}%")
-                        ->orWhere('nid_number', 'like', "%{$search}%")
-                        ->orWhere('application_no', 'like', "%{$search}%");
-                  });
+                    ->orWhereHas('memberAdmission', function ($mq) use ($search) {
+                        $mq->where('applicant_name_en', 'like', "%{$search}%")
+                            ->orWhere('applicant_name_bn', 'like', "%{$search}%")
+                            ->orWhere('mobile_number', 'like', "%{$search}%")
+                            ->orWhere('nid_number', 'like', "%{$search}%")
+                            ->orWhere('application_no', 'like', "%{$search}%");
+                    });
             });
         }
 
@@ -231,46 +231,46 @@ class HeadOfficeLoanController extends Controller
             'reviewedBy:id,name',
             'approvals.user:id,name',
         ])
-        ->select([
-            'id',
-            'application_no',
-            'member_admission_id',
-            'loan_product_id',
-            'loan_category_id',
-            'branch_id',
-            'samity_id',
-            'status',
-            'requested_amount',
-            'approved_amount',
-            'savings_amount',
-            'business_plan',
-            'asset_info',
-            'created_at',
-            'submitted_at',
-            'reviewed_at',
-            'disbursed_at',
-            'reviewed_by',
-            'disbursed_by',
-            'loan_term_months',
-            'repayment_frequency',
-            'number_of_installments',
-            'purpose_of_loan',
-            'printed_at',
-            'legacy_member_snapshot',
-        ]);
+            ->select([
+                'id',
+                'application_no',
+                'member_admission_id',
+                'loan_product_id',
+                'loan_category_id',
+                'branch_id',
+                'samity_id',
+                'status',
+                'requested_amount',
+                'approved_amount',
+                'savings_amount',
+                'business_plan',
+                'asset_info',
+                'created_at',
+                'submitted_at',
+                'reviewed_at',
+                'disbursed_at',
+                'reviewed_by',
+                'disbursed_by',
+                'loan_term_months',
+                'repayment_frequency',
+                'number_of_installments',
+                'purpose_of_loan',
+                'printed_at',
+                'legacy_member_snapshot',
+            ]);
 
         $this->applyAccessibleBranchScope($query);
         $this->applyHeadOfficeStageVisibility($query);
         $this->applySubmittedAtDateRange($query, $dateFrom, $dateTo);
 
         if ($request->zone_id) {
-            $query->whereHas('branch.area', function($q) use ($request) {
+            $query->whereHas('branch.area', function ($q) use ($request) {
                 $q->where('zone_id', $request->zone_id);
             });
         }
 
         if ($request->area_id) {
-            $query->whereHas('branch', function($q) use ($request) {
+            $query->whereHas('branch', function ($q) use ($request) {
                 $q->where('area_id', $request->area_id);
             });
         }
@@ -283,21 +283,21 @@ class HeadOfficeLoanController extends Controller
 
         if ($request->search) {
             $search = $request->search;
-            $query->where(function($q) use ($search) {
+            $query->where(function ($q) use ($search) {
                 $q->where('application_no', 'like', "%{$search}%")
-                  ->orWhereHas('memberAdmission', function($mq) use ($search) {
-                      $mq->where('applicant_name_en', 'like', "%{$search}%")
-                        ->orWhere('applicant_name_bn', 'like', "%{$search}%")
-                        ->orWhere('mobile_number', 'like', "%{$search}%")
-                        ->orWhere('nid_number', 'like', "%{$search}%")
-                        ->orWhere('application_no', 'like', "%{$search}%");
-                  });
+                    ->orWhereHas('memberAdmission', function ($mq) use ($search) {
+                        $mq->where('applicant_name_en', 'like', "%{$search}%")
+                            ->orWhere('applicant_name_bn', 'like', "%{$search}%")
+                            ->orWhere('mobile_number', 'like', "%{$search}%")
+                            ->orWhere('nid_number', 'like', "%{$search}%")
+                            ->orWhere('application_no', 'like', "%{$search}%");
+                    });
             });
         }
 
         if ($request->had_issues) {
             if ($request->had_issues === 'yes') {
-                $query->whereHas('issues', function($q) {
+                $query->whereHas('issues', function ($q) {
                     $q->where('status', '!=', 'pending');
                 });
             } elseif ($request->had_issues === 'no') {
@@ -315,7 +315,7 @@ class HeadOfficeLoanController extends Controller
 
         // Get all matching records sorted by branch code (no pagination for print)
         $loans = $query->orderBy(
-            \App\Models\Branch::select('code')->whereColumn('branches.id', 'loan_applications.branch_id'),
+            Branch::select('code')->whereColumn('branches.id', 'loan_applications.branch_id'),
             'asc'
         )->orderByRaw('COALESCE(submitted_at, created_at) desc')->get();
 
@@ -335,8 +335,8 @@ class HeadOfficeLoanController extends Controller
                     ?? null;
             }
 
-            $savingsOther = (!empty($businessPlan['is_against_savings']) ? ($businessPlan['against_savings_amount'] ?? 0) : 0)
-                + (!empty($assetInfo['is_against_savings']) ? ($assetInfo['against_savings_amount'] ?? 0) : 0);
+            $savingsOther = (! empty($businessPlan['is_against_savings']) ? ($businessPlan['against_savings_amount'] ?? 0) : 0)
+                + (! empty($assetInfo['is_against_savings']) ? ($assetInfo['against_savings_amount'] ?? 0) : 0);
 
             $savingsGeneralNum = $savingsGeneral !== null && $savingsGeneral !== '' ? (float) $savingsGeneral : 0;
             $savingsOtherNum = (float) $savingsOther;
@@ -401,7 +401,7 @@ class HeadOfficeLoanController extends Controller
             $search = $request->search;
             $query->where(function ($q) use ($search) {
                 $q->where('application_no', 'like', "%{$search}%")
-                    ->orWhereHas('memberAdmission', function($mq) use ($search) {
+                    ->orWhereHas('memberAdmission', function ($mq) use ($search) {
                         $mq->where('applicant_name_en', 'like', "%{$search}%")
                             ->orWhere('applicant_name_bn', 'like', "%{$search}%")
                             ->orWhere('mobile_number', 'like', "%{$search}%")
@@ -412,7 +412,7 @@ class HeadOfficeLoanController extends Controller
         }
         if ($request->had_issues) {
             if ($request->had_issues === 'yes') {
-                $query->whereHas('issues', function($q) {
+                $query->whereHas('issues', function ($q) {
                     $q->where('status', '!=', 'pending');
                 });
             } elseif ($request->had_issues === 'no') {
@@ -462,7 +462,7 @@ class HeadOfficeLoanController extends Controller
             $search = $request->search;
             $query->where(function ($q) use ($search) {
                 $q->where('application_no', 'like', "%{$search}%")
-                    ->orWhereHas('memberAdmission', function($mq) use ($search) {
+                    ->orWhereHas('memberAdmission', function ($mq) use ($search) {
                         $mq->where('applicant_name_en', 'like', "%{$search}%")
                             ->orWhere('applicant_name_bn', 'like', "%{$search}%")
                             ->orWhere('mobile_number', 'like', "%{$search}%")
@@ -473,7 +473,7 @@ class HeadOfficeLoanController extends Controller
         }
 
         if ($request->had_issues === 'yes') {
-            $query->whereHas('issues', function($q) {
+            $query->whereHas('issues', function ($q) {
                 $q->where('status', '!=', 'pending');
             });
         } elseif ($request->had_issues === 'no') {
@@ -490,7 +490,7 @@ class HeadOfficeLoanController extends Controller
 
         $loans = $query->orderByRaw('COALESCE(submitted_at, created_at) desc')->get();
 
-        $spreadsheet = new Spreadsheet();
+        $spreadsheet = new Spreadsheet;
         $sheet = $spreadsheet->getActiveSheet();
         $sheet->setTitle('Loan Applications');
 
@@ -523,7 +523,7 @@ class HeadOfficeLoanController extends Controller
             $sheet->setCellValue("D{$rowIdx}", $loan->memberAdmission?->applicant_name_bn ?? '');
             $sheet->setCellValue("E{$rowIdx}", $loan->memberAdmission?->nid_number ?? '');
             $sheet->setCellValue("F{$rowIdx}", $loan->memberAdmission?->mobile_number ?? '');
-            $sheet->setCellValue("G{$rowIdx}", ($loan->loanProduct?->product_name_bn ?? '') . ' / ' . ($loan->loanCategory?->category_name_bn ?? ''));
+            $sheet->setCellValue("G{$rowIdx}", ($loan->loanProduct?->product_name_bn ?? '').' / '.($loan->loanCategory?->category_name_bn ?? ''));
             $sheet->setCellValue("H{$rowIdx}", $loan->requested_amount ?? 0);
             $sheet->setCellValue("I{$rowIdx}", $loan->approved_amount ?? 0);
             $sheet->setCellValue("J{$rowIdx}", $loan->branch?->area?->zone?->name ?? '');
@@ -536,11 +536,11 @@ class HeadOfficeLoanController extends Controller
             $rowIdx++;
         }
 
-        $fileName = 'Loan_Applications_' . date('Y_m_d_His') . '.xlsx';
+        $fileName = 'Loan_Applications_'.date('Y_m_d_His').'.xlsx';
         $writer = new Xlsx($spreadsheet);
 
         header('Content-Type: application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
-        header('Content-Disposition: attachment; filename="' . $fileName . '"');
+        header('Content-Disposition: attachment; filename="'.$fileName.'"');
         header('Cache-Control: max-age=0');
 
         $writer->save('php://output');
@@ -557,7 +557,7 @@ class HeadOfficeLoanController extends Controller
         $date = $request->input('date');
         $month = $request->input('month');
 
-        if (!$dateFrom && !$dateTo && !$date && !$month) {
+        if (! $dateFrom && ! $dateTo && ! $date && ! $month) {
             $month = now()->format('Y-m');
         }
 
@@ -579,20 +579,20 @@ class HeadOfficeLoanController extends Controller
             $parts = explode('-', $month);
             if (count($parts) === 2) {
                 $query->whereYear('submitted_at', $parts[0])
-                      ->whereMonth('submitted_at', $parts[1]);
+                    ->whereMonth('submitted_at', $parts[1]);
             }
         }
 
         // Zone filter
         if ($request->filled('zone_id')) {
-            $query->whereHas('branch.area', function($q) use ($request) {
+            $query->whereHas('branch.area', function ($q) use ($request) {
                 $q->where('zone_id', $request->zone_id);
             });
         }
 
         // Area filter
         if ($request->filled('area_id')) {
-            $query->whereHas('branch', function($q) use ($request) {
+            $query->whereHas('branch', function ($q) use ($request) {
                 $q->where('area_id', $request->area_id);
             });
         }
@@ -654,6 +654,7 @@ class HeadOfficeLoanController extends Controller
             'branches' => $orgFilters['branches'],
         ]);
     }
+
     public function show(LoanApplication $loanApplication)
     {
         $this->ensureCanAccessBranch($loanApplication->branch_id);
@@ -725,11 +726,13 @@ class HeadOfficeLoanController extends Controller
             return back()->with('error', 'শুধুমাত্র হেড অফিসে প্রেরিত আবেদন অনুমোদন করা যাবে।');
         }
 
-        // Only block if there are unanswered pending issues (without response from Zonal Manager/Branch)
+        // Only block if there are unanswered or ZM-unapproved pending issues
         if ($loanApplication->issues()->where('status', 'pending')->where(function ($q) {
-            $q->whereNull('response_message')->orWhere('response_message', '');
+            $q->whereNull('response_message')
+                ->orWhere('response_message', '')
+                ->orWhereNull('zm_approved_at');
         })->exists()) {
-            return back()->with('error', 'জোন থেকে ব্যাখ্যা/জবাব না পাওয়া পর্যন্ত অনুমোদন করা যাবে না।');
+            return back()->with('error', 'জোনাল ম্যানেজার (ZM) কর্তৃক অনুমোদন না হওয়া পর্যন্ত হেড অফিস থেকে অনুমোদন করা যাবে না।');
         }
 
         $loanApplication->loadMissing('loanProduct');
@@ -739,11 +742,14 @@ class HeadOfficeLoanController extends Controller
         );
 
         // Close/resolve any pending issues now that Head Office is approving
-        $loanApplication->issues()->where('status', 'pending')->update([
-            'status' => 'resolved',
-            'responded_at' => now(),
-            'responded_by' => auth()->id(),
-        ]);
+        $loanApplication->issues()->where('status', 'pending')->each(function ($issue) {
+            $update = ['status' => 'resolved'];
+            if (! $issue->responded_at) {
+                $update['responded_at'] = now();
+                $update['responded_by'] = auth()->id();
+            }
+            $issue->update($update);
+        });
 
         $update = [
             'status' => LoanApplication::STATUS_PENDING_DISBURSEMENT,
@@ -775,7 +781,7 @@ class HeadOfficeLoanController extends Controller
                 details: [
                     'আবেদন নং' => $loanApplication->application_no,
                     'সদস্যের নাম' => $loanApplication->memberAdmission?->applicant_name_bn ?: ($loanApplication->memberAdmission?->applicant_name_en ?? 'N/A'),
-                    'অনুমোদিত পরিমাণ' => number_format($loanApplication->approved_amount ?? $loanApplication->requested_amount ?? 0) . ' টাকা',
+                    'অনুমোদিত পরিমাণ' => number_format($loanApplication->approved_amount ?? $loanApplication->requested_amount ?? 0).' টাকা',
                     'অনুমোদনকারী' => auth()->user()?->name ?? 'Head Office',
                 ]
             );
@@ -805,6 +811,7 @@ class HeadOfficeLoanController extends Controller
             foreach ($loans as $loan) {
                 if ($loan->issues()->where('status', 'pending')->whereNull('response_message')->exists()) {
                     $skippedCount++;
+
                     continue;
                 }
 
@@ -844,7 +851,7 @@ class HeadOfficeLoanController extends Controller
                             'আবেদন নং' => $loan->application_no,
                             'সদস্যের নাম' => $loan->memberAdmission?->applicant_name_bn ?: ($loan->memberAdmission?->applicant_name_en ?? 'N/A'),
                             'শাখা' => $loan->branch?->name ?? 'N/A',
-                            'অনুমোদিত পরিমাণ' => '৳ ' . number_format($loan->approved_amount ?: $loan->requested_amount, 2),
+                            'অনুমোদিত পরিমাণ' => '৳ '.number_format($loan->approved_amount ?: $loan->requested_amount, 2),
                         ]
                     );
                 }
@@ -859,7 +866,8 @@ class HeadOfficeLoanController extends Controller
             return back()->with('success', $msg);
         } catch (\Exception $e) {
             DB::rollBack();
-            return back()->with('error', 'অনুমোদন ব্যর্থ হয়েছে: ' . $e->getMessage());
+
+            return back()->with('error', 'অনুমোদন ব্যর্থ হয়েছে: '.$e->getMessage());
         }
     }
 
@@ -890,23 +898,23 @@ class HeadOfficeLoanController extends Controller
                 $parts = explode('-', $month);
                 if (count($parts) === 2) {
                     $query->whereYear('submitted_at', $parts[0])
-                          ->whereMonth('submitted_at', $parts[1]);
+                        ->whereMonth('submitted_at', $parts[1]);
                 }
             } else {
                 $defaultMonth = now()->format('Y-m');
                 $parts = explode('-', $defaultMonth);
                 $query->whereYear('submitted_at', $parts[0])
-                      ->whereMonth('submitted_at', $parts[1]);
+                    ->whereMonth('submitted_at', $parts[1]);
             }
 
             if ($request->filled('zone_id')) {
-                $query->whereHas('branch.area', function($q) use ($request) {
+                $query->whereHas('branch.area', function ($q) use ($request) {
                     $q->where('zone_id', $request->zone_id);
                 });
             }
 
             if ($request->filled('area_id')) {
-                $query->whereHas('branch', function($q) use ($request) {
+                $query->whereHas('branch', function ($q) use ($request) {
                     $q->where('area_id', $request->area_id);
                 });
             }
@@ -923,6 +931,7 @@ class HeadOfficeLoanController extends Controller
             foreach ($loans as $loan) {
                 if ($loan->issues()->where('status', 'pending')->exists()) {
                     $skippedCount++;
+
                     continue;
                 }
                 $loan->loadMissing('loanProduct');
@@ -961,7 +970,7 @@ class HeadOfficeLoanController extends Controller
                         details: [
                             'আবেদন নং' => $loan->application_no,
                             'সদস্যের নাম' => $loan->memberAdmission?->applicant_name_bn ?: ($loan->memberAdmission?->applicant_name_en ?? 'N/A'),
-                            'অনুমোদিত পরিমাণ' => number_format($loan->approved_amount ?? $loan->requested_amount ?? 0) . ' টাকা',
+                            'অনুমোদিত পরিমাণ' => number_format($loan->approved_amount ?? $loan->requested_amount ?? 0).' টাকা',
                             'অনুমোদনকারী' => auth()->user()?->name ?? 'Head Office',
                         ]
                     );
@@ -971,13 +980,15 @@ class HeadOfficeLoanController extends Controller
             DB::commit();
 
             $message = $approvedCount > 0
-                ? "অনুমোদিত: {$approvedCount}" . ($skippedCount > 0 ? ", সমস্যা থাকায় বাদ: {$skippedCount}" : '')
+                ? "অনুমোদিত: {$approvedCount}".($skippedCount > 0 ? ", সমস্যা থাকায় বাদ: {$skippedCount}" : '')
                 : ($skippedCount > 0 ? "সব আবেদনে সমস্যা আছে, কোনোটিই অনুমোদন হয়নি। বাদ: {$skippedCount}" : 'এই তারিখে কোন পেন্ডিং আবেদন নেই।');
+
             return back()->with('success', $message);
 
         } catch (\Exception $e) {
             DB::rollBack();
-            return back()->with('error', 'প্রসেস ব্যর্থ: ' . $e->getMessage());
+
+            return back()->with('error', 'প্রসেস ব্যর্থ: '.$e->getMessage());
         }
     }
 
@@ -1050,7 +1061,7 @@ class HeadOfficeLoanController extends Controller
                     'selected_approvers' => null,
                 ];
 
-                if (!$loanApplication->submitted_at) {
+                if (! $loanApplication->submitted_at) {
                     $updateData['submitted_by'] = $loanApplication->submitted_by ?: auth()->id();
                     $updateData['submitted_at'] = now();
                 }
@@ -1129,7 +1140,7 @@ class HeadOfficeLoanController extends Controller
             $loan->forceDelete();
         });
 
-        return back()->with('success', $count . ' টি ঋণ আবেদন মুছে ফেলা হয়েছে।');
+        return back()->with('success', $count.' টি ঋণ আবেদন মুছে ফেলা হয়েছে।');
     }
 
     /**
@@ -1177,24 +1188,12 @@ class HeadOfficeLoanController extends Controller
     }
 
     /**
-     * Head Office role sees only loans that have reached Head Office.
-     * SuperAdmin continues to see the full list.
+     * SuperAdmin and Head Office share the full loan list (সর্বমোট).
+     * Head Office still defaults to the pending_head_office work queue.
      */
     private function shouldRestrictToHeadOfficeStage(): bool
     {
-        $user = auth()->user();
-        if (! $user) {
-            return false;
-        }
-
-        $user->loadMissing('role');
-        $roleName = strtolower((string) $user->role?->name);
-
-        if ($user->isSuperAdmin() || $user->has_all_access || in_array($roleName, ['super_admin', 'superadmin'], true)) {
-            return false;
-        }
-
-        return $roleName === Role::HEAD_OFFICE;
+        return false;
     }
 
     private function headOfficeVisibleLoanStatuses(): array
@@ -1226,4 +1225,3 @@ class HeadOfficeLoanController extends Controller
         }
     }
 }
-

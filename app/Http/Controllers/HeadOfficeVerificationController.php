@@ -2,24 +2,23 @@
 
 namespace App\Http\Controllers;
 
-use App\Models\MemberAdmission;
-use App\Models\MemberAdmissionIssue;
+use App\Models\Branch;
 use App\Models\LoanApplication;
 use App\Models\LoanApplicationIssue;
-use App\Models\Branch;
-use App\Models\User;
+use App\Models\MemberAdmission;
+use App\Models\MemberAdmissionIssue;
 use App\Models\Role;
-use App\Services\ApprovalService;
+use App\Models\User;
 use App\Services\NotificationService;
-use Illuminate\Http\Request;
-use Inertia\Inertia;
-use Illuminate\Support\Facades\DB;
 use Carbon\Carbon;
+use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
+use Inertia\Inertia;
 
 class HeadOfficeVerificationController extends Controller
 {
-    use Concerns\ScopesToAccessibleBranches;
     use Concerns\ResolvesListPerPage;
+    use Concerns\ScopesToAccessibleBranches;
 
     /**
      * Display Verification list (Admissions & Loans with inquiries/issues)
@@ -37,7 +36,7 @@ class HeadOfficeVerificationController extends Controller
         $dateTo = $request->has('date_to') ? $request->input('date_to') : ($isBranchOrApprover ? null : $today);
 
         // If date_from is given without date_to, default date_to to date_from (single date filter)
-        if ($dateFrom && !$dateTo) {
+        if ($dateFrom && ! $dateTo) {
             $dateTo = $dateFrom;
         }
 
@@ -59,13 +58,13 @@ class HeadOfficeVerificationController extends Controller
             'submittedBy:id,name',
             'createdBy:id,name',
             'reviewedBy:id,name',
-            'issues' => fn ($q) => $q->with(['reporter:id,name', 'resolver:id,name'])->orderBy('created_at', 'asc'),
+            'issues' => fn ($q) => $q->with(['reporter:id,name', 'resolver:id,name', 'zmApprover:id,name'])->orderBy('created_at', 'asc'),
         ])
-        ->where(function ($q) {
-            $q->whereHas('issues')
-              ->orWhere('revision_count', '>', 0)
-              ->orWhere('status', 'needs_revision');
-        });
+            ->where(function ($q) {
+                $q->whereHas('issues')
+                    ->orWhere('revision_count', '>', 0)
+                    ->orWhere('status', 'needs_revision');
+            });
 
         $this->applyAccessibleBranchScope($admissionQuery);
 
@@ -77,32 +76,35 @@ class HeadOfficeVerificationController extends Controller
         if ($dateFrom && $dateTo) {
             $admissionQuery->where(function ($q) use ($startOfDay, $endOfDay) {
                 $q->whereBetween('submitted_at', [$startOfDay, $endOfDay])
-                  ->orWhereBetween('returned_at', [$startOfDay, $endOfDay])
-                  ->orWhereBetween('reviewed_at', [$startOfDay, $endOfDay])
-                  ->orWhereHas('issues', function ($iq) use ($startOfDay, $endOfDay) {
-                      $iq->whereBetween('created_at', [$startOfDay, $endOfDay])
-                         ->orWhereBetween('resolved_at', [$startOfDay, $endOfDay]);
-                  });
+                    ->orWhereBetween('returned_at', [$startOfDay, $endOfDay])
+                    ->orWhereBetween('reviewed_at', [$startOfDay, $endOfDay])
+                    ->orWhereHas('issues', function ($iq) use ($startOfDay, $endOfDay) {
+                        $iq->whereBetween('created_at', [$startOfDay, $endOfDay])
+                            ->orWhereBetween('resolved_at', [$startOfDay, $endOfDay])
+                            ->orWhereBetween('zm_approved_at', [$startOfDay, $endOfDay]);
+                    });
             });
         } elseif ($dateFrom) {
             $admissionQuery->where(function ($q) use ($startOfDay) {
                 $q->where('submitted_at', '>=', $startOfDay)
-                  ->orWhere('returned_at', '>=', $startOfDay)
-                  ->orWhere('reviewed_at', '>=', $startOfDay)
-                  ->orWhereHas('issues', function ($iq) use ($startOfDay) {
-                      $iq->where('created_at', '>=', $startOfDay)
-                         ->orWhere('resolved_at', '>=', $startOfDay);
-                  });
+                    ->orWhere('returned_at', '>=', $startOfDay)
+                    ->orWhere('reviewed_at', '>=', $startOfDay)
+                    ->orWhereHas('issues', function ($iq) use ($startOfDay) {
+                        $iq->where('created_at', '>=', $startOfDay)
+                            ->orWhere('resolved_at', '>=', $startOfDay)
+                            ->orWhere('zm_approved_at', '>=', $startOfDay);
+                    });
             });
         } elseif ($dateTo) {
             $admissionQuery->where(function ($q) use ($endOfDay) {
                 $q->where('submitted_at', '<=', $endOfDay)
-                  ->orWhere('returned_at', '<=', $endOfDay)
-                  ->orWhere('reviewed_at', '<=', $endOfDay)
-                  ->orWhereHas('issues', function ($iq) use ($endOfDay) {
-                      $iq->where('created_at', '<=', $endOfDay)
-                         ->orWhere('resolved_at', '<=', $endOfDay);
-                  });
+                    ->orWhere('returned_at', '<=', $endOfDay)
+                    ->orWhere('reviewed_at', '<=', $endOfDay)
+                    ->orWhereHas('issues', function ($iq) use ($endOfDay) {
+                        $iq->where('created_at', '<=', $endOfDay)
+                            ->orWhere('resolved_at', '<=', $endOfDay)
+                            ->orWhere('zm_approved_at', '<=', $endOfDay);
+                    });
             });
         }
 
@@ -121,21 +123,25 @@ class HeadOfficeVerificationController extends Controller
         if ($search) {
             $admissionQuery->where(function ($q) use ($search) {
                 $q->where('application_no', 'like', "%{$search}%")
-                  ->orWhere('applicant_name_en', 'like', "%{$search}%")
-                  ->orWhere('applicant_name_bn', 'like', "%{$search}%")
-                  ->orWhere('mobile_number', 'like', "%{$search}%")
-                  ->orWhere('nid_number', 'like', "%{$search}%");
+                    ->orWhere('applicant_name_en', 'like', "%{$search}%")
+                    ->orWhere('applicant_name_bn', 'like', "%{$search}%")
+                    ->orWhere('mobile_number', 'like', "%{$search}%")
+                    ->orWhere('nid_number', 'like', "%{$search}%");
             });
         }
 
         // Issue status filter for Admissions
         if ($issueStatus === 'pending') {
-            $admissionQuery->whereHas('issues', fn ($q) => $q->where('status', 'pending'));
+            $admissionQuery->whereHas('issues', fn ($q) => $q->where('status', 'pending')->where(function ($sq) {
+                $sq->whereNull('resolution_note')->orWhere('resolution_note', '');
+            }));
+        } elseif ($issueStatus === 'branch_replied') {
+            $admissionQuery->whereHas('issues', fn ($q) => $q->whereNotNull('resolution_note')->where('resolution_note', '!=', '')->whereNull('zm_approved_at'));
+        } elseif ($issueStatus === 'zm_approved' || $issueStatus === 'replied') {
+            $admissionQuery->whereHas('issues', fn ($q) => $q->whereNotNull('zm_approved_at'));
         } elseif ($issueStatus === 'resolved') {
             $admissionQuery->whereDoesntHave('issues', fn ($q) => $q->where('status', 'pending'))
-                           ->whereHas('issues', fn ($q) => $q->where('status', 'resolved'));
-        } elseif ($issueStatus === 'replied') {
-            $admissionQuery->whereHas('issues', fn ($q) => $q->whereNotNull('resolution_note'));
+                ->whereHas('issues', fn ($q) => $q->where('status', 'resolved'));
         } elseif ($issueStatus === 'approved') {
             $admissionQuery->where('status', 'approved');
         } elseif ($issueStatus === 'rejected') {
@@ -151,12 +157,12 @@ class HeadOfficeVerificationController extends Controller
             'memberAdmission:id,applicant_name_en,applicant_name_bn,nid_number,mobile_number,application_no,is_legacy,loan_dofa',
             'submittedBy:id,name',
             'reviewedBy:id,name',
-            'issues' => fn ($q) => $q->with(['reporter:id,name', 'responder:id,name'])->orderBy('created_at', 'asc'),
+            'issues' => fn ($q) => $q->with(['reporter:id,name', 'responder:id,name', 'zmApprover:id,name'])->orderBy('created_at', 'asc'),
         ])
-        ->where(function ($q) {
-            $q->whereHas('issues')
-              ->orWhere('status', LoanApplication::STATUS_NEEDS_CORRECTION);
-        });
+            ->where(function ($q) {
+                $q->whereHas('issues')
+                    ->orWhere('status', LoanApplication::STATUS_NEEDS_CORRECTION);
+            });
 
         $this->applyAccessibleBranchScope($loanQuery);
 
@@ -168,29 +174,32 @@ class HeadOfficeVerificationController extends Controller
         if ($dateFrom && $dateTo) {
             $loanQuery->where(function ($q) use ($startOfDay, $endOfDay) {
                 $q->whereBetween('submitted_at', [$startOfDay, $endOfDay])
-                  ->orWhereBetween('reviewed_at', [$startOfDay, $endOfDay])
-                  ->orWhereHas('issues', function ($iq) use ($startOfDay, $endOfDay) {
-                      $iq->whereBetween('created_at', [$startOfDay, $endOfDay])
-                         ->orWhereBetween('responded_at', [$startOfDay, $endOfDay]);
-                  });
+                    ->orWhereBetween('reviewed_at', [$startOfDay, $endOfDay])
+                    ->orWhereHas('issues', function ($iq) use ($startOfDay, $endOfDay) {
+                        $iq->whereBetween('created_at', [$startOfDay, $endOfDay])
+                            ->orWhereBetween('responded_at', [$startOfDay, $endOfDay])
+                            ->orWhereBetween('zm_approved_at', [$startOfDay, $endOfDay]);
+                    });
             });
         } elseif ($dateFrom) {
             $loanQuery->where(function ($q) use ($startOfDay) {
                 $q->where('submitted_at', '>=', $startOfDay)
-                  ->orWhere('reviewed_at', '>=', $startOfDay)
-                  ->orWhereHas('issues', function ($iq) use ($startOfDay) {
-                      $iq->where('created_at', '>=', $startOfDay)
-                         ->orWhere('responded_at', '>=', $startOfDay);
-                  });
+                    ->orWhere('reviewed_at', '>=', $startOfDay)
+                    ->orWhereHas('issues', function ($iq) use ($startOfDay) {
+                        $iq->where('created_at', '>=', $startOfDay)
+                            ->orWhere('responded_at', '>=', $startOfDay)
+                            ->orWhere('zm_approved_at', '>=', $startOfDay);
+                    });
             });
         } elseif ($dateTo) {
             $loanQuery->where(function ($q) use ($endOfDay) {
                 $q->where('submitted_at', '<=', $endOfDay)
-                  ->orWhere('reviewed_at', '<=', $endOfDay)
-                  ->orWhereHas('issues', function ($iq) use ($endOfDay) {
-                      $iq->where('created_at', '<=', $endOfDay)
-                         ->orWhere('responded_at', '<=', $endOfDay);
-                  });
+                    ->orWhere('reviewed_at', '<=', $endOfDay)
+                    ->orWhereHas('issues', function ($iq) use ($endOfDay) {
+                        $iq->where('created_at', '<=', $endOfDay)
+                            ->orWhere('responded_at', '<=', $endOfDay)
+                            ->orWhere('zm_approved_at', '<=', $endOfDay);
+                    });
             });
         }
 
@@ -209,29 +218,33 @@ class HeadOfficeVerificationController extends Controller
         if ($search) {
             $loanQuery->where(function ($q) use ($search) {
                 $q->where('application_no', 'like', "%{$search}%")
-                  ->orWhereHas('memberAdmission', function ($mq) use ($search) {
-                      $mq->where('applicant_name_en', 'like', "%{$search}%")
-                        ->orWhere('applicant_name_bn', 'like', "%{$search}%")
-                        ->orWhere('mobile_number', 'like', "%{$search}%")
-                        ->orWhere('nid_number', 'like', "%{$search}%")
-                        ->orWhere('application_no', 'like', "%{$search}%");
-                  });
+                    ->orWhereHas('memberAdmission', function ($mq) use ($search) {
+                        $mq->where('applicant_name_en', 'like', "%{$search}%")
+                            ->orWhere('applicant_name_bn', 'like', "%{$search}%")
+                            ->orWhere('mobile_number', 'like', "%{$search}%")
+                            ->orWhere('nid_number', 'like', "%{$search}%")
+                            ->orWhere('application_no', 'like', "%{$search}%");
+                    });
             });
         }
 
         // Issue status filter for Loans
         if ($issueStatus === 'pending') {
-            $loanQuery->whereHas('issues', fn ($q) => $q->where('status', 'pending'));
+            $loanQuery->whereHas('issues', fn ($q) => $q->where('status', 'pending')->where(function ($sq) {
+                $sq->whereNull('response_message')->orWhere('response_message', '');
+            }));
+        } elseif ($issueStatus === 'branch_replied') {
+            $loanQuery->whereHas('issues', fn ($q) => $q->whereNotNull('response_message')->where('response_message', '!=', '')->whereNull('zm_approved_at'));
+        } elseif ($issueStatus === 'zm_approved' || $issueStatus === 'replied') {
+            $loanQuery->whereHas('issues', fn ($q) => $q->whereNotNull('zm_approved_at'));
         } elseif ($issueStatus === 'resolved') {
             $loanQuery->whereDoesntHave('issues', fn ($q) => $q->where('status', 'pending'))
-                      ->whereHas('issues', fn ($q) => $q->where('status', 'resolved'));
-        } elseif ($issueStatus === 'replied') {
-            $loanQuery->whereHas('issues', fn ($q) => $q->whereNotNull('response_message'));
+                ->whereHas('issues', fn ($q) => $q->where('status', 'resolved'));
         } elseif ($issueStatus === 'approved') {
             $loanQuery->whereIn('status', [
                 LoanApplication::STATUS_APPROVED,
                 LoanApplication::STATUS_PENDING_DISBURSEMENT,
-                LoanApplication::STATUS_DISBURSED
+                LoanApplication::STATUS_DISBURSED,
             ]);
         } elseif ($issueStatus === 'rejected') {
             $loanQuery->where('status', LoanApplication::STATUS_REJECTED);
@@ -240,12 +253,18 @@ class HeadOfficeVerificationController extends Controller
         $admissionList = ($type === 'loan') ? collect() : $admissionQuery->get();
         $loanList = ($type === 'admission') ? collect() : $loanQuery->get();
 
-        // Permissions: Only Zonal Managers (or super admins with full access) can reply
+        // Permissions:
+        // - canApprove: HO / Super Admin / ED (final 1-click approve)
+        // - canReject: HO, Branch Manager, Area Manager, Zone Manager, Super Admin
+        // - canZmApprove: Zone Manager, Super Admin, has_all_access
+        $isZoneManager = in_array($roleName, [Role::ZONE_MANAGER, 'zone_manager'], true);
         $canApprove = $authUser->has_all_access || $authUser->isSuperAdmin() || $authUser->isHeadOffice() || $authUser->isEd();
         $canReject = $canApprove || in_array($roleName, ['branch_manager', 'area_manager', 'zone_manager', 'admf', 'dmf'], true);
-        $isZoneManager = in_array($roleName, [Role::ZONE_MANAGER, 'zone_manager'], true) || $authUser->has_all_access || $authUser->isSuperAdmin();
-        $canReply = $isZoneManager;
-        $isHoAdmin = $canApprove;
+        $canZmApprove = $isZoneManager || $authUser->has_all_access || $authUser->isSuperAdmin();
+        // Head Office users ONLY raise issues and approve/reject. They do NOT write replies.
+        // Branch users (FO, BM, AM) and Zone Managers (ZM) can reply.
+        $canReply = (! $authUser->isHeadOffice() && ! $authUser->isEd()) || $isZoneManager;
+        $isHoAdmin = $canApprove && ! $isZoneManager;
 
         // Standardize into unified Verification Items
         $verificationItems = collect();
@@ -255,7 +274,7 @@ class HeadOfficeVerificationController extends Controller
             $hasPendingIssue = $admission->issues->contains(fn ($i) => $i->status === 'pending');
 
             $branchCode = (string) ($admission->branch?->code ?? $admission->branch?->branch_code ?? '0000');
-            $branchCodeInt = is_numeric($branchCode) ? (int)$branchCode : 999999;
+            $branchCodeInt = is_numeric($branchCode) ? (int) $branchCode : 999999;
 
             $viewUrl = $isHoAdmin
                 ? "/head-office/admissions/{$admission->id}"
@@ -267,6 +286,7 @@ class HeadOfficeVerificationController extends Controller
                     $i->resolution_note,
                     $latestIssue && $i->id === $latestIssue->id ? $admission->revision_comments : null
                 );
+
                 return [
                     'id' => $i->id,
                     'issue_description' => $itemParsed['ho_objection'],
@@ -278,6 +298,10 @@ class HeadOfficeVerificationController extends Controller
                     'replied_at' => $itemParsed['branch_reply'] && $i->resolved_at
                         ? $i->resolved_at->toIso8601String()
                         : null,
+                    'is_zm_approved' => ! empty($i->zm_approved_at),
+                    'zm_approved_at' => $i->zm_approved_at ? Carbon::parse($i->zm_approved_at)->toIso8601String() : null,
+                    'zm_approver_name' => $i->zmApprover?->name ?? null,
+                    'zm_approval_note' => $i->zm_approval_note ?? null,
                 ];
             })->values();
 
@@ -287,11 +311,13 @@ class HeadOfficeVerificationController extends Controller
                 $latestIssue?->resolution_note,
                 $admission->revision_comments
             );
-            $hasReplied = $mappedIssues->contains(fn ($i) => !empty($i['reply_message']))
-                || !empty($parsed['branch_reply'])
-                || !empty($latestMapped['reply_message']);
+            $hasReplied = $mappedIssues->contains(fn ($i) => ! empty($i['reply_message']))
+                || ! empty($parsed['branch_reply']);
+            $hasUnapprovedPendingIssue = $admission->issues->contains(fn ($i) => $i->status === 'pending' && empty($i->zm_approved_at));
+            $isZmApproved = ! $hasUnapprovedPendingIssue && $admission->issues->contains(fn ($i) => ! empty($i->zm_approved_at));
 
             $sentDate = collect([
+                $latestIssue?->zm_approved_at,
                 $latestIssue?->resolved_at,
                 $latestIssue?->created_at,
                 $admission->returned_at,
@@ -302,7 +328,7 @@ class HeadOfficeVerificationController extends Controller
             $effectiveActionAt = $sentDate ?: $admission->submitted_at ?: $admission->created_at;
 
             $verificationItems->push([
-                'id' => 'admission_' . $admission->id,
+                'id' => 'admission_'.$admission->id,
                 'raw_id' => $admission->id,
                 'item_type' => 'admission',
                 'application_no' => $admission->application_no,
@@ -330,10 +356,15 @@ class HeadOfficeVerificationController extends Controller
                 'rejection_reason' => $admission->rejection_reason,
                 'has_pending_issue' => $hasPendingIssue,
                 'has_replied' => $hasReplied,
+                'is_zm_approved' => $isZmApproved,
+                'zm_approved_at' => $latestIssue?->zm_approved_at ? Carbon::parse($latestIssue->zm_approved_at)->toIso8601String() : null,
+                'zm_approver_name' => $latestIssue?->zmApprover?->name ?? null,
+                'zm_approval_note' => $latestIssue?->zm_approval_note ?? null,
                 'issues' => $mappedIssues,
                 'latest_issue_id' => $latestIssue?->id ?? null,
                 'latest_issue_description' => $latestMapped['issue_description'] ?? $parsed['ho_objection'],
                 'latest_reply_message' => $latestMapped['reply_message'] ?? $parsed['branch_reply'],
+                'latest_reply_by_name' => $latestMapped['responder_name'] ?? null,
                 'view_url' => $viewUrl,
                 'amount' => null,
             ]);
@@ -344,7 +375,7 @@ class HeadOfficeVerificationController extends Controller
             $hasPendingIssue = $loan->issues->contains(fn ($i) => $i->status === 'pending');
 
             $branchCode = (string) ($loan->branch?->code ?? $loan->branch?->branch_code ?? '0000');
-            $branchCodeInt = is_numeric($branchCode) ? (int)$branchCode : 999999;
+            $branchCodeInt = is_numeric($branchCode) ? (int) $branchCode : 999999;
 
             $viewUrl = $isHoAdmin
                 ? "/head-office/loans/{$loan->id}"
@@ -356,6 +387,7 @@ class HeadOfficeVerificationController extends Controller
                     $i->response_message,
                     $latestIssue && $i->id === $latestIssue->id ? ($loan->revision_comments ?? null) : null
                 );
+
                 return [
                     'id' => $i->id,
                     'issue_description' => $itemParsed['ho_objection'],
@@ -367,6 +399,10 @@ class HeadOfficeVerificationController extends Controller
                     'replied_at' => $itemParsed['branch_reply'] && $i->responded_at
                         ? $i->responded_at->toIso8601String()
                         : null,
+                    'is_zm_approved' => ! empty($i->zm_approved_at),
+                    'zm_approved_at' => $i->zm_approved_at ? Carbon::parse($i->zm_approved_at)->toIso8601String() : null,
+                    'zm_approver_name' => $i->zmApprover?->name ?? null,
+                    'zm_approval_note' => $i->zm_approval_note ?? null,
                 ];
             })->values();
 
@@ -376,11 +412,15 @@ class HeadOfficeVerificationController extends Controller
                 $latestIssue?->response_message,
                 $loan->revision_comments ?? null
             );
-            $hasReplied = $mappedIssues->contains(fn ($i) => !empty($i['reply_message']))
-                || !empty($parsed['branch_reply'])
-                || !empty($latestMapped['reply_message']);
+            $hasReplied = $mappedIssues->contains(fn ($i) => ! empty($i['reply_message']))
+                || ! empty($parsed['branch_reply'])
+                || ! empty($latestMapped['reply_message']);
+
+            $hasUnapprovedPendingIssue = $loan->issues->contains(fn ($i) => $i->status === 'pending' && empty($i->zm_approved_at));
+            $isZmApproved = ! $hasUnapprovedPendingIssue && $loan->issues->contains(fn ($i) => ! empty($i->zm_approved_at));
 
             $sentDate = collect([
+                $latestIssue?->zm_approved_at,
                 $latestIssue?->responded_at,
                 $latestIssue?->created_at,
                 $loan->reviewed_at,
@@ -390,7 +430,7 @@ class HeadOfficeVerificationController extends Controller
             $effectiveActionAt = $sentDate ?: $loan->submitted_at ?: $loan->created_at;
 
             $verificationItems->push([
-                'id' => 'loan_' . $loan->id,
+                'id' => 'loan_'.$loan->id,
                 'raw_id' => $loan->id,
                 'item_type' => 'loan',
                 'application_no' => $loan->application_no,
@@ -418,10 +458,15 @@ class HeadOfficeVerificationController extends Controller
                 'rejection_reason' => $loan->rejection_reason,
                 'has_pending_issue' => $hasPendingIssue,
                 'has_replied' => $hasReplied,
+                'is_zm_approved' => $isZmApproved,
+                'zm_approved_at' => $latestIssue?->zm_approved_at ? Carbon::parse($latestIssue->zm_approved_at)->toIso8601String() : null,
+                'zm_approver_name' => $latestIssue?->zmApprover?->name ?? null,
+                'zm_approval_note' => $latestIssue?->zm_approval_note ?? null,
                 'issues' => $mappedIssues,
                 'latest_issue_id' => $latestIssue?->id ?? null,
                 'latest_issue_description' => $latestMapped['issue_description'] ?? $parsed['ho_objection'],
                 'latest_reply_message' => $latestMapped['reply_message'] ?? $parsed['branch_reply'],
+                'latest_reply_by_name' => $latestMapped['responder_name'] ?? null,
                 'view_url' => $viewUrl,
                 'amount' => $loan->approved_amount ?: $loan->requested_amount,
             ]);
@@ -431,16 +476,19 @@ class HeadOfficeVerificationController extends Controller
         if ($startOfDay && $endOfDay) {
             $verificationItems = $verificationItems->filter(function ($item) use ($startOfDay, $endOfDay) {
                 $dt = Carbon::parse($item['latest_action_at']);
+
                 return $dt->between($startOfDay, $endOfDay);
             });
         } elseif ($startOfDay) {
             $verificationItems = $verificationItems->filter(function ($item) use ($startOfDay) {
                 $dt = Carbon::parse($item['latest_action_at']);
+
                 return $dt->gte($startOfDay);
             });
         } elseif ($endOfDay) {
             $verificationItems = $verificationItems->filter(function ($item) use ($endOfDay) {
                 $dt = Carbon::parse($item['latest_action_at']);
+
                 return $dt->lte($endOfDay);
             });
         }
@@ -450,6 +498,7 @@ class HeadOfficeVerificationController extends Controller
             if ($a['branch_code_int'] !== $b['branch_code_int']) {
                 return $a['branch_code_int'] <=> $b['branch_code_int'];
             }
+
             return strcmp($b['latest_action_at'], $a['latest_action_at']);
         })->values();
 
@@ -458,8 +507,9 @@ class HeadOfficeVerificationController extends Controller
             'total' => $sortedItems->count(),
             'admission_count' => $sortedItems->where('item_type', 'admission')->count(),
             'loan_count' => $sortedItems->where('item_type', 'loan')->count(),
-            'pending_issues' => $sortedItems->where('has_pending_issue', true)->count(),
-            'branch_replied' => $sortedItems->where('has_replied', true)->count(),
+            'pending_issues' => $sortedItems->filter(fn ($i) => $i['has_pending_issue'] && ! $i['has_replied'])->count(),
+            'branch_replied' => $sortedItems->filter(fn ($i) => $i['has_replied'] && ! $i['is_zm_approved'] && ! in_array($i['status'], ['approved', 'pending_disbursement', 'disbursed', 'rejected']))->count(),
+            'zm_approved' => $sortedItems->filter(fn ($i) => $i['is_zm_approved'] && ! in_array($i['status'], ['approved', 'pending_disbursement', 'disbursed', 'rejected']))->count(),
             'approved' => $sortedItems->whereIn('status', ['approved', 'pending_disbursement', 'disbursed'])->count(),
         ];
 
@@ -490,15 +540,16 @@ class HeadOfficeVerificationController extends Controller
                 'search' => $search,
                 'type' => $type,
                 'issue_status' => $issueStatus,
-                'zone_id' => $zoneId ? (int)$zoneId : null,
-                'area_id' => $areaId ? (int)$areaId : null,
-                'branch_id' => $branchId ? (int)$branchId : null,
+                'zone_id' => $zoneId ? (int) $zoneId : null,
+                'area_id' => $areaId ? (int) $areaId : null,
+                'branch_id' => $branchId ? (int) $branchId : null,
                 'per_page' => $perPage,
             ],
             'permissions' => [
                 'can_approve' => $canApprove,
                 'can_reject' => $canReject,
                 'can_reply' => $canReply,
+                'can_zm_approve' => $canZmApprove,
                 'is_head_office' => $isHoAdmin,
                 'is_zone_manager' => $isZoneManager,
                 'role' => $roleName,
@@ -510,18 +561,17 @@ class HeadOfficeVerificationController extends Controller
     }
 
     /**
-     * Zonal Manager reply/explanation to an issue raised by Head Office
+     * Universal Reply/Explanation to an issue raised by Head Office
+     * Anyone with branch access can reply.
+     * If submitted by ZM or Super Admin, it is automatically marked ZM approved.
+     * If submitted by Branch user, it awaits ZM approval.
      */
     public function replyIssue(Request $request)
     {
         $authUser = auth()->user();
         $authUser->loadMissing('role');
         $roleName = strtolower($authUser->role->name ?? '');
-        $canReply = in_array($roleName, [Role::ZONE_MANAGER, 'zone_manager'], true) || $authUser->has_all_access || $authUser->isSuperAdmin();
-
-        if (!$canReply) {
-            return back()->with('error', 'শুধুমাত্র জোনাল ম্যানেজার (Zonal Manager) আপত্তির ব্যাখ্যা/জবাব প্রদান করতে পারবেন।');
-        }
+        $isZmOrAdmin = in_array($roleName, [Role::ZONE_MANAGER, 'zone_manager'], true) || $authUser->has_all_access || $authUser->isSuperAdmin();
 
         $validated = $request->validate([
             'item_type' => 'required|in:admission,loan',
@@ -534,25 +584,28 @@ class HeadOfficeVerificationController extends Controller
             $admission = MemberAdmission::findOrFail($validated['raw_id']);
             $this->ensureCanAccessBranch($admission->branch_id);
 
-            if (!empty($validated['issue_id'])) {
+            $updateData = [
+                'resolution_note' => $validated['reply_message'],
+                'resolved_at' => now(),
+                'resolved_by' => $authUser->id,
+            ];
+
+            if ($isZmOrAdmin) {
+                $updateData['zm_approved_at'] = now();
+                $updateData['zm_approved_by'] = $authUser->id;
+            }
+
+            if (! empty($validated['issue_id'])) {
                 $issue = MemberAdmissionIssue::where('member_admission_id', $admission->id)
                     ->where('id', $validated['issue_id'])
                     ->first();
                 if ($issue) {
-                    $issue->update([
-                        'resolution_note' => $validated['reply_message'],
-                        'resolved_at' => now(),
-                        'resolved_by' => $authUser->id,
-                    ]);
+                    $issue->update($updateData);
                 }
             } else {
                 $latestIssue = $admission->issues()->where('status', 'pending')->latest()->first();
                 if ($latestIssue) {
-                    $latestIssue->update([
-                        'resolution_note' => $validated['reply_message'],
-                        'resolved_at' => now(),
-                        'resolved_by' => $authUser->id,
-                    ]);
+                    $latestIssue->update($updateData);
                 }
             }
 
@@ -563,21 +616,13 @@ class HeadOfficeVerificationController extends Controller
                 'submitted_by' => $authUser->id,
             ]);
 
-            // Notify Head Office
-            $headOfficeUsers = User::where('is_active', 1)
-                ->where(function ($q) {
-                    $q->where('has_all_access', 1)
-                      ->orWhereHas('role', fn ($r) => $r->whereIn('name', ['super_admin', 'head_office', 'ed']));
-                })->get();
-
-            if ($headOfficeUsers->isNotEmpty()) {
-                app(NotificationService::class)->send(
-                    users: $headOfficeUsers,
+            if ($isZmOrAdmin) {
+                // Directly ZM-approved -> notify Head Office
+                $this->notifyHeadOffice(
                     type: 'member_admission',
                     title: 'সদস্য ভর্তির আপত্তিতে জোনাল ব্যাখ্যা এসেছে',
                     message: "সদস্য আবেদন নং {$admission->application_no} ({$admission->applicant_name_bn}) এর আপত্তিতে জোনাল ম্যানেজার ({$authUser->name}) থেকে ব্যাখ্যা প্রদান করা হয়েছে: \"{$validated['reply_message']}\"",
                     notifiable: $admission,
-                    actionUrl: "/head-office/verifications",
                     details: [
                         'আবেদন নং' => $admission->application_no,
                         'শাখা' => $admission->branch?->name ?? 'N/A',
@@ -585,30 +630,52 @@ class HeadOfficeVerificationController extends Controller
                         'ব্যাখ্যা' => $validated['reply_message'],
                     ]
                 );
+
+                return back()->with('success', 'জোনাল ব্যাখ্যা সফলভাবে সংরক্ষণ ও হেড অফিসে প্রেরণ করা হয়েছে।');
+            } else {
+                // Branch reply pending ZM approval -> notify Zone Manager
+                $this->notifyZoneManagers(
+                    branchId: $admission->branch_id,
+                    type: 'member_admission',
+                    title: 'সদস্য ভর্তি আপত্তিতে শাখার জবাব এসেছে (ZM অনুমোদন অপেক্ষমান)',
+                    message: "সদস্য আবেদন নং {$admission->application_no} ({$admission->applicant_name_bn}) এর আপত্তিতে শাখা ({$authUser->name}) থেকে ব্যাখ্যা প্রদান করা হয়েছে। অনুগ্রহ করে পর্যালোচনাপূর্বক ZM অনুমোদন প্রদান করুন।",
+                    notifiable: $admission,
+                    details: [
+                        'আবেদন নং' => $admission->application_no,
+                        'শাখা' => $admission->branch?->name ?? 'N/A',
+                        'জবাবদাতা' => "{$authUser->name} (".($authUser->role->label ?? $authUser->role->name ?? 'কর্মকর্তা').')',
+                        'ব্যাখ্যা' => $validated['reply_message'],
+                    ]
+                );
+
+                return back()->with('success', 'শাখার ব্যাখ্যা সফলভাবে সংরক্ষণ করা হয়েছে। এটি জোনাল ম্যানেজারের অনুমোদনের অপেক্ষায় রয়েছে।');
             }
         } else {
             $loan = LoanApplication::findOrFail($validated['raw_id']);
             $this->ensureCanAccessBranch($loan->branch_id);
 
-            if (!empty($validated['issue_id'])) {
+            $updateData = [
+                'response_message' => $validated['reply_message'],
+                'responded_by' => $authUser->id,
+                'responded_at' => now(),
+            ];
+
+            if ($isZmOrAdmin) {
+                $updateData['zm_approved_at'] = now();
+                $updateData['zm_approved_by'] = $authUser->id;
+            }
+
+            if (! empty($validated['issue_id'])) {
                 $issue = LoanApplicationIssue::where('loan_application_id', $loan->id)
                     ->where('id', $validated['issue_id'])
                     ->first();
                 if ($issue) {
-                    $issue->update([
-                        'response_message' => $validated['reply_message'],
-                        'responded_by' => $authUser->id,
-                        'responded_at' => now(),
-                    ]);
+                    $issue->update($updateData);
                 }
             } else {
                 $latestIssue = $loan->issues()->where('status', 'pending')->latest()->first();
                 if ($latestIssue) {
-                    $latestIssue->update([
-                        'response_message' => $validated['reply_message'],
-                        'responded_by' => $authUser->id,
-                        'responded_at' => now(),
-                    ]);
+                    $latestIssue->update($updateData);
                 }
             }
 
@@ -618,21 +685,13 @@ class HeadOfficeVerificationController extends Controller
                 'submitted_by' => $authUser->id,
             ]);
 
-            // Notify Head Office
-            $headOfficeUsers = User::where('is_active', 1)
-                ->where(function ($q) {
-                    $q->where('has_all_access', 1)
-                      ->orWhereHas('role', fn ($r) => $r->whereIn('name', ['super_admin', 'head_office', 'ed']));
-                })->get();
-
-            if ($headOfficeUsers->isNotEmpty()) {
-                app(NotificationService::class)->send(
-                    users: $headOfficeUsers,
+            if ($isZmOrAdmin) {
+                // Directly ZM-approved -> notify Head Office
+                $this->notifyHeadOffice(
                     type: 'loan_application',
                     title: 'ঋণ আবেদনের আপত্তিতে জোনাল ব্যাখ্যা এসেছে',
                     message: "ঋণ আবেদন নং {$loan->application_no} ({$loan->memberAdmission?->applicant_name_bn}) এর আপত্তিতে জোনাল ম্যানেজার ({$authUser->name}) থেকে ব্যাখ্যা প্রদান করা হয়েছে: \"{$validated['reply_message']}\"",
                     notifiable: $loan,
-                    actionUrl: "/head-office/verifications",
                     details: [
                         'আবেদন নং' => $loan->application_no,
                         'শাখা' => $loan->branch?->name ?? 'N/A',
@@ -640,10 +699,222 @@ class HeadOfficeVerificationController extends Controller
                         'ব্যাখ্যা' => $validated['reply_message'],
                     ]
                 );
+
+                return back()->with('success', 'জোনাল ব্যাখ্যা সফলভাবে সংরক্ষণ ও হেড অফিসে প্রেরণ করা হয়েছে।');
+            } else {
+                // Branch reply pending ZM approval -> notify Zone Manager
+                $this->notifyZoneManagers(
+                    branchId: $loan->branch_id,
+                    type: 'loan_application',
+                    title: 'ঋণ আবেদন আপত্তিতে শাখার জবাব এসেছে (ZM অনুমোদন অপেক্ষমান)',
+                    message: "ঋণ আবেদন নং {$loan->application_no} ({$loan->memberAdmission?->applicant_name_bn}) এর আপত্তিতে শাখা ({$authUser->name}) থেকে ব্যাখ্যা প্রদান করা হয়েছে। অনুগ্রহ করে পর্যালোচনাপূর্বক ZM অনুমোদন প্রদান করুন।",
+                    notifiable: $loan,
+                    details: [
+                        'আবেদন নং' => $loan->application_no,
+                        'শাখা' => $loan->branch?->name ?? 'N/A',
+                        'জবাবদাতা' => "{$authUser->name} (".($authUser->role->label ?? $authUser->role->name ?? 'কর্মকর্তা').')',
+                        'ব্যাখ্যা' => $validated['reply_message'],
+                    ]
+                );
+
+                return back()->with('success', 'শাখার ব্যাখ্যা সফলভাবে সংরক্ষণ করা হয়েছে। এটি জোনাল ম্যানেজারের অনুমোদনের অপেক্ষায় রয়েছে।');
             }
         }
+    }
 
-        return back()->with('success', 'জোনাল ব্যাখ্যা সফলভাবে প্রেরণ করা হয়েছে।');
+    /**
+     * Single-click ZM Approve a branch reply/explanation
+     */
+    public function approveZmIssue(Request $request)
+    {
+        $authUser = auth()->user();
+        $authUser->loadMissing('role');
+        $roleName = strtolower($authUser->role->name ?? '');
+        $canZmApprove = in_array($roleName, [Role::ZONE_MANAGER, 'zone_manager'], true) || $authUser->has_all_access || $authUser->isSuperAdmin();
+
+        if (! $canZmApprove) {
+            return back()->with('error', 'শুধুমাত্র জোনাল ম্যানেজার (ZM) বা সুপার অ্যাডমিন ZM অনুমোদন করতে পারবেন।');
+        }
+
+        $validated = $request->validate([
+            'item_type' => 'required|in:admission,loan',
+            'raw_id' => 'required|integer',
+            'issue_id' => 'nullable|integer',
+            'approval_note' => 'nullable|string|max:2000',
+        ]);
+
+        if ($validated['item_type'] === 'admission') {
+            $admission = MemberAdmission::findOrFail($validated['raw_id']);
+            $this->ensureCanAccessBranch($admission->branch_id);
+
+            $updateData = [
+                'zm_approved_at' => now(),
+                'zm_approved_by' => $authUser->id,
+                'zm_approval_note' => $validated['approval_note'] ?? null,
+            ];
+
+            if (! empty($validated['issue_id'])) {
+                $issue = MemberAdmissionIssue::where('member_admission_id', $admission->id)
+                    ->where('id', $validated['issue_id'])
+                    ->first();
+                if ($issue) {
+                    $issue->update($updateData);
+                }
+            } else {
+                $admission->issues()->whereNull('zm_approved_at')->update($updateData);
+            }
+
+            $admission->update([
+                'submitted_at' => now(),
+            ]);
+
+            $this->notifyHeadOffice(
+                type: 'member_admission',
+                title: 'সদস্য ভর্তি আপত্তিতে জোনাল অনুমোদন সম্পন্ন হয়েছে',
+                message: "সদস্য আবেদন নং {$admission->application_no} ({$admission->applicant_name_bn}) এর শাখার জবাব জোনাল ম্যানেজার ({$authUser->name}) কর্তৃক অনুমোদিত হয়েছে।",
+                notifiable: $admission,
+                details: [
+                    'আবেদন নং' => $admission->application_no,
+                    'শাখা' => $admission->branch?->name ?? 'N/A',
+                    'ZM অনুমোদনকারী' => "{$authUser->name} (জোনাল ম্যানেজার)",
+                    'মন্তব্য' => $validated['approval_note'] ?? 'অনুমোদিত',
+                ]
+            );
+
+            return back()->with('success', 'জোনাল অনুমোদন সফলভাবে সম্পন্ন হয়েছে এবং হেড অফিসে পাঠানো হয়েছে।');
+        } else {
+            $loan = LoanApplication::findOrFail($validated['raw_id']);
+            $this->ensureCanAccessBranch($loan->branch_id);
+
+            $updateData = [
+                'zm_approved_at' => now(),
+                'zm_approved_by' => $authUser->id,
+                'zm_approval_note' => $validated['approval_note'] ?? null,
+            ];
+
+            if (! empty($validated['issue_id'])) {
+                $issue = LoanApplicationIssue::where('loan_application_id', $loan->id)
+                    ->where('id', $validated['issue_id'])
+                    ->first();
+                if ($issue) {
+                    $issue->update($updateData);
+                }
+            } else {
+                $loan->issues()->whereNull('zm_approved_at')->update($updateData);
+            }
+
+            $loan->update([
+                'submitted_at' => now(),
+            ]);
+
+            $this->notifyHeadOffice(
+                type: 'loan_application',
+                title: 'ঋণ আবেদন আপত্তিতে জোনাল অনুমোদন সম্পন্ন হয়েছে',
+                message: "ঋণ আবেদন নং {$loan->application_no} ({$loan->memberAdmission?->applicant_name_bn}) এর শাখার জবাব জোনাল ম্যানেজার ({$authUser->name}) কর্তৃক অনুমোদিত হয়েছে।",
+                notifiable: $loan,
+                details: [
+                    'আবেদন নং' => $loan->application_no,
+                    'শাখা' => $loan->branch?->name ?? 'N/A',
+                    'ZM অনুমোদনকারী' => "{$authUser->name} (জোনাল ম্যানেজার)",
+                    'মন্তব্য' => $validated['approval_note'] ?? 'অনুমোদিত',
+                ]
+            );
+
+            return back()->with('success', 'জোনাল অনুমোদন সফলভাবে সম্পন্ন হয়েছে এবং হেড অফিসে পাঠানো হয়েছে।');
+        }
+    }
+
+    /**
+     * Multi-select Bulk ZM Approve
+     */
+    public function bulkApproveZm(Request $request)
+    {
+        $authUser = auth()->user();
+        $authUser->loadMissing('role');
+        $roleName = strtolower($authUser->role->name ?? '');
+        $canZmApprove = in_array($roleName, [Role::ZONE_MANAGER, 'zone_manager'], true) || $authUser->has_all_access || $authUser->isSuperAdmin();
+
+        if (! $canZmApprove) {
+            return back()->with('error', 'শুধুমাত্র জোনাল ম্যানেজার (ZM) বা সুপার অ্যাডমিন ZM অনুমোদন করতে পারবেন।');
+        }
+
+        $validated = $request->validate([
+            'items' => 'required|array|min:1',
+            'items.*.item_type' => 'required|in:admission,loan',
+            'items.*.raw_id' => 'required|integer',
+            'items.*.issue_id' => 'nullable|integer',
+            'approval_note' => 'nullable|string|max:2000',
+        ]);
+
+        $approvedCount = 0;
+
+        DB::transaction(function () use ($validated, $authUser, &$approvedCount) {
+            foreach ($validated['items'] as $itemData) {
+                if ($itemData['item_type'] === 'admission') {
+                    $admission = MemberAdmission::find($itemData['raw_id']);
+                    if (! $admission) {
+                        continue;
+                    }
+                    $this->ensureCanAccessBranch($admission->branch_id);
+
+                    $updateData = [
+                        'zm_approved_at' => now(),
+                        'zm_approved_by' => $authUser->id,
+                        'zm_approval_note' => $validated['approval_note'] ?? 'বাল্ক ZM অনুমোদন',
+                    ];
+
+                    if (! empty($itemData['issue_id'])) {
+                        MemberAdmissionIssue::where('member_admission_id', $admission->id)
+                            ->where('id', $itemData['issue_id'])
+                            ->update($updateData);
+                    } else {
+                        $admission->issues()->whereNull('zm_approved_at')->update($updateData);
+                    }
+
+                    $admission->update(['submitted_at' => now()]);
+                    $approvedCount++;
+                } else {
+                    $loan = LoanApplication::find($itemData['raw_id']);
+                    if (! $loan) {
+                        continue;
+                    }
+                    $this->ensureCanAccessBranch($loan->branch_id);
+
+                    $updateData = [
+                        'zm_approved_at' => now(),
+                        'zm_approved_by' => $authUser->id,
+                        'zm_approval_note' => $validated['approval_note'] ?? 'বাল্ক ZM অনুমোদন',
+                    ];
+
+                    if (! empty($itemData['issue_id'])) {
+                        LoanApplicationIssue::where('loan_application_id', $loan->id)
+                            ->where('id', $itemData['issue_id'])
+                            ->update($updateData);
+                    } else {
+                        $loan->issues()->whereNull('zm_approved_at')->update($updateData);
+                    }
+
+                    $loan->update(['submitted_at' => now()]);
+                    $approvedCount++;
+                }
+            }
+        });
+
+        if ($approvedCount > 0) {
+            $this->notifyHeadOffice(
+                type: 'member_admission',
+                title: 'একযোগে ZM অনুমোদন সম্পন্ন হয়েছে',
+                message: "জোনাল ম্যানেজার ({$authUser->name}) মোট {$approvedCount} টি আবেদনের শাখার জবাব অনুমোদন করেছেন।",
+                notifiable: $authUser,
+                details: [
+                    'অনুমোদিত আবেদনের সংখ্যা' => "{$approvedCount} টি",
+                    'অনুমোদনকারী' => "{$authUser->name} (জোনাল ম্যানেজার)",
+                    'তারিখ' => now()->format('Y-m-d H:i'),
+                ]
+            );
+        }
+
+        return back()->with('success', "নির্বাচিত {$approvedCount} টি আবেদনের ব্যাখ্যা সফলভাবে ZM অনুমোদন করা হয়েছে।");
     }
 
     /**
@@ -707,9 +978,19 @@ class HeadOfficeVerificationController extends Controller
             $latestIssue?->resolution_note,
             $admission->revision_comments
         );
-        $hasBranchReply = !empty($parsed['branch_reply']) || $admission->issues()->whereNotNull('resolution_note')->exists();
+        $hasBranchReply = ! empty($parsed['branch_reply']) || $admission->issues()->whereNotNull('resolution_note')->exists();
 
-        if (!$hasBranchReply && $admission->issues()->where('status', 'pending')->exists()) {
+        // Must be ZM approved if pending issues exist
+        $hasPendingUnapprovedIssue = $admission->issues()
+            ->where('status', 'pending')
+            ->whereNull('zm_approved_at')
+            ->exists();
+
+        if ($hasPendingUnapprovedIssue) {
+            return back()->with('error', 'জোনাল ম্যানেজার (ZM) কর্তৃক অনুমোদন না হওয়া পর্যন্ত হেড অফিস থেকে অনুমোদন করা যাবে না।');
+        }
+
+        if (! $hasBranchReply && $admission->issues()->where('status', 'pending')->exists()) {
             return back()->with('error', 'জোন থেকে ব্যাখ্যা/জবাব না পাওয়া পর্যন্ত অনুমোদন করা যাবে না।');
         }
 
@@ -781,9 +1062,19 @@ class HeadOfficeVerificationController extends Controller
             $latestIssue?->response_message,
             $loanApplication->revision_comments
         );
-        $hasBranchReply = !empty($parsed['branch_reply']) || $loanApplication->issues()->whereNotNull('response_message')->exists();
+        $hasBranchReply = ! empty($parsed['branch_reply']) || $loanApplication->issues()->whereNotNull('response_message')->exists();
 
-        if (!$hasBranchReply && $loanApplication->issues()->where('status', 'pending')->exists()) {
+        // Must be ZM approved if pending issues exist
+        $hasPendingUnapprovedIssue = $loanApplication->issues()
+            ->where('status', 'pending')
+            ->whereNull('zm_approved_at')
+            ->exists();
+
+        if ($hasPendingUnapprovedIssue) {
+            return back()->with('error', 'জোনাল ম্যানেজার (ZM) কর্তৃক অনুমোদন না হওয়া পর্যন্ত হেড অফিস থেকে অনুমোদন করা যাবে না।');
+        }
+
+        if (! $hasBranchReply && $loanApplication->issues()->where('status', 'pending')->exists()) {
             return back()->with('error', 'জোন থেকে ব্যাখ্যা/জবাব না পাওয়া পর্যন্ত অনুমোদন করা যাবে না।');
         }
 
@@ -825,7 +1116,7 @@ class HeadOfficeVerificationController extends Controller
                     'আবেদন নং' => $loanApplication->application_no,
                     'সদস্যের নাম' => $loanApplication->memberAdmission?->applicant_name_bn ?: ($loanApplication->memberAdmission?->applicant_name_en ?? 'N/A'),
                     'শাখা' => $loanApplication->branch?->name ?? 'N/A',
-                    'অনুমোদিত পরিমাণ' => '৳ ' . number_format($loanApplication->approved_amount ?: $loanApplication->requested_amount, 2),
+                    'অনুমোদিত পরিমাণ' => '৳ '.number_format($loanApplication->approved_amount ?: $loanApplication->requested_amount, 2),
                 ]
             );
         }
@@ -963,31 +1254,90 @@ class HeadOfficeVerificationController extends Controller
     }
 
     /**
-     * Close pending admission issues without overwriting the branch reply.
-     * Status must stay within ENUM('pending','resolved') — 'rejected' causes data truncated.
+     * Close pending admission issues without overwriting the branch reply author & date.
      */
     private function closePendingAdmissionIssues(MemberAdmission $admission, int $userId): void
     {
         $admission->issues()
             ->where('status', 'pending')
-            ->update([
-                'status' => 'resolved',
-                'resolved_at' => now(),
-                'resolved_by' => $userId,
-            ]);
+            ->each(function ($issue) use ($userId) {
+                $update = ['status' => 'resolved'];
+                if (! $issue->resolved_at) {
+                    $update['resolved_at'] = now();
+                    $update['resolved_by'] = $userId;
+                }
+                $issue->update($update);
+            });
     }
 
     /**
-     * Close pending loan issues without overwriting the branch reply.
+     * Close pending loan issues without overwriting the branch reply author & date.
      */
     private function closePendingLoanIssues(LoanApplication $loan, int $userId): void
     {
         $loan->issues()
             ->where('status', 'pending')
-            ->update([
-                'status' => 'resolved',
-                'responded_at' => now(),
-                'responded_by' => $userId,
-            ]);
+            ->each(function ($issue) use ($userId) {
+                $update = ['status' => 'resolved'];
+                if (! $issue->responded_at) {
+                    $update['responded_at'] = now();
+                    $update['responded_by'] = $userId;
+                }
+                $issue->update($update);
+            });
+    }
+
+    /**
+     * Send notification to Zone Manager(s) responsible for a branch
+     */
+    private function notifyZoneManagers(int $branchId, string $type, string $title, string $message, $notifiable, array $details = []): void
+    {
+        $branch = Branch::with('area.zone')->find($branchId);
+        $zoneId = $branch?->area?->zone_id;
+
+        $zoneManagers = User::where('is_active', 1)
+            ->whereHas('role', fn ($r) => $r->whereIn('name', [Role::ZONE_MANAGER, 'zone_manager']))
+            ->where(function ($q) use ($zoneId) {
+                if ($zoneId) {
+                    $q->where('zone_id', $zoneId)->orWhereNull('zone_id');
+                }
+            })
+            ->get();
+
+        if ($zoneManagers->isNotEmpty()) {
+            app(NotificationService::class)->send(
+                users: $zoneManagers,
+                type: $type,
+                title: $title,
+                message: $message,
+                notifiable: $notifiable,
+                actionUrl: '/verifications',
+                details: $details
+            );
+        }
+    }
+
+    /**
+     * Send notification to Head Office users
+     */
+    private function notifyHeadOffice(string $type, string $title, string $message, $notifiable, array $details = []): void
+    {
+        $headOfficeUsers = User::where('is_active', 1)
+            ->where(function ($q) {
+                $q->where('has_all_access', 1)
+                    ->orWhereHas('role', fn ($r) => $r->whereIn('name', ['super_admin', 'head_office', 'ed']));
+            })->get();
+
+        if ($headOfficeUsers->isNotEmpty()) {
+            app(NotificationService::class)->send(
+                users: $headOfficeUsers,
+                type: $type,
+                title: $title,
+                message: $message,
+                notifiable: $notifiable,
+                actionUrl: '/verifications',
+                details: $details
+            );
+        }
     }
 }

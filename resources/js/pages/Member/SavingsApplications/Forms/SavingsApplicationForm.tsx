@@ -8,6 +8,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { fileToCompressedDataUrl } from '@/utils/imageUpload';
+import { withLiveMemberCode } from '@/utils/memberCodeUtils';
 
 interface SavingsFormData {
     // Office use
@@ -230,7 +231,7 @@ export default function SavingsApplicationForm({ memberAdmission, savingsProduct
     if (onlyPreview && savedData) {
         return (
             <div className="print-container">
-                <SavingsApplicationPrintView data={savedData} />
+                <SavingsApplicationPrintView data={withLiveMemberCode(savedData, memberAdmission)} />
             </div>
         );
     }
@@ -241,14 +242,14 @@ export default function SavingsApplicationForm({ memberAdmission, savingsProduct
 
     const durationMonths = existingApplication?.duration_months ?? savingsProduct?.duration_months ?? null;
 
-    const { data, setData, post, processing } = useForm<SavingsFormData>({
+    const { data, setData, post, processing } = useForm<SavingsFormData>(withLiveMemberCode({
         // Office use – auto from product
         account_opening_date: existingApplication?.account_opening_date || new Date().toISOString().split('T')[0],
         monthly_savings_amount: existingApplication?.monthly_savings_amount ?? savingsProduct?.min_amount ?? 0,
         term_years: existingApplication?.term_years ?? (durationMonths && durationMonths >= 12 ? Math.round(durationMonths / 12) : null),
         duration_months: durationMonths,
         account_no: existingApplication?.account_no || '',
-        member_no: existingApplication?.member_no || memberAdmission?.application_no || '',
+        member_no: memberAdmission?.application_no || existingApplication?.member_no || '',
         
         // Applicant photo
         applicant_photo: existingApplication?.applicant_photo || null,
@@ -300,7 +301,7 @@ export default function SavingsApplicationForm({ memberAdmission, savingsProduct
         branch_name: branch?.name || '',
         branch_address: branch?.address || '',
         area_name: branch?.area?.name || '',
-    });
+    }, memberAdmission));
 
     // Get backend validation errors from Inertia
     const pageProps = usePage().props as any;
@@ -338,17 +339,18 @@ export default function SavingsApplicationForm({ memberAdmission, savingsProduct
         monthly_savings_amount: localErrors.monthly_savings_amount || backendErrors.monthly_savings_amount || backendErrors.deposit_amount,
     }), [localErrors, backendErrors]);
 
-    // Load saved data if exists
+    // Load saved data if exists, then always prefer the live member code
     useEffect(() => {
         if (existingApplication && existingApplication.form_data) {
             const formData = existingApplication.form_data;
-            Object.keys(formData).forEach(key => {
-                if (formData[key] !== null && formData[key] !== undefined) {
-                    setData(key as any, formData[key]);
-                }
-            });
+            setData((prev) => withLiveMemberCode({
+                ...prev,
+                ...formData,
+            }, memberAdmission));
+        } else if (memberAdmission?.application_no) {
+            setData('member_no', memberAdmission.application_no);
         }
-    }, [existingApplication]);
+    }, [existingApplication, memberAdmission?.application_no]);
 
     const handleImageUpload = async (field: string, file: File | null) => {
         if (!file) return;
@@ -1052,7 +1054,7 @@ export default function SavingsApplicationForm({ memberAdmission, savingsProduct
                         <div className="lg:sticky lg:top-4 lg:h-fit print:block print-container savings-form-print-area">
                             <div className="bg-white rounded-lg shadow-lg p-4 print:shadow-none print:p-2 print:rounded-none print:bg-white">
                                 <h3 className="text-sm font-bold mb-3 savings-form-no-print">Preview</h3>
-                                <SavingsApplicationPrintView data={data} />
+                                <SavingsApplicationPrintView data={withLiveMemberCode(data, memberAdmission)} />
                             </div>
                         </div>
                     </div>

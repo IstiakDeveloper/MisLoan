@@ -20,6 +20,7 @@ use App\Models\SavingsProduct;
 use App\Models\User;
 use App\Models\Zone;
 use App\Services\ApprovalService;
+use App\Services\HoSendCutoffService;
 use App\Services\MemberCodeService;
 use App\Services\NotificationService;
 use App\Support\LoanFormVisibility;
@@ -1579,6 +1580,10 @@ class LoanApplicationController extends Controller
             return back()->withErrors(['error' => 'শুধু শাখা অনুমোদিত ঋণ আবেদন Head Office এ পাঠানো যাবে।']);
         }
 
+        if ($blocked = app(HoSendCutoffService::class)->redirectIfBlocked()) {
+            return $blocked;
+        }
+
         $application->update([
             'status' => LoanApplication::STATUS_PENDING_HEAD_OFFICE,
             'submitted_at' => now(),
@@ -1623,6 +1628,10 @@ class LoanApplicationController extends Controller
 
         if ($roleName !== 'branch_user') {
             abort(403, 'শুধুমাত্র শাখা ব্যবহারকারী (Branch User) ঋণ আবেদন হেড অফিসে পাঠাতে পারবেন।');
+        }
+
+        if ($blocked = app(HoSendCutoffService::class)->redirectIfBlocked()) {
+            return $blocked;
         }
 
         $validated = $request->validate([

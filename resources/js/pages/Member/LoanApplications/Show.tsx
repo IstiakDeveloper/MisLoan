@@ -42,6 +42,7 @@ import LoanAgreement from './Forms/LoanAgreement';
 import FieldInvestigation from './Forms/FieldInvestigation';
 import LoanApplicationApproval from './Forms/LoanApplicationApproval';
 import SendLoanToHoModal from '@/components/LoanApplications/SendLoanToHoModal';
+import { useHoSendCutoff } from '@/hooks/use-ho-send-cutoff';
 
 interface LoanApplication {
     id: number;
@@ -245,6 +246,7 @@ const PIPELINE_STAGES = [
 export default function Show({ application, routes, categories = [] }: Props) {
     const pageAuth = usePage().props.auth as { user?: { role?: { name: string } } } | undefined;
     const isBranchUser = pageAuth?.user?.role?.name === 'branch_user';
+    const hoSendCutoff = useHoSendCutoff();
     const isBranchManager = pageAuth?.user?.role?.name === 'branch_manager' || pageAuth?.user?.role?.name === 'super_admin';
     const canRespondToIssues = isBranchUser || isBranchManager;
     const showBranchApproveButton = isBranchManager &&
@@ -1184,7 +1186,13 @@ export default function Show({ application, routes, categories = [] }: Props) {
                             {application.status === 'ready_for_head_office' && isBranchUser && (
                                 <Button
                                     className="w-full sm:w-auto bg-indigo-600 hover:bg-indigo-700 text-white shadow-xs font-semibold rounded-xl text-xs sm:text-sm h-9 sm:h-10"
-                                    onClick={() => setShowLoanHoModal(true)}
+                                    onClick={() => {
+                                        if (!hoSendCutoff.is_blocked) {
+                                            setShowLoanHoModal(true);
+                                        }
+                                    }}
+                                    disabled={hoSendCutoff.is_blocked}
+                                    title={hoSendCutoff.is_blocked ? hoSendCutoff.blocked_message : undefined}
                                 >
                                     <Send className="w-4 h-4 mr-1.5" />
                                     Head Office এ পাঠান
@@ -2501,6 +2509,10 @@ export default function Show({ application, routes, categories = [] }: Props) {
                         amount: application.requested_amount || application.approved_amount,
                     },
                 ]}
+                cutoffLabel={hoSendCutoff.label}
+                cutoffBadge={hoSendCutoff.badge}
+                isBlocked={hoSendCutoff.is_blocked}
+                blockedMessage={hoSendCutoff.blocked_message}
             />
         </AdminLayout>
     );

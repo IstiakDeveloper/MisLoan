@@ -12,6 +12,7 @@ use App\Models\Samity;
 use App\Models\User;
 use App\Models\Zone;
 use App\Services\ApprovalService;
+use App\Services\HoSendCutoffService;
 use App\Services\ImageCompressionService;
 use App\Services\MemberAdmissionLoanSyncService;
 use App\Services\MemberCodeService;
@@ -1719,6 +1720,10 @@ class MemberAdmissionController extends Controller
             return back()->with('error', 'শুধু শাখা অনুমোদিত আবেদনই Head Office এ পাঠানো যাবে।');
         }
 
+        if ($blocked = app(HoSendCutoffService::class)->redirectIfBlocked()) {
+            return $blocked;
+        }
+
         $memberAdmission->update([
             'status' => 'pending_head_office',
             'submitted_by' => $user->id,
@@ -1763,6 +1768,10 @@ class MemberAdmissionController extends Controller
 
         if ($roleName !== 'branch_user') {
             return back()->with('error', 'শুধুমাত্র শাখা ব্যবহারকারী (Branch User) হেড অফিসে পাঠাতে পারবেন।');
+        }
+
+        if ($blocked = app(HoSendCutoffService::class)->redirectIfBlocked()) {
+            return $blocked;
         }
 
         $validated = $request->validate([

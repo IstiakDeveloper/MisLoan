@@ -4,6 +4,7 @@ use App\Http\Controllers\ApprovalController;
 use App\Http\Controllers\ClusterHandoverController;
 use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\HeadOffice\CsoDutyRosterController;
+use App\Http\Controllers\HeadOffice\HoSendCutoffController;
 use App\Http\Controllers\HeadOfficeAdmissionController;
 use App\Http\Controllers\HeadOfficeLoanController;
 use App\Http\Controllers\HeadOfficeSavingsController;
@@ -241,6 +242,8 @@ Route::middleware(['auth', 'verified'])->group(function () {
         Route::post('store-issue', [HeadOfficeVerificationController::class, 'storeIssue'])->name('store-issue');
         Route::post('resolve-issue', [HeadOfficeVerificationController::class, 'resolveIssue'])->name('resolve-issue');
         Route::post('reply-issue', [HeadOfficeVerificationController::class, 'replyIssue'])->name('reply-issue');
+        Route::post('zm-approve', [HeadOfficeVerificationController::class, 'approveZmIssue'])->name('zm-approve');
+        Route::post('bulk-zm-approve', [HeadOfficeVerificationController::class, 'bulkApproveZm'])->name('bulk-zm-approve');
         Route::post('reject-application', [HeadOfficeVerificationController::class, 'rejectApplication'])->name('reject-application');
     });
 
@@ -365,6 +368,8 @@ Route::middleware(['auth', 'verified'])->group(function () {
         Route::post('verifications/store-issue', [HeadOfficeVerificationController::class, 'storeIssue'])->name('verifications.store-issue');
         Route::post('verifications/resolve-issue', [HeadOfficeVerificationController::class, 'resolveIssue'])->name('verifications.resolve-issue');
         Route::post('verifications/reply-issue', [HeadOfficeVerificationController::class, 'replyIssue'])->name('verifications.reply-issue');
+        Route::post('verifications/zm-approve', [HeadOfficeVerificationController::class, 'approveZmIssue'])->name('verifications.zm-approve');
+        Route::post('verifications/bulk-zm-approve', [HeadOfficeVerificationController::class, 'bulkApproveZm'])->name('verifications.bulk-zm-approve');
         Route::post('verifications/reject-application', [HeadOfficeVerificationController::class, 'rejectApplication'])->name('verifications.reject-application');
 
         // Head Office Team Based Approvals overview + management
@@ -384,6 +389,10 @@ Route::middleware(['auth', 'verified'])->group(function () {
         Route::get('cso-duty-roster', [CsoDutyRosterController::class, 'index'])->name('cso-duty-roster');
         Route::post('cso-duty-roster', [CsoDutyRosterController::class, 'save'])->name('cso-duty-roster.save');
         Route::post('cso-duty-roster/reset', [CsoDutyRosterController::class, 'reset'])->name('cso-duty-roster.reset');
+
+        // Branch send-to-HO daily cutoff (default 5:00 PM, configurable)
+        Route::get('send-cutoff', [HoSendCutoffController::class, 'index'])->name('send-cutoff');
+        Route::put('send-cutoff', [HoSendCutoffController::class, 'update'])->name('send-cutoff.update');
     });
 
     // Team Based Approval Report - Head Office, SuperAdmin, ED

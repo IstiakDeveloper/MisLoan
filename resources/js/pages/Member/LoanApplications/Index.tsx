@@ -12,6 +12,8 @@ import ListPagination from '@/components/ListPagination';
 import AutoFitTableContainer from '@/components/AutoFitTableContainer';
 import { formatBranchLabel, keepListFilters, sortBranchesByCode } from '@/utils/branchLabel';
 import SendLoanToHoModal, { HoLoanItem } from '@/components/LoanApplications/SendLoanToHoModal';
+import HoSendCutoffNotice from '@/components/HoSendCutoffNotice';
+import { useHoSendCutoff } from '@/hooks/use-ho-send-cutoff';
 
 interface ZoneOption {
     id: number;
@@ -248,6 +250,7 @@ export default function Index({
     const pageAuth = usePage().props.auth as { user?: { role?: { name: string } } } | undefined;
     const roleName = pageAuth?.user?.role?.name?.toLowerCase() || '';
     const isBranchUser = roleName === 'branch_user';
+    const hoSendCutoff = useHoSendCutoff();
     const isBranchManager = roleName === 'branch_manager';
     const isFieldOfficer = roleName === 'field_officer';
     const canCreateLoanApplication = isFieldOfficer || roleName === 'branch_user';
@@ -689,6 +692,7 @@ export default function Index({
     const [isSendingLoanToHo, setIsSendingLoanToHo] = useState(false);
 
     const openSendSingleToHo = (app: LoanApplication) => {
+        if (hoSendCutoff.is_blocked) return;
         const member = app.member_display ?? app.member_admission;
         const memberName = member?.applicant_name_bn || member?.applicant_name_en || 'সদস্য';
         setLoanHoModalItems([
@@ -704,7 +708,7 @@ export default function Index({
     };
 
     const openSendBulkToHo = () => {
-        if (selectedHoIds.length === 0) return;
+        if (selectedHoIds.length === 0 || hoSendCutoff.is_blocked) return;
         const selectedApps = applicationRows
             .filter((a) => selectedHoIds.includes(a.id))
             .map((a) => {
@@ -846,21 +850,8 @@ export default function Index({
                         </div>
                     </div>
 
-                    {/* Prominent & Professional 2:00 PM Deadline Warning Notice for Branch Users */}
                     {isBranchUser && (
-                        <div className="bg-amber-50/90 border border-amber-200/90 px-3.5 py-2.5 rounded-xl text-xs text-amber-950 flex items-center justify-between gap-3 shadow-2xs">
-                            <div className="flex items-center gap-2.5 min-w-0">
-                                <div className="w-6 h-6 rounded-lg bg-amber-200/80 text-amber-900 flex items-center justify-center shrink-0">
-                                    <Clock size={14} className="stroke-[2.5]" />
-                                </div>
-                                <p className="font-medium text-amber-900 leading-snug">
-                                    <strong className="font-bold text-amber-950">জরুরি সময়সীমা:</strong> ঋণ আবেদনসমূহ <span className="underline decoration-amber-500 font-bold">অবশ্যই দুপুর ২:০০ টার মধ্যে</span> হেড অফিসে পাঠাতে হবে, যাতে একই কার্যদিবসে যথাসময়ে যাচাই ও চূড়ান্ত অনুমোদন সম্পন্ন করা যায়।
-                                </p>
-                            </div>
-                            <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-amber-200/70 text-amber-900 border border-amber-300 shrink-0 hidden sm:inline-block">
-                                সময়সীমা: ২:০০ PM
-                            </span>
-                        </div>
+                        <HoSendCutoffNotice kind="loan" />
                     )}
                 </div>
 
@@ -1065,7 +1056,8 @@ export default function Index({
                                 <button
                                     type="button"
                                     onClick={openSendBulkToHo}
-                                    disabled={selectedHoIds.length === 0 || isSendingLoanToHo}
+                                    disabled={selectedHoIds.length === 0 || isSendingLoanToHo || hoSendCutoff.is_blocked}
+                                    title={hoSendCutoff.is_blocked ? hoSendCutoff.blocked_message : undefined}
                                     className="inline-flex items-center gap-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-700 disabled:opacity-40 px-3 py-1 text-xs font-bold text-white shadow-2xs transition active:scale-95"
                                 >
                                     <Send className="w-3.5 h-3.5" />
@@ -1516,8 +1508,9 @@ export default function Index({
                                                             {app.status === 'ready_for_head_office' && isBranchUser && (
                                                                 <button
                                                                     onClick={() => openSendSingleToHo(app)}
-                                                                    className="inline-flex items-center gap-1 text-xs px-2.5 py-1 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-xl shadow-sm transition active:scale-95 shadow-2xs"
-                                                                    title="Head Office এ পাঠান"
+                                                                    disabled={hoSendCutoff.is_blocked}
+                                                                    className="inline-flex items-center gap-1 text-xs px-2.5 py-1 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-xl shadow-sm transition active:scale-95 shadow-2xs disabled:opacity-40 disabled:cursor-not-allowed"
+                                                                    title={hoSendCutoff.is_blocked ? hoSendCutoff.blocked_message : 'Head Office এ পাঠান'}
                                                                 >
                                                                     <Send className="w-3 h-3" />
                                                                     <span>HO পাঠান</span>
@@ -1835,6 +1828,10 @@ export default function Index({
                 onConfirm={handleConfirmSendLoanToHo}
                 isLoading={isSendingLoanToHo}
                 items={loanHoModalItems}
+                cutoffLabel={hoSendCutoff.label}
+                cutoffBadge={hoSendCutoff.badge}
+                isBlocked={hoSendCutoff.is_blocked}
+                blockedMessage={hoSendCutoff.blocked_message}
             />
         </AdminLayout>
     );

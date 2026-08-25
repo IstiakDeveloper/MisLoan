@@ -13,6 +13,7 @@ use App\Models\Role;
 use App\Services\ApprovalService;
 use App\Services\ClusterHandoverService;
 use App\Services\CsoAllocationService;
+use App\Services\HoSendCutoffService;
 use Carbon\Carbon;
 use Illuminate\Foundation\Inspiring;
 use Illuminate\Http\Request;
@@ -291,16 +292,34 @@ class HandleInertiaRequests extends Middleware
             if ($isHoApprover) {
                 $repliedAdmissionCount = MemberAdmission::whereNotIn('status', ['approved', 'rejected', 'cancelled'])
                     ->where(function ($q) {
-                        $q->whereHas('issues', fn ($iq) => $iq->whereNotNull('resolution_note')->where('resolution_note', '!=', ''))
+                        $q->whereHas('issues', fn ($iq) => $iq->whereNotNull('zm_approved_at'))
                             ->orWhere(fn ($sq) => $sq->whereNotNull('revision_comments')->where('revision_comments', '!=', '')->where('status', 'pending_head_office'));
                     })
                     ->count();
 
                 $repliedLoanCount = LoanApplication::whereNotIn('status', ['approved', 'rejected', 'cancelled', 'pending_disbursement', 'disbursed'])
-                    ->whereHas('issues', fn ($iq) => $iq->whereNotNull('response_message')->where('response_message', '!=', ''))
+                    ->whereHas('issues', fn ($iq) => $iq->whereNotNull('zm_approved_at'))
                     ->count();
 
                 $badgeCounts['pendingVerifications'] = $repliedAdmissionCount + $repliedLoanCount;
+            } elseif ($roleNameForBadges === 'zone_manager') {
+                $accessibleBranchIds = $authUser->getAccessibleBranches()->pluck('id')->all();
+
+                $pendingAdmissionQuery = MemberAdmission::whereNotIn('status', ['approved', 'rejected', 'cancelled'])
+                    ->whereIn('branch_id', $accessibleBranchIds ?: [0])
+                    ->where(function ($q) {
+                        $q->whereHas('issues', fn ($iq) => $iq->where('status', 'pending')->whereNull('zm_approved_at'))
+                            ->orWhere('status', 'needs_revision');
+                    });
+
+                $pendingLoanQuery = LoanApplication::whereNotIn('status', ['approved', 'rejected', 'cancelled', 'pending_disbursement', 'disbursed'])
+                    ->whereIn('branch_id', $accessibleBranchIds ?: [0])
+                    ->where(function ($q) {
+                        $q->whereHas('issues', fn ($iq) => $iq->where('status', 'pending')->whereNull('zm_approved_at'))
+                            ->orWhere('status', 'needs_revision');
+                    });
+
+                $badgeCounts['pendingVerifications'] = $pendingAdmissionQuery->count() + $pendingLoanQuery->count();
             } else {
                 $accessibleBranchIds = $authUser->getAccessibleBranches()->pluck('id')->all();
 
@@ -377,6 +396,9 @@ class HandleInertiaRequests extends Middleware
             'unreadNotificationsCount' => $unreadNotificationsCount,
             'notifications' => $notifications,
             'siteMaintenance' => Cache::get('site_maintenance', false),
+            'hoSendCutoff' => $request->user()
+                ? app(HoSendCutoffService::class)->toSharedArray()
+                : null,
         ]);
     }
 }

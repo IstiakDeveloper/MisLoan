@@ -2,34 +2,35 @@
 
 namespace App\Http\Controllers;
 
-use App\Models\MemberAdmission;
-use App\Models\MemberAdmissionIssue;
-use App\Models\Zone;
 use App\Models\Area;
 use App\Models\Branch;
-use App\Models\User;
+use App\Models\MemberAdmission;
+use App\Models\MemberAdmissionIssue;
 use App\Models\Role;
+use App\Models\User;
+use App\Models\Zone;
 use App\Services\ApprovalService;
 use App\Services\BlockListService;
+use App\Services\MemberCodeService;
 use App\Services\NotificationService;
 use App\Support\RoleListWorkQueue;
-use Illuminate\Http\Request;
-use Inertia\Inertia;
-use Illuminate\Support\Facades\DB;
 use Carbon\Carbon;
+use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
+use Inertia\Inertia;
+use PhpOffice\PhpSpreadsheet\Cell\Coordinate;
 use PhpOffice\PhpSpreadsheet\Spreadsheet;
-use PhpOffice\PhpSpreadsheet\Writer\Xlsx;
 use PhpOffice\PhpSpreadsheet\Style\Alignment;
 use PhpOffice\PhpSpreadsheet\Style\Border;
 use PhpOffice\PhpSpreadsheet\Style\Fill;
-use PhpOffice\PhpSpreadsheet\Cell\Coordinate;
+use PhpOffice\PhpSpreadsheet\Writer\Xlsx;
 
 class HeadOfficeAdmissionController extends Controller
 {
     use Concerns\AppliesRoleDefaultListFilter;
-    use Concerns\ScopesToAccessibleBranches;
     use Concerns\RequiresSuperAdminDeletePin;
     use Concerns\ResolvesListPerPage;
+    use Concerns\ScopesToAccessibleBranches;
 
     /**
      * Display admissions (all branches for HO; assigned zone/area for approvers/managers)
@@ -57,14 +58,14 @@ class HeadOfficeAdmissionController extends Controller
 
         // Zone filter
         if ($request->has('zone_id') && $request->zone_id) {
-            $query->whereHas('branch.area', function($q) use ($request) {
+            $query->whereHas('branch.area', function ($q) use ($request) {
                 $q->where('zone_id', $request->zone_id);
             });
         }
 
         // Area filter
         if ($request->has('area_id') && $request->area_id) {
-            $query->whereHas('branch', function($q) use ($request) {
+            $query->whereHas('branch', function ($q) use ($request) {
                 $q->where('area_id', $request->area_id);
             });
         }
@@ -80,7 +81,7 @@ class HeadOfficeAdmissionController extends Controller
 
         // Search filter
         if ($request->has('search') && $request->search) {
-            \App\Services\MemberCodeService::applyAdmissionSearch($query, $request->search);
+            MemberCodeService::applyAdmissionSearch($query, $request->search);
         }
 
         // Had issues filter (for admissions that went through revision)
@@ -88,7 +89,7 @@ class HeadOfficeAdmissionController extends Controller
             if ($request->had_issues === 'yes') {
                 $query->where('revision_count', '>', 0);
             } elseif ($request->had_issues === 'no') {
-                $query->where(function($q) {
+                $query->where(function ($q) {
                     $q->whereNull('revision_count')->orWhere('revision_count', 0);
                 });
             }
@@ -111,13 +112,13 @@ class HeadOfficeAdmissionController extends Controller
 
         // Apply zone/area/branch filters to stats
         if ($request->has('zone_id') && $request->zone_id) {
-            $statsQuery->whereHas('branch.area', function($q) use ($request) {
+            $statsQuery->whereHas('branch.area', function ($q) use ($request) {
                 $q->where('zone_id', $request->zone_id);
             });
         }
 
         if ($request->has('area_id') && $request->area_id) {
-            $statsQuery->whereHas('branch', function($q) use ($request) {
+            $statsQuery->whereHas('branch', function ($q) use ($request) {
                 $q->where('area_id', $request->area_id);
             });
         }
@@ -130,7 +131,7 @@ class HeadOfficeAdmissionController extends Controller
             if ($request->had_issues === 'yes') {
                 $statsQuery->where('revision_count', '>', 0);
             } elseif ($request->had_issues === 'no') {
-                $statsQuery->where(function($q) {
+                $statsQuery->where(function ($q) {
                     $q->whereNull('revision_count')->orWhere('revision_count', 0);
                 });
             }
@@ -138,12 +139,12 @@ class HeadOfficeAdmissionController extends Controller
 
         if ($request->has('search') && $request->search) {
             $search = $request->search;
-            $statsQuery->where(function($q) use ($search) {
+            $statsQuery->where(function ($q) use ($search) {
                 $q->where('application_no', 'like', "%{$search}%")
-                  ->orWhere('applicant_name_en', 'like', "%{$search}%")
-                  ->orWhere('applicant_name_bn', 'like', "%{$search}%")
-                  ->orWhere('mobile_number', 'like', "%{$search}%")
-                  ->orWhere('nid_number', 'like', "%{$search}%");
+                    ->orWhere('applicant_name_en', 'like', "%{$search}%")
+                    ->orWhere('applicant_name_bn', 'like', "%{$search}%")
+                    ->orWhere('mobile_number', 'like', "%{$search}%")
+                    ->orWhere('nid_number', 'like', "%{$search}%");
             });
         }
 
@@ -174,6 +175,7 @@ class HeadOfficeAdmissionController extends Controller
         $admissions = $admissions->through(function (MemberAdmission $admission) {
             $arr = $admission->toArray();
             $arr['tracking_state'] = $admission->getTrackingState();
+
             return $arr;
         });
 
@@ -220,13 +222,13 @@ class HeadOfficeAdmissionController extends Controller
         $this->applySubmittedAtDateRange($query, $workQueue['date_from'], $workQueue['date_to']);
 
         if ($request->zone_id) {
-            $query->whereHas('branch.area', function($q) use ($request) {
+            $query->whereHas('branch.area', function ($q) use ($request) {
                 $q->where('zone_id', $request->zone_id);
             });
         }
 
         if ($request->area_id) {
-            $query->whereHas('branch', function($q) use ($request) {
+            $query->whereHas('branch', function ($q) use ($request) {
                 $q->where('area_id', $request->area_id);
             });
         }
@@ -239,12 +241,12 @@ class HeadOfficeAdmissionController extends Controller
 
         if ($request->search) {
             $search = $request->search;
-            $query->where(function($q) use ($search) {
+            $query->where(function ($q) use ($search) {
                 $q->where('application_no', 'like', "%{$search}%")
-                  ->orWhere('applicant_name_en', 'like', "%{$search}%")
-                  ->orWhere('applicant_name_bn', 'like', "%{$search}%")
-                  ->orWhere('mobile_number', 'like', "%{$search}%")
-                  ->orWhere('nid_number', 'like', "%{$search}%");
+                    ->orWhere('applicant_name_en', 'like', "%{$search}%")
+                    ->orWhere('applicant_name_bn', 'like', "%{$search}%")
+                    ->orWhere('mobile_number', 'like', "%{$search}%")
+                    ->orWhere('nid_number', 'like', "%{$search}%");
             });
         }
 
@@ -252,7 +254,7 @@ class HeadOfficeAdmissionController extends Controller
             if ($request->had_issues === 'yes') {
                 $query->where('revision_count', '>', 0);
             } elseif ($request->had_issues === 'no') {
-                $query->where(function($q) {
+                $query->where(function ($q) {
                     $q->whereNull('revision_count')->orWhere('revision_count', 0);
                 });
             }
@@ -260,7 +262,7 @@ class HeadOfficeAdmissionController extends Controller
 
         // Get all matching records sorted by branch code (no pagination for print)
         $admissions = $query->orderBy(
-            \App\Models\Branch::select('code')->whereColumn('branches.id', 'member_admissions.branch_id'),
+            Branch::select('code')->whereColumn('branches.id', 'member_admissions.branch_id'),
             'asc'
         )->orderByRaw('COALESCE(submitted_at, created_at) desc')->get();
 
@@ -344,7 +346,7 @@ class HeadOfficeAdmissionController extends Controller
             'needs_revision' => 'সংশোধন',
         ];
 
-        $spreadsheet = new Spreadsheet();
+        $spreadsheet = new Spreadsheet;
         $sheet = $spreadsheet->getActiveSheet();
         $sheet->setTitle('Admission Members');
 
@@ -493,11 +495,11 @@ class HeadOfficeAdmissionController extends Controller
             'samity',
             'memberCategory',
             'submittedBy',
-            'issues' => function($q) {
+            'issues' => function ($q) {
                 $q->where('status', 'pending')->with('reporter');
-            }
+            },
         ])
-        ->where('status', 'pending_head_office');
+            ->where('status', 'pending_head_office');
 
         $this->applyAccessibleBranchScope($query);
 
@@ -507,7 +509,7 @@ class HeadOfficeAdmissionController extends Controller
         $month = $request->input('month');
 
         // Default to current month when no date range / date / month is passed
-        if (!$dateFrom && !$dateTo && !$date && !$month) {
+        if (! $dateFrom && ! $dateTo && ! $date && ! $month) {
             $month = now()->format('Y-m');
         }
 
@@ -524,20 +526,20 @@ class HeadOfficeAdmissionController extends Controller
             $parts = explode('-', $month);
             if (count($parts) === 2) {
                 $query->whereYear('submitted_at', $parts[0])
-                      ->whereMonth('submitted_at', $parts[1]);
+                    ->whereMonth('submitted_at', $parts[1]);
             }
         }
 
         // Zone filter
         if ($request->filled('zone_id')) {
-            $query->whereHas('branch.area', function($q) use ($request) {
+            $query->whereHas('branch.area', function ($q) use ($request) {
                 $q->where('zone_id', $request->zone_id);
             });
         }
 
         // Area filter
         if ($request->filled('area_id')) {
-            $query->whereHas('branch', function($q) use ($request) {
+            $query->whereHas('branch', function ($q) use ($request) {
                 $q->where('area_id', $request->area_id);
             });
         }
@@ -552,11 +554,11 @@ class HeadOfficeAdmissionController extends Controller
         if ($search) {
             $query->where(function ($q) use ($search) {
                 $q->where('applicant_name_en', 'like', "%{$search}%")
-                  ->orWhere('applicant_name_bn', 'like', "%{$search}%")
-                  ->orWhere('nid_number', 'like', "%{$search}%")
-                  ->orWhere('smart_card_number', 'like', "%{$search}%")
-                  ->orWhere('mobile_number', 'like', "%{$search}%")
-                  ->orWhere('application_no', 'like', "%{$search}%");
+                    ->orWhere('applicant_name_bn', 'like', "%{$search}%")
+                    ->orWhere('nid_number', 'like', "%{$search}%")
+                    ->orWhere('smart_card_number', 'like', "%{$search}%")
+                    ->orWhere('mobile_number', 'like', "%{$search}%")
+                    ->orWhere('application_no', 'like', "%{$search}%");
             });
         }
 
@@ -601,9 +603,9 @@ class HeadOfficeAdmissionController extends Controller
             'approvals.user',
             'familyMembers',
             'otherAssets',
-            'issues' => function($q) {
+            'issues' => function ($q) {
                 $q->with(['reporter', 'resolver']);
-            }
+            },
         ]);
 
         return Inertia::render('MemberAdmission/Show', [
@@ -712,7 +714,7 @@ class HeadOfficeAdmissionController extends Controller
                 'rejection_reason' => null,
             ];
 
-            if (!$admission->submitted_at) {
+            if (! $admission->submitted_at) {
                 $updateData['submitted_by'] = $admission->submitted_by ?: $authUser->id;
                 $updateData['submitted_at'] = now();
             }
@@ -768,7 +770,7 @@ class HeadOfficeAdmissionController extends Controller
                     'selected_approvers' => null,
                 ];
 
-                if (!$admission->submitted_at) {
+                if (! $admission->submitted_at) {
                     $updateData['submitted_by'] = $admission->submitted_by ?: auth()->id();
                     $updateData['submitted_at'] = now();
                 }
@@ -815,19 +817,24 @@ class HeadOfficeAdmissionController extends Controller
      */
     public function approveSingle(MemberAdmission $admission)
     {
-        // Only block if has unanswered pending issues
+        // Only block if has unanswered or ZM-unapproved pending issues
         if ($admission->issues()->where('status', 'pending')->where(function ($q) {
-            $q->whereNull('resolution_note')->orWhere('resolution_note', '');
+            $q->whereNull('resolution_note')
+                ->orWhere('resolution_note', '')
+                ->orWhereNull('zm_approved_at');
         })->exists()) {
-            return back()->with('error', 'জোন থেকে ব্যাখ্যা/জবাব না পাওয়া পর্যন্ত অনুমোদন করা যাবে না।');
+            return back()->with('error', 'জোনাল ম্যানেজার (ZM) কর্তৃক অনুমোদন না হওয়া পর্যন্ত হেড অফিস থেকে অনুমোদন করা যাবে না।');
         }
 
         // Close/resolve any pending issues now that Head Office is approving
-        $admission->issues()->where('status', 'pending')->update([
-            'status' => 'resolved',
-            'resolved_at' => now(),
-            'resolved_by' => auth()->id(),
-        ]);
+        $admission->issues()->where('status', 'pending')->each(function ($issue) {
+            $update = ['status' => 'resolved'];
+            if (! $issue->resolved_at) {
+                $update['resolved_at'] = now();
+                $update['resolved_by'] = auth()->id();
+            }
+            $issue->update($update);
+        });
 
         $admission->update([
             'status' => 'approved',
@@ -981,6 +988,7 @@ class HeadOfficeAdmissionController extends Controller
                 // If has unreplied pending issues, skip
                 if ($admission->issues()->where('status', 'pending')->whereNull('resolution_note')->exists()) {
                     $skippedCount++;
+
                     continue;
                 }
 
@@ -1027,7 +1035,8 @@ class HeadOfficeAdmissionController extends Controller
             return back()->with('success', $msg);
         } catch (\Exception $e) {
             DB::rollBack();
-            return back()->with('error', 'অনুমোদন ব্যর্থ হয়েছে: ' . $e->getMessage());
+
+            return back()->with('error', 'অনুমোদন ব্যর্থ হয়েছে: '.$e->getMessage());
         }
     }
 
@@ -1059,23 +1068,23 @@ class HeadOfficeAdmissionController extends Controller
                 $parts = explode('-', $month);
                 if (count($parts) === 2) {
                     $query->whereYear('submitted_at', $parts[0])
-                          ->whereMonth('submitted_at', $parts[1]);
+                        ->whereMonth('submitted_at', $parts[1]);
                 }
             } else {
                 $defaultMonth = now()->format('Y-m');
                 $parts = explode('-', $defaultMonth);
                 $query->whereYear('submitted_at', $parts[0])
-                      ->whereMonth('submitted_at', $parts[1]);
+                    ->whereMonth('submitted_at', $parts[1]);
             }
 
             if ($request->filled('zone_id')) {
-                $query->whereHas('branch.area', function($q) use ($request) {
+                $query->whereHas('branch.area', function ($q) use ($request) {
                     $q->where('zone_id', $request->zone_id);
                 });
             }
 
             if ($request->filled('area_id')) {
-                $query->whereHas('branch', function($q) use ($request) {
+                $query->whereHas('branch', function ($q) use ($request) {
                     $q->where('area_id', $request->area_id);
                 });
             }
@@ -1166,7 +1175,8 @@ class HeadOfficeAdmissionController extends Controller
 
         } catch (\Exception $e) {
             DB::rollBack();
-            return back()->with('error', 'Failed to process admissions: ' . $e->getMessage());
+
+            return back()->with('error', 'Failed to process admissions: '.$e->getMessage());
         }
     }
 
@@ -1176,6 +1186,7 @@ class HeadOfficeAdmissionController extends Controller
     public function deleteIssue(MemberAdmissionIssue $issue)
     {
         $issue->delete();
+
         return back()->with('success', 'Issue deleted successfully!');
     }
 
@@ -1216,7 +1227,7 @@ class HeadOfficeAdmissionController extends Controller
             $this->deleteAdmissionWithRelations($admission);
         }
 
-        return back()->with('success', $admissions->count() . ' টি সদস্য ভর্তি মুছে ফেলা হয়েছে।');
+        return back()->with('success', $admissions->count().' টি সদস্য ভর্তি মুছে ফেলা হয়েছে।');
     }
 
     private function deleteAdmissionWithRelations(MemberAdmission $admission): void

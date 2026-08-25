@@ -34,6 +34,8 @@ import ListPagination from '@/components/ListPagination';
 import AutoFitTableContainer from '@/components/AutoFitTableContainer';
 import { formatBranchLabel, keepListFilters, sortBranchesByCode } from '@/utils/branchLabel';
 import SendAdmissionToHoModal, { HoAdmissionItem } from '@/components/MemberAdmission/SendAdmissionToHoModal';
+import HoSendCutoffNotice from '@/components/HoSendCutoffNotice';
+import { useHoSendCutoff } from '@/hooks/use-ho-send-cutoff';
 
 interface ZoneOption {
     id: number;
@@ -102,6 +104,7 @@ export default function Index({ admissions, zones = [], areas = [], branches = [
     const roleName = pageAuth?.user?.role?.name?.toLowerCase() || '';
     // Only Branch User can send ready admissions to Head Office (not Branch Manager)
     const isBranchUser = roleName === 'branch_user';
+    const hoSendCutoff = useHoSendCutoff();
     const isFieldOfficer = roleName === 'field_officer';
     const canCreateAdmission = isFieldOfficer || roleName === 'branch_manager';
     const currentUserId = pageAuth?.user?.id;
@@ -185,6 +188,7 @@ export default function Index({ admissions, zones = [], areas = [], branches = [
     };
 
     const openSendSingleToHo = (admission: MemberAdmission) => {
+        if (hoSendCutoff.is_blocked) return;
         setHoModalItems([
             {
                 id: admission.id,
@@ -197,7 +201,7 @@ export default function Index({ admissions, zones = [], areas = [], branches = [
     };
 
     const openSendBulkToHo = () => {
-        if (selectedHoIds.length === 0) return;
+        if (selectedHoIds.length === 0 || hoSendCutoff.is_blocked) return;
         const selectedAdmissions = admissions.data
             .filter((a) => selectedHoIds.includes(a.id))
             .map((a) => ({
@@ -605,21 +609,8 @@ export default function Index({ admissions, zones = [], areas = [], branches = [
                         </div>
                     </div>
 
-                    {/* Prominent & Professional 2:00 PM Deadline Warning Notice for Branch Users */}
                     {isBranchUser && (
-                        <div className="bg-amber-50/90 border border-amber-200/90 px-3.5 py-2.5 rounded-xl text-xs text-amber-950 flex items-center justify-between gap-3 shadow-2xs">
-                            <div className="flex items-center gap-2.5 min-w-0">
-                                <div className="w-6 h-6 rounded-lg bg-amber-200/80 text-amber-900 flex items-center justify-center shrink-0">
-                                    <Clock size={14} className="stroke-[2.5]" />
-                                </div>
-                                <p className="font-medium text-amber-900 leading-snug">
-                                    <strong className="font-bold text-amber-950">জরুরি সময়সীমা:</strong> সদস্য ভর্তির আবেদনসমূহ <span className="underline decoration-amber-500 font-bold">অবশ্যই দুপুর ২:০০ টার মধ্যে</span> হেড অফিসে পাঠাতে হবে, যাতে আগামী কার্যদিবসে যথাসময়ে ঋণ অনুমোদন ও কার্যক্রম সম্পন্ন করা যায়।
-                                </p>
-                            </div>
-                            <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-amber-200/70 text-amber-900 border border-amber-300 shrink-0 hidden sm:inline-block">
-                                সময়সীমা: ২:০০ PM
-                            </span>
-                        </div>
+                        <HoSendCutoffNotice kind="admission" />
                     )}
                 </div>
 
@@ -819,7 +810,8 @@ export default function Index({ admissions, zones = [], areas = [], branches = [
                                 <button
                                     type="button"
                                     onClick={openSendBulkToHo}
-                                    disabled={selectedHoIds.length === 0 || isSendingToHo}
+                                    disabled={selectedHoIds.length === 0 || isSendingToHo || hoSendCutoff.is_blocked}
+                                    title={hoSendCutoff.is_blocked ? hoSendCutoff.blocked_message : undefined}
                                     className="inline-flex items-center gap-1.5 rounded-lg bg-purple-600 hover:bg-purple-700 disabled:opacity-40 px-3 py-1 text-xs font-bold text-white shadow-2xs transition active:scale-95"
                                 >
                                     <Send className="w-3.5 h-3.5" />
@@ -975,8 +967,9 @@ export default function Index({ admissions, zones = [], areas = [], branches = [
                                         {admission.status === 'ready_for_head_office' && isBranchUser && (
                                             <button
                                                 onClick={() => openSendSingleToHo(admission)}
-                                                className="p-2 text-white bg-purple-600 hover:bg-purple-700 rounded-xl transition shadow-2xs"
-                                                title="Head Office এ পাঠান"
+                                                disabled={hoSendCutoff.is_blocked}
+                                                className="p-2 text-white bg-purple-600 hover:bg-purple-700 rounded-xl transition shadow-2xs disabled:opacity-40 disabled:cursor-not-allowed"
+                                                title={hoSendCutoff.is_blocked ? hoSendCutoff.blocked_message : 'Head Office এ পাঠান'}
                                             >
                                                 <Send className="w-4 h-4" />
                                             </button>
@@ -1152,8 +1145,9 @@ export default function Index({ admissions, zones = [], areas = [], branches = [
                                                         {admission.status === 'ready_for_head_office' && isBranchUser && (
                                                             <button
                                                                 onClick={() => openSendSingleToHo(admission)}
-                                                                className="p-2 text-purple-600 hover:bg-purple-50 rounded-lg transition-colors"
-                                                                title="Head Office এ পাঠান"
+                                                                disabled={hoSendCutoff.is_blocked}
+                                                                className="p-2 text-purple-600 hover:bg-purple-50 rounded-lg transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+                                                                title={hoSendCutoff.is_blocked ? hoSendCutoff.blocked_message : 'Head Office এ পাঠান'}
                                                             >
                                                                 <Send className="w-4 h-4" />
                                                             </button>
@@ -1287,6 +1281,10 @@ export default function Index({ admissions, zones = [], areas = [], branches = [
                     onConfirm={handleConfirmSendToHo}
                     isLoading={isSendingToHo}
                     items={hoModalItems}
+                    cutoffLabel={hoSendCutoff.label}
+                    cutoffBadge={hoSendCutoff.badge}
+                    isBlocked={hoSendCutoff.is_blocked}
+                    blockedMessage={hoSendCutoff.blocked_message}
                 />
             </div>
         </AdminLayout>

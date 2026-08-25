@@ -25,6 +25,10 @@ interface Props {
     onConfirm: () => void;
     isLoading?: boolean;
     items: HoLoanItem[];
+    cutoffLabel?: string;
+    cutoffBadge?: string;
+    isBlocked?: boolean;
+    blockedMessage?: string;
 }
 
 export default function SendLoanToHoModal({
@@ -33,6 +37,10 @@ export default function SendLoanToHoModal({
     onConfirm,
     isLoading = false,
     items,
+    cutoffLabel = 'বিকাল ৫:০০টা',
+    cutoffBadge = '৫:০০ PM',
+    isBlocked = false,
+    blockedMessage,
 }: Props) {
     if (!isOpen) return null;
 
@@ -75,21 +83,37 @@ export default function SendLoanToHoModal({
                 </div>
 
                 {/* 2. Core Business Rule Warning Box */}
-                <div className="p-4 bg-amber-50/90 border border-amber-200/90 rounded-2xl space-y-2 text-amber-950 shadow-2xs">
-                    <div className="flex items-center gap-2 text-amber-800 font-bold text-xs uppercase tracking-wide">
-                        <Clock className="w-4 h-4 shrink-0 text-amber-600 stroke-[2.5]" />
-                        <span>জরুরি সময়সীমা ও ব্যবসায়িক নিয়মাবলী</span>
+                <div className={`p-4 rounded-2xl space-y-2 shadow-2xs border ${
+                    isBlocked
+                        ? 'bg-rose-50/90 border-rose-200/90 text-rose-950'
+                        : 'bg-amber-50/90 border-amber-200/90 text-amber-950'
+                }`}>
+                    <div className={`flex items-center gap-2 font-bold text-xs uppercase tracking-wide ${
+                        isBlocked ? 'text-rose-800' : 'text-amber-800'
+                    }`}>
+                        <Clock className={`w-4 h-4 shrink-0 stroke-[2.5] ${isBlocked ? 'text-rose-600' : 'text-amber-600'}`} />
+                        <span>{isBlocked ? 'সময়সীমা শেষ' : 'জরুরি সময়সীমা ও ব্যবসায়িক নিয়মাবলী'}</span>
                     </div>
-                    <p className="text-xs leading-relaxed font-semibold text-amber-900">
-                        ঋণ আবেদনসমূহ <span className="underline decoration-amber-500 font-bold">অবশ্যই দুপুর ২:০০ টার মধ্যে</span> হেড অফিসে পাঠাতে হবে, যাতে একই কার্যদিবসে যথাসময়ে যাচাই, অনুমোদন ও তহবিল প্রস্তুতি সম্পন্ন করা যায়।
+                    <p className={`text-xs leading-relaxed font-semibold ${isBlocked ? 'text-rose-900' : 'text-amber-900'}`}>
+                        {isBlocked
+                            ? (blockedMessage || `সময়সীমা শেষ। ${cutoffLabel}র পর হেড অফিসে পাঠানো যাবে না।`)
+                            : (
+                                <>
+                                    ঋণ আবেদনসমূহ <span className="underline decoration-amber-500 font-bold">অবশ্যই {cutoffLabel}র মধ্যে</span> হেড অফিসে পাঠাতে হবে, যাতে একই কার্যদিবসে যথাসময়ে যাচাই, অনুমোদন ও তহবিল প্রস্তুতি সম্পন্ন করা যায়।
+                                </>
+                            )}
                     </p>
-                    <div className="pt-1.5 border-t border-amber-200/60 flex items-center justify-between text-[11px] text-amber-800 font-medium">
+                    <div className={`pt-1.5 border-t flex items-center justify-between text-[11px] font-medium ${
+                        isBlocked ? 'border-rose-200/60 text-rose-800' : 'border-amber-200/60 text-amber-800'
+                    }`}>
                         <div className="flex items-center gap-1.5">
-                            <Calendar className="w-3.5 h-3.5 text-amber-600 shrink-0" />
+                            <Calendar className={`w-3.5 h-3.5 shrink-0 ${isBlocked ? 'text-rose-600' : 'text-amber-600'}`} />
                             <span>প্রেরণের তারিখ: <strong className="font-bold">{formattedToday}</strong></span>
                         </div>
-                        <span className="font-bold text-amber-900 bg-amber-200/70 px-2 py-0.5 rounded">
-                            সময়সীমা: ২:০০ PM
+                        <span className={`font-bold px-2 py-0.5 rounded ${
+                            isBlocked ? 'text-rose-900 bg-rose-200/70' : 'text-amber-900 bg-amber-200/70'
+                        }`}>
+                            সময়সীমা: {cutoffBadge}
                         </span>
                     </div>
                 </div>
@@ -163,11 +187,11 @@ export default function SendLoanToHoModal({
                     <button
                         type="button"
                         onClick={onConfirm}
-                        disabled={isLoading}
+                        disabled={isLoading || isBlocked}
                         className="inline-flex items-center justify-center gap-2 px-5 py-2.5 text-xs font-bold text-white bg-purple-600 rounded-xl hover:bg-purple-700 shadow-md shadow-purple-500/20 transition active:scale-95 disabled:opacity-50"
                     >
                         <Send className="w-3.5 h-3.5" />
-                        <span>{isLoading ? 'পাঠানো হচ্ছে...' : 'হ্যাঁ, হেড অফিসে পাঠান'}</span>
+                        <span>{isBlocked ? 'এখন পাঠানো যাবে না' : (isLoading ? 'পাঠানো হচ্ছে...' : 'হ্যাঁ, হেড অফিসে পাঠান')}</span>
                     </button>
                 </div>
             </div>

@@ -58,7 +58,7 @@ class MemberCodeService
      */
     public static function formatFullCode(mixed $branchCode, mixed $serial): string
     {
-        return self::formatBranchCode($branchCode) . self::formatMemberSerial($serial);
+        return self::formatBranchCode($branchCode).self::formatMemberSerial($serial);
     }
 
     /**
@@ -66,17 +66,17 @@ class MemberCodeService
      */
     public static function resolveBranchCode(?int $branchId = null, mixed $branchObj = null): string
     {
-        if ($branchObj && isset($branchObj->code) && !empty($branchObj->code)) {
+        if ($branchObj && isset($branchObj->code) && ! empty($branchObj->code)) {
             return self::formatBranchCode($branchObj->code);
         }
 
-        if (!$branchId && auth()->check() && auth()->user()->branch_id) {
+        if (! $branchId && auth()->check() && auth()->user()->branch_id) {
             $branchId = (int) auth()->user()->branch_id;
         }
 
         if ($branchId) {
             $branch = Branch::find($branchId);
-            if ($branch && !empty($branch->code)) {
+            if ($branch && ! empty($branch->code)) {
                 return self::formatBranchCode($branch->code);
             }
         }
@@ -104,24 +104,27 @@ class MemberCodeService
             if (str_starts_with($clean, $resolvedBranchCode)) {
                 return $clean;
             }
+
             // If user explicitly entered a 10 digit code with a 4-digit branch prefix and 6-digit serial
             return $clean;
         }
 
         // If length is 6 or less (just the serial number e.g. 65 -> 000065)
         if (strlen($clean) <= 6) {
-            return $resolvedBranchCode . str_pad($clean, 6, '0', STR_PAD_LEFT);
+            return $resolvedBranchCode.str_pad($clean, 6, '0', STR_PAD_LEFT);
         }
 
         // If length is between 7 and 9 digits
         if (strlen($clean) > 4 && str_starts_with($clean, $resolvedBranchCode)) {
             $serial = substr($clean, 4);
-            return $resolvedBranchCode . str_pad($serial, 6, '0', STR_PAD_LEFT);
+
+            return $resolvedBranchCode.str_pad($serial, 6, '0', STR_PAD_LEFT);
         }
 
         // Fallback: treat last 6 as serial
         $serial = substr($clean, -6);
-        return $resolvedBranchCode . str_pad($serial, 6, '0', STR_PAD_LEFT);
+
+        return $resolvedBranchCode.str_pad($serial, 6, '0', STR_PAD_LEFT);
     }
 
     /**
@@ -139,10 +142,11 @@ class MemberCodeService
             ->orderByRaw('CAST(SUBSTRING(application_no, 5, 6) AS UNSIGNED) DESC')
             ->first();
 
-        if ($lastAdmission && !empty($lastAdmission->application_no)) {
+        if ($lastAdmission && ! empty($lastAdmission->application_no)) {
             $currentSerialStr = substr($lastAdmission->application_no, 4, 6);
             $nextSerialInt = ((int) $currentSerialStr) + 1;
-            return $resolvedBranchCode . str_pad((string) $nextSerialInt, 6, '0', STR_PAD_LEFT);
+
+            return $resolvedBranchCode.str_pad((string) $nextSerialInt, 6, '0', STR_PAD_LEFT);
         }
 
         // Check if there are any existing admissions for this branch with older format
@@ -156,12 +160,13 @@ class MemberCodeService
                 $num = (int) $legacyLast->application_no;
                 if ($num < 999999) {
                     $nextSerialInt = $num + 1;
-                    return $resolvedBranchCode . str_pad((string) $nextSerialInt, 6, '0', STR_PAD_LEFT);
+
+                    return $resolvedBranchCode.str_pad((string) $nextSerialInt, 6, '0', STR_PAD_LEFT);
                 }
             }
         }
 
-        return $resolvedBranchCode . '000001';
+        return $resolvedBranchCode.'000001';
     }
 
     /**
@@ -182,10 +187,10 @@ class MemberCodeService
 
         $query->where(function ($q) use ($clean, $padded6) {
             $q->where('application_no', 'like', "%{$clean}%")
-              ->orWhere('applicant_name_en', 'like', "%{$clean}%")
-              ->orWhere('applicant_name_bn', 'like', "%{$clean}%")
-              ->orWhere('mobile_number', 'like', "%{$clean}%")
-              ->orWhere('nid_number', 'like', "%{$clean}%");
+                ->orWhere('applicant_name_en', 'like', "%{$clean}%")
+                ->orWhere('applicant_name_bn', 'like', "%{$clean}%")
+                ->orWhere('mobile_number', 'like', "%{$clean}%")
+                ->orWhere('nid_number', 'like', "%{$clean}%");
 
             if ($padded6) {
                 $q->orWhere('application_no', 'like', "%{$padded6}");
@@ -211,18 +216,18 @@ class MemberCodeService
 
         $query->where(function ($q) use ($clean, $padded6) {
             $q->where('application_no', 'like', "%{$clean}%")
-              ->orWhereHas('memberAdmission', function ($mq) use ($clean, $padded6) {
-                  $mq->where('applicant_name_en', 'like', "%{$clean}%")
-                     ->orWhere('applicant_name_bn', 'like', "%{$clean}%")
-                     ->orWhere('mobile_number', 'like', "%{$clean}%")
-                     ->orWhere('nid_number', 'like', "%{$clean}%")
-                     ->orWhere('application_no', 'like', "%{$clean}%");
+                ->orWhereHas('memberAdmission', function ($mq) use ($clean, $padded6) {
+                    $mq->where('applicant_name_en', 'like', "%{$clean}%")
+                        ->orWhere('applicant_name_bn', 'like', "%{$clean}%")
+                        ->orWhere('mobile_number', 'like', "%{$clean}%")
+                        ->orWhere('nid_number', 'like', "%{$clean}%")
+                        ->orWhere('application_no', 'like', "%{$clean}%");
 
-                  if ($padded6) {
-                      $mq->orWhere('application_no', 'like', "%{$padded6}");
-                      $mq->orWhere('application_no', 'like', "%{$padded6}%");
-                  }
-              });
+                    if ($padded6) {
+                        $mq->orWhere('application_no', 'like', "%{$padded6}");
+                        $mq->orWhere('application_no', 'like', "%{$padded6}%");
+                    }
+                });
         });
     }
 
@@ -241,23 +246,69 @@ class MemberCodeService
 
         $query->where(function ($q) use ($clean, $padded6) {
             $q->where('application_no', 'like', "%{$clean}%")
-              ->orWhereHas('memberAdmission', function ($mq) use ($clean, $padded6) {
-                  $mq->where('applicant_name_en', 'like', "%{$clean}%")
-                     ->orWhere('applicant_name_bn', 'like', "%{$clean}%")
-                     ->orWhere('nid_number', 'like', "%{$clean}%")
-                     ->orWhere('mobile_number', 'like', "%{$clean}%")
-                     ->orWhere('application_no', 'like', "%{$clean}%");
+                ->orWhereHas('memberAdmission', function ($mq) use ($clean, $padded6) {
+                    $mq->where('applicant_name_en', 'like', "%{$clean}%")
+                        ->orWhere('applicant_name_bn', 'like', "%{$clean}%")
+                        ->orWhere('nid_number', 'like', "%{$clean}%")
+                        ->orWhere('mobile_number', 'like', "%{$clean}%")
+                        ->orWhere('application_no', 'like', "%{$clean}%");
 
-                  if ($padded6) {
-                      $mq->orWhere('application_no', 'like', "%{$padded6}");
-                      $mq->orWhere('application_no', 'like', "%{$padded6}%");
-                  }
-              })
-              ->orWhereHas('savingsProduct', function ($pq) use ($clean) {
-                  $pq->where('product_name', 'like', "%{$clean}%")
-                     ->orWhere('product_name_bn', 'like', "%{$clean}%");
-              });
+                    if ($padded6) {
+                        $mq->orWhere('application_no', 'like', "%{$padded6}");
+                        $mq->orWhere('application_no', 'like', "%{$padded6}%");
+                    }
+                })
+                ->orWhereHas('savingsProduct', function ($pq) use ($clean) {
+                    $pq->where('product_name', 'like', "%{$clean}%")
+                        ->orWhere('product_name_bn', 'like', "%{$clean}%");
+                });
         });
+    }
+
+    /**
+     * English digits → Bengali digits (০-৯). Used when matching stored codes.
+     */
+    public static function toBengaliDigits(?string $input): string
+    {
+        if ($input === null || $input === '') {
+            return '';
+        }
+
+        $en = ['0', '1', '2', '3', '4', '5', '6', '7', '8', '9'];
+        $bn = ['০', '১', '২', '৩', '৪', '৫', '৬', '৭', '৮', '৯'];
+
+        return str_replace($en, $bn, (string) $input);
+    }
+
+    /**
+     * Equivalent spellings of a stored member code (English/Bengali, 10-digit, serial).
+     *
+     * @return list<string>
+     */
+    public static function codeMatchVariants(?string $code): array
+    {
+        $raw = trim((string) $code);
+        if ($raw === '') {
+            return [];
+        }
+
+        $english = self::toEnglishDigits($raw);
+        $digits = preg_replace('/\D/', '', $english) ?? '';
+        $variants = [$raw, $english, $digits];
+
+        if (strlen($digits) === 10) {
+            $variants[] = $digits;
+            $variants[] = self::toBengaliDigits($digits);
+            $serial = substr($digits, 4, 6);
+            $variants[] = $serial;
+            $variants[] = ltrim($serial, '0') ?: '0';
+        } elseif (strlen($digits) <= 6 && $digits !== '') {
+            $padded = str_pad($digits, 6, '0', STR_PAD_LEFT);
+            $variants[] = $padded;
+            $variants[] = ltrim($padded, '0') ?: '0';
+        }
+
+        return array_values(array_unique(array_filter($variants, fn ($v) => $v !== '')));
     }
 
     /**
@@ -271,7 +322,16 @@ class MemberCodeService
         ?string $memberName = null,
     ): void {
         $member = MemberAdmission::query()
-            ->select(['id', 'application_no', 'applicant_name_bn', 'applicant_name_en', 'nid_number', 'mobile_number'])
+            ->select([
+                'id',
+                'application_no',
+                'applicant_name_bn',
+                'applicant_name_en',
+                'nid_number',
+                'smart_card_number',
+                'mobile_number',
+                'alternative_mobile',
+            ])
             ->find($memberAdmissionId);
 
         if (! $member) {
@@ -303,23 +363,15 @@ class MemberCodeService
         $loans = LoanApplication::where('member_admission_id', $member->id)->get();
 
         foreach ($loans as $loan) {
-            if (self::overlayMemberCodeOnLoanApplication($loan, $newCode, $memberName)) {
+            if (self::overlayMemberCodeOnLoanApplication($loan, $newCode, $memberName, $oldCode)) {
                 $loan->save();
                 $updated++;
             }
         }
 
-        $loanIds = $loans->pluck('id')->filter()->all();
-        if ($loanIds !== []) {
-            LoanMember::whereIn('loan_application_id', $loanIds)->update([
-                'member_code' => $newCode,
-            ]);
-        }
-
-        SavingsApplication::where('member_admission_id', $member->id)->update([
-            'member_no' => $newCode,
-        ]);
-
+        $loanIds = $loans->pluck('id')->filter()->values()->all();
+        self::syncLoanMemberCodes($member, $newCode, $oldCode, $loanIds);
+        self::syncSavingsMemberCode($member, $newCode, $oldCode, $memberName);
         self::syncTeamBasedMemberCode($member, $newCode, $oldCode);
 
         return $updated;
@@ -337,7 +389,16 @@ class MemberCodeService
         $loansUpdated = 0;
 
         $query = MemberAdmission::query()
-            ->select(['id', 'application_no', 'applicant_name_bn', 'applicant_name_en', 'nid_number', 'mobile_number'])
+            ->select([
+                'id',
+                'application_no',
+                'applicant_name_bn',
+                'applicant_name_en',
+                'nid_number',
+                'smart_card_number',
+                'mobile_number',
+                'alternative_mobile',
+            ])
             ->whereNotNull('application_no')
             ->where('application_no', '!=', '')
             ->whereHas('loanApplications', function ($q) use ($loanIds) {
@@ -362,26 +423,134 @@ class MemberCodeService
         ];
     }
 
+    /**
+     * @param  list<int>  $loanIds
+     */
+    private static function syncLoanMemberCodes(
+        MemberAdmission $member,
+        string $newCode,
+        ?string $oldCode,
+        array $loanIds,
+    ): void {
+        $oldVariants = ($oldCode && $oldCode !== $newCode) ? self::fullCodeMatchVariants($oldCode) : [];
+        $serialVariants = ($oldCode && $oldCode !== $newCode) ? self::serialCodeMatchVariants($oldCode) : [];
+        $memberName = trim((string) ($member->applicant_name_bn ?: $member->applicant_name_en ?: ''));
+
+        $query = LoanMember::query()->where(function ($q) use ($loanIds, $oldVariants, $serialVariants, $member, $memberName) {
+            $matched = false;
+
+            if ($loanIds !== []) {
+                $q->orWhereIn('loan_application_id', $loanIds);
+                $matched = true;
+            }
+
+            if ($oldVariants !== []) {
+                $q->orWhere(function ($inner) use ($oldVariants, $member) {
+                    $inner->whereIn('member_code', $oldVariants)
+                        ->whereHas('loanApplication', function ($lq) use ($member) {
+                            $lq->where('member_admission_id', $member->id)
+                                ->orWhereNull('member_admission_id');
+                        });
+                });
+                $matched = true;
+            }
+
+            if ($serialVariants !== [] && $memberName !== '') {
+                $q->orWhere(function ($inner) use ($serialVariants, $memberName) {
+                    $inner->whereIn('member_code', $serialVariants)
+                        ->where('member_name', $memberName);
+                });
+                $matched = true;
+            }
+
+            if (! $matched) {
+                $q->whereRaw('0 = 1');
+            }
+        });
+
+        $query->update(['member_code' => $newCode]);
+    }
+
+    private static function syncSavingsMemberCode(
+        MemberAdmission $member,
+        string $newCode,
+        ?string $oldCode,
+        ?string $memberName,
+    ): void {
+        $oldCodes = ($oldCode && $oldCode !== $newCode) ? self::fullCodeMatchVariants($oldCode) : [];
+
+        $rows = SavingsApplication::where('member_admission_id', $member->id)->get();
+
+        foreach ($rows as $saving) {
+            $dirty = false;
+
+            if ((string) $saving->member_no !== $newCode) {
+                $saving->member_no = $newCode;
+                $dirty = true;
+            }
+
+            $formData = is_array($saving->form_data) ? $saving->form_data : null;
+            if (is_array($formData) && $formData !== []) {
+                $saving->form_data = self::rewriteJsonMemberCodes(
+                    $formData,
+                    $oldCodes,
+                    $newCode,
+                    $memberName,
+                    $dirty,
+                );
+                $saving->form_data = self::setJsonMemberCodeFields(
+                    $saving->form_data,
+                    ['member_no' => $newCode],
+                    $dirty,
+                );
+            }
+
+            if ($dirty) {
+                $saving->save();
+            }
+        }
+    }
+
     private static function syncTeamBasedMemberCode(MemberAdmission $member, string $newCode, ?string $oldCode): void
     {
-        if ($oldCode && $oldCode !== $newCode) {
-            TeamBasedApprovalItem::where('member_code', $oldCode)->update([
+        $fullVariants = ($oldCode && $oldCode !== $newCode)
+            ? self::fullCodeMatchVariants($oldCode)
+            : [];
+        $serialVariants = ($oldCode && $oldCode !== $newCode)
+            ? self::serialCodeMatchVariants($oldCode)
+            : [];
+        $memberName = trim((string) ($member->applicant_name_bn ?: $member->applicant_name_en ?: ''));
+
+        if ($fullVariants !== []) {
+            TeamBasedApprovalItem::whereIn('member_code', $fullVariants)->update([
                 'member_code' => $newCode,
             ]);
         }
+
+        if ($serialVariants !== [] && $memberName !== '') {
+            TeamBasedApprovalItem::whereIn('member_code', $serialVariants)
+                ->where(function ($q) use ($memberName) {
+                    $q->where('member_name', $memberName)
+                        ->orWhere('name_bn', $memberName);
+                })
+                ->update(['member_code' => $newCode]);
+        }
+
+        $nids = self::identityMatchVariants($member->nid_number, $member->smart_card_number);
+        $phones = self::phoneMatchVariants($member->mobile_number, $member->alternative_mobile);
 
         $itemQuery = TeamBasedApprovalItem::query()
             ->where(function ($q) use ($newCode) {
                 $q->whereNull('member_code')->orWhere('member_code', '!=', $newCode);
             })
-            ->where(function ($q) use ($member) {
+            ->where(function ($q) use ($nids, $phones) {
                 $matched = false;
-                if (! empty($member->nid_number)) {
-                    $q->orWhere('nid_number', $member->nid_number);
+                if ($nids !== []) {
+                    $q->orWhereIn('nid_number', $nids);
                     $matched = true;
                 }
-                if (! empty($member->mobile_number)) {
-                    $q->orWhere('member_phone', $member->mobile_number);
+                if ($phones !== []) {
+                    $q->orWhereIn('member_phone', $phones);
                     $matched = true;
                 }
                 if (! $matched) {
@@ -399,8 +568,25 @@ class MemberCodeService
         LoanApplication $loan,
         string $newCode,
         ?string $memberName = null,
+        ?string $oldCode = null,
     ): bool {
         $dirty = false;
+        $oldCodes = ($oldCode && $oldCode !== $newCode) ? self::fullCodeMatchVariants($oldCode) : [];
+
+        foreach (self::loanJsonAttributes() as $attribute) {
+            $value = $loan->{$attribute};
+            if (! is_array($value) || $value === []) {
+                continue;
+            }
+
+            $loan->{$attribute} = self::rewriteJsonMemberCodes(
+                $value,
+                $oldCodes,
+                $newCode,
+                $memberName,
+                $dirty,
+            );
+        }
 
         $loan->loan_agreement_data = self::setJsonMemberCodeFields(
             $loan->loan_agreement_data,
@@ -455,6 +641,223 @@ class MemberCodeService
         }
 
         return $dirty;
+    }
+
+    /**
+     * @return list<string>
+     */
+    private static function loanJsonAttributes(): array
+    {
+        return [
+            'loan_agreement_data',
+            'guarantor_info',
+            'guarantors_list',
+            'family_members',
+            'nominee_info',
+            'income_sources',
+            'asset_info',
+            'employment_details',
+            'loan_usage_breakdown',
+            'monthly_income_breakdown',
+            'monthly_expense_breakdown',
+            'asset_details',
+            'liability_details',
+            'risk_measures',
+            'signatures',
+            'conditions_met',
+            'documents_submitted',
+            'business_plan',
+            'legacy_member_snapshot',
+        ];
+    }
+
+    /**
+     * Recursively replace stored member-code values and known identity keys.
+     *
+     * @param  list<string>  $oldCodes
+     */
+    public static function rewriteJsonMemberCodes(
+        mixed $data,
+        array $oldCodes,
+        string $newCode,
+        ?string $memberName,
+        bool &$dirty,
+    ): mixed {
+        if (! is_array($data)) {
+            $replaced = self::replaceOldMemberCodeString($data, $oldCodes, $newCode);
+            if (is_string($data) && $replaced !== null) {
+                $dirty = true;
+
+                return $replaced;
+            }
+
+            return $data;
+        }
+
+        foreach ($data as $key => $value) {
+            if (is_array($value)) {
+                $data[$key] = self::rewriteJsonMemberCodes($value, $oldCodes, $newCode, $memberName, $dirty);
+
+                continue;
+            }
+
+            if (! is_string($value) && ! is_numeric($value)) {
+                continue;
+            }
+
+            $asString = (string) $value;
+
+            if (in_array((string) $key, self::memberCodeJsonKeys(), true) && $asString !== $newCode) {
+                $data[$key] = $newCode;
+                $dirty = true;
+
+                continue;
+            }
+
+            if ((string) $key === 'member_name_code') {
+                $name = $memberName ?: trim(explode(' / ', $asString, 2)[0]);
+                $next = $name !== '' ? $name.' / '.$newCode : $newCode;
+                if ($asString !== $next) {
+                    $data[$key] = $next;
+                    $dirty = true;
+                }
+
+                continue;
+            }
+
+            $replaced = self::replaceOldMemberCodeString($asString, $oldCodes, $newCode);
+            if ($replaced !== null) {
+                $data[$key] = $replaced;
+                $dirty = true;
+            }
+        }
+
+        return $data;
+    }
+
+    /**
+     * @return list<string>
+     */
+    private static function memberCodeJsonKeys(): array
+    {
+        return [
+            'member_code',
+            'member_no',
+            'loan_recipient_code1',
+            'loan_recipient_code2',
+        ];
+    }
+
+    /**
+     * @param  list<string>  $oldCodes
+     */
+    private static function replaceOldMemberCodeString(mixed $value, array $oldCodes, string $newCode): ?string
+    {
+        if (! is_string($value) || $oldCodes === []) {
+            return null;
+        }
+
+        foreach ($oldCodes as $old) {
+            if ($old === '' || $old === $newCode) {
+                continue;
+            }
+
+            if ($value === $old) {
+                return $newCode;
+            }
+
+            $suffix = ' / '.$old;
+            if (str_ends_with($value, $suffix)) {
+                return substr($value, 0, -strlen($old)).$newCode;
+            }
+        }
+
+        return null;
+    }
+
+    /**
+     * Full 10-digit (and script) variants only — safe for global member_code matching.
+     *
+     * @return list<string>
+     */
+    private static function fullCodeMatchVariants(string $code): array
+    {
+        $all = self::codeMatchVariants($code);
+
+        return array_values(array_filter($all, function (string $variant) {
+            $variantDigits = preg_replace('/\D/', '', self::toEnglishDigits($variant)) ?? '';
+
+            return strlen($variantDigits) === 10;
+        }));
+    }
+
+    /**
+     * Short serial spellings (e.g. 65 / 000065). Only used with a name match.
+     *
+     * @return list<string>
+     */
+    private static function serialCodeMatchVariants(string $code): array
+    {
+        $digits = preg_replace('/\D/', '', self::toEnglishDigits($code)) ?? '';
+        if ($digits === '') {
+            return [];
+        }
+
+        $serial = strlen($digits) === 10 ? substr($digits, 4, 6) : (strlen($digits) <= 6 ? str_pad($digits, 6, '0', STR_PAD_LEFT) : '');
+        if ($serial === '') {
+            return [];
+        }
+
+        $unpadded = ltrim($serial, '0') ?: '0';
+
+        return array_values(array_unique(array_filter([
+            $serial,
+            $unpadded,
+            self::toBengaliDigits($serial),
+            self::toBengaliDigits($unpadded),
+        ])));
+    }
+
+    /**
+     * @return list<string>
+     */
+    private static function identityMatchVariants(?string ...$values): array
+    {
+        $out = [];
+        foreach ($values as $value) {
+            $raw = trim((string) $value);
+            if ($raw === '' || $raw === '0') {
+                continue;
+            }
+            $out[] = $raw;
+            $digits = MemberAdmission::normalizeIdentityNumber($raw);
+            if ($digits !== '' && $digits !== '0') {
+                $out[] = $digits;
+            }
+        }
+
+        return array_values(array_unique($out));
+    }
+
+    /**
+     * @return list<string>
+     */
+    private static function phoneMatchVariants(?string ...$values): array
+    {
+        $out = [];
+        foreach ($values as $value) {
+            $raw = trim((string) $value);
+            if ($raw === '') {
+                continue;
+            }
+            $out[] = $raw;
+            $normalized = MemberAdmission::normalizeMobileNumber($raw);
+            if ($normalized !== '') {
+                $out[] = $normalized;
+            }
+        }
+
+        return array_values(array_unique($out));
     }
 
     /**

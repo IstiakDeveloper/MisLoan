@@ -44,6 +44,37 @@ class MemberCodeSyncTest extends TestCase
     }
 
     #[Test]
+    public function it_rewrites_nested_member_code_fields_and_old_code_strings(): void
+    {
+        $loan = new LoanApplication([
+            'loan_agreement_data' => [
+                'member_code' => '0001000001',
+                'nested' => [
+                    'member_code' => '0001000001',
+                    'note' => 'keep',
+                ],
+            ],
+            'business_plan' => [
+                'pages' => [
+                    ['member_name_code' => 'মৌসুমি / 0001000001'],
+                ],
+            ],
+        ]);
+
+        $changed = MemberCodeService::overlayMemberCodeOnLoanApplication(
+            $loan,
+            '0001000099',
+            'মৌসুমি',
+            '0001000001',
+        );
+
+        $this->assertTrue($changed);
+        $this->assertSame('0001000099', $loan->loan_agreement_data['nested']['member_code']);
+        $this->assertSame('keep', $loan->loan_agreement_data['nested']['note']);
+        $this->assertSame('মৌসুমি / 0001000099', $loan->business_plan['pages'][0]['member_name_code']);
+    }
+
+    #[Test]
     public function it_does_not_mark_empty_forms_dirty(): void
     {
         $loan = new LoanApplication([

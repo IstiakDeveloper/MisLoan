@@ -7,6 +7,7 @@ use App\Support\AdmissionFormVisibility;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Support\Facades\Schema;
 
 class MemberAdmission extends Model
 {
@@ -504,6 +505,30 @@ class MemberAdmission extends Model
                     $admission->branch_id
                 );
             }
+        });
+
+        static::updated(function (MemberAdmission $admission) {
+            if (! $admission->wasChanged('application_no')) {
+                return;
+            }
+
+            $newCode = trim((string) $admission->application_no);
+            if ($newCode === '') {
+                return;
+            }
+
+            if (! Schema::hasTable('loan_applications')) {
+                return;
+            }
+
+            $oldCode = $admission->getOriginal('application_no');
+
+            MemberCodeService::syncRelatedRecords(
+                (int) $admission->id,
+                $newCode,
+                is_string($oldCode) ? $oldCode : null,
+                $admission->applicant_name_bn ?: $admission->applicant_name_en
+            );
         });
     }
 

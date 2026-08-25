@@ -27,6 +27,13 @@ export interface SharedData {
     quote: { message: string; author: string };
     auth: Auth;
     sidebarOpen: boolean;
+    hoSendCutoff?: {
+        time: string;
+        label: string;
+        badge: string;
+        is_blocked: boolean;
+        blocked_message: string;
+    } | null;
     [key: string]: unknown;
 }
 

@@ -24,6 +24,10 @@ interface Props {
     onConfirm: () => void;
     isLoading?: boolean;
     items: HoAdmissionItem[];
+    cutoffLabel?: string;
+    cutoffBadge?: string;
+    isBlocked?: boolean;
+    blockedMessage?: string;
 }
 
 export default function SendAdmissionToHoModal({
@@ -32,6 +36,10 @@ export default function SendAdmissionToHoModal({
     onConfirm,
     isLoading = false,
     items,
+    cutoffLabel = 'বিকাল ৫:০০টা',
+    cutoffBadge = '৫:০০ PM',
+    isBlocked = false,
+    blockedMessage,
 }: Props) {
     if (!isOpen) return null;
 
@@ -80,19 +88,40 @@ export default function SendAdmissionToHoModal({
                 </div>
 
                 {/* 2. Core Business Rule Warning Box */}
-                <div className="p-4 bg-amber-50/90 border border-amber-200/90 rounded-2xl space-y-2 text-amber-950 shadow-2xs">
-                    <div className="flex items-center gap-2 text-amber-800 font-bold text-xs uppercase tracking-wide">
-                        <ShieldAlert className="w-4 h-4 shrink-0 text-amber-600" />
-                        <span>জরুরি জ্ঞাতব্য ও ব্যবসায়িক নিয়মাবলী</span>
+                <div className={`p-4 rounded-2xl space-y-2 shadow-2xs border ${
+                    isBlocked
+                        ? 'bg-rose-50/90 border-rose-200/90 text-rose-950'
+                        : 'bg-amber-50/90 border-amber-200/90 text-amber-950'
+                }`}>
+                    <div className={`flex items-center gap-2 font-bold text-xs uppercase tracking-wide ${
+                        isBlocked ? 'text-rose-800' : 'text-amber-800'
+                    }`}>
+                        <ShieldAlert className={`w-4 h-4 shrink-0 ${isBlocked ? 'text-rose-600' : 'text-amber-600'}`} />
+                        <span>{isBlocked ? 'সময়সীমা শেষ' : 'জরুরি জ্ঞাতব্য ও ব্যবসায়িক নিয়মাবলী'}</span>
                     </div>
-                    <p className="text-xs leading-relaxed font-semibold text-amber-900">
-                        আজকের তারিখে অনুমোদনের জন্য প্রেরিত সদস্য ভর্তির আবেদনগুলোর ভিত্তিতে <span className="underline decoration-amber-500 font-bold">আগামী কার্যদিবসে (আগামীকাল)</span> তাদের ঋণ আবেদন কার্যক্রম পরিচালিত হবে।
+                    <p className={`text-xs leading-relaxed font-semibold ${isBlocked ? 'text-rose-900' : 'text-amber-900'}`}>
+                        {isBlocked
+                            ? (blockedMessage || `সময়সীমা শেষ। ${cutoffLabel}র পর হেড অফিসে পাঠানো যাবে না।`)
+                            : (
+                                <>
+                                    আজকের তারিখে অনুমোদনের জন্য প্রেরিত সদস্য ভর্তির আবেদনগুলোর ভিত্তিতে <span className="underline decoration-amber-500 font-bold">আগামী কার্যদিবসে (আগামীকাল)</span> তাদের ঋণ আবেদন কার্যক্রম পরিচালিত হবে। আবেদনসমূহ <span className="underline decoration-amber-500 font-bold">অবশ্যই {cutoffLabel}র মধ্যে</span> পাঠাতে হবে।
+                                </>
+                            )}
                     </p>
-                    <div className="pt-1.5 border-t border-amber-200/60 flex items-center gap-2 text-[11px] text-amber-800 font-medium">
-                        <Calendar className="w-3.5 h-3.5 text-amber-600 shrink-0" />
-                        <span>আজকের ভর্তি প্রেরণ (<strong className="font-bold">{formattedToday}</strong>)</span>
-                        <ArrowRight className="w-3.5 h-3.5 text-amber-600 shrink-0" />
-                        <span>আগামীকাল ঋণ কার্যকর (<strong className="font-bold">{formattedTomorrow}</strong>)</span>
+                    <div className={`pt-1.5 border-t flex items-center justify-between gap-2 text-[11px] font-medium ${
+                        isBlocked ? 'border-rose-200/60 text-rose-800' : 'border-amber-200/60 text-amber-800'
+                    }`}>
+                        <div className="flex items-center gap-2 min-w-0">
+                            <Calendar className={`w-3.5 h-3.5 shrink-0 ${isBlocked ? 'text-rose-600' : 'text-amber-600'}`} />
+                            <span>আজকের ভর্তি প্রেরণ (<strong className="font-bold">{formattedToday}</strong>)</span>
+                            <ArrowRight className={`w-3.5 h-3.5 shrink-0 ${isBlocked ? 'text-rose-600' : 'text-amber-600'}`} />
+                            <span>আগামীকাল ঋণ কার্যকর (<strong className="font-bold">{formattedTomorrow}</strong>)</span>
+                        </div>
+                        <span className={`font-bold px-2 py-0.5 rounded shrink-0 ${
+                            isBlocked ? 'text-rose-900 bg-rose-200/70' : 'text-amber-900 bg-amber-200/70'
+                        }`}>
+                            সময়সীমা: {cutoffBadge}
+                        </span>
                     </div>
                 </div>
 
@@ -153,11 +182,11 @@ export default function SendAdmissionToHoModal({
                     <button
                         type="button"
                         onClick={onConfirm}
-                        disabled={isLoading}
+                        disabled={isLoading || isBlocked}
                         className="inline-flex items-center justify-center gap-2 px-5 py-2.5 text-xs font-bold text-white bg-purple-600 rounded-xl hover:bg-purple-700 shadow-md shadow-purple-500/20 transition active:scale-95 disabled:opacity-50"
                     >
                         <Send className="w-3.5 h-3.5" />
-                        <span>{isLoading ? 'পাঠানো হচ্ছে...' : 'হ্যাঁ, হেড অফিসে পাঠান'}</span>
+                        <span>{isBlocked ? 'এখন পাঠানো যাবে না' : (isLoading ? 'পাঠানো হচ্ছে...' : 'হ্যাঁ, হেড অফিসে পাঠান')}</span>
                     </button>
                 </div>
             </div>

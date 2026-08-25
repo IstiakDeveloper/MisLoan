@@ -15,10 +15,14 @@ class LoanApplicationIssue extends Model
         'response_message',
         'responded_by',
         'responded_at',
+        'zm_approved_at',
+        'zm_approved_by',
+        'zm_approval_note',
     ];
 
     protected $casts = [
         'responded_at' => 'datetime',
+        'zm_approved_at' => 'datetime',
     ];
 
     public function loanApplication(): BelongsTo
@@ -34,6 +38,11 @@ class LoanApplicationIssue extends Model
     public function responder(): BelongsTo
     {
         return $this->belongsTo(User::class, 'responded_by');
+    }
+
+    public function zmApprover(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'zm_approved_by');
     }
 
     /**

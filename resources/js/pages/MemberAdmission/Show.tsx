@@ -28,6 +28,7 @@ import MemberAdmissionFormView from '@/components/MemberAdmissionFormView';
 import HeadOfficeModificationModal, { canHeadOfficeModify } from '@/components/HeadOfficeModificationModal';
 import { toEnglishDigits, formatBranchCode, parseMemberCode } from '@/utils/memberCodeUtils';
 import SendAdmissionToHoModal from '@/components/MemberAdmission/SendAdmissionToHoModal';
+import { useHoSendCutoff } from '@/hooks/use-ho-send-cutoff';
 
 interface Props {
     admission: MemberAdmission & {
@@ -66,6 +67,7 @@ export default function Show({ admission, auth }: Props) {
     const isHeadOffice = canHeadOfficeModify(pageAuth) || canHeadOfficeModify(auth);
     // Only Branch User can send ready admissions to Head Office (not Branch Manager)
     const isBranchUser = roleName === 'branch_user';
+    const hoSendCutoff = useHoSendCutoff();
     const isFieldOfficer = roleName === 'field_officer';
     const canApplyLoan =
         admission.status === 'approved' && (roleName === 'branch_user' || isFieldOfficer);
@@ -156,6 +158,7 @@ export default function Show({ admission, auth }: Props) {
     const [isSendingToHo, setIsSendingToHo] = useState(false);
 
     const handleSendToHeadOffice = () => {
+        if (hoSendCutoff.is_blocked) return;
         setShowHoModal(true);
     };
 
@@ -332,7 +335,9 @@ export default function Show({ admission, auth }: Props) {
                                 <button
                                     type="button"
                                     onClick={handleSendToHeadOffice}
-                                    className="inline-flex items-center justify-center gap-1.5 px-3 py-2.5 min-h-11 sm:min-h-9 sm:h-9 bg-purple-600 text-white rounded-xl text-xs font-bold hover:bg-purple-700 shadow-xs transition touch-manipulation col-span-2 sm:col-span-1"
+                                    disabled={hoSendCutoff.is_blocked}
+                                    title={hoSendCutoff.is_blocked ? hoSendCutoff.blocked_message : undefined}
+                                    className="inline-flex items-center justify-center gap-1.5 px-3 py-2.5 min-h-11 sm:min-h-9 sm:h-9 bg-purple-600 text-white rounded-xl text-xs font-bold hover:bg-purple-700 shadow-xs transition touch-manipulation col-span-2 sm:col-span-1 disabled:opacity-40 disabled:cursor-not-allowed"
                                 >
                                     <Send className="w-4 h-4 shrink-0" />
                                     <span>Head Office এ পাঠান</span>
@@ -747,6 +752,11 @@ export default function Show({ admission, auth }: Props) {
                         branch_name: admission.branch?.name,
                     },
                 ]}
+                cutoffLabel={hoSendCutoff.label}
+                cutoffBadge={hoSendCutoff.badge}
+                isBlocked={hoSendCutoff.is_blocked}
+                blockedMessage={hoSendCutoff.blocked_message}
+            />
             />
         </AdminLayout>
     );
