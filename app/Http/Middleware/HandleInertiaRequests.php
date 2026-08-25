@@ -11,6 +11,7 @@ use App\Models\MemberAdmissionIssue;
 use App\Models\Notification;
 use App\Models\Role;
 use App\Services\ApprovalService;
+use App\Services\ClusterHandoverService;
 use App\Services\CsoAllocationService;
 use Carbon\Carbon;
 use Illuminate\Foundation\Inspiring;
@@ -193,6 +194,7 @@ class HandleInertiaRequests extends Middleware
             'pendingLoanApplications' => 0,
             'pendingAdmissions' => 0,
             'pendingApprovals' => 0,
+            'pendingClusterHandovers' => 0,
         ];
 
         $roleNameForBadges = $userData['role']['name'] ?? null;
@@ -340,6 +342,11 @@ class HandleInertiaRequests extends Middleware
                 ->whereHas('loanApplication', fn ($q) => $q->whereIn('status', ['submitted', 'under_review']))
                 ->count();
             $badgeCounts['pendingApprovals'] = $memberCount + $loanCount;
+        }
+
+        if ($userData && $request->user() && in_array($roleNameForBadges, [Role::BRANCH_USER, Role::BRANCH_MANAGER], true)) {
+            $badgeCounts['pendingClusterHandovers'] = app(ClusterHandoverService::class)
+                ->pendingMemberCount($request->user());
         }
 
         $notifications = [];

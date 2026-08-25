@@ -72,6 +72,7 @@ interface PageProps extends Record<string, unknown> {
         pendingApprovals?: number;
         pendingTeamBasedApprovals?: number;
         pendingVerifications?: number;
+        pendingClusterHandovers?: number;
     };
 }
 
@@ -101,6 +102,7 @@ function isGmailAddress(email?: string | null): boolean {
 function getPageTitle(currentPath: string): string {
     if (currentPath === '/dashboard') return 'Dashboard';
     if (currentPath.includes('/cso-duty-roster')) return 'CSO Duty Roster';
+    if (currentPath.includes('/cluster-handover')) return 'Cluster Handover';
     if (currentPath.includes('/member-admissions') || currentPath.includes('/admission-members')) return 'Member Admissions';
     if (currentPath.includes('/loan-applications')) return 'Loan Applications';
     if (currentPath.includes('/savings-applications')) return 'Savings Applications';
@@ -243,6 +245,7 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
     const branchMenuItemsFull = [
         { name: 'Dashboard', href: '/dashboard', icon: LayoutDashboard },
         { name: 'Member Admissions', href: '/member-admissions', icon: UserPlus },
+        { name: 'Cluster Handover', href: '/cluster-handover', icon: Users, badge: badgeCounts.pendingClusterHandovers || 0 },
         { name: 'Loan Applications', href: '/member/loan-applications', icon: Banknote },
         { name: 'Verification', href: '/verifications', icon: SearchCheck, badge: badgeCounts.pendingVerifications || 0 },
         { name: 'Savings Applications', href: '/member/savings-applications', icon: PiggyBank },
@@ -254,7 +257,7 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
     const branchMenuItems = isFieldOfficer
         ? branchMenuItemsFull.filter((m) => m.name === 'Dashboard' || m.name === 'Member Admissions' || m.name === 'Loan Applications' || m.name === 'Verification')
         : roleName === 'branch_user'
-        ? branchMenuItemsFull.slice(0, 6)
+        ? branchMenuItemsFull.filter((m) => m.name !== 'Pending Approvals')
         : branchMenuItemsFull;
 
     const approverMenuItems = [

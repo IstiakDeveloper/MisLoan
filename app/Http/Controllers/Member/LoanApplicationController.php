@@ -13,10 +13,11 @@ use App\Models\LoanCategory;
 use App\Models\LoanProduct;
 use App\Models\MemberAdmission;
 use App\Models\Role;
-use App\Models\SavingsProduct;
 use App\Models\Samity;
+use App\Models\SavingsProduct;
 use App\Models\User;
 use App\Services\ApprovalService;
+use App\Services\MemberCodeService;
 use App\Services\NotificationService;
 use App\Support\LoanFormVisibility;
 use App\Support\NumberToWordsBangla;
@@ -24,15 +25,16 @@ use App\Support\RoleListWorkQueue;
 use Carbon\Carbon;
 use Illuminate\Http\Exceptions\HttpResponseException;
 use Illuminate\Http\Request;
-use Inertia\Inertia;
 use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Str;
+use Illuminate\Validation\ValidationException;
+use Inertia\Inertia;
 use PhpOffice\PhpSpreadsheet\Cell\Coordinate;
 use PhpOffice\PhpSpreadsheet\Spreadsheet;
 use PhpOffice\PhpSpreadsheet\Style\Alignment;
 use PhpOffice\PhpSpreadsheet\Style\Border;
 use PhpOffice\PhpSpreadsheet\Style\Fill;
 use PhpOffice\PhpSpreadsheet\Writer\Xlsx;
+use Symfony\Component\HttpKernel\Exception\HttpException;
 
 class LoanApplicationController extends Controller
 {
@@ -61,21 +63,20 @@ class LoanApplicationController extends Controller
 
     private function ensureCanCreateLoanApplication($user): void
     {
-        if (!$this->canCreateLoanApplication($user)) {
+        if (! $this->canCreateLoanApplication($user)) {
             abort(403, 'শুধুমাত্র ফিল্ড অফিসার বা শাখা ব্যবহারকারী ঋণ আবেদন করতে পারবেন।');
         }
     }
 
     /**
-     * Draft/fill loan forms: field officers may prepare applications for members
-     * they created in their current branch (before admission is approved);
-     * branch users need an approved member of the branch.
+     * Draft/fill loan forms: field officers of the member's branch may prepare
+     * applications (before admission is approved); branch users need an approved member.
      */
     private function ensureMemberAccessibleForLoanDraft(MemberAdmission $member, $user): void
     {
         $this->ensureCanCreateLoanApplication($user);
 
-        if (!$user->has_all_access && !$user->canAccessBranch((int) $member->branch_id)) {
+        if (! $member->isOnAccessibleBranchFor($user)) {
             abort(403, 'এই সদস্য আপনার এলাকার/শাখার নয়।');
         }
 
@@ -84,10 +85,6 @@ class LoanApplicationController extends Controller
         }
 
         if ($this->isFieldOfficer($user)) {
-            if (! $member->isAssignedToUser($user)) {
-                abort(403, 'ফিল্ড অফিসার শুধু নিজের করা সদস্যের জন্য ঋণ আবেদন করতে পারবেন।');
-            }
-
             return;
         }
 
@@ -148,7 +145,7 @@ class LoanApplicationController extends Controller
                 ->where('status', 'pending')
                 ->first();
 
-            if (!$pendingApproval) {
+            if (! $pendingApproval) {
                 $pendingApproval = $application->approvals()
                     ->where('user_id', $user->id)
                     ->where('status', 'pending')
@@ -541,8 +538,8 @@ class LoanApplicationController extends Controller
 
     private function ensureApplicationAccessibleToUser(LoanApplication $application, $user): void
     {
-        if (!$user->has_all_access && !$user->isSuperAdmin() && !$user->isHeadOffice()
-            && !$user->canAccessBranch((int) $application->branch_id)) {
+        if (! $user->has_all_access && ! $user->isSuperAdmin() && ! $user->isHeadOffice()
+            && ! $user->canAccessBranch((int) $application->branch_id)) {
             abort(403, 'আপনার এই ঋণ আবেদন দেখার অনুমতি নেই।');
         }
 
@@ -587,7 +584,7 @@ class LoanApplicationController extends Controller
         $today = now()->startOfDay();
 
         if ($loan->expected_end_date) {
-            return \Carbon\Carbon::parse($loan->expected_end_date)->startOfDay()->gte($today);
+            return Carbon::parse($loan->expected_end_date)->startOfDay()->gte($today);
         }
 
         $duration = (int) (
@@ -601,7 +598,7 @@ class LoanApplicationController extends Controller
             ?: $loan->created_at;
 
         if ($duration > 0 && $start) {
-            $endDate = \Carbon\Carbon::parse($start)->addMonths($duration)->startOfDay();
+            $endDate = Carbon::parse($start)->addMonths($duration)->startOfDay();
 
             return $endDate->gte($today);
         }
@@ -633,36 +630,37 @@ class LoanApplicationController extends Controller
         $categories = LoanCategory::with(['loanProducts' => function ($query) {
             $query->where('is_active', true)->orderBy('product_name');
         }])
-        ->where('is_active', true)
-        ->orderBy('display_order')
-        ->get()
-        ->map(function ($category) {
-            // Rename the relationship in the response to match the frontend
-            $category->loan_products = $category->loanProducts;
-            unset($category->loanProducts);
-            return $category;
-        });
+            ->where('is_active', true)
+            ->orderBy('display_order')
+            ->get()
+            ->map(function ($category) {
+                // Rename the relationship in the response to match the frontend
+                $category->loan_products = $category->loanProducts;
+                unset($category->loanProducts);
+
+                return $category;
+            });
 
         // Get user's loan applications for date range
         $dateExpression = 'COALESCE(disbursed_at, reviewed_at, submitted_at, created_at)';
 
         // Main query: only small columns (no LOBs) so ORDER BY uses minimal sort buffer.
         $applicationsQuery = LoanApplication::with([
-                'loanProduct:id,product_name,product_name_bn,product_code,installment_type',
-                'loanCategory:id,category_name,category_name_bn',
-                'memberAdmission:id,applicant_name_en,applicant_name_bn,application_no,nid_number,mobile_number,status,is_legacy,loan_dofa',
-                'branch:id,name,code',
-                'approvals' => function ($query) {
-                    $query->select('id', 'loan_application_id', 'user_id', 'level', 'sequence', 'status')
-                        ->with('user:id,name');
-                },
-                'issues' => function ($query) {
-                    $query->select('id', 'loan_application_id', 'issue_description', 'status', 'reported_by', 'created_at')
-                        ->with('reporter:id,name')
-                        ->orderBy('created_at', 'desc');
-                }
-            ])
-            ->when(!$user->has_all_access, function ($query) use ($user) {
+            'loanProduct:id,product_name,product_name_bn,product_code,installment_type',
+            'loanCategory:id,category_name,category_name_bn',
+            'memberAdmission:id,applicant_name_en,applicant_name_bn,application_no,nid_number,mobile_number,status,is_legacy,loan_dofa',
+            'branch:id,name,code',
+            'approvals' => function ($query) {
+                $query->select('id', 'loan_application_id', 'user_id', 'level', 'sequence', 'status')
+                    ->with('user:id,name');
+            },
+            'issues' => function ($query) {
+                $query->select('id', 'loan_application_id', 'issue_description', 'status', 'reported_by', 'created_at')
+                    ->with('reporter:id,name')
+                    ->orderBy('created_at', 'desc');
+            },
+        ])
+            ->when(! $user->has_all_access, function ($query) use ($user) {
                 $query->whereIn('branch_id', $user->getAccessibleBranches()->pluck('id'));
             })
             ->when($isFieldOfficer, function ($query) use ($user) {
@@ -674,7 +672,7 @@ class LoanApplicationController extends Controller
 
         $applications = $applicationsQuery
             ->when($searchFilter, function ($query) use ($searchFilter) {
-                \App\Services\MemberCodeService::applyLoanSearch($query, $searchFilter);
+                MemberCodeService::applyLoanSearch($query, $searchFilter);
             })
             ->orderByRaw('COALESCE(disbursed_at, reviewed_at, submitted_at, created_at) desc')
             ->with('samity:id,samity_name,samity_name_bn,samity_code')
@@ -719,7 +717,7 @@ class LoanApplicationController extends Controller
 
         // Base query for stats (without status filter)
         $statsBaseQuery = LoanApplication::query()
-            ->when(!$user->has_all_access, function ($query) use ($user) {
+            ->when(! $user->has_all_access, function ($query) use ($user) {
                 $query->whereIn('branch_id', $user->getAccessibleBranches()->pluck('id'));
             })
             ->when($isFieldOfficer, function ($query) use ($user) {
@@ -771,14 +769,14 @@ class LoanApplicationController extends Controller
         $isFieldOfficer = $this->isFieldOfficer($user);
 
         $query = LoanApplication::with([
-                'loanProduct',
-                'loanCategory',
-                'memberAdmission',
-                'branch',
-                'samity',
-                'submittedBy',
-            ])
-            ->when(!$user->has_all_access, function ($query) use ($user) {
+            'loanProduct',
+            'loanCategory',
+            'memberAdmission',
+            'branch',
+            'samity',
+            'submittedBy',
+        ])
+            ->when(! $user->has_all_access, function ($query) use ($user) {
                 $query->whereIn('branch_id', $user->getAccessibleBranches()->pluck('id'));
             })
             ->when($isFieldOfficer, function ($query) use ($user) {
@@ -792,13 +790,13 @@ class LoanApplicationController extends Controller
             ->when($searchFilter, function ($query) use ($searchFilter) {
                 $query->where(function ($q) use ($searchFilter) {
                     $q->where('application_no', 'like', "%{$searchFilter}%")
-                      ->orWhereHas('memberAdmission', function ($mq) use ($searchFilter) {
-                          $mq->where('applicant_name_en', 'like', "%{$searchFilter}%")
-                            ->orWhere('applicant_name_bn', 'like', "%{$searchFilter}%")
-                            ->orWhere('mobile_number', 'like', "%{$searchFilter}%")
-                            ->orWhere('nid_number', 'like', "%{$searchFilter}%")
-                            ->orWhere('application_no', 'like', "%{$searchFilter}%");
-                      });
+                        ->orWhereHas('memberAdmission', function ($mq) use ($searchFilter) {
+                            $mq->where('applicant_name_en', 'like', "%{$searchFilter}%")
+                                ->orWhere('applicant_name_bn', 'like', "%{$searchFilter}%")
+                                ->orWhere('mobile_number', 'like', "%{$searchFilter}%")
+                                ->orWhere('nid_number', 'like', "%{$searchFilter}%")
+                                ->orWhere('application_no', 'like', "%{$searchFilter}%");
+                        });
                 });
             })
             ->orderByRaw('COALESCE(disbursed_at, reviewed_at, submitted_at, created_at) desc');
@@ -817,7 +815,7 @@ class LoanApplicationController extends Controller
             'disbursed' => 'বিতরণকৃত (Disbursed)',
         ];
 
-        $spreadsheet = new Spreadsheet();
+        $spreadsheet = new Spreadsheet;
         $sheet = $spreadsheet->getActiveSheet();
         $sheet->setTitle('ঋণ আবেদন');
 
@@ -908,7 +906,7 @@ class LoanApplicationController extends Controller
             $sheet->getColumnDimension(Coordinate::stringFromColumnIndex($col))->setAutoSize(true);
         }
 
-        $filename = 'loan_applications_' . date('Y_m_d_His') . '.xlsx';
+        $filename = 'loan_applications_'.date('Y_m_d_His').'.xlsx';
         $writer = new Xlsx($spreadsheet);
 
         return response()->streamDownload(function () use ($writer) {
@@ -920,7 +918,7 @@ class LoanApplicationController extends Controller
 
     private function resolvePreselectedMember(Request $request): ?array
     {
-        if (!$request->filled('member_id')) {
+        if (! $request->filled('member_id')) {
             return null;
         }
 
@@ -929,13 +927,13 @@ class LoanApplicationController extends Controller
             ->select('id', 'application_no', 'applicant_name_en', 'applicant_name_bn', 'nid_number', 'mobile_number', 'father_name_en', 'mother_name_en', 'samity_id', 'status', 'branch_id', 'created_by', 'requested_loan_amount')
             ->find($request->integer('member_id'));
 
-        if (!$member) {
+        if (! $member) {
             return null;
         }
 
         try {
             $this->ensureMemberAccessibleForLoanDraft($member, $user);
-        } catch (\Symfony\Component\HttpKernel\Exception\HttpException $e) {
+        } catch (HttpException $e) {
             return null;
         }
 
@@ -1033,7 +1031,7 @@ class LoanApplicationController extends Controller
                 ->where('is_active', true)
                 ->orderBy('product_name')
                 ->get();
-        } else if ($loanProduct) {
+        } elseif ($loanProduct) {
             $products = LoanProduct::where('loan_category_id', $loanProduct->loan_category_id)
                 ->where('is_active', true)
                 ->orderBy('product_name')
@@ -1079,14 +1077,13 @@ class LoanApplicationController extends Controller
         $branchId = $user->branch_id;
 
         $members = MemberAdmission::where('branch_id', $branchId)
-            ->when($this->isFieldOfficer($user), function ($query) use ($user) {
-                $query->assignedToOfficer((int) $user->id)
-                    ->where('status', '!=', 'rejected');
+            ->when($this->isFieldOfficer($user), function ($query) {
+                $query->where('status', '!=', 'rejected');
             }, function ($query) {
                 $query->where('status', 'approved');
             })
             ->where(function ($query) use ($search) {
-                \App\Services\MemberCodeService::applyAdmissionSearch($query, $search);
+                MemberCodeService::applyAdmissionSearch($query, $search);
             })
             ->select('id', 'application_no', 'applicant_name_en', 'applicant_name_bn', 'nid_number', 'mobile_number', 'father_name_en', 'mother_name_en', 'samity_id', 'status', 'requested_loan_amount')
             ->with('samity:id,samity_name,samity_name_bn')
@@ -1096,7 +1093,7 @@ class LoanApplicationController extends Controller
 
         // Check for active loans for each member (ANY product)
         $memberIds = $members->pluck('id');
-        
+
         if ($memberIds->isNotEmpty()) {
             $activeLoans = LoanApplication::whereIn('member_admission_id', $memberIds)
                 ->whereIn('status', [
@@ -1120,7 +1117,7 @@ class LoanApplicationController extends Controller
                     $member->has_active_loan = true;
                     $member->active_loans = $memberLoans->map(function ($loan) {
                         $endDate = $loan->expected_end_date;
-                        if (!$endDate) {
+                        if (! $endDate) {
                             $duration = (int) (
                                 $loan->loan_term_months
                                 ?: $loan->loanProduct?->duration_months
@@ -1130,7 +1127,7 @@ class LoanApplicationController extends Controller
                                 ?: $loan->disbursed_at
                                 ?: $loan->created_at;
                             if ($duration > 0 && $start) {
-                                $endDate = \Carbon\Carbon::parse($start)->addMonths($duration)->toDateString();
+                                $endDate = Carbon::parse($start)->addMonths($duration)->toDateString();
                             }
                         }
 
@@ -1178,13 +1175,14 @@ class LoanApplicationController extends Controller
         }
 
         $branchId = $user->branch_id;
-        if (!$branchId) {
+        if (! $branchId) {
             return response()->json([]);
         }
         $samities = Samity::where('branch_id', $branchId)
             ->where('is_active', true)
             ->orderBy('samity_name')
             ->get(['id', 'samity_code', 'samity_name', 'samity_name_bn']);
+
         return response()->json($samities);
     }
 
@@ -1282,7 +1280,7 @@ class LoanApplicationController extends Controller
         if ($validated['requested_amount'] < $loanProduct->min_amount ||
             $validated['requested_amount'] > $loanProduct->max_amount) {
             return back()->withErrors([
-                'requested_amount' => "Amount must be between {$loanProduct->min_amount} and {$loanProduct->max_amount}"
+                'requested_amount' => "Amount must be between {$loanProduct->min_amount} and {$loanProduct->max_amount}",
             ]);
         }
 
@@ -1292,9 +1290,9 @@ class LoanApplicationController extends Controller
             $this->ensureMemberAccessibleForLoanDraft($memberAdmission, $user);
             $eligibilityCheck = $loanProduct->checkEligibility($memberAdmission);
 
-            if (!$eligibilityCheck['eligible']) {
+            if (! $eligibilityCheck['eligible']) {
                 return back()->withErrors([
-                    'eligibility' => 'You are not eligible for this loan product: ' . implode(', ', $eligibilityCheck['reasons'])
+                    'eligibility' => 'You are not eligible for this loan product: '.implode(', ', $eligibilityCheck['reasons']),
                 ]);
             }
         }
@@ -1358,10 +1356,11 @@ class LoanApplicationController extends Controller
             DB::commit();
 
             return redirect()->route('member.loan-applications.show', $application->id)
-                ->with('success', 'Loan application created successfully. Application No: ' . $application->application_no);
+                ->with('success', 'Loan application created successfully. Application No: '.$application->application_no);
         } catch (\Exception $e) {
             DB::rollBack();
-            return back()->withErrors(['error' => 'Failed to create loan application: ' . $e->getMessage()]);
+
+            return back()->withErrors(['error' => 'Failed to create loan application: '.$e->getMessage()]);
         }
     }
 
@@ -1423,18 +1422,18 @@ class LoanApplicationController extends Controller
         $application = LoanApplication::with(['loanProduct.loanCategory', 'loanCategory'])->findOrFail($id);
         $this->ensureApplicationAccessibleToUser($application, $user);
 
-        if (!$application->canBeEdited()) {
+        if (! $application->canBeEdited()) {
             return back()->withErrors(['error' => 'This application cannot be submitted']);
         }
 
         if ($application->member_admission_id) {
             $member = MemberAdmission::find($application->member_admission_id);
-            if (!$member) {
+            if (! $member) {
                 return back()->withErrors(['error' => 'সদস্য ভর্তি তথ্য পাওয়া যায়নি।']);
             }
             try {
                 $this->ensureMemberApprovedForLoanSubmit($member);
-            } catch (\Symfony\Component\HttpKernel\Exception\HttpException $e) {
+            } catch (HttpException $e) {
                 return back()->withErrors(['error' => 'সদস্য ভর্তি অনুমোদিত না হওয়া পর্যন্ত ঋণ আবেদন জমা দেওয়া যাবে না।']);
             }
         }
@@ -1446,7 +1445,7 @@ class LoanApplicationController extends Controller
         $formSaved = LoanFormVisibility::buildFormSavedMap($application);
         $allRequiredSaved = LoanFormVisibility::allRequiredFormsSaved($submitRequired, $formSaved);
 
-        if (!$allRequiredSaved) {
+        if (! $allRequiredSaved) {
             return back()->withErrors(['error' => 'অনুমোদনের জন্য প্রয়োজনীয় ফর্ম (ঋণ চুক্তিপত্র বা আবেদন ও অনুমোদনপত্র) পূরণ করে তারপর সাবমিট করুন।']);
         }
 
@@ -1463,6 +1462,7 @@ class LoanApplicationController extends Controller
             DB::commit();
         } catch (\Exception $e) {
             DB::rollBack();
+
             return back()->withErrors(['error' => $e->getMessage()]);
         }
 
@@ -1478,13 +1478,13 @@ class LoanApplicationController extends Controller
                 users: $branchManagers,
                 type: 'loan_application',
                 title: 'নতুন ঋণ আবেদন জমা হয়েছে',
-                message: "ঋণ আবেদন নং {$application->application_no} ({$application->memberAdmission?->applicant_name_bn}) ব্রাঞ্চে জমা দেওয়া হয়েছে। চাহিদাকৃত পরিমাণ: " . number_format($application->requested_amount ?? 0) . " টাকা।",
+                message: "ঋণ আবেদন নং {$application->application_no} ({$application->memberAdmission?->applicant_name_bn}) ব্রাঞ্চে জমা দেওয়া হয়েছে। চাহিদাকৃত পরিমাণ: ".number_format($application->requested_amount ?? 0).' টাকা।',
                 notifiable: $application,
                 actionUrl: '/approvals',
                 details: [
                     'আবেদন নং' => $application->application_no,
                     'সদস্যের নাম' => $application->memberAdmission?->applicant_name_bn ?: ($application->memberAdmission?->applicant_name_en ?? 'N/A'),
-                    'চাহিদাকৃত ঋণ' => number_format($application->requested_amount ?? 0) . ' টাকা',
+                    'চাহিদাকৃত ঋণ' => number_format($application->requested_amount ?? 0).' টাকা',
                     'শাখা' => $application->branch?->name ?? 'N/A',
                 ]
             );
@@ -1521,7 +1521,7 @@ class LoanApplicationController extends Controller
         $headOfficeUsers = User::where('is_active', 1)
             ->where(function ($q) {
                 $q->where('has_all_access', 1)
-                  ->orWhereHas('role', fn ($r) => $r->whereIn('name', ['super_admin', 'head_office', 'ed']));
+                    ->orWhereHas('role', fn ($r) => $r->whereIn('name', ['super_admin', 'head_office', 'ed']));
             })->get();
 
         if ($headOfficeUsers->isNotEmpty()) {
@@ -1535,7 +1535,7 @@ class LoanApplicationController extends Controller
                 details: [
                     'আবেদন নং' => $application->application_no,
                     'সদস্যের নাম' => $application->memberAdmission?->applicant_name_bn ?: ($application->memberAdmission?->applicant_name_en ?? 'N/A'),
-                    'ঋণের পরিমাণ' => number_format($application->requested_amount ?? 0) . ' টাকা',
+                    'ঋণের পরিমাণ' => number_format($application->requested_amount ?? 0).' টাকা',
                     'শাখা' => $application->branch?->name ?? 'N/A',
                 ]
             );
@@ -1574,7 +1574,7 @@ class LoanApplicationController extends Controller
                 $this->ensureApplicationAccessibleToUser($application, $user);
 
                 return true;
-            } catch (\Symfony\Component\HttpKernel\Exception\HttpException $e) {
+            } catch (HttpException $e) {
                 return false;
             }
         })->values();
@@ -1701,13 +1701,13 @@ class LoanApplicationController extends Controller
                 'nullable',
                 'numeric',
                 'min:1',
-                'max:' . $maxLimit,
+                'max:'.$maxLimit,
             ],
             'disbursement_method' => ['nullable', 'string', 'max:50'],
             'disbursement_reference' => ['nullable', 'string', 'max:100'],
         ], [
             'disbursed_amount.max' => $productMax > 0
-                ? 'বিতরণকৃত ঋণের পরিমাণ প্রডাক্টের সর্বোচ্চ সীমার (৳' . number_format($productMax) . ') চেয়ে বেশি হতে পারবে না।'
+                ? 'বিতরণকৃত ঋণের পরিমাণ প্রডাক্টের সর্বোচ্চ সীমার (৳'.number_format($productMax).') চেয়ে বেশি হতে পারবে না।'
                 : 'বিতরণকৃত ঋণের পরিমাণ অতিরিক্ত বেশি হতে পারবে না।',
             'disbursed_amount.min' => 'বিতরণকৃত ঋণের পরিমাণ অন্তত ১ টাকা হতে হবে।',
         ]);
@@ -1731,9 +1731,9 @@ class LoanApplicationController extends Controller
 
         // 1. Form 1 / Agreement: Loan Agreement Data
         $agreementData = is_array($application->loan_agreement_data) ? $application->loan_agreement_data : [];
-        if (!empty($agreementData)) {
+        if (! empty($agreementData)) {
             $agreementData['loan_amount'] = $disbursedAmount;
-            $agreementData['loan_amount_words'] = $wordsDisbursed ? $wordsDisbursed . ' টাকা' : '';
+            $agreementData['loan_amount_words'] = $wordsDisbursed ? $wordsDisbursed.' টাকা' : '';
             $agreementData['service_charge'] = $totServiceCharge;
             $agreementData['total_amount'] = $totalRepayable;
             $agreementData['installment_amount'] = $newInstallmentAmount;
@@ -1742,32 +1742,32 @@ class LoanApplicationController extends Controller
 
         // 2. Form 2: Guarantor Commitment (loan_amount with service charge)
         $guarantorInfo = is_array($application->guarantor_info) ? $application->guarantor_info : [];
-        if (!empty($guarantorInfo)) {
+        if (! empty($guarantorInfo)) {
             $guarantorLoanAmount = (float) round($totalRepayable);
             $guarantorWords = NumberToWordsBangla::convert($guarantorLoanAmount);
             $guarantorInfo['loan_amount'] = $guarantorLoanAmount;
-            $guarantorInfo['loan_amount_words'] = $guarantorWords ? $guarantorWords . ' টাকা' : '';
+            $guarantorInfo['loan_amount_words'] = $guarantorWords ? $guarantorWords.' টাকা' : '';
         }
 
         // 3. Form 3: Death Risk Fund (loan_amount_received & words)
         $nomineeInfo = is_array($application->nominee_info) ? $application->nominee_info : [];
-        if (!empty($nomineeInfo)) {
+        if (! empty($nomineeInfo)) {
             $nomineeInfo['loan_amount_received'] = $disbursedAmount;
-            $nomineeInfo['loan_amount_words'] = $wordsDisbursed ? $wordsDisbursed . ' টাকা' : '';
+            $nomineeInfo['loan_amount_words'] = $wordsDisbursed ? $wordsDisbursed.' টাকা' : '';
         }
 
         // 4. Form 4: Field Investigation (asset_info)
         $assetInfo = is_array($application->asset_info) ? $application->asset_info : [];
-        if (!empty($assetInfo)) {
+        if (! empty($assetInfo)) {
             $assetInfo['current_loan_demand'] = $disbursedAmount;
             $assetInfo['recommended_loan_amount'] = $disbursedAmount;
         }
 
         // 5. Form 5: Agrosor Profile / Approval Form (business_plan)
         $businessPlan = is_array($application->business_plan) ? $application->business_plan : [];
-        if (!empty($businessPlan)) {
+        if (! empty($businessPlan)) {
             $businessPlan['final_approved_loan_amount_digits'] = (string) $disbursedAmount;
-            $businessPlan['final_approved_loan_amount_words'] = $wordsDisbursed ? $wordsDisbursed . ' টাকা' : '';
+            $businessPlan['final_approved_loan_amount_words'] = $wordsDisbursed ? $wordsDisbursed.' টাকা' : '';
             $businessPlan['applied_loan_amount'] = (string) $disbursedAmount;
             $businessPlan['fund_applied_loan'] = (string) $disbursedAmount;
             $approvalDate = $application->reviewed_at?->format('Y-m-d')
@@ -1777,7 +1777,7 @@ class LoanApplicationController extends Controller
                     ->value('approved_at');
             $approvalDate = $approvalDate instanceof \DateTimeInterface
                 ? $approvalDate->format('Y-m-d')
-                : ($approvalDate ? \Carbon\Carbon::parse($approvalDate)->toDateString() : now()->toDateString());
+                : ($approvalDate ? Carbon::parse($approvalDate)->toDateString() : now()->toDateString());
             $businessPlan = $application->mergeOfficialDatesIntoBusinessPlan(
                 $businessPlan,
                 $approvalDate,
@@ -1794,25 +1794,25 @@ class LoanApplicationController extends Controller
             'disbursed_at' => now(),
         ];
 
-        if (!empty($validated['disbursement_method'])) {
+        if (! empty($validated['disbursement_method'])) {
             $updateData['disbursement_method'] = $validated['disbursement_method'];
         }
-        if (!empty($validated['disbursement_reference'])) {
+        if (! empty($validated['disbursement_reference'])) {
             $updateData['disbursement_reference'] = $validated['disbursement_reference'];
         }
-        if (!empty($agreementData)) {
+        if (! empty($agreementData)) {
             $updateData['loan_agreement_data'] = $agreementData;
         }
-        if (!empty($guarantorInfo)) {
+        if (! empty($guarantorInfo)) {
             $updateData['guarantor_info'] = $guarantorInfo;
         }
-        if (!empty($nomineeInfo)) {
+        if (! empty($nomineeInfo)) {
             $updateData['nominee_info'] = $nomineeInfo;
         }
-        if (!empty($assetInfo)) {
+        if (! empty($assetInfo)) {
             $updateData['asset_info'] = $assetInfo;
         }
-        if (!empty($businessPlan)) {
+        if (! empty($businessPlan)) {
             $updateData['business_plan'] = $businessPlan;
         }
 
@@ -1824,21 +1824,21 @@ class LoanApplicationController extends Controller
                 users: $application->submittedBy,
                 type: 'loan_application',
                 title: 'ঋণ বিতরণ সফলভাবে সম্পন্ন হয়েছে',
-                message: "ঋণ আবেদন নং {$application->application_no} ({$application->memberAdmission?->applicant_name_bn}) এর ঋণ বিতরণ করা হয়েছে। পরিমাণ: " . number_format($disbursedAmount) . " টাকা।",
+                message: "ঋণ আবেদন নং {$application->application_no} ({$application->memberAdmission?->applicant_name_bn}) এর ঋণ বিতরণ করা হয়েছে। পরিমাণ: ".number_format($disbursedAmount).' টাকা।',
                 notifiable: $application,
                 actionUrl: "/member/loan-applications/{$application->id}",
                 details: [
                     'আবেদন নং' => $application->application_no,
                     'সদস্যের নাম' => $application->memberAdmission?->applicant_name_bn ?: ($application->memberAdmission?->applicant_name_en ?? 'N/A'),
-                    'বিতরণকৃত ঋণ' => number_format($disbursedAmount) . ' টাকা',
-                    'অনুমোদিত ঋণ' => number_format($approvedAmount) . ' টাকা',
+                    'বিতরণকৃত ঋণ' => number_format($disbursedAmount).' টাকা',
+                    'অনুমোদিত ঋণ' => number_format($approvedAmount).' টাকা',
                     'বিতরণের তারিখ' => now()->format('Y-m-d H:i'),
                 ]
             );
         }
 
         return redirect()->route('member.loan-applications.show', $application->id)
-            ->with('success', 'ঋণ সফলভাবে বিতরণ করা হয়েছে। বিতরণকৃত পরিমাণ: ৳' . number_format($disbursedAmount));
+            ->with('success', 'ঋণ সফলভাবে বিতরণ করা হয়েছে। বিতরণকৃত পরিমাণ: ৳'.number_format($disbursedAmount));
     }
 
     /**
@@ -1863,7 +1863,7 @@ class LoanApplicationController extends Controller
 
         if ($request->user()?->isSuperAdmin()) {
             $this->assertSuperAdminLoanEditUnlocked($request, $application);
-        } elseif (!$this->canManageAnyStatus() && !$application->canBeEdited()) {
+        } elseif (! $this->canManageAnyStatus() && ! $application->canBeEdited()) {
             return back()->withErrors(['error' => 'This application cannot be edited']);
         }
 
@@ -1893,7 +1893,7 @@ class LoanApplicationController extends Controller
             'samity',
             'submittedBy',
             'reviewedBy',
-            'disbursedBy'
+            'disbursedBy',
         ])->findOrFail($id);
         $this->ensureApplicationAccessibleToUser($application, request()->user());
 
@@ -1931,13 +1931,13 @@ class LoanApplicationController extends Controller
         if ($isLegacy) {
             $legacySnapshot = $request->session()->get('loan_legacy_member');
             $legacyKey = $request->session()->get('loan_legacy_key');
-            if (!$legacySnapshot || !$legacyKey) {
+            if (! $legacySnapshot || ! $legacyKey) {
                 return redirect()->route('member.loan-applications.index')
                     ->with('error', 'আগের সদস্যের সেশন শেষ হয়ে গেছে। আবার সদস্য তথ্য দিন।');
             }
         } else {
             $memberId = (int) $request->input('member_id');
-            if (!$memberId) {
+            if (! $memberId) {
                 return redirect()->route('member.loan-applications.index')->with('error', 'সদস্য নির্বাচন করুন।');
             }
             $member = MemberAdmission::findOrFail($memberId);
@@ -1961,7 +1961,7 @@ class LoanApplicationController extends Controller
             $legacySnapshot
         );
 
-        if (!$draft) {
+        if (! $draft) {
             return redirect()->route('member.loan-applications.index')
                 ->with('error', 'ঋণ আবেদন তৈরি করা যায়নি।');
         }
@@ -1988,7 +1988,7 @@ class LoanApplicationController extends Controller
             default => 'loan_agreement',
         };
 
-        if (!$draft->exists || !$draft->application_no) {
+        if (! $draft->exists || ! $draft->application_no) {
             $draft->application_no = LoanApplication::generateApplicationNo();
         }
         $draft->status = LoanApplication::STATUS_DRAFT;
@@ -2002,7 +2002,7 @@ class LoanApplicationController extends Controller
         $draft->loan_term_months = $draft->loan_term_months ?: $durationMonths;
         $draft->number_of_installments = $draft->number_of_installments ?: max(1, $numberOfInstallments);
         $draft->purpose_of_loan = $draft->purpose_of_loan ?: 'ঋণ আবেদন';
-        if (!$draft->proposed_start_date) {
+        if (! $draft->proposed_start_date) {
             $draft->proposed_start_date = now()->addDay()->toDateString();
         }
         $draft->save();
@@ -2031,6 +2031,7 @@ class LoanApplicationController extends Controller
                 if ($member) {
                     $member->loadMissing(['samity', 'familyMembers', 'otherAssets', 'branch']);
                 }
+
                 return [$member, $existingApplication, $existingApplication->legacy_application_key];
             }
         }
@@ -2065,7 +2066,7 @@ class LoanApplicationController extends Controller
             }
             $legacySnapshot = $request->session()->get('loan_legacy_member');
             $legacyKey = $request->session()->get('loan_legacy_key');
-            if (!$legacySnapshot || !$legacyKey) {
+            if (! $legacySnapshot || ! $legacyKey) {
                 return [null, null, null]; // will redirect
             }
             $samity = Samity::find($legacySnapshot['samity_id'] ?? 0);
@@ -2096,7 +2097,7 @@ class LoanApplicationController extends Controller
                 || $formId === 4
                 || in_array($formId, [2, 3], true)
             ) {
-                if (!$user->has_all_access && !$user->canAccessBranch((int) $member->branch_id)) {
+                if (! $user->has_all_access && ! $user->canAccessBranch((int) $member->branch_id)) {
                     abort(403, 'এই সদস্য আপনার এলাকার/শাখার নয়।');
                 }
             } else {
@@ -2145,7 +2146,7 @@ class LoanApplicationController extends Controller
                 'loan_category_id' => $loanCategoryId,
                 'status' => LoanApplication::STATUS_DRAFT,
             ]);
-            if (!$draft->exists || !$draft->application_no) {
+            if (! $draft->exists || ! $draft->application_no) {
                 $draft->application_no = LoanApplication::generateApplicationNo();
             }
             $draft->member_admission_id = null;
@@ -2155,10 +2156,11 @@ class LoanApplicationController extends Controller
             $draft->samity_id = (int) ($legacySnapshot['samity_id'] ?? 0);
             $draft->requested_amount = $requestedAmount;
             $draft->submitted_by = $user->id;
+
             return $draft;
         }
         $member = MemberAdmission::find($memberId);
-        if (!$member) {
+        if (! $member) {
             return null;
         }
         $this->ensureMemberAccessibleForLoanDraft($member, $user);
@@ -2173,13 +2175,14 @@ class LoanApplicationController extends Controller
         } elseif ($this->memberHasActiveLoan((int) $member->id)) {
             abort(403, $this->activeLoanBlockMessage());
         }
-        if (!$draft->exists || !$draft->application_no) {
+        if (! $draft->exists || ! $draft->application_no) {
             $draft->application_no = LoanApplication::generateApplicationNo();
         }
         $draft->branch_id = $user->branch_id;
         $draft->samity_id = $member->samity_id;
         $draft->requested_amount = $requestedAmount;
         $draft->submitted_by = $user->id;
+
         return $draft;
     }
 
@@ -2193,7 +2196,7 @@ class LoanApplicationController extends Controller
         $requestedAmount = (float) $request->input('amount', 0);
 
         [$member, $existingApplication, $legacyKey] = $this->resolveMemberForForm($request, $loanProductId, $loanCategoryId, 1);
-        if (!$member) {
+        if (! $member) {
             return redirect()->route('member.loan-applications.index')->with('error', 'সদস্য তথ্য পাওয়া যাচ্ছে না।');
         }
 
@@ -2224,7 +2227,7 @@ class LoanApplicationController extends Controller
         $requestedAmount = (float) $request->input('amount', 0);
 
         [$member, $existingApplication, $legacyKey] = $this->resolveMemberForForm($request, $loanProductId, $loanCategoryId, 2);
-        if (!$member) {
+        if (! $member) {
             return redirect()->route('member.loan-applications.index')->with('error', 'সদস্য তথ্য পাওয়া যাচ্ছে না।');
         }
 
@@ -2258,7 +2261,7 @@ class LoanApplicationController extends Controller
                 'requested_amount' => 'required|numeric|min:0',
                 'agreement_data' => 'nullable|array',
             ];
-            if (!$isLegacy) {
+            if (! $isLegacy) {
                 $rules['member_id'] = 'required|exists:member_admissions,id';
             }
             $validated = $request->validate($rules);
@@ -2266,7 +2269,7 @@ class LoanApplicationController extends Controller
             $memberId = $isLegacy ? null : (int) $validated['member_id'];
             $legacyKey = $isLegacy ? $request->session()->get('loan_legacy_key') : null;
             $legacySnapshot = $isLegacy ? $request->session()->get('loan_legacy_member') : null;
-            if ($isLegacy && (!$legacyKey || !$legacySnapshot)) {
+            if ($isLegacy && (! $legacyKey || ! $legacySnapshot)) {
                 return redirect()->route('member.loan-applications.index')->with('error', 'আগের সদস্যের সেশন শেষ। আবার সদস্য তথ্য দিন।');
             }
 
@@ -2282,7 +2285,7 @@ class LoanApplicationController extends Controller
             );
 
             $agreementData = $validated['agreement_data'] ?? [];
-            if (!is_array($agreementData)) {
+            if (! is_array($agreementData)) {
                 $agreementData = [];
             }
             // Soft merge: keep previously saved signature/image fields if new payload left them empty
@@ -2297,7 +2300,7 @@ class LoanApplicationController extends Controller
 
             return redirect()->route('member.loan-applications.show', $loanApplication->id)
                 ->with('success', 'ঋণ চুক্তিপত্র খসড়া হিসেবে সংরক্ষিত হয়েছে।');
-        } catch (\Illuminate\Validation\ValidationException $e) {
+        } catch (ValidationException $e) {
             throw $e;
         } catch (\Throwable $e) {
             \Log::error('Loan agreement draft save failed: '.$e->getMessage());
@@ -2318,7 +2321,7 @@ class LoanApplicationController extends Controller
             'requested_amount' => 'required|numeric|min:0',
             'agreement_data' => 'required|array',
         ];
-        if (!$isLegacy) {
+        if (! $isLegacy) {
             $rules['member_id'] = 'required|exists:member_admissions,id';
         }
         $validated = $request->validate($rules);
@@ -2326,7 +2329,7 @@ class LoanApplicationController extends Controller
         $memberId = $isLegacy ? null : (int) $validated['member_id'];
         $legacyKey = $isLegacy ? $request->session()->get('loan_legacy_key') : null;
         $legacySnapshot = $isLegacy ? $request->session()->get('loan_legacy_member') : null;
-        if ($isLegacy && (!$legacyKey || !$legacySnapshot)) {
+        if ($isLegacy && (! $legacyKey || ! $legacySnapshot)) {
             return redirect()->route('member.loan-applications.index')->with('error', 'আগের সদস্যের সেশন শেষ। আবার সদস্য তথ্য দিন।');
         }
 
@@ -2371,7 +2374,7 @@ class LoanApplicationController extends Controller
         $requestedAmount = (float) $request->input('amount', 0);
 
         [$member, $existingApplication, $legacyKey] = $this->resolveMemberForForm($request, $loanProductId, $loanCategoryId, 3);
-        if (!$member) {
+        if (! $member) {
             return redirect()->route('member.loan-applications.index')->with('error', 'সদস্য তথ্য পাওয়া যাচ্ছে না।');
         }
 
@@ -2407,7 +2410,7 @@ class LoanApplicationController extends Controller
             'requested_amount' => 'required|numeric|min:0',
             'form_data' => 'required|array',
         ];
-        if (!$isLegacy) {
+        if (! $isLegacy) {
             $rules['member_id'] = 'required|exists:member_admissions,id';
         }
         $validated = $request->validate($rules);
@@ -2415,7 +2418,7 @@ class LoanApplicationController extends Controller
         $memberId = $isLegacy ? null : (int) $validated['member_id'];
         $legacyKey = $isLegacy ? $request->session()->get('loan_legacy_key') : null;
         $legacySnapshot = $isLegacy ? $request->session()->get('loan_legacy_member') : null;
-        if ($isLegacy && (!$legacyKey || !$legacySnapshot)) {
+        if ($isLegacy && (! $legacyKey || ! $legacySnapshot)) {
             return redirect()->route('member.loan-applications.index')->with('error', 'আগের সদস্যের সেশন শেষ। আবার সদস্য তথ্য দিন।');
         }
 
@@ -2498,7 +2501,7 @@ class LoanApplicationController extends Controller
             $requestedAmount = (float) $request->input('amount', 0);
 
             [$member, $existingApplication, $legacyKey] = $this->resolveMemberForForm($request, $loanProductId, $loanCategoryId, 4);
-            if (!$member) {
+            if (! $member) {
                 return redirect()->route('member.loan-applications.index')->with('error', 'সদস্য তথ্য পাওয়া যাচ্ছে না।');
             }
 
@@ -2510,11 +2513,11 @@ class LoanApplicationController extends Controller
 
         // Loan round (দফা): for legacy admissions use stored loan_dofa as base; else count+1
         $loanRound = 1;
-        if (!$request->boolean('legacy') && isset($member->id)) {
+        if (! $request->boolean('legacy') && isset($member->id)) {
             $existingCount = LoanApplication::where('member_admission_id', $member->id)
                 ->whereIn('status', [LoanApplication::STATUS_APPROVED, LoanApplication::STATUS_DISBURSED])
                 ->count();
-            if (!empty($member->is_legacy) && !empty($member->loan_dofa)) {
+            if (! empty($member->is_legacy) && ! empty($member->loan_dofa)) {
                 $loanRound = (int) $member->loan_dofa + $existingCount;
             } else {
                 $loanRound = $existingCount + 1;
@@ -2551,7 +2554,7 @@ class LoanApplicationController extends Controller
             'requested_amount' => 'required|numeric|min:0',
             'form_data' => 'required|array',
         ];
-        if (!$isLegacy) {
+        if (! $isLegacy) {
             $rules['member_id'] = 'required|exists:member_admissions,id';
         }
         $validated = $request->validate($rules);
@@ -2559,7 +2562,7 @@ class LoanApplicationController extends Controller
         $memberId = $isLegacy ? null : (int) $validated['member_id'];
         $legacyKey = $isLegacy ? $request->session()->get('loan_legacy_key') : null;
         $legacySnapshot = $isLegacy ? $request->session()->get('loan_legacy_member') : null;
-        if ($isLegacy && (!$legacyKey || !$legacySnapshot)) {
+        if ($isLegacy && (! $legacyKey || ! $legacySnapshot)) {
             return redirect()->route('member.loan-applications.index')->with('error', 'আগের সদস্যের সেশন শেষ। আবার সদস্য তথ্য দিন।');
         }
 
@@ -2623,11 +2626,11 @@ class LoanApplicationController extends Controller
         $requestedAmount = (float) $request->input('amount', 0);
 
         [$member, $existingApplication, $legacyKey] = $this->resolveMemberForForm($request, $loanProductId, $loanCategoryId, 5);
-        if (!$member) {
+        if (! $member) {
             return redirect()->route('member.loan-applications.index')->with('error', 'সদস্য তথ্য পাওয়া যাচ্ছে না।');
         }
 
-        if (!$request->boolean('legacy')) {
+        if (! $request->boolean('legacy')) {
             $member = MemberAdmission::with(['samity', 'familyMembers', 'otherAssets', 'branch'])->find($member->id);
         }
         $loanProduct = LoanProduct::findOrFail($loanProductId);
@@ -2636,11 +2639,11 @@ class LoanApplicationController extends Controller
         $branch = $user->branch;
 
         $loanRound = 1;
-        if (!$request->boolean('legacy') && isset($member->id)) {
+        if (! $request->boolean('legacy') && isset($member->id)) {
             $existingCount = LoanApplication::where('member_admission_id', $member->id)
                 ->whereIn('status', [LoanApplication::STATUS_APPROVED, LoanApplication::STATUS_DISBURSED])
                 ->count();
-            if (!empty($member->is_legacy) && !empty($member->loan_dofa)) {
+            if (! empty($member->is_legacy) && ! empty($member->loan_dofa)) {
                 $loanRound = (int) $member->loan_dofa + $existingCount;
             } else {
                 $loanRound = $existingCount + 1;
@@ -2678,7 +2681,7 @@ class LoanApplicationController extends Controller
                 'requested_amount' => 'required|numeric|min:0',
                 'form_data' => 'nullable|array',
             ];
-            if (!$isLegacy) {
+            if (! $isLegacy) {
                 $rules['member_id'] = 'required|exists:member_admissions,id';
             }
             $validated = $request->validate($rules);
@@ -2686,7 +2689,7 @@ class LoanApplicationController extends Controller
             $memberId = $isLegacy ? null : (int) $validated['member_id'];
             $legacyKey = $isLegacy ? $request->session()->get('loan_legacy_key') : null;
             $legacySnapshot = $isLegacy ? $request->session()->get('loan_legacy_member') : null;
-            if ($isLegacy && (!$legacyKey || !$legacySnapshot)) {
+            if ($isLegacy && (! $legacyKey || ! $legacySnapshot)) {
                 return redirect()->route('member.loan-applications.index')->with('error', 'আগের সদস্যের সেশন শেষ। আবার সদস্য তথ্য দিন।');
             }
 
@@ -2702,7 +2705,7 @@ class LoanApplicationController extends Controller
             );
 
             $formData = $validated['form_data'] ?? [];
-            if (!is_array($formData)) {
+            if (! is_array($formData)) {
                 $formData = [];
             }
             $existingPlan = is_array($loanApplication->business_plan) ? $loanApplication->business_plan : [];
@@ -2747,7 +2750,7 @@ class LoanApplicationController extends Controller
 
             return redirect()->route('member.loan-applications.show', $loanApplication->id)
                 ->with('success', 'ঋণ আবেদন খসড়া হিসেবে সংরক্ষিত হয়েছে।');
-        } catch (\Illuminate\Validation\ValidationException $e) {
+        } catch (ValidationException $e) {
             throw $e;
         } catch (\Throwable $e) {
             \Log::error('Loan approval draft save failed: '.$e->getMessage());
@@ -2804,14 +2807,14 @@ class LoanApplicationController extends Controller
         $application = LoanApplication::findOrFail($id);
         $user = auth()->user();
         $this->ensureApplicationAccessibleToUser($application, $user);
-        
+
         // Only allow deletion if status is draft
         if ($application->status !== LoanApplication::STATUS_DRAFT) {
             return back()->withErrors(['error' => 'শুধুমাত্র খসড়া (Draft) অবস্থার আবেদন মুছে ফেলা যাবে।']);
         }
-        
+
         $application->delete();
-        
+
         return $this->redirectToListPreservingFilters('member.loan-applications.index', 'ঋণ আবেদন সফলভাবে মুছে ফেলা হয়েছে।');
     }
 
@@ -2827,11 +2830,11 @@ class LoanApplicationController extends Controller
         }
 
         $member = $application->memberAdmission;
-        if (!$member) {
+        if (! $member) {
             return back()->withErrors(['error' => 'সদস্য ভর্তি তথ্য পাওয়া যায়নি।']);
         }
 
-        $normalizedCode = \App\Services\MemberCodeService::normalizeMemberCode(
+        $normalizedCode = MemberCodeService::normalizeMemberCode(
             $request->input('member_code'),
             $member->branch_id,
             $member->branch?->code
@@ -2853,7 +2856,7 @@ class LoanApplicationController extends Controller
                 'application_no' => $normalizedCode,
             ]);
 
-            \App\Services\MemberCodeService::syncRelatedRecords(
+            MemberCodeService::syncRelatedRecords(
                 (int) $member->id,
                 $normalizedCode,
                 $oldCode,
@@ -2861,7 +2864,7 @@ class LoanApplicationController extends Controller
             );
         });
 
-        return back()->with('success', 'মেম্বার কোড সফলভাবে আপডেট করা হয়েছে: ' . $normalizedCode);
+        return back()->with('success', 'মেম্বার কোড সফলভাবে আপডেট করা হয়েছে: '.$normalizedCode);
     }
 
     /**
@@ -2892,7 +2895,7 @@ class LoanApplicationController extends Controller
             ->where('is_active', true)
             ->first();
 
-        if (!$newProduct) {
+        if (! $newProduct) {
             return back()->withErrors(['loan_product_id' => 'নির্বাচিত ক্যাটাগরির অধীনে এই ঋণ প্রোডাক্টটি পাওয়া যায়নি বা নিষ্ক্রিয়।']);
         }
 
@@ -2922,7 +2925,7 @@ class LoanApplicationController extends Controller
 
             // If loan agreement data exists, synchronize product details in it
             $agreementData = is_array($application->loan_agreement_data) ? $application->loan_agreement_data : [];
-            if (!empty($agreementData)) {
+            if (! empty($agreementData)) {
                 $totServiceCharge = $this->calculateTotalServiceCharge($effectiveAmount, $newProduct);
                 $totalRepayable = $effectiveAmount + $totServiceCharge;
                 $agreementData['product_name'] = $newProduct->product_name_bn ?: $newProduct->product_name;
@@ -2938,6 +2941,7 @@ class LoanApplicationController extends Controller
         });
 
         $productLabel = $newProduct->product_name_bn ?: $newProduct->product_name;
+
         return back()->with('success', "ঋণ প্রোডাক্ট সফলভাবে পরিবর্তন করা হয়েছে: {$productLabel}");
     }
 }

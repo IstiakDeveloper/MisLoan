@@ -1,16 +1,17 @@
 <?php
 
+use App\Http\Middleware\CheckBranchUser;
+use App\Http\Middleware\CheckHeadOffice;
+use App\Http\Middleware\CheckMaintenanceMode;
+use App\Http\Middleware\CheckPermission;
+use App\Http\Middleware\CheckRole;
+use App\Http\Middleware\CheckTeamBasedApprovalReportAccess;
+use App\Http\Middleware\EnsureCanViewMemberAdmission;
+use App\Http\Middleware\EnsurePortfolioHandoverComplete;
 use App\Http\Middleware\EnsureProfileComplete;
 use App\Http\Middleware\HandleAppearance;
 use App\Http\Middleware\HandleInertiaRequests;
 use App\Http\Middleware\NormalizeInertiaAmounts;
-use App\Http\Middleware\CheckRole;
-use App\Http\Middleware\CheckPermission;
-use App\Http\Middleware\CheckBranchUser;
-use App\Http\Middleware\CheckHeadOffice;
-use App\Http\Middleware\CheckTeamBasedApprovalReportAccess;
-use App\Http\Middleware\EnsureCanViewMemberAdmission;
-use App\Http\Middleware\CheckMaintenanceMode;
 use Illuminate\Foundation\Application;
 use Illuminate\Foundation\Configuration\Exceptions;
 use Illuminate\Foundation\Configuration\Middleware;
@@ -32,10 +33,12 @@ return Application::configure(basePath: dirname(__DIR__))
             NormalizeInertiaAmounts::class,
             AddLinkHeadersForPreloadedAssets::class,
             CheckMaintenanceMode::class,
+            EnsurePortfolioHandoverComplete::class,
         ]);
 
         $middleware->alias([
             'ensure.profile.complete' => EnsureProfileComplete::class,
+            'ensure.portfolio.handover' => EnsurePortfolioHandoverComplete::class,
             'role' => CheckRole::class,
             'permission' => CheckPermission::class,
             'branch.user' => CheckBranchUser::class,

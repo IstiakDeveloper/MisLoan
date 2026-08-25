@@ -1,6 +1,7 @@
 <?php
 
 use App\Http\Controllers\ApprovalController;
+use App\Http\Controllers\ClusterHandoverController;
 use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\HeadOffice\CsoDutyRosterController;
 use App\Http\Controllers\HeadOfficeAdmissionController;
@@ -46,6 +47,9 @@ Route::middleware(['auth', 'verified'])->group(function () {
     // Portfolio handover (allowed while locked; middleware whitelists these routes)
     Route::get('portfolio-handover', [PortfolioHandoverController::class, 'index'])->name('portfolio-handover.index');
     Route::post('portfolio-handover', [PortfolioHandoverController::class, 'store'])->name('portfolio-handover.store');
+
+    Route::get('cluster-handover', [ClusterHandoverController::class, 'index'])->name('cluster-handover.index');
+    Route::post('cluster-handover', [ClusterHandoverController::class, 'store'])->name('cluster-handover.store');
 
     Route::post('admin/maintenance/toggle', [MaintenanceController::class, 'toggle'])->name('admin.maintenance.toggle');
 
@@ -120,8 +124,6 @@ Route::middleware(['auth', 'verified'])->group(function () {
         Route::post('users/send-credentials-all', [UserController::class, 'sendCredentialsToAll'])->name('users.send-credentials-all');
         Route::post('users/send-branch-summary', [UserController::class, 'sendBranchSummary'])->name('users.send-branch-summary');
     });
-
-
 
     // Samity Management Routes - Only for SuperAdmin/Head Office
     Route::prefix('samities')->name('samities.')->middleware('head.office')->group(function () {

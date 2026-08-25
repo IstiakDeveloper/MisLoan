@@ -2,9 +2,11 @@
 
 namespace App\Http\Controllers;
 
+use App\Models\Area;
 use App\Models\LoanApplicationApproval;
 use App\Models\MemberAdmission;
 use App\Models\MemberAdmissionApproval;
+use App\Models\Zone;
 use App\Services\ApprovalService;
 use App\Support\LoanFormVisibility;
 use Illuminate\Http\RedirectResponse;
@@ -55,13 +57,13 @@ class ApprovalController extends Controller
         ])->values();
 
         $areaIds = $branches->pluck('area_id')->filter()->unique();
-        $areas = \App\Models\Area::query()
+        $areas = Area::query()
             ->whereIn('id', $areaIds)
             ->orderBy('name')
             ->get(['id', 'name', 'code', 'zone_id']);
 
         $zoneIds = $areas->pluck('zone_id')->filter()->unique();
-        $zones = \App\Models\Zone::query()
+        $zones = Zone::query()
             ->whereIn('id', $zoneIds)
             ->orderBy('name')
             ->get(['id', 'name', 'code']);
@@ -79,10 +81,12 @@ class ApprovalController extends Controller
                 'applicant_name_bn' => $member ? ($member->applicant_name_bn ?? '') : '',
                 'branch_name' => $branch ? $branch->name : '',
                 'branch_id' => $loan->branch_id,
+                'branch_code' => $branch->code ?? '',
                 'requested_amount' => $loan->requested_amount,
                 'submitted_at' => $loan->submitted_at,
                 'level' => $approval->level,
                 'sequence' => $approval->sequence,
+                'block_list' => $member ? $this->blockListFieldsFromMember($member) : null,
             ];
             if ($approval->level === 'branch') {
                 $data['escalation_approvers'] = $this->approvalService->getEscalationApprovers($loan->branch_id)
@@ -123,6 +127,7 @@ class ApprovalController extends Controller
             } else {
                 $data['escalation_approvers'] = [];
             }
+
             return $data;
         });
 
@@ -259,33 +264,44 @@ class ApprovalController extends Controller
             if (LoanFormVisibility::isBmFormIncompleteMessage($e->getMessage())) {
                 return $this->redirectToFieldInvestigationForResume($loanApproval, $request);
             }
+
             return back()->with('error', $e->getMessage());
         }
 
         if ($success) {
             return $this->redirectToListPreservingFilters('approvals.index', 'ঋণ আবেদন অনুমোদিত হয়েছে।');
         }
+
         return back()->with('error', 'অনুমোদন করা যাচ্ছে না।');
     }
 
     /**
-     * Reject a loan application.
+     * Reject a loan application and optionally push the applicant to the block list.
      * Rejects the loan; higher approvers also sync-reject Team Based.
      */
     public function rejectLoan(Request $request, LoanApplicationApproval $loanApproval)
     {
         abort_unless((int) $loanApproval->user_id === (int) $request->user()->id, 403);
 
-        $data = $request->validate([
+        $rules = [
             'comments' => 'required|string|max:1000',
-        ], [
-            'comments.required' => 'মন্তব্য লিখতে হবে।',
-        ]);
+            'push_to_block_list' => ['sometimes', 'boolean'],
+        ];
+
+        $pushToBlockList = $request->boolean('push_to_block_list', false);
+
+        if ($pushToBlockList) {
+            $rules = array_merge($rules, $this->blockListValidationRules());
+        }
+
+        $data = $request->validate($rules, $this->blockListValidationMessages());
 
         try {
             $success = $this->approvalService->rejectLoan(
                 $loanApproval,
                 $data['comments'],
+                $pushToBlockList,
+                $pushToBlockList ? ($data['block_list'] ?? null) : null,
             );
         } catch (\RuntimeException $e) {
             return back()->with('error', $e->getMessage());
@@ -293,6 +309,9 @@ class ApprovalController extends Controller
 
         if ($success) {
             $message = 'ঋণ আবেদন প্রত্যাখ্যান হয়েছে।';
+            if ($pushToBlockList) {
+                $message .= ' Block List-এ যোগ করা হয়েছে।';
+            }
             if (in_array($loanApproval->level, ['area', 'zone', 'escalation'], true)) {
                 $message .= ' টিম ভিত্তিক অনুমোদনও প্রত্যাখ্যান হয়েছে (থাকলে)।';
             }
@@ -315,7 +334,7 @@ class ApprovalController extends Controller
         ]);
 
         $loan = $loanApproval->loanApplication;
-        $aboveCeiling = (float) ($loan?->requested_amount ?? 0) >= \App\Services\ApprovalService::BRANCH_MANAGER_LOAN_CEILING;
+        $aboveCeiling = (float) ($loan?->requested_amount ?? 0) >= ApprovalService::BRANCH_MANAGER_LOAN_CEILING;
 
         try {
             $success = $this->approvalService->forwardLoanToApprover(

@@ -64,7 +64,7 @@ class User extends Authenticatable
 
     /**
      * Members still assigned to this FO whose branch differs from the FO's current branch
-     * (typical after HRM transfer). Kept for the optional handover screen; login is not locked.
+     * (typical after HRM transfer). Shown on the cluster/samity handover screen.
      */
     public function pendingPortfolioHandoverMembers()
     {
@@ -75,11 +75,18 @@ class User extends Authenticatable
     }
 
     /**
-     * Members belong to the branch, not the officer, so transfer no longer blocks the app.
+     * After transfer, lock the app until remaining old-branch members are assigned
+     * to officers still working at that branch.
      */
     public function needsPortfolioHandover(): bool
     {
-        return false;
+        $this->loadMissing('role');
+
+        if ($this->role?->name !== Role::FIELD_OFFICER) {
+            return false;
+        }
+
+        return $this->pendingPortfolioHandoverMembers()->exists();
     }
 
     /**

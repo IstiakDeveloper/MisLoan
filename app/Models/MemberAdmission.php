@@ -2,6 +2,8 @@
 
 namespace App\Models;
 
+use App\Services\MemberCodeService;
+use App\Support\AdmissionFormVisibility;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
@@ -216,6 +218,23 @@ class MemberAdmission extends Model
         return $id !== null ? (int) $id : null;
     }
 
+    /**
+     * Members belong to the branch. Any staff of that branch (including a transferred
+     * field officer) may work with this admission; assigned_officer_id is audit-only.
+     */
+    public function isOnAccessibleBranchFor(User $user): bool
+    {
+        if ($user->has_all_access) {
+            return true;
+        }
+
+        if ($this->branch_id === null) {
+            return false;
+        }
+
+        return $user->canAccessBranch((int) $this->branch_id);
+    }
+
     public function isAssignedToUser(User $user): bool
     {
         return $this->effectiveOfficerId() === (int) $user->id;
@@ -338,7 +357,7 @@ class MemberAdmission extends Model
 
     public function canBeEdited(): bool
     {
-        return in_array($this->status, \App\Support\AdmissionFormVisibility::staffEditableStatuses(), true);
+        return in_array($this->status, AdmissionFormVisibility::staffEditableStatuses(), true);
     }
 
     public function hasDisbursedLoan(): bool
@@ -364,7 +383,7 @@ class MemberAdmission extends Model
 
         $user->loadMissing('role');
 
-        return \App\Support\AdmissionFormVisibility::canEditAdmissionForm(
+        return AdmissionFormVisibility::canEditAdmissionForm(
             $user->role?->name,
             (string) $this->status,
             $this->hasDisbursedLoan(),
@@ -411,13 +430,14 @@ class MemberAdmission extends Model
         }
 
         $current = $this->getCurrentPendingApprovalForTracking();
-        if (!$current) {
+        if (! $current) {
             if ($status === 'submitted') {
                 return ['label' => 'শাখা ব্যবস্থাপকের কাছে', 'pending_with_name' => null];
             }
             if ($status === 'under_review') {
                 return ['label' => 'পর্যালোচনায়', 'pending_with_name' => null];
             }
+
             return ['label' => '—', 'pending_with_name' => null];
         }
 
@@ -435,7 +455,7 @@ class MemberAdmission extends Model
         ];
         $label = $levelLabels[$level] ?? 'পর্যালোচনায়';
         if ($name && $level !== 'branch') {
-            $label .= ' (' . $name . ')';
+            $label .= ' ('.$name.')';
         }
 
         return ['label' => $label, 'pending_with_name' => $name];
@@ -454,8 +474,10 @@ class MemberAdmission extends Model
                     return $p;
                 }
             }
+
             return null;
         }
+
         return $this->currentPendingApproval();
     }
 
@@ -466,9 +488,9 @@ class MemberAdmission extends Model
 
         static::creating(function ($admission) {
             if (empty($admission->application_no)) {
-                $admission->application_no = \App\Services\MemberCodeService::generateNextMemberCode($admission->branch_id);
+                $admission->application_no = MemberCodeService::generateNextMemberCode($admission->branch_id);
             } else {
-                $admission->application_no = \App\Services\MemberCodeService::normalizeMemberCode(
+                $admission->application_no = MemberCodeService::normalizeMemberCode(
                     $admission->application_no,
                     $admission->branch_id
                 );
@@ -476,8 +498,8 @@ class MemberAdmission extends Model
         });
 
         static::updating(function ($admission) {
-            if ($admission->isDirty('application_no') && !empty($admission->application_no)) {
-                $admission->application_no = \App\Services\MemberCodeService::normalizeMemberCode(
+            if ($admission->isDirty('application_no') && ! empty($admission->application_no)) {
+                $admission->application_no = MemberCodeService::normalizeMemberCode(
                     $admission->application_no,
                     $admission->branch_id
                 );
@@ -490,7 +512,7 @@ class MemberAdmission extends Model
      */
     public static function generateApplicationNumber(?int $branchId = null): string
     {
-        return \App\Services\MemberCodeService::generateNextMemberCode($branchId);
+        return MemberCodeService::generateNextMemberCode($branchId);
     }
 
     /**

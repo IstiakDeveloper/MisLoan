@@ -2,16 +2,16 @@
 
 namespace App\Services;
 
-use App\Models\MemberAdmission;
-use App\Models\MemberAdmissionApproval;
+use App\Models\Branch;
 use App\Models\LoanApplication;
 use App\Models\LoanApplicationApproval;
+use App\Models\MemberAdmission;
+use App\Models\MemberAdmissionApproval;
 use App\Models\Role;
 use App\Models\TeamBasedApproval;
 use App\Models\TeamBasedApprovalItem;
 use App\Models\TeamBasedApprovalReview;
 use App\Models\User;
-use App\Services\NotificationService;
 use App\Support\LoanFormVisibility;
 use App\Support\NumberToWordsBangla;
 use Illuminate\Support\Facades\DB;
@@ -28,7 +28,7 @@ class ApprovalService
             $admission->approvals()->delete();
 
             $branch = $admission->branch;
-            if (!$branch) {
+            if (! $branch) {
                 throw new \Exception('Admission must have a branch.');
             }
 
@@ -65,7 +65,7 @@ class ApprovalService
         $sequence = 1;
 
         $branch = $admission->branch;
-        if (!$branch) {
+        if (! $branch) {
             return $approvers;
         }
 
@@ -153,7 +153,7 @@ class ApprovalService
         }
 
         // Check if it's the current pending approval in sequence
-        if (!$approval->isCurrentPending()) {
+        if (! $approval->isCurrentPending()) {
             return false;
         }
 
@@ -256,7 +256,7 @@ class ApprovalService
             return false;
         }
 
-        if (!$approval->isCurrentPending()) {
+        if (! $approval->isCurrentPending()) {
             return false;
         }
 
@@ -336,6 +336,7 @@ class ApprovalService
             if ($admission && $admission->status === 'under_review' && $approval->level !== 'branch') {
                 return true;
             }
+
             return false;
         })->values();
     }
@@ -366,7 +367,7 @@ class ApprovalService
             return false;
         }
 
-        if (!$approval->isCurrentPending()) {
+        if (! $approval->isCurrentPending()) {
             return false;
         }
 
@@ -427,9 +428,9 @@ class ApprovalService
         $approvers = collect();
 
         // Get the branch with area and zone relationships
-        $branch = \App\Models\Branch::with('area.zone')->find($branchId);
+        $branch = Branch::with('area.zone')->find($branchId);
 
-        if (!$branch) {
+        if (! $branch) {
             return $approvers;
         }
 
@@ -444,6 +445,7 @@ class ApprovalService
             ->get()
             ->map(function ($user) {
                 $user->level = 'Branch';
+
                 return $user;
             });
 
@@ -461,6 +463,7 @@ class ApprovalService
                 ->get()
                 ->map(function ($user) {
                     $user->level = 'Area';
+
                     return $user;
                 });
 
@@ -479,6 +482,7 @@ class ApprovalService
                 ->get()
                 ->map(function ($user) {
                     $user->level = 'Zone';
+
                     return $user;
                 });
 
@@ -495,8 +499,8 @@ class ApprovalService
      */
     public function getEscalationApprovers(int $branchId)
     {
-        $branch = \App\Models\Branch::with('area.zone')->find($branchId);
-        if (!$branch) {
+        $branch = Branch::with('area.zone')->find($branchId);
+        if (! $branch) {
             return collect();
         }
 
@@ -514,6 +518,7 @@ class ApprovalService
                 ->get()
                 ->map(function ($user) {
                     $user->level = 'area';
+
                     return $user;
                 });
             $approvers = $approvers->merge($areaUsers);
@@ -531,6 +536,7 @@ class ApprovalService
                 ->get()
                 ->map(function ($user) {
                     $user->level = 'zone';
+
                     return $user;
                 });
             $approvers = $approvers->merge($zoneUsers);
@@ -540,6 +546,7 @@ class ApprovalService
         $escalationUsers = User::getApproversSelectableByBranch($branchId)
             ->map(function ($user) {
                 $user->level = 'escalation';
+
                 return $user;
             });
         $approvers = $approvers->merge($escalationUsers);
@@ -553,7 +560,7 @@ class ApprovalService
      */
     public function forwardToApprover(MemberAdmissionApproval $approval, int $userId, ?string $comments = null): bool
     {
-        if ($approval->status !== 'pending' || !$approval->isCurrentPending()) {
+        if ($approval->status !== 'pending' || ! $approval->isCurrentPending()) {
             return false;
         }
         if ($approval->level !== 'branch') {
@@ -561,7 +568,7 @@ class ApprovalService
         }
 
         $targetUser = User::with('role')->find($userId);
-        if (!$targetUser || !$targetUser->is_active) {
+        if (! $targetUser || ! $targetUser->is_active) {
             return false;
         }
         $roleName = $targetUser->role->name ?? '';
@@ -636,7 +643,7 @@ class ApprovalService
                 details: [
                     'আবেদন নং' => $admission->application_no,
                     'আবেদনকারীর নাম' => $admission->applicant_name_bn ?: $admission->applicant_name_en,
-                    'অনুমোদনকারী' => $targetUser->name . " (" . ($targetUser->role?->name ?? '') . ")",
+                    'অনুমোদনকারী' => $targetUser->name.' ('.($targetUser->role?->name ?? '').')',
                 ]
             );
         }
@@ -652,7 +659,7 @@ class ApprovalService
         DB::transaction(function () use ($loan) {
             $loan->approvals()->delete();
 
-            if (!$loan->branch_id) {
+            if (! $loan->branch_id) {
                 throw new \Exception('Loan application must have a branch.');
             }
 
@@ -685,7 +692,7 @@ class ApprovalService
      */
     public function approveLoan(LoanApplicationApproval $approval, ?string $comments = null, ?float $approvedAmount = null): bool
     {
-        if ($approval->status !== 'pending' || !$approval->isCurrentPending()) {
+        if ($approval->status !== 'pending' || ! $approval->isCurrentPending()) {
             return false;
         }
 
@@ -771,13 +778,13 @@ class ApprovalService
                     users: $loan->submittedBy,
                     type: 'loan_application',
                     title: 'ঋণ আবেদন শাখা কর্তৃক অনুমোদিত',
-                    message: "ঋণ আবেদন নং {$loan->application_no} ({$loan->memberAdmission?->applicant_name_bn}) শাখা থেকে অনুমোদিত হয়েছে। অনুমোদিত পরিমাণ: " . number_format($approvedAmount) . " টাকা।",
+                    message: "ঋণ আবেদন নং {$loan->application_no} ({$loan->memberAdmission?->applicant_name_bn}) শাখা থেকে অনুমোদিত হয়েছে। অনুমোদিত পরিমাণ: ".number_format($approvedAmount).' টাকা।',
                     notifiable: $loan,
                     actionUrl: "/member/loan-applications/{$loan->id}",
                     details: [
                         'আবেদন নং' => $loan->application_no,
                         'সদস্যের নাম' => $loan->memberAdmission?->applicant_name_bn ?: ($loan->memberAdmission?->applicant_name_en ?? 'N/A'),
-                        'অনুমোদিত পরিমাণ' => number_format($approvedAmount) . ' টাকা',
+                        'অনুমোদিত পরিমাণ' => number_format($approvedAmount).' টাকা',
                         'অনুমোদনকারী' => auth()->user()?->name ?? 'Branch Manager',
                     ]
                 );
@@ -786,13 +793,13 @@ class ApprovalService
                     users: $loan->submittedBy,
                     type: 'loan_application',
                     title: 'উচ্চতর পর্যায় থেকে ঋণ আবেদন অনুমোদিত',
-                    message: "ঋণ আবেদন নং {$loan->application_no} ({$loan->memberAdmission?->applicant_name_bn}) উচ্চতর অনুমোদনকারী কর্তৃক অনুমোদিত হয়েছে। অনুমোদিত পরিমাণ: " . number_format($approvedAmount) . " টাকা।",
+                    message: "ঋণ আবেদন নং {$loan->application_no} ({$loan->memberAdmission?->applicant_name_bn}) উচ্চতর অনুমোদনকারী কর্তৃক অনুমোদিত হয়েছে। অনুমোদিত পরিমাণ: ".number_format($approvedAmount).' টাকা।',
                     notifiable: $loan,
                     actionUrl: "/member/loan-applications/{$loan->id}",
                     details: [
                         'আবেদন নং' => $loan->application_no,
                         'সদস্যের নাম' => $loan->memberAdmission?->applicant_name_bn ?: ($loan->memberAdmission?->applicant_name_en ?? 'N/A'),
-                        'অনুমোদিত পরিমাণ' => number_format($approvedAmount) . ' টাকা',
+                        'অনুমোদিত পরিমাণ' => number_format($approvedAmount).' টাকা',
                         'অনুমোদনকারী' => auth()->user()?->name ?? 'Approver',
                     ]
                 );
@@ -806,16 +813,21 @@ class ApprovalService
      * Reject a loan application.
      * Always rejects the loan. Higher-level approvers (area/zone/escalation) also
      * sync-reject any linked Team Based sheet. Branch Manager reject skips Team Based.
+     * When $pushToBlockList is true, the applicant is pushed to the external block list.
+     *
+     * @param  array<string, mixed>|null  $blockListData
      */
     public function rejectLoan(
         LoanApplicationApproval $approval,
         string $comments,
+        bool $pushToBlockList = false,
+        ?array $blockListData = null,
     ): bool {
         if ($approval->status !== 'pending' || ! $approval->isCurrentPending()) {
             return false;
         }
 
-        DB::transaction(function () use ($approval, $comments) {
+        DB::transaction(function () use ($approval, $comments, $pushToBlockList, $blockListData) {
             $approval->update([
                 'status' => 'rejected',
                 'comments' => $comments,
@@ -835,6 +847,24 @@ class ApprovalService
             }
 
             $loan->update(['status' => LoanApplication::STATUS_REJECTED]);
+
+            if ($pushToBlockList && is_array($blockListData)) {
+                $branch = $loan->branch;
+                if (! $branch) {
+                    throw new \RuntimeException('শাখার তথ্য পাওয়া যায়নি। Block list-এ পাঠানো যায়নি।');
+                }
+
+                $member = $loan->memberAdmission;
+                $memberName = (string) ($member?->applicant_name_bn ?: ($member?->applicant_name_en ?: 'N/A'));
+
+                app(BlockListService::class)->pushRejectedPerson(
+                    $approval->user,
+                    $memberName,
+                    $branch,
+                    $blockListData,
+                    $comments,
+                );
+            }
         });
 
         // Send notifications
@@ -868,7 +898,7 @@ class ApprovalService
      */
     public function forwardLoanToApprover(LoanApplicationApproval $approval, int $userId, ?string $comments = null): bool
     {
-        if ($approval->status !== 'pending' || !$approval->isCurrentPending()) {
+        if ($approval->status !== 'pending' || ! $approval->isCurrentPending()) {
             return false;
         }
         if ($approval->level !== 'branch') {
@@ -876,7 +906,7 @@ class ApprovalService
         }
 
         $targetUser = User::with('role')->find($userId);
-        if (!$targetUser || !$targetUser->is_active) {
+        if (! $targetUser || ! $targetUser->is_active) {
             return false;
         }
         $roleName = $targetUser->role->name ?? '';
@@ -949,13 +979,13 @@ class ApprovalService
             users: $targetUser,
             type: 'loan_application',
             title: 'ঋণ আবেদন আপনার পর্যালোচনার জন্য ফরোয়ার্ড করা হয়েছে',
-            message: "ঋণ আবেদন নং {$loan->application_no} ({$loan->memberAdmission?->applicant_name_bn}) আপনার অনুমোদনের জন্য ফরোয়ার্ড করা হয়েছে। চাহিদাকৃত পরিমাণ: " . number_format($loan->requested_amount ?? 0) . " টাকা।",
+            message: "ঋণ আবেদন নং {$loan->application_no} ({$loan->memberAdmission?->applicant_name_bn}) আপনার অনুমোদনের জন্য ফরোয়ার্ড করা হয়েছে। চাহিদাকৃত পরিমাণ: ".number_format($loan->requested_amount ?? 0).' টাকা।',
             notifiable: $loan,
             actionUrl: '/approvals',
             details: [
                 'আবেদন নং' => $loan->application_no,
                 'সদস্যের নাম' => $loan->memberAdmission?->applicant_name_bn ?: ($loan->memberAdmission?->applicant_name_en ?? 'N/A'),
-                'চাহিদাকৃত ঋণ' => number_format($loan->requested_amount ?? 0) . ' টাকা',
+                'চাহিদাকৃত ঋণ' => number_format($loan->requested_amount ?? 0).' টাকা',
                 'শাখা' => $loan->branch?->name ?? 'N/A',
                 'ফরোয়ার্ড করেছেন' => auth()->user()?->name ?? 'Branch Manager',
             ]
@@ -973,7 +1003,7 @@ class ApprovalService
                 details: [
                     'আবেদন নং' => $loan->application_no,
                     'সদস্যের নাম' => $loan->memberAdmission?->applicant_name_bn ?: ($loan->memberAdmission?->applicant_name_en ?? 'N/A'),
-                    'অনুমোদনকারী' => $targetUser->name . " (" . ($targetUser->role?->name ?? '') . ")",
+                    'অনুমোদনকারী' => $targetUser->name.' ('.($targetUser->role?->name ?? '').')',
                 ]
             );
         }

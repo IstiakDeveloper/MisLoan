@@ -345,7 +345,7 @@ class MemberAdmissionController extends Controller
             'approvals.user',
         ]);
 
-        // Records stay on the branch; field officers only see their own in that branch.
+        // List stays personal for field officers. Loans for other branch members go through ঋণ আবেদন search.
         if (! $user->has_all_access) {
             $query->whereIn('branch_id', $user->getAccessibleBranches()->pluck('id'));
         }
