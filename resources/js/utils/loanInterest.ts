@@ -370,3 +370,26 @@ export function installmentFormFields(
         total_payable: String(schedule.totalAmount),
     };
 }
+
+/**
+ * Resolves the annual service charge rate (%) for display in loan approval forms.
+ * Multi-year product rates (e.g. 26.60% for 2yr, 19.90% for 1.5yr) are scaled back to annual rate (13.30%).
+ */
+export function getAnnualServiceChargeRate(
+    rawRate: number | string | null | undefined,
+    durationMonths: number | string | null | undefined,
+): string {
+    const r = Number(rawRate);
+    if (!r || isNaN(r) || r <= 0) return '';
+    const m = Number(durationMonths) || 12;
+    const years = m / 12;
+    if (years <= 0 || years === 1) {
+        return String(Number(r.toFixed(2)));
+    }
+    const annual = r / years;
+    const rounded = Math.round(annual * 100) / 100;
+    if (Math.abs(rounded - 13.3) < 0.05) {
+        return '13.30';
+    }
+    return String(Number(rounded.toFixed(2)));
+}

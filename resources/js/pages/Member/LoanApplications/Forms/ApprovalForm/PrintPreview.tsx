@@ -1,7 +1,7 @@
 import React from 'react';
 import { formatDateBangla } from '@/utils/dateUtils';
 import { useAutoFitPrint } from '@/hooks/useAutoFitPrint';
-import { formatLoanYearsLabel } from './FormPage3';
+import { formatLoanYearsLabel, getAnnualServiceChargeRate } from './FormPage3';
 
 const PRINT_FONT = 'Kalpurush, Arial, sans-serif';
 const pageFontStyle = { fontFamily: PRINT_FONT, color: '#000' } as const;
@@ -85,6 +85,7 @@ function renderPage1(d: any, branch?: any, categoryName?: string) {
     const fmt = formatDateBangla;
     const nidDigits = (d.nid_smart_card || '').replace(/\D/g, '').slice(0, 17).split('');
     const durationLabel = `${formatLoanYearsLabel(d.loan_duration_months)} বছর`;
+    const branchName = branch?.name || branch?.branch_name || d.branch_name || '';
     return (
         <div
             id="preview-page-1"
@@ -104,6 +105,9 @@ function renderPage1(d: any, branch?: any, categoryName?: string) {
                                 <p className="text-[12px] leading-tight print:text-[11.5px] text-gray-800">{branch?.address || d.branch_address || 'উকিলপাড়া, নওগাঁ।'}</p>
                             </div>
                         </div>
+                        <p className="text-[12px] print:text-[11.5px] text-gray-800 font-medium">
+                            শাখা: <span className="font-semibold">{branchName || ''}</span>
+                        </p>
                         <div className="text-center rounded-lg border-2 border-gray-700 px-4 py-0.5 mt-0.5">
                             <h2 className="text-[12.5px] font-bold print:text-[12px]">({cat} ঋণ আবেদন ও অনুমোদনপত্র)</h2>
                         </div>
@@ -757,7 +761,7 @@ function renderPage3(d: any) {
                         <div className="inline-block border border-gray-600 px-3 py-1 font-bold mb-2 bg-gray-100 text-[12.5px]">গ. অন্যান্য তথ্যাবলী:</div>
                         <div className="flex justify-between text-[12.5px] mb-1.5">
                             <span>০১. (ক) ঋণের মেয়াদ: <span className="underline font-bold px-1">{d.loan_duration_months || ''} মাস</span></span>
-                            <span>(খ) সার্ভিস চার্জের হার: <span className="underline font-bold px-1">{d.applied_service_charge_rate || ''}%</span></span>
+                            <span>(খ) সার্ভিস চার্জের হার: <span className="underline font-bold px-1">{getAnnualServiceChargeRate(d.applied_service_charge_rate, d.loan_duration_months) || d.applied_service_charge_rate || ''}%</span></span>
                             <span>(গ) ঋণ পরিশোধের তফসিল:</span>
                         </div>
                         <table className="w-full border-collapse border border-gray-600 text-center align-middle text-[12px]">

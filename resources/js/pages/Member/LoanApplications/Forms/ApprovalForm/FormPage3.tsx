@@ -1,9 +1,9 @@
 import React, { useEffect, useMemo } from 'react';
 import { FormPageProps } from './Types';
 import { Calculator, Calendar, ShieldCheck, UserCheck, DollarSign } from 'lucide-react';
-import { calcInstallmentSchedule } from '@/utils/loanInterest';
+import { calcInstallmentSchedule, getAnnualServiceChargeRate } from '@/utils/loanInterest';
 
-export { calcInstallmentSchedule } from '@/utils/loanInterest';
+export { calcInstallmentSchedule, getAnnualServiceChargeRate } from '@/utils/loanInterest';
 
 /** Convert duration months → years label (e.g. 12 → "১", 18 → "১.৫", 24 → "২") */
 export function formatLoanYearsLabel(months: number | string | null | undefined): string {
@@ -141,9 +141,10 @@ export default function FormPage3({ data, setData, member, loanProduct, loanCate
         if (months && String(data.loan_duration_months || '') !== String(months)) {
             setData('loan_duration_months', String(months));
         }
-        const sc = loanProduct?.interest_rate ?? loanProduct?.service_charge ?? loanProduct?.service_charge_rate;
-        if (sc != null && sc !== '' && String(data.applied_service_charge_rate || '') !== String(sc)) {
-            setData('applied_service_charge_rate', String(sc));
+        const rawSc = loanProduct?.service_charge ?? loanProduct?.interest_rate ?? loanProduct?.service_charge_rate ?? (loanProduct?.service_charge_per_thousand ? Number(loanProduct.service_charge_per_thousand) / 10 : undefined);
+        const annualRate = getAnnualServiceChargeRate(rawSc, months || data.loan_duration_months);
+        if (annualRate && String(data.applied_service_charge_rate || '') !== annualRate) {
+            setData('applied_service_charge_rate', annualRate);
         }
 
         if (!liveSchedule) return;

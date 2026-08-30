@@ -4,6 +4,7 @@ use App\Http\Controllers\ApprovalController;
 use App\Http\Controllers\ClusterHandoverController;
 use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\HeadOffice\CsoDutyRosterController;
+use App\Http\Controllers\HeadOffice\GuarantorInformantReportController;
 use App\Http\Controllers\HeadOffice\HoSendCutoffController;
 use App\Http\Controllers\HeadOfficeAdmissionController;
 use App\Http\Controllers\HeadOfficeLoanController;
@@ -393,6 +394,11 @@ Route::middleware(['auth', 'verified'])->group(function () {
         // Branch send-to-HO daily cutoff (default 5:00 PM, configurable)
         Route::get('send-cutoff', [HoSendCutoffController::class, 'index'])->name('send-cutoff');
         Route::put('send-cutoff', [HoSendCutoffController::class, 'update'])->name('send-cutoff.update');
+
+        // 3 Lakh+ Loan Guarantor & Informant Report
+        Route::get('reports/guarantor-informants', [GuarantorInformantReportController::class, 'index'])->name('reports.guarantor-informants');
+        Route::get('reports/guarantor-informants/print', [GuarantorInformantReportController::class, 'print'])->name('reports.guarantor-informants.print');
+        Route::get('reports/guarantor-informants/export', [GuarantorInformantReportController::class, 'exportExcel'])->name('reports.guarantor-informants.export');
     });
 
     // Team Based Approval Report - Head Office, SuperAdmin, ED

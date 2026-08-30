@@ -11,7 +11,7 @@ const num = (v: any) => {
 };
 
 /** Page-1 only: logo left, text+title to the right */
-function Header() {
+function Header({ branchName, branchAddress }: { branchName?: string; branchAddress?: string }) {
     return (
         <div className="mb-2 flex items-center justify-center gap-3">
             <img
@@ -24,8 +24,11 @@ function Header() {
             />
             <div className="flex flex-col items-center justify-center">
                 <h1 className="text-[22px] font-bold leading-none tracking-wide">মৌসুমী</h1>
-                <p className="text-[12px] font-semibold leading-tight mt-0.5">উকিলপাড়া, নওগাঁ</p>
-                <div className="mt-1.5 inline-block rounded-full border-2 border-black px-5 py-0.5">
+                <p className="text-[12px] font-semibold leading-tight mt-0.5">{branchAddress || 'উকিলপাড়া, নওগাঁ'}</p>
+                <p className="text-[12px] font-medium leading-tight">
+                    শাখা: <span className="font-semibold">{branchName || ''}</span>
+                </p>
+                <div className="mt-1 inline-block rounded-full border-2 border-black px-5 py-0.5">
                     <h2 className="text-[13px] font-bold text-black leading-tight whitespace-nowrap">
                         অগ্রসর ঋণ আবেদন ও অনুমোদনপত্র
                     </h2>
@@ -157,7 +160,7 @@ export default function PrintPreview({ formData }: { formData: AgrosorProfileDat
             >
                 <div className="print-page-content flex flex-col justify-between h-full w-full box-border">
                     <div className="space-y-2">
-                        <Header />
+                        <Header branchName={d.branch_name} branchAddress={d.branch_address} />
 
                         <div className="grid grid-cols-3 gap-x-3 text-[12px] mb-1.5">
                             <p>

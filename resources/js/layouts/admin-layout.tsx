@@ -82,8 +82,9 @@ interface AdminLayoutProps {
 }
 
 const SETUP_PATHS = ['/loan-categories', '/loan-products', '/savings-products', '/organizations', '/samities', '/member-categories', '/users', '/roles', '/head-office/cso-duty-roster', '/head-office/send-cutoff'];
-const REPORT_PATHS = ['/head-office/team-based-approvals/report'];
+const REPORT_PATHS = ['/head-office/team-based-approvals/report', '/head-office/reports/guarantor-informants'];
 const TEAM_BASED_REPORT_HREF = '/head-office/team-based-approvals/report';
+const GUARANTOR_INFORMANT_REPORT_HREF = '/head-office/reports/guarantor-informants';
 
 function isNavItemActive(currentPath: string, href: string): boolean {
     if (currentPath === href) return true;
@@ -109,6 +110,7 @@ function getPageTitle(currentPath: string): string {
     if (currentPath.includes('/loan-applications')) return 'Loan Applications';
     if (currentPath.includes('/savings-applications')) return 'Savings Applications';
     if (currentPath.includes('/team-based-approvals')) return 'Team Based Approvals';
+    if (currentPath.includes('/reports/guarantor-informants')) return 'Guarantor & Informant Report';
     if (currentPath.includes('/approvals')) return 'Pending Approvals';
     if (currentPath.includes('/verifications')) return 'Verifications';
     if (currentPath.includes('/loan-categories')) return 'Loan Categories';
@@ -222,6 +224,7 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
     // Head Office / Super Admin / CSO do not approve via /approvals — hide Pending Approvals UI
     const showPendingApprovalsNav = !isHeadOfficeRole && !isSuperAdmin && !isCsoRole;
     const canViewTeamBasedReport = auth.user.has_all_access || isSuperAdmin || isHeadOfficeRole || isEdRole;
+    const canViewGuarantorReport = auth.user.has_all_access || isSuperAdmin || isHeadOfficeRole || isCsoRole || isEdRole;
     const showConfigurationSection = (!isBranchRole && !isTeamApproverRole && !isCsoRole) || isEdRole;
     const { canInstall, promptInstall, isInstalled, isStandalone, platform } = usePwaInstallPrompt();
 
@@ -296,7 +299,8 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
     ];
 
     const headOfficeReportItems = [
-        { name: 'Team Based Report', href: TEAM_BASED_REPORT_HREF, icon: PieChart },
+        ...(canViewTeamBasedReport ? [{ name: 'Team Based Report', href: TEAM_BASED_REPORT_HREF, icon: PieChart }] : []),
+        ...(canViewGuarantorReport ? [{ name: 'Guarantor & Informant Report', href: GUARANTOR_INFORMANT_REPORT_HREF, icon: Users }] : []),
     ];
 
     const headOfficeSetupItems = [
@@ -448,7 +452,7 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
         ].slice(0, 4).filter(Boolean);
     }, [isFieldOfficer, isBranchRole, isTeamApproverRole, isEdRole, branchMenuItems, approverMenuItems, approverOperationsItems, headOfficeMainItems, badgeCounts.pendingApprovals]);
 
-    const showReportSection = isEdRole || canViewTeamBasedReport;
+    const showReportSection = headOfficeReportItems.length > 0;
     const currentTitle = getPageTitle(path);
 
     return (

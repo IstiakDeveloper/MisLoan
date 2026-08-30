@@ -21,7 +21,7 @@ import { triggerPrintWithAutoFit } from '@/hooks/useAutoFitPrint';
 import { getRequiredSavingsPercent } from '@/components/LoanApplications/GeneralSavingsSection';
 import { afterLoanFormSaveUrl } from '@/utils/loanFormNavigation';
 import { getLoanYears, scaleAnnualToLoanYears } from './FormPage3';
-import { calculateLoanSchedule, installmentFormFields } from '@/utils/loanInterest';
+import { calculateLoanSchedule, getAnnualServiceChargeRate, installmentFormFields } from '@/utils/loanInterest';
 import { withLiveMemberCode } from '@/utils/memberCodeUtils';
 
 export const toInputDate = (value: string | null | undefined): string => {
@@ -259,7 +259,8 @@ export default function ApprovalForm({
 
     const { data, setData, processing } = useForm<LoanApplicationApprovalData>(withLiveMemberCode({
         category_name: categoryName,
-        branch_address: branch?.address || '',
+        branch_name: branch?.name || branch?.branch_name || member?.branch?.name || (savedData as any)?.branch_name || '',
+        branch_address: branch?.address || member?.branch?.address || (savedData as any)?.branch_address || '',
         application_date: new Date().toISOString().split('T')[0],
         recipient_to: '',
         authority_medium: '',
@@ -414,11 +415,14 @@ export default function ApprovalForm({
         loan_duration_months: loanProduct?.duration_months
             ? String(loanProduct.duration_months)
             : (loanProduct?.loan_duration_months ? String(loanProduct.loan_duration_months) : ''),
-        applied_service_charge_rate: loanProduct?.interest_rate != null && loanProduct?.interest_rate !== ''
+        applied_service_charge_rate: getAnnualServiceChargeRate(
+            loanProduct?.service_charge ?? loanProduct?.interest_rate ?? loanProduct?.service_charge_rate ?? (loanProduct?.service_charge_per_thousand ? Number(loanProduct.service_charge_per_thousand) / 10 : undefined),
+            loanProduct?.duration_months ?? loanProduct?.loan_duration_months ?? 12,
+        ) || (loanProduct?.interest_rate != null && loanProduct?.interest_rate !== ''
             ? String(loanProduct.interest_rate)
             : (loanProduct?.service_charge != null && loanProduct?.service_charge !== ''
                 ? String(loanProduct.service_charge)
-                : ''),
+                : '')),
         annual_net_profit:
             durationNetFromAdmission ||
             String((savedData as any)?.annual_net_profit || '') ||
