@@ -97,7 +97,9 @@ export function liveMemberCode(member: any): string {
 }
 
 /**
- * Always prefer the current member identity over values saved in loan-form JSON / local drafts.
+ * Keep read-only member identity (code, name, NID, mobile, samity) live.
+ * Do not overwrite form-editable snapshot fields such as guardian_name,
+ * loan_purpose, addresses, or guarantor details — those are saved on the form.
  */
 export function withLiveMemberCode<T extends Record<string, any>>(data: T, member: any): T {
     if (!data) {
@@ -117,16 +119,6 @@ export function withLiveMemberCode<T extends Record<string, any>>(data: T, membe
         member?.samity?.samity_name_bn || member?.samity?.samity_name || '',
     ).trim();
     const samityCode = String(member?.samity?.samity_code || member?.samity?.id || '').trim();
-    const village = String(member?.present_village_road || member?.permanent_village_road || '').trim();
-    const union = String(member?.present_union || member?.permanent_union || '').trim();
-    const upazila = String(member?.present_upazila || member?.permanent_upazila || '').trim();
-    const district = String(member?.present_district || member?.permanent_district || '').trim();
-    const postOffice = String(member?.present_post_code || member?.permanent_post_code || '').trim();
-    const project = String(member?.project_name || '').trim();
-    const guardian = String(member?.guardian_name || father).trim();
-    const guarantorName = String(member?.guarantor_name || '').trim();
-    const guarantorMobile = String(member?.guarantor_mobile || '').trim();
-    const addressLine3 = [upazila, district].filter(Boolean).join(', ');
 
     const assign = (key: string, value: string) => {
         if (key in next && value !== '') {
@@ -151,7 +143,6 @@ export function withLiveMemberCode<T extends Record<string, any>>(data: T, membe
     assign('member_name_bn', name);
     assign('member_name_detail', name);
     assign('loan_recipient_name', name);
-    assign('applicant_signature_name', name);
     assign('father_husband_name', father);
     assign('member_father_or_spouse', father);
     assign('mother_name', mother);
@@ -164,32 +155,6 @@ export function withLiveMemberCode<T extends Record<string, any>>(data: T, membe
     assign('committee_name', samityName);
     assign('samity_code', samityCode);
     assign('committee_code', samityCode);
-    assign('village', village);
-    assign('member_village', village);
-    assign('guarantor_village', village);
-    assign('union', union);
-    assign('upazila', upazila);
-    assign('member_upazila', upazila);
-    assign('district', district);
-    assign('member_district', district);
-    assign('post_office', postOffice);
-    assign('member_post_office', postOffice);
-    assign('permanent_address_line1', String(member?.permanent_village_road || village).trim());
-    assign('permanent_address_line2', String(member?.permanent_post_code || postOffice).trim());
-    assign('permanent_address_line3', addressLine3);
-    assign('current_address_line1', village);
-    assign('current_address_line2', postOffice);
-    assign('current_address_line3', addressLine3);
-    assign('project_name', project);
-    assign('proposed_project_name', project);
-    assign('loan_purpose', project);
-    assign('loan_program_name', project);
-    assign('est_main_income_desc', project);
-    assign('guardian_name', guardian);
-    assign('guarantor_name', guarantorName);
-    assign('guarantor_1_name', guarantorName);
-    assign('guarantor_mobile', guarantorMobile);
-    assign('guarantor_1_mobile', guarantorMobile);
 
     if ('samity_name_code' in next && (samityName || samityCode)) {
         next.samity_name_code = [samityName, samityCode].filter(Boolean).join(' / ');

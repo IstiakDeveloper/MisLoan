@@ -168,7 +168,6 @@ class MemberAdmissionLoanSyncService
     {
         $code = $this->memberCode($member);
         $name = $this->memberName($member);
-        $land = $this->acresAndDecimals($member->total_land_amount ?? $member->cultivable_land_amount);
         $samity = $member->samity;
 
         return array_filter([
@@ -180,19 +179,7 @@ class MemberAdmissionLoanSyncService
             'mobile_number' => $member->mobile_number,
             'samity_name' => $samity?->samity_name_bn ?: $samity?->samity_name,
             'samity_code' => $samity?->samity_code ?: (string) $samity?->id,
-            'village' => $member->present_village_road ?: $member->permanent_village_road,
-            'union' => $member->present_union ?: $member->permanent_union,
-            'upazila' => $member->present_upazila ?: $member->permanent_upazila,
-            'district' => $member->present_district ?: $member->permanent_district,
-            'loan_purpose' => $member->project_name ?: $member->business_details,
-            'applicant_signature_name' => $member->applicant_name_bn ?: $name,
             'applicant_signature_image' => $member->applicant_signature_path,
-            'guardian_name' => $member->guardian_name ?: $this->fatherOrSpouse($member),
-            'guardian_signature_image' => $member->guardian_signature_path,
-            'land_acres' => $land['acres'],
-            'land_decimal' => $land['decimal'],
-            'house_value' => $this->positiveString($member->total_asset_value),
-            'land_value' => $this->positiveString($member->total_land_value ?: $member->cultivable_land_value),
         ], fn ($v) => $v !== null && $v !== '');
     }
 
@@ -204,12 +191,6 @@ class MemberAdmissionLoanSyncService
         $samity = $member->samity;
 
         return array_filter([
-            'guarantor_name' => $member->guarantor_name,
-            'guarantor_mobile' => $member->guarantor_mobile,
-            'guarantor_village' => $member->present_village_road ?: $member->permanent_village_road,
-            'guarantor_post_office' => $member->present_post_code ?: $member->permanent_post_code,
-            'guarantor_upazila' => $member->present_upazila ?: $member->permanent_upazila,
-            'guarantor_district' => $member->present_district ?: $member->permanent_district,
             'member_name' => $this->memberName($member),
             'member_father_or_spouse' => $this->fatherOrSpouse($member),
             'member_nid' => $this->nid($member),
@@ -244,12 +225,6 @@ class MemberAdmissionLoanSyncService
             'age' => $this->age($member),
             'nid_number' => $this->nid($member),
             'mobile_number' => $member->mobile_number,
-            'guardian_name' => $member->guardian_name,
-            'guardian_village' => $member->permanent_village_road ?: $member->present_village_road,
-            'guardian_post_office' => $member->permanent_post_code ?: $member->present_post_code,
-            'guardian_upazila' => $member->permanent_upazila ?: $member->present_upazila,
-            'guardian_district' => $member->permanent_district ?: $member->present_district,
-            'guardian_mobile' => $member->guarantor_mobile,
             'loan_recipient_photo' => $this->storageUrl($member->customer_photo_path),
             'guardian_photo' => $this->storageUrl($member->guardian_photo_path),
         ], fn ($v) => $v !== null && $v !== '');
@@ -328,8 +303,6 @@ class MemberAdmissionLoanSyncService
             'proposed_project_name' => $project,
             'est_main_income_desc' => $project,
             'loan_program_name' => $project,
-            'guarantor_1_name' => $member->guarantor_name,
-            'guarantor_1_mobile' => $member->guarantor_mobile,
             'occupation' => $self['occupation'],
             'educational_qualification' => $self['education'],
             'annual_net_profit' => $this->positiveString($member->estimated_annual_project_income),
@@ -446,29 +419,6 @@ class MemberAdmissionLoanSyncService
         $education = trim((string) ($self?->education_level ?: ''));
 
         return ['occupation' => $occupation, 'education' => $education];
-    }
-
-    /**
-     * @return array{acres: string, decimal: string}
-     */
-    private function acresAndDecimals(mixed $totalDecimals): array
-    {
-        if ($totalDecimals === null || $totalDecimals === '' || ! is_numeric($totalDecimals)) {
-            return ['acres' => '', 'decimal' => ''];
-        }
-
-        $val = (float) $totalDecimals;
-        if ($val <= 0) {
-            return ['acres' => '', 'decimal' => ''];
-        }
-
-        $acres = (int) floor($val / 100);
-        $decimal = (int) round($val % 100);
-
-        return [
-            'acres' => $acres > 0 ? (string) $acres : '০',
-            'decimal' => (string) $decimal,
-        ];
     }
 
     private function memberName(MemberAdmission $member): string

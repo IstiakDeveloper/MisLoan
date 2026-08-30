@@ -50,6 +50,10 @@ class MemberAdmissionLoanSyncTest extends TestCase
                 'member_code' => '0001000001',
                 'nid_number' => '111',
                 'loan_amount' => 50000,
+                'guardian_name' => 'ফর্মে সংশোধিত অভিভাবক',
+                'village' => 'ফর্মের গ্রাম',
+                'loan_purpose' => 'ফর্মের উদ্দেশ্য',
+                'applicant_signature_name' => 'ফর্মের আবেদনকারী',
             ],
             'guarantor_info' => [
                 'member_name' => 'পুরাতন',
@@ -60,6 +64,7 @@ class MemberAdmissionLoanSyncTest extends TestCase
                 'member_code' => '0001000001',
                 'member_name_detail' => 'পুরাতন',
                 'project_name' => 'পুরাতন প্রকল্প',
+                'guarantor_1_name' => 'ফর্মের ১ম জামিনদার',
                 'officer_post_inspection_comments' => 'মাঠ মন্তব্য রাখুন',
             ],
             'asset_info' => [
@@ -70,6 +75,7 @@ class MemberAdmissionLoanSyncTest extends TestCase
             'nominee_info' => [
                 'loan_recipient_name' => 'পুরাতন',
                 'loan_recipient_code1' => '0001000001',
+                'guardian_name' => 'ফর্মের অভিভাবক',
             ],
         ]);
 
@@ -81,15 +87,18 @@ class MemberAdmissionLoanSyncTest extends TestCase
         $this->assertSame('1990123456789', $loan->loan_agreement_data['nid_number']);
         $this->assertSame(50000, $loan->loan_agreement_data['loan_amount']);
         $this->assertSame('নতুন সমিতি', $loan->loan_agreement_data['samity_name']);
-        $this->assertSame('বাগানপাড়া', $loan->loan_agreement_data['village']);
-        $this->assertSame('গরু পালন', $loan->loan_agreement_data['loan_purpose']);
+        $this->assertSame('ফর্মে সংশোধিত অভিভাবক', $loan->loan_agreement_data['guardian_name']);
+        $this->assertSame('ফর্মের গ্রাম', $loan->loan_agreement_data['village']);
+        $this->assertSame('ফর্মের উদ্দেশ্য', $loan->loan_agreement_data['loan_purpose']);
+        $this->assertSame('ফর্মের আবেদনকারী', $loan->loan_agreement_data['applicant_signature_name']);
 
         $this->assertSame('মৌসুমি বেগম', $loan->guarantor_info['member_name']);
-        $this->assertSame('করিম উদ্দিন', $loan->guarantor_info['guarantor_name']);
+        $this->assertSame('পুরাতন জামিনদার', $loan->guarantor_info['guarantor_name']);
         $this->assertSame('0001000099', $loan->guarantor_info['member_code']);
 
         $this->assertSame('মৌসুমি বেগম', $loan->business_plan['member_name_detail']);
         $this->assertSame('গরু পালন', $loan->business_plan['project_name']);
+        $this->assertSame('ফর্মের ১ম জামিনদার', $loan->business_plan['guarantor_1_name']);
         $this->assertSame('মাঠ মন্তব্য রাখুন', $loan->business_plan['officer_post_inspection_comments']);
 
         $this->assertSame('0001000099', $loan->asset_info['member_no']);
@@ -97,6 +106,7 @@ class MemberAdmissionLoanSyncTest extends TestCase
 
         $this->assertSame('মৌসুমি বেগম', $loan->nominee_info['loan_recipient_name']);
         $this->assertSame('0001000099', $loan->nominee_info['loan_recipient_code1']);
+        $this->assertSame('ফর্মের অভিভাবক', $loan->nominee_info['guardian_name']);
     }
 
     #[Test]
