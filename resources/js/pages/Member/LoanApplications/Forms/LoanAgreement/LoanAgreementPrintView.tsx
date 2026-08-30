@@ -250,7 +250,7 @@ export function LoanAgreementPrintView({ data }: { data: LoanAgreementData }) {
                 {/* 2. Member & Samity Summary paragraph */}
                 <div className="text-xs sm:text-sm leading-relaxed space-y-1.5 mb-4">
                     <p>
-                        আবেদনকারী <span className="border-b border-dotted border-gray-800 px-2 font-bold text-sm">{str(d.member_name_bn)}</span> সমিতির একজন সক্রিয় সদস্য। উক্ত সমিতির সদস্য সংখ্যা <span className="border-b border-dotted border-gray-800 px-2 font-semibold">{bn(d.samity_member_count) || '........'}</span> জন।
+                        আবেদনকারী <span className="border-b border-dotted border-gray-800 px-2 font-bold text-sm">{str(d.samity_name)}</span> সমিতির একজন সক্রিয় সদস্য। উক্ত সমিতির সদস্য সংখ্যা <span className="border-b border-dotted border-gray-800 px-2 font-semibold">{bn(d.samity_member_count) || '........'}</span> জন।
                     </p>
                     <p>
                         বর্তমান ঋণ সংখ্যা <span className="border-b border-dotted border-gray-800 px-2 font-semibold">{bn(d.current_loan_count) || '........'}</span> জন। মোট চলতি ঋণ <span className="border-b border-dotted border-gray-800 px-2 font-semibold">{bnNum(d.total_current_loan) || '........'}</span> টাকা। মেয়াদোত্তীর্ণ ঋণ <span className="border-b border-dotted border-gray-800 px-2 font-semibold">{bnNum(d.expired_loan_amount) || '........'}</span> টাকা।
@@ -318,22 +318,28 @@ export function LoanAgreementPrintView({ data }: { data: LoanAgreementData }) {
                 </div>
 
                 {/* 4. Recommendation Lines */}
-                <div className="space-y-5 text-xs sm:text-sm mb-5">
-                    <div className="flex justify-between items-end pt-1">
+                <div className="space-y-6 text-xs sm:text-sm mb-5">
+                    <div className="flex justify-between items-end pt-2">
                         <p>
                             আবেদনকারীকে <span className="border-b border-dotted border-gray-800 px-4 font-bold text-sm sm:text-base text-green-800">{bnNum(d.loan_amount)}</span> টাকা ঋণ মঞ্জুর করা যেতে পারে।
                         </p>
-                        <p className="font-semibold text-right border-t border-dotted border-gray-800 pt-1 min-w-[200px]">
-                            সংশ্লিষ্ট অফিসারের স্বাক্ষর (সিল সহ)
-                        </p>
+                        <div className="text-center min-w-[200px]">
+                            <div className="h-[67px] print:h-[67px]" aria-hidden="true" />
+                            <p className="font-semibold border-t border-dotted border-gray-800 pt-1">
+                                সংশ্লিষ্ট অফিসারের স্বাক্ষর (সিল সহ)
+                            </p>
+                        </div>
                     </div>
-                    <div className="flex justify-between items-end pt-2">
+                    <div className="flex justify-between items-end pt-3">
                         <p>
                             আবেদনকারীকে <span className="border-b border-dotted border-gray-800 px-4 font-bold text-sm sm:text-base text-green-800">{bnNum(d.loan_amount)}</span> টাকা ঋণ মঞ্জুর করা হলো।
                         </p>
-                        <p className="font-semibold text-right border-t border-dotted border-gray-800 pt-1 min-w-[250px]">
-                            শাখা ব্যবস্থাপক/আঞ্চলিক ব্যবস্থাপকের স্বাক্ষর (সিল সহ)
-                        </p>
+                        <div className="text-center min-w-[250px]">
+                            <div className="h-[67px] print:h-[67px]" aria-hidden="true" />
+                            <p className="font-semibold border-t border-dotted border-gray-800 pt-1">
+                                শাখা ব্যবস্থাপক/আঞ্চলিক ব্যবস্থাপকের স্বাক্ষর (সিল সহ)
+                            </p>
+                        </div>
                     </div>
                 </div>
 
