@@ -118,9 +118,17 @@ export default function GuarantorInformantPrint({
         ? zones.find((z) => String(z.id) === filterZoneId) || null
         : (selectedArea?.zone_id ? zones.find((z) => String(z.id) === String(selectedArea.zone_id)) : null);
 
-    const branchName = selectedBranch ? `${selectedBranch.name} (${selectedBranch.code || ''})` : (loans.length > 0 && loans[0]?.branch_name ? loans[0].branch_name : 'সকল শাখা');
-    const areaName = selectedArea ? selectedArea.name : (loans.length > 0 && loans[0]?.area_name ? loans[0].area_name : 'সকল অঞ্চল');
-    const zoneName = selectedZone ? selectedZone.name : (loans.length > 0 && loans[0]?.zone_name ? loans[0].zone_name : 'সকল জোন');
+    const branchName = selectedBranch 
+        ? `${selectedBranch.name}${selectedBranch.code ? ` (${selectedBranch.code})` : ''}` 
+        : 'সকল শাখা';
+
+    const areaName = selectedArea 
+        ? selectedArea.name 
+        : 'সকল অঞ্চল';
+
+    const zoneName = selectedZone 
+        ? selectedZone.name 
+        : 'সকল জোন';
 
     const fromDateStr = filters.date_from ? formatDate(filters.date_from) : '';
     const toDateStr = filters.date_to ? formatDate(filters.date_to) : '';
