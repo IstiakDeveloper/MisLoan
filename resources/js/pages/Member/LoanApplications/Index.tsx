@@ -632,16 +632,18 @@ export default function Index({
             barColor: 'from-purple-500 to-purple-600',
             activeBg: 'bg-purple-600 border-purple-600 text-white',
         },
-        {
-            key: 'approved',
-            label: 'অনুমোদিত',
-            count: filteredStats.approved,
-            icon: CheckCircle2,
-            iconColor: 'text-teal-600',
-            iconBg: 'bg-teal-50',
-            barColor: 'from-teal-500 to-teal-600',
-            activeBg: 'bg-teal-600 border-teal-600 text-white',
-        },
+        ...(!isBranchUser
+            ? [{
+                key: 'approved',
+                label: 'অনুমোদিত',
+                count: filteredStats.approved,
+                icon: CheckCircle2,
+                iconColor: 'text-teal-600',
+                iconBg: 'bg-teal-50',
+                barColor: 'from-teal-500 to-teal-600',
+                activeBg: 'bg-teal-600 border-teal-600 text-white',
+            }]
+            : []),
         {
             key: 'pending_disbursement',
             label: 'বিতরণ অপেক্ষা',
@@ -652,6 +654,18 @@ export default function Index({
             barColor: 'from-amber-500 to-amber-600',
             activeBg: 'bg-amber-600 border-amber-600 text-white',
         },
+        ...(isBranchUser
+            ? [{
+                key: 'disbursed',
+                label: 'বিতরণকৃত',
+                count: filteredStats.disbursed,
+                icon: CheckCircle2,
+                iconColor: 'text-teal-600',
+                iconBg: 'bg-teal-50',
+                barColor: 'from-teal-500 to-teal-600',
+                activeBg: 'bg-teal-600 border-teal-600 text-white',
+            }]
+            : []),
         {
             key: 'rejected',
             label: 'প্রত্যাখ্যাত',

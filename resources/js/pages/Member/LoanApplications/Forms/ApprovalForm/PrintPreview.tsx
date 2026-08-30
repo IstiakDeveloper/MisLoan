@@ -1,7 +1,7 @@
 import React from 'react';
 import { formatDateBangla } from '@/utils/dateUtils';
 import { useAutoFitPrint } from '@/hooks/useAutoFitPrint';
-import { formatLoanYearsLabel, getAnnualServiceChargeRate } from './FormPage3';
+import { formatLoanYearsLabel, getReducingServiceChargeRate } from './FormPage3';
 
 const PRINT_FONT = 'Kalpurush, Arial, sans-serif';
 const pageFontStyle = { fontFamily: PRINT_FONT, color: '#000' } as const;
@@ -761,7 +761,7 @@ function renderPage3(d: any) {
                         <div className="inline-block border border-gray-600 px-3 py-1 font-bold mb-2 bg-gray-100 text-[12.5px]">গ. অন্যান্য তথ্যাবলী:</div>
                         <div className="flex justify-between text-[12.5px] mb-1.5">
                             <span>০১. (ক) ঋণের মেয়াদ: <span className="underline font-bold px-1">{d.loan_duration_months || ''} মাস</span></span>
-                            <span>(খ) সার্ভিস চার্জের হার: <span className="underline font-bold px-1">{getAnnualServiceChargeRate(d.applied_service_charge_rate, d.loan_duration_months) || d.applied_service_charge_rate || ''}%</span></span>
+                            <span>(খ) সার্ভিস চার্জের হার: <span className="underline font-bold px-1">{getReducingServiceChargeRate(null, d.applied_service_charge_rate, d.loan_duration_months) || d.applied_service_charge_rate || ''}%</span></span>
                             <span>(গ) ঋণ পরিশোধের তফসিল:</span>
                         </div>
                         <table className="w-full border-collapse border border-gray-600 text-center align-middle text-[12px]">
