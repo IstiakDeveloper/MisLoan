@@ -4,6 +4,7 @@ import GeneralSavingsSection from '@/components/LoanApplications/GeneralSavingsS
 import { SmartDateInput } from '@/components/ui/SmartDateInput';
 import { Calendar, User, Home, Building2, Wallet, Briefcase, Calculator, Lock } from 'lucide-react';
 import { formatLoanYearsLabel, getLoanYears, scaleAnnualToLoanYears } from './FormPage3';
+import { numberToWordsBangla } from './PrintPreview';
 
 const RECIPIENT_OPTIONS = [
     'নির্বাহী পরিচালক',
@@ -95,6 +96,16 @@ export default function FormPage1({
         data.project_income_1_2_yr,
         data.project_expense_1_2_yr,
     ]);
+
+    const appAmount = Number(data.approval_amount_digits || data.capital_applied_loan || requestedAmount) || 0;
+    useEffect(() => {
+        if (appAmount > 0) {
+            const words = numberToWordsBangla(appAmount);
+            if (words && String(data.approval_amount_words || '') !== words) {
+                setData('approval_amount_words', words);
+            }
+        }
+    }, [appAmount, data.approval_amount_words]);
 
     return (
         <div id="form-page-1" data-sync="page-1" className="space-y-5">

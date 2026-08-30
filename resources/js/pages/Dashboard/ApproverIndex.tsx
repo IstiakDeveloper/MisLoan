@@ -104,10 +104,13 @@ export interface SubordinateManager {
     branches_count?: number | null;
 }
 
+import HierarchicalPendingMonitor, { HierarchyNode } from '@/components/Dashboard/HierarchicalPendingMonitor';
+
 export interface SubordinateSummary {
     type: 'branch_managers' | 'regional_managers' | 'zonal_and_regional_managers';
     title: string;
     list: SubordinateManager[];
+    hierarchy_tree?: HierarchyNode[];
     total_managers: number;
     total_pending_all: number;
     total_amount_all: number;
@@ -239,6 +242,7 @@ export default function UnifiedApproverDashboard({
 
     const [searchManager, setSearchManager] = useState('');
     const [managerFilterTab, setManagerFilterTab] = useState<'all' | 'pending' | 'zero'>('all');
+    const [viewMode, setViewMode] = useState<'hierarchy' | 'flat'>('hierarchy');
 
     const filteredSubordinates = useMemo(() => {
         if (!subordinateSummary?.list) return [];
@@ -855,90 +859,144 @@ export default function UnifiedApproverDashboard({
 
                 {/* 5. SUBORDINATE MANAGERS NAME-BASED PENDING MONITOR */}
                 {subordinateSummary && subordinateSummary.list && (
-                    <div className="bg-white rounded-2xl border border-slate-200/90 shadow-2xs p-4 space-y-4">
-                        {/* Section Header */}
-                        <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 pb-3 border-b border-slate-100">
+                    <div className="space-y-4">
+                        {/* View Mode Switcher Header */}
+                        <div className="flex items-center justify-between gap-3 bg-gradient-to-r from-indigo-900 via-blue-900 to-slate-900 text-white p-3 rounded-2xl shadow-sm flex-wrap">
                             <div className="flex items-center gap-2.5">
-                                <div className="w-8 h-8 rounded-xl bg-gradient-to-tr from-indigo-600 to-blue-600 text-white flex items-center justify-center shadow-xs shrink-0">
-                                    <Users size={16} />
+                                <div className="w-8 h-8 rounded-xl bg-white/10 backdrop-blur-md flex items-center justify-center text-indigo-300">
+                                    <Users size={17} />
                                 </div>
                                 <div>
-                                    <div className="flex items-center gap-2">
-                                        <h3 className="text-sm sm:text-base font-bold text-slate-800 tracking-tight">
-                                            {subordinateSummary.title}
-                                        </h3>
-                                        <span className="text-[10px] font-bold px-2 py-0.5 bg-indigo-50 text-indigo-700 rounded-md border border-indigo-200">
-                                            মোট {subordinateSummary.total_managers} জন কর্মকর্তা
-                                        </span>
-                                        <span className="text-[10px] font-bold px-2 py-0.5 bg-amber-50 text-amber-800 rounded-md border border-amber-200">
-                                            মোট পেন্ডিং {subordinateSummary.total_pending_all} টি
-                                        </span>
-                                    </div>
-                                    <p className="text-[11px] text-slate-400 font-medium mt-0.5">
-                                        আওতাধীন কর্মকর্তাদের নাম, শাখা/অঞ্চল এবং পেন্ডিং আবেদনের তাৎক্ষণিক পর্যবেক্ষণ
+                                    <h3 className="text-sm font-bold tracking-tight">
+                                        {subordinateSummary.title}
+                                    </h3>
+                                    <p className="text-[11px] text-indigo-200/80">
+                                        আওতাধীন কর্মকর্তা ও শাখাসমূহের ক্রমানুসারে পেন্ডিং আবেদনের লাইভ স্থিতি
                                     </p>
                                 </div>
                             </div>
 
-                            {/* Search & Tabs Toolbar */}
-                            <div className="flex flex-wrap items-center gap-2">
-                                <div className="relative min-w-[200px] max-w-xs">
-                                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 w-3.5 h-3.5" />
-                                    <input
-                                        type="text"
-                                        value={searchManager}
-                                        onChange={(e) => setSearchManager(e.target.value)}
-                                        placeholder="কর্মকর্তা বা শাখার নাম খুঁজুন..."
-                                        className="w-full pl-8 pr-3 py-1.5 text-xs bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 font-medium"
-                                    />
-                                    {searchManager && (
-                                        <button
-                                            type="button"
-                                            onClick={() => setSearchManager('')}
-                                            className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 text-xs"
-                                        >
-                                            ✕
-                                        </button>
-                                    )}
-                                </div>
-
-                                <div className="flex items-center bg-slate-100 p-1 rounded-xl text-[11px] font-bold">
-                                    <button
-                                        type="button"
-                                        onClick={() => setManagerFilterTab('all')}
-                                        className={`px-2.5 py-1 rounded-lg transition-all ${
-                                            managerFilterTab === 'all'
-                                                ? 'bg-white text-slate-900 shadow-2xs font-extrabold'
-                                                : 'text-slate-600 hover:text-slate-900'
-                                        }`}
-                                    >
-                                        সব ({subordinateSummary.list.length})
-                                    </button>
-                                    <button
-                                        type="button"
-                                        onClick={() => setManagerFilterTab('pending')}
-                                        className={`px-2.5 py-1 rounded-lg transition-all ${
-                                            managerFilterTab === 'pending'
-                                                ? 'bg-amber-500 text-white shadow-2xs font-extrabold'
-                                                : 'text-slate-600 hover:text-amber-600'
-                                        }`}
-                                    >
-                                        পেন্ডিং আছে ({subordinateSummary.list.filter((m) => m.total_pending > 0).length})
-                                    </button>
-                                    <button
-                                        type="button"
-                                        onClick={() => setManagerFilterTab('zero')}
-                                        className={`px-2.5 py-1 rounded-lg transition-all ${
-                                            managerFilterTab === 'zero'
-                                                ? 'bg-emerald-600 text-white shadow-2xs font-extrabold'
-                                                : 'text-slate-600 hover:text-emerald-600'
-                                        }`}
-                                    >
-                                        শূন্য ({subordinateSummary.list.filter((m) => m.total_pending === 0).length})
-                                    </button>
-                                </div>
+                            <div className="flex items-center bg-black/30 p-1 rounded-xl text-xs font-bold gap-1 backdrop-blur-md">
+                                <button
+                                    type="button"
+                                    onClick={() => setViewMode('hierarchy')}
+                                    className={`px-3 py-1.5 rounded-lg transition-all flex items-center gap-1.5 ${
+                                        viewMode === 'hierarchy'
+                                            ? 'bg-indigo-600 text-white shadow-sm font-extrabold'
+                                            : 'text-indigo-200 hover:text-white'
+                                    }`}
+                                >
+                                    <Layers size={13} />
+                                    <span>হায়ারার্কি ড্রিল-ডাউন ভিউ</span>
+                                </button>
+                                <button
+                                    type="button"
+                                    onClick={() => setViewMode('flat')}
+                                    className={`px-3 py-1.5 rounded-lg transition-all flex items-center gap-1.5 ${
+                                        viewMode === 'flat'
+                                            ? 'bg-indigo-600 text-white shadow-sm font-extrabold'
+                                            : 'text-indigo-200 hover:text-white'
+                                    }`}
+                                >
+                                    <BarChart3 size={13} />
+                                    <span>ফ্ল্যাট তালিকা ভিউ</span>
+                                </button>
                             </div>
                         </div>
+
+                        {/* Hierarchical Monitor View */}
+                        {viewMode === 'hierarchy' ? (
+                            <HierarchicalPendingMonitor
+                                tree={subordinateSummary.hierarchy_tree || []}
+                                title={subordinateSummary.title}
+                                subtitle="আওতাধীন অঞ্চল ও শাখাসমূহ ক্রমানুসারে এক্সপ্যান্ড করে প্রতিটি স্তরের দায়িত্বপ্রাপ্ত কর্মকর্তা ও স্টেজের লাইভ স্থিতি"
+                                accentColor="indigo"
+                            />
+                        ) : (
+                            <div className="bg-white rounded-2xl border border-slate-200/90 shadow-2xs p-4 space-y-4">
+                                {/* Section Header */}
+                                <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 pb-3 border-b border-slate-100">
+                                    <div className="flex items-center gap-2.5">
+                                        <div className="w-8 h-8 rounded-xl bg-gradient-to-tr from-indigo-600 to-blue-600 text-white flex items-center justify-center shadow-xs shrink-0">
+                                            <Users size={16} />
+                                        </div>
+                                        <div>
+                                            <div className="flex items-center gap-2">
+                                                <h3 className="text-sm sm:text-base font-bold text-slate-800 tracking-tight">
+                                                    {subordinateSummary.title} (ফ্ল্যাট তালিকা)
+                                                </h3>
+                                                <span className="text-[10px] font-bold px-2 py-0.5 bg-indigo-50 text-indigo-700 rounded-md border border-indigo-200">
+                                                    মোট {subordinateSummary.total_managers} জন কর্মকর্তা
+                                                </span>
+                                                <span className="text-[10px] font-bold px-2 py-0.5 bg-amber-50 text-amber-800 rounded-md border border-amber-200">
+                                                    মোট পেন্ডিং {subordinateSummary.total_pending_all} টি
+                                                </span>
+                                            </div>
+                                            <p className="text-[11px] text-slate-400 font-medium mt-0.5">
+                                                আওতাধীন কর্মকর্তাদের নাম, শাখা/অঞ্চল এবং পেন্ডিং আবেদনের তাৎক্ষণিক পর্যবেক্ষণ
+                                            </p>
+                                        </div>
+                                    </div>
+
+                                    {/* Search & Tabs Toolbar */}
+                                    <div className="flex flex-wrap items-center gap-2">
+                                        <div className="relative min-w-[200px] max-w-xs">
+                                            <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 w-3.5 h-3.5" />
+                                            <input
+                                                type="text"
+                                                value={searchManager}
+                                                onChange={(e) => setSearchManager(e.target.value)}
+                                                placeholder="কর্মকর্তা বা শাখার নাম খুঁজুন..."
+                                                className="w-full pl-8 pr-3 py-1.5 text-xs bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 font-medium"
+                                            />
+                                            {searchManager && (
+                                                <button
+                                                    type="button"
+                                                    onClick={() => setSearchManager('')}
+                                                    className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 text-xs"
+                                                >
+                                                    ✕
+                                                </button>
+                                            )}
+                                        </div>
+
+                                        <div className="flex items-center bg-slate-100 p-1 rounded-xl text-[11px] font-bold">
+                                            <button
+                                                type="button"
+                                                onClick={() => setManagerFilterTab('all')}
+                                                className={`px-2.5 py-1 rounded-lg transition-all ${
+                                                    managerFilterTab === 'all'
+                                                        ? 'bg-white text-slate-900 shadow-2xs font-extrabold'
+                                                        : 'text-slate-600 hover:text-slate-900'
+                                                }`}
+                                            >
+                                                সব ({subordinateSummary.list.length})
+                                            </button>
+                                            <button
+                                                type="button"
+                                                onClick={() => setManagerFilterTab('pending')}
+                                                className={`px-2.5 py-1 rounded-lg transition-all ${
+                                                    managerFilterTab === 'pending'
+                                                        ? 'bg-amber-500 text-white shadow-2xs font-extrabold'
+                                                        : 'text-slate-600 hover:text-amber-600'
+                                                }`}
+                                            >
+                                                পেন্ডিং আছে ({subordinateSummary.list.filter((m) => m.total_pending > 0).length})
+                                            </button>
+                                            <button
+                                                type="button"
+                                                onClick={() => setManagerFilterTab('zero')}
+                                                className={`px-2.5 py-1 rounded-lg transition-all ${
+                                                    managerFilterTab === 'zero'
+                                                        ? 'bg-emerald-600 text-white shadow-2xs font-extrabold'
+                                                        : 'text-slate-600 hover:text-emerald-600'
+                                                }`}
+                                            >
+                                                শূন্য ({subordinateSummary.list.filter((m) => m.total_pending === 0).length})
+                                            </button>
+                                        </div>
+                                    </div>
+                                </div>
 
                         {/* Managers Table View */}
                         <div className="overflow-x-auto rounded-xl border border-slate-200/80">
@@ -1102,6 +1160,8 @@ export default function UnifiedApproverDashboard({
                     </div>
                 )}
             </div>
-        </AdminLayout>
-    );
+        )}
+    </div>
+</AdminLayout>
+);
 }

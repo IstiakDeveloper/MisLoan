@@ -93,11 +93,14 @@ export interface HOManager {
     areas_count?: number | null;
 }
 
+import HierarchicalPendingMonitor, { HierarchyNode } from '@/components/Dashboard/HierarchicalPendingMonitor';
+
 export interface HOManagersSummary {
     rm_list: HOManager[];
     zm_list: HOManager[];
     senior_list: HOManager[];
     bm_list: HOManager[];
+    hierarchy_tree?: HierarchyNode[];
     total_rm: number;
     total_zm: number;
     total_senior: number;
@@ -230,6 +233,7 @@ export default function HeadOfficeDashboard({
     const [tierTab, setTierTab] = useState<'rm' | 'zm' | 'senior' | 'bm'>('rm');
     const [searchManager, setSearchManager] = useState('');
     const [statusFilterTab, setStatusFilterTab] = useState<'all' | 'pending' | 'zero'>('all');
+    const [viewMode, setViewMode] = useState<'hierarchy' | 'flat'>('hierarchy');
 
     const activeList = useMemo(() => {
         if (!hoManagersSummary) return [];
@@ -866,91 +870,142 @@ export default function HeadOfficeDashboard({
 
                 {/* 5. ALL-TIERS MANAGERS & APPROVERS NAME-BASED PENDING MONITOR (RM to Senior Approvers & BM) */}
                 {hoManagersSummary && (
-                    <div className="bg-white rounded-2xl border border-slate-200/90 shadow-2xs p-4 space-y-4">
-                        {/* Section Header */}
-                        <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3 pb-3 border-b border-slate-100">
+                    <div className="space-y-4">
+                        {/* View Switcher Header Card */}
+                        <div className="flex items-center justify-between gap-3 bg-gradient-to-r from-purple-900 via-indigo-900 to-slate-900 text-white p-3 rounded-2xl shadow-sm flex-wrap">
                             <div className="flex items-center gap-2.5">
-                                <div className="w-8 h-8 rounded-xl bg-gradient-to-tr from-purple-600 to-indigo-600 text-white flex items-center justify-center shadow-xs shrink-0">
-                                    <Users size={16} />
+                                <div className="w-8 h-8 rounded-xl bg-white/10 backdrop-blur-md flex items-center justify-center text-purple-300">
+                                    <Users size={17} />
                                 </div>
                                 <div>
-                                    <div className="flex items-center gap-2">
-                                        <h3 className="text-sm sm:text-base font-bold text-slate-800 tracking-tight">
-                                            কর্মকর্তা ও অনুমোদকভিত্তিক কেন্দ্রীয় পেন্ডিং মনিটর
-                                        </h3>
-                                        <span className="text-[10px] font-bold px-2 py-0.5 bg-purple-50 text-purple-700 rounded-md border border-purple-200">
-                                            সকল স্তর (RM ➔ ZM ➔ সিনিয়র অনুমোদক ➔ BM)
-                                        </span>
-                                    </div>
-                                    <p className="text-[11px] text-slate-400 font-medium mt-0.5">
-                                        রিজিওনাল ম্যানেজার (RM) থেকে শুরু করে হেড অফিস পর্যন্ত সকল দায়িত্বপ্রাপ্ত কর্মকর্তার নামভিত্তিক পেন্ডিং আবেদনের লাইভ স্থিতি
+                                    <h3 className="text-sm font-bold tracking-tight">
+                                        কর্মকর্তা ও অনুমোদকভিত্তিক কেন্দ্রীয় পেন্ডিং মনিটর
+                                    </h3>
+                                    <p className="text-[11px] text-purple-200/80">
+                                        জোন, অঞ্চল, শাখা এবং উর্ধ্বতন অনুমোদকদের পেন্ডিং আবেদনের লাইভ স্থিতি ও পর্যায়ভিত্তিক বিশ্লেষণ
                                     </p>
                                 </div>
                             </div>
 
-                            {/* Main Tier Selection Tabs */}
-                            <div className="flex items-center bg-slate-100 p-1 rounded-xl text-xs font-bold gap-1 flex-wrap">
+                            <div className="flex items-center bg-black/30 p-1 rounded-xl text-xs font-bold gap-1 backdrop-blur-md">
                                 <button
                                     type="button"
-                                    onClick={() => { setTierTab('rm'); setSearchManager(''); }}
+                                    onClick={() => setViewMode('hierarchy')}
                                     className={`px-3 py-1.5 rounded-lg transition-all flex items-center gap-1.5 ${
-                                        tierTab === 'rm'
-                                            ? 'bg-white text-purple-700 shadow-2xs font-extrabold'
-                                            : 'text-slate-600 hover:text-slate-900'
+                                        viewMode === 'hierarchy'
+                                            ? 'bg-purple-600 text-white shadow-sm font-extrabold'
+                                            : 'text-purple-200 hover:text-white'
                                     }`}
                                 >
-                                    <span>আঞ্চলিক ব্যবস্থাপক (RM)</span>
-                                    <span className={`text-[10px] px-1.5 py-0.2 rounded-full ${tierTab === 'rm' ? 'bg-purple-100 text-purple-800' : 'bg-slate-200 text-slate-700'}`}>
-                                        {hoManagersSummary.total_rm}
-                                    </span>
+                                    <Layers size={13} />
+                                    <span>হায়ারার্কি ড্রিল-ডাউন ভিউ</span>
                                 </button>
-
                                 <button
                                     type="button"
-                                    onClick={() => { setTierTab('zm'); setSearchManager(''); }}
+                                    onClick={() => setViewMode('flat')}
                                     className={`px-3 py-1.5 rounded-lg transition-all flex items-center gap-1.5 ${
-                                        tierTab === 'zm'
-                                            ? 'bg-white text-purple-700 shadow-2xs font-extrabold'
-                                            : 'text-slate-600 hover:text-slate-900'
+                                        viewMode === 'flat'
+                                            ? 'bg-purple-600 text-white shadow-sm font-extrabold'
+                                            : 'text-purple-200 hover:text-white'
                                     }`}
                                 >
-                                    <span>জোনাল ম্যানেজার (ZM)</span>
-                                    <span className={`text-[10px] px-1.5 py-0.2 rounded-full ${tierTab === 'zm' ? 'bg-purple-100 text-purple-800' : 'bg-slate-200 text-slate-700'}`}>
-                                        {hoManagersSummary.total_zm}
-                                    </span>
-                                </button>
-
-                                <button
-                                    type="button"
-                                    onClick={() => { setTierTab('senior'); setSearchManager(''); }}
-                                    className={`px-3 py-1.5 rounded-lg transition-all flex items-center gap-1.5 ${
-                                        tierTab === 'senior'
-                                            ? 'bg-white text-purple-700 shadow-2xs font-extrabold'
-                                            : 'text-slate-600 hover:text-slate-900'
-                                    }`}
-                                >
-                                    <span>উর্ধ্বতন অনুমোদক (ADMF/DMF/ED)</span>
-                                    <span className={`text-[10px] px-1.5 py-0.2 rounded-full ${tierTab === 'senior' ? 'bg-purple-100 text-purple-800' : 'bg-slate-200 text-slate-700'}`}>
-                                        {hoManagersSummary.total_senior}
-                                    </span>
-                                </button>
-
-                                <button
-                                    type="button"
-                                    onClick={() => { setTierTab('bm'); setSearchManager(''); }}
-                                    className={`px-3 py-1.5 rounded-lg transition-all flex items-center gap-1.5 ${
-                                        tierTab === 'bm'
-                                            ? 'bg-white text-purple-700 shadow-2xs font-extrabold'
-                                            : 'text-slate-600 hover:text-slate-900'
-                                    }`}
-                                >
-                                    <span>শাখা ব্যবস্থাপক (BM)</span>
-                                    <span className={`text-[10px] px-1.5 py-0.2 rounded-full ${tierTab === 'bm' ? 'bg-purple-100 text-purple-800' : 'bg-slate-200 text-slate-700'}`}>
-                                        {hoManagersSummary.total_bm}
-                                    </span>
+                                    <BarChart3 size={13} />
+                                    <span>আলাদা তালিকা ভিউ (RM/ZM/BM)</span>
                                 </button>
                             </div>
                         </div>
+
+                        {/* Hierarchical Drill-Down Monitor View */}
+                        {viewMode === 'hierarchy' ? (
+                            <HierarchicalPendingMonitor
+                                tree={hoManagersSummary.hierarchy_tree || []}
+                                title="সারাদেশের কর্মকর্তা ও অনুমোদকভিত্তিক পেন্ডিং মনিটর (হায়ারার্কি ড্রিল-ডাউন)"
+                                subtitle="জোন ➔ অঞ্চল ➔ শাখা ক্রমানুসারে এক্সপ্যান্ড করে প্রতিটি স্তরের দায়িত্বপ্রাপ্ত কর্মকর্তা, পেন্ডিং ও স্টেজের লাইভ স্থিতি"
+                                accentColor="purple"
+                            />
+                        ) : (
+                            <div className="bg-white rounded-2xl border border-slate-200/90 shadow-2xs p-4 space-y-4">
+                                {/* Section Header */}
+                                <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3 pb-3 border-b border-slate-100">
+                                    <div className="flex items-center gap-2.5">
+                                        <div className="w-8 h-8 rounded-xl bg-gradient-to-tr from-purple-600 to-indigo-600 text-white flex items-center justify-center shadow-xs shrink-0">
+                                            <Users size={16} />
+                                        </div>
+                                        <div>
+                                            <div className="flex items-center gap-2">
+                                                <h3 className="text-sm sm:text-base font-bold text-slate-800 tracking-tight">
+                                                    আলাদা তালিকা ভিউ (RM, ZM, সিনিয়র অনুমোদক ও BM)
+                                                </h3>
+                                            </div>
+                                            <p className="text-[11px] text-slate-400 font-medium mt-0.5">
+                                                নির্দিষ্ট স্তরের কর্মকর্তাদের তালিকা অনুসারে পেন্ডিং স্থিতি
+                                            </p>
+                                        </div>
+                                    </div>
+
+                                    {/* Main Tier Selection Tabs */}
+                                    <div className="flex items-center bg-slate-100 p-1 rounded-xl text-xs font-bold gap-1 flex-wrap">
+                                        <button
+                                            type="button"
+                                            onClick={() => { setTierTab('rm'); setSearchManager(''); }}
+                                            className={`px-3 py-1.5 rounded-lg transition-all flex items-center gap-1.5 ${
+                                                tierTab === 'rm'
+                                                    ? 'bg-white text-purple-700 shadow-2xs font-extrabold'
+                                                    : 'text-slate-600 hover:text-slate-900'
+                                            }`}
+                                        >
+                                            <span>আঞ্চলিক ব্যবস্থাপক (RM)</span>
+                                            <span className={`text-[10px] px-1.5 py-0.2 rounded-full ${tierTab === 'rm' ? 'bg-purple-100 text-purple-800' : 'bg-slate-200 text-slate-700'}`}>
+                                                {hoManagersSummary.total_rm}
+                                            </span>
+                                        </button>
+
+                                        <button
+                                            type="button"
+                                            onClick={() => { setTierTab('zm'); setSearchManager(''); }}
+                                            className={`px-3 py-1.5 rounded-lg transition-all flex items-center gap-1.5 ${
+                                                tierTab === 'zm'
+                                                    ? 'bg-white text-purple-700 shadow-2xs font-extrabold'
+                                                    : 'text-slate-600 hover:text-slate-900'
+                                            }`}
+                                        >
+                                            <span>জোনাল ম্যানেজার (ZM)</span>
+                                            <span className={`text-[10px] px-1.5 py-0.2 rounded-full ${tierTab === 'zm' ? 'bg-purple-100 text-purple-800' : 'bg-slate-200 text-slate-700'}`}>
+                                                {hoManagersSummary.total_zm}
+                                            </span>
+                                        </button>
+
+                                        <button
+                                            type="button"
+                                            onClick={() => { setTierTab('senior'); setSearchManager(''); }}
+                                            className={`px-3 py-1.5 rounded-lg transition-all flex items-center gap-1.5 ${
+                                                tierTab === 'senior'
+                                                    ? 'bg-white text-purple-700 shadow-2xs font-extrabold'
+                                                    : 'text-slate-600 hover:text-slate-900'
+                                            }`}
+                                        >
+                                            <span>উর্ধ্বতন অনুমোদক (ADMF/DMF/ED)</span>
+                                            <span className={`text-[10px] px-1.5 py-0.2 rounded-full ${tierTab === 'senior' ? 'bg-purple-100 text-purple-800' : 'bg-slate-200 text-slate-700'}`}>
+                                                {hoManagersSummary.total_senior}
+                                            </span>
+                                        </button>
+
+                                        <button
+                                            type="button"
+                                            onClick={() => { setTierTab('bm'); setSearchManager(''); }}
+                                            className={`px-3 py-1.5 rounded-lg transition-all flex items-center gap-1.5 ${
+                                                tierTab === 'bm'
+                                                    ? 'bg-white text-purple-700 shadow-2xs font-extrabold'
+                                                    : 'text-slate-600 hover:text-slate-900'
+                                            }`}
+                                        >
+                                            <span>শাখা ব্যবস্থাপক (BM)</span>
+                                            <span className={`text-[10px] px-1.5 py-0.2 rounded-full ${tierTab === 'bm' ? 'bg-purple-100 text-purple-800' : 'bg-slate-200 text-slate-700'}`}>
+                                                {hoManagersSummary.total_bm}
+                                            </span>
+                                        </button>
+                                    </div>
+                                </div>
 
                         {/* Search & Sub-Filter Toolbar */}
                         <div className="flex flex-wrap items-center justify-between gap-2.5 pt-1">
@@ -1195,6 +1250,8 @@ export default function HeadOfficeDashboard({
                     </div>
                 )}
             </div>
-        </AdminLayout>
-    );
+        )}
+    </div>
+</AdminLayout>
+);
 }

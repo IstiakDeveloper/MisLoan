@@ -308,6 +308,7 @@ export default function ApprovalForm({
         capital_own: '',
         capital_applied_loan: requestedAmount ? String(requestedAmount) : '',
         approval_amount_digits: requestedAmount ? String(requestedAmount) : '',
+        approval_amount_words: requestedAmount ? numberToWordsBangla(Number(requestedAmount)) : '',
         family_assets: getFamilyAssetsFromMember(member),
         applicant_signature: '',
         approver_signature: '',

@@ -464,10 +464,22 @@ class DashboardController extends Controller
         // Sort by highest pending count first
         usort($subordinateList, fn ($a, $b) => $b['total_pending'] <=> $a['total_pending']);
 
+        // Hierarchical Pending Tree
+        if ($approverType === 'area' || $roleName === Role::AREA_MANAGER) {
+            $areaIds = $user->area_id ? [$user->area_id] : $user->areas()->pluck('areas.id')->toArray();
+            $hierarchyTree = $this->buildHierarchicalPendingTree(null, $areaIds, null);
+        } elseif ($approverType === 'zone' || $roleName === Role::ZONE_MANAGER) {
+            $zoneIds = $user->zone_id ? [$user->zone_id] : $user->zones()->pluck('zones.id')->toArray();
+            $hierarchyTree = $this->buildHierarchicalPendingTree($zoneIds, null, null);
+        } else {
+            $hierarchyTree = $this->buildHierarchicalPendingTree();
+        }
+
         $subordinateSummary = [
             'type' => $subordinateType,
             'title' => $subordinateTitle,
             'list' => $subordinateList,
+            'hierarchy_tree' => $hierarchyTree,
             'total_managers' => count($subordinateList),
             'total_pending_all' => array_sum(array_column($subordinateList, 'total_pending')),
             'total_amount_all' => array_sum(array_column($subordinateList, 'loan_amount')),
@@ -856,11 +868,14 @@ class DashboardController extends Controller
         }
         usort($bmList, fn ($a, $b) => $b['total_pending'] <=> $a['total_pending']);
 
+        $hierarchyTree = $this->buildHierarchicalPendingTree();
+
         $hoManagersSummary = [
             'rm_list' => $rmList,
             'zm_list' => $zmList,
             'senior_list' => $seniorList,
             'bm_list' => $bmList,
+            'hierarchy_tree' => $hierarchyTree,
             'total_rm' => count($rmList),
             'total_zm' => count($zmList),
             'total_senior' => count($seniorList),
@@ -885,6 +900,341 @@ class DashboardController extends Controller
                 'role' => 'প্রধান কার্যালয় (Head Office)',
             ],
         ]);
+    }
+
+    /**
+     * Build Hierarchical Pending Tree (Zone -> Area -> Branch -> Stage Breakdown)
+     */
+    private function buildHierarchicalPendingTree(?array $scopeZoneIds = null, ?array $scopeAreaIds = null, ?array $scopeBranchIds = null): array
+    {
+        // 1. Fetch Zones with Areas and Branches
+        $zonesQuery = Zone::query();
+        if (! empty($scopeZoneIds)) {
+            $zonesQuery->whereIn('id', $scopeZoneIds);
+        }
+
+        $zones = $zonesQuery->with([
+            'areas' => function ($q) use ($scopeAreaIds) {
+                if (! empty($scopeAreaIds)) {
+                    $q->whereIn('id', $scopeAreaIds);
+                }
+            },
+            'areas.branches' => function ($q) use ($scopeBranchIds) {
+                if (! empty($scopeBranchIds)) {
+                    $q->whereIn('id', $scopeBranchIds);
+                }
+            }
+        ])->get();
+
+        // If zone filtering wasn't applied directly but area filtering was, locate parent zones
+        if ($zones->isEmpty() && ! empty($scopeAreaIds)) {
+            $parentZoneIds = Area::whereIn('id', $scopeAreaIds)->pluck('zone_id')->filter()->unique()->toArray();
+            if (! empty($parentZoneIds)) {
+                $zones = Zone::whereIn('id', $parentZoneIds)->with([
+                    'areas' => fn ($q) => $q->whereIn('id', $scopeAreaIds),
+                    'areas.branches' => function ($q) use ($scopeBranchIds) {
+                        if (! empty($scopeBranchIds)) {
+                            $q->whereIn('id', $scopeBranchIds);
+                        }
+                    }
+                ])->get();
+            }
+        }
+
+        // Get all branch IDs in this tree
+        $allBranchIds = [];
+        foreach ($zones as $zone) {
+            foreach ($zone->areas as $area) {
+                foreach ($area->branches as $branch) {
+                    $allBranchIds[] = $branch->id;
+                }
+            }
+        }
+        $allBranchIds = array_unique($allBranchIds);
+
+        if (empty($allBranchIds)) {
+            return [];
+        }
+
+        // 2. Fetch Users in bulk for BM, RM, ZM
+        $bmUsers = User::whereIn('branch_id', $allBranchIds)
+            ->where('is_active', 1)
+            ->whereHas('role', fn ($q) => $q->where('name', Role::BRANCH_MANAGER))
+            ->get()
+            ->keyBy('branch_id');
+
+        $allAreaIds = [];
+        foreach ($zones as $zone) {
+            foreach ($zone->areas as $area) {
+                $allAreaIds[] = $area->id;
+            }
+        }
+        $rmUsers = User::where(function ($q) use ($allAreaIds) {
+                $q->whereIn('area_id', $allAreaIds)
+                  ->orWhereHas('areas', fn ($sq) => $sq->whereIn('areas.id', $allAreaIds));
+            })
+            ->where('is_active', 1)
+            ->whereHas('role', fn ($q) => $q->where('name', Role::AREA_MANAGER))
+            ->with('areas:id')
+            ->get();
+        $rmByAreaId = [];
+        foreach ($rmUsers as $u) {
+            if ($u->area_id) {
+                $rmByAreaId[$u->area_id] = $u;
+            }
+            foreach ($u->areas as $a) {
+                $rmByAreaId[$a->id] = $u;
+            }
+        }
+
+        $allZoneIds = $zones->pluck('id')->toArray();
+        $zmUsers = User::where(function ($q) use ($allZoneIds) {
+                $q->whereIn('zone_id', $allZoneIds)
+                  ->orWhereHas('zones', fn ($sq) => $sq->whereIn('zones.id', $allZoneIds));
+            })
+            ->where('is_active', 1)
+            ->whereHas('role', fn ($q) => $q->where('name', Role::ZONE_MANAGER))
+            ->with('zones:id')
+            ->get();
+        $zmByZoneId = [];
+        foreach ($zmUsers as $u) {
+            if ($u->zone_id) {
+                $zmByZoneId[$u->zone_id] = $u;
+            }
+            foreach ($u->zones as $z) {
+                $zmByZoneId[$z->id] = $u;
+            }
+        }
+
+        // 3. Query all pending Admissions and Loans for these branches
+        $admissions = MemberAdmission::whereIn('branch_id', $allBranchIds)
+            ->whereIn('status', ['submitted', 'under_review', 'pending_head_office', 'ready_for_head_office'])
+            ->with(['approvals' => fn ($q) => $q->orderBy('sequence')])
+            ->get();
+
+        $loans = LoanApplication::whereIn('branch_id', $allBranchIds)
+            ->whereIn('status', ['submitted', 'under_review', 'pending_head_office', 'ready_for_head_office', 'needs_correction'])
+            ->with(['approvals' => fn ($q) => $q->orderBy('sequence')])
+            ->get();
+
+        // 4. Group by branch_id and calculate stage breakdowns
+        $branchData = [];
+        foreach ($allBranchIds as $bId) {
+            $branchData[$bId] = [
+                'admission_pending' => 0,
+                'loan_pending' => 0,
+                'total_pending' => 0,
+                'loan_amount' => 0.0,
+                'stages' => [
+                    'branch' => ['label' => 'শাখা ব্যবস্থাপক', 'admission' => 0, 'loan' => 0, 'total' => 0],
+                    'area' => ['label' => 'আঞ্চলিক ব্যবস্থাপক (RM)', 'admission' => 0, 'loan' => 0, 'total' => 0],
+                    'zone' => ['label' => 'জোনাল ম্যানেজার (ZM)', 'admission' => 0, 'loan' => 0, 'total' => 0],
+                    'senior_ho' => ['label' => 'হেড অফিস / সিনিয়র অনুমোদক', 'admission' => 0, 'loan' => 0, 'total' => 0],
+                    'correction' => ['label' => 'সংশোধনে ফেরত', 'admission' => 0, 'loan' => 0, 'total' => 0],
+                ],
+            ];
+        }
+
+        foreach ($admissions as $adm) {
+            $bId = $adm->branch_id;
+            if (! isset($branchData[$bId])) continue;
+
+            $branchData[$bId]['admission_pending']++;
+            $branchData[$bId]['total_pending']++;
+
+            $stage = 'branch';
+            if ($adm->status === 'pending_head_office' || $adm->status === 'ready_for_head_office') {
+                $stage = 'senior_ho';
+            } else {
+                $curr = null;
+                $pending = $adm->approvals->where('status', 'pending')->sortBy('sequence');
+                foreach ($pending as $p) {
+                    $prev = $adm->approvals->where('sequence', '<', $p->sequence);
+                    if ($prev->every(fn ($a) => $a->status === 'approved')) {
+                        $curr = $p;
+                        break;
+                    }
+                }
+                if ($curr) {
+                    $lvl = $curr->level;
+                    if ($lvl === 'area') $stage = 'area';
+                    elseif ($lvl === 'zone') $stage = 'zone';
+                    elseif (in_array($lvl, ['escalation', 'head_office'], true)) $stage = 'senior_ho';
+                    else $stage = 'branch';
+                }
+            }
+
+            $branchData[$bId]['stages'][$stage]['admission']++;
+            $branchData[$bId]['stages'][$stage]['total']++;
+        }
+
+        foreach ($loans as $loan) {
+            $bId = $loan->branch_id;
+            if (! isset($branchData[$bId])) continue;
+
+            if ($loan->status === 'needs_correction') {
+                $branchData[$bId]['stages']['correction']['loan']++;
+                $branchData[$bId]['stages']['correction']['total']++;
+                continue;
+            }
+
+            $branchData[$bId]['loan_pending']++;
+            $branchData[$bId]['total_pending']++;
+            $branchData[$bId]['loan_amount'] += (float) $loan->requested_amount;
+
+            $stage = 'branch';
+            if ($loan->status === 'pending_head_office' || $loan->status === 'ready_for_head_office') {
+                $stage = 'senior_ho';
+            } else {
+                $curr = null;
+                $pending = $loan->approvals->where('status', 'pending')->sortBy('sequence');
+                foreach ($pending as $p) {
+                    $prev = $loan->approvals->where('sequence', '<', $p->sequence);
+                    if ($prev->every(fn ($a) => $a->status === 'approved')) {
+                        $curr = $p;
+                        break;
+                    }
+                }
+                if ($curr) {
+                    $lvl = $curr->level;
+                    if ($lvl === 'area') $stage = 'area';
+                    elseif ($lvl === 'zone') $stage = 'zone';
+                    elseif (in_array($lvl, ['escalation', 'head_office'], true)) $stage = 'senior_ho';
+                    else $stage = 'branch';
+                }
+            }
+
+            $branchData[$bId]['stages'][$stage]['loan']++;
+            $branchData[$bId]['stages'][$stage]['total']++;
+        }
+
+        // 5. Construct Tree Structure
+        $tree = [];
+
+        foreach ($zones as $zone) {
+            $zm = $zmByZoneId[$zone->id] ?? null;
+            $zoneNode = [
+                'id' => $zone->id,
+                'key' => 'zone-' . $zone->id,
+                'type' => 'zone',
+                'name' => $zone->name,
+                'code' => $zone->code,
+                'manager_name' => $zm?->name ?? 'নিযুক্ত নেই',
+                'manager_phone' => $zm?->phone,
+                'manager_role' => 'জোনাল ম্যানেজার (ZM)',
+                'admission_pending' => 0,
+                'loan_pending' => 0,
+                'total_pending' => 0,
+                'loan_amount' => 0.0,
+                'areas_count' => $zone->areas->count(),
+                'branches_count' => 0,
+                'stages' => [
+                    'branch' => ['label' => 'শাখা ব্যবস্থাপক', 'admission' => 0, 'loan' => 0, 'total' => 0],
+                    'area' => ['label' => 'আঞ্চলিক ব্যবস্থাপক (RM)', 'admission' => 0, 'loan' => 0, 'total' => 0],
+                    'zone' => ['label' => 'জোনাল ম্যানেজার (ZM)', 'admission' => 0, 'loan' => 0, 'total' => 0],
+                    'senior_ho' => ['label' => 'হেড অফিস / সিনিয়র অনুমোদক', 'admission' => 0, 'loan' => 0, 'total' => 0],
+                    'correction' => ['label' => 'সংশোধনে ফেরত', 'admission' => 0, 'loan' => 0, 'total' => 0],
+                ],
+                'children' => [],
+            ];
+
+            foreach ($zone->areas as $area) {
+                $rm = $rmByAreaId[$area->id] ?? null;
+                $areaNode = [
+                    'id' => $area->id,
+                    'key' => 'area-' . $area->id,
+                    'type' => 'area',
+                    'name' => $area->name,
+                    'code' => $area->code,
+                    'parent_name' => $zone->name,
+                    'manager_name' => $rm?->name ?? 'নিযুক্ত নেই',
+                    'manager_phone' => $rm?->phone,
+                    'manager_role' => 'আঞ্চলিক ব্যবস্থাপক (RM)',
+                    'admission_pending' => 0,
+                    'loan_pending' => 0,
+                    'total_pending' => 0,
+                    'loan_amount' => 0.0,
+                    'branches_count' => $area->branches->count(),
+                    'stages' => [
+                        'branch' => ['label' => 'শাখা ব্যবস্থাপক', 'admission' => 0, 'loan' => 0, 'total' => 0],
+                        'area' => ['label' => 'আঞ্চলিক ব্যবস্থাপক (RM)', 'admission' => 0, 'loan' => 0, 'total' => 0],
+                        'zone' => ['label' => 'জোনাল ম্যানেজার (ZM)', 'admission' => 0, 'loan' => 0, 'total' => 0],
+                        'senior_ho' => ['label' => 'হেড অফিস / সিনিয়র অনুমোদক', 'admission' => 0, 'loan' => 0, 'total' => 0],
+                        'correction' => ['label' => 'সংশোধনে ফেরত', 'admission' => 0, 'loan' => 0, 'total' => 0],
+                    ],
+                    'children' => [],
+                ];
+
+                foreach ($area->branches as $branch) {
+                    $bm = $bmUsers[$branch->id] ?? null;
+                    $bStats = $branchData[$branch->id] ?? null;
+
+                    $branchAdm = $bStats ? $bStats['admission_pending'] : 0;
+                    $branchLoan = $bStats ? $bStats['loan_pending'] : 0;
+                    $branchTotal = $bStats ? $bStats['total_pending'] : 0;
+                    $branchAmount = $bStats ? $bStats['loan_amount'] : 0.0;
+                    $branchStages = $bStats ? $bStats['stages'] : [];
+
+                    $branchNode = [
+                        'id' => $branch->id,
+                        'key' => 'branch-' . $branch->id,
+                        'type' => 'branch',
+                        'name' => $branch->name,
+                        'code' => $branch->code,
+                        'parent_name' => $area->name . ' • ' . $zone->name,
+                        'manager_name' => $bm?->name ?? 'নিযুক্ত নেই',
+                        'manager_phone' => $bm?->phone,
+                        'manager_role' => 'শাখা ব্যবস্থাপক (BM)',
+                        'admission_pending' => $branchAdm,
+                        'loan_pending' => $branchLoan,
+                        'total_pending' => $branchTotal,
+                        'loan_amount' => $branchAmount,
+                        'branches_count' => 1,
+                        'stages' => $branchStages,
+                    ];
+
+                    // Aggregate into Area
+                    $areaNode['admission_pending'] += $branchAdm;
+                    $areaNode['loan_pending'] += $branchLoan;
+                    $areaNode['total_pending'] += $branchTotal;
+                    $areaNode['loan_amount'] += $branchAmount;
+                    foreach ($branchStages as $stKey => $stVal) {
+                        $areaNode['stages'][$stKey]['admission'] += $stVal['admission'];
+                        $areaNode['stages'][$stKey]['loan'] += $stVal['loan'];
+                        $areaNode['stages'][$stKey]['total'] += $stVal['total'];
+                    }
+
+                    $areaNode['children'][] = $branchNode;
+                }
+
+                // Sort branches by total pending desc
+                usort($areaNode['children'], fn ($a, $b) => $b['total_pending'] <=> $a['total_pending']);
+
+                // Aggregate into Zone
+                $zoneNode['admission_pending'] += $areaNode['admission_pending'];
+                $zoneNode['loan_pending'] += $areaNode['loan_pending'];
+                $zoneNode['total_pending'] += $areaNode['total_pending'];
+                $zoneNode['loan_amount'] += $areaNode['loan_amount'];
+                $zoneNode['branches_count'] += $areaNode['branches_count'];
+                foreach ($areaNode['stages'] as $stKey => $stVal) {
+                    $zoneNode['stages'][$stKey]['admission'] += $stVal['admission'];
+                    $zoneNode['stages'][$stKey]['loan'] += $stVal['loan'];
+                    $zoneNode['stages'][$stKey]['total'] += $stVal['total'];
+                }
+
+                $zoneNode['children'][] = $areaNode;
+            }
+
+            // Sort areas by total pending desc
+            usort($zoneNode['children'], fn ($a, $b) => $b['total_pending'] <=> $a['total_pending']);
+
+            $tree[] = $zoneNode;
+        }
+
+        // Sort zones by total pending desc
+        usort($tree, fn ($a, $b) => $b['total_pending'] <=> $a['total_pending']);
+
+        return $tree;
     }
 
     /**

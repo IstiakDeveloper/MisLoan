@@ -289,7 +289,7 @@ function renderPage1(d: any, branch?: any, categoryName?: string) {
                     {/* Approval Statement */}
                     <div className="text-[12px] print:text-[11.5px] leading-relaxed my-2">
                         <p>
-                            আবেদনকারীর যাবতীয় তথ্যাদি সরেজমিনে যাচাই সাপেক্ষে উক্ত প্রকল্পে <strong className="border-b border-dotted border-gray-600 inline-block min-w-[80px] text-center font-bold">{noDecimal(d.approval_amount_digits || d.capital_applied_loan)}</strong> (কথায় <span className="border-b border-dotted border-gray-600 inline-block min-w-[120px] font-medium">{d.approval_amount_words || ''}</span>) টাকা ঋণ বিতরণের জন্য অনুমোদন করা হলো।
+                            আবেদনকারীর যাবতীয় তথ্যাদি সরেজমিনে যাচাই সাপেক্ষে উক্ত প্রকল্পে <strong className="border-b border-dotted border-gray-600 inline-block min-w-[80px] text-center font-bold">{noDecimal(d.approval_amount_digits || d.capital_applied_loan)}</strong> (কথায় <span className="border-b border-dotted border-gray-600 inline-block min-w-[120px] font-medium">{d.approval_amount_words || numberToWordsBangla(d.approval_amount_digits || d.capital_applied_loan)}</span>) টাকা ঋণ বিতরণের জন্য অনুমোদন করা হলো।
                         </p>
                     </div>
 
