@@ -75,10 +75,7 @@ export function LoanAgreementPrintView({ data }: { data: LoanAgreementData }) {
                         </div>
                     </div>
                     <p className="text-xs font-bold mt-2 text-center">
-                        ঋণ কর্মসূচির নাম :{' '}
-                        <span className="border-b border-dotted border-gray-800 inline-block min-w-[200px] text-left px-2 text-sm font-bold">
-                            {str(d.loan_category_name)}
-                        </span>
+                        ঋণ কর্মসূচির নাম : <span className="text-sm font-bold">{str(d.loan_category_name)}</span>
                     </p>
                 </div>
 
