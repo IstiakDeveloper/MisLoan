@@ -28,6 +28,7 @@ use App\Support\NumberToWordsBangla;
 use App\Support\RoleListWorkQueue;
 use Carbon\Carbon;
 use Illuminate\Http\Exceptions\HttpResponseException;
+use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
@@ -139,6 +140,9 @@ class LoanApplicationController extends Controller
         $application->can_disburse = $status === LoanApplication::STATUS_PENDING_DISBURSEMENT
             && $this->isBranchUserRole($user)
             && $application->disburse_forms_complete;
+        $application->next_disburse_form_id = $status === LoanApplication::STATUS_PENDING_DISBURSEMENT
+            ? LoanFormVisibility::nextDisburseFormId($formSaved)
+            : null;
 
         $isBranchManagerUser = in_array($roleName, ['branch_manager', 'super_admin']) || (bool) ($user->has_all_access ?? false);
 
@@ -2387,6 +2391,32 @@ class LoanApplicationController extends Controller
     }
 
     /**
+     * After a disbursement-wizard form save, continue to the next form (2 → 3)
+     * or back to the show page to confirm disbursement (3 → show).
+     */
+    private function redirectAfterDisburseFormSave(
+        Request $request,
+        LoanApplication $application,
+        int $savedFormId,
+        string $message
+    ): RedirectResponse {
+        if (! $request->boolean('disburse_wizard')) {
+            return redirect()->route('member.loan-applications.show', $application->id)
+                ->with('success', $message);
+        }
+
+        $next = LoanFormVisibility::disburseWizardNextLocation($savedFormId, (int) $application->id, [
+            'member_id' => $request->input('member_id'),
+            'product_id' => $request->input('loan_product_id'),
+            'category_id' => $request->input('loan_category_id'),
+            'amount' => $request->input('requested_amount'),
+            'legacy' => $request->boolean('legacy'),
+        ]);
+
+        return redirect()->route($next['route'], $next['parameters'])->with('success', $message);
+    }
+
+    /**
      * Save guarantor commitment draft
      */
     public function saveGuarantorCommitmentDraft(Request $request)
@@ -2437,8 +2467,12 @@ class LoanApplicationController extends Controller
         $loanApplication->number_of_installments = $numberOfInstallments;
         $loanApplication->save();
 
-        return redirect()->route('member.loan-applications.show', $loanApplication->id)
-            ->with('success', 'জামিনদার/দায়িত্ব গ্রহণকারীর অঙ্গীকার নামা সংরক্ষিত হয়েছে।');
+        return $this->redirectAfterDisburseFormSave(
+            $request,
+            $loanApplication,
+            2,
+            'জামিনদার/দায়িত্ব গ্রহণকারীর অঙ্গীকার নামা সংরক্ষিত হয়েছে।'
+        );
     }
 
     /**
@@ -2547,8 +2581,12 @@ class LoanApplicationController extends Controller
                 ->with('success', 'ঋণ সফলভাবে বিতরণ করা হয়েছে।');
         }
 
-        return redirect()->route('member.loan-applications.show', $loanApplication->id)
-            ->with('success', 'মৃত্যুজনিত ঋণঝুঁকি তহবিল আবেদন সংরক্ষিত হয়েছে।');
+        return $this->redirectAfterDisburseFormSave(
+            $request,
+            $loanApplication,
+            3,
+            'মৃত্যুজনিত ঋণঝুঁকি তহবিল আবেদন সংরক্ষিত হয়েছে।'
+        );
     }
 
     /**

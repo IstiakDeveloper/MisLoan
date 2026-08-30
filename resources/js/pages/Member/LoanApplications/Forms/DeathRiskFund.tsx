@@ -1,10 +1,10 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Head, useForm, router } from '@inertiajs/react';
 import AdminLayout from '@/layouts/admin-layout';
-import { Save, Printer, Eye, Upload, X, ArrowLeft } from 'lucide-react';
+import { Save, Printer, Eye, Upload, X, ArrowLeft, CheckCircle2 } from 'lucide-react';
 import { formatDateBangla } from '@/utils/dateUtils';
 import { numberToWordsBangla } from './ApprovalForm/PrintPreview';
-import { afterLoanFormSaveUrl } from '@/utils/loanFormNavigation';
+import { afterLoanFormSaveUrl, continueDisburseWizardUrl, disburseWizardParamsFromContext, isDisburseWizardSearch, loanDisburseShowUrl } from '@/utils/loanFormNavigation';
 import { useAutoFitPrint } from '@/hooks/useAutoFitPrint';
 import { withLiveMemberCode } from '@/utils/memberCodeUtils';
 import { fileToCompressedDataUrl } from '@/utils/imageUpload';
@@ -362,11 +362,8 @@ function resolveBackUrl(
     requestedAmount: number,
     existingApplication?: any,
 ) {
-    if (typeof window !== 'undefined') {
-        const currentParams = new URLSearchParams(window.location.search);
-        if (currentParams.get('return') === 'disburse' && currentParams.get('application_id')) {
-            return `/member/loan-applications/${currentParams.get('application_id')}?action=disburse`;
-        }
+    if (typeof window !== 'undefined' && isDisburseWizardSearch() && existingApplication?.id) {
+        return loanDisburseShowUrl(existingApplication.id);
     }
     return afterLoanFormSaveUrl({
         afterSaveUrl,
@@ -378,6 +375,29 @@ function resolveBackUrl(
         requestedAmount,
         formId: 3,
     });
+}
+
+function resolveContinueUrl(
+    afterSaveUrl: string | undefined,
+    isLegacy: boolean,
+    member: any,
+    loanProduct: any,
+    loanCategory: any,
+    requestedAmount: number,
+    existingApplication?: any,
+) {
+    const wizardParams = disburseWizardParamsFromContext({
+        existingApplication,
+        member,
+        loanProduct,
+        loanCategory,
+        requestedAmount,
+        isLegacy,
+    });
+    if (wizardParams && isDisburseWizardSearch()) {
+        return continueDisburseWizardUrl(3, wizardParams);
+    }
+    return resolveBackUrl(afterSaveUrl, isLegacy, member, loanProduct, loanCategory, requestedAmount, existingApplication);
 }
 
 function DeathRiskFundOnlyPreview({ member, loanProduct, loanCategory, requestedAmount, branch, savedData }: any) {
@@ -439,6 +459,7 @@ export default function DeathRiskFund({
         );
     }
     const [errors, setErrors] = useState<Record<string, string>>({});
+    const missingBannerRef = useRef<HTMLDivElement>(null);
 
     useAutoFitPrint([member, loanProduct, loanCategory, requestedAmount, branch], '.death-risk-print');
 
@@ -617,50 +638,48 @@ export default function DeathRiskFund({
         }
 
         setErrors(newErrors);
+        if (Object.keys(newErrors).length > 0) {
+            requestAnimationFrame(() => {
+                missingBannerRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+            });
+        }
         return Object.keys(newErrors).length === 0;
     };
 
-    const handleSaveDraft = () => {
-        // Soft draft: incomplete forms can still be saved. Strict checks only for auto-disburse.
-        let autoDisburse = false;
-        if (typeof window !== 'undefined') {
-            const currentParams = new URLSearchParams(window.location.search);
-            if (currentParams.get('action') === 'disburse' && currentParams.get('step') === '3' && existingApplication?.id) {
-                autoDisburse = true;
-            }
-        }
-        if (autoDisburse && !validateForm()) {
-            alert('বিতরণের আগে অনুগ্রহ করে সকল আবশ্যক ক্ষেত্র পূরণ করুন');
+    const handleSaveDraft = (thenDisburse = false) => {
+        if (thenDisburse && !validateForm()) {
             return;
         }
 
+        const inDisburseWizard = !embedded && isDisburseWizardSearch();
         const payload: any = { loan_product_id: loanProduct.id, loan_category_id: loanCategory.id, requested_amount: requestedAmount, form_data: data, draft: 1 };
         if (isLegacy) payload.legacy = 1; else payload.member_id = member?.id;
         if (existingApplication?.id) {
             payload.application_id = existingApplication.id;
         }
-        if (autoDisburse && existingApplication?.id) {
-            payload.auto_disburse = 1;
+        if (inDisburseWizard || thenDisburse) {
+            payload.disburse_wizard = 1;
         }
+        const continueUrl = thenDisburse && existingApplication?.id
+            ? loanDisburseShowUrl(existingApplication.id)
+            : resolveContinueUrl(
+                afterSaveUrl,
+                isLegacy,
+                member,
+                loanProduct,
+                loanCategory,
+                requestedAmount,
+                existingApplication,
+            );
         router.post(
             '/member/loan-applications/forms/death-risk-fund/save-draft',
             payload,
             {
                 onSuccess: () => {
-                    if (autoDisburse) {
+                    if (inDisburseWizard || thenDisburse) {
                         return;
                     }
-                    router.visit(
-                        resolveBackUrl(
-                            afterSaveUrl,
-                            isLegacy,
-                            member,
-                            loanProduct,
-                            loanCategory,
-                            requestedAmount,
-                            existingApplication,
-                        ),
-                    );
+                    router.visit(continueUrl);
                 },
                 onError: (errors) => {
                     console.error('Save draft error:', errors);
@@ -669,6 +688,8 @@ export default function DeathRiskFund({
             }
         );
     };
+
+    const inWizard = !embedded && isDisburseWizardSearch();
 
     const handlePrint = () => {
         const printWindow = window.open('', '_blank', 'width=900,height=1200');
@@ -1572,6 +1593,24 @@ export default function DeathRiskFund({
             </Head>
 
             <div className="max-w-[1600px] mx-auto p-4">
+                {inWizard && (
+                    <div className="bg-emerald-50 border border-emerald-200 rounded-xl p-3.5 mb-4 print:hidden">
+                        <p className="text-sm font-bold text-emerald-900">বিতরণের ধাপ ২/২ — মৃত্যুঝুঁকি ফর্ম</p>
+                        <p className="text-xs text-emerald-800 mt-0.5">
+                            আবশ্যক ঘর পূরণ করে <strong>বিতরণ</strong> চাপুন। এই ফর্ম সেভ হবে, তারপর অর্থ বিতরণ নিশ্চিত করা যাবে।
+                        </p>
+                    </div>
+                )}
+                {Object.keys(errors).length > 0 && (
+                    <div ref={missingBannerRef} className="bg-red-50 border border-red-300 rounded-xl p-3.5 mb-4 print:hidden">
+                        <p className="text-sm font-bold text-red-800">নিচের তথ্যগুলো পূরণ করতে হবে:</p>
+                        <ul className="mt-1.5 list-disc list-inside text-xs text-red-700 space-y-0.5">
+                            {Object.entries(errors).map(([key, message]) => (
+                                <li key={key}>{message.replace(/ আবশ্যক$/, '')}</li>
+                            ))}
+                        </ul>
+                    </div>
+                )}
                 {/* Header */}
                 <div className="flex items-center justify-between mb-4 print:hidden">
                     {!embedded && <div className="flex items-center gap-3">
@@ -1604,15 +1643,28 @@ export default function DeathRiskFund({
                             )}
                         </div>
                     </div>}
-                    <div className="flex gap-2">
-                        <button
-                            onClick={handleSaveDraft}
-                            disabled={processing}
-                            className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white text-sm rounded-md hover:bg-blue-700 disabled:opacity-50"
-                        >
-                            <Save className="w-4 h-4" />
-                            {processing ? 'সংরক্ষণ হচ্ছে...' : (saveButtonLabel || 'সংরক্ষণ করুন')}
-                        </button>
+                    <div className="flex flex-wrap gap-2">
+                        {!inWizard && (
+                            <button
+                                onClick={() => handleSaveDraft(false)}
+                                disabled={processing}
+                                className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white text-sm rounded-md hover:bg-blue-700 disabled:opacity-50"
+                            >
+                                <Save className="w-4 h-4" />
+                                {processing ? 'সংরক্ষণ হচ্ছে...' : (saveButtonLabel || 'সংরক্ষণ করুন')}
+                            </button>
+                        )}
+                        {inWizard && (
+                            <button
+                                type="button"
+                                onClick={() => handleSaveDraft(true)}
+                                disabled={processing}
+                                className="flex items-center gap-2 px-4 py-2 bg-emerald-600 text-white text-sm font-bold rounded-md hover:bg-emerald-700 disabled:opacity-50"
+                            >
+                                <CheckCircle2 className="w-4 h-4" />
+                                {processing ? 'সংরক্ষণ হচ্ছে...' : 'বিতরণ'}
+                            </button>
+                        )}
                         <button
                             onClick={handlePrint}
                             className="flex items-center gap-2 px-4 py-2 bg-purple-600 text-white text-sm rounded-md hover:bg-purple-700"

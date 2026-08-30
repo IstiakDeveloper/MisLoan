@@ -115,6 +115,48 @@ class LoanFormVisibilityTest extends TestCase
         $this->assertSame([], $editable);
     }
 
+    public function test_next_disburse_form_id_returns_first_unsaved_form(): void
+    {
+        $this->assertSame(2, LoanFormVisibility::nextDisburseFormId([
+            2 => false,
+            3 => false,
+        ]));
+        $this->assertSame(3, LoanFormVisibility::nextDisburseFormId([
+            2 => true,
+            3 => false,
+        ]));
+        $this->assertNull(LoanFormVisibility::nextDisburseFormId([
+            2 => true,
+            3 => true,
+        ]));
+        $this->assertSame(2, LoanFormVisibility::nextDisburseFormId([]));
+    }
+
+    public function test_disburse_wizard_sends_form_two_save_to_form_three(): void
+    {
+        $next = LoanFormVisibility::disburseWizardNextLocation(2, 41, [
+            'member_id' => 9,
+            'product_id' => 3,
+            'category_id' => 2,
+            'amount' => 50000,
+        ]);
+
+        $this->assertSame('member.loan-applications.forms.death-risk-fund', $next['route']);
+        $this->assertSame(41, $next['parameters']['application_id']);
+        $this->assertSame('disburse', $next['parameters']['action']);
+        $this->assertSame(3, $next['parameters']['step']);
+        $this->assertSame(9, $next['parameters']['member_id']);
+    }
+
+    public function test_disburse_wizard_sends_form_three_save_to_show_page(): void
+    {
+        $next = LoanFormVisibility::disburseWizardNextLocation(3, 41);
+
+        $this->assertSame('member.loan-applications.show', $next['route']);
+        $this->assertSame(41, $next['parameters']['id']);
+        $this->assertSame('disburse', $next['parameters']['action']);
+    }
+
     public function test_branch_manager_at_pending_disbursement_only_gets_disburse_forms(): void
     {
         $editable = LoanFormVisibility::editableFormIdsForUser(

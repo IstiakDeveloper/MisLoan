@@ -1250,7 +1250,7 @@ export default function Index({
                                                     router.get(`/member/loan-applications/${app.id}?action=disburse`);
                                                 }}
                                                 className="inline-flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold text-white bg-emerald-600 hover:bg-emerald-700 border border-emerald-700 transition active:scale-95"
-                                                title="বিতরণ প্রক্রিয়া শুরু করুন"
+                                                title="ফর্ম পূরণ করে ঋণ বিতরণ করুন"
                                             >
                                                 <CheckCircle className="w-3.5 h-3.5" />
                                                 <span>বিতরণ</span>
@@ -1522,7 +1522,7 @@ export default function Index({
                                                                         router.get(`/member/loan-applications/${app.id}?action=disburse`);
                                                                     }}
                                                                     className="inline-flex items-center gap-1 text-xs px-2.5 py-1 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-xl shadow-sm transition active:scale-95"
-                                                                    title="বিতরণ প্রক্রিয়া শুরু করুন"
+                                                                    title="ফর্ম পূরণ করে ঋণ বিতরণ করুন"
                                                                 >
                                                                     <CheckCircle className="w-3 h-3" />
                                                                     <span>বিতরণ</span>

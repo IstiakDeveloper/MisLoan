@@ -1,11 +1,11 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Head, useForm, router } from '@inertiajs/react';
 import AdminLayout from '@/layouts/admin-layout';
 import { formatDateBangla } from '@/utils/dateUtils';
 import { calculateTotalServiceCharge } from '@/utils/loanInterest';
-import { Save, Printer, Eye, ArrowLeft, ShieldCheck, UserCheck, CreditCard, FileText } from 'lucide-react';
+import { Save, Printer, Eye, ArrowLeft, ShieldCheck, UserCheck, CreditCard, FileText, CheckCircle2 } from 'lucide-react';
 import { numberToWordsBangla } from './ApprovalForm/PrintPreview';
-import { afterLoanFormSaveUrl } from '@/utils/loanFormNavigation';
+import { afterLoanFormSaveUrl, continueDisburseWizardUrl, disburseWizardParamsFromContext, isDisburseWizardSearch, loanDisburseShowUrl } from '@/utils/loanFormNavigation';
 import { useAutoFitPrint } from '@/hooks/useAutoFitPrint';
 import { withLiveMemberCode } from '@/utils/memberCodeUtils';
 
@@ -73,11 +73,8 @@ function resolveBackUrl(
     requestedAmount: number,
     existingApplication?: any,
 ) {
-    if (typeof window !== 'undefined') {
-        const currentParams = new URLSearchParams(window.location.search);
-        if (currentParams.get('return') === 'disburse' && currentParams.get('application_id')) {
-            return `/member/loan-applications/${currentParams.get('application_id')}?action=disburse`;
-        }
+    if (typeof window !== 'undefined' && isDisburseWizardSearch() && existingApplication?.id) {
+        return loanDisburseShowUrl(existingApplication.id);
     }
     return afterLoanFormSaveUrl({
         afterSaveUrl,
@@ -89,6 +86,29 @@ function resolveBackUrl(
         requestedAmount,
         formId: 2,
     });
+}
+
+function resolveContinueUrl(
+    afterSaveUrl: string | undefined,
+    isLegacy: boolean,
+    member: any,
+    loanProduct: any,
+    loanCategory: any,
+    requestedAmount: number,
+    existingApplication?: any,
+) {
+    const wizardParams = disburseWizardParamsFromContext({
+        existingApplication,
+        member,
+        loanProduct,
+        loanCategory,
+        requestedAmount,
+        isLegacy,
+    });
+    if (wizardParams && isDisburseWizardSearch()) {
+        return continueDisburseWizardUrl(2, wizardParams);
+    }
+    return resolveBackUrl(afterSaveUrl, isLegacy, member, loanProduct, loanCategory, requestedAmount, existingApplication);
 }
 
 /** Service charge from base loan amount & product (prorated by duration for annual rates) */
@@ -196,6 +216,8 @@ export default function GuarantorCommitment({
     }
 
     const [showPreview, setShowPreview] = useState(true);
+    const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
+    const missingBannerRef = useRef<HTMLDivElement>(null);
 
     const baseLoanAmount = Number(requestedAmount) || 0;
     const autoServiceCharge = Math.round(calcServiceCharge(baseLoanAmount, loanProduct));
@@ -281,26 +303,94 @@ export default function GuarantorCommitment({
         }
     }, [savedData, baseLoanAmount, loanProduct]);
 
-    const handleSaveDraft = () => {
+    const collectFieldErrors = (): Record<string, string> => {
+        const next: Record<string, string> = {};
+        if (!data.guarantor_name?.trim()) {
+            next.guarantor_name = 'জামিনদারের নাম';
+        }
+        if (!data.guarantor_nid?.trim()) {
+            next.guarantor_nid = 'জামিনদারের NID';
+        }
+        if (!data.guarantor_mobile?.trim()) {
+            next.guarantor_mobile = 'জামিনদারের মোবাইল';
+        }
+        if (!data.guarantor_village?.trim()) {
+            next.guarantor_village = 'জামিনদারের গ্রাম/রাস্তা';
+        }
+        if (!data.guarantor_post_office?.trim()) {
+            next.guarantor_post_office = 'জামিনদারের ডাকঘর';
+        }
+        if (!data.guarantor_upazila?.trim()) {
+            next.guarantor_upazila = 'জামিনদারের উপজেলা';
+        }
+        if (!data.guarantor_district?.trim()) {
+            next.guarantor_district = 'জামিনদারের জেলা';
+        }
+        if (!data.loan_date?.trim()) {
+            next.loan_date = 'ঋণের তারিখ';
+        }
+        if (!data.loan_amount || Number(data.loan_amount) <= 0) {
+            next.loan_amount = 'ঋণের পরিমাণ';
+        }
+
+        return next;
+    };
+
+    const clearFieldError = (key: string) => {
+        if (!fieldErrors[key]) {
+            return;
+        }
+        setFieldErrors((prev) => {
+            const next = { ...prev };
+            delete next[key];
+
+            return next;
+        });
+    };
+
+    const fieldInputClass = (key: string) =>
+        fieldErrors[key]
+            ? `${inputClass} border-red-500 bg-red-50 focus:ring-red-500 focus:border-red-500`
+            : inputClass;
+
+    const handleSaveDraft = (requireComplete = false) => {
+        if (requireComplete) {
+            const nextErrors = collectFieldErrors();
+            setFieldErrors(nextErrors);
+            if (Object.keys(nextErrors).length > 0) {
+                requestAnimationFrame(() => {
+                    missingBannerRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                });
+
+                return;
+            }
+        }
+
+        const inDisburseWizard = !embedded && isDisburseWizardSearch();
         const payload: any = { loan_product_id: loanProduct.id, loan_category_id: loanCategory.id, requested_amount: requestedAmount, agreement_data: data };
         if (isLegacy) payload.legacy = 1; else payload.member_id = member?.id;
         if (existingApplication?.id) payload.application_id = existingApplication.id;
+        if (inDisburseWizard) {
+            payload.disburse_wizard = 1;
+        }
+        const continueUrl = resolveContinueUrl(
+            afterSaveUrl,
+            isLegacy,
+            member,
+            loanProduct,
+            loanCategory,
+            requestedAmount,
+            existingApplication,
+        );
         router.post(
             '/member/loan-applications/forms/guarantor-commitment/save-draft',
             payload,
             {
                 onSuccess: () => {
-                    router.visit(
-                        resolveBackUrl(
-                            afterSaveUrl,
-                            isLegacy,
-                            member,
-                            loanProduct,
-                            loanCategory,
-                            requestedAmount,
-                            existingApplication,
-                        ),
-                    );
+                    if (inDisburseWizard) {
+                        return;
+                    }
+                    router.visit(continueUrl);
                 },
                 onError: (errors) => {
                     console.error('Save draft error:', errors);
@@ -309,6 +399,8 @@ export default function GuarantorCommitment({
             }
         );
     };
+
+    const inWizard = !embedded && isDisburseWizardSearch();
 
     const handlePrint = () => {
         window.print();
@@ -370,6 +462,24 @@ export default function GuarantorCommitment({
             </Head>
 
             <div className="max-w-[1600px] mx-auto p-4 md:p-6 space-y-6">
+                {inWizard && (
+                    <div className="bg-emerald-50 border border-emerald-200 rounded-xl p-3.5 print:hidden">
+                        <p className="text-sm font-bold text-emerald-900">বিতরণের ধাপ ১/২ — জামিনদার ফর্ম</p>
+                        <p className="text-xs text-emerald-800 mt-0.5">
+                            আবশ্যক ঘর পূরণ করে <strong>বিতরণ</strong> চাপুন। এই ফর্ম সেভ হবে, তারপর পরের ফর্ম আসবে।
+                        </p>
+                    </div>
+                )}
+                {Object.keys(fieldErrors).length > 0 && (
+                    <div ref={missingBannerRef} className="bg-red-50 border border-red-300 rounded-xl p-3.5 print:hidden">
+                        <p className="text-sm font-bold text-red-800">নিচের তথ্যগুলো পূরণ করতে হবে:</p>
+                        <ul className="mt-1.5 list-disc list-inside text-xs text-red-700 space-y-0.5">
+                            {Object.entries(fieldErrors).map(([key, label]) => (
+                                <li key={key}>{label}</li>
+                            ))}
+                        </ul>
+                    </div>
+                )}
                 {/* Top Action Header */}
                 <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-white p-4 rounded-xl border border-gray-200 shadow-sm print:hidden">
                     {!embedded && <div className="flex items-center gap-3">
@@ -416,15 +526,28 @@ export default function GuarantorCommitment({
                             <Eye className="w-4 h-4" />
                             <span>{showPreview ? 'প্রিভিউ বন্ধ করুন' : 'প্রিভিউ দেখুন'}</span>
                         </button>
-                        <button
-                            type="button"
-                            onClick={handleSaveDraft}
-                            disabled={processing}
-                            className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white text-xs md:text-sm font-bold rounded-lg hover:bg-blue-700 disabled:opacity-50 transition-all shadow-sm"
-                        >
-                            <Save className="w-4 h-4" />
-                            <span>{processing ? 'সংরক্ষণ হচ্ছে...' : (saveButtonLabel || 'ড্রাফট সংরক্ষণ করুন')}</span>
-                        </button>
+                        {!inWizard && (
+                            <button
+                                type="button"
+                                onClick={() => handleSaveDraft(false)}
+                                disabled={processing}
+                                className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white text-xs md:text-sm font-bold rounded-lg hover:bg-blue-700 disabled:opacity-50 transition-all shadow-sm"
+                            >
+                                <Save className="w-4 h-4" />
+                                <span>{processing ? 'সংরক্ষণ হচ্ছে...' : (saveButtonLabel || 'ড্রাফট সংরক্ষণ করুন')}</span>
+                            </button>
+                        )}
+                        {inWizard && (
+                            <button
+                                type="button"
+                                onClick={() => handleSaveDraft(true)}
+                                disabled={processing}
+                                className="flex items-center gap-2 px-4 py-2 bg-emerald-600 text-white text-xs md:text-sm font-bold rounded-lg hover:bg-emerald-700 disabled:opacity-50 transition-all shadow-sm"
+                            >
+                                <CheckCircle2 className="w-4 h-4" />
+                                <span>{processing ? 'সংরক্ষণ হচ্ছে...' : 'বিতরণ'}</span>
+                            </button>
+                        )}
                         {showPreview && (
                             <button
                                 type="button"
@@ -454,10 +577,16 @@ export default function GuarantorCommitment({
                                     <input
                                         type="text"
                                         value={data.guarantor_name}
-                                        onChange={(e) => setData('guarantor_name', e.target.value)}
+                                        onChange={(e) => {
+                                            setData('guarantor_name', e.target.value);
+                                            clearFieldError('guarantor_name');
+                                        }}
                                         placeholder="জামিনদারের নাম লিখুন"
-                                        className={inputClass}
+                                        className={fieldInputClass('guarantor_name')}
                                     />
+                                    {fieldErrors.guarantor_name && (
+                                        <p className="text-xs text-red-600 mt-0.5">{fieldErrors.guarantor_name} পূরণ করুন</p>
+                                    )}
                                 </div>
                                 <div>
                                     <label className="block text-xs font-semibold text-gray-700 mb-1">স্বামী/পিতা</label>
@@ -470,64 +599,100 @@ export default function GuarantorCommitment({
                                     />
                                 </div>
                                 <div>
-                                    <label className="block text-xs font-semibold text-gray-700 mb-1">জাতীয় পরিচয়পত্র (NID) নং</label>
+                                    <label className="block text-xs font-semibold text-gray-700 mb-1">জাতীয় পরিচয়পত্র (NID) নং *</label>
                                     <input
                                         type="text"
                                         value={data.guarantor_nid}
-                                        onChange={(e) => setData('guarantor_nid', e.target.value)}
+                                        onChange={(e) => {
+                                            setData('guarantor_nid', e.target.value);
+                                            clearFieldError('guarantor_nid');
+                                        }}
                                         placeholder="NID নম্বর"
-                                        className={inputClass}
+                                        className={fieldInputClass('guarantor_nid')}
                                     />
+                                    {fieldErrors.guarantor_nid && (
+                                        <p className="text-xs text-red-600 mt-0.5">{fieldErrors.guarantor_nid} পূরণ করুন</p>
+                                    )}
                                 </div>
                                 <div>
-                                    <label className="block text-xs font-semibold text-gray-700 mb-1">মোবাইল নং</label>
+                                    <label className="block text-xs font-semibold text-gray-700 mb-1">মোবাইল নং *</label>
                                     <input
                                         type="text"
                                         value={data.guarantor_mobile}
-                                        onChange={(e) => setData('guarantor_mobile', e.target.value)}
+                                        onChange={(e) => {
+                                            setData('guarantor_mobile', e.target.value);
+                                            clearFieldError('guarantor_mobile');
+                                        }}
                                         placeholder="মোবাইল নম্বর"
-                                        className={inputClass}
+                                        className={fieldInputClass('guarantor_mobile')}
                                     />
+                                    {fieldErrors.guarantor_mobile && (
+                                        <p className="text-xs text-red-600 mt-0.5">{fieldErrors.guarantor_mobile} পূরণ করুন</p>
+                                    )}
                                 </div>
                                 <div>
-                                    <label className="block text-xs font-semibold text-gray-700 mb-1">গ্রাম/রাস্তা</label>
+                                    <label className="block text-xs font-semibold text-gray-700 mb-1">গ্রাম/রাস্তা *</label>
                                     <input
                                         type="text"
                                         value={data.guarantor_village}
-                                        onChange={(e) => setData('guarantor_village', e.target.value)}
+                                        onChange={(e) => {
+                                            setData('guarantor_village', e.target.value);
+                                            clearFieldError('guarantor_village');
+                                        }}
                                         placeholder="গ্রাম"
-                                        className={inputClass}
+                                        className={fieldInputClass('guarantor_village')}
                                     />
+                                    {fieldErrors.guarantor_village && (
+                                        <p className="text-xs text-red-600 mt-0.5">{fieldErrors.guarantor_village} পূরণ করুন</p>
+                                    )}
                                 </div>
                                 <div>
-                                    <label className="block text-xs font-semibold text-gray-700 mb-1">ডাকঘর</label>
+                                    <label className="block text-xs font-semibold text-gray-700 mb-1">ডাকঘর *</label>
                                     <input
                                         type="text"
                                         value={data.guarantor_post_office}
-                                        onChange={(e) => setData('guarantor_post_office', e.target.value)}
+                                        onChange={(e) => {
+                                            setData('guarantor_post_office', e.target.value);
+                                            clearFieldError('guarantor_post_office');
+                                        }}
                                         placeholder="ডাকঘর"
-                                        className={inputClass}
+                                        className={fieldInputClass('guarantor_post_office')}
                                     />
+                                    {fieldErrors.guarantor_post_office && (
+                                        <p className="text-xs text-red-600 mt-0.5">{fieldErrors.guarantor_post_office} পূরণ করুন</p>
+                                    )}
                                 </div>
                                 <div>
-                                    <label className="block text-xs font-semibold text-gray-700 mb-1">উপজেলা</label>
+                                    <label className="block text-xs font-semibold text-gray-700 mb-1">উপজেলা *</label>
                                     <input
                                         type="text"
                                         value={data.guarantor_upazila}
-                                        onChange={(e) => setData('guarantor_upazila', e.target.value)}
+                                        onChange={(e) => {
+                                            setData('guarantor_upazila', e.target.value);
+                                            clearFieldError('guarantor_upazila');
+                                        }}
                                         placeholder="উপজেলা"
-                                        className={inputClass}
+                                        className={fieldInputClass('guarantor_upazila')}
                                     />
+                                    {fieldErrors.guarantor_upazila && (
+                                        <p className="text-xs text-red-600 mt-0.5">{fieldErrors.guarantor_upazila} পূরণ করুন</p>
+                                    )}
                                 </div>
                                 <div>
-                                    <label className="block text-xs font-semibold text-gray-700 mb-1">জেলা</label>
+                                    <label className="block text-xs font-semibold text-gray-700 mb-1">জেলা *</label>
                                     <input
                                         type="text"
                                         value={data.guarantor_district}
-                                        onChange={(e) => setData('guarantor_district', e.target.value)}
+                                        onChange={(e) => {
+                                            setData('guarantor_district', e.target.value);
+                                            clearFieldError('guarantor_district');
+                                        }}
                                         placeholder="জেলা"
-                                        className={inputClass}
+                                        className={fieldInputClass('guarantor_district')}
                                     />
+                                    {fieldErrors.guarantor_district && (
+                                        <p className="text-xs text-red-600 mt-0.5">{fieldErrors.guarantor_district} পূরণ করুন</p>
+                                    )}
                                 </div>
                             </div>
                         </div>
@@ -606,13 +771,19 @@ export default function GuarantorCommitment({
                             </h3>
                             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                                 <div>
-                                    <label className="block text-xs font-semibold text-gray-700 mb-1">অদ্য/গত তারিখ</label>
+                                    <label className="block text-xs font-semibold text-gray-700 mb-1">অদ্য/গত তারিখ *</label>
                                     <input
                                         type="date"
                                         value={data.loan_date}
-                                        onChange={(e) => setData('loan_date', e.target.value)}
-                                        className={inputClass}
+                                        onChange={(e) => {
+                                            setData('loan_date', e.target.value);
+                                            clearFieldError('loan_date');
+                                        }}
+                                        className={fieldInputClass('loan_date')}
                                     />
+                                    {fieldErrors.loan_date && (
+                                        <p className="text-xs text-red-600 mt-0.5">{fieldErrors.loan_date} পূরণ করুন</p>
+                                    )}
                                 </div>
                                 <div>
                                     <label className="block text-xs font-semibold text-gray-700 mb-1">আবেদনকৃত ঋণের পরিমাণ (৳)</label>
@@ -636,13 +807,18 @@ export default function GuarantorCommitment({
                                     </p>
                                 </div>
                                 <div className="sm:col-span-2">
-                                    <label className="block text-xs font-semibold text-gray-700 mb-1">ঋণের পরিমাণ (সার্ভিস চার্জ সহ) (৳)</label>
+                                    <label className="block text-xs font-semibold text-gray-700 mb-1">ঋণের পরিমাণ (সার্ভিস চার্জ সহ) (৳) *</label>
                                     <input
                                         type="text"
                                         value={data.loan_amount > 0 ? Number(data.loan_amount).toLocaleString('bn-BD') : ''}
                                         readOnly
-                                        className="w-full px-3 py-2 text-xs md:text-sm font-bold text-emerald-700 border border-emerald-300 rounded-lg bg-emerald-50/50 cursor-not-allowed"
+                                        className={fieldErrors.loan_amount
+                                            ? 'w-full px-3 py-2 text-xs md:text-sm font-bold text-red-700 border border-red-500 rounded-lg bg-red-50 cursor-not-allowed'
+                                            : 'w-full px-3 py-2 text-xs md:text-sm font-bold text-emerald-700 border border-emerald-300 rounded-lg bg-emerald-50/50 cursor-not-allowed'}
                                     />
+                                    {fieldErrors.loan_amount && (
+                                        <p className="text-xs text-red-600 mt-0.5">{fieldErrors.loan_amount} পূরণ করুন</p>
+                                    )}
                                 </div>
                                 <div className="sm:col-span-2">
                                     <label className="block text-xs font-semibold text-gray-700 mb-1">ঋণের পরিমাণ (কথায়)</label>

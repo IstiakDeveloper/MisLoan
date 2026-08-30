@@ -104,6 +104,65 @@ class LoanFormVisibility
     }
 
     /**
+     * First required disbursement form that is not yet saved, or null when both are complete.
+     */
+    public static function nextDisburseFormId(array $formSaved): ?int
+    {
+        foreach (self::disburseFormIds() as $id) {
+            if (! ($formSaved[$id] ?? false)) {
+                return $id;
+            }
+        }
+
+        return null;
+    }
+
+    /**
+     * Where to send the user after saving a form in the disbursement wizard.
+     * Form 2 always continues to form 3; form 3 returns to the show page to confirm disbursement.
+     *
+     * @param  array{member_id?: int|string|null, product_id?: int|string|null, category_id?: int|string|null, amount?: float|int|string|null, legacy?: bool|int|string|null}  $query
+     * @return array{route: string, parameters: array<string, mixed>}
+     */
+    public static function disburseWizardNextLocation(int $savedFormId, int $applicationId, array $query = []): array
+    {
+        if ($savedFormId === 2) {
+            $parameters = [
+                'amount' => $query['amount'] ?? 0,
+                'application_id' => $applicationId,
+                'return' => 'disburse',
+                'action' => 'disburse',
+                'step' => 3,
+            ];
+            if (! empty($query['member_id'])) {
+                $parameters['member_id'] = $query['member_id'];
+            }
+            if (! empty($query['product_id'])) {
+                $parameters['product_id'] = $query['product_id'];
+            }
+            if (! empty($query['category_id'])) {
+                $parameters['category_id'] = $query['category_id'];
+            }
+            if (! empty($query['legacy'])) {
+                $parameters['legacy'] = 1;
+            }
+
+            return [
+                'route' => 'member.loan-applications.forms.death-risk-fund',
+                'parameters' => $parameters,
+            ];
+        }
+
+        return [
+            'route' => 'member.loan-applications.show',
+            'parameters' => [
+                'id' => $applicationId,
+                'action' => 'disburse',
+            ],
+        ];
+    }
+
+    /**
      * Statuses where the loan has not been disbursed (or cancelled) yet.
      *
      * @return string[]

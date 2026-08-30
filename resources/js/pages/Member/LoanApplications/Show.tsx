@@ -43,6 +43,11 @@ import FieldInvestigation from './Forms/FieldInvestigation';
 import LoanApplicationApproval from './Forms/LoanApplicationApproval';
 import SendLoanToHoModal from '@/components/LoanApplications/SendLoanToHoModal';
 import { useHoSendCutoff } from '@/hooks/use-ho-send-cutoff';
+import {
+    disburseWizardFormUrl,
+    isDisburseWizardSearch,
+    nextDisburseFormId,
+} from '@/utils/loanFormNavigation';
 
 interface LoanApplication {
     id: number;
@@ -117,6 +122,7 @@ interface LoanApplication {
     disburse_forms_complete?: boolean;
     can_submit?: boolean;
     can_disburse?: boolean;
+    next_disburse_form_id?: number | null;
     member_admission_status?: string;
     loan_product: {
         product_name: string;
@@ -352,6 +358,8 @@ export default function Show({ application, routes, categories = [] }: Props) {
     const [disburseError, setDisburseError] = useState<string | null>(null);
     const [pinModalOpen, setPinModalOpen] = useState(false);
     const [pinProcessing, setPinProcessing] = useState(false);
+    const disburseCtaRef = useRef<HTMLDivElement>(null);
+    const autoOpenedDisburseModal = useRef(false);
 
     const confirmSuperAdminUnlock = (pin: string) => {
         setPinProcessing(true);
@@ -394,6 +402,7 @@ export default function Show({ application, routes, categories = [] }: Props) {
     const visibleFormIds = application.visible_form_ids || [1, 2, 3, 4, 5];
     const fillableFormIds = application.editable_form_ids ?? [];
     const formSaved = application.form_saved ?? {};
+    const wantsDisburseAction = isDisburseWizardSearch();
 
     const effectiveBaseAmount =
         application.disbursed_amount != null && Number(application.disbursed_amount) > 0
@@ -415,6 +424,54 @@ export default function Show({ application, routes, categories = [] }: Props) {
         params.set('application_id', String(application.id));
         return `/member/loan-applications/forms/${route}?${params.toString()}`;
     };
+
+    const buildDisburseFormUrl = (formId: number) => {
+        return disburseWizardFormUrl(formId, {
+            applicationId: application.id,
+            amount: effectiveBaseAmount ?? application.requested_amount,
+            memberId: application.member_admission?.id,
+            productId: application.loan_product_id,
+            categoryId: application.loan_category_id,
+        });
+    };
+
+    const openDisburseModal = () => {
+        setDisburseAmount(String(application.disbursed_amount || maxDisburseAmount));
+        setDisburseError(null);
+        setDisburseModalOpen(true);
+    };
+
+    const startDisburseFlow = () => {
+        if (!isBranchUser || !routes.disburse || application.status !== 'pending_disbursement') {
+            return;
+        }
+
+        const nextForm =
+            application.next_disburse_form_id
+            ?? nextDisburseFormId(formSaved);
+
+        if (nextForm) {
+            router.visit(buildDisburseFormUrl(nextForm));
+            return;
+        }
+
+        openDisburseModal();
+    };
+
+    useEffect(() => {
+        if (!wantsDisburseAction || !isBranchUser || application.status !== 'pending_disbursement') {
+            return;
+        }
+
+        disburseCtaRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+
+        if (!application.can_disburse || autoOpenedDisburseModal.current) {
+            return;
+        }
+
+        autoOpenedDisburseModal.current = true;
+        openDisburseModal();
+    }, []);
 
     const hasMeaningfulData = (data: any): boolean => {
         if (data === null || data === undefined || data === '') return false;
@@ -846,16 +903,16 @@ export default function Show({ application, routes, categories = [] }: Props) {
             case 'pending_disbursement':
                 if (!application.can_disburse) {
                     return {
-                        title: 'পেন্ডিং অবস্থা: বিতরণের পূর্বে জামিনদার ও মৃত্যুঝুঁকি ফর্ম পূরণ বাকি',
-                        desc: 'ঋণ অনুমোদিত হয়েছে, তবে বিতরণ করার পূর্বে ফর্ম ২ (জামিনদার) ও ফর্ম ৩ (মৃত্যুঝুঁকি) সেভ করতে হবে।',
+                        title: 'পরবর্তী কাজ: ফর্ম পূরণ করে ঋণ বিতরণ করুন',
+                        desc: 'হেড অফিস অনুমোদন করেছে। "বিতরণ করুন" চাপুন — আগে জামিনদার (ফর্ম ২) ও মৃত্যুঝুঁকি (ফর্ম ৩) আসবে। আবশ্যক ঘর খালি থাকলে লাল দেখাবে। দুটো ফর্ম সেভ হলে অর্থ বিতরণ করা যাবে।',
                         badgeColor: 'bg-amber-100 text-amber-900 border-amber-300',
                         cardBg: 'bg-amber-50/90 border-amber-300/80 text-amber-950',
                         iconColor: 'text-amber-600',
                     };
                 }
                 return {
-                    title: 'পেন্ডিং অবস্থা: ঋণ বিতরণ অপেক্ষমাণ (প্রস্তুত)',
-                    desc: 'সকল প্রয়োজনীয় শর্ত ও ফর্ম সম্পন্ন হয়েছে। "বিতরণ করুন" বাটনে ক্লিক করে সদস্যকে অর্থ বিতরণ করুন।',
+                    title: 'পরবর্তী কাজ: এখনই ঋণ বিতরণ করুন',
+                    desc: 'জামিনদার ও মৃত্যুঝুঁকি ফর্ম সম্পন্ন। "বিতরণ করুন" চাপুন, পরিমাণ নিশ্চিত করে সদস্যকে অর্থ বিতরণ করুন।',
                     badgeColor: 'bg-emerald-100 text-emerald-900 border-emerald-300',
                     cardBg: 'bg-emerald-50/90 border-emerald-200 text-emerald-950',
                     iconColor: 'text-emerald-600',
@@ -1199,24 +1256,18 @@ export default function Show({ application, routes, categories = [] }: Props) {
                                 </Button>
                             )}
                             {application.status === 'pending_disbursement' && isBranchUser && routes.disburse && (
-                                application.can_disburse ? (
+                                <div
+                                    ref={disburseCtaRef}
+                                    className={wantsDisburseAction ? 'w-full sm:w-auto rounded-xl ring-4 ring-emerald-200' : 'w-full sm:w-auto'}
+                                >
                                     <Button
                                         className="w-full sm:w-auto bg-emerald-600 hover:bg-emerald-700 text-white shadow-xs font-semibold rounded-xl text-xs sm:text-sm h-9 sm:h-10"
-                                        onClick={() => {
-                                            setDisburseAmount(String(application.disbursed_amount || maxDisburseAmount));
-                                            setDisburseError(null);
-                                            setDisburseModalOpen(true);
-                                        }}
+                                        onClick={startDisburseFlow}
                                     >
                                         <CheckCircle2 className="w-4 h-4 mr-1.5" />
                                         বিতরণ করুন
                                     </Button>
-                                ) : (
-                                    <Button disabled variant="outline" className="w-full sm:w-auto rounded-xl text-xs h-9 sm:h-10" title="বিতরণের আগে ফর্ম ২ ও ৩ পূরণ করুন">
-                                        <Clock className="w-4 h-4 mr-1.5" />
-                                        বিতরণ (ফর্ম ২+৩ বাকি)
-                                    </Button>
-                                )
+                                </div>
                             )}
                         </div>
                     </div>
@@ -1306,6 +1357,24 @@ export default function Show({ application, routes, categories = [] }: Props) {
                                                 </>
                                             )}
                                         </Button>
+                                    </div>
+                                )}
+
+                                {application.status === 'pending_disbursement' && isBranchUser && routes.disburse && (
+                                    <div className="mt-2.5 flex flex-wrap items-center gap-2">
+                                        <Button
+                                            size="sm"
+                                            className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-lg text-xs"
+                                            onClick={startDisburseFlow}
+                                        >
+                                            <CheckCircle2 className="w-4 h-4 mr-1" />
+                                            {application.can_disburse ? 'এখান থেকেই বিতরণ করুন' : 'বিতরণ করুন — ফর্ম পূরণ শুরু'}
+                                        </Button>
+                                        {!application.can_disburse && [2, 3].some((id) => !formSaved[id]) && (
+                                            <span className="text-[11px] font-semibold text-amber-800">
+                                                বাকি: {[2, 3].filter((id) => !formSaved[id]).map((id) => `ফর্ম ${id}`).join(' ও ')}
+                                            </span>
+                                        )}
                                     </div>
                                 )}
                             </div>
