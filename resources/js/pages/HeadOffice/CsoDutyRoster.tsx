@@ -22,6 +22,7 @@ import {
     X,
     HelpCircle,
 } from 'lucide-react';
+import { addCalendarDays, todayIsoDate } from '@/utils/dateUtils';
 
 interface Zone {
     id: number;
@@ -96,20 +97,15 @@ export default function CsoDutyRoster({
     };
 
     const handlePreviousDay = () => {
-        const d = new Date(selectedDate);
-        d.setDate(d.getDate() - 1);
-        handleDateChange(d.toISOString().split('T')[0]);
+        handleDateChange(addCalendarDays(selectedDate, -1));
     };
 
     const handleNextDay = () => {
-        const d = new Date(selectedDate);
-        d.setDate(d.getDate() + 1);
-        handleDateChange(d.toISOString().split('T')[0]);
+        handleDateChange(addCalendarDays(selectedDate, 1));
     };
 
     const handleToday = () => {
-        const todayStr = new Date().toISOString().split('T')[0];
-        handleDateChange(todayStr);
+        handleDateChange(todayIsoDate());
     };
 
     const openEditModal = () => {
@@ -203,7 +199,7 @@ export default function CsoDutyRoster({
         );
     }, [dutyBoard.roster]);
 
-    const isToday = selectedDate === new Date().toISOString().split('T')[0];
+    const isToday = selectedDate === todayIsoDate();
 
     return (
         <AdminLayout>

@@ -13,6 +13,7 @@ import {
     getInstallmentTypeLabel,
     getLoanDurationMonths,
 } from '@/utils/loanInterest';
+import { todayIsoDate } from '@/utils/dateUtils';
 import { AgrosorProfileData, AgrosorProfileProps } from './Types';
 import FormPage1 from './FormPage1';
 import FormPage2 from './FormPage2';
@@ -223,7 +224,7 @@ function buildInitialData(
 
     const base: AgrosorProfileData = {
         form_variant: 'agrosor_profile',
-        application_date: new Date().toISOString().split('T')[0],
+        application_date: todayIsoDate(),
         disbursement_date: '',
         repayment_date: '',
         member_name_code: [memberName, memberCode].filter(Boolean).join(' / '),

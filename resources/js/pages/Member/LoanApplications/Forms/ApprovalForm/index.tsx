@@ -4,6 +4,7 @@ import AdminLayout from '@/layouts/admin-layout';
 import { Save, Eye, ArrowLeft, X, Minimize2, Printer, AlertCircle } from 'lucide-react';
 import { useIsMobile } from '@/hooks/use-mobile';
 import { fileToCompressedDataUrl } from '@/utils/imageUpload';
+import { todayIsoDate } from '@/utils/dateUtils';
 import {
     clearLoanDraftLocal,
     loadLoanDraftLocal,
@@ -261,7 +262,7 @@ export default function ApprovalForm({
         category_name: categoryName,
         branch_name: branch?.name || branch?.branch_name || member?.branch?.name || (savedData as any)?.branch_name || '',
         branch_address: branch?.address || member?.branch?.address || (savedData as any)?.branch_address || '',
-        application_date: new Date().toISOString().split('T')[0],
+        application_date: todayIsoDate(),
         recipient_to: '',
         authority_medium: '',
         committee_name: member?.samity?.samity_name_bn || member?.samity?.samity_name || '',
@@ -271,7 +272,7 @@ export default function ApprovalForm({
         member_name_detail: member?.applicant_name_bn || member?.applicant_name_en || '',
         member_code: member?.application_no || '',
         member_mobile: member?.mobile_number || '',
-        age: getAgeFromDOB(member?.date_of_birth, new Date().toISOString().split('T')[0]),
+        age: getAgeFromDOB(member?.date_of_birth, todayIsoDate()),
         father_husband_name: member?.father_name_bn || member?.spouse_name_bn || '',
         permanent_address_line1: member?.permanent_village_road || member?.present_village_road || '',
         permanent_address_line2: member?.permanent_post_code || member?.present_post_code || '',

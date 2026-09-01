@@ -1,4 +1,5 @@
 import React from 'react';
+import { formatLongDate } from '@/utils/dateUtils';
 import {
     Send,
     AlertCircle,
@@ -45,12 +46,7 @@ export default function SendLoanToHoModal({
     if (!isOpen) return null;
 
     const count = items.length;
-    const today = new Date();
-    const formattedToday = today.toLocaleDateString('bn-BD', {
-        day: 'numeric',
-        month: 'long',
-        year: 'numeric',
-    });
+    const formattedToday = formatLongDate(new Date());
 
     const totalAmount = items.reduce((sum, item) => sum + (Number(item.amount) || 0), 0);
 

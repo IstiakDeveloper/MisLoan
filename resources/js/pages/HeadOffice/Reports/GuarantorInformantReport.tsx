@@ -15,6 +15,12 @@ import {
     Calendar,
     ShieldAlert
 } from 'lucide-react';
+import {
+    lastMonthRangeIso,
+    startOfMonthIsoDate,
+    startOfYearIsoDate,
+    todayIsoDate,
+} from '@/utils/dateUtils';
 
 interface Guarantor {
     name: string;
@@ -154,28 +160,22 @@ export default function GuarantorInformantReport({
     };
 
     const handleQuickDate = (type: 'today' | 'this_month' | 'last_month' | 'this_year') => {
-        const now = new Date();
         let fromStr = '';
         let toStr = '';
 
-        const formatDateStr = (d: Date) => d.toISOString().split('T')[0];
-
         if (type === 'today') {
-            fromStr = formatDateStr(now);
-            toStr = formatDateStr(now);
+            fromStr = todayIsoDate();
+            toStr = fromStr;
         } else if (type === 'this_month') {
-            const firstDay = new Date(now.getFullYear(), now.getMonth(), 1);
-            fromStr = formatDateStr(firstDay);
-            toStr = formatDateStr(now);
+            fromStr = startOfMonthIsoDate();
+            toStr = todayIsoDate();
         } else if (type === 'last_month') {
-            const firstDayLastMonth = new Date(now.getFullYear(), now.getMonth() - 1, 1);
-            const lastDayLastMonth = new Date(now.getFullYear(), now.getMonth(), 0);
-            fromStr = formatDateStr(firstDayLastMonth);
-            toStr = formatDateStr(lastDayLastMonth);
+            const lastMonth = lastMonthRangeIso();
+            fromStr = lastMonth.from;
+            toStr = lastMonth.to;
         } else if (type === 'this_year') {
-            const firstDayYear = new Date(now.getFullYear(), 0, 1);
-            fromStr = formatDateStr(firstDayYear);
-            toStr = formatDateStr(now);
+            fromStr = startOfYearIsoDate();
+            toStr = todayIsoDate();
         }
 
         setDateFrom(fromStr);

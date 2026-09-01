@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Head, router, Link, usePage } from '@inertiajs/react';
 import AdminLayout from '@/layouts/admin-layout';
-import { formatDate, formatDateTime } from '@/utils/dateUtils';
+import { formatDate, formatDateTime, todayIsoDate } from '@/utils/dateUtils';
 import { Badge } from '@/components/ui/badge';
 import {
     Search,
@@ -297,7 +297,7 @@ export default function Index({ admissions, zones = [], areas = [], branches = [
         );
     };
 
-    const today = new Date().toISOString().split('T')[0];
+    const today = todayIsoDate();
     const isTodayFilter = fromDate === today && toDate === today;
 
     const buildParams = (override: Record<string, string> = {}) => {

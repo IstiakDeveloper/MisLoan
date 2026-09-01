@@ -1,7 +1,7 @@
 import { useState, useMemo, useEffect } from 'react';
 import { Head, router, useForm, usePage } from '@inertiajs/react';
 import AdminLayout from '@/layouts/admin-layout';
-import { formatDate } from '@/utils/dateUtils';
+import { formatDate, startOfMonthIsoDate, todayIsoDate } from '@/utils/dateUtils';
 import {
     Plus, Calendar, FileText, CheckCircle, XCircle, Clock,
     Search, Eye, Edit, Trash2, X, AlertTriangle, MessageSquare, Send,
@@ -262,9 +262,8 @@ export default function Index({
         }
     };
 
-    const now = new Date();
-    const today = now.toISOString().split('T')[0];
-    const firstDayOfMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-01`;
+    const today = todayIsoDate();
+    const firstDayOfMonth = startOfMonthIsoDate();
     const [selectedZone, setSelectedZone] = useState(filters?.zone_id ? String(filters.zone_id) : '');
     const [selectedArea, setSelectedArea] = useState(filters?.area_id ? String(filters.area_id) : '');
     const [selectedBranch, setSelectedBranch] = useState(filters?.branch_id ? String(filters.branch_id) : '');

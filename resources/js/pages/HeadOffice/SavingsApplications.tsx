@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Head, router, Link } from '@inertiajs/react';
 import AdminLayout from '@/layouts/admin-layout';
 import { Search, Filter, ChevronLeft, ChevronRight, FileText, X, Landmark, Eye, Calculator } from 'lucide-react';
-import { formatDate } from '@/utils/dateUtils';
+import { formatDate, todayIsoDate } from '@/utils/dateUtils';
 import SavingsCalculatorModal from '@/components/SavingsCalculatorModal';
 import { formatBranchLabel, sortBranchesByCode } from '@/utils/branchLabel';
 import { PhoneCallLink } from '@/components/ui/PhoneCallLink';
@@ -136,7 +136,7 @@ export default function SavingsApplications({
 }: Props) {
     const [searchQuery, setSearchQuery] = useState(filters.search || '');
     const [statusFilter, setStatusFilter] = useState(filters.status || '');
-    const today = new Date().toISOString().split('T')[0];
+    const today = todayIsoDate();
     const [dateFrom, setDateFrom] = useState(filters.date_from || today);
     const [dateTo, setDateTo] = useState(filters.date_to || today);
     const [selectedZone, setSelectedZone] = useState((filters.zone_id ?? '').toString());

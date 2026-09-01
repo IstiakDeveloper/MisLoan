@@ -469,8 +469,8 @@ export default function ProcessAdmissions({ admissions, filters, zones = [], are
         if (!mString) return '';
         const [y, m] = mString.split('-');
         if (!y || !m) return mString;
-        const dateObj = new Date(parseInt(y), parseInt(m) - 1, 1);
-        return dateObj.toLocaleString('bn-BD', { month: 'long', year: 'numeric' });
+        const dateObj = new Date(`${y}-${m}-01T12:00:00+06:00`);
+        return dateObj.toLocaleString('bn-BD', { timeZone: 'Asia/Dhaka', month: 'long', year: 'numeric' });
     };
 
     return (

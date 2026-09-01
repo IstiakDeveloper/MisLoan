@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import AdminLayout from '@/layouts/admin-layout';
-import { formatDate, formatDateTime } from '@/utils/dateUtils';
+import { formatDate, formatDateTime, todayIsoDate } from '@/utils/dateUtils';
 import { formatCurrency as formatCurrencyBase } from '@/utils/formatAmount';
 import { Head, Link, router } from '@inertiajs/react';
 import { formatBranchLabel, sortBranchesByCode } from '@/utils/branchLabel';
@@ -122,7 +122,7 @@ export default function Submissions({ applications, zones, areas, branches, unre
     const [selectedArea, setSelectedArea] = useState(filters.area_id || '');
     const [selectedBranch, setSelectedBranch] = useState(filters.branch_id || '');
     const [selectedStatus, setSelectedStatus] = useState(filters.status || '');
-    const [selectedDate, setSelectedDate] = useState(filters.date || new Date().toISOString().split('T')[0]);
+    const [selectedDate, setSelectedDate] = useState(filters.date || todayIsoDate());
 
     const filteredAreas = selectedZone
         ? areas.filter(a => a.zone_id === parseInt(selectedZone))
@@ -156,7 +156,7 @@ export default function Submissions({ applications, zones, areas, branches, unre
         setSelectedArea('');
         setSelectedBranch('');
         setSelectedStatus('');
-        setSelectedDate(new Date().toISOString().split('T')[0]);
+        setSelectedDate(todayIsoDate());
         router.get('/submissions');
     };
 

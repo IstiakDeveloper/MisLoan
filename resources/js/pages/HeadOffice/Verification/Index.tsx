@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Head, router, Link } from '@inertiajs/react';
 import AdminLayout from '@/layouts/admin-layout';
-import { formatDate, formatDateTime } from '@/utils/dateUtils';
+import { formatDate, formatDateTime, todayIsoDate } from '@/utils/dateUtils';
 import ListPagination from '@/components/ListPagination';
 import AutoFitTableContainer from '@/components/AutoFitTableContainer';
 import { formatBranchLabel, keepListFilters, sortBranchesByCode } from '@/utils/branchLabel';
@@ -168,7 +168,7 @@ interface Props {
 }
 
 export default function VerificationIndex({ items, stats, filters, permissions, zones, areas, branches }: Props) {
-    const today = new Date().toISOString().split('T')[0];
+    const today = todayIsoDate();
 
     const [dateFrom, setDateFrom] = useState(filters.date_from || '');
     const [dateTo, setDateTo] = useState(filters.date_to || '');

@@ -1,7 +1,7 @@
 import { useState, useEffect, useMemo } from 'react';
 import { Head, router, Link } from '@inertiajs/react';
 import AdminLayout from '@/layouts/admin-layout';
-import { formatDate } from '@/utils/dateUtils';
+import { formatDate, todayIsoDate } from '@/utils/dateUtils';
 import {
     Plus,
     Calendar,
@@ -98,7 +98,7 @@ const formatAmount = (amount: number) => {
 const G_SAVINGS_PRODUCT_CODE = '21.01';
 
 export default function Index({ products, applications, flash }: Props) {
-    const today = new Date().toISOString().split('T')[0];
+    const today = todayIsoDate();
     const [currentDateFrom, setCurrentDateFrom] = useState(today);
     const [currentDateTo, setCurrentDateTo] = useState(today);
     const [searchQuery, setSearchQuery] = useState('');

@@ -3,7 +3,7 @@ import { Head, useForm, router, usePage } from '@inertiajs/react';
 import AdminLayout from '@/layouts/admin-layout';
 import { Plus, Printer, Save, Upload, X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { formatDateBangla } from '@/utils/dateUtils';
+import { formatDateBangla, todayIsoDate } from '@/utils/dateUtils';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
@@ -244,7 +244,7 @@ export default function SavingsApplicationForm({ memberAdmission, savingsProduct
 
     const { data, setData, post, processing } = useForm<SavingsFormData>(withLiveMemberCode({
         // Office use – auto from product
-        account_opening_date: existingApplication?.account_opening_date || new Date().toISOString().split('T')[0],
+        account_opening_date: existingApplication?.account_opening_date || todayIsoDate(),
         monthly_savings_amount: existingApplication?.monthly_savings_amount ?? savingsProduct?.min_amount ?? 0,
         term_years: existingApplication?.term_years ?? (durationMonths && durationMonths >= 12 ? Math.round(durationMonths / 12) : null),
         duration_months: durationMonths,

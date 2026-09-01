@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Head, useForm, router } from '@inertiajs/react';
 import AdminLayout from '@/layouts/admin-layout';
-import { formatDateBangla } from '@/utils/dateUtils';
+import { formatDateBangla, todayIsoDate } from '@/utils/dateUtils';
 import { Save, Printer, Eye, ArrowLeft, ClipboardList } from 'lucide-react';
 import GeneralSavingsSection, { getRequiredSavingsPercent } from '@/components/LoanApplications/GeneralSavingsSection';
 import { afterLoanFormSaveUrl } from '@/utils/loanFormNavigation';
@@ -370,7 +370,7 @@ function buildFieldInvestigationDefaults(
     return {
         branch_name: branch?.name || '',
         branch_address: branch?.address || '',
-        field_visit_date: new Date().toISOString().split('T')[0],
+        field_visit_date: todayIsoDate(),
         loan_disbursement_date: '',
         member_name: member?.applicant_name_bn || member?.applicant_name_en || '',
         member_no: member?.application_no || '',
@@ -510,7 +510,7 @@ export default function FieldInvestigation({
     const { data, setData, processing } = useForm<FieldInvestigationData>({
         branch_name: branch?.name || '',
         branch_address: branch?.address || '',
-        field_visit_date: new Date().toISOString().split('T')[0],
+        field_visit_date: todayIsoDate(),
         loan_disbursement_date: '',
         member_name: member?.applicant_name_bn || member?.applicant_name_en || '',
         member_no: member?.application_no || '',

@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Head, router, Link, usePage } from '@inertiajs/react';
 import AdminLayout from '@/layouts/admin-layout';
-import { formatDate, formatTime } from '@/utils/dateUtils';
+import { formatDate, formatTime, todayIsoDate } from '@/utils/dateUtils';
 import { Badge } from '@/components/ui/badge';
 import {
     Search,
@@ -182,7 +182,7 @@ export default function LoanApplications({ loans, filters, stats, zones, areas, 
     const [syncProcessing, setSyncProcessing] = useState(false);
 
     // Date filters - default to current month (1st .. today)
-    const today = new Date().toISOString().split('T')[0];
+    const today = todayIsoDate();
     const monthStart = `${today.slice(0, 7)}-01`;
     const [dateFrom, setDateFrom] = useState(filters.date_from || '');
     const [dateTo, setDateTo] = useState(filters.date_to || '');

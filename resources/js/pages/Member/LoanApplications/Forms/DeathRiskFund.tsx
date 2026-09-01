@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { Head, useForm, router } from '@inertiajs/react';
 import AdminLayout from '@/layouts/admin-layout';
 import { Save, Printer, Eye, Upload, X, ArrowLeft, CheckCircle2 } from 'lucide-react';
-import { formatDateBangla } from '@/utils/dateUtils';
+import { formatDateBangla, todayIsoDate } from '@/utils/dateUtils';
 import { numberToWordsBangla } from './ApprovalForm/PrintPreview';
 import { afterLoanFormSaveUrl, continueDisburseWizardUrl, disburseWizardParamsFromContext, isDisburseWizardSearch, loanDisburseShowUrl } from '@/utils/loanFormNavigation';
 import { useAutoFitPrint } from '@/hooks/useAutoFitPrint';
@@ -316,7 +316,7 @@ function buildDeathRiskFundDefaults(
     const words = amount > 0 ? numberToWordsBangla(amount) : '';
     return {
         branch_name: branch?.name || '',
-        date: new Date().toISOString().split('T')[0],
+        date: todayIsoDate(),
         loan_recipient_photo: memberPhotoUrl,
         guardian_photo: guardianPhotoUrl,
         loan_recipient_name: member?.applicant_name_bn || member?.applicant_name_en || '',
@@ -331,7 +331,7 @@ function buildDeathRiskFundDefaults(
         nid_number: member?.nid_number || '',
         mobile_number: member?.mobile_number || '',
         component_name: loanCategory?.category_name_bn || loanCategory?.category_name || '',
-        loan_sanction_date: new Date().toISOString().split('T')[0],
+        loan_sanction_date: todayIsoDate(),
         loan_amount_received: amount,
         loan_amount_words: words ? words + ' টাকা' : '',
         loan_term: loanProduct?.duration_months ? `${loanProduct.duration_months} মাস` : '',
@@ -478,7 +478,7 @@ export default function DeathRiskFund({
 
     const { data, setData, processing } = useForm<DeathRiskFundData>({
         branch_name: branch?.name || '',
-        date: new Date().toISOString().split('T')[0],
+        date: todayIsoDate(),
 
         // Photos - prioritize savedData, then MemberAdmission, then null
         loan_recipient_photo: savedData?.loan_recipient_photo || memberPhotoUrl || null,
@@ -497,7 +497,7 @@ export default function DeathRiskFund({
         nid_number: member?.nid_number || '',
         mobile_number: member?.mobile_number || '',
         component_name: loanCategory?.category_name_bn || loanCategory?.category_name || '', // External
-        loan_sanction_date: new Date().toISOString().split('T')[0], // External
+        loan_sanction_date: todayIsoDate(), // External
         loan_amount_received: baseAmount, // External
         loan_amount_words: initialWords, // Will be auto-calculated
         loan_term: loanProduct?.duration_months ? `${loanProduct.duration_months} মাস` : '', // External

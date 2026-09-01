@@ -1,4 +1,5 @@
 import React from 'react';
+import { addCalendarDays, formatLongDate, todayIsoDate } from '@/utils/dateUtils';
 import {
     Send,
     AlertCircle,
@@ -44,20 +45,8 @@ export default function SendAdmissionToHoModal({
     if (!isOpen) return null;
 
     const count = items.length;
-    const today = new Date();
-    const formattedToday = today.toLocaleDateString('bn-BD', {
-        day: 'numeric',
-        month: 'long',
-        year: 'numeric',
-    });
-
-    const tomorrow = new Date(today);
-    tomorrow.setDate(tomorrow.getDate() + 1);
-    const formattedTomorrow = tomorrow.toLocaleDateString('bn-BD', {
-        day: 'numeric',
-        month: 'long',
-        year: 'numeric',
-    });
+    const formattedToday = formatLongDate(new Date());
+    const formattedTomorrow = formatLongDate(addCalendarDays(todayIsoDate(), 1));
 
     return (
         <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4 animate-in fade-in duration-200">

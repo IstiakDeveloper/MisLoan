@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { X, Search, AlertCircle } from 'lucide-react';
 import { router } from '@inertiajs/react';
 import { formatBranchLabel, sortBranchesByCode } from '@/utils/branchLabel';
+import { todayIsoDate } from '@/utils/dateUtils';
 
 interface IssueFilterModalProps {
     isOpen: boolean;
@@ -13,7 +14,7 @@ interface IssueFilterModalProps {
 }
 
 const IssueFilterModal = ({ isOpen, onClose, zones, areas, branches, onSubmit }: IssueFilterModalProps) => {
-    const [selectedDate, setSelectedDate] = useState(new Date().toISOString().split('T')[0]);
+    const [selectedDate, setSelectedDate] = useState(todayIsoDate());
     const [selectedZone, setSelectedZone] = useState('');
     const [selectedArea, setSelectedArea] = useState('');
     const [selectedBranch, setSelectedBranch] = useState('');

@@ -1,6 +1,7 @@
 import React from 'react';
 import { Head, Link } from '@inertiajs/react';
 import AdminLayout from '@/layouts/admin-layout';
+import { formatDateTime } from '@/utils/dateUtils';
 import { Bell, ArrowLeft, ExternalLink, Calendar, FileText } from 'lucide-react';
 
 interface NotificationItem {
@@ -21,20 +22,7 @@ interface Props {
 }
 
 export default function Show({ notification }: Props) {
-    const formatDate = (dateString: string) => {
-        try {
-            const date = new Date(dateString);
-            return date.toLocaleString('bn-BD', {
-                year: 'numeric',
-                month: 'long',
-                day: 'numeric',
-                hour: '2-digit',
-                minute: '2-digit',
-            });
-        } catch {
-            return dateString;
-        }
-    };
+    const formatDate = (dateString: string) => formatDateTime(dateString);
 
     return (
         <AdminLayout>

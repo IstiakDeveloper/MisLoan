@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Head, router, Link, usePage } from '@inertiajs/react';
 import AdminLayout from '@/layouts/admin-layout';
-import { formatDate, formatTime } from '@/utils/dateUtils';
+import { formatDate, formatTime, todayIsoDate } from '@/utils/dateUtils';
 import {
     Search,
     Eye,
@@ -148,7 +148,7 @@ export default function AdmissionMembers({ admissions, filters, stats, zones, ar
     const [deleteProcessing, setDeleteProcessing] = useState(false);
     const [markAsPrintedCheckbox, setMarkAsPrintedCheckbox] = useState(false);
 
-    const today = new Date().toISOString().split('T')[0];
+    const today = todayIsoDate();
     const monthStart = `${today.slice(0, 7)}-01`;
     const [dateFrom, setDateFrom] = useState(filters.date_from || '');
     const [dateTo, setDateTo] = useState(filters.date_to || '');

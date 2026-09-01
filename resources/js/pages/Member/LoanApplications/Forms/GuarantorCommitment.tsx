@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { Head, useForm, router } from '@inertiajs/react';
 import AdminLayout from '@/layouts/admin-layout';
-import { formatDateBangla } from '@/utils/dateUtils';
+import { formatDateBangla, todayIsoDate } from '@/utils/dateUtils';
 import { calculateTotalServiceCharge } from '@/utils/loanInterest';
 import { Save, Printer, Eye, ArrowLeft, ShieldCheck, UserCheck, CreditCard, FileText, CheckCircle2 } from 'lucide-react';
 import { numberToWordsBangla } from './ApprovalForm/PrintPreview';
@@ -154,7 +154,7 @@ function buildGuarantorCommitmentDefaults(
         member_code: member?.application_no || '',
         samity_name: member?.samity?.samity_name_bn || member?.samity?.samity_name || '',
         samity_code: member?.samity?.samity_code || member?.samity?.id?.toString() || '',
-        loan_date: new Date().toISOString().split('T')[0],
+        loan_date: todayIsoDate(),
         loan_amount: loanAmount,
         loan_amount_words: words ? words + ' টাকা' : '',
         witness1_signature_image: null,
@@ -255,7 +255,7 @@ export default function GuarantorCommitment({
         samity_code: member?.samity?.samity_code || member?.samity?.id?.toString() || '',
         
         // Loan Details — loan_amount = base + service charge (auto from product)
-        loan_date: new Date().toISOString().split('T')[0],
+        loan_date: todayIsoDate(),
         loan_amount: initialLoanAmount,
         loan_amount_words: initialWords,
         

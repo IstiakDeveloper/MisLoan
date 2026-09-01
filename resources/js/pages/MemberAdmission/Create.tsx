@@ -5,6 +5,7 @@ import {
     MemberAdmissionFormData,
     OtherAsset,
 } from '@/types/memberAdmission';
+import { formatTime } from '@/utils/dateUtils';
 import {
     clearMemberAdmissionDraftLocal,
     hasMeaningfulDraftData,
@@ -400,10 +401,7 @@ export default function Create({
             }));
 
             if (draft.savedAt) {
-                const d = new Date(draft.savedAt);
-                setLastSavedTime(
-                    d.toLocaleTimeString('bn-BD', { hour: '2-digit', minute: '2-digit', second: '2-digit' })
-                );
+                setLastSavedTime(formatTime(draft.savedAt, '', true));
             }
 
             if (hasMeaningfulDraftData(draft.data) || draft.memberTypeChosen) {
@@ -433,10 +431,7 @@ export default function Create({
                 data,
             });
             setIsAutoSaving(false);
-            const now = new Date();
-            setLastSavedTime(
-                now.toLocaleTimeString('bn-BD', { hour: '2-digit', minute: '2-digit', second: '2-digit' })
-            );
+            setLastSavedTime(formatTime(new Date(), '', true));
         }, 500);
 
         return () => clearTimeout(timer);

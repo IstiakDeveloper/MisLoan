@@ -7,8 +7,10 @@ use DateTimeInterface;
 
 class DateFormatter
 {
+    public const TIMEZONE = 'Asia/Dhaka';
+
     /**
-     * Display date as dd/mm/YYYY (Bangladesh format).
+     * Display date as dd/mm/YYYY in Bangladesh time.
      */
     public static function displayDate(mixed $value, string $fallback = '-'): string
     {
@@ -17,27 +19,39 @@ class DateFormatter
         }
 
         try {
-            if ($value instanceof DateTimeInterface) {
-                return Carbon::instance($value)->format('d/m/Y');
-            }
-
-            $str = trim((string) $value);
-            if ($str === '') {
-                return $fallback;
-            }
-
-            if (preg_match('/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/', $str)) {
+            $str = is_string($value) ? trim($value) : '';
+            if ($str !== '' && preg_match('/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/', $str)) {
                 return $str;
             }
 
-            return Carbon::parse($str)->format('d/m/Y');
+            if ($str !== '' && preg_match('/^\d{4}-\d{2}-\d{2}$/', $str)) {
+                return Carbon::createFromFormat('Y-m-d', $str, self::TIMEZONE)->format('d/m/Y');
+            }
+
+            return self::toDhaka($value)->format('d/m/Y');
         } catch (\Throwable) {
             return $fallback;
         }
     }
 
     /**
-     * Display date + time as dd/mm/YYYY hh:mm AM/PM.
+     * Display time as hh:mm AM/PM in Bangladesh time.
+     */
+    public static function displayTime(mixed $value, string $fallback = '-'): string
+    {
+        if ($value === null || $value === '') {
+            return $fallback;
+        }
+
+        try {
+            return self::toDhaka($value)->format('h:i A');
+        } catch (\Throwable) {
+            return $fallback;
+        }
+    }
+
+    /**
+     * Display date + time as dd/mm/YYYY hh:mm AM/PM in Bangladesh time.
      */
     public static function displayDateTime(mixed $value, string $fallback = '-'): string
     {
@@ -46,13 +60,18 @@ class DateFormatter
         }
 
         try {
-            $carbon = $value instanceof DateTimeInterface
-                ? Carbon::instance($value)
-                : Carbon::parse((string) $value);
-
-            return $carbon->format('d/m/Y h:i A');
+            return self::toDhaka($value)->format('d/m/Y h:i A');
         } catch (\Throwable) {
             return $fallback;
         }
+    }
+
+    private static function toDhaka(mixed $value): Carbon
+    {
+        $carbon = $value instanceof DateTimeInterface
+            ? Carbon::instance($value)
+            : Carbon::parse((string) $value);
+
+        return $carbon->timezone(self::TIMEZONE);
     }
 }

@@ -1,6 +1,7 @@
 import React from 'react';
 import { Head, Link, router } from '@inertiajs/react';
 import AdminLayout from '@/layouts/admin-layout';
+import { formatDateTime } from '@/utils/dateUtils';
 import {
     Bell,
     Check,
@@ -63,20 +64,7 @@ export default function Index({ notifications, filter, unreadCount }: Props) {
         });
     };
 
-    const formatDate = (dateString: string) => {
-        try {
-            const date = new Date(dateString);
-            return date.toLocaleString('bn-BD', {
-                year: 'numeric',
-                month: 'short',
-                day: 'numeric',
-                hour: '2-digit',
-                minute: '2-digit',
-            });
-        } catch {
-            return dateString;
-        }
-    };
+    const formatDate = (dateString: string) => formatDateTime(dateString);
 
     return (
         <AdminLayout>

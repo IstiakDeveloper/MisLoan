@@ -10,6 +10,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
+import { addCalendarMonths, formatDate, todayIsoDate } from '@/utils/dateUtils';
 import {
     Calculator,
     Calendar,
@@ -83,7 +84,7 @@ const COMPLETED_TIERS = [
 ];
 
 export default function SavingsCalculatorModal({ open, onOpenChange, onSelectScheme }: Props) {
-    const todayStr = new Date().toISOString().split('T')[0];
+    const todayStr = todayIsoDate();
 
     // Form Inputs State
     const [selectedSchemeId, setSelectedSchemeId] = useState<string>('5yr');
@@ -126,8 +127,6 @@ export default function SavingsCalculatorModal({ open, onOpenChange, onSelectSch
     // Auto-update End Date when Scheme Type, Sub-Option, or Start Date changes
     useEffect(() => {
         if (!startDate) return;
-        const start = new Date(startDate);
-        if (isNaN(start.getTime())) return;
 
         let monthsToAdd = activeScheme.durationMonths;
         if (activeScheme.isMillionaire) {
@@ -136,9 +135,7 @@ export default function SavingsCalculatorModal({ open, onOpenChange, onSelectSch
             monthsToAdd = activeKotipatiOpt.durationMonths;
         }
 
-        const targetEnd = new Date(start);
-        targetEnd.setMonth(targetEnd.getMonth() + monthsToAdd);
-        setEndDate(targetEnd.toISOString().split('T')[0]);
+        setEndDate(addCalendarMonths(startDate, monthsToAdd));
     }, [selectedSchemeId, targetTermYears, startDate, activeScheme, activeMillionaireOpt, activeKotipatiOpt]);
 
     // Calculation Engine
@@ -374,7 +371,7 @@ export default function SavingsCalculatorModal({ open, onOpenChange, onSelectSch
                         <div className="text-right border-l-2 border-slate-200 pl-4">
                             <h2 className="text-sm font-bold text-indigo-900 uppercase">Savings Statement</h2>
                             <p className="text-xs font-mono font-bold text-slate-700">Ref: {statementRefNo}</p>
-                            <p className="text-[11px] text-slate-500">Date: {new Date().toLocaleDateString('en-GB')}</p>
+                            <p className="text-[11px] text-slate-500">Date: {formatDate(new Date())}</p>
                         </div>
                     </div>
 

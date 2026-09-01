@@ -3,6 +3,7 @@ import { Head, useForm, router, usePage } from '@inertiajs/react';
 import AdminLayout from '@/layouts/admin-layout';
 import { Printer, Save, Eye, Calculator, ArrowLeft, AlertCircle } from 'lucide-react';
 import { fileToCompressedDataUrl } from '@/utils/imageUpload';
+import { todayIsoDate } from '@/utils/dateUtils';
 import {
     clearLoanDraftLocal,
     loadLoanDraftLocal,
@@ -73,7 +74,7 @@ export function buildLoanAgreementDefaults(
         number_of_installments: schedule.numberOfInstallments,
         installment_amount: schedule.installmentAmount,
         last_installment_amount: schedule.lastInstallmentAmount,
-        disbursement_date: new Date().toISOString().split('T')[0],
+        disbursement_date: todayIsoDate(),
         last_installment_date: schedule.lastInstallmentDate,
         applicant_signature_name: member?.applicant_name_bn || '',
         applicant_signature_image: member?.applicant_signature_path || null,

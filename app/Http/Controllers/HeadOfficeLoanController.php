@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Helpers\DateFormatter;
 use App\Models\Area;
 use App\Models\Branch;
 use App\Models\LoanApplication;
@@ -530,7 +531,7 @@ class HeadOfficeLoanController extends Controller
             $sheet->setCellValue("K{$rowIdx}", $loan->branch?->area?->name ?? '');
             $sheet->setCellValue("L{$rowIdx}", $loan->branch?->name ?? '');
             $sheet->setCellValue("M{$rowIdx}", $loan->samity?->samity_name ?? '');
-            $sheet->setCellValue("N{$rowIdx}", $loan->submitted_at ? formatDate($loan.submitted_at) : '');
+            $sheet->setCellValue("N{$rowIdx}", $loan->submitted_at ? DateFormatter::displayDateTime($loan->submitted_at) : '');
             $sheet->setCellValue("O{$rowIdx}", $loan->status);
             $sheet->setCellValue("P{$rowIdx}", $loan->printed_at ? 'প্রিন্ট সম্পন্ন' : 'প্রিন্ট হয়নি');
             $rowIdx++;
