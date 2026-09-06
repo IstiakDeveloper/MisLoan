@@ -96,6 +96,7 @@ Route::middleware(['auth', 'verified'])->group(function () {
         Route::delete('branches/{branch}', [OrganizationController::class, 'destroyBranch'])->name('branches.destroy');
         Route::patch('branches/{branch}/toggle-status', [OrganizationController::class, 'toggleBranchStatus'])->name('branches.toggle-status');
         Route::get('branches/print', [OrganizationController::class, 'branchesPrint'])->name('branches.print');
+        Route::get('structure/print', [OrganizationController::class, 'structurePrint'])->name('structure.print');
 
         // API Routes for cascading dropdowns
         Route::get('zones/{zone}/areas', [OrganizationController::class, 'getAreasByZone'])->name('zones.areas');

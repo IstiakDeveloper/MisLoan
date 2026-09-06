@@ -2,7 +2,6 @@
 
 namespace Tests\Unit;
 
-use App\Models\Branch;
 use App\Models\MemberAdmission;
 use App\Models\MemberAdmissionApproval;
 use App\Models\Role;
@@ -20,7 +19,7 @@ class MemberAdmissionForwardApprovalTest extends TestCase
     {
         if (DB::connection()->getDriverName() === 'sqlite') {
             DB::connection()->getPdo()->sqliteCreateFunction('REGEXP', function ($pattern, $value) {
-                return (int) (preg_match('/' . $pattern . '/', (string) $value) === 1);
+                return (int) (preg_match('/'.$pattern.'/', (string) $value) === 1);
             });
         }
 
@@ -94,7 +93,7 @@ class MemberAdmissionForwardApprovalTest extends TestCase
         });
     }
 
-    public function test_forwarding_admission_to_rm_or_zm_sets_pending_and_under_review(): void
+    public function test_admissions_cannot_be_forwarded_to_higher_approvers(): void
     {
         $this->createDummyTables();
 
@@ -119,6 +118,7 @@ class MemberAdmissionForwardApprovalTest extends TestCase
             'application_no' => 'APP-001',
             'applicant_name_bn' => 'আবেদনকারী ১',
             'status' => 'submitted',
+            'requested_loan_amount' => 150000,
             'created_by' => $bmUser->id,
         ]);
 
@@ -130,56 +130,42 @@ class MemberAdmissionForwardApprovalTest extends TestCase
             'status' => 'pending',
         ]);
 
-        // Mock notification service
-        $notificationMock = $this->createMock(NotificationService::class);
-        $this->app->instance(NotificationService::class, $notificationMock);
-
         $service = app(ApprovalService::class);
         $result = $service->forwardToApprover($bmApproval, $rmUser->id, 'Forwarding to Area Manager');
 
-        $this->assertTrue($result);
-        $this->assertEquals('under_review', $admission->fresh()->status);
-
-        $bmApprovalFresh = $bmApproval->fresh();
-        $this->assertEquals('approved', $bmApprovalFresh->status);
-
-        $nextApproval = MemberAdmissionApproval::where('member_admission_id', $admission->id)
-            ->where('user_id', $rmUser->id)
-            ->first();
-
-        $this->assertNotNull($nextApproval);
-        $this->assertEquals('pending', $nextApproval->status);
-        $this->assertEquals('area', $nextApproval->level);
+        $this->assertFalse($result);
+        $this->assertEquals('submitted', $admission->fresh()->status);
+        $this->assertEquals('pending', $bmApproval->fresh()->status);
+        $this->assertNull(
+            MemberAdmissionApproval::where('member_admission_id', $admission->id)
+                ->where('user_id', $rmUser->id)
+                ->first()
+        );
     }
 
-    public function test_forwarding_admission_to_admf_dmf_ed_auto_approves_and_sets_ready_for_head_office(): void
+    public function test_branch_manager_can_approve_admission_regardless_of_loan_amount(): void
     {
         $this->createDummyTables();
 
         $bmRole = Role::create(['name' => Role::BRANCH_MANAGER, 'display_name' => 'Branch Manager']);
-        $admfRole = Role::create(['name' => Role::ADMF, 'display_name' => 'ADMF']);
-        $dmfRole = Role::create(['name' => Role::DMF, 'display_name' => 'DMF']);
-        $edRole = Role::create(['name' => Role::ED, 'display_name' => 'ED']);
-
         $bmUser = User::create([
             'name' => 'Branch Manager',
-            'email' => 'bm2@test.com',
+            'email' => 'bm-approve@test.com',
             'role_id' => $bmRole->id,
             'is_active' => true,
         ]);
 
-        foreach ([$admfRole, $dmfRole, $edRole] as $role) {
-            $approverUser = User::create([
-                'name' => "Approver {$role->name}",
-                'email' => "approver_{$role->name}@test.com",
-                'role_id' => $role->id,
-                'is_active' => true,
-            ]);
+        $notificationMock = $this->createMock(NotificationService::class);
+        $this->app->instance(NotificationService::class, $notificationMock);
 
+        $service = app(ApprovalService::class);
+
+        foreach ([15000, 70000, 150000] as $amount) {
             $admission = MemberAdmission::create([
-                'application_no' => "APP-{$role->name}",
-                'applicant_name_bn' => "আবেদনকারী {$role->name}",
+                'application_no' => 'APP-'.$amount,
+                'applicant_name_bn' => 'আবেদনকারী '.$amount,
                 'status' => 'submitted',
+                'requested_loan_amount' => $amount,
                 'created_by' => $bmUser->id,
             ]);
 
@@ -191,26 +177,11 @@ class MemberAdmissionForwardApprovalTest extends TestCase
                 'status' => 'pending',
             ]);
 
-            $notificationMock = $this->createMock(NotificationService::class);
-            $this->app->instance(NotificationService::class, $notificationMock);
+            $result = $service->approve($bmApproval, 'Approved by branch manager');
 
-            $service = app(ApprovalService::class);
-            $result = $service->forwardToApprover($bmApproval, $approverUser->id, 'Forwarding to executive');
-
-            $this->assertTrue($result);
-            $this->assertEquals('ready_for_head_office', $admission->fresh()->status, "Admission should be ready_for_head_office when forwarded to {$role->name}");
-
-            $bmApprovalFresh = $bmApproval->fresh();
-            $this->assertEquals('approved', $bmApprovalFresh->status);
-
-            $escalationApproval = MemberAdmissionApproval::where('member_admission_id', $admission->id)
-                ->where('user_id', $approverUser->id)
-                ->first();
-
-            $this->assertNotNull($escalationApproval);
-            $this->assertEquals('approved', $escalationApproval->status, "Approval row for {$role->name} must be approved");
-            $this->assertEquals('escalation', $escalationApproval->level);
-            $this->assertNotNull($escalationApproval->approved_at);
+            $this->assertTrue($result, "BM should approve admission with requested amount {$amount}");
+            $this->assertEquals('ready_for_head_office', $admission->fresh()->status);
+            $this->assertEquals('approved', $bmApproval->fresh()->status);
         }
     }
 }

@@ -117,19 +117,100 @@ class LoanFormVisibilityTest extends TestCase
 
     public function test_next_disburse_form_id_returns_first_unsaved_form(): void
     {
+        $amount = 50000.0;
+
         $this->assertSame(2, LoanFormVisibility::nextDisburseFormId([
             2 => false,
             3 => false,
-        ]));
+        ], $amount));
         $this->assertSame(3, LoanFormVisibility::nextDisburseFormId([
             2 => true,
             3 => false,
-        ]));
+        ], $amount));
         $this->assertNull(LoanFormVisibility::nextDisburseFormId([
             2 => true,
             3 => true,
-        ]));
-        $this->assertSame(2, LoanFormVisibility::nextDisburseFormId([]));
+        ], $amount));
+        $this->assertSame(2, LoanFormVisibility::nextDisburseFormId([], $amount));
+    }
+
+    public function test_loans_below_twenty_thousand_hide_guarantor_form(): void
+    {
+        $product = $this->weeklyProduct();
+        $amount = 19999.0;
+
+        $visible = LoanFormVisibility::visibleFormIdsForShow(
+            Role::BRANCH_USER,
+            LoanApplication::STATUS_PENDING_DISBURSEMENT,
+            $product,
+            $amount
+        );
+
+        $this->assertFalse(LoanFormVisibility::requiresGuarantorForm($amount));
+        $this->assertSame([3], LoanFormVisibility::disburseFormIds($amount));
+        $this->assertNotContains(2, $visible);
+        $this->assertContains(1, $visible);
+        $this->assertContains(3, $visible);
+        $this->assertContains(4, $visible);
+        $this->assertSame(3, LoanFormVisibility::nextDisburseFormId([], $amount));
+        $this->assertNull(LoanFormVisibility::nextDisburseFormId([3 => true], $amount));
+        $this->assertSame(
+            'বিতরণের আগে মৃত্যুঝুঁকি তহবিল (ফর্ম ৩) পূরণ করতে হবে।',
+            LoanFormVisibility::disburseIncompleteMessage($amount)
+        );
+    }
+
+    public function test_loans_of_twenty_thousand_or_more_still_require_guarantor_form(): void
+    {
+        $product = $this->weeklyProduct();
+
+        foreach ([20000.0, 25000.0] as $amount) {
+            $visible = LoanFormVisibility::visibleFormIdsForShow(
+                Role::BRANCH_USER,
+                LoanApplication::STATUS_PENDING_DISBURSEMENT,
+                $product,
+                $amount
+            );
+
+            $this->assertTrue(LoanFormVisibility::requiresGuarantorForm($amount));
+            $this->assertSame([2, 3], LoanFormVisibility::disburseFormIds($amount));
+            $this->assertContains(2, $visible);
+            $this->assertContains(3, $visible);
+            $this->assertSame(2, LoanFormVisibility::nextDisburseFormId([], $amount));
+        }
+    }
+
+    public function test_monthly_loan_below_twenty_thousand_hides_guarantor_form(): void
+    {
+        $product = (object) [
+            'installment_type' => 'monthly',
+            'product_code' => 'AGR',
+            'product_name' => 'Agrosor',
+            'product_name_bn' => '',
+        ];
+        $amount = 15000.0;
+
+        $visible = LoanFormVisibility::visibleFormIdsForShow(
+            Role::BRANCH_USER,
+            LoanApplication::STATUS_DRAFT,
+            $product,
+            $amount
+        );
+
+        $this->assertEqualsCanonicalizing([5, 3, 4], $visible);
+        $this->assertNotContains(2, $visible);
+    }
+
+    public function test_branch_manager_at_pending_disbursement_skips_guarantor_below_twenty_thousand(): void
+    {
+        $editable = LoanFormVisibility::editableFormIdsForUser(
+            Role::BRANCH_MANAGER,
+            LoanApplication::STATUS_PENDING_DISBURSEMENT,
+            $this->weeklyProduct(),
+            15000.0
+        );
+
+        $this->assertEqualsCanonicalizing([3], $editable);
     }
 
     public function test_disburse_wizard_sends_form_two_save_to_form_three(): void

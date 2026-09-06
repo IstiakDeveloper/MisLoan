@@ -448,21 +448,6 @@ export default function Index({
     };
 
     const handleAction = (approval: Approval, actionType: 'approve' | 'reject' | 'return' | 'forward') => {
-        const isBranch = approval.level === 'branch';
-        const amount = Number(approval.requested_loan_amount || 0);
-
-        if (actionType === 'approve' && isBranch && amount >= 70000) {
-            setSelectedApproval(approval);
-            setAction('forward');
-            setComments('');
-            setCommentsError(null);
-            setServerError(null);
-            setForwardToUserId('');
-            resetAdmissionBlockList();
-            setShowModal(true);
-            return;
-        }
-
         setSelectedApproval(approval);
         setAction(actionType);
         setComments('');
@@ -1819,35 +1804,9 @@ export default function Index({
                             ) : null}
                         </div>
 
-                        {/* Forward Specific Selection */}
-                        {action === 'forward' && (
-                            <div className="space-y-2">
-                                <div className="bg-amber-50 p-2.5 rounded-xl border border-amber-200 text-xs text-amber-900 space-y-1">
-                                    <p className="font-bold flex items-center gap-1">
-                                        <AlertCircle className="w-3.5 h-3.5 text-amber-600 shrink-0" />
-                                        <span>উচ্চতর কর্মকর্তা নির্বাচন প্রয়োজন</span>
-                                    </p>
-                                    <p className="text-[11px] leading-relaxed text-amber-800">
-                                        ঋণ চাহিদা <strong>৳ {Number(selectedApproval.requested_loan_amount || 0).toLocaleString('bn-BD')}</strong> (৭০,০০০ টাকা বা তার বেশি)। পরবর্তী কর্মকর্তা নির্বাচন করুন।
-                                    </p>
-                                </div>
-                                <div className="space-y-1">
-                                    <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider">
-                                        কর্মকর্তা <span className="text-rose-500">*</span>
-                                    </label>
-                                    <select
-                                        value={forwardToUserId}
-                                        onChange={(e) => setForwardToUserId(e.target.value)}
-                                        className="w-full border border-slate-300 rounded-xl px-2.5 py-2 text-xs bg-white focus:outline-none focus:ring-1 focus:ring-blue-500 focus:border-blue-500 text-slate-900 font-semibold transition"
-                                    >
-                                        <option value="">-- কর্মকর্তা নির্বাচন করুন --</option>
-                                        {(selectedApproval.escalation_approvers ?? []).map((u) => (
-                                            <option key={u.id} value={u.id}>
-                                                {u.name} ({u.role_name || u.level})
-                                            </option>
-                                        ))}
-                                    </select>
-                                </div>
+                        {action === 'approve' && (
+                            <div className="bg-emerald-50 p-2.5 rounded-xl border border-emerald-200 text-[11px] leading-relaxed text-emerald-900">
+                                শাখা ব্যবস্থাপক অনুমোদন করলে আবেদনটি হেড অফিসে পাঠানোর জন্য প্রস্তুত হবে। সদস্য ভর্তিতে উচ্চতর অনুমোদনকারীর কাছে পাঠাতে হয় না।
                             </div>
                         )}
 

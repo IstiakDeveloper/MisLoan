@@ -71,6 +71,9 @@ class LoanFormVisibility
         return self::isWeekly($product) ? [1] : [5];
     }
 
+    /** Guarantor Commitment (Form 2) is required only from this amount upward */
+    public const GUARANTOR_MIN_AMOUNT = 20000.0;
+
     public const BM_CEILING = 70000.0;
 
     public const BM_FORM_INCOMPLETE_MESSAGE = 'অনুমোদন করার আগে সরেজমিন তদন্ত প্রতিবেদন (ফর্ম ৪) পূরণ করতে হবে।';
@@ -97,18 +100,36 @@ class LoanFormVisibility
         return $amount < self::ONE_LAKH ? [4] : [];
     }
 
-    /** Branch User before disburse */
-    public static function disburseFormIds(): array
+    public static function requiresGuarantorForm(float $amount): bool
     {
-        return [2, 3];
+        return $amount >= self::GUARANTOR_MIN_AMOUNT;
+    }
+
+    /**
+     * Branch User before disburse. Form 2 (জামিনদার অঙ্গীকার) only at 20,000 TK or more.
+     *
+     * @return int[]
+     */
+    public static function disburseFormIds(float $amount): array
+    {
+        return self::requiresGuarantorForm($amount) ? [2, 3] : [3];
+    }
+
+    public static function disburseIncompleteMessage(float $amount): string
+    {
+        if (self::requiresGuarantorForm($amount)) {
+            return 'বিতরণের আগে জামিনদার অঙ্গীকার (ফর্ম ২) ও মৃত্যুঝুঁকি তহবিল (ফর্ম ৩) পূরণ করতে হবে।';
+        }
+
+        return 'বিতরণের আগে মৃত্যুঝুঁকি তহবিল (ফর্ম ৩) পূরণ করতে হবে।';
     }
 
     /**
      * First required disbursement form that is not yet saved, or null when both are complete.
      */
-    public static function nextDisburseFormId(array $formSaved): ?int
+    public static function nextDisburseFormId(array $formSaved, float $amount): ?int
     {
-        foreach (self::disburseFormIds() as $id) {
+        foreach (self::disburseFormIds($amount) as $id) {
             if (! ($formSaved[$id] ?? false)) {
                 return $id;
             }
@@ -224,7 +245,7 @@ class LoanFormVisibility
 
         if ($status === LoanApplication::STATUS_PENDING_DISBURSEMENT) {
             if ($roleName === Role::BRANCH_MANAGER) {
-                return self::disburseFormIds();
+                return self::disburseFormIds($amount);
             }
 
             return [];
@@ -255,7 +276,7 @@ class LoanFormVisibility
         return match ($action) {
             'submit' => self::foSubmitFormIds($product, $amount, $category),
             'bm_approve', 'bm_forward' => self::bmRequiredFormIds($product, $amount, $category),
-            'disburse' => self::disburseFormIds(),
+            'disburse' => self::disburseFormIds($amount),
             default => [],
         };
     }
@@ -272,7 +293,7 @@ class LoanFormVisibility
         return array_values(array_unique(array_merge(
             self::foSubmitFormIds($product, $amount, $category),
             self::bmRequiredFormIds($product, $amount, $category),
-            self::disburseFormIds()
+            self::disburseFormIds($amount)
         )));
     }
 

@@ -13,6 +13,7 @@ import { Head, router } from '@inertiajs/react';
 import {
     Building2,
     Edit,
+    FileText,
     Plus,
     Printer,
     RefreshCw,
@@ -202,6 +203,18 @@ export default function Index({ zones, areas, branches, hrmSyncEnabled }: Props)
                             >
                                 <Printer className="h-4 w-4" />
                                 Print Branch List
+                            </button>
+                            <button
+                                type="button"
+                                onClick={() =>
+                                    router.visit(
+                                        '/organizations/structure/print',
+                                    )
+                                }
+                                className="flex min-h-10 flex-1 items-center justify-center gap-2 rounded-lg border border-white/30 bg-white/10 px-4 py-2 text-sm font-semibold text-white backdrop-blur hover:bg-white/20 focus:ring-4 focus:ring-white/30 focus:outline-none sm:flex-none"
+                            >
+                                <FileText className="h-4 w-4" />
+                                Org Structure (১ পাতা PDF)
                             </button>
                             {canMutate && hrmSyncEnabled && (
                                 <button

@@ -224,7 +224,7 @@ export default function FormSelection({ member, loanProduct, loanCategory, reque
                                 <li>ফিল্ড অফিসার: সাপ্তাহিক = ফর্ম ১, মাসিক = ফর্ম ৫ পূরণ করে submit করবেন</li>
                                 <li>সুফলন: ৯৯ হাজার পর্যন্ত = ঋণ চুক্তিপত্র (ফর্ম ১), এর উপরে = অগ্রসর প্রোফাইল (ফর্ম ৫)</li>
                                 <li>শাখা ব্যবস্থাপক: প্রয়োজনে ফর্ম ৪ পূরণ করে approve/forward করবেন</li>
-                                <li>শাখা ব্যবহারকারী: HO approve এর পর ফর্ম ২+৩ পূরণ করে disburse করবেন</li>
+                                <li>শাখা ব্যবহারকারী: HO approve এর পর ২০ হাজার বা তার বেশি হলে ফর্ম ২+৩, নিচে হলে শুধু ফর্ম ৩ পূরণ করে disburse করবেন</li>
                             </ul>
                         </div>
                     </div>

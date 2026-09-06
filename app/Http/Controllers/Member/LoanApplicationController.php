@@ -116,7 +116,7 @@ class LoanApplicationController extends Controller
 
         $formSaved = $formSavedOverride ?? LoanFormVisibility::buildFormSavedMap($application);
         $submitRequired = LoanFormVisibility::requiredFormIdsForAction('submit', $product, $amount, $category);
-        $disburseRequired = LoanFormVisibility::disburseFormIds();
+        $disburseRequired = LoanFormVisibility::disburseFormIds($amount);
         $editableFormIds = LoanFormVisibility::editableFormIdsForUser($roleName, $status, $product, $amount, $category);
         $visibleFormIds = LoanFormVisibility::visibleFormIdsForShow($roleName, $status, $product, $amount, $category);
 
@@ -140,8 +140,9 @@ class LoanApplicationController extends Controller
         $application->can_disburse = $status === LoanApplication::STATUS_PENDING_DISBURSEMENT
             && $this->isBranchUserRole($user)
             && $application->disburse_forms_complete;
+        $application->disburse_required_form_ids = $disburseRequired;
         $application->next_disburse_form_id = $status === LoanApplication::STATUS_PENDING_DISBURSEMENT
-            ? LoanFormVisibility::nextDisburseFormId($formSaved)
+            ? LoanFormVisibility::nextDisburseFormId($formSaved, $amount)
             : null;
 
         $isBranchManagerUser = in_array($roleName, ['branch_manager', 'super_admin']) || (bool) ($user->has_all_access ?? false);
@@ -1769,7 +1770,7 @@ class LoanApplicationController extends Controller
 
         $this->attachFormMeta($application, $user);
         if (! $application->can_disburse) {
-            return back()->withErrors(['error' => 'বিতরণের আগে জামিনদার অঙ্গীকার (ফর্ম ২) ও মৃত্যুঝুঁকি তহবিল (ফর্ম ৩) পূরণ করতে হবে।']);
+            return back()->withErrors(['error' => LoanFormVisibility::disburseIncompleteMessage((float) ($application->requested_amount ?? 0))]);
         }
 
         $approvedAmount = (float) ($application->approved_amount ?? $application->requested_amount ?? 0);
@@ -2312,6 +2313,19 @@ class LoanApplicationController extends Controller
             return redirect()->route('member.loan-applications.index')->with('error', 'সদস্য তথ্য পাওয়া যাচ্ছে না।');
         }
 
+        $guarantorAmount = $existingApplication
+            ? (float) ($existingApplication->requested_amount ?? $requestedAmount)
+            : $requestedAmount;
+        if (! LoanFormVisibility::requiresGuarantorForm($guarantorAmount)) {
+            if ($existingApplication) {
+                return redirect()->route('member.loan-applications.show', $existingApplication->id)
+                    ->with('info', '২০ হাজার টাকার নিচে জামিনদার অঙ্গীকার ফর্ম প্রয়োজন নেই।');
+            }
+
+            return redirect()->route('member.loan-applications.index')
+                ->with('error', '২০ হাজার টাকার নিচে জামিনদার অঙ্গীকার ফর্ম প্রয়োজন নেই।');
+        }
+
         $loanProduct = LoanProduct::findOrFail($loanProductId);
         $loanCategory = LoanCategory::findOrFail($loanCategoryId);
         $user = $request->user();
@@ -2451,6 +2465,11 @@ class LoanApplicationController extends Controller
             $legacySnapshot
         );
 
+        if (! LoanFormVisibility::requiresGuarantorForm((float) ($loanApplication->requested_amount ?? $validated['requested_amount']))) {
+            return redirect()->route('member.loan-applications.show', $loanApplication->id)
+                ->with('error', '২০ হাজার টাকার নিচে জামিনদার অঙ্গীকার ফর্ম প্রয়োজন নেই।');
+        }
+
         $loanProduct = LoanProduct::find($validated['loan_product_id']);
         $agreementData = $validated['agreement_data'];
         $purposeOfLoan = $agreementData['loan_purpose'] ?? $agreementData['purpose_of_loan'] ?? 'জামিনদার/দায়িত্ব গ্রহণকারীর অঙ্গীকার নামা অনুযায়ী';
@@ -2565,10 +2584,11 @@ class LoanApplicationController extends Controller
             }
 
             $formSaved = LoanFormVisibility::buildFormSavedMap($loanApplication->fresh());
-            $disburseRequired = LoanFormVisibility::disburseFormIds();
+            $disburseAmount = (float) ($loanApplication->requested_amount ?? $validated['requested_amount'] ?? 0);
+            $disburseRequired = LoanFormVisibility::disburseFormIds($disburseAmount);
             if (! LoanFormVisibility::allRequiredFormsSaved($disburseRequired, $formSaved)) {
                 return redirect()->route('member.loan-applications.show', $loanApplication->id)
-                    ->with('error', 'বিতরণের আগে জামিনদার অঙ্গীকার (ফর্ম ২) ও মৃত্যুঝুঁকি তহবিল (ফর্ম ৩) পূরণ করতে হবে।');
+                    ->with('error', LoanFormVisibility::disburseIncompleteMessage($disburseAmount));
             }
 
             LoanApplication::whereKey($loanApplication->id)->update([

@@ -140,12 +140,7 @@ class ApprovalController extends Controller
                 'requested_loan_amount' => $member->requested_loan_amount ? (float) $member->requested_loan_amount : 0,
                 'block_list' => $this->blockListFieldsFromMember($member),
             ];
-            if ($approval->level === 'branch') {
-                $data['escalation_approvers'] = $this->approvalService->getEscalationApprovers($approval->memberAdmission->branch_id)
-                    ->map(fn ($u) => ['id' => $u->id, 'name' => $u->name, 'email' => $u->email ?? '', 'level' => $u->level ?? '', 'role_name' => $u->role->name ?? '']);
-            } else {
-                $data['escalation_approvers'] = [];
-            }
+            $data['escalation_approvers'] = [];
 
             return $data;
         });
@@ -226,27 +221,11 @@ class ApprovalController extends Controller
     }
 
     /**
-     * Branch manager forwards admission to selected approver (Area/Zone/ADMF/DMF/ED)
+     * Admissions do not escalate. Branch Manager is the final branch approver.
      */
     public function forward(Request $request, MemberAdmissionApproval $approval)
     {
-        $request->validate([
-            'forward_to_user_id' => 'required|exists:users,id',
-            'comments' => 'nullable|string|max:1000',
-        ]);
-
-        $success = $this->approvalService->forwardToApprover($approval, (int) $request->forward_to_user_id, $request->comments);
-
-        if ($success) {
-            $freshAdmission = $approval->memberAdmission()->first();
-            $message = $freshAdmission?->status === 'ready_for_head_office'
-                ? 'সদস্য আবেদনটি ফরোয়ার্ড ও স্বয়ংক্রিয়ভাবে অনুমোদিত হয়েছে। শাখা থেকে এখন হেড অফিসে পাঠানো যাবে।'
-                : 'সদস্য আবেদনটি পর্যালোচনার জন্য উচ্চতর কর্মকর্তার কাছে ফরোয়ার্ড করা হয়েছে।';
-
-            return $this->redirectToListPreservingFilters('approvals.index', $message);
-        }
-
-        return back()->with('error', 'Unable to forward this application.');
+        return back()->with('error', 'সদস্য ভর্তিতে শাখা ব্যবস্থাপকই চূড়ান্ত অনুমোদনকারী। উচ্চতর কর্মকর্তার কাছে পাঠানো যায় না।');
     }
 
     /**

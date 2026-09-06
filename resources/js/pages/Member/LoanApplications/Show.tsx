@@ -44,6 +44,7 @@ import LoanApplicationApproval from './Forms/LoanApplicationApproval';
 import SendLoanToHoModal from '@/components/LoanApplications/SendLoanToHoModal';
 import { useHoSendCutoff } from '@/hooks/use-ho-send-cutoff';
 import {
+    disburseFormIds,
     disburseWizardFormUrl,
     isDisburseWizardSearch,
     nextDisburseFormId,
@@ -122,6 +123,7 @@ interface LoanApplication {
     disburse_forms_complete?: boolean;
     can_submit?: boolean;
     can_disburse?: boolean;
+    disburse_required_form_ids?: number[];
     next_disburse_form_id?: number | null;
     member_admission_status?: string;
     loan_product: {
@@ -403,6 +405,10 @@ export default function Show({ application, routes, categories = [] }: Props) {
     const fillableFormIds = application.editable_form_ids ?? [];
     const formSaved = application.form_saved ?? {};
     const wantsDisburseAction = isDisburseWizardSearch();
+    const disburseRequiredIds = application.disburse_required_form_ids
+        ?? disburseFormIds(Number(application.requested_amount ?? 0));
+    const pendingDisburseFormIds = disburseRequiredIds.filter((id) => !formSaved[id]);
+    const needsGuarantorForm = disburseRequiredIds.includes(2);
 
     const effectiveBaseAmount =
         application.disbursed_amount != null && Number(application.disbursed_amount) > 0
@@ -448,7 +454,7 @@ export default function Show({ application, routes, categories = [] }: Props) {
 
         const nextForm =
             application.next_disburse_form_id
-            ?? nextDisburseFormId(formSaved);
+            ?? nextDisburseFormId(formSaved, Number(application.requested_amount ?? 0));
 
         if (nextForm) {
             router.visit(buildDisburseFormUrl(nextForm));
@@ -904,7 +910,9 @@ export default function Show({ application, routes, categories = [] }: Props) {
                 if (!application.can_disburse) {
                     return {
                         title: 'পরবর্তী কাজ: ফর্ম পূরণ করে ঋণ বিতরণ করুন',
-                        desc: 'হেড অফিস অনুমোদন করেছে। "বিতরণ করুন" চাপুন — আগে জামিনদার (ফর্ম ২) ও মৃত্যুঝুঁকি (ফর্ম ৩) আসবে। আবশ্যক ঘর খালি থাকলে লাল দেখাবে। দুটো ফর্ম সেভ হলে অর্থ বিতরণ করা যাবে।',
+                        desc: needsGuarantorForm
+                            ? 'হেড অফিস অনুমোদন করেছে। "বিতরণ করুন" চাপুন — আগে জামিনদার (ফর্ম ২) ও মৃত্যুঝুঁকি (ফর্ম ৩) আসবে। আবশ্যক ঘর খালি থাকলে লাল দেখাবে। দুটো ফর্ম সেভ হলে অর্থ বিতরণ করা যাবে।'
+                            : 'হেড অফিস অনুমোদন করেছে। "বিতরণ করুন" চাপুন — আগে মৃত্যুঝুঁকি (ফর্ম ৩) আসবে। ফর্ম সেভ হলে অর্থ বিতরণ করা যাবে। ২০ হাজারের নিচে জামিনদার ফর্ম লাগে না।',
                         badgeColor: 'bg-amber-100 text-amber-900 border-amber-300',
                         cardBg: 'bg-amber-50/90 border-amber-300/80 text-amber-950',
                         iconColor: 'text-amber-600',
@@ -912,7 +920,9 @@ export default function Show({ application, routes, categories = [] }: Props) {
                 }
                 return {
                     title: 'পরবর্তী কাজ: এখনই ঋণ বিতরণ করুন',
-                    desc: 'জামিনদার ও মৃত্যুঝুঁকি ফর্ম সম্পন্ন। "বিতরণ করুন" চাপুন, পরিমাণ নিশ্চিত করে সদস্যকে অর্থ বিতরণ করুন।',
+                    desc: needsGuarantorForm
+                        ? 'জামিনদার ও মৃত্যুঝুঁকি ফর্ম সম্পন্ন। "বিতরণ করুন" চাপুন, পরিমাণ নিশ্চিত করে সদস্যকে অর্থ বিতরণ করুন।'
+                        : 'মৃত্যুঝুঁকি ফর্ম সম্পন্ন। "বিতরণ করুন" চাপুন, পরিমাণ নিশ্চিত করে সদস্যকে অর্থ বিতরণ করুন।',
                     badgeColor: 'bg-emerald-100 text-emerald-900 border-emerald-300',
                     cardBg: 'bg-emerald-50/90 border-emerald-200 text-emerald-950',
                     iconColor: 'text-emerald-600',
@@ -1370,9 +1380,9 @@ export default function Show({ application, routes, categories = [] }: Props) {
                                             <CheckCircle2 className="w-4 h-4 mr-1" />
                                             {application.can_disburse ? 'এখান থেকেই বিতরণ করুন' : 'বিতরণ করুন — ফর্ম পূরণ শুরু'}
                                         </Button>
-                                        {!application.can_disburse && [2, 3].some((id) => !formSaved[id]) && (
+                                        {!application.can_disburse && pendingDisburseFormIds.length > 0 && (
                                             <span className="text-[11px] font-semibold text-amber-800">
-                                                বাকি: {[2, 3].filter((id) => !formSaved[id]).map((id) => `ফর্ম ${id}`).join(' ও ')}
+                                                বাকি: {pendingDisburseFormIds.map((id) => `ফর্ম ${id}`).join(' ও ')}
                                             </span>
                                         )}
                                     </div>

@@ -20,7 +20,8 @@ class ApprovalService
 {
     /**
      * Create approval workflow when member admission is submitted.
-     * Branch user submit goes to branch manager only. Branch manager can then approve or forward to Area/Zone/ADMF/DMF/ED.
+     * Branch user submit goes to branch manager only. Branch manager is the final
+     * branch approver regardless of requested loan amount; Branch User then sends to Head Office.
      */
     public function createApprovalWorkflow(MemberAdmission $admission): void
     {
@@ -155,11 +156,6 @@ class ApprovalService
         // Check if it's the current pending approval in sequence
         if (! $approval->isCurrentPending()) {
             return false;
-        }
-
-        // If requested loan amount >= 70,000 TK, branch level cannot directly approve without higher approver selection
-        if ($approval->level === 'branch' && (float) ($approval->memberAdmission->requested_loan_amount ?? 0) >= 70000) {
-            throw new \Exception('ঋণ চাহিদা ৭০,০০০ টাকা বা তার বেশি হওয়ায় সরাসরি অনুমোদন করা সম্ভব নয়। উচ্চতর অনুমোদনকারী নির্বাচন করে Forward করুন।');
         }
 
         DB::transaction(function () use ($approval, $comments) {
@@ -555,159 +551,12 @@ class ApprovalService
     }
 
     /**
-     * Branch manager forwards admission to selected approver (Area/Zone/ADMF/DMF/ED).
-     * Area/Zone managers receive it as a pending approval step for review.
-     * ADMF, DMF, ED are auto-approved immediately and the admission becomes ready_for_head_office.
+     * Admissions no longer escalate to Area/Zone/ADMF/DMF/ED.
+     * Branch Manager is the final branch approver; Branch User sends to Head Office.
      */
     public function forwardToApprover(MemberAdmissionApproval $approval, int $userId, ?string $comments = null): bool
     {
-        if ($approval->status !== 'pending' || ! $approval->isCurrentPending()) {
-            return false;
-        }
-        if ($approval->level !== 'branch') {
-            return false;
-        }
-
-        $targetUser = User::with('role')->find($userId);
-        if (! $targetUser || ! $targetUser->is_active) {
-            return false;
-        }
-        $roleName = strtolower($targetUser->role->name ?? '');
-        $level = 'escalation';
-        if ($roleName === 'area_manager') {
-            $level = 'area';
-        } elseif ($roleName === 'zone_manager') {
-            $level = 'zone';
-        } elseif (in_array($roleName, ['admf', 'dmf', 'ed'], true)) {
-            $level = 'escalation';
-        }
-
-        $isEscalationAutoApprove = in_array($roleName, ['admf', 'dmf', 'ed'], true);
-
-        DB::transaction(function () use ($approval, $targetUser, $userId, $comments, $level, $isEscalationAutoApprove) {
-            $admission = $approval->memberAdmission;
-            $approval->update([
-                'status' => 'approved',
-                'comments' => $comments ?? 'Forwarded to higher-level approver',
-                'approved_at' => now(),
-                'approver_signature' => $approval->user->signature ?? null,
-                'approver_pin' => $approval->user->pin ?? null,
-            ]);
-            // একই শাখার অন্য Branch Manager দের pending row গুলোও approved
-            $admission->approvals()
-                ->where('level', 'branch')
-                ->where('id', '!=', $approval->id)
-                ->where('status', 'pending')
-                ->update([
-                    'status' => 'approved',
-                    'comments' => 'Forwarded by another branch manager',
-                    'approved_at' => now(),
-                ]);
-            $nextSequence = $admission->approvals()->max('sequence') + 1;
-
-            if ($isEscalationAutoApprove) {
-                // ADMF, DMF, ED এর কাছে forward করলে স্বয়ংক্রিয়ভাবে approved হবে এবং স্ট্যাটাস ready_for_head_office হবে
-                MemberAdmissionApproval::create([
-                    'member_admission_id' => $admission->id,
-                    'user_id' => $userId,
-                    'level' => $level,
-                    'sequence' => $nextSequence,
-                    'status' => 'approved',
-                    'comments' => $comments ? "উচ্চতর কর্মকর্তা ({$targetUser->name}) বরাবর ফরোয়ার্ড ও স্বয়ংক্রিয় অনুমোদিত: {$comments}" : "উচ্চতর কর্মকর্তা ({$targetUser->name}) বরাবর ফরোয়ার্ড ও স্বয়ংক্রিয় অনুমোদিত",
-                    'approved_at' => now(),
-                    'approver_signature' => $targetUser->signature ?? null,
-                    'approver_pin' => $targetUser->pin ?? null,
-                ]);
-                $admission->update(['status' => 'ready_for_head_office']);
-            } else {
-                // RM (Area Manager) / ZM (Zone Manager) এর কাছে pending থাকবে
-                MemberAdmissionApproval::create([
-                    'member_admission_id' => $admission->id,
-                    'user_id' => $userId,
-                    'level' => $level,
-                    'sequence' => $nextSequence,
-                    'status' => 'pending',
-                ]);
-                $admission->update(['status' => 'under_review']);
-            }
-        });
-
-        // Send notifications
-        $admission = $approval->memberAdmission->fresh(['createdBy', 'submittedBy', 'branch']);
-
-        if ($isEscalationAutoApprove) {
-            // 1. Inform target approver (ADMF/DMF/ED)
-            app(NotificationService::class)->send(
-                users: $targetUser,
-                type: 'member_admission',
-                title: 'সদস্য আবেদন ফরোয়ার্ড ও অনুমোদিত',
-                message: "সদস্য আবেদন নং {$admission->application_no} ({$admission->applicant_name_bn}) আপনার বরাবর ফরোয়ার্ড করা হয়েছে এবং স্বয়ংক্রিয়ভাবে অনুমোদিত হয়েছে।",
-                notifiable: $admission,
-                actionUrl: "/member-admissions/{$admission->id}",
-                details: [
-                    'আবেদন নং' => $admission->application_no,
-                    'আবেদনকারীর নাম' => $admission->applicant_name_bn ?: $admission->applicant_name_en,
-                    'শাখা' => $admission->branch?->name ?? 'N/A',
-                    'ফরোয়ার্ড করেছেন' => auth()->user()?->name ?? 'Branch Manager',
-                    'স্ট্যাটাস' => 'শাখা অনুমোদিত (হেড অফিসে পাঠানোর জন্য প্রস্তুত)',
-                ]
-            );
-
-            // 2. Notify submitter/creator
-            $recipients = collect([$admission->createdBy, $admission->submittedBy])->filter();
-            if ($recipients->isNotEmpty()) {
-                app(NotificationService::class)->send(
-                    users: $recipients,
-                    type: 'member_admission',
-                    title: 'সদস্য আবেদন অনুমোদিত (হেড অফিসে পাঠানোর জন্য প্রস্তুত)',
-                    message: "সদস্য আবেদন নং {$admission->application_no} ({$admission->applicant_name_bn}) উচ্চতর কর্মকর্তা ({$targetUser->name}) বরাবর ফরোয়ার্ড ও অনুমোদিত হয়েছে। শাখা থেকে এখন হেড অফিসে পাঠানো যাবে।",
-                    notifiable: $admission,
-                    actionUrl: "/member-admissions/{$admission->id}",
-                    details: [
-                        'আবেদন নং' => $admission->application_no,
-                        'আবেদনকারীর নাম' => $admission->applicant_name_bn ?: $admission->applicant_name_en,
-                        'অনুমোদনকারী' => $targetUser->name.' ('.($targetUser->role?->name ?? '').')',
-                    ]
-                );
-            }
-        } else {
-            // RM / ZM
-            // 1. Notify target approver
-            app(NotificationService::class)->send(
-                users: $targetUser,
-                type: 'member_admission',
-                title: 'সদস্য আবেদন আপনার পর্যালোচনার জন্য ফরোয়ার্ড করা হয়েছে',
-                message: "সদস্য আবেদন নং {$admission->application_no} ({$admission->applicant_name_bn}) আপনার অনুমোদনের জন্য ফরোয়ার্ড করা হয়েছে।",
-                notifiable: $admission,
-                actionUrl: '/approvals',
-                details: [
-                    'আবেদন নং' => $admission->application_no,
-                    'আবেদনকারীর নাম' => $admission->applicant_name_bn ?: $admission->applicant_name_en,
-                    'শাখা' => $admission->branch?->name ?? 'N/A',
-                    'ফরোয়ার্ড করেছেন' => auth()->user()?->name ?? 'Branch Manager',
-                ]
-            );
-
-            // 2. Notify submitter/creator
-            $recipients = collect([$admission->createdBy, $admission->submittedBy])->filter();
-            if ($recipients->isNotEmpty()) {
-                app(NotificationService::class)->send(
-                    users: $recipients,
-                    type: 'member_admission',
-                    title: 'সদস্য আবেদন উচ্চতর অনুমোদনকারীর কাছে প্রেরিত',
-                    message: "আপনার সদস্য আবেদন নং {$admission->application_no} ({$admission->applicant_name_bn}) উচ্চতর অনুমোদনকারীর কাছে পাঠানো হয়েছে।",
-                    notifiable: $admission,
-                    actionUrl: "/member-admissions/{$admission->id}",
-                    details: [
-                        'আবেদন নং' => $admission->application_no,
-                        'আবেদনকারীর নাম' => $admission->applicant_name_bn ?: $admission->applicant_name_en,
-                        'অনুমোদনকারী' => $targetUser->name.' ('.($targetUser->role?->name ?? '').')',
-                    ]
-                );
-            }
-        }
-
-        return true;
+        return false;
     }
 
     /**

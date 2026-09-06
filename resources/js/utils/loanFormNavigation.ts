@@ -70,8 +70,17 @@ export function loanDisburseShowUrl(applicationId: number): string {
     return `/member/loan-applications/${applicationId}?action=disburse`;
 }
 
-export function nextDisburseFormId(formSaved: Record<number, boolean | undefined>): number | null {
-    for (const id of [2, 3]) {
+export const GUARANTOR_MIN_AMOUNT = 20000;
+
+export function disburseFormIds(amount: number): number[] {
+    return amount >= GUARANTOR_MIN_AMOUNT ? [2, 3] : [3];
+}
+
+export function nextDisburseFormId(
+    formSaved: Record<number, boolean | undefined>,
+    amount: number,
+): number | null {
+    for (const id of disburseFormIds(amount)) {
         if (!formSaved[id]) {
             return id;
         }

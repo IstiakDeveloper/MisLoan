@@ -757,7 +757,6 @@ export default function Show({ admission, auth }: Props) {
                 isBlocked={hoSendCutoff.is_blocked}
                 blockedMessage={hoSendCutoff.blocked_message}
             />
-            />
         </AdminLayout>
     );
 }
