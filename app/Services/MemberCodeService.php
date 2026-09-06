@@ -316,9 +316,10 @@ class MemberCodeService
 
     /**
      * Assign a new application_no to one member and push that latest code
-     * onto every related record. Another member may not keep the same code.
+     * onto every related record. If another member already has that code,
+     * the two codes are swapped so both stay unique.
      *
-     * @return array{ok: true, code: string}|array{ok: false, field: string, message: string}
+     * @return array{ok: true, code: string, swapped_code?: string}|array{ok: false, field: string, message: string}
      */
     public static function assignMemberCode(MemberAdmission $member, ?string $inputCode): array
     {
@@ -332,38 +333,116 @@ class MemberCodeService
             $member->branch?->code
         );
 
-        if (self::findConflictingAdmission($normalizedCode, (int) $member->id, $member->branch_id)) {
-            return self::duplicateCodeFailure($normalizedCode);
-        }
-
-        $oldCode = $member->application_no;
-        $memberName = $member->applicant_name_bn ?: $member->applicant_name_en;
+        $oldCode = is_string($member->application_no) ? $member->application_no : null;
+        $swappedCode = null;
 
         try {
-            DB::transaction(function () use ($member, $normalizedCode, $oldCode, $memberName) {
-                if ((string) $member->application_no !== $normalizedCode) {
-                    $member->update([
-                        'application_no' => $normalizedCode,
-                    ]);
+            DB::transaction(function () use ($member, $normalizedCode, $oldCode, &$swappedCode) {
+                if ((string) $member->application_no === $normalizedCode) {
+                    self::syncRelatedRecords(
+                        (int) $member->id,
+                        $normalizedCode,
+                        $oldCode,
+                        $member->applicant_name_bn ?: $member->applicant_name_en
+                    );
+
+                    return;
                 }
 
+                $previous = self::findConflictingAdmission($normalizedCode, (int) $member->id, $member->branch_id);
+
+                if ($previous) {
+                    $swappedCode = self::swapWithPreviousHolder($member, $previous, $normalizedCode, $oldCode);
+
+                    return;
+                }
+
+                $member->update([
+                    'application_no' => $normalizedCode,
+                ]);
                 $member->refresh();
 
                 self::syncRelatedRecords(
                     (int) $member->id,
                     $normalizedCode,
-                    is_string($oldCode) ? $oldCode : null,
-                    $memberName
+                    $oldCode,
+                    $member->applicant_name_bn ?: $member->applicant_name_en
                 );
             });
         } catch (UniqueConstraintViolationException) {
             return self::duplicateCodeFailure($normalizedCode);
         }
 
-        return [
+        $result = [
             'ok' => true,
             'code' => $normalizedCode,
         ];
+
+        if (is_string($swappedCode) && $swappedCode !== '') {
+            $result['swapped_code'] = $swappedCode;
+        }
+
+        return $result;
+    }
+
+    /**
+     * Give this member the taken code and move the previous holder onto this member's old code.
+     */
+    private static function swapWithPreviousHolder(
+        MemberAdmission $member,
+        MemberAdmission $previous,
+        string $newCode,
+        ?string $oldCode,
+    ): string {
+        if (! $previous->relationLoaded('branch') && Schema::hasTable('branches')) {
+            $previous->load('branch');
+        }
+
+        $previousOldCode = is_string($previous->application_no) ? $previous->application_no : null;
+        $codeForPrevious = ($oldCode !== null && $oldCode !== '' && $oldCode !== $newCode)
+            ? self::normalizeMemberCode($oldCode, $member->branch_id, $member->branch?->code)
+            : self::generateNextMemberCode($previous->branch_id, $previous->branch?->code);
+
+        $tempCode = '__swap_'.$previous->id.'_'.bin2hex(random_bytes(4));
+
+        MemberAdmission::withoutEvents(function () use ($member, $previous, $newCode, $codeForPrevious, $tempCode) {
+            $previous->update(['application_no' => $tempCode]);
+            $member->update(['application_no' => $newCode]);
+            $previous->update(['application_no' => $codeForPrevious]);
+        });
+
+        $member->refresh();
+        $previous->refresh();
+
+        self::syncRelatedRecords(
+            (int) $member->id,
+            $newCode,
+            $oldCode,
+            $member->applicant_name_bn ?: $member->applicant_name_en
+        );
+
+        self::syncRelatedRecords(
+            (int) $previous->id,
+            $codeForPrevious,
+            $previousOldCode,
+            $previous->applicant_name_bn ?: $previous->applicant_name_en
+        );
+
+        return $codeForPrevious;
+    }
+
+    /**
+     * @param  array{ok: true, code: string, swapped_code?: string}  $result
+     */
+    public static function updatedFlashMessage(array $result): string
+    {
+        $message = 'মেম্বার কোড সফলভাবে আপডেট করা হয়েছে: '.$result['code'];
+
+        if (! empty($result['swapped_code'])) {
+            $message .= ' আগের সদস্যের কোড পরিবর্তন করে '.$result['swapped_code'].' করা হয়েছে।';
+        }
+
+        return $message;
     }
 
     /**

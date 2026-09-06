@@ -2989,7 +2989,7 @@ class LoanApplicationController extends Controller
             ]);
         }
 
-        return back()->with('success', 'মেম্বার কোড সফলভাবে আপডেট করা হয়েছে: '.$result['code']);
+        return back()->with('success', MemberCodeService::updatedFlashMessage($result));
     }
 
     /**

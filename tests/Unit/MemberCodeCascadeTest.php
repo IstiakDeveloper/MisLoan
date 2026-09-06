@@ -278,7 +278,7 @@ class MemberCodeCascadeTest extends TestCase
     }
 
     #[Test]
-    public function assigning_a_code_already_used_by_another_member_fails_and_keeps_the_current_code(): void
+    public function assigning_a_code_already_used_by_another_member_swaps_and_cascades_both(): void
     {
         $this->createDummyTables();
 
@@ -290,12 +290,13 @@ class MemberCodeCascadeTest extends TestCase
         ]);
         $member->setRelation('branch', new Branch(['code' => '0001']));
 
-        MemberAdmission::create([
+        $previous = MemberAdmission::create([
             'application_no' => '0001000099',
             'applicant_name_bn' => 'অন্য সদস্য',
             'branch_id' => 1,
             'status' => 'approved',
         ]);
+        $previous->setRelation('branch', new Branch(['code' => '0001']));
 
         $loan = LoanApplication::create([
             'application_no' => 'LN2026080003',
@@ -304,13 +305,26 @@ class MemberCodeCascadeTest extends TestCase
             'loan_agreement_data' => ['member_code' => '0001000001'],
         ]);
 
+        $previousLoan = LoanApplication::create([
+            'application_no' => 'LN2026080004',
+            'member_admission_id' => $previous->id,
+            'status' => LoanApplication::STATUS_SUBMITTED,
+            'loan_agreement_data' => ['member_code' => '0001000099'],
+        ]);
+
         $result = MemberCodeService::assignMemberCode($member, '0001000099');
 
-        $this->assertFalse($result['ok']);
-        $this->assertSame('member_code', $result['field']);
-        $this->assertStringContainsString('0001000099', $result['message']);
-        $this->assertSame('0001000001', $member->fresh()->application_no);
-        $this->assertSame('0001000001', $loan->fresh()->loan_agreement_data['member_code']);
+        $this->assertTrue($result['ok']);
+        $this->assertSame('0001000099', $result['code']);
+        $this->assertSame('0001000001', $result['swapped_code']);
+        $this->assertSame('0001000099', $member->fresh()->application_no);
+        $this->assertSame('0001000001', $previous->fresh()->application_no);
+        $this->assertSame('0001000099', $loan->fresh()->loan_agreement_data['member_code']);
+        $this->assertSame('0001000001', $previousLoan->fresh()->loan_agreement_data['member_code']);
+        $this->assertSame(
+            'মেম্বার কোড সফলভাবে আপডেট করা হয়েছে: 0001000099 আগের সদস্যের কোড পরিবর্তন করে 0001000001 করা হয়েছে।',
+            MemberCodeService::updatedFlashMessage($result)
+        );
     }
 
     #[Test]
@@ -338,5 +352,12 @@ class MemberCodeCascadeTest extends TestCase
 
         $this->assertNotNull($conflict);
         $this->assertSame('99', $conflict->application_no);
+
+        $member->setRelation('branch', new Branch(['code' => '0001']));
+        $result = MemberCodeService::assignMemberCode($member, '0001000099');
+
+        $this->assertTrue($result['ok']);
+        $this->assertSame('0001000099', $member->fresh()->application_no);
+        $this->assertSame('0001000001', $conflict->fresh()->application_no);
     }
 }
