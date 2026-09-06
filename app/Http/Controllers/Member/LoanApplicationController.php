@@ -6,6 +6,7 @@ use App\Http\Controllers\Concerns\AppliesRoleDefaultListFilter;
 use App\Http\Controllers\Concerns\RequiresSuperAdminDeletePin;
 use App\Http\Controllers\Concerns\ResolvesListPerPage;
 use App\Http\Controllers\Controller;
+use App\Http\Requests\Member\RequestLoanAmountChangeRequest;
 use App\Models\Area;
 use App\Models\Branch;
 use App\Models\LoanApplication;
@@ -139,7 +140,23 @@ class LoanApplicationController extends Controller
             && ($memberAdmission === null || $memberAdmission->status === 'approved');
         $application->can_disburse = $status === LoanApplication::STATUS_PENDING_DISBURSEMENT
             && $this->isBranchUserRole($user)
-            && $application->disburse_forms_complete;
+            && $application->disburse_forms_complete
+            && ! $application->hasPendingAmountChange();
+        $application->can_change_approved_amount = $this->isBranchUserRole($user)
+            && $application->canRequestApprovedAmountChange();
+        $lastAmountApproval = app(ApprovalService::class)->lastLoanAmountApproval($application);
+        $application->amount_change_pending = $application->hasPendingAmountChange();
+        $application->amount_change_approver_name = $application->hasPendingAmountChange()
+            ? ($application->approvals()->where('status', 'pending')->reorder()->latest('id')->first()?->user?->name)
+            : $lastAmountApproval?->user?->name;
+        $application->final_approver = $lastAmountApproval ? [
+            'id' => $lastAmountApproval->user_id,
+            'name' => $lastAmountApproval->user?->name,
+            'level' => $lastAmountApproval->level,
+            'level_label' => ApprovalService::approvalLevelLabel($lastAmountApproval->level),
+            'role_name' => $lastAmountApproval->user?->role?->display_name
+                ?: $lastAmountApproval->user?->role?->name,
+        ] : null;
         $application->disburse_required_form_ids = $disburseRequired;
         $application->next_disburse_form_id = $status === LoanApplication::STATUS_PENDING_DISBURSEMENT
             ? LoanFormVisibility::nextDisburseFormId($formSaved, $amount)
@@ -701,7 +718,7 @@ class LoanApplicationController extends Controller
             ->select([
                 'id', 'application_no', 'member_admission_id', 'loan_product_id',
                 'loan_category_id', 'branch_id', 'samity_id', 'form_type', 'status',
-                'requested_amount', 'approved_amount', 'disbursed_amount', 'created_at', 'updated_at',
+                'requested_amount', 'approved_amount', 'pending_approved_amount', 'disbursed_amount', 'created_at', 'updated_at',
                 'submitted_at', 'reviewed_at', 'disbursed_at', 'purpose_of_loan', 'legacy_member_snapshot',
             ])
             ->paginate($perPage)
@@ -1454,7 +1471,7 @@ class LoanApplicationController extends Controller
             'submittedBy',
             'reviewedBy',
             'disbursedBy',
-            'approvals.user',
+            'approvals.user.role',
             'issues' => function ($query) {
                 $query->with(['reporter:id,name', 'responder:id,name'])
                     ->orderByDesc('created_at');
@@ -1482,6 +1499,7 @@ class LoanApplicationController extends Controller
                 'print' => route('member.loan-applications.print', $application->id),
                 'submit' => route('member.loan-applications.submit', $application->id),
                 'disburse' => route('member.loan-applications.disburse', $application->id),
+                'requestAmountChange' => route('member.loan-applications.request-amount-change', $application->id),
                 'updateLoanProduct' => route('member.loan-applications.update-loan-product', $application->id),
             ],
         ]);
@@ -1764,8 +1782,10 @@ class LoanApplicationController extends Controller
         $application = LoanApplication::with(['loanProduct', 'memberAdmission', 'submittedBy'])->findOrFail($id);
         $this->ensureApplicationAccessibleToUser($application, $user);
 
-        if ($application->status !== LoanApplication::STATUS_PENDING_DISBURSEMENT) {
-            return back()->withErrors(['error' => 'শুধু বিতরণের অপেক্ষায় থাকা ঋণ বিতরণ করা যাবে।']);
+        if ($application->status !== LoanApplication::STATUS_PENDING_DISBURSEMENT || $application->hasPendingAmountChange()) {
+            return back()->withErrors(['error' => $application->hasPendingAmountChange()
+                ? 'পরিমাণ পরিবর্তনের অনুমোদন না হওয়া পর্যন্ত ঋণ বিতরণ করা যাবে না।'
+                : 'শুধু বিতরণের অপেক্ষায় থাকা ঋণ বিতরণ করা যাবে।']);
         }
 
         $this->attachFormMeta($application, $user);
@@ -1921,6 +1941,32 @@ class LoanApplicationController extends Controller
 
         return redirect()->route('member.loan-applications.show', $application->id)
             ->with('success', 'ঋণ সফলভাবে বিতরণ করা হয়েছে। বিতরণকৃত পরিমাণ: ৳'.number_format($disbursedAmount));
+    }
+
+    /**
+     * Branch user (accountant) proposes a new approved amount after HO approval.
+     */
+    public function requestAmountChange(RequestLoanAmountChangeRequest $request, $id)
+    {
+        $user = $request->user();
+        if (! $this->isBranchUserRole($user)) {
+            abort(403, 'শুধুমাত্র শাখা ব্যবহারকারী অনুমোদিত পরিমাণ পরিবর্তন করতে পারবেন।');
+        }
+
+        $application = LoanApplication::with(['loanProduct', 'approvals'])->findOrFail($id);
+        $this->ensureApplicationAccessibleToUser($application, $user);
+
+        try {
+            app(ApprovalService::class)->requestLoanAmountChange(
+                $application,
+                $user,
+                (float) $request->validated('approved_amount')
+            );
+        } catch (\Exception $e) {
+            return back()->withErrors(['approved_amount' => $e->getMessage()]);
+        }
+
+        return back()->with('success', 'নতুন পরিমাণ অনুমোদনকারীর কাছে পাঠানো হয়েছে। অনুমোদন হলেই বিতরণ করা যাবে।');
     }
 
     /**

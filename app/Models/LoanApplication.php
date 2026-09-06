@@ -2,14 +2,16 @@
 
 namespace App\Models;
 
+use Carbon\Carbon;
 use Illuminate\Database\Eloquent\Model;
-use Illuminate\Database\Eloquent\SoftDeletes;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\SoftDeletes;
 
 class LoanApplication extends Model
 {
     use SoftDeletes;
+
     protected $fillable = [
         'application_no',
         'member_admission_id',
@@ -20,6 +22,9 @@ class LoanApplication extends Model
         'form_type',
         'requested_amount',
         'approved_amount',
+        'pending_approved_amount',
+        'amount_change_requested_by',
+        'amount_change_requested_at',
         'disbursed_amount',
         'installment_amount',
         'number_of_installments',
@@ -95,6 +100,7 @@ class LoanApplication extends Model
     protected $casts = [
         'requested_amount' => 'decimal:2',
         'approved_amount' => 'decimal:2',
+        'pending_approved_amount' => 'decimal:2',
         'disbursed_amount' => 'decimal:2',
         'installment_amount' => 'decimal:2',
         'number_of_installments' => 'integer',
@@ -127,6 +133,7 @@ class LoanApplication extends Model
         'other_loan_amount' => 'decimal:2',
         'submitted_at' => 'datetime',
         'reviewed_at' => 'datetime',
+        'amount_change_requested_at' => 'datetime',
         'disbursed_at' => 'datetime',
         'printed_at' => 'datetime',
         'officer_reviewed_at' => 'datetime',
@@ -147,13 +154,15 @@ class LoanApplication extends Model
     {
         if ($this->member_admission_id) {
             $m = $this->memberAdmission ?? MemberAdmission::with('samity')->find($this->member_admission_id);
+
             return $m ? (object) $m->toArray() : null;
         }
         $snap = $this->legacy_member_snapshot;
-        if (!$snap || !is_array($snap)) {
+        if (! $snap || ! is_array($snap)) {
             return null;
         }
         $samity = $this->samity;
+
         return (object) array_merge($snap, [
             'id' => null,
             'samity' => $samity ? (object) ['id' => $samity->id, 'samity_name' => $samity->samity_name, 'samity_name_bn' => $samity->samity_name_bn, 'samity_code' => $samity->samity_code] : null,
@@ -162,16 +171,29 @@ class LoanApplication extends Model
 
     // Status constants
     const STATUS_DRAFT = 'draft';
+
     const STATUS_PENDING = 'pending';
+
     const STATUS_SUBMITTED = 'submitted';
+
     const STATUS_UNDER_REVIEW = 'under_review';
+
     const STATUS_READY_FOR_HEAD_OFFICE = 'ready_for_head_office';
+
     const STATUS_PENDING_HEAD_OFFICE = 'pending_head_office';
+
     const STATUS_APPROVED = 'approved';
+
     const STATUS_PENDING_DISBURSEMENT = 'pending_disbursement';
+
+    const STATUS_PENDING_AMOUNT_APPROVAL = 'pending_amount_approval';
+
     const STATUS_REJECTED = 'rejected';
+
     const STATUS_DISBURSED = 'disbursed';
+
     const STATUS_CANCELLED = 'cancelled';
+
     const STATUS_NEEDS_CORRECTION = 'needs_correction';
 
     // Relationships
@@ -213,6 +235,44 @@ class LoanApplication extends Model
     public function disbursedBy(): BelongsTo
     {
         return $this->belongsTo(User::class, 'disbursed_by');
+    }
+
+    public function amountChangeRequestedBy(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'amount_change_requested_by');
+    }
+
+    public function hasPendingAmountChange(): bool
+    {
+        return $this->status === self::STATUS_PENDING_AMOUNT_APPROVAL
+            && $this->pending_approved_amount !== null;
+    }
+
+    public function canRequestApprovedAmountChange(): bool
+    {
+        return in_array($this->status, [self::STATUS_PENDING_DISBURSEMENT, self::STATUS_APPROVED], true)
+            && ! $this->hasPendingAmountChange();
+    }
+
+    /**
+     * Member code from the linked admission (or legacy snapshot), not the loan application_no.
+     */
+    public function memberCode(): ?string
+    {
+        $fromMember = trim((string) ($this->memberAdmission?->application_no ?? ''));
+        if ($fromMember !== '') {
+            return $fromMember;
+        }
+
+        $snapshot = $this->legacy_member_snapshot;
+        if (is_array($snapshot)) {
+            $fromSnapshot = trim((string) ($snapshot['application_no'] ?? ''));
+            if ($fromSnapshot !== '') {
+                return $fromSnapshot;
+            }
+        }
+
+        return null;
     }
 
     public function approvals(): HasMany
@@ -269,8 +329,9 @@ class LoanApplication extends Model
 
     public function canBeDisbursed(): bool
     {
-        return $this->status === self::STATUS_PENDING_DISBURSEMENT
-            || $this->status === self::STATUS_APPROVED;
+        return ($this->status === self::STATUS_PENDING_DISBURSEMENT
+            || $this->status === self::STATUS_APPROVED)
+            && ! $this->hasPendingAmountChange();
     }
 
     // Scopes
@@ -308,6 +369,12 @@ class LoanApplication extends Model
 
         if ($status === self::STATUS_APPROVED) {
             return ['label' => 'অনুমোদিত', 'pending_with_name' => null];
+        }
+
+        if ($status === self::STATUS_PENDING_AMOUNT_APPROVAL) {
+            $approverName = $this->getCurrentPendingApprovalForTracking()?->user?->name;
+
+            return ['label' => 'পরিমাণ পরিবর্তনের অনুমোদন অপেক্ষা', 'pending_with_name' => $approverName];
         }
 
         if ($status === self::STATUS_PENDING_DISBURSEMENT) {
@@ -411,7 +478,7 @@ class LoanApplication extends Model
 
             $duration = (int) ($this->loan_term_months ?: $this->loanProduct?->duration_months ?: 0);
             if ($duration > 0) {
-                $end = \Carbon\Carbon::parse($disbursementDate)->addMonths($duration);
+                $end = Carbon::parse($disbursementDate)->addMonths($duration);
                 $type = strtolower((string) ($this->loanProduct?->installment_type ?? ''));
                 if (str_contains($type, 'lump')) {
                     $end->subDay();
@@ -424,5 +491,4 @@ class LoanApplication extends Model
 
         return $businessPlan;
     }
-
 }

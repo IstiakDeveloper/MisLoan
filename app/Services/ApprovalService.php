@@ -604,6 +604,10 @@ class ApprovalService
             return false;
         }
 
+        if ($this->isLoanAmountChangeApproval($approval->loanApplication)) {
+            return $this->approveLoanAmountChange($approval, $comments, $approvedAmount);
+        }
+
         if ($approval->level === 'branch' && (float) ($approval->loanApplication->requested_amount ?? 0) >= self::BRANCH_MANAGER_LOAN_CEILING) {
             throw new \Exception('ঋণের পরিমাণ ৭০,০০০ টাকা বা তার বেশি হওয়ায় সরাসরি অনুমোদন করা সম্ভব নয়। উচ্চতর অনুমোদনকারী নির্বাচন করে Forward করুন।');
         }
@@ -733,6 +737,10 @@ class ApprovalService
     ): bool {
         if ($approval->status !== 'pending' || ! $approval->isCurrentPending()) {
             return false;
+        }
+
+        if ($this->isLoanAmountChangeApproval($approval->loanApplication)) {
+            return $this->rejectLoanAmountChange($approval, $comments);
         }
 
         DB::transaction(function () use ($approval, $comments, $pushToBlockList, $blockListData) {
@@ -1236,6 +1244,237 @@ class ApprovalService
         return $legacy;
     }
 
+    public function isLoanAmountChangeApproval(?LoanApplication $loan): bool
+    {
+        return $loan !== null && $loan->hasPendingAmountChange();
+    }
+
+    public static function approvalLevelLabel(?string $level): string
+    {
+        return match ($level) {
+            'branch' => 'শাখা ব্যবস্থাপক',
+            'area' => 'এরিয়া ব্যবস্থাপক',
+            'zone' => 'জোন ব্যবস্থাপক',
+            'escalation' => 'উচ্চতর অনুমোদনকারী',
+            'head_office' => 'হেড অফিস',
+            default => 'অনুমোদনকারী',
+        };
+    }
+
+    /**
+     * The person who gave the final branch-chain approval.
+     * If BM forwarded, this is the Area/Zone/ADMF/DMF/ED who approved — not the BM.
+     */
+    public function lastLoanAmountApproval(LoanApplication $loan): ?LoanApplicationApproval
+    {
+        $approved = LoanApplicationApproval::query()
+            ->where('loan_application_id', $loan->id)
+            ->where('status', 'approved')
+            ->with('user.role')
+            ->orderByDesc('sequence')
+            ->orderByDesc('id')
+            ->get()
+            ->filter(fn (LoanApplicationApproval $approval) => ! $this->isNonFinalApprovalComment($approval->comments))
+            ->values();
+
+        $higherLevel = $approved->first(
+            fn (LoanApplicationApproval $approval) => in_array($approval->level, ['escalation', 'zone', 'area'], true)
+        );
+
+        return $higherLevel ?? $approved->first();
+    }
+
+    private function isNonFinalApprovalComment(?string $comments): bool
+    {
+        $text = trim((string) $comments);
+        if ($text === '') {
+            return false;
+        }
+
+        if (in_array($text, [
+            'Approved by another branch manager',
+            'Forwarded by another branch manager',
+            'Forwarded to higher-level approver',
+        ], true)) {
+            return true;
+        }
+
+        return str_contains($text, 'Forwarded by another')
+            || str_contains($text, 'অন্য শাখা ব্যবস্থাপক');
+    }
+
+    /**
+     * Accountant requests a new approved amount after HO approval.
+     * The original amount-approver must approve again before disbursement.
+     */
+    public function requestLoanAmountChange(LoanApplication $loan, User $accountant, float $newAmount): void
+    {
+        if (! in_array($loan->status, [LoanApplication::STATUS_PENDING_DISBURSEMENT, LoanApplication::STATUS_APPROVED], true)) {
+            throw new \Exception('শুধু অনুমোদিত ও বিতরণের অপেক্ষায় থাকা ঋণের পরিমাণ পরিবর্তন করা যাবে।');
+        }
+
+        if ($loan->hasPendingAmountChange()) {
+            throw new \Exception('ইতিমধ্যে পরিমাণ পরিবর্তনের অনুমোদন অপেক্ষমাণ।');
+        }
+
+        $loan->loadMissing(['loanProduct', 'memberAdmission', 'submittedBy']);
+        $newAmount = (int) round($newAmount);
+        $currentApproved = (int) round((float) ($loan->approved_amount ?? $loan->requested_amount ?? 0));
+
+        if ($newAmount < 1) {
+            throw new \Exception('নতুন অনুমোদিত পরিমাণ অন্তত ১ টাকা হতে হবে।');
+        }
+
+        if ($newAmount === $currentApproved) {
+            throw new \Exception('নতুন পরিমাণ বর্তমান অনুমোদিত পরিমাণের সমান। পরিবর্তন করার কিছু নেই।');
+        }
+
+        $productMax = (float) ($loan->loanProduct?->max_amount ?? 0);
+        if ($productMax > 0 && $newAmount > $productMax) {
+            throw new \Exception('নতুন পরিমাণ প্রডাক্টের সর্বোচ্চ সীমার (৳'.number_format($productMax).') চেয়ে বেশি হতে পারবে না।');
+        }
+
+        $lastApproval = $this->lastLoanAmountApproval($loan);
+        if (! $lastApproval || ! $lastApproval->user_id) {
+            throw new \Exception('এই ঋণের পূর্বের অনুমোদনকারী পাওয়া যায়নি।');
+        }
+
+        $targetUser = User::query()->find($lastApproval->user_id);
+        if (! $targetUser || ! $targetUser->is_active) {
+            throw new \Exception('পূর্বের অনুমোদনকারী এখন সক্রিয় নন।');
+        }
+
+        $nextSequence = ((int) $loan->approvals()->max('sequence')) + 1;
+
+        DB::transaction(function () use ($loan, $accountant, $newAmount, $lastApproval, $nextSequence) {
+            $loan->update([
+                'status' => LoanApplication::STATUS_PENDING_AMOUNT_APPROVAL,
+                'pending_approved_amount' => $newAmount,
+                'amount_change_requested_by' => $accountant->id,
+                'amount_change_requested_at' => now(),
+            ]);
+
+            LoanApplicationApproval::create([
+                'loan_application_id' => $loan->id,
+                'user_id' => $lastApproval->user_id,
+                'level' => $lastApproval->level ?: 'branch',
+                'sequence' => $nextSequence,
+                'status' => 'pending',
+            ]);
+        });
+
+        $loan = $loan->fresh(['memberAdmission', 'submittedBy']);
+        app(NotificationService::class)->send(
+            users: $targetUser,
+            type: 'loan_application',
+            title: 'ঋণের অনুমোদিত পরিমাণ পরিবর্তনের অনুমোদন প্রয়োজন',
+            message: "ঋণ আবেদন নং {$loan->application_no} এর অনুমোদিত পরিমাণ ৳".number_format($currentApproved).' থেকে ৳'.number_format($newAmount).' করা হয়েছে। অনুমোদন দিলে বিতরণ করা যাবে।',
+            notifiable: $loan,
+            actionUrl: '/approvals',
+            details: [
+                'আবেদন নং' => $loan->application_no,
+                'আগের অনুমোদিত পরিমাণ' => number_format($currentApproved).' টাকা',
+                'প্রস্তাবিত পরিমাণ' => number_format($newAmount).' টাকা',
+                'পরিবর্তন করেছেন' => $accountant->name,
+            ]
+        );
+    }
+
+    private function approveLoanAmountChange(LoanApplicationApproval $approval, ?string $comments, ?float $approvedAmount): bool
+    {
+        $loan = $approval->loanApplication;
+        $finalAmount = $approvedAmount !== null && $approvedAmount > 0
+            ? (int) round($approvedAmount)
+            : (int) round((float) $loan->pending_approved_amount);
+
+        if ($finalAmount < 1) {
+            throw new \Exception('চূড়ান্ত অনুমোদিত ঋণের পরিমাণ দিতে হবে।');
+        }
+
+        DB::transaction(function () use ($approval, $comments, $loan, $finalAmount) {
+            $approval->update([
+                'status' => 'approved',
+                'comments' => $comments ?: 'পরিমাণ পরিবর্তন অনুমোদিত',
+                'approved_at' => now(),
+                'approver_signature' => $approval->user->signature ?? null,
+            ]);
+
+            $words = NumberToWordsBangla::convert($finalAmount);
+            $businessPlan = is_array($loan->business_plan) ? $loan->business_plan : [];
+            $businessPlan['final_approved_loan_amount_digits'] = (string) $finalAmount;
+            $businessPlan['final_approved_loan_amount_words'] = $words ? $words.' টাকা' : '';
+
+            $loan->update([
+                'status' => LoanApplication::STATUS_PENDING_DISBURSEMENT,
+                'approved_amount' => $finalAmount,
+                'pending_approved_amount' => null,
+                'amount_change_requested_by' => null,
+                'amount_change_requested_at' => null,
+                'business_plan' => $businessPlan,
+            ]);
+        });
+
+        $loan = $loan->fresh(['submittedBy', 'memberAdmission']);
+        $recipients = collect([$loan->submittedBy])->filter();
+        if ($recipients->isNotEmpty()) {
+            app(NotificationService::class)->send(
+                users: $recipients,
+                type: 'loan_application',
+                title: 'পরিবর্তিত ঋণ পরিমাণ অনুমোদিত',
+                message: "ঋণ আবেদন নং {$loan->application_no} এর নতুন অনুমোদিত পরিমাণ ৳".number_format($finalAmount).'। এখন বিতরণ করা যাবে।',
+                notifiable: $loan,
+                actionUrl: "/member/loan-applications/{$loan->id}",
+                details: [
+                    'আবেদন নং' => $loan->application_no,
+                    'নতুন অনুমোদিত পরিমাণ' => number_format($finalAmount).' টাকা',
+                    'অনুমোদনকারী' => auth()->user()?->name ?? 'Approver',
+                ]
+            );
+        }
+
+        return true;
+    }
+
+    private function rejectLoanAmountChange(LoanApplicationApproval $approval, string $comments): bool
+    {
+        $loan = $approval->loanApplication;
+        $previousAmount = (float) ($loan->approved_amount ?? $loan->requested_amount ?? 0);
+
+        DB::transaction(function () use ($approval, $comments, $loan) {
+            $approval->update([
+                'status' => 'rejected',
+                'comments' => $comments,
+                'approved_at' => now(),
+            ]);
+
+            $loan->update([
+                'status' => LoanApplication::STATUS_PENDING_DISBURSEMENT,
+                'pending_approved_amount' => null,
+                'amount_change_requested_by' => null,
+                'amount_change_requested_at' => null,
+            ]);
+        });
+
+        $loan = $loan->fresh(['submittedBy', 'memberAdmission']);
+        if ($loan->submittedBy) {
+            app(NotificationService::class)->send(
+                users: $loan->submittedBy,
+                type: 'loan_application',
+                title: 'পরিমাণ পরিবর্তন প্রত্যাখ্যাত',
+                message: "ঋণ আবেদন নং {$loan->application_no} এর পরিমাণ পরিবর্তন প্রত্যাখ্যান হয়েছে। আগের অনুমোদিত পরিমাণ ৳".number_format($previousAmount).' বহাল থাকবে।',
+                notifiable: $loan,
+                actionUrl: "/member/loan-applications/{$loan->id}",
+                details: [
+                    'আবেদন নং' => $loan->application_no,
+                    'অনুমোদিত পরিমাণ' => number_format($previousAmount).' টাকা',
+                    'কারণ' => $comments,
+                ]
+            );
+        }
+
+        return true;
+    }
+
     /**
      * Get pending loan approvals for a user (branch/area/zone/escalation approvers)
      */
@@ -1244,7 +1483,11 @@ class ApprovalService
         $approvals = LoanApplicationApproval::where('user_id', $user->id)
             ->where('status', 'pending')
             ->whereHas('loanApplication', function ($query) {
-                $query->whereIn('status', [LoanApplication::STATUS_SUBMITTED, LoanApplication::STATUS_UNDER_REVIEW]);
+                $query->whereIn('status', [
+                    LoanApplication::STATUS_SUBMITTED,
+                    LoanApplication::STATUS_UNDER_REVIEW,
+                    LoanApplication::STATUS_PENDING_AMOUNT_APPROVAL,
+                ]);
             })
             ->with(['loanApplication.memberAdmission', 'loanApplication.branch.area.zone', 'loanApplication.loanProduct', 'loanApplication.loanCategory'])
             ->get();
@@ -1255,6 +1498,9 @@ class ApprovalService
             }
             $loan = $approval->loanApplication;
             if ($loan && $loan->status === LoanApplication::STATUS_UNDER_REVIEW && $approval->level !== 'branch') {
+                return true;
+            }
+            if ($loan && $loan->status === LoanApplication::STATUS_PENDING_AMOUNT_APPROVAL) {
                 return true;
             }
 

@@ -199,6 +199,7 @@ class LoanFormVisibility
             LoanApplication::STATUS_PENDING_HEAD_OFFICE,
             LoanApplication::STATUS_APPROVED,
             LoanApplication::STATUS_PENDING_DISBURSEMENT,
+            LoanApplication::STATUS_PENDING_AMOUNT_APPROVAL,
             LoanApplication::STATUS_REJECTED,
             LoanApplication::STATUS_NEEDS_CORRECTION,
         ];

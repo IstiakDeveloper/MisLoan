@@ -173,6 +173,7 @@ const statusConfig: Record<string, { label: string; color: string; icon: any }> 
     pending_head_office: { label: 'হেড অফিসে প্রেরিত', color: 'bg-indigo-100 text-indigo-800 border-indigo-300', icon: Clock },
     approved: { label: 'অনুমোদিত', color: 'bg-green-100 text-green-800 border-green-300', icon: CheckCircle2 },
     pending_disbursement: { label: 'বিতরণের অপেক্ষায়', color: 'bg-amber-100 text-amber-800 border-amber-300', icon: Clock },
+    pending_amount_approval: { label: 'পরিমাণ পরিবর্তনের অনুমোদন অপেক্ষা', color: 'bg-orange-100 text-orange-800 border-orange-300', icon: Clock },
     rejected: { label: 'প্রত্যাখ্যাত', color: 'bg-rose-100 text-rose-800 border-rose-300', icon: XCircle },
     disbursed: { label: 'বিতরণ হয়েছে', color: 'bg-emerald-100 text-emerald-800 border-emerald-300', icon: CheckCircle2 },
     cancelled: { label: 'বাতিল', color: 'bg-slate-100 text-slate-800 border-slate-300', icon: XCircle },

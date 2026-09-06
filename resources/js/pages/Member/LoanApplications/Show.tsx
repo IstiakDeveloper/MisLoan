@@ -57,6 +57,7 @@ interface LoanApplication {
     status: string;
     requested_amount: number;
     approved_amount: number | null;
+    pending_approved_amount?: number | null;
     disbursed_amount?: number | null;
     disbursed_at?: string | null;
     disbursement_method?: string | null;
@@ -123,6 +124,16 @@ interface LoanApplication {
     disburse_forms_complete?: boolean;
     can_submit?: boolean;
     can_disburse?: boolean;
+    can_change_approved_amount?: boolean;
+    amount_change_pending?: boolean;
+    amount_change_approver_name?: string | null;
+    final_approver?: {
+        id?: number | null;
+        name?: string | null;
+        level?: string | null;
+        level_label?: string | null;
+        role_name?: string | null;
+    } | null;
     disburse_required_form_ids?: number[];
     next_disburse_form_id?: number | null;
     member_admission_status?: string;
@@ -214,6 +225,7 @@ interface Props {
         print: string;
         submit: string;
         disburse?: string;
+        requestAmountChange?: string;
         updateLoanProduct?: string;
     };
     categories?: LoanCategoryOption[];
@@ -236,6 +248,7 @@ const statusConfig = {
     pending_head_office: { label: 'হেড অফিসে প্রেরিত', color: 'bg-indigo-100 text-indigo-800 border-indigo-300', icon: Clock },
     approved: { label: 'অনুমোদিত', color: 'bg-green-100 text-green-800 border-green-300', icon: CheckCircle2 },
     pending_disbursement: { label: 'বিতরণের অপেক্ষায়', color: 'bg-amber-100 text-amber-800 border-amber-300', icon: Clock },
+    pending_amount_approval: { label: 'পরিমাণ পরিবর্তনের অনুমোদন অপেক্ষা', color: 'bg-orange-100 text-orange-800 border-orange-300', icon: Clock },
     rejected: { label: 'প্রত্যাখ্যাত', color: 'bg-rose-100 text-rose-800 border-rose-300', icon: XCircle },
     disbursed: { label: 'বিতরণ হয়েছে', color: 'bg-emerald-100 text-emerald-800 border-emerald-300', icon: CheckCircle2 },
     cancelled: { label: 'বাতিল', color: 'bg-slate-100 text-slate-800 border-slate-300', icon: XCircle },
@@ -359,6 +372,10 @@ export default function Show({ application, routes, categories = [] }: Props) {
     const [disbursementReference, setDisbursementReference] = useState<string>(application.disbursement_reference || '');
     const [submittingDisburse, setSubmittingDisburse] = useState(false);
     const [disburseError, setDisburseError] = useState<string | null>(null);
+    const [amountChangeModalOpen, setAmountChangeModalOpen] = useState(false);
+    const [amountChangeValue, setAmountChangeValue] = useState<string>(String(maxDisburseAmount || ''));
+    const [amountChangeError, setAmountChangeError] = useState<string | null>(null);
+    const [submittingAmountChange, setSubmittingAmountChange] = useState(false);
     const [pinModalOpen, setPinModalOpen] = useState(false);
     const [pinProcessing, setPinProcessing] = useState(false);
     const disburseCtaRef = useRef<HTMLDivElement>(null);
@@ -751,6 +768,40 @@ export default function Show({ application, routes, categories = [] }: Props) {
         );
     };
 
+    const handleAmountChangeSubmit = (e: React.FormEvent) => {
+        e.preventDefault();
+        if (!routes.requestAmountChange) {
+            return;
+        }
+        const amt = parseFloat(amountChangeValue);
+        if (isNaN(amt) || amt <= 0) {
+            setAmountChangeError('অনুগ্রহ করে সঠিক পরিমাণ লিখুন।');
+            return;
+        }
+        if (Math.round(amt) === Math.round(maxDisburseAmount)) {
+            setAmountChangeError('নতুন পরিমাণ বর্তমান অনুমোদিত পরিমাণের সমান।');
+            return;
+        }
+        setAmountChangeError(null);
+        setSubmittingAmountChange(true);
+        router.patch(
+            routes.requestAmountChange,
+            { approved_amount: Math.round(amt) },
+            {
+                preserveScroll: true,
+                onSuccess: () => {
+                    setAmountChangeModalOpen(false);
+                },
+                onError: (errs) => {
+                    setAmountChangeError(errs.approved_amount || errs.error || 'পরিমাণ পরিবর্তন পাঠানো যায়নি।');
+                },
+                onFinish: () => {
+                    setSubmittingAmountChange(false);
+                },
+            }
+        );
+    };
+
     const [showLoanHoModal, setShowLoanHoModal] = useState(false);
     const [isSendingLoanToHo, setIsSendingLoanToHo] = useState(false);
 
@@ -837,6 +888,7 @@ export default function Show({ application, routes, categories = [] }: Props) {
                 return 2;
             case 'approved':
             case 'pending_disbursement':
+            case 'pending_amount_approval':
                 return 3;
             case 'disbursed':
                 return 4;
@@ -912,6 +964,14 @@ export default function Show({ application, routes, categories = [] }: Props) {
                     badgeColor: 'bg-indigo-100 text-indigo-900 border-indigo-300',
                     cardBg: 'bg-indigo-50/90 border-indigo-200 text-indigo-950',
                     iconColor: 'text-indigo-600',
+                };
+            case 'pending_amount_approval':
+                return {
+                    title: 'পেন্ডিং অবস্থা: পরিমাণ পরিবর্তনের অনুমোদন',
+                    desc: `হিসাবরক্ষক অনুমোদিত পরিমাণ ৳${Number(application.pending_approved_amount ?? 0).toLocaleString('bn-BD')} করতে চেয়েছেন। ${application.amount_change_approver_name ? `${application.amount_change_approver_name} অনুমোদন` : 'পূর্বের অনুমোদনকারী অনুমোদন'} দিলেই বিতরণ করা যাবে।`,
+                    badgeColor: 'bg-orange-100 text-orange-900 border-orange-300',
+                    cardBg: 'bg-orange-50/90 border-orange-200 text-orange-950',
+                    iconColor: 'text-orange-600',
                 };
             case 'approved':
             case 'pending_disbursement':
@@ -1274,6 +1334,19 @@ export default function Show({ application, routes, categories = [] }: Props) {
                                     Head Office এ পাঠান
                                 </Button>
                             )}
+                            {application.can_change_approved_amount && isBranchUser && routes.requestAmountChange && (
+                                <Button
+                                    className="w-full sm:w-auto bg-amber-600 hover:bg-amber-700 text-white shadow-xs font-semibold rounded-xl text-xs sm:text-sm h-9 sm:h-10"
+                                    onClick={() => {
+                                        setAmountChangeValue(String(maxDisburseAmount || ''));
+                                        setAmountChangeError(null);
+                                        setAmountChangeModalOpen(true);
+                                    }}
+                                >
+                                    <Banknote className="w-4 h-4 mr-1.5" />
+                                    অনুমোদিত পরিমাণ পরিবর্তন
+                                </Button>
+                            )}
                             {application.status === 'pending_disbursement' && isBranchUser && routes.disburse && (
                                 <div
                                     ref={disburseCtaRef}
@@ -1334,6 +1407,25 @@ export default function Show({ application, routes, categories = [] }: Props) {
                                     })}
                                 </div>
                             </div>
+
+                            {application.final_approver?.name && (
+                                <div className="mt-2 flex flex-wrap items-center gap-2 rounded-xl border border-indigo-100 bg-indigo-50/80 px-3 py-2">
+                                    <ShieldCheck className="w-4 h-4 text-indigo-600 shrink-0" />
+                                    <div className="min-w-0 text-xs">
+                                        <p className="font-bold text-indigo-900">
+                                            চূড়ান্ত অনুমোদনকারী: {application.final_approver.name}
+                                        </p>
+                                        <p className="text-[11px] text-indigo-700">
+                                            {[application.final_approver.role_name, application.final_approver.level_label]
+                                                .filter(Boolean)
+                                                .join(' · ')}
+                                            {application.amount_change_pending
+                                                ? ' — পরিমাণ পরিবর্তনের অনুমোদন এই কর্মকর্তার কাছে অপেক্ষমাণ'
+                                                : ''}
+                                        </p>
+                                    </div>
+                                </div>
+                            )}
                         </div>
 
                         {/* Clear Plain Bengali Pending Status Callout Card */}
@@ -1379,6 +1471,22 @@ export default function Show({ application, routes, categories = [] }: Props) {
                                     </div>
                                 )}
 
+                                {application.can_change_approved_amount && isBranchUser && routes.requestAmountChange && (
+                                    <div className="mt-2.5">
+                                        <Button
+                                            size="sm"
+                                            className="bg-amber-600 hover:bg-amber-700 text-white font-bold rounded-lg text-xs"
+                                            onClick={() => {
+                                                setAmountChangeValue(String(maxDisburseAmount || ''));
+                                                setAmountChangeError(null);
+                                                setAmountChangeModalOpen(true);
+                                            }}
+                                        >
+                                            <Banknote className="w-4 h-4 mr-1" />
+                                            অনুমোদিত পরিমাণ পরিবর্তন
+                                        </Button>
+                                    </div>
+                                )}
                                 {application.status === 'pending_disbursement' && isBranchUser && routes.disburse && (
                                     <div className="mt-2.5 flex flex-wrap items-center gap-2">
                                         <Button
@@ -1459,6 +1567,11 @@ export default function Show({ application, routes, categories = [] }: Props) {
                                 {application.status !== 'disbursed' && application.approved_amount != null && (
                                     <p className="text-[10px] sm:text-xs text-slate-500 truncate">
                                         অনুমোদিত: ৳{Number(application.approved_amount).toLocaleString('bn-BD')}
+                                    </p>
+                                )}
+                                {application.amount_change_pending && application.pending_approved_amount != null && (
+                                    <p className="text-[10px] sm:text-xs text-orange-700 truncate">
+                                        প্রস্তাবিত: ৳{Number(application.pending_approved_amount).toLocaleString('bn-BD')}
                                     </p>
                                 )}
                             </div>
@@ -1968,6 +2081,12 @@ export default function Show({ application, routes, categories = [] }: Props) {
                                                 <span className="font-bold text-emerald-700">৳{Number(application.approved_amount).toLocaleString('bn-BD')}</span>
                                             </div>
                                         )}
+                                        {application.amount_change_pending && application.pending_approved_amount != null && (
+                                            <div className="flex justify-between py-1.5 border-b border-orange-100 bg-orange-50/80 px-2 rounded-lg -mx-2">
+                                                <span className="font-semibold text-orange-900">প্রস্তাবিত নতুন পরিমাণ:</span>
+                                                <span className="font-black text-orange-700">৳{Number(application.pending_approved_amount).toLocaleString('bn-BD')}</span>
+                                            </div>
+                                        )}
                                         {application.disbursed_amount != null && (
                                             <div className="flex justify-between py-1.5 border-b border-slate-100 bg-emerald-50/70 px-2 rounded-lg -mx-2">
                                                 <span className="font-semibold text-emerald-900">প্রকৃত বিতরণ পরিমাণ:</span>
@@ -2274,7 +2393,7 @@ export default function Show({ application, routes, categories = [] }: Props) {
                             {/* Disbursed Amount Input */}
                             <div>
                                 <label className="block text-xs font-bold text-slate-700 mb-1">
-                                    প্রকৃত বিতরণকৃত ঋণের পরিমাণ (টাকা): <span className="text-rose-500">*</span>
+                                    বিতরণকৃত ঋণের পরিমাণ (টাকা): <span className="text-rose-500">*</span>
                                 </label>
                                 <div className="relative">
                                     <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400 font-bold">৳</span>
@@ -2283,27 +2402,11 @@ export default function Show({ application, routes, categories = [] }: Props) {
                                         min="1"
                                         step="any"
                                         value={disburseAmount}
-                                        onChange={(e) => {
-                                            const val = e.target.value;
-                                            setDisburseAmount(val);
-                                            const num = parseFloat(val);
-                                            if (!isNaN(num) && num <= 0) {
-                                                setDisburseError('বিতরণকৃত ঋণের পরিমাণ অন্তত ১ টাকা হতে হবে।');
-                                            } else {
-                                                setDisburseError(null);
-                                            }
-                                        }}
-                                        className="w-full rounded-xl border border-slate-300 pl-8 pr-3.5 py-2.5 text-base focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20 font-black text-emerald-700 shadow-xs"
-                                        placeholder="টাকার পরিমাণ লিখুন"
+                                        readOnly
+                                        className="w-full rounded-xl border border-slate-200 bg-slate-50 pl-8 pr-3.5 py-2.5 text-base font-black text-emerald-700 shadow-xs"
                                         required
                                     />
                                 </div>
-                                {parseFloat(disburseAmount) > maxDisburseAmount && (
-                                    <div className="mt-1.5 flex items-center gap-1.5 text-xs text-amber-700 bg-amber-50 border border-amber-200 px-2.5 py-1 rounded-lg">
-                                        <AlertCircle className="w-3.5 h-3.5 shrink-0 text-amber-600" />
-                                        <span>অনুমোদিত পরিমাণের চেয়ে <strong>৳{(parseFloat(disburseAmount) - maxDisburseAmount).toLocaleString('bn-BD')}</strong> বেশি বিতরণ করা হচ্ছে।</span>
-                                    </div>
-                                )}
                                 {disburseError ? (
                                     <p className="text-xs text-rose-600 font-semibold mt-1.5 flex items-center gap-1">
                                         <AlertCircle className="w-3.5 h-3.5 shrink-0" />
@@ -2311,7 +2414,7 @@ export default function Show({ application, routes, categories = [] }: Props) {
                                     </p>
                                 ) : (
                                     <p className="text-[11px] text-slate-500 mt-1.5 leading-relaxed">
-                                        💡 সদস্য কম বা বেশি টাকা নিতে চাইলে এখানে পরিমাণ পরিবর্তন করুন। এটি সেভ হলে সংশ্লিষ্ট সকল ফর্ম ও কিস্তির হিসাব স্বয়ংক্রিয়ভাবে আপডেট হবে।
+                                        বিতরণ অনুমোদিত পরিমাণেই হবে। পরিমাণ বদলাতে হলে আগে <strong>অনুমোদিত পরিমাণ পরিবর্তন</strong> বাটন ব্যবহার করুন — পূর্বের অনুমোদনকারীর আবার অনুমোদন লাগবে।
                                     </p>
                                 )}
                             </div>
@@ -2360,6 +2463,87 @@ export default function Show({ application, routes, categories = [] }: Props) {
                                     disabled={submittingDisburse || !!disburseError || !disburseAmount || parseFloat(disburseAmount) <= 0}
                                 >
                                     {submittingDisburse ? 'বিতরণ হচ্ছে...' : 'বিতরণ নিশ্চিত করুন'}
+                                </Button>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+            )}
+            {amountChangeModalOpen && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-xs p-4 print:hidden">
+                    <div className="w-full max-w-lg rounded-2xl bg-white shadow-2xl overflow-hidden border border-slate-200">
+                        <div className="border-b px-5 py-4 bg-gradient-to-r from-amber-600 to-orange-700 text-white flex items-center justify-between">
+                            <div>
+                                <h3 className="text-base font-bold">অনুমোদিত পরিমাণ পরিবর্তন</h3>
+                                <p className="text-xs text-amber-100 mt-0.5">আবেদন নং: {application.application_no}</p>
+                            </div>
+                            <button
+                                type="button"
+                                onClick={() => setAmountChangeModalOpen(false)}
+                                className="text-white/80 hover:text-white p-1 rounded-lg hover:bg-white/10 transition"
+                            >
+                                <XCircle className="w-5 h-5" />
+                            </button>
+                        </div>
+                        <form onSubmit={handleAmountChangeSubmit} className="p-5 space-y-4">
+                            <div className="bg-slate-50 border border-slate-200/80 rounded-xl p-3.5 space-y-2 text-xs">
+                                <div className="flex justify-between items-center">
+                                    <span className="text-slate-500 font-medium">বর্তমান অনুমোদিত পরিমাণ:</span>
+                                    <span className="font-bold text-emerald-700 text-sm">
+                                        ৳{maxDisburseAmount.toLocaleString('bn-BD')}
+                                    </span>
+                                </div>
+                                {application.amount_change_approver_name && (
+                                    <div className="flex justify-between items-center">
+                                        <span className="text-slate-500 font-medium">পুনরায় অনুমোদন করবেন:</span>
+                                        <span className="font-semibold text-slate-800">{application.amount_change_approver_name}</span>
+                                    </div>
+                                )}
+                            </div>
+                            <div>
+                                <label className="block text-xs font-bold text-slate-700 mb-1">
+                                    নতুন অনুমোদিত পরিমাণ (টাকা): <span className="text-rose-500">*</span>
+                                </label>
+                                <div className="relative">
+                                    <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400 font-bold">৳</span>
+                                    <input
+                                        type="number"
+                                        min="1"
+                                        step="1"
+                                        value={amountChangeValue}
+                                        onChange={(e) => {
+                                            setAmountChangeValue(e.target.value);
+                                            setAmountChangeError(null);
+                                        }}
+                                        className="w-full rounded-xl border border-slate-300 pl-8 pr-3.5 py-2.5 text-base focus:border-amber-500 focus:ring-2 focus:ring-amber-500/20 font-black text-amber-800 shadow-xs"
+                                        placeholder="নতুন পরিমাণ লিখুন"
+                                        required
+                                    />
+                                </div>
+                                {amountChangeError ? (
+                                    <p className="text-xs text-rose-600 font-semibold mt-1.5">{amountChangeError}</p>
+                                ) : (
+                                    <p className="text-[11px] text-slate-500 mt-1.5 leading-relaxed">
+                                        পরিবর্তন পাঠালে বিতরণ আটকে যাবে। পূর্বের অনুমোদনকারী আবার অনুমোদন দিলে নতুন পরিমাণ বহাল হবে, তারপর বিতরণ করা যাবে।
+                                    </p>
+                                )}
+                            </div>
+                            <div className="flex justify-end gap-2 pt-3 border-t">
+                                <Button
+                                    type="button"
+                                    variant="outline"
+                                    className="rounded-xl text-xs"
+                                    onClick={() => setAmountChangeModalOpen(false)}
+                                    disabled={submittingAmountChange}
+                                >
+                                    বাতিল
+                                </Button>
+                                <Button
+                                    type="submit"
+                                    className="bg-amber-600 hover:bg-amber-700 text-white rounded-xl text-xs font-bold shadow-xs px-4"
+                                    disabled={submittingAmountChange || !amountChangeValue}
+                                >
+                                    {submittingAmountChange ? 'পাঠানো হচ্ছে...' : 'অনুমোদনের জন্য পাঠান'}
                                 </Button>
                             </div>
                         </form>
