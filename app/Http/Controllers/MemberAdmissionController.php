@@ -1865,40 +1865,24 @@ class MemberAdmissionController extends Controller
     public function updateMemberCode(Request $request, MemberAdmission $memberAdmission)
     {
         if ($memberAdmission->hasDisbursedLoan()) {
-            return back()->withErrors(['error' => 'ঋণ বিতরণ সম্পন্ন হওয়ার পর মেম্বার কোড পরিবর্তন করা যাবে না।']);
-        }
+            $message = 'ঋণ বিতরণ সম্পন্ন হওয়ার পর মেম্বার কোড পরিবর্তন করা যাবে না।';
+            session()->flash('error', $message);
 
-        $memberAdmission->loadMissing('branch');
-        $normalizedCode = MemberCodeService::normalizeMemberCode(
-            $request->input('member_code'),
-            $memberAdmission->branch_id,
-            $memberAdmission->branch?->code
-        );
-
-        $exists = MemberAdmission::where('application_no', $normalizedCode)
-            ->where('id', '!=', $memberAdmission->id)
-            ->exists();
-
-        if ($exists) {
-            return back()->withErrors(['member_code' => "মেম্বার কোড {$normalizedCode} ইতিমধ্যে অন্য সদস্যের জন্য ব্যবহার করা হয়েছে।"]);
-        }
-
-        $oldCode = $memberAdmission->application_no;
-        $memberName = $memberAdmission->applicant_name_bn ?: $memberAdmission->applicant_name_en;
-
-        DB::transaction(function () use ($memberAdmission, $normalizedCode, $oldCode, $memberName) {
-            $memberAdmission->update([
-                'application_no' => $normalizedCode,
+            throw ValidationException::withMessages([
+                'member_code' => $message,
             ]);
+        }
 
-            MemberCodeService::syncRelatedRecords(
-                (int) $memberAdmission->id,
-                $normalizedCode,
-                $oldCode,
-                $memberName
-            );
-        });
+        $result = MemberCodeService::assignMemberCode($memberAdmission, $request->input('member_code'));
 
-        return back()->with('success', 'মেম্বার কোড সফলভাবে আপডেট করা হয়েছে: '.$normalizedCode);
+        if (! $result['ok']) {
+            session()->flash('error', $result['message']);
+
+            throw ValidationException::withMessages([
+                $result['field'] => $result['message'],
+            ]);
+        }
+
+        return back()->with('success', 'মেম্বার কোড সফলভাবে আপডেট করা হয়েছে: '.$result['code']);
     }
 }

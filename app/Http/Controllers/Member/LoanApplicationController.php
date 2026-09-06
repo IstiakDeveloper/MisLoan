@@ -2961,45 +2961,35 @@ class LoanApplicationController extends Controller
         $application = LoanApplication::with('memberAdmission.branch')->findOrFail($id);
 
         if ($application->status === LoanApplication::STATUS_DISBURSED) {
-            return back()->withErrors(['error' => 'ঋণ বিতরণ সম্পন্ন হওয়ার পর মেম্বার কোড পরিবর্তন করা যাবে না।']);
+            $message = 'ঋণ বিতরণ সম্পন্ন হওয়ার পর মেম্বার কোড পরিবর্তন করা যাবে না।';
+            session()->flash('error', $message);
+
+            throw ValidationException::withMessages([
+                'member_code' => $message,
+            ]);
         }
 
         $member = $application->memberAdmission;
         if (! $member) {
-            return back()->withErrors(['error' => 'সদস্য ভর্তি তথ্য পাওয়া যায়নি।']);
-        }
+            $message = 'সদস্য ভর্তি তথ্য পাওয়া যায়নি।';
+            session()->flash('error', $message);
 
-        $normalizedCode = MemberCodeService::normalizeMemberCode(
-            $request->input('member_code'),
-            $member->branch_id,
-            $member->branch?->code
-        );
-
-        $exists = MemberAdmission::where('application_no', $normalizedCode)
-            ->where('id', '!=', $member->id)
-            ->exists();
-
-        if ($exists) {
-            return back()->withErrors(['member_code' => "মেম্বার কোড {$normalizedCode} ইতিমধ্যে অন্য সদস্যের জন্য ব্যবহার করা হয়েছে।"]);
-        }
-
-        $oldCode = $member->application_no;
-        $memberName = $member->applicant_name_bn ?: $member->applicant_name_en;
-
-        DB::transaction(function () use ($member, $normalizedCode, $oldCode, $memberName) {
-            $member->update([
-                'application_no' => $normalizedCode,
+            throw ValidationException::withMessages([
+                'member_code' => $message,
             ]);
+        }
 
-            MemberCodeService::syncRelatedRecords(
-                (int) $member->id,
-                $normalizedCode,
-                $oldCode,
-                $memberName
-            );
-        });
+        $result = MemberCodeService::assignMemberCode($member, $request->input('member_code'));
 
-        return back()->with('success', 'মেম্বার কোড সফলভাবে আপডেট করা হয়েছে: '.$normalizedCode);
+        if (! $result['ok']) {
+            session()->flash('error', $result['message']);
+
+            throw ValidationException::withMessages([
+                $result['field'] => $result['message'],
+            ]);
+        }
+
+        return back()->with('success', 'মেম্বার কোড সফলভাবে আপডেট করা হয়েছে: '.$result['code']);
     }
 
     /**

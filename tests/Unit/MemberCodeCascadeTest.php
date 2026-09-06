@@ -2,11 +2,13 @@
 
 namespace Tests\Unit;
 
+use App\Models\Branch;
 use App\Models\LoanApplication;
 use App\Models\LoanMember;
 use App\Models\MemberAdmission;
 use App\Models\SavingsApplication;
 use App\Models\TeamBasedApprovalItem;
+use App\Services\MemberCodeService;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
@@ -28,6 +30,23 @@ class MemberCodeCascadeTest extends TestCase
         Schema::dropIfExists('team_based_approval_items');
         Schema::dropIfExists('loan_applications');
         Schema::dropIfExists('member_admissions');
+        Schema::dropIfExists('branches');
+
+        Schema::create('branches', function (Blueprint $table) {
+            $table->id();
+            $table->string('name')->default('Test Branch');
+            $table->string('code')->nullable();
+            $table->timestamps();
+            $table->softDeletes();
+        });
+
+        DB::table('branches')->insert([
+            'id' => 1,
+            'name' => 'Test Branch',
+            'code' => '0001',
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
 
         Schema::create('member_admissions', function (Blueprint $table) {
             $table->id();
@@ -219,5 +238,105 @@ class MemberCodeCascadeTest extends TestCase
 
         $this->assertSame('0001000099', $matching->fresh()->member_code);
         $this->assertSame('65', $other->fresh()->member_code);
+    }
+
+    #[Test]
+    public function assigning_a_member_code_updates_the_member_and_all_related_records(): void
+    {
+        $this->createDummyTables();
+
+        $member = MemberAdmission::create([
+            'application_no' => '0001000001',
+            'applicant_name_bn' => 'মৌসুমি বেগম',
+            'branch_id' => 1,
+            'nid_number' => '1990123456789',
+            'mobile_number' => '01711111111',
+            'status' => 'approved',
+        ]);
+        $member->setRelation('branch', new Branch(['code' => '0001']));
+
+        $loan = LoanApplication::create([
+            'application_no' => 'LN2026080002',
+            'member_admission_id' => $member->id,
+            'status' => LoanApplication::STATUS_SUBMITTED,
+            'loan_agreement_data' => ['member_code' => '0001000001'],
+            'guarantor_info' => ['member_code' => '0001000001'],
+            'business_plan' => [
+                'member_code' => '0001000001',
+                'member_name_code' => 'মৌসুমি বেগম / 0001000001',
+            ],
+        ]);
+
+        $result = MemberCodeService::assignMemberCode($member, '0001000099');
+
+        $this->assertTrue($result['ok']);
+        $this->assertSame('0001000099', $result['code']);
+        $this->assertSame('0001000099', $member->fresh()->application_no);
+        $this->assertSame('0001000099', $loan->fresh()->loan_agreement_data['member_code']);
+        $this->assertSame('0001000099', $loan->fresh()->guarantor_info['member_code']);
+        $this->assertSame('মৌসুমি বেগম / 0001000099', $loan->fresh()->business_plan['member_name_code']);
+    }
+
+    #[Test]
+    public function assigning_a_code_already_used_by_another_member_fails_and_keeps_the_current_code(): void
+    {
+        $this->createDummyTables();
+
+        $member = MemberAdmission::create([
+            'application_no' => '0001000001',
+            'applicant_name_bn' => 'মৌসুমি বেগম',
+            'branch_id' => 1,
+            'status' => 'approved',
+        ]);
+        $member->setRelation('branch', new Branch(['code' => '0001']));
+
+        MemberAdmission::create([
+            'application_no' => '0001000099',
+            'applicant_name_bn' => 'অন্য সদস্য',
+            'branch_id' => 1,
+            'status' => 'approved',
+        ]);
+
+        $loan = LoanApplication::create([
+            'application_no' => 'LN2026080003',
+            'member_admission_id' => $member->id,
+            'status' => LoanApplication::STATUS_SUBMITTED,
+            'loan_agreement_data' => ['member_code' => '0001000001'],
+        ]);
+
+        $result = MemberCodeService::assignMemberCode($member, '0001000099');
+
+        $this->assertFalse($result['ok']);
+        $this->assertSame('member_code', $result['field']);
+        $this->assertStringContainsString('0001000099', $result['message']);
+        $this->assertSame('0001000001', $member->fresh()->application_no);
+        $this->assertSame('0001000001', $loan->fresh()->loan_agreement_data['member_code']);
+    }
+
+    #[Test]
+    public function same_branch_serial_variant_is_treated_as_a_duplicate_code(): void
+    {
+        $this->createDummyTables();
+
+        $member = MemberAdmission::create([
+            'application_no' => '0001000001',
+            'applicant_name_bn' => 'মৌসুমি বেগম',
+            'branch_id' => 1,
+            'status' => 'approved',
+        ]);
+
+        DB::table('member_admissions')->insert([
+            'application_no' => '99',
+            'applicant_name_bn' => 'পুরনো সিরিয়াল',
+            'branch_id' => 1,
+            'status' => 'approved',
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        $conflict = MemberCodeService::findConflictingAdmission('0001000099', (int) $member->id, 1);
+
+        $this->assertNotNull($conflict);
+        $this->assertSame('99', $conflict->application_no);
     }
 }

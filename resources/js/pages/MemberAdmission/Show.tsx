@@ -85,6 +85,7 @@ export default function Show({ admission, auth }: Props) {
     const [memberCodeModalOpen, setMemberCodeModalOpen] = useState(false);
     const [serialInput, setSerialInput] = useState<string>(parsedCode.serial);
     const [submittingMemberCode, setSubmittingMemberCode] = useState(false);
+    const [memberCodeError, setMemberCodeError] = useState<string | null>(null);
 
     useEffect(() => {
         const p = parseMemberCode(admission.application_no, branchPrefix);
@@ -96,15 +97,22 @@ export default function Show({ admission, auth }: Props) {
         const cleanSerial = toEnglishDigits(serialInput).replace(/\D/g, '');
         if (!cleanSerial) return;
         const fullCode = `${branchPrefix}${cleanSerial.padStart(6, '0')}`;
+        setMemberCodeError(null);
         setSubmittingMemberCode(true);
         router.patch(
             `/member-admissions/${admission.id}/update-member-code`,
             { member_code: fullCode },
             {
                 preserveScroll: true,
+                onSuccess: () => {
+                    setMemberCodeError(null);
+                    setMemberCodeModalOpen(false);
+                },
+                onError: (errors) => {
+                    setMemberCodeError(errors.member_code || errors.error || 'কোড আপডেট করা যায়নি।');
+                },
                 onFinish: () => {
                     setSubmittingMemberCode(false);
-                    setMemberCodeModalOpen(false);
                 },
             }
         );
@@ -280,6 +288,7 @@ export default function Show({ admission, auth }: Props) {
                                             onClick={() => {
                                                 const p = parseMemberCode(admission.application_no, branchPrefix);
                                                 setSerialInput(p.serial);
+                                                setMemberCodeError(null);
                                                 setMemberCodeModalOpen(true);
                                             }}
                                             className="inline-flex items-center gap-1 text-[10px] bg-indigo-50 hover:bg-indigo-100 text-indigo-700 px-1.5 py-0.5 rounded border border-indigo-200 font-semibold cursor-pointer"
@@ -715,6 +724,9 @@ export default function Show({ admission, auth }: Props) {
                                     <span>পূর্ণাঙ্গ কোড: <span className="font-mono font-bold text-blue-700">{branchPrefix}{serialInput ? serialInput.padStart(6, '0') : '000001'}</span></span>
                                     <span className="text-[10px] text-slate-400">(যেমন: 65 লিখলে হবে {branchPrefix}000065)</span>
                                 </div>
+                                {memberCodeError && (
+                                    <p className="mt-2 text-xs font-semibold text-rose-600">{memberCodeError}</p>
+                                )}
                             </div>
 
                             <div className="flex justify-end gap-2 pt-2 border-t">

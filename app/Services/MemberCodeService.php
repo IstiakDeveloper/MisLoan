@@ -9,6 +9,9 @@ use App\Models\MemberAdmission;
 use App\Models\SavingsApplication;
 use App\Models\TeamBasedApprovalItem;
 use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Database\UniqueConstraintViolationException;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Schema;
 
 class MemberCodeService
 {
@@ -309,6 +312,97 @@ class MemberCodeService
         }
 
         return array_values(array_unique(array_filter($variants, fn ($v) => $v !== '')));
+    }
+
+    /**
+     * Assign a new application_no to one member and push that latest code
+     * onto every related record. Another member may not keep the same code.
+     *
+     * @return array{ok: true, code: string}|array{ok: false, field: string, message: string}
+     */
+    public static function assignMemberCode(MemberAdmission $member, ?string $inputCode): array
+    {
+        if (! $member->relationLoaded('branch') && Schema::hasTable('branches')) {
+            $member->load('branch');
+        }
+
+        $normalizedCode = self::normalizeMemberCode(
+            $inputCode,
+            $member->branch_id,
+            $member->branch?->code
+        );
+
+        if (self::findConflictingAdmission($normalizedCode, (int) $member->id, $member->branch_id)) {
+            return self::duplicateCodeFailure($normalizedCode);
+        }
+
+        $oldCode = $member->application_no;
+        $memberName = $member->applicant_name_bn ?: $member->applicant_name_en;
+
+        try {
+            DB::transaction(function () use ($member, $normalizedCode, $oldCode, $memberName) {
+                if ((string) $member->application_no !== $normalizedCode) {
+                    $member->update([
+                        'application_no' => $normalizedCode,
+                    ]);
+                }
+
+                $member->refresh();
+
+                self::syncRelatedRecords(
+                    (int) $member->id,
+                    $normalizedCode,
+                    is_string($oldCode) ? $oldCode : null,
+                    $memberName
+                );
+            });
+        } catch (UniqueConstraintViolationException) {
+            return self::duplicateCodeFailure($normalizedCode);
+        }
+
+        return [
+            'ok' => true,
+            'code' => $normalizedCode,
+        ];
+    }
+
+    /**
+     * Another member already using this 10-digit code, or the same serial in this branch.
+     */
+    public static function findConflictingAdmission(string $normalizedCode, int $excludeId, ?int $branchId = null): ?MemberAdmission
+    {
+        $fullVariants = self::fullCodeMatchVariants($normalizedCode);
+        $serialVariants = self::serialCodeMatchVariants($normalizedCode);
+
+        return MemberAdmission::query()
+            ->where('id', '!=', $excludeId)
+            ->where(function ($q) use ($normalizedCode, $fullVariants, $serialVariants, $branchId) {
+                $q->where('application_no', $normalizedCode);
+
+                if ($fullVariants !== []) {
+                    $q->orWhereIn('application_no', $fullVariants);
+                }
+
+                if ($branchId && $serialVariants !== []) {
+                    $q->orWhere(function ($inner) use ($branchId, $serialVariants) {
+                        $inner->where('branch_id', $branchId)
+                            ->whereIn('application_no', $serialVariants);
+                    });
+                }
+            })
+            ->first();
+    }
+
+    /**
+     * @return array{ok: false, field: string, message: string}
+     */
+    private static function duplicateCodeFailure(string $normalizedCode): array
+    {
+        return [
+            'ok' => false,
+            'field' => 'member_code',
+            'message' => "মেম্বার কোড {$normalizedCode} ইতিমধ্যে অন্য সদস্যের জন্য ব্যবহার করা হয়েছে।",
+        ];
     }
 
     /**
