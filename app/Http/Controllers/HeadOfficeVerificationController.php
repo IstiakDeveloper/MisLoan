@@ -204,8 +204,8 @@ class HeadOfficeVerificationController extends Controller
             );
             $hasReplied = $mappedIssues->contains(fn ($i) => ! empty($i['reply_message']))
                 || ! empty($parsed['branch_reply']);
-            $hasUnapprovedPendingIssue = $admission->issues->contains(fn ($i) => $i->status === 'pending' && empty($i->zm_approved_at));
-            $isZmApproved = ! $hasUnapprovedPendingIssue && $admission->issues->contains(fn ($i) => ! empty($i->zm_approved_at));
+            $hasUnapprovedIssue = $admission->issues->contains(fn ($i) => empty($i->zm_approved_at));
+            $isZmApproved = $admission->issues->isNotEmpty() && ! $hasUnapprovedIssue;
 
             $timelineDates = collect();
             foreach ($mappedIssues as $issue) {
@@ -320,8 +320,8 @@ class HeadOfficeVerificationController extends Controller
                 || ! empty($parsed['branch_reply'])
                 || ! empty($latestMapped['reply_message']);
 
-            $hasUnapprovedPendingIssue = $loan->issues->contains(fn ($i) => $i->status === 'pending' && empty($i->zm_approved_at));
-            $isZmApproved = ! $hasUnapprovedPendingIssue && $loan->issues->contains(fn ($i) => ! empty($i->zm_approved_at));
+            $hasUnapprovedIssue = $loan->issues->contains(fn ($i) => empty($i->zm_approved_at));
+            $isZmApproved = $loan->issues->isNotEmpty() && ! $hasUnapprovedIssue;
 
             $timelineDates = collect();
             foreach ($mappedIssues as $issue) {
@@ -856,6 +856,97 @@ class HeadOfficeVerificationController extends Controller
     }
 
     /**
+     * Multi-select Bulk Head Office Final Approve
+     */
+    public function bulkApproveHeadOffice(Request $request)
+    {
+        $authUser = auth()->user();
+        $authUser->loadMissing('role');
+        $roleName = strtolower($authUser->role->name ?? '');
+        $isHoAdmin = $authUser->has_all_access
+            || $authUser->isSuperAdmin()
+            || $authUser->isHeadOffice()
+            || $authUser->isEd()
+            || in_array($roleName, [Role::SUPER_ADMIN, Role::HEAD_OFFICE, 'admin', 'super_admin', 'head_office', 'head_office_approver'], true);
+
+        if (! $isHoAdmin) {
+            return back()->with('error', 'শুধুমাত্র হেড অফিস কর্মকর্তা বা সুপার অ্যাডমিন চূড়ান্ত অনুমোদন করতে পারবেন।');
+        }
+
+        $validated = $request->validate([
+            'items' => 'required|array|min:1',
+            'items.*.item_type' => 'required|in:admission,loan',
+            'items.*.raw_id' => 'required|integer',
+        ]);
+
+        $approvedCount = 0;
+
+        DB::transaction(function () use ($validated, $authUser, &$approvedCount) {
+            foreach ($validated['items'] as $itemData) {
+                if ($itemData['item_type'] === 'admission') {
+                    $admission = MemberAdmission::find($itemData['raw_id']);
+                    if (! $admission || in_array($admission->status, ['approved', 'rejected'], true)) {
+                        continue;
+                    }
+                    $this->ensureCanAccessBranch($admission->branch_id);
+
+                    // Must have issues and ALL issues must be ZM-approved
+                    if ($admission->issues()->doesntExist() || $admission->issues()->whereNull('zm_approved_at')->exists()) {
+                        continue;
+                    }
+
+                    $this->closePendingAdmissionIssues($admission, $authUser->id);
+
+                    $admission->update([
+                        'status' => 'approved',
+                        'reviewed_at' => now(),
+                        'reviewed_by' => $authUser->id,
+                        'rejection_reason' => null,
+                    ]);
+
+                    $admission->approvals()
+                        ->where('status', 'pending')
+                        ->update([
+                            'status' => 'approved',
+                            'approved_at' => now(),
+                            'comments' => 'হেড অফিস একযোগে বাল্ক অনুমোদন',
+                        ]);
+
+                    $approvedCount++;
+                } else {
+                    $loan = LoanApplication::find($itemData['raw_id']);
+                    if (! $loan || in_array($loan->status, [LoanApplication::STATUS_APPROVED, LoanApplication::STATUS_PENDING_DISBURSEMENT, LoanApplication::STATUS_DISBURSED, LoanApplication::STATUS_REJECTED], true)) {
+                        continue;
+                    }
+                    $this->ensureCanAccessBranch($loan->branch_id);
+
+                    // Must have issues and ALL issues must be ZM-approved
+                    if ($loan->issues()->doesntExist() || $loan->issues()->whereNull('zm_approved_at')->exists()) {
+                        continue;
+                    }
+
+                    $this->closePendingLoanIssues($loan, $authUser->id);
+
+                    $loan->update([
+                        'status' => LoanApplication::STATUS_PENDING_DISBURSEMENT,
+                        'reviewed_at' => now(),
+                        'reviewed_by' => $authUser->id,
+                        'approved_amount' => $loan->approved_amount ?: $loan->requested_amount,
+                    ]);
+
+                    $approvedCount++;
+                }
+            }
+        });
+
+        if ($approvedCount === 0) {
+            return back()->with('error', 'নির্বাচিত আবেদনগুলোর মধ্যে কোনোটিই ZM অনুমোদিত নয়। ZM অনুমোদন ছাড়া হেড অফিস থেকে চূড়ান্ত অনুমোদন করা যাবে না।');
+        }
+
+        return back()->with('success', "নির্বাচিত {$approvedCount} টি আবেদন সফলভাবে চূড়ান্ত অনুমোদন করা হয়েছে।");
+    }
+
+    /**
      * Reject application from Verification
      */
     public function rejectApplication(Request $request)
@@ -916,23 +1007,24 @@ class HeadOfficeVerificationController extends Controller
             $latestIssue?->resolution_note,
             $admission->revision_comments
         );
-        $hasBranchReply = ! empty($parsed['branch_reply']) || $admission->issues()->whereNotNull('resolution_note')->exists();
+        $authUser = auth()->user();
+        $authUser->loadMissing('role');
+        $roleName = strtolower($authUser->role->name ?? '');
+        $canApprove = $authUser->has_all_access
+            || $authUser->isSuperAdmin()
+            || $authUser->isHeadOffice()
+            || $authUser->isEd()
+            || in_array($roleName, [Role::SUPER_ADMIN, Role::HEAD_OFFICE, 'admin', 'super_admin', 'head_office', 'head_office_approver'], true);
 
-        // Must be ZM approved if pending issues exist
-        $hasPendingUnapprovedIssue = $admission->issues()
-            ->where('status', 'pending')
-            ->whereNull('zm_approved_at')
-            ->exists();
+        if (! $canApprove) {
+            return back()->with('error', 'শুধুমাত্র হেড অফিস কর্মকর্তা বা সুপার অ্যাডমিন চূড়ান্ত অনুমোদন করতে পারবেন।');
+        }
 
-        if ($hasPendingUnapprovedIssue) {
+        // Must have issues and all issues must be approved by ZM
+        $hasUnapprovedIssue = $admission->issues()->doesntExist() || $admission->issues()->whereNull('zm_approved_at')->exists();
+        if ($hasUnapprovedIssue) {
             return back()->with('error', 'জোনাল ম্যানেজার (ZM) কর্তৃক অনুমোদন না হওয়া পর্যন্ত হেড অফিস থেকে অনুমোদন করা যাবে না।');
         }
-
-        if (! $hasBranchReply && $admission->issues()->where('status', 'pending')->exists()) {
-            return back()->with('error', 'জোন থেকে ব্যাখ্যা/জবাব না পাওয়া পর্যন্ত অনুমোদন করা যাবে না।');
-        }
-
-        $authUser = auth()->user();
 
         DB::transaction(function () use ($admission, $authUser) {
             $this->closePendingAdmissionIssues($admission, $authUser->id);
@@ -1000,23 +1092,24 @@ class HeadOfficeVerificationController extends Controller
             $latestIssue?->response_message,
             $loanApplication->revision_comments
         );
-        $hasBranchReply = ! empty($parsed['branch_reply']) || $loanApplication->issues()->whereNotNull('response_message')->exists();
+        $authUser = auth()->user();
+        $authUser->loadMissing('role');
+        $roleName = strtolower($authUser->role->name ?? '');
+        $canApprove = $authUser->has_all_access
+            || $authUser->isSuperAdmin()
+            || $authUser->isHeadOffice()
+            || $authUser->isEd()
+            || in_array($roleName, [Role::SUPER_ADMIN, Role::HEAD_OFFICE, 'admin', 'super_admin', 'head_office', 'head_office_approver'], true);
 
-        // Must be ZM approved if pending issues exist
-        $hasPendingUnapprovedIssue = $loanApplication->issues()
-            ->where('status', 'pending')
-            ->whereNull('zm_approved_at')
-            ->exists();
+        if (! $canApprove) {
+            return back()->with('error', 'শুধুমাত্র হেড অফিস কর্মকর্তা বা সুপার অ্যাডমিন চূড়ান্ত অনুমোদন করতে পারবেন।');
+        }
 
-        if ($hasPendingUnapprovedIssue) {
+        // Must have issues and all issues must be approved by ZM
+        $hasUnapprovedIssue = $loanApplication->issues()->doesntExist() || $loanApplication->issues()->whereNull('zm_approved_at')->exists();
+        if ($hasUnapprovedIssue) {
             return back()->with('error', 'জোনাল ম্যানেজার (ZM) কর্তৃক অনুমোদন না হওয়া পর্যন্ত হেড অফিস থেকে অনুমোদন করা যাবে না।');
         }
-
-        if (! $hasBranchReply && $loanApplication->issues()->where('status', 'pending')->exists()) {
-            return back()->with('error', 'জোন থেকে ব্যাখ্যা/জবাব না পাওয়া পর্যন্ত অনুমোদন করা যাবে না।');
-        }
-
-        $authUser = auth()->user();
 
         DB::transaction(function () use ($loanApplication, $authUser) {
             $this->closePendingLoanIssues($loanApplication, $authUser->id);

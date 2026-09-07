@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { Head, router, Link } from '@inertiajs/react';
 import AdminLayout from '@/layouts/admin-layout';
 import { formatDate, formatDateTime, todayIsoDate } from '@/utils/dateUtils';
@@ -201,6 +201,8 @@ export default function VerificationIndex({ items, stats, filters, permissions, 
     const [bulkZmModalOpen, setBulkZmModalOpen] = useState(false);
     const [bulkApprovalNote, setBulkApprovalNote] = useState('');
 
+    const [bulkHoModalOpen, setBulkHoModalOpen] = useState(false);
+
     const [rejectModalItem, setRejectModalItem] = useState<VerificationItem | null>(null);
     const [rejectReason, setRejectReason] = useState('');
 
@@ -349,16 +351,30 @@ export default function VerificationIndex({ items, stats, filters, permissions, 
         );
     };
 
-    // Selection Handlers
-    const allPageIds = (items?.data ?? []).map((i) => i.id);
-    const isAllSelected = allPageIds.length > 0 && allPageIds.every((id) => selectedIds.includes(id));
-    const isSomeSelected = allPageIds.some((id) => selectedIds.includes(id));
+    // Selection Handlers - Only items eligible for action can be selected
+    const selectablePageItems = useMemo(() => {
+        return (items?.data ?? []).filter((item) => {
+            const isResolved = ['approved', 'pending_disbursement', 'disbursed', 'rejected'].includes(item.status);
+            if (isResolved) return false;
+            if (permissions.can_approve) {
+                return Boolean(item.is_zm_approved);
+            }
+            if (permissions.can_zm_approve) {
+                return Boolean(item.has_replied && !item.is_zm_approved);
+            }
+            return false;
+        });
+    }, [items?.data, permissions.can_approve, permissions.can_zm_approve]);
+
+    const selectablePageIds = selectablePageItems.map((i) => i.id);
+    const isAllSelected = selectablePageIds.length > 0 && selectablePageIds.every((id) => selectedIds.includes(id));
+    const isSomeSelected = selectablePageIds.some((id) => selectedIds.includes(id));
 
     const toggleSelectAll = () => {
         if (isAllSelected) {
-            setSelectedIds((prev) => prev.filter((id) => !allPageIds.includes(id)));
+            setSelectedIds((prev) => prev.filter((id) => !selectablePageIds.includes(id)));
         } else {
-            setSelectedIds((prev) => Array.from(new Set([...prev, ...allPageIds])));
+            setSelectedIds((prev) => Array.from(new Set([...prev, ...selectablePageIds])));
         }
     };
 
@@ -370,11 +386,19 @@ export default function VerificationIndex({ items, stats, filters, permissions, 
 
     // 1-Click Approve (Head Office)
     const handleOneClickApprove = (item: VerificationItem) => {
+        if (!item.is_zm_approved) {
+            alert('জোনাল ম্যানেজার (ZM) কর্তৃক অনুমোদন না হওয়া পর্যন্ত হেড অফিস থেকে চূড়ান্ত অনুমোদন করা যাবে না।');
+            return;
+        }
         setApprovalModalItem(item);
     };
 
     const confirmApproval = () => {
         if (!approvalModalItem) return;
+        if (!approvalModalItem.is_zm_approved) {
+            alert('জোনাল ম্যানেজার (ZM) কর্তৃক অনুমোদন না হওয়া পর্যন্ত হেড অফিস থেকে চূড়ান্ত অনুমোদন করা যাবে না।');
+            return;
+        }
         setIsSubmitting(true);
 
         const url = approvalModalItem.item_type === 'admission'
@@ -442,6 +466,40 @@ export default function VerificationIndex({ items, stats, filters, permissions, 
                 setBulkZmModalOpen(false);
                 setSelectedIds([]);
                 setBulkApprovalNote('');
+            },
+            onFinish: () => setIsSubmitting(false),
+        });
+    };
+
+    // Bulk Head Office Approve
+    const handleOpenBulkHoModal = () => {
+        if (selectedIds.length === 0) return;
+        setBulkHoModalOpen(true);
+    };
+
+    const confirmBulkHoApprove = () => {
+        if (selectedIds.length === 0) return;
+
+        const selectedItems = (items?.data ?? []).filter((i) => selectedIds.includes(i.id) && i.is_zm_approved);
+        if (selectedItems.length === 0) {
+            alert('নির্বাচিত আবেদনগুলোর মধ্যে কোনোটিই ZM অনুমোদিত নয়। ZM অনুমোদন ছাড়া চূড়ান্ত অনুমোদন করা যাবে না।');
+            return;
+        }
+
+        setIsSubmitting(true);
+
+        const payloadItems = selectedItems.map((item) => ({
+            item_type: item.item_type,
+            raw_id: item.raw_id,
+        }));
+
+        router.post('/verifications/bulk-ho-approve', {
+            items: payloadItems,
+        }, {
+            ...keepListFilters,
+            onSuccess: () => {
+                setBulkHoModalOpen(false);
+                setSelectedIds([]);
             },
             onFinish: () => setIsSubmitting(false),
         });
@@ -879,11 +937,11 @@ export default function VerificationIndex({ items, stats, filters, permissions, 
                     </div>
                 </div>
 
-                {/* Floating Bulk Action Bar for ZM Approval */}
-                {selectedIds.length > 0 && permissions.can_zm_approve && (
+                {/* Floating Bulk Action Bar for Head Office & ZM Approval */}
+                {selectedIds.length > 0 && (permissions.is_head_office || permissions.can_approve || permissions.can_zm_approve) && (
                     <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-40 bg-slate-900/95 backdrop-blur-md text-white px-5 py-3.5 rounded-2xl shadow-2xl border border-slate-700 flex items-center gap-4 animate-in slide-in-from-bottom duration-200">
                         <div className="flex items-center gap-2">
-                            <span className="w-7 h-7 rounded-full bg-indigo-500 text-white font-bold text-xs flex items-center justify-center">
+                            <span className="w-7 h-7 rounded-full bg-indigo-500 text-white font-bold text-xs flex items-center justify-center shadow-xs">
                                 {selectedIds.length}
                             </span>
                             <span className="text-xs font-semibold">টি আবেদন নির্বাচিত</span>
@@ -892,19 +950,32 @@ export default function VerificationIndex({ items, stats, filters, permissions, 
                         <div className="h-4 w-px bg-slate-700" />
 
                         <div className="flex items-center gap-2">
-                            <button
-                                type="button"
-                                onClick={handleOpenBulkZmModal}
-                                className="px-3.5 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-xs font-bold flex items-center gap-1.5 shadow-sm transition"
-                            >
-                                <ShieldCheck className="w-4 h-4" />
-                                নির্বাচিতসমূহ ZM অনুমোদন করুন (Bulk ZM Approve)
-                            </button>
+                            {/* Head Office Bulk Final Approve (Only shown for HO / Admin) */}
+                            {(permissions.is_head_office || permissions.can_approve) ? (
+                                <button
+                                    type="button"
+                                    onClick={handleOpenBulkHoModal}
+                                    className="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-xs font-bold flex items-center gap-2 shadow-sm transition hover:shadow cursor-pointer"
+                                    title="নির্বাচিত প্রস্তুত আবেদনগুলো হেড অফিস থেকে চূড়ান্ত অনুমোদন করুন"
+                                >
+                                    <CheckCircle2 className="w-4 h-4 text-white" />
+                                    একযোগে চূড়ান্ত অনুমোদন
+                                </button>
+                            ) : (permissions.is_zone_manager && permissions.can_zm_approve) ? (
+                                <button
+                                    type="button"
+                                    onClick={handleOpenBulkZmModal}
+                                    className="px-4 py-2 bg-teal-600 hover:bg-teal-500 text-white rounded-xl text-xs font-bold flex items-center gap-2 shadow-sm transition cursor-pointer"
+                                >
+                                    <ShieldCheck className="w-4 h-4 text-white" />
+                                    একযোগে ZM অনুমোদন
+                                </button>
+                            ) : null}
 
                             <button
                                 type="button"
                                 onClick={() => setSelectedIds([])}
-                                className="px-2.5 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-xl text-xs font-medium transition"
+                                className="px-3 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-xl text-xs font-medium transition cursor-pointer"
                             >
                                 সিলেকশন মুছুন
                             </button>
@@ -965,22 +1036,72 @@ export default function VerificationIndex({ items, stats, filters, permissions, 
                                         const isApproved = item.status === 'approved' || item.status === 'pending_disbursement' || item.status === 'disbursed';
                                         const isRejected = item.status === 'rejected';
                                         const isSelected = selectedIds.includes(item.id);
+                                        const isActionReady = item.is_zm_approved && !isApproved && !isRejected;
+                                        const isBranchReplied = item.has_replied && !item.is_zm_approved && !isApproved && !isRejected;
+                                        const isPending = item.has_pending_issue && !item.has_replied && !isApproved && !isRejected;
 
                                         return (
                                             <tr
                                                 key={item.id}
-                                                className={`transition hover:bg-indigo-50/40 ${
-                                                    isSelected ? 'bg-indigo-50/70' : item.has_pending_issue ? 'bg-amber-50/20' : ''
+                                                className={`transition border-b border-slate-100 ${
+                                                    isSelected
+                                                        ? 'bg-indigo-50/90 border-l-4 border-l-indigo-600'
+                                                        : isActionReady
+                                                        ? 'bg-emerald-50/40 hover:bg-emerald-50/70 border-l-4 border-l-emerald-500'
+                                                        : isBranchReplied
+                                                        ? 'bg-sky-50/20 hover:bg-sky-50/50 border-l-4 border-l-sky-400'
+                                                        : isPending
+                                                        ? 'bg-amber-50/20 hover:bg-amber-50/50 border-l-4 border-l-amber-400'
+                                                        : 'hover:bg-slate-50 border-l-4 border-l-slate-200'
                                                 }`}
                                             >
                                                 {/* Checkbox */}
                                                 <td className="py-3.5 px-3 text-center align-top">
-                                                    <input
-                                                        type="checkbox"
-                                                        checked={isSelected}
-                                                        onChange={() => toggleSelectItem(item.id)}
-                                                        className="w-4 h-4 rounded text-indigo-600 focus:ring-indigo-500 border-slate-300 cursor-pointer"
-                                                    />
+                                                    {permissions.can_approve ? (
+                                                        isActionReady ? (
+                                                            <input
+                                                                type="checkbox"
+                                                                checked={isSelected}
+                                                                onChange={() => toggleSelectItem(item.id)}
+                                                                className="w-4 h-4 rounded text-emerald-600 focus:ring-emerald-500 border-slate-300 cursor-pointer"
+                                                            />
+                                                        ) : (
+                                                            <input
+                                                                type="checkbox"
+                                                                disabled
+                                                                className="w-4 h-4 rounded text-slate-300 border-slate-200 cursor-not-allowed opacity-30"
+                                                                title={
+                                                                    isApproved
+                                                                        ? 'আবেদনটি ইতিমধ্যে অনুমোদিত'
+                                                                        : isRejected
+                                                                        ? 'আবেদনটি বাতিলকৃত'
+                                                                        : 'ZM অনুমোদন সম্পন্ন না হওয়া পর্যন্ত চূড়ান্ত অনুমোদনের জন্য সিলেক্ট করা যাবে না'
+                                                                }
+                                                            />
+                                                        )
+                                                    ) : permissions.can_zm_approve ? (
+                                                        isBranchReplied ? (
+                                                            <input
+                                                                type="checkbox"
+                                                                checked={isSelected}
+                                                                onChange={() => toggleSelectItem(item.id)}
+                                                                className="w-4 h-4 rounded text-emerald-600 focus:ring-emerald-500 border-slate-300 cursor-pointer"
+                                                            />
+                                                        ) : (
+                                                            <input
+                                                                type="checkbox"
+                                                                disabled
+                                                                className="w-4 h-4 rounded text-slate-300 border-slate-200 cursor-not-allowed opacity-30"
+                                                                title="শাখার জবাব ও ZM অনুমোদন অপেক্ষমাণ ব্যতীত সিলেক্ট করা যাবে না"
+                                                            />
+                                                        )
+                                                    ) : (
+                                                        <input
+                                                            type="checkbox"
+                                                            disabled
+                                                            className="w-4 h-4 rounded text-slate-300 border-slate-200 cursor-not-allowed opacity-30"
+                                                        />
+                                                    )}
                                                 </td>
 
                                                 {/* Serial Number */}
@@ -1079,15 +1200,15 @@ export default function VerificationIndex({ items, stats, filters, permissions, 
                                                         <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-rose-100 text-rose-800 border border-rose-300">
                                                             <XCircle className="w-3 h-3" /> বাতিলকৃত
                                                         </span>
-                                                    ) : item.is_zm_approved ? (
+                                                    ) : isActionReady ? (
                                                         <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-bold bg-emerald-600 text-white shadow-2xs" title="ZM অনুমোদন সম্পন্ন, হেড অফিস ফাইনাল অনুমোদনের জন্য প্রস্তুত">
-                                                            <ShieldCheck className="w-3.5 h-3.5 text-white" /> ZM অনুমোদিত (HO প্রস্তুত)
+                                                            <ShieldCheck className="w-3.5 h-3.5 text-white" /> ⚡ HO চূড়ান্ত প্রস্তুত
                                                         </span>
-                                                    ) : item.has_replied ? (
+                                                    ) : isBranchReplied ? (
                                                         <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-sky-100 text-sky-800 border border-sky-300" title="শাখা থেকে জবাব দেওয়া হয়েছে, ZM অনুমোদনের অপেক্ষায়">
                                                             <Clock className="w-3 h-3 text-sky-600" /> শাখার জবাব (ZM অপেক্ষমান)
                                                         </span>
-                                                    ) : item.has_pending_issue ? (
+                                                    ) : isPending ? (
                                                         <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-100 text-amber-800 border border-amber-300">
                                                             <AlertCircle className="w-3 h-3" /> তদন্তাধীন / অমীমাংসিত
                                                         </span>
@@ -1163,36 +1284,26 @@ export default function VerificationIndex({ items, stats, filters, permissions, 
                                                                     <button
                                                                         type="button"
                                                                         onClick={() => handleOneClickApprove(item)}
-                                                                        className="px-2.5 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-bold flex items-center gap-1 shadow-sm transition"
+                                                                        className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-bold flex items-center gap-1.5 shadow-sm transition hover:shadow"
                                                                         title="১ ক্লিকে চূড়ান্ত অনুমোদন করুন (ZM অনুমোদন সম্পন্ন)"
                                                                     >
-                                                                        <Check className="w-3.5 h-3.5" />
+                                                                        <CheckCircle2 className="w-3.5 h-3.5 text-white" />
                                                                         HO অনুমোদন
                                                                     </button>
-                                                                ) : item.has_replied && !item.is_zm_approved ? (
+                                                                ) : item.has_replied ? (
                                                                     <span
-                                                                        className="inline-flex items-center gap-1 px-2.5 py-1 bg-rose-50 text-rose-800 border border-rose-200 rounded-lg text-[11px] font-semibold"
+                                                                        className="inline-flex items-center gap-1 px-2.5 py-1 bg-sky-50 text-sky-800 border border-sky-200 rounded-lg text-[11px] font-semibold"
                                                                         title="জোনাল ম্যানেজার (ZM) অনুমোদন না করা পর্যন্ত হেড অফিস থেকে চূড়ান্ত অনুমোদন করা যাবে না"
                                                                     >
-                                                                        <Lock className="w-3 h-3 text-rose-600 shrink-0" />
-                                                                        ZM অনুমোদনের অপেক্ষায়
+                                                                        <Clock className="w-3 h-3 text-sky-600 shrink-0" />
+                                                                        ZM অপেক্ষমান
                                                                     </span>
-                                                                ) : !item.has_pending_issue ? (
-                                                                    <button
-                                                                        type="button"
-                                                                        onClick={() => handleOneClickApprove(item)}
-                                                                        className="px-2.5 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-bold flex items-center gap-1 shadow-sm transition"
-                                                                        title="১ ক্লিকে চূড়ান্ত অনুমোদন করুন"
-                                                                    >
-                                                                        <Check className="w-3.5 h-3.5" />
-                                                                        HO অনুমোদন
-                                                                    </button>
                                                                 ) : (
                                                                     <span
-                                                                        className="inline-flex items-center gap-1 px-2.5 py-1 bg-slate-50 text-slate-600 border border-slate-200 rounded-lg text-[11px] font-medium"
+                                                                        className="inline-flex items-center gap-1 px-2.5 py-1 bg-amber-50 text-amber-800 border border-amber-200 rounded-lg text-[11px] font-medium"
                                                                         title="শাখা থেকে জবাব ও ZM অনুমোদনের অপেক্ষায় রয়েছে"
                                                                     >
-                                                                        <Clock className="w-3 h-3 text-slate-400 shrink-0" />
+                                                                        <Clock className="w-3 h-3 text-amber-600 shrink-0" />
                                                                         জবাব অপেক্ষমান
                                                                     </span>
                                                                 )}
@@ -1494,6 +1605,47 @@ export default function VerificationIndex({ items, stats, filters, permissions, 
                 </div>
             )}
 
+            {/* Bulk Head Office Approval Confirmation Modal */}
+            {bulkHoModalOpen && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs">
+                    <div className="bg-white rounded-2xl max-w-md w-full p-5 shadow-2xl border border-slate-200 space-y-4 animate-in fade-in zoom-in duration-150">
+                        <div className="flex items-center gap-3">
+                            <div className="w-10 h-10 rounded-xl bg-emerald-100 text-emerald-600 flex items-center justify-center shrink-0">
+                                <CheckCircle2 className="w-6 h-6" />
+                            </div>
+                            <div>
+                                <h3 className="font-bold text-slate-900 text-base">একযোগে চূড়ান্ত অনুমোদন (HO Bulk Approve)</h3>
+                                <p className="text-xs text-slate-500">নির্বাচিত {selectedIds.length} টি প্রস্তুত আবেদন এক ক্লিকে চূড়ান্ত অনুমোদন</p>
+                            </div>
+                        </div>
+
+                        <div className="bg-emerald-50/70 rounded-xl p-3 text-xs text-emerald-950 border border-emerald-200">
+                            আপনি নির্বাচিত মোট <strong>{selectedIds.length}</strong> টি আবেদন হেড অফিস থেকে চূড়ান্ত অনুমোদন করতে যাচ্ছেন।
+                        </div>
+
+                        <div className="flex justify-end gap-2 pt-2 border-t border-slate-100">
+                            <button
+                                type="button"
+                                onClick={() => setBulkHoModalOpen(false)}
+                                disabled={isSubmitting}
+                                className="px-4 py-2 text-xs font-semibold text-slate-600 hover:bg-slate-100 rounded-lg transition"
+                            >
+                                বাতিল
+                            </button>
+                            <button
+                                type="button"
+                                onClick={confirmBulkHoApprove}
+                                disabled={isSubmitting}
+                                className="px-4 py-2 text-xs font-semibold bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg shadow-sm transition flex items-center gap-1.5"
+                            >
+                                <CheckCheck className="w-4 h-4" />
+                                {isSubmitting ? 'অনুমোদন হচ্ছে...' : `হ্যাঁ, ${selectedIds.length} টি চূড়ান্ত অনুমোদন করুন`}
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
             {/* Reject Application Modal */}
             {rejectModalItem && (
                 <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs">
@@ -1699,6 +1851,8 @@ function VerificationThread({
     isRejected: boolean;
     compact?: boolean;
 }) {
+    const [expanded, setExpanded] = useState(false);
+
     const issues =
         item.issues.length > 0
             ? [...item.issues].sort((a, b) => (a.created_at || '').localeCompare(b.created_at || ''))
@@ -1723,6 +1877,10 @@ function VerificationThread({
 
     const textClass = compact ? 'text-xs' : 'text-sm';
 
+    // In compact table view, if there are multiple objection rounds, display only the most recent one by default
+    const hasMultiple = compact && issues.length > 1;
+    const displayedIssues = hasMultiple && !expanded ? [issues[issues.length - 1]] : issues;
+
     return (
         <div className="relative space-y-2 pl-3">
             <div className="absolute left-[5px] top-2 bottom-2 w-px bg-slate-200" />
@@ -1733,7 +1891,26 @@ function VerificationThread({
                 </div>
             )}
 
-            {issues.map((issue, index) => (
+            {/* Toggle button to expand/collapse earlier rounds in compact table view */}
+            {hasMultiple && (
+                <div className="mb-1.5">
+                    <button
+                        type="button"
+                        onClick={() => setExpanded(!expanded)}
+                        className="inline-flex items-center gap-1 text-[10px] font-bold text-indigo-700 hover:text-indigo-900 bg-indigo-50 hover:bg-indigo-100/80 px-2 py-1 rounded border border-indigo-200 transition shadow-2xs"
+                        title={expanded ? 'পূর্ববর্তী রাউন্ডগুলো সংক্ষেপ করুন' : 'পূর্ববর্তী সকল আপত্তি ও জবাব দেখুন'}
+                    >
+                        <RotateCcw className={`w-3 h-3 text-indigo-500 transition-transform duration-200 ${expanded ? 'rotate-180' : ''}`} />
+                        <span>
+                            {expanded
+                                ? 'পূর্ববর্তী রাউন্ডগুলো সংক্ষেপ করুন'
+                                : `+ পূর্ববর্তী ${issues.length - 1}টি আপত্তি ও জবাব দেখুন`}
+                        </span>
+                    </button>
+                </div>
+            )}
+
+            {displayedIssues.map((issue, index) => (
                 <div key={issue.id || `round-${index}`} className="space-y-2">
                     {/* 1. HO Objection Card */}
                     <div className="relative bg-amber-50/90 border border-amber-200 rounded-lg p-2.5 space-y-1 shadow-2xs">

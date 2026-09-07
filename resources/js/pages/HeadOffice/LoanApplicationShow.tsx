@@ -200,6 +200,7 @@ export default function LoanApplicationShow({ loan, categories = [], flash }: Pr
     const canModify = useCanHeadOfficeModify();
     const [loanDetailsModalOpen, setLoanDetailsModalOpen] = useState(false);
     const [showIssueModal, setShowIssueModal] = useState(false);
+    const [editingIssueId, setEditingIssueId] = useState<number | null>(null);
     const [showRejectModal, setShowRejectModal] = useState(false);
     const [showModificationModal, setShowModificationModal] = useState(false);
     const [pinModalOpen, setPinModalOpen] = useState(false);
@@ -262,7 +263,7 @@ export default function LoanApplicationShow({ loan, categories = [], flash }: Pr
         );
     };
 
-    const { data, setData, post, processing, reset } = useForm({
+    const { data, setData, post, patch, processing, reset } = useForm({
         issue_description: '',
     });
 
@@ -471,24 +472,44 @@ export default function LoanApplicationShow({ loan, categories = [], flash }: Pr
 
     const handleSubmitIssue = (e: React.FormEvent) => {
         e.preventDefault();
-        post(`/head-office/loans/${loan.id}/issue`, {
+        const options = {
             preserveScroll: true,
             onSuccess: () => {
                 reset();
+                setEditingIssueId(null);
                 setShowIssueModal(false);
             },
-        });
+        };
+
+        if (editingIssueId) {
+            patch(`/head-office/loan-issues/${editingIssueId}`, options);
+            return;
+        }
+
+        post(`/head-office/loans/${loan.id}/issue`, options);
+    };
+
+    const openNewIssueModal = () => {
+        setEditingIssueId(null);
+        reset();
+        setShowIssueModal(true);
+    };
+
+    const openEditIssueModal = (issue: { id: number; issue_description: string }) => {
+        setEditingIssueId(issue.id);
+        setData('issue_description', issue.issue_description);
+        setShowIssueModal(true);
     };
 
     const issues = loan.issues ?? [];
     const pendingIssues = issues.filter((issue) => issue.status === 'pending');
     const unansweredIssues = issues.filter((issue) => issue.status === 'pending' && !issue.response_message);
+    const hasUnapprovedIssues = issues.some((issue) => !issue.zm_approved_at);
     const hasRepliedIssues = issues.some((issue) => Boolean(issue.response_message));
 
     const handleApprove = () => {
-        const unansweredIssuesList = loan.issues?.filter(issue => issue.status === 'pending' && !issue.response_message) || [];
-        if (unansweredIssuesList.length > 0) {
-            alert('জোন থেকে ব্যাখ্যা/জবাব না পাওয়া পর্যন্ত অনুমোদন করা যাবে না।');
+        if (hasUnapprovedIssues) {
+            alert('জোনাল ম্যানেজার (ZM) কর্তৃক অনুমোদন না হওয়া পর্যন্ত হেড অফিস থেকে অনুমোদন করা যাবে না।');
             return;
         }
         if (confirm('এই ঋণ আবেদন অনুমোদন করবেন?')) {
@@ -874,7 +895,7 @@ export default function LoanApplicationShow({ loan, categories = [], flash }: Pr
 
                             <Button 
                                 variant="outline" 
-                                onClick={() => setShowIssueModal(true)}
+                                onClick={openNewIssueModal}
                                 disabled={loan.status === 'approved' || loan.status === 'disbursed'}
                                 title={loan.status === 'approved' || loan.status === 'disbursed' ? 'অনুমোদিত আবেদনে সমস্যা পাঠানো যাবে না' : ''}
                                 className="rounded-xl text-xs sm:text-sm h-9 sm:h-10 border-amber-300 bg-amber-50/50 text-amber-900 hover:bg-amber-100/80"
@@ -885,7 +906,7 @@ export default function LoanApplicationShow({ loan, categories = [], flash }: Pr
 
                             {loan.status === 'pending_head_office' && (
                                 <>
-                                    {unansweredIssues.length === 0 && (
+                                    {!hasUnapprovedIssues ? (
                                         <Button 
                                             onClick={handleApprove} 
                                             className="bg-emerald-600 hover:bg-emerald-700 text-white shadow-xs font-bold rounded-xl text-xs sm:text-sm h-9 sm:h-10"
@@ -893,6 +914,11 @@ export default function LoanApplicationShow({ loan, categories = [], flash }: Pr
                                             <CheckCircle2 className="w-4 h-4 mr-1.5" />
                                             অনুমোদন করুন
                                         </Button>
+                                    ) : (
+                                        <div className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-amber-50 border border-amber-200 rounded-xl text-xs font-semibold text-amber-800" title="জোনাল ম্যানেজারের অনুমোদন ছাড়া হেড অফিস থেকে অনুমোদন করা যাবে না">
+                                            <Clock className="w-3.5 h-3.5 text-amber-600 shrink-0" />
+                                            <span>ZM অনুমোদন অপেক্ষমান</span>
+                                        </div>
                                     )}
                                     <Button 
                                         variant="destructive" 
@@ -989,7 +1015,7 @@ export default function LoanApplicationShow({ loan, categories = [], flash }: Pr
                                             size="sm"
                                             variant="outline"
                                             className="border-amber-300 bg-white text-amber-900 hover:bg-amber-50 rounded-lg text-xs font-semibold"
-                                            onClick={() => setShowIssueModal(true)}
+                                            onClick={openNewIssueModal}
                                         >
                                             <AlertCircle className="w-3.5 h-3.5 mr-1 text-amber-600" />
                                             পর্যবেক্ষণ / সমস্যা পাঠান
@@ -1237,7 +1263,8 @@ export default function LoanApplicationShow({ loan, categories = [], flash }: Pr
                                 onEditComment={openEditCommentModal}
                                 issues={issues}
                                 canRespondToIssues={false}
-                                onNewIssue={() => setShowIssueModal(true)}
+                                onNewIssue={openNewIssueModal}
+                                onEditIssue={openEditIssueModal}
                                 isHeadOffice={true}
                             />
                         )}
@@ -1251,14 +1278,20 @@ export default function LoanApplicationShow({ loan, categories = [], flash }: Pr
                     <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg overflow-hidden border border-slate-200 animate-in fade-in zoom-in-95 duration-200">
                         <div className="px-6 py-4 border-b border-slate-100 bg-slate-50/50 flex items-center justify-between">
                             <div>
-                                <h3 className="text-base font-bold text-slate-900">সমস্যা লিখে পাঠান</h3>
-                                <p className="text-xs text-slate-500">সমস্যার বিবরণ লিখুন। শাখা এটি দেখে সংশোধন করবে।</p>
+                                <h3 className="text-base font-bold text-slate-900">
+                                    {editingIssueId ? 'সমস্যা আপডেট করুন' : 'সমস্যা লিখে পাঠান'}
+                                </h3>
+                                <p className="text-xs text-slate-500">
+                                    {editingIssueId
+                                        ? 'ভুল বা আপত্তি থাকলে বিবরণ সংশোধন করে আবার সাবমিট করুন।'
+                                        : 'সমস্যার বিবরণ লিখুন। শাখা এটি দেখে সংশোধন করবে।'}
+                                </p>
                             </div>
                             <Button 
                                 variant="ghost" 
                                 size="icon" 
                                 className="h-8 w-8 rounded-full text-slate-400 hover:text-slate-600"
-                                onClick={() => { setShowIssueModal(false); reset(); }}
+                                onClick={() => { setShowIssueModal(false); setEditingIssueId(null); reset(); }}
                             >
                                 <XCircle className="w-5 h-5" />
                             </Button>
@@ -1282,7 +1315,7 @@ export default function LoanApplicationShow({ loan, categories = [], flash }: Pr
                                     type="button" 
                                     variant="outline" 
                                     className="rounded-xl text-xs"
-                                    onClick={() => { setShowIssueModal(false); reset(); }}
+                                    onClick={() => { setShowIssueModal(false); setEditingIssueId(null); reset(); }}
                                 >
                                     বাতিল
                                 </Button>
@@ -1291,7 +1324,9 @@ export default function LoanApplicationShow({ loan, categories = [], flash }: Pr
                                     disabled={processing}
                                     className="rounded-xl text-xs bg-indigo-600 hover:bg-indigo-700 text-white font-bold shadow-xs"
                                 >
-                                    {processing ? 'পাঠানো হচ্ছে...' : 'পাঠান'}
+                                    {processing
+                                        ? (editingIssueId ? 'আপডেট হচ্ছে...' : 'পাঠানো হচ্ছে...')
+                                        : (editingIssueId ? 'আপডেট করে সাবমিট করুন' : 'পাঠান')}
                                 </Button>
                             </div>
                         </form>

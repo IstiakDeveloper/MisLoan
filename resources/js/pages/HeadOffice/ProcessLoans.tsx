@@ -27,6 +27,7 @@ import {
     MapPin,
     Building,
     DollarSign,
+    Pencil,
 } from 'lucide-react';
 
 interface Zone {
@@ -56,6 +57,8 @@ interface Issue {
         name: string;
     };
     created_at?: string;
+    status?: string;
+    response_message?: string;
 }
 
 interface Loan {
@@ -151,11 +154,12 @@ export default function ProcessLoans({ loans, filters, zones = [], areas = [], b
 
     const [selectedLoan, setSelectedLoan] = useState<Loan | null>(null);
     const [showIssueModal, setShowIssueModal] = useState(false);
+    const [editingIssueId, setEditingIssueId] = useState<number | null>(null);
     const [showViewModal, setShowViewModal] = useState(false);
     const [showRejectModal, setShowRejectModal] = useState(false);
     const [rejectionReason, setRejectionReason] = useState('');
 
-    const { data, setData, post, processing, reset, errors } = useForm({
+    const { data, setData, post, patch, processing, reset, errors } = useForm({
         issue_description: '',
     });
 
@@ -294,16 +298,28 @@ export default function ProcessLoans({ loans, filters, zones = [], areas = [], b
         return true;
     });
 
+    const canMutateIssue = (issue: Issue) =>
+        (!issue.status || issue.status === 'pending') && !issue.response_message;
+
     // Modals
     const openIssueModal = (loan: Loan) => {
         setSelectedLoan(loan);
-        setShowIssueModal(true);
+        setEditingIssueId(null);
         reset();
+        setShowIssueModal(true);
+    };
+
+    const openEditIssueModal = (loan: Loan, issue: Issue) => {
+        setSelectedLoan(loan);
+        setEditingIssueId(issue.id);
+        setData('issue_description', issue.issue_description);
+        setShowIssueModal(true);
     };
 
     const closeIssueModal = () => {
         setShowIssueModal(false);
         setSelectedLoan(null);
+        setEditingIssueId(null);
         reset();
     };
 
@@ -311,13 +327,20 @@ export default function ProcessLoans({ loans, filters, zones = [], areas = [], b
         e.preventDefault();
         if (!selectedLoan) return;
 
-        post(`/head-office/loans/${selectedLoan.id}/issue`, {
+        const options = {
             preserveScroll: true,
             preserveState: true,
             onSuccess: () => {
                 closeIssueModal();
             },
-        });
+        };
+
+        if (editingIssueId) {
+            patch(`/head-office/loan-issues/${editingIssueId}`, options);
+            return;
+        }
+
+        post(`/head-office/loans/${selectedLoan.id}/issue`, options);
     };
 
     const addPresetIssueTag = (tagText: string) => {
@@ -349,9 +372,9 @@ export default function ProcessLoans({ loans, filters, zones = [], areas = [], b
     };
 
     const handleApproveSingle = (loan: Loan) => {
-        const hasUnansweredIssues = loan.issues && loan.issues.some((i: any) => i.status === 'pending' && !i.response_message);
-        if (hasUnansweredIssues) {
-            alert('আবেদনটিতে উত্তরবিহীন সমস্যা রয়েছে! জোন থেকে ব্যাখ্যা পাওয়ার পর অনুমোদন করুন।');
+        const hasUnapprovedIssues = loan.issues && loan.issues.some((i: any) => !i.zm_approved_at);
+        if (hasUnapprovedIssues) {
+            alert('জোনাল ম্যানেজার (ZM) কর্তৃক অনুমোদন না হওয়া পর্যন্ত হেড অফিস থেকে অনুমোদন করা যাবে না।');
             return;
         }
 
@@ -362,7 +385,7 @@ export default function ProcessLoans({ loans, filters, zones = [], areas = [], b
 
     const handleDeleteIssue = (issueId: number) => {
         if (confirm('এই সমস্যা রেকর্ডটি মুছে ফেলতে চান?')) {
-            router.delete(`/head-office/issues/${issueId}`, keepListFilters);
+            router.delete(`/head-office/loan-issues/${issueId}`, keepListFilters);
         }
     };
 
@@ -968,13 +991,26 @@ export default function ProcessLoans({ loans, filters, zones = [], areas = [], b
                                                                             </p>
                                                                         )}
                                                                     </div>
-                                                                    <button
-                                                                        onClick={() => handleDeleteIssue(issue.id)}
-                                                                        className="text-slate-400 hover:text-red-600 p-0.5 transition shrink-0"
-                                                                        title="সমস্যাটি মুছে ফেলুন"
-                                                                    >
-                                                                        <X className="w-3 h-3" />
-                                                                    </button>
+                                                                    {canMutateIssue(issue) && (
+                                                                        <div className="flex items-center gap-0.5 shrink-0">
+                                                                            <button
+                                                                                type="button"
+                                                                                onClick={() => openEditIssueModal(loan, issue)}
+                                                                                className="text-slate-400 hover:text-indigo-600 p-0.5 transition"
+                                                                                title="সমস্যাটি আপডেট করুন"
+                                                                            >
+                                                                                <Pencil className="w-3 h-3" />
+                                                                            </button>
+                                                                            <button
+                                                                                type="button"
+                                                                                onClick={() => handleDeleteIssue(issue.id)}
+                                                                                className="text-slate-400 hover:text-red-600 p-0.5 transition"
+                                                                                title="সমস্যাটি মুছে ফেলুন"
+                                                                            >
+                                                                                <X className="w-3 h-3" />
+                                                                            </button>
+                                                                        </div>
+                                                                    )}
                                                                 </div>
                                                             ))}
                                                         </div>
@@ -1055,7 +1091,7 @@ export default function ProcessLoans({ loans, filters, zones = [], areas = [], b
                             <div>
                                 <h3 className="text-base font-bold flex items-center gap-2">
                                     <AlertTriangle className="w-4 h-4 text-amber-400" />
-                                    যাচাই ও ঋণ আবেদন সমস্যা চিহ্নিতকরণ
+                                    {editingIssueId ? 'সমস্যা আপডেট করুন' : 'যাচাই ও ঋণ আবেদন সমস্যা চিহ্নিতকরণ'}
                                 </h3>
                                 <p className="text-xs text-slate-300 mt-0.5">
                                     সদস্য নং: {selectedLoan.member_admission?.application_no || selectedLoan.application_no} | {selectedLoan.member_admission?.applicant_name_bn}
@@ -1103,16 +1139,28 @@ export default function ProcessLoans({ loans, filters, zones = [], areas = [], b
                                 )}
                             </div>
 
-                            {selectedLoan.issues.length > 0 && (
+                            {!editingIssueId && selectedLoan.issues.length > 0 && (
                                 <div className="border-t border-slate-100 pt-3">
                                     <h4 className="text-xs font-semibold text-slate-700 mb-1.5">পূর্বে চিহ্নিত সমস্যাসমূহ:</h4>
                                     <div className="space-y-1.5 max-h-32 overflow-y-auto">
                                         {selectedLoan.issues.map((issue) => (
-                                            <div key={issue.id} className="p-2 bg-amber-50 border border-amber-200 rounded-lg text-xs">
-                                                <p className="text-amber-900 font-medium text-xs">{issue.issue_description}</p>
-                                                <p className="text-[10px] text-amber-600 mt-0.5">
-                                                    রিপোর্টার: {issue.reporter?.name}
-                                                </p>
+                                            <div key={issue.id} className="p-2 bg-amber-50 border border-amber-200 rounded-lg text-xs flex items-start justify-between gap-2">
+                                                <div className="min-w-0">
+                                                    <p className="text-amber-900 font-medium text-xs">{issue.issue_description}</p>
+                                                    <p className="text-[10px] text-amber-600 mt-0.5">
+                                                        রিপোর্টার: {issue.reporter?.name}
+                                                    </p>
+                                                </div>
+                                                {canMutateIssue(issue) && (
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => openEditIssueModal(selectedLoan, issue)}
+                                                        className="inline-flex items-center gap-1 px-2 py-0.5 text-[10px] font-semibold text-indigo-700 bg-indigo-50 hover:bg-indigo-100 border border-indigo-200 rounded-lg shrink-0"
+                                                    >
+                                                        <Pencil className="w-3 h-3" />
+                                                        আপডেট
+                                                    </button>
+                                                )}
                                             </div>
                                         ))}
                                     </div>
@@ -1132,7 +1180,9 @@ export default function ProcessLoans({ loans, filters, zones = [], areas = [], b
                                     disabled={processing}
                                     className="px-4 py-2 bg-amber-600 hover:bg-amber-700 text-white text-xs font-semibold rounded-xl shadow-sm transition disabled:opacity-50"
                                 >
-                                    {processing ? 'সংরক্ষণ হচ্ছে...' : 'সমস্যা সেভ করুন'}
+                                    {processing
+                                        ? (editingIssueId ? 'আপডেট হচ্ছে...' : 'সংরক্ষণ হচ্ছে...')
+                                        : (editingIssueId ? 'আপডেট করে সাবমিট করুন' : 'সমস্যা সেভ করুন')}
                                 </button>
                             </div>
                         </form>

@@ -254,6 +254,7 @@ Route::middleware(['auth', 'verified'])->group(function () {
         Route::post('reply-issue', [HeadOfficeVerificationController::class, 'replyIssue'])->name('reply-issue');
         Route::post('zm-approve', [HeadOfficeVerificationController::class, 'approveZmIssue'])->name('zm-approve');
         Route::post('bulk-zm-approve', [HeadOfficeVerificationController::class, 'bulkApproveZm'])->name('bulk-zm-approve');
+        Route::post('bulk-ho-approve', [HeadOfficeVerificationController::class, 'bulkApproveHeadOffice'])->name('bulk-ho-approve');
         Route::post('reject-application', [HeadOfficeVerificationController::class, 'rejectApplication'])->name('reject-application');
     });
 
@@ -360,6 +361,8 @@ Route::middleware(['auth', 'verified'])->group(function () {
         Route::get('process-loans', [HeadOfficeLoanController::class, 'process'])->name('process-loans');
         Route::get('loans/{loanApplication}', [HeadOfficeLoanController::class, 'show'])->name('loans.show');
         Route::post('loans/{loanApplication}/issue', [HeadOfficeLoanController::class, 'storeIssue'])->name('loans.issue');
+        Route::patch('loan-issues/{issue}', [HeadOfficeLoanController::class, 'updateIssue'])->name('loan-issues.update');
+        Route::delete('loan-issues/{issue}', [HeadOfficeLoanController::class, 'deleteIssue'])->name('loan-issues.delete');
         Route::patch('loans/{loanApplication}/approve', [HeadOfficeLoanController::class, 'approveSingle'])->name('loans.approve');
         Route::post('loans/approve-bulk', [HeadOfficeLoanController::class, 'approveBulk'])->name('loans.approve-bulk');
         Route::post('loans/approve-all', [HeadOfficeLoanController::class, 'approveAll'])->name('loans.approve-all');
@@ -381,6 +384,7 @@ Route::middleware(['auth', 'verified'])->group(function () {
         Route::post('verifications/reply-issue', [HeadOfficeVerificationController::class, 'replyIssue'])->name('verifications.reply-issue');
         Route::post('verifications/zm-approve', [HeadOfficeVerificationController::class, 'approveZmIssue'])->name('verifications.zm-approve');
         Route::post('verifications/bulk-zm-approve', [HeadOfficeVerificationController::class, 'bulkApproveZm'])->name('verifications.bulk-zm-approve');
+        Route::post('verifications/bulk-ho-approve', [HeadOfficeVerificationController::class, 'bulkApproveHeadOffice'])->name('verifications.bulk-ho-approve');
         Route::post('verifications/reject-application', [HeadOfficeVerificationController::class, 'rejectApplication'])->name('verifications.reject-application');
 
         // Head Office Team Based Approvals overview + management

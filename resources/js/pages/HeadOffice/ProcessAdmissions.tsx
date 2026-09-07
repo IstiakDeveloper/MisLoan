@@ -346,9 +346,9 @@ export default function ProcessAdmissions({ admissions, filters, zones = [], are
     };
 
     const handleApproveSingle = (admission: Admission) => {
-        const hasUnansweredIssues = admission.issues && admission.issues.some((i: any) => i.status === 'pending' && !i.resolution_note);
-        if (hasUnansweredIssues) {
-            alert('আবেদনটিতে উত্তরবিহীন সমস্যা রয়েছে! জোন থেকে ব্যাখ্যা পাওয়ার পর অনুমোদন করুন।');
+        const hasUnapprovedIssues = admission.issues && admission.issues.some((i: any) => !i.zm_approved_at);
+        if (hasUnapprovedIssues) {
+            alert('জোনাল ম্যানেজার (ZM) কর্তৃক অনুমোদন না হওয়া পর্যন্ত হেড অফিস থেকে অনুমোদন করা যাবে না।');
             return;
         }
 

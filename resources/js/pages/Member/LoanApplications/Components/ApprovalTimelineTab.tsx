@@ -21,6 +21,7 @@ interface Props {
     canRespondToIssues?: boolean;
     onOpenIssueAction?: (issueId: number, action: 'resolve' | 'reject') => void;
     onNewIssue?: () => void;
+    onEditIssue?: (issue: any) => void;
     isHeadOffice?: boolean;
 }
 
@@ -33,6 +34,7 @@ export default function ApprovalTimelineTab({
     canRespondToIssues = false,
     onOpenIssueAction,
     onNewIssue,
+    onEditIssue,
     isHeadOffice = false,
 }: Props) {
     return (
@@ -245,9 +247,22 @@ export default function ApprovalTimelineTab({
                                 <p className="text-slate-800 whitespace-pre-wrap bg-white/80 p-3 rounded-xl border border-slate-200/60 leading-relaxed">
                                     {issue.issue_description}
                                 </p>
-                                <p className="text-xs text-slate-500 mt-2">
-                                    প্রেরক: <span className="font-semibold text-slate-700">{issue.reporter?.name || 'হেড অফিস কর্মকর্তা'}</span>
-                                </p>
+                                <div className="mt-2 flex flex-wrap items-center justify-between gap-2">
+                                    <p className="text-xs text-slate-500">
+                                        প্রেরক: <span className="font-semibold text-slate-700">{issue.reporter?.name || 'হেড অফিস কর্মকর্তা'}</span>
+                                    </p>
+                                    {isHeadOffice && onEditIssue && issue.status === 'pending' && !issue.response_message && (
+                                        <button
+                                            type="button"
+                                            onClick={() => onEditIssue(issue)}
+                                            className="inline-flex items-center gap-1 px-2.5 py-0.5 text-[11px] font-bold text-indigo-700 bg-indigo-50 hover:bg-indigo-100 hover:text-indigo-900 border border-indigo-200 rounded-lg transition active:scale-95 cursor-pointer shadow-2xs"
+                                            title="সমস্যা সম্পাদনা করুন"
+                                        >
+                                            <Edit className="w-3 h-3 text-indigo-600" />
+                                            <span>আপডেট</span>
+                                        </button>
+                                    )}
+                                </div>
 
                                 {/* Branch Response */}
                                 {issue.response_message ? (

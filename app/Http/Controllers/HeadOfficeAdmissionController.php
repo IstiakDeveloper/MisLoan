@@ -812,12 +812,8 @@ class HeadOfficeAdmissionController extends Controller
      */
     public function approveSingle(MemberAdmission $admission)
     {
-        // Only block if has unanswered or ZM-unapproved pending issues
-        if ($admission->issues()->where('status', 'pending')->where(function ($q) {
-            $q->whereNull('resolution_note')
-                ->orWhere('resolution_note', '')
-                ->orWhereNull('zm_approved_at');
-        })->exists()) {
+        // Block if has ANY issue without ZM approval
+        if ($admission->issues()->whereNull('zm_approved_at')->exists()) {
             return back()->with('error', 'জোনাল ম্যানেজার (ZM) কর্তৃক অনুমোদন না হওয়া পর্যন্ত হেড অফিস থেকে অনুমোদন করা যাবে না।');
         }
 
@@ -980,8 +976,8 @@ class HeadOfficeAdmissionController extends Controller
         DB::beginTransaction();
         try {
             foreach ($admissions as $admission) {
-                // If has unreplied pending issues, skip
-                if ($admission->issues()->where('status', 'pending')->whereNull('resolution_note')->exists()) {
+                // If has unapproved issues, skip
+                if ($admission->issues()->whereNull('zm_approved_at')->exists()) {
                     $skippedCount++;
 
                     continue;
@@ -1094,11 +1090,14 @@ class HeadOfficeAdmissionController extends Controller
             $returnedCount = 0;
 
             foreach ($admissions as $admission) {
-                $pendingIssues = $admission->issues()->where('status', 'pending')->get();
+                $unapprovedIssues = $admission->issues()->where(function ($q) {
+                    $q->where('status', 'pending')
+                        ->orWhereNull('zm_approved_at');
+                })->get();
 
-                if ($pendingIssues->count() > 0) {
+                if ($unapprovedIssues->count() > 0) {
                     // Has issues - return to branch
-                    $comments = $pendingIssues->pluck('issue_description')->implode("\n\n");
+                    $comments = $unapprovedIssues->pluck('issue_description')->implode("\n\n");
                     $admission->update([
                         'status' => 'needs_revision',
                         'revision_count' => ($admission->revision_count ?? 0) + 1,

@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Helpers\DateFormatter;
+use App\Http\Requests\HeadOffice\UpdateLoanApplicationIssueRequest;
 use App\Models\Area;
 use App\Models\Branch;
 use App\Models\LoanApplication;
@@ -17,6 +18,7 @@ use App\Services\NotificationService;
 use App\Support\LoanFormVisibility;
 use App\Support\RoleListWorkQueue;
 use Carbon\Carbon;
+use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Inertia\Inertia;
@@ -728,6 +730,42 @@ class HeadOfficeLoanController extends Controller
     }
 
     /**
+     * Update a pending loan issue that has not yet received a branch/ZM reply.
+     */
+    public function updateIssue(UpdateLoanApplicationIssueRequest $request, LoanApplicationIssue $issue): RedirectResponse
+    {
+        $issue->loadMissing('loanApplication');
+        $this->ensureCanAccessBranch($issue->loanApplication?->branch_id);
+
+        if ($blocked = $this->issueMutationError($issue)) {
+            return back()->with('error', $blocked);
+        }
+
+        $issue->update([
+            'issue_description' => $request->validated('issue_description'),
+        ]);
+
+        return back()->with('success', 'সমস্যা সফলভাবে আপডেট করা হয়েছে।');
+    }
+
+    /**
+     * Delete a pending loan issue that has not yet received a branch/ZM reply.
+     */
+    public function deleteIssue(LoanApplicationIssue $issue): RedirectResponse
+    {
+        $issue->loadMissing('loanApplication');
+        $this->ensureCanAccessBranch($issue->loanApplication?->branch_id);
+
+        if ($blocked = $this->issueMutationError($issue)) {
+            return back()->with('error', $blocked);
+        }
+
+        $issue->delete();
+
+        return back()->with('success', 'সমস্যা রেকর্ডটি মুছে ফেলা হয়েছে।');
+    }
+
+    /**
      * Approve loan application (head office)
      */
     public function approveSingle(LoanApplication $loanApplication)
@@ -736,12 +774,8 @@ class HeadOfficeLoanController extends Controller
             return back()->with('error', 'শুধুমাত্র হেড অফিসে প্রেরিত আবেদন অনুমোদন করা যাবে।');
         }
 
-        // Only block if there are unanswered or ZM-unapproved pending issues
-        if ($loanApplication->issues()->where('status', 'pending')->where(function ($q) {
-            $q->whereNull('response_message')
-                ->orWhere('response_message', '')
-                ->orWhereNull('zm_approved_at');
-        })->exists()) {
+        // Block if there are ANY issues without ZM approval
+        if ($loanApplication->issues()->whereNull('zm_approved_at')->exists()) {
             return back()->with('error', 'জোনাল ম্যানেজার (ZM) কর্তৃক অনুমোদন না হওয়া পর্যন্ত হেড অফিস থেকে অনুমোদন করা যাবে না।');
         }
 
@@ -819,7 +853,7 @@ class HeadOfficeLoanController extends Controller
         DB::beginTransaction();
         try {
             foreach ($loans as $loan) {
-                if ($loan->issues()->where('status', 'pending')->whereNull('response_message')->exists()) {
+                if ($loan->issues()->whereNull('zm_approved_at')->exists()) {
                     $skippedCount++;
 
                     continue;
@@ -939,7 +973,10 @@ class HeadOfficeLoanController extends Controller
             $skippedCount = 0;
 
             foreach ($loans as $loan) {
-                if ($loan->issues()->where('status', 'pending')->exists()) {
+                if ($loan->issues()->where(function ($q) {
+                    $q->where('status', 'pending')
+                        ->orWhereNull('zm_approved_at');
+                })->exists()) {
                     $skippedCount++;
 
                     continue;
@@ -1233,5 +1270,18 @@ class HeadOfficeLoanController extends Controller
         ) {
             abort(403, 'এই ঋণ আবেদনটি এখনও হেড অফিসে আসেনি।');
         }
+    }
+
+    private function issueMutationError(LoanApplicationIssue $issue): ?string
+    {
+        if ($issue->status !== 'pending') {
+            return 'শুধুমাত্র অপেক্ষমাণ সমস্যা সম্পাদনা বা মুছে ফেলা যাবে।';
+        }
+
+        if (filled($issue->response_message) || filled($issue->zm_approved_at)) {
+            return 'শাখা বা জোন থেকে জবাব আসার পর সমস্যা আর সম্পাদনা করা যাবে না। প্রয়োজনে নতুন সমস্যা লিখুন।';
+        }
+
+        return null;
     }
 }
