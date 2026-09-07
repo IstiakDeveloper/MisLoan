@@ -755,6 +755,10 @@ class HeadOfficeAdmissionController extends Controller
             return back()->with('error', 'খসড়া আবেদনের অনুমোদন রিসেট করা যাবে না।');
         }
 
+        if ($admission->hasDisbursedLoan()) {
+            return back()->with('error', 'এই সদস্যের ঋণ বিতরণ সম্পন্ন হয়েছে, তাই ভর্তি অনুমোদন রিসেট করা যাবে না।');
+        }
+
         try {
             DB::transaction(function () use ($admission) {
                 $updateData = [
@@ -805,6 +809,71 @@ class HeadOfficeAdmissionController extends Controller
         }
 
         return back()->with('success', 'অনুমোদন শাখা ব্যবস্থাপক পর্যায়ে রিসেট করা হয়েছে।');
+    }
+
+    /**
+     * Reset admission approval back to Head Office pending.
+     */
+    public function resetToHeadOffice(MemberAdmission $admission)
+    {
+        $this->ensureCanAccessBranch($admission->branch_id);
+
+        if ($admission->status === 'draft') {
+            return back()->with('error', 'খসড়া আবেদনের অনুমোদন রিসেট করা যাবে না।');
+        }
+
+        if ($admission->hasDisbursedLoan()) {
+            return back()->with('error', 'এই সদস্যের ঋণ বিতরণ সম্পন্ন হয়েছে, তাই ভর্তি অনুমোদন রিসেট করা যাবে না।');
+        }
+
+        try {
+            DB::transaction(function () use ($admission) {
+                $updateData = [
+                    'status' => 'pending_head_office',
+                    'reviewed_by' => null,
+                    'reviewed_at' => null,
+                    'rejection_reason' => null,
+                ];
+
+                if (! $admission->submitted_at) {
+                    $updateData['submitted_by'] = $admission->submitted_by ?: auth()->id();
+                    $updateData['submitted_at'] = now();
+                }
+
+                $admission->update($updateData);
+            });
+        } catch (\Exception $e) {
+            return back()->with('error', $e->getMessage());
+        }
+
+        $admission->refresh()->loadMissing(['createdBy', 'submittedBy', 'branch']);
+        $branchManagers = User::where('branch_id', $admission->branch_id)
+            ->where('is_active', 1)
+            ->whereHas('role', fn ($q) => $q->where('name', Role::BRANCH_MANAGER))
+            ->get();
+        $recipients = collect([$admission->createdBy, $admission->submittedBy])
+            ->concat($branchManagers)
+            ->filter()
+            ->unique('id');
+
+        if ($recipients->isNotEmpty()) {
+            app(NotificationService::class)->send(
+                users: $recipients,
+                type: 'member_admission',
+                title: 'সদস্য আবেদন হেড অফিস অপেক্ষমাণ অবস্থায় রিসেট করা হয়েছে',
+                message: "সদস্য আবেদন নং {$admission->application_no} ({$admission->applicant_name_bn}) হেড অফিস অপেক্ষমাণ (Pending Head Office) অবস্থায় রিসেট করা হয়েছে।",
+                notifiable: $admission,
+                actionUrl: '/head-office/admission-members',
+                details: [
+                    'আবেদন নং' => $admission->application_no,
+                    'আবেদনকারীর নাম' => $admission->applicant_name_bn ?: $admission->applicant_name_en,
+                    'শাখা' => $admission->branch?->name ?? 'N/A',
+                    'রিসেট করেছেন' => auth()->user()?->name ?? 'Head Office',
+                ]
+            );
+        }
+
+        return back()->with('success', 'সদস্য আবেদনটি হেড অফিস অপেক্ষমাণ (Pending Head Office) অবস্থায় রিসেট করা হয়েছে।');
     }
 
     /**

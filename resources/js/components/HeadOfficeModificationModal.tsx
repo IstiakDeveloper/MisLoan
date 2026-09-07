@@ -1,6 +1,6 @@
 import React, { useEffect } from 'react';
 import { useForm, usePage } from '@inertiajs/react';
-import { UserCheck, RotateCcw, Wrench, X } from 'lucide-react';
+import { UserCheck, RotateCcw, Building2, Wrench, X } from 'lucide-react';
 
 export type ModificationEntityType = 'admission' | 'loan';
 
@@ -29,7 +29,8 @@ export function canHeadOfficeModify(auth?: { user?: { has_all_access?: boolean; 
         !!auth?.user?.has_all_access ||
         roleName === 'head_office' ||
         roleName === 'super_admin' ||
-        roleName === 'superadmin'
+        roleName === 'superadmin' ||
+        roleName === 'cso'
     );
 }
 
@@ -57,6 +58,12 @@ export default function HeadOfficeModificationModal({ open, onClose, entityType,
         reset: resetResetForm,
     } = useForm({});
 
+    const {
+        patch: patchResetToHo,
+        processing: resetToHoProcessing,
+        reset: resetResetToHoForm,
+    } = useForm({});
+
     useEffect(() => {
         if (open && target) {
             setLegacyData('loan_dofa', target.loanDofa ?? '');
@@ -65,6 +72,7 @@ export default function HeadOfficeModificationModal({ open, onClose, entityType,
         if (!open) {
             resetLegacy();
             resetResetForm();
+            resetResetToHoForm();
         }
     }, [open, target?.id]);
 
@@ -75,6 +83,10 @@ export default function HeadOfficeModificationModal({ open, onClose, entityType,
     const canShowLegacy =
         entityType === 'admission' && !target.isLegacy && target.status !== 'rejected';
     const canReset =
+        target.status !== 'draft' &&
+        target.status !== 'disbursed' &&
+        target.status !== 'cancelled';
+    const canResetToHo =
         target.status !== 'draft' &&
         target.status !== 'disbursed' &&
         target.status !== 'cancelled';
@@ -99,11 +111,11 @@ export default function HeadOfficeModificationModal({ open, onClose, entityType,
             entityType === 'admission'
                 ? `/head-office/admissions/${target.id}/reset-approval`
                 : `/head-office/loans/${target.id}/reset-approval`;
-        const idLabel = entityType === 'loan' ? 'সদস্য নং' : 'আবেদন নং';
+        const idLabel = entityType === 'loan' ? 'সদস্য নং / আবেদন নং' : 'আবেদন নং';
 
         if (
             confirm(
-                `${idLabel} ${target.applicationNo} এর সব অনুমোদন মুছে শাখা ব্যবস্থাপক পর্যায়ে রিসেট করতে চান?`
+                `${idLabel} ${target.applicationNo} এর সব অনুমোদন মুছে শাখা ব্যবস্থাপক পর্যায়ে ফেরত পাঠাতে চান?`
             )
         ) {
             patchReset(url, {
@@ -114,16 +126,36 @@ export default function HeadOfficeModificationModal({ open, onClose, entityType,
         }
     };
 
-    const busy = legacyProcessing || resetProcessing;
-    const optionCount = Number(canShowLegacy) + Number(canReset);
+    const handleResetToHo = () => {
+        const url =
+            entityType === 'admission'
+                ? `/head-office/admissions/${target.id}/reset-to-head-office`
+                : `/head-office/loans/${target.id}/reset-to-head-office`;
+        const idLabel = entityType === 'loan' ? 'সদস্য নং / আবেদন নং' : 'আবেদন নং';
+
+        if (
+            confirm(
+                `${idLabel} ${target.applicationNo} হেড অফিস অপেক্ষমাণ (Pending Head Office) অবস্থায় রিসেট করতে চান? শাখা অনুমোদন বহাল থাকবে।`
+            )
+        ) {
+            patchResetToHo(url, {
+                preserveScroll: true,
+                preserveState: true,
+                onSuccess: () => onClose(),
+            });
+        }
+    };
+
+    const busy = legacyProcessing || resetProcessing || resetToHoProcessing;
+    const optionCount = Number(canShowLegacy) + Number(canReset) + Number(canResetToHo);
 
     return (
         <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-end sm:items-center justify-center z-50 p-0 sm:p-4 animate-in fade-in duration-200">
-            <div className="bg-white rounded-t-3xl sm:rounded-2xl max-w-md w-full shadow-2xl overflow-hidden border border-slate-200">
+            <div className="bg-white rounded-t-3xl sm:rounded-2xl max-w-lg w-full shadow-2xl overflow-hidden border border-slate-200">
                 <div className="bg-slate-800 text-white px-4 py-3 flex items-center justify-between">
                     <div>
                         <h3 className="text-sm font-bold flex items-center gap-2">
-                            <Wrench className="w-4 h-4" />
+                            <Wrench className="w-4 h-4 text-amber-400" />
                             Modification
                         </h3>
                         <p className="text-[11px] text-slate-300 mt-0.5">
@@ -146,67 +178,99 @@ export default function HeadOfficeModificationModal({ open, onClose, entityType,
                     </p>
 
                     {optionCount > 0 ? (
-                        <div className={`grid gap-2.5 ${optionCount > 1 ? 'grid-cols-2' : 'grid-cols-1 max-w-[12rem]'}`}>
+                        <div className="space-y-2.5">
                             {canShowLegacy && (
                                 <form
                                     onSubmit={handleMarkLegacy}
-                                    className="rounded-xl border border-orange-200 bg-orange-50/70 p-3 flex flex-col gap-2.5 hover:border-orange-300 hover:shadow-sm transition"
+                                    className="rounded-xl border border-orange-200 bg-orange-50/70 p-3 flex flex-col gap-2.5 hover:border-orange-300 hover:shadow-xs transition"
                                 >
-                                    <div className="flex size-8 items-center justify-center rounded-lg bg-orange-100 text-orange-700">
-                                        <UserCheck className="w-4 h-4" />
+                                    <div className="flex items-center gap-2.5">
+                                        <div className="flex size-8 items-center justify-center rounded-lg bg-orange-100 text-orange-700 shrink-0">
+                                            <UserCheck className="w-4 h-4" />
+                                        </div>
+                                        <div>
+                                            <h4 className="text-xs font-bold text-orange-950 leading-snug">
+                                                পুরাতন সদস্য
+                                            </h4>
+                                            <p className="text-[10px] text-orange-800/80 mt-0.5 leading-relaxed">
+                                                দফা সেট করে স্বয়ংক্রিয় অনুমোদন
+                                            </p>
+                                        </div>
                                     </div>
-                                    <div>
-                                        <h4 className="text-xs font-bold text-orange-950 leading-snug">
-                                            পুরাতন সদস্য
-                                        </h4>
-                                        <p className="text-[10px] text-orange-800/80 mt-0.5 leading-relaxed">
-                                            দফা সেট করে স্বয়ংক্রিয় অনুমোদন
-                                        </p>
+                                    <div className="flex items-center gap-2">
+                                        <input
+                                            type="number"
+                                            min={1}
+                                            max={999}
+                                            required
+                                            value={legacyData.loan_dofa}
+                                            onChange={(e) => setLegacyData('loan_dofa', e.target.value)}
+                                            className="w-full px-2.5 py-1.5 bg-white border border-orange-200 rounded-lg text-xs text-slate-800 focus:ring-1 focus:ring-orange-500"
+                                            placeholder="ঋণের দফা (যেমন: ১, ২, ৩...)"
+                                        />
+                                        <button
+                                            type="submit"
+                                            disabled={busy || !legacyData.loan_dofa}
+                                            className="px-4 py-1.5 bg-orange-600 hover:bg-orange-700 text-white text-[11px] font-semibold rounded-lg transition disabled:opacity-50 shrink-0"
+                                        >
+                                            {legacyProcessing ? 'হচ্ছে...' : 'অনুমোদন'}
+                                        </button>
                                     </div>
-                                    <input
-                                        type="number"
-                                        min={1}
-                                        max={999}
-                                        required
-                                        value={legacyData.loan_dofa}
-                                        onChange={(e) => setLegacyData('loan_dofa', e.target.value)}
-                                        className="w-full px-2 py-1.5 bg-white border border-orange-200 rounded-lg text-xs text-slate-800 focus:ring-1 focus:ring-orange-500"
-                                        placeholder="ঋণের দফা"
-                                    />
                                     {legacyErrors.loan_dofa && (
                                         <p className="text-[10px] text-red-600">{legacyErrors.loan_dofa}</p>
                                     )}
-                                    <button
-                                        type="submit"
-                                        disabled={busy || !legacyData.loan_dofa}
-                                        className="mt-auto w-full px-2 py-1.5 bg-orange-600 hover:bg-orange-700 text-white text-[11px] font-semibold rounded-lg transition disabled:opacity-50"
-                                    >
-                                        {legacyProcessing ? 'হচ্ছে...' : 'অনুমোদন'}
-                                    </button>
                                 </form>
                             )}
 
-                            {canReset && (
-                                <div className="rounded-xl border border-indigo-200 bg-indigo-50/70 p-3 flex flex-col gap-2.5 hover:border-indigo-300 hover:shadow-sm transition">
-                                    <div className="flex size-8 items-center justify-center rounded-lg bg-indigo-100 text-indigo-700">
-                                        <RotateCcw className="w-4 h-4" />
-                                    </div>
-                                    <div>
-                                        <h4 className="text-xs font-bold text-indigo-950 leading-snug">
-                                            Reset Approval
-                                        </h4>
-                                        <p className="text-[10px] text-indigo-800/80 mt-0.5 leading-relaxed">
-                                            অনুমোদন মুছে শাখায় ফেরত
-                                        </p>
-                                    </div>
-                                    <button
-                                        type="button"
-                                        onClick={handleResetApproval}
-                                        disabled={busy}
-                                        className="mt-auto w-full px-2 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white text-[11px] font-semibold rounded-lg transition disabled:opacity-50"
-                                    >
-                                        {resetProcessing ? 'হচ্ছে...' : 'রিসেট করুন'}
-                                    </button>
+                            {(canResetToHo || canReset) && (
+                                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                                    {canResetToHo && (
+                                        <div className="rounded-xl border border-purple-200 bg-purple-50/70 p-3 flex flex-col gap-2.5 hover:border-purple-300 hover:shadow-xs transition">
+                                            <div className="flex size-8 items-center justify-center rounded-lg bg-purple-100 text-purple-700 shrink-0">
+                                                <Building2 className="w-4 h-4" />
+                                            </div>
+                                            <div>
+                                                <h4 className="text-xs font-bold text-purple-950 leading-snug">
+                                                    হেড অফিসে রিসেট
+                                                </h4>
+                                                <p className="text-[10px] text-purple-800/80 mt-0.5 leading-relaxed">
+                                                    অনুমোদন রিসেট করে হেড অফিস অপেক্ষমাণ (Pending HO) করুন। শাখা অনুমোদন বহাল থাকবে।
+                                                </p>
+                                            </div>
+                                            <button
+                                                type="button"
+                                                onClick={handleResetToHo}
+                                                disabled={busy}
+                                                className="mt-auto w-full px-2 py-1.5 bg-purple-600 hover:bg-purple-700 text-white text-[11px] font-semibold rounded-lg transition disabled:opacity-50"
+                                            >
+                                                {resetToHoProcessing ? 'হচ্ছে...' : 'হেড অফিসে রিসেট'}
+                                            </button>
+                                        </div>
+                                    )}
+
+                                    {canReset && (
+                                        <div className="rounded-xl border border-indigo-200 bg-indigo-50/70 p-3 flex flex-col gap-2.5 hover:border-indigo-300 hover:shadow-xs transition">
+                                            <div className="flex size-8 items-center justify-center rounded-lg bg-indigo-100 text-indigo-700 shrink-0">
+                                                <RotateCcw className="w-4 h-4" />
+                                            </div>
+                                            <div>
+                                                <h4 className="text-xs font-bold text-indigo-950 leading-snug">
+                                                    শাখা ব্যবস্থাপকে রিসেট
+                                                </h4>
+                                                <p className="text-[10px] text-indigo-800/80 mt-0.5 leading-relaxed">
+                                                    সব অনুমোদন মুছে আবেদনটি পুনরায় শাখা ব্যবস্থাপক পর্যায়ে ফেরত পাঠান।
+                                                </p>
+                                            </div>
+                                            <button
+                                                type="button"
+                                                onClick={handleResetApproval}
+                                                disabled={busy}
+                                                className="mt-auto w-full px-2 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white text-[11px] font-semibold rounded-lg transition disabled:opacity-50"
+                                            >
+                                                {resetProcessing ? 'হচ্ছে...' : 'শাখায় রিসেট'}
+                                            </button>
+                                        </div>
+                                    )}
                                 </div>
                             )}
                         </div>

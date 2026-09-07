@@ -33,6 +33,7 @@ import {
     RotateCcw,
     Lock,
     X,
+    Wrench,
 } from 'lucide-react';
 import SuperAdminDeletePinModal from '@/components/SuperAdminDeletePinModal';
 import { toEnglishDigits, formatBranchCode, parseMemberCode } from '@/utils/memberCodeUtils';
@@ -43,7 +44,7 @@ import FieldInvestigation from './Forms/FieldInvestigation';
 import LoanApplicationApproval from './Forms/LoanApplicationApproval';
 import SendLoanToHoModal from '@/components/LoanApplications/SendLoanToHoModal';
 import { useHoSendCutoff } from '@/hooks/use-ho-send-cutoff';
-import { canHeadOfficeModify } from '@/components/HeadOfficeModificationModal';
+import HeadOfficeModificationModal, { canHeadOfficeModify } from '@/components/HeadOfficeModificationModal';
 import {
     disburseFormIds,
     disburseWizardFormUrl,
@@ -300,6 +301,7 @@ export default function Show({ application, routes, categories = [] }: Props) {
     const [commentInput, setCommentInput] = useState('');
     const [savingComment, setSavingComment] = useState(false);
     const [commentError, setCommentError] = useState<string | null>(null);
+    const [showModificationModal, setShowModificationModal] = useState(false);
 
     const openEditCommentModal = (approval: any) => {
         setEditingApproval({
@@ -1428,6 +1430,16 @@ export default function Show({ application, routes, categories = [] }: Props) {
                                     </Button>
                                 </div>
                             )}
+                            {isSuperAdmin && application.status !== 'draft' && application.status !== 'disbursed' && application.status !== 'cancelled' && (
+                                <Button
+                                    variant="outline"
+                                    onClick={() => setShowModificationModal(true)}
+                                    className="w-full sm:w-auto rounded-xl text-xs sm:text-sm h-9 sm:h-10 border-slate-300 hover:bg-slate-100"
+                                >
+                                    <Wrench className="w-3.5 h-3.5 mr-1.5 text-amber-600" />
+                                    Modification
+                                </Button>
+                            )}
                         </div>
                     </div>
 
@@ -2496,6 +2508,23 @@ export default function Show({ application, routes, categories = [] }: Props) {
             <EditApprovalCommentModal
                 editingApproval={editingApproval}
                 onClose={() => setEditingApproval(null)}
+            />
+
+            <HeadOfficeModificationModal
+                open={showModificationModal}
+                onClose={() => setShowModificationModal(false)}
+                entityType="loan"
+                target={{
+                    id: application.id,
+                    applicationNo: application.application_no,
+                    applicantName:
+                        application.member_admission?.applicant_name_bn ||
+                        application.member_admission?.applicant_name_en ||
+                        application.member_admission?.member_name_bn ||
+                        application.member_admission?.member_name_en,
+                    status: application.status,
+                    loanDofa: application.member_admission?.loan_dofa,
+                }}
             />
         </AdminLayout>
     );

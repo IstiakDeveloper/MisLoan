@@ -347,6 +347,7 @@ Route::middleware(['auth', 'verified'])->group(function () {
         Route::patch('admissions/{admission}/approve', [HeadOfficeAdmissionController::class, 'approveSingle'])->name('admissions.approve');
         Route::patch('admissions/{admission}/mark-legacy', [HeadOfficeAdmissionController::class, 'markAsLegacy'])->name('admissions.mark-legacy');
         Route::patch('admissions/{admission}/reset-approval', [HeadOfficeAdmissionController::class, 'resetApproval'])->name('admissions.reset-approval');
+        Route::patch('admissions/{admission}/reset-to-head-office', [HeadOfficeAdmissionController::class, 'resetToHeadOffice'])->name('admissions.reset-to-head-office');
         Route::patch('admissions/{admission}/reject', [HeadOfficeAdmissionController::class, 'rejectSingle'])->name('admissions.reject');
         Route::post('admissions/approve-bulk', [HeadOfficeAdmissionController::class, 'approveBulk'])->name('admissions.approve-bulk');
         Route::post('admissions/approve-all', [HeadOfficeAdmissionController::class, 'approveAll'])->name('admissions.approve-all');
@@ -368,6 +369,7 @@ Route::middleware(['auth', 'verified'])->group(function () {
         Route::post('loans/approve-all', [HeadOfficeLoanController::class, 'approveAll'])->name('loans.approve-all');
         Route::patch('loans/{loanApplication}/reject', [HeadOfficeLoanController::class, 'rejectSingle'])->name('loans.reject');
         Route::patch('loans/{loanApplication}/reset-approval', [HeadOfficeLoanController::class, 'resetApproval'])->name('loans.reset-approval');
+        Route::patch('loans/{loanApplication}/reset-to-head-office', [HeadOfficeLoanController::class, 'resetToHeadOffice'])->name('loans.reset-to-head-office');
         Route::delete('loans/bulk', [HeadOfficeLoanController::class, 'bulkDestroy'])->name('loans.bulk-destroy');
         Route::delete('loans/{loanApplication}', [HeadOfficeLoanController::class, 'destroy'])->name('loans.destroy');
 

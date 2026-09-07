@@ -1152,6 +1152,72 @@ class HeadOfficeLoanController extends Controller
     }
 
     /**
+     * Reset loan approval back to Head Office pending.
+     */
+    public function resetToHeadOffice(LoanApplication $loanApplication)
+    {
+        $this->ensureCanAccessBranch($loanApplication->branch_id);
+
+        if (in_array($loanApplication->status, [
+            LoanApplication::STATUS_DRAFT,
+            LoanApplication::STATUS_DISBURSED,
+            LoanApplication::STATUS_CANCELLED,
+        ], true)) {
+            return back()->with('error', 'এই অবস্থার ঋণ আবেদনের অনুমোদন রিসেট করা যাবে না।');
+        }
+
+        try {
+            DB::transaction(function () use ($loanApplication) {
+                $updateData = [
+                    'status' => LoanApplication::STATUS_PENDING_HEAD_OFFICE,
+                    'reviewed_by' => null,
+                    'reviewed_at' => null,
+                    'rejection_reason' => null,
+                ];
+
+                if (! $loanApplication->submitted_at) {
+                    $updateData['submitted_by'] = $loanApplication->submitted_by ?: auth()->id();
+                    $updateData['submitted_at'] = now();
+                }
+
+                $loanApplication->update($updateData);
+            });
+        } catch (\Exception $e) {
+            return back()->with('error', $e->getMessage());
+        }
+
+        $loanApplication->refresh()->loadMissing(['submittedBy', 'memberAdmission', 'branch']);
+        $branchManagers = User::where('branch_id', $loanApplication->branch_id)
+            ->where('is_active', 1)
+            ->whereHas('role', fn ($q) => $q->where('name', Role::BRANCH_MANAGER))
+            ->get();
+        $recipients = collect([$loanApplication->submittedBy])
+            ->concat($branchManagers)
+            ->filter()
+            ->unique('id');
+
+        if ($recipients->isNotEmpty()) {
+            app(NotificationService::class)->send(
+                users: $recipients,
+                type: 'loan_application',
+                title: 'ঋণ আবেদন হেড অফিস অপেক্ষমাণ অবস্থায় রিসেট করা হয়েছে',
+                message: "ঋণ আবেদন নং {$loanApplication->application_no} ({$loanApplication->memberAdmission?->applicant_name_bn}) হেড অফিস অপেক্ষমাণ (Pending Head Office) অবস্থায় রিসেট করা হয়েছে।",
+                notifiable: $loanApplication,
+                actionUrl: "/head-office/loans/{$loanApplication->id}",
+                details: [
+                    'আবেদন নং' => $loanApplication->application_no,
+                    'সদস্যের নাম' => $loanApplication->memberAdmission?->applicant_name_bn
+                        ?: ($loanApplication->memberAdmission?->applicant_name_en ?? 'N/A'),
+                    'শাখা' => $loanApplication->branch?->name ?? 'N/A',
+                    'রিসেট করেছেন' => auth()->user()?->name ?? 'Head Office',
+                ]
+            );
+        }
+
+        return back()->with('success', 'ঋণ আবেদনটি হেড অফিস অপেক্ষমাণ (Pending Head Office) অবস্থায় রিসেট করা হয়েছে।');
+    }
+
+    /**
      * Delete loan application (SuperAdmin only, PIN required; any status).
      */
     public function destroy(Request $request, LoanApplication $loanApplication)
