@@ -6,6 +6,7 @@ use App\Models\Area;
 use App\Models\Branch;
 use App\Models\LoanApplication;
 use App\Models\MemberAdmission;
+use App\Models\MemberAdmissionApproval;
 use App\Models\MemberCategory;
 use App\Models\Role;
 use App\Models\Samity;
@@ -1884,5 +1885,26 @@ class MemberAdmissionController extends Controller
         }
 
         return back()->with('success', MemberCodeService::updatedFlashMessage($result));
+    }
+
+    /**
+     * Update approval comments by Super Admin / Head Office
+     */
+    public function updateApprovalComment(Request $request, MemberAdmissionApproval $approval)
+    {
+        $user = $request->user();
+        if (! $user || (! $user->has_all_access && ! $user->isSuperAdmin() && ! $user->isHeadOffice())) {
+            abort(403, 'অনুমোদনকারীর মন্তব্য সম্পাদনা করার অনুমতি নেই।');
+        }
+
+        $validated = $request->validate([
+            'comments' => 'nullable|string|max:3000',
+        ]);
+
+        $approval->update([
+            'comments' => $validated['comments'] ?? null,
+        ]);
+
+        return back()->with('success', 'অনুমোদনকারীর মন্তব্য সফলভাবে আপডেট করা হয়েছে।');
     }
 }

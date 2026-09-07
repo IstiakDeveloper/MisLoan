@@ -135,12 +135,14 @@ interface Props {
     };
     stats: {
         total: number;
+        pending_action?: number;
         admission_count: number;
         loan_count: number;
         pending_issues: number;
         branch_replied: number;
         zm_approved: number;
         approved: number;
+        rejected?: number;
     };
     filters: {
         date_from?: string;
@@ -177,7 +179,7 @@ export default function VerificationIndex({ items, stats, filters, permissions, 
 
     const [searchQuery, setSearchQuery] = useState(filters.search || '');
     const [typeFilter, setTypeFilter] = useState(filters.type || 'all');
-    const [issueStatusFilter, setIssueStatusFilter] = useState(filters.issue_status || 'all');
+    const [issueStatusFilter, setIssueStatusFilter] = useState(filters.issue_status || 'pending_action');
 
     const [selectedZone, setSelectedZone] = useState(filters.zone_id?.toString() || '');
     const [selectedArea, setSelectedArea] = useState(filters.area_id?.toString() || '');
@@ -334,7 +336,7 @@ export default function VerificationIndex({ items, stats, filters, permissions, 
     const clearFilters = () => {
         setSearchQuery('');
         setTypeFilter('all');
-        setIssueStatusFilter('all');
+        setIssueStatusFilter('pending_action');
         setSelectedZone('');
         setSelectedArea('');
         setSelectedBranch('');
@@ -342,7 +344,7 @@ export default function VerificationIndex({ items, stats, filters, permissions, 
         setDateTo('');
         router.get(
             '/verifications',
-            { date_from: '', date_to: '' },
+            { issue_status: 'pending_action', date_from: '', date_to: '' },
             { preserveState: true, replace: true }
         );
     };
@@ -532,303 +534,349 @@ export default function VerificationIndex({ items, stats, filters, permissions, 
         <AdminLayout>
             <Head title="যাচাই ও অনুসন্ধান (Verification & Inquiries)" />
 
-            <div className="w-full space-y-5 py-4 px-3 sm:px-6 pb-24">
-                {/* Header */}
-                <div className="relative overflow-hidden flex flex-col sm:flex-row sm:items-center justify-between gap-4 rounded-2xl border border-indigo-200 bg-gradient-to-r from-slate-900 via-indigo-950 to-blue-900 px-5 py-5 shadow-md shadow-indigo-950/20">
-                    <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_top_right,_rgba(255,255,255,0.12),_transparent_50%)] pointer-events-none" />
-                    <div className="relative z-10">
-                        <div className="inline-flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wider text-indigo-300 mb-1">
-                            <ShieldAlert className="w-3.5 h-3.5 text-amber-400" />
-                            Verification & Query Dashboard
+            <div className="w-full space-y-3.5 py-3 px-3 sm:px-6 pb-24">
+                {/* 1. Sleek, Executive Header Bar */}
+                <div className="bg-white rounded-xl border border-slate-200/80 shadow-xs p-3.5 flex flex-col lg:flex-row lg:items-center justify-between gap-3">
+                    <div className="flex items-center gap-3">
+                        <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-indigo-600 to-blue-700 text-white flex items-center justify-center shadow-xs shrink-0">
+                            <ShieldAlert className="w-5 h-5 text-amber-300" />
                         </div>
-                        <h1 className="text-xl sm:text-2xl font-bold text-white tracking-tight">
-                            যাচাই ও অনুসন্ধান মনিটরিং
-                        </h1>
-                        <p className="text-sm text-indigo-200 mt-0.5">
-                            {permissions.can_approve
-                                ? 'হেড অফিসের আপত্তি, শাখার জবাব, জোনাল অনুমোদন পর্যালোচনা ও দ্রুত অনুমোদন'
-                                : permissions.can_zm_approve
-                                ? 'শাখার জবাবসমূহ পর্যালোচনা করে ১-ক্লিকে বা বাল্ক ZM অনুমোদন প্রদান করুন'
-                                : 'আপত্তিযুক্ত আবেদনের কারণ পর্যবেক্ষণ করুন এবং ব্যাখ্যা/জবাব প্রদান করুন'}
-                        </p>
+                        <div>
+                            <div className="flex items-center gap-2 flex-wrap">
+                                <h1 className="text-lg sm:text-xl font-bold text-slate-900 tracking-tight">
+                                    যাচাই ও অনুসন্ধান মনিটরিং
+                                </h1>
+                                {(stats?.zm_approved ?? 0) > 0 ? (
+                                    <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-bold bg-emerald-100 text-emerald-800 border border-emerald-300 animate-pulse">
+                                        <ShieldCheck className="w-3.5 h-3.5 text-emerald-600" />
+                                        {stats.zm_approved} টি আবেদন HO অনুমোদনের জন্য প্রস্তুত
+                                    </span>
+                                ) : (
+                                    <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-medium bg-slate-100 text-slate-700 border border-slate-200">
+                                        <Clock className="w-3 h-3 text-slate-500" />
+                                        {stats?.pending_action ?? 0} টি আবেদন অমীমাংসিত/অপেক্ষমান
+                                    </span>
+                                )}
+                            </div>
+                            <p className="text-xs text-slate-500 mt-0.5">
+                                {permissions.can_approve
+                                    ? 'হেড অফিস আপত্তি, শাখার জবাব ও জোনাল অনুমোদন পর্যালোচনা ও ১-ক্লিকে চূড়ান্ত অনুমোদন'
+                                    : permissions.can_zm_approve
+                                    ? 'শাখার জবাবসমূহ পর্যালোচনা করে ZM অনুমোদন প্রদান করুন'
+                                    : 'আপত্তির কারণ পর্যবেক্ষণ করে শাখা থেকে ব্যাখ্যা/জবাব প্রদান করুন'}
+                            </p>
+                        </div>
                     </div>
-                    <div className="relative z-10 flex flex-wrap items-center gap-2 shrink-0">
-                        <button
-                            type="button"
-                            onClick={handleAllDatesFilter}
-                            className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition border ${
-                                isAllDates
-                                    ? 'bg-white text-indigo-900 border-white shadow-sm font-bold'
-                                    : 'bg-white/10 hover:bg-white/20 text-white border-white/20'
-                            }`}
-                            title="সকল তারিখের ডেটা দেখুন"
-                        >
-                            <RotateCcw className="w-3.5 h-3.5" />
-                            সকল তারিখ (All Dates)
-                        </button>
-                        <button
-                            type="button"
-                            onClick={handleTodayFilter}
-                            className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition border ${
-                                isTodayFilter
-                                    ? 'bg-indigo-600 text-white border-indigo-400 shadow-sm font-bold'
-                                    : 'bg-indigo-500/20 hover:bg-indigo-500/40 text-white border-white/20'
-                            }`}
-                            title="আজকের অনুসন্ধানসমূহ"
-                        >
-                            <CalendarDays className="w-3.5 h-3.5" />
-                            Today (আজ)
-                        </button>
+
+                    {/* Right side: Search & Date toggles */}
+                    <div className="flex items-center gap-2 flex-wrap">
+                        {/* Compact Search */}
+                        <div className="relative min-w-[220px] flex-1 sm:flex-initial">
+                            <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 w-3.5 h-3.5" />
+                            <input
+                                type="text"
+                                value={searchQuery}
+                                onChange={(e) => setSearchQuery(e.target.value)}
+                                placeholder="আবেদন নং, সদস্য, মোবাইল..."
+                                className="w-full pl-8 pr-3 py-1.5 text-xs border border-slate-300 rounded-lg bg-slate-50 focus:bg-white focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition"
+                            />
+                            {searchQuery && (
+                                <button
+                                    type="button"
+                                    onClick={() => setSearchQuery('')}
+                                    className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
+                                >
+                                    <X className="w-3 h-3" />
+                                </button>
+                            )}
+                        </div>
+
+                        {/* Date Toggles */}
+                        <div className="inline-flex items-center p-0.5 bg-slate-100 rounded-lg border border-slate-200 text-xs">
+                            <button
+                                type="button"
+                                onClick={handleAllDatesFilter}
+                                className={`px-2.5 py-1 rounded-md font-semibold transition ${
+                                    isAllDates
+                                        ? 'bg-white text-indigo-900 shadow-xs font-bold'
+                                        : 'text-slate-600 hover:text-slate-900'
+                                }`}
+                                title="সকল তারিখের ডেটা"
+                            >
+                                সব তারিখ
+                            </button>
+                            <button
+                                type="button"
+                                onClick={handleTodayFilter}
+                                className={`px-2.5 py-1 rounded-md font-semibold transition ${
+                                    isTodayFilter
+                                        ? 'bg-indigo-600 text-white shadow-xs font-bold'
+                                        : 'text-slate-600 hover:text-slate-900'
+                                }`}
+                                title="আজকের অনুসন্ধানসমূহ"
+                            >
+                                আজ
+                            </button>
+                        </div>
                     </div>
                 </div>
 
-                {/* Stat Cards */}
-                <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2.5">
-                    <button
-                        type="button"
-                        onClick={() => handleStatusChange('all')}
-                        className={`rounded-xl p-3 text-left border transition shadow-sm ${
-                            issueStatusFilter === 'all'
-                                ? 'border-indigo-600 bg-indigo-600 text-white shadow-indigo-200'
-                                : 'border-indigo-100 bg-white text-slate-800 hover:border-indigo-300 hover:bg-indigo-50/50'
-                        }`}
-                    >
-                        <div className="text-xl font-bold tabular-nums leading-none">{stats?.total ?? 0}</div>
-                        <div className={`text-[11px] font-medium mt-1 ${issueStatusFilter === 'all' ? 'text-indigo-100' : 'text-slate-500'}`}>
-                            মোট যাচাই/তদন্ত
-                        </div>
-                    </button>
+                {/* 2. Main Filter Tabs (Ordered as requested: Pending & ZM Approved -> All -> Approved -> Rejected) */}
+                <div className="bg-white rounded-xl border border-slate-200/80 shadow-xs p-2.5 space-y-2.5">
+                    <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-100 pb-2">
+                        {/* Primary Filter Tabs */}
+                        <div className="flex items-center gap-1.5 flex-wrap">
+                            {/* Tab 1: অমীমাংসিত ও ZM অনুমোদিত (DEFAULT) */}
+                            <button
+                                type="button"
+                                onClick={() => handleStatusChange('pending_action')}
+                                className={`px-3 py-1.5 rounded-lg text-xs font-bold transition flex items-center gap-1.5 ${
+                                    issueStatusFilter === 'pending_action'
+                                        ? 'bg-indigo-600 text-white shadow-xs'
+                                        : 'bg-indigo-50 text-indigo-800 hover:bg-indigo-100'
+                                }`}
+                            >
+                                <AlertCircle className="w-3.5 h-3.5" />
+                                অমীমাংসিত ও ZM অনুমোদিত
+                                <span className={`px-1.5 py-0.2 rounded-full text-[10px] font-mono ${
+                                    issueStatusFilter === 'pending_action' ? 'bg-indigo-800 text-white' : 'bg-indigo-200 text-indigo-900'
+                                }`}>
+                                    {stats?.pending_action ?? 0}
+                                </span>
+                            </button>
 
-                    <button
-                        type="button"
-                        onClick={() => handleStatusChange('pending')}
-                        className={`rounded-xl p-3 text-left border transition shadow-sm ${
-                            issueStatusFilter === 'pending'
-                                ? 'border-amber-600 bg-amber-600 text-white shadow-amber-200'
-                                : 'border-amber-200 bg-amber-50/50 text-slate-800 hover:border-amber-400 hover:bg-amber-100/50'
-                        }`}
-                    >
-                        <div className="text-xl font-bold tabular-nums leading-none text-amber-700">{stats?.pending_issues ?? 0}</div>
-                        <div className="text-[11px] font-medium text-amber-900 mt-1">
-                            অমীমাংসিত আপত্তি
-                        </div>
-                    </button>
+                            {/* Tab 2: সকল (All) */}
+                            <button
+                                type="button"
+                                onClick={() => handleStatusChange('all')}
+                                className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition flex items-center gap-1.5 ${
+                                    issueStatusFilter === 'all'
+                                        ? 'bg-slate-900 text-white shadow-xs'
+                                        : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
+                                }`}
+                            >
+                                <Layers className="w-3.5 h-3.5" />
+                                সকল (All)
+                                <span className={`px-1.5 py-0.2 rounded-full text-[10px] font-mono ${
+                                    issueStatusFilter === 'all' ? 'bg-slate-800 text-white' : 'bg-slate-200 text-slate-700'
+                                }`}>
+                                    {stats?.total ?? 0}
+                                </span>
+                            </button>
 
-                    <button
-                        type="button"
-                        onClick={() => handleStatusChange('branch_replied')}
-                        className={`rounded-xl p-3 text-left border transition shadow-sm ${
-                            issueStatusFilter === 'branch_replied'
-                                ? 'border-sky-600 bg-sky-600 text-white shadow-sky-200'
-                                : 'border-sky-200 bg-sky-50/50 text-slate-800 hover:border-sky-400 hover:bg-sky-100/50'
-                        }`}
-                    >
-                        <div className="text-xl font-bold tabular-nums leading-none text-sky-700">{stats?.branch_replied ?? 0}</div>
-                        <div className="text-[11px] font-medium text-sky-900 mt-1">
-                            শাখার জবাব (ZM অপেক্ষমান)
-                        </div>
-                    </button>
+                            {/* Tab 3: অনুমোদিত (Approved) */}
+                            <button
+                                type="button"
+                                onClick={() => handleStatusChange('approved')}
+                                className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition flex items-center gap-1.5 ${
+                                    issueStatusFilter === 'approved'
+                                        ? 'bg-emerald-600 text-white shadow-xs'
+                                        : 'bg-emerald-50 text-emerald-800 hover:bg-emerald-100'
+                                }`}
+                            >
+                                <CheckCircle2 className="w-3.5 h-3.5" />
+                                অনুমোদিত
+                                <span className={`px-1.5 py-0.2 rounded-full text-[10px] font-mono ${
+                                    issueStatusFilter === 'approved' ? 'bg-emerald-700 text-white' : 'bg-emerald-200 text-emerald-900'
+                                }`}>
+                                    {stats?.approved ?? 0}
+                                </span>
+                            </button>
 
-                    <button
-                        type="button"
-                        onClick={() => handleStatusChange('zm_approved')}
-                        className={`rounded-xl p-3 text-left border transition shadow-sm ${
-                            issueStatusFilter === 'zm_approved'
-                                ? 'border-indigo-600 bg-indigo-600 text-white shadow-indigo-200'
-                                : 'border-indigo-200 bg-indigo-50/50 text-slate-800 hover:border-indigo-400 hover:bg-indigo-100/50'
-                        }`}
-                    >
-                        <div className="text-xl font-bold tabular-nums leading-none text-indigo-700">{stats?.zm_approved ?? 0}</div>
-                        <div className="text-[11px] font-medium text-indigo-900 mt-1">
-                            ZM অনুমোদিত (HO অপেক্ষমান)
+                            {/* Tab 4: বাতিলকৃত (Rejected) */}
+                            <button
+                                type="button"
+                                onClick={() => handleStatusChange('rejected')}
+                                className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition flex items-center gap-1.5 ${
+                                    issueStatusFilter === 'rejected'
+                                        ? 'bg-rose-600 text-white shadow-xs'
+                                        : 'bg-rose-50 text-rose-800 hover:bg-rose-100'
+                                }`}
+                            >
+                                <XCircle className="w-3.5 h-3.5" />
+                                বাতিলকৃত
+                                <span className={`px-1.5 py-0.2 rounded-full text-[10px] font-mono ${
+                                    issueStatusFilter === 'rejected' ? 'bg-rose-700 text-white' : 'bg-rose-200 text-rose-900'
+                                }`}>
+                                    {stats?.rejected ?? 0}
+                                </span>
+                            </button>
                         </div>
-                    </button>
 
-                    <button
-                        type="button"
-                        onClick={() => handleStatusChange('approved')}
-                        className={`rounded-xl p-3 text-left border transition shadow-sm ${
-                            issueStatusFilter === 'approved'
-                                ? 'border-emerald-600 bg-emerald-600 text-white shadow-emerald-200'
-                                : 'border-emerald-200 bg-emerald-50/50 text-slate-800 hover:border-emerald-400 hover:bg-emerald-100/50'
-                        }`}
-                    >
-                        <div className="text-xl font-bold tabular-nums leading-none text-emerald-700">{stats?.approved ?? 0}</div>
-                        <div className="text-[11px] font-medium text-emerald-900 mt-1">
-                            চূড়ান্ত অনুমোদিত
-                        </div>
-                    </button>
-
-                    <button
-                        type="button"
-                        onClick={() => handleTypeChange('admission')}
-                        className={`rounded-xl p-3 text-left border transition shadow-sm ${
-                            typeFilter === 'admission'
-                                ? 'border-blue-600 bg-blue-600 text-white shadow-blue-200'
-                                : 'border-blue-100 bg-white text-slate-800 hover:border-blue-300 hover:bg-blue-50/50'
-                        }`}
-                    >
-                        <div className="text-xl font-bold tabular-nums leading-none">{stats?.admission_count ?? 0}</div>
-                        <div className={`text-[11px] font-medium mt-1 ${typeFilter === 'admission' ? 'text-blue-100' : 'text-slate-500'}`}>
-                            সদস্য ভর্তি ({stats?.admission_count ?? 0})
-                        </div>
-                    </button>
-                </div>
-
-                {/* Filters */}
-                <div className="bg-white rounded-xl border border-indigo-100 p-3.5 shadow-sm space-y-3">
-                    {/* Type switch pills */}
-                    <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 pb-2.5">
-                        <div className="flex items-center gap-1.5">
+                        {/* Type switch pills */}
+                        <div className="flex items-center gap-1">
                             <button
                                 type="button"
                                 onClick={() => handleTypeChange('all')}
-                                className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition ${
+                                className={`px-2.5 py-1 rounded-md text-xs font-medium transition ${
                                     typeFilter === 'all'
-                                        ? 'bg-slate-900 text-white shadow-sm'
+                                        ? 'bg-slate-800 text-white font-semibold shadow-2xs'
                                         : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
                                 }`}
                             >
-                                সকল টাইপ ({stats.total})
+                                সব টাইপ
                             </button>
                             <button
                                 type="button"
                                 onClick={() => handleTypeChange('admission')}
-                                className={`px-3 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1 transition ${
+                                className={`px-2.5 py-1 rounded-md text-xs font-medium flex items-center gap-1 transition ${
                                     typeFilter === 'admission'
-                                        ? 'bg-blue-600 text-white shadow-sm'
+                                        ? 'bg-blue-600 text-white font-semibold shadow-2xs'
                                         : 'bg-blue-50 text-blue-700 hover:bg-blue-100'
                                 }`}
                             >
-                                <UserPlus className="w-3.5 h-3.5" />
-                                ভর্তি যাচাই ({stats.admission_count})
+                                <UserPlus className="w-3 h-3" />
+                                ভর্তি ({stats?.admission_count ?? 0})
                             </button>
                             <button
                                 type="button"
                                 onClick={() => handleTypeChange('loan')}
-                                className={`px-3 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1 transition ${
+                                className={`px-2.5 py-1 rounded-md text-xs font-medium flex items-center gap-1 transition ${
                                     typeFilter === 'loan'
-                                        ? 'bg-emerald-600 text-white shadow-sm'
+                                        ? 'bg-emerald-600 text-white font-semibold shadow-2xs'
                                         : 'bg-emerald-50 text-emerald-700 hover:bg-emerald-100'
                                 }`}
                             >
-                                <Banknote className="w-3.5 h-3.5" />
-                                ঋণ যাচাই ({stats.loan_count})
+                                <Banknote className="w-3 h-3" />
+                                ঋণ ({stats?.loan_count ?? 0})
                             </button>
-                        </div>
-
-                        <div className="text-xs text-slate-500 font-medium flex items-center gap-2">
-                            <span>শাখা ক্রম ও কোড অনুযায়ী সুবিন্যস্ত</span>
                         </div>
                     </div>
 
-                    <form onSubmit={handleSearch} className="flex flex-wrap gap-2 items-end">
-                        <div className="flex-1 min-w-[200px]">
-                            <div className="relative">
-                                <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-indigo-400 w-4 h-4" />
-                                <input
-                                    type="text"
-                                    value={searchQuery}
-                                    onChange={(e) => setSearchQuery(e.target.value)}
-                                    placeholder="আবেদন নং, সদস্যের নাম, মোবাইল, এনআইডি..."
-                                    className="w-full pl-9 pr-3 py-2 text-sm border border-indigo-200 rounded-lg bg-indigo-50/20 focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-400"
-                                />
-                            </div>
-                        </div>
+                    {/* Row 3: Sub-status Quick Filter Chips + Org Selectors */}
+                    <div className="flex flex-wrap items-center justify-between gap-2 text-xs">
+                        {/* Sub-status filter chips */}
+                        <div className="flex items-center gap-1.5 flex-wrap">
+                            <span className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider mr-1">
+                                ফিল্টার:
+                            </span>
 
-                        <div className="flex items-center gap-1">
-                            <input
-                                type="date"
-                                value={dateFrom}
-                                onChange={(e) => handleDateFromChange(e.target.value)}
-                                className="px-2.5 py-2 text-sm border border-indigo-200 rounded-lg bg-white focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-400"
-                                title="হতে তারিখ"
-                                placeholder="হতে তারিখ"
-                            />
-                            <span className="text-slate-400 text-xs">-</span>
-                            <input
-                                type="date"
-                                value={dateTo}
-                                onChange={(e) => handleDateToChange(e.target.value)}
-                                className="px-2.5 py-2 text-sm border border-indigo-200 rounded-lg bg-white focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-400"
-                                title="পর্যন্ত তারিখ"
-                                placeholder="পর্যন্ত তারিখ"
-                            />
-                        </div>
-
-                        {zones.length > 0 && (
-                            <select
-                                value={selectedZone}
-                                onChange={(e) => handleZoneChange(e.target.value)}
-                                className="px-2.5 py-2 text-sm border border-indigo-200 rounded-lg bg-white"
-                            >
-                                <option value="">সব জোন</option>
-                                {zones.map((zone) => (
-                                    <option key={zone.id} value={zone.id.toString()}>
-                                        {zone.name}
-                                    </option>
-                                ))}
-                            </select>
-                        )}
-
-                        {areas.length > 0 && (
-                            <select
-                                value={selectedArea}
-                                onChange={(e) => handleAreaChange(e.target.value)}
-                                disabled={!selectedZone && filteredAreas.length === 0}
-                                className="px-2.5 py-2 text-sm border border-indigo-200 rounded-lg bg-white disabled:bg-slate-100"
-                            >
-                                <option value="">সব এলাকা</option>
-                                {filteredAreas.map((area) => (
-                                    <option key={area.id} value={area.id.toString()}>
-                                        {area.name}
-                                    </option>
-                                ))}
-                            </select>
-                        )}
-
-                        {branches.length > 0 && (
-                            <select
-                                value={selectedBranch}
-                                onChange={(e) => handleBranchChange(e.target.value)}
-                                disabled={!selectedZone && !selectedArea && filteredBranches.length === 0}
-                                className="px-2.5 py-2 text-sm border border-indigo-200 rounded-lg bg-white disabled:bg-slate-100"
-                            >
-                                <option value="">সব শাখা</option>
-                                {filteredBranches.map((branch) => (
-                                    <option key={branch.id} value={branch.id.toString()}>
-                                        {formatBranchLabel(branch)}
-                                    </option>
-                                ))}
-                            </select>
-                        )}
-
-                        <select
-                            value={issueStatusFilter}
-                            onChange={(e) => handleStatusChange(e.target.value)}
-                            className="px-2.5 py-2 text-sm border border-indigo-200 rounded-lg bg-white font-medium"
-                        >
-                            <option value="all">সব স্ট্যাটাস</option>
-                            <option value="pending">অমীমাংসিত আপত্তি</option>
-                            <option value="branch_replied">শাখার জবাব (ZM অপেক্ষমান)</option>
-                            <option value="zm_approved">ZM অনুমোদিত (HO অপেক্ষমান)</option>
-                            <option value="resolved">সমাধানকৃত</option>
-                            <option value="approved">অনুমোদিত</option>
-                            <option value="rejected">বাতিলকৃত</option>
-                        </select>
-
-                        {hasActiveFilters && (
+                            {/* ZM Approved (Ready for HO Action) Chip */}
                             <button
                                 type="button"
-                                onClick={clearFilters}
-                                className="px-3 py-2 text-sm bg-white text-slate-600 border border-indigo-200 rounded-lg hover:bg-indigo-50 font-medium flex items-center gap-1.5"
-                                title="ফিল্টার রিসেট করুন"
+                                onClick={() => handleStatusChange('zm_approved')}
+                                className={`px-2.5 py-1 rounded-md font-medium flex items-center gap-1 transition border ${
+                                    issueStatusFilter === 'zm_approved'
+                                        ? 'bg-emerald-600 text-white border-emerald-600 shadow-2xs font-bold'
+                                        : 'bg-emerald-50 text-emerald-800 border-emerald-200 hover:bg-emerald-100'
+                                }`}
+                                title="জোনাল ম্যানেজার অনুমোদন সম্পন্ন, হেড অফিসের ফাইনাল অনুমোদনের অপেক্ষায়"
                             >
-                                <X className="w-3.5 h-3.5" />
-                                Clear
+                                <ShieldCheck className="w-3.5 h-3.5 text-emerald-600" />
+                                ZM অনুমোদিত — HO অ্যাকশন প্রস্তুত ({stats?.zm_approved ?? 0})
                             </button>
-                        )}
-                    </form>
+
+                            {/* Branch Replied (Waiting for ZM) Chip */}
+                            <button
+                                type="button"
+                                onClick={() => handleStatusChange('branch_replied')}
+                                className={`px-2.5 py-1 rounded-md font-medium flex items-center gap-1 transition border ${
+                                    issueStatusFilter === 'branch_replied'
+                                        ? 'bg-sky-600 text-white border-sky-600 shadow-2xs font-bold'
+                                        : 'bg-sky-50 text-sky-800 border-sky-200 hover:bg-sky-100'
+                                }`}
+                                title="শাখা থেকে জবাব দেওয়া হয়েছে, ZM অনুমোদনের অপেক্ষায়"
+                            >
+                                <Clock className="w-3.5 h-3.5 text-sky-600" />
+                                শাখার জবাব — ZM অপেক্ষমান ({stats?.branch_replied ?? 0})
+                            </button>
+
+                            {/* Unresolved / Pending Branch Reply Chip */}
+                            <button
+                                type="button"
+                                onClick={() => handleStatusChange('pending')}
+                                className={`px-2.5 py-1 rounded-md font-medium flex items-center gap-1 transition border ${
+                                    issueStatusFilter === 'pending'
+                                        ? 'bg-amber-600 text-white border-amber-600 shadow-2xs font-bold'
+                                        : 'bg-amber-50 text-amber-900 border-amber-200 hover:bg-amber-100'
+                                }`}
+                                title="হেড অফিসের আপত্তি দেওয়া আছে, শাখা থেকে এখনো উত্তর আসেনি"
+                            >
+                                <AlertCircle className="w-3.5 h-3.5 text-amber-600" />
+                                অমীমাংসিত — শাখার জবাব অপেক্ষমান ({stats?.pending_issues ?? 0})
+                            </button>
+                        </div>
+
+                        {/* Org & Date selectors */}
+                        <div className="flex items-center gap-1.5 flex-wrap ml-auto">
+                            {zones.length > 0 && (
+                                <select
+                                    value={selectedZone}
+                                    onChange={(e) => handleZoneChange(e.target.value)}
+                                    className="h-7 px-2 text-xs border border-slate-300 rounded-md bg-white text-slate-700"
+                                >
+                                    <option value="">সব জোন</option>
+                                    {zones.map((zone) => (
+                                        <option key={zone.id} value={zone.id.toString()}>
+                                            {zone.name}
+                                        </option>
+                                    ))}
+                                </select>
+                            )}
+
+                            {areas.length > 0 && (
+                                <select
+                                    value={selectedArea}
+                                    onChange={(e) => handleAreaChange(e.target.value)}
+                                    disabled={!selectedZone && filteredAreas.length === 0}
+                                    className="h-7 px-2 text-xs border border-slate-300 rounded-md bg-white text-slate-700 disabled:bg-slate-100"
+                                >
+                                    <option value="">সব এলাকা</option>
+                                    {filteredAreas.map((area) => (
+                                        <option key={area.id} value={area.id.toString()}>
+                                            {area.name}
+                                        </option>
+                                    ))}
+                                </select>
+                            )}
+
+                            {branches.length > 0 && (
+                                <select
+                                    value={selectedBranch}
+                                    onChange={(e) => handleBranchChange(e.target.value)}
+                                    disabled={!selectedZone && !selectedArea && filteredBranches.length === 0}
+                                    className="h-7 px-2 text-xs border border-slate-300 rounded-md bg-white text-slate-700 disabled:bg-slate-100 max-w-[160px]"
+                                >
+                                    <option value="">সব শাখা</option>
+                                    {filteredBranches.map((branch) => (
+                                        <option key={branch.id} value={branch.id.toString()}>
+                                            {formatBranchLabel(branch)}
+                                        </option>
+                                    ))}
+                                </select>
+                            )}
+
+                            <div className="flex items-center gap-1">
+                                <input
+                                    type="date"
+                                    value={dateFrom}
+                                    onChange={(e) => handleDateFromChange(e.target.value)}
+                                    className="h-7 px-1.5 text-xs border border-slate-300 rounded-md bg-white"
+                                    title="হতে তারিখ"
+                                />
+                                <span className="text-slate-400 text-xs">-</span>
+                                <input
+                                    type="date"
+                                    value={dateTo}
+                                    onChange={(e) => handleDateToChange(e.target.value)}
+                                    className="h-7 px-1.5 text-xs border border-slate-300 rounded-md bg-white"
+                                    title="পর্যন্ত তারিখ"
+                                />
+                            </div>
+
+                            {hasActiveFilters && (
+                                <button
+                                    type="button"
+                                    onClick={clearFilters}
+                                    className="h-7 px-2 text-xs bg-slate-100 text-slate-600 hover:bg-slate-200 border border-slate-200 rounded-md font-medium flex items-center gap-1 transition"
+                                    title="সকল ফিল্টার রিসেট করুন"
+                                >
+                                    <RotateCcw className="w-3 h-3" />
+                                    রিসেট
+                                </button>
+                            )}
+                        </div>
+                    </div>
                 </div>
 
                 {/* Floating Bulk Action Bar for ZM Approval */}
@@ -870,7 +918,7 @@ export default function VerificationIndex({ items, stats, filters, permissions, 
                         minWidth={1150}
                         storageKey="ho_verification_table"
                         title="যাচাই ও অনুসন্ধান তালিকা"
-                        subtitle={`(পৃষ্ঠা ${items.current_page || 1}/${items.last_page || 1} · মোট ${items.total || 0} টি রেকর্ড)`}
+                        subtitle={`(সর্বশেষ আপডেট সবার উপরে · পৃষ্ঠা ${items.current_page || 1}/${items.last_page || 1} · মোট ${items.total || 0} টি রেকর্ড)`}
                     >
                         <table className="w-full text-left border-collapse table-auto">
                             <thead>
@@ -975,14 +1023,10 @@ export default function VerificationIndex({ items, stats, filters, permissions, 
                                                             {item.application_no}
                                                         </span>
                                                     </div>
-                                                    <div className="text-[10px] text-slate-500 mt-1 font-medium flex items-center gap-1" title={`পাঠানোর / অ্যাকশন তারিখ: ${item.sent_at ? formatDate(item.sent_at) : (item.submitted_at ? formatDate(item.submitted_at) : formatDate(item.created_at))}`}>
-                                                        <CalendarDays className="w-3 h-3 text-indigo-400 shrink-0" />
+                                                    <div className="text-[10px] text-slate-500 mt-1 font-medium flex items-center gap-1" title="আবেদন হেড অফিসে প্রেরণের তারিখ">
+                                                        <CalendarDays className="w-3 h-3 text-slate-400 shrink-0" />
                                                         <span>
-                                                            {item.sent_at
-                                                                ? formatDate(item.sent_at)
-                                                                : item.submitted_at
-                                                                ? formatDate(item.submitted_at)
-                                                                : formatDate(item.created_at)}
+                                                            আবেদন: {item.submitted_at ? formatDate(item.submitted_at) : formatDate(item.created_at)}
                                                         </span>
                                                     </div>
                                                     <div className="text-[10px] text-slate-500 mt-0.5 font-medium">
@@ -1013,6 +1057,10 @@ export default function VerificationIndex({ items, stats, filters, permissions, 
 
                                                 {/* Unified Thread: HO Objection, Branch Reply & ZM Approval */}
                                                 <td className="py-3.5 px-3 align-top">
+                                                    <div className="text-[10px] text-indigo-700 font-semibold mb-1.5 flex items-center gap-1 bg-indigo-50/60 px-2 py-0.5 rounded border border-indigo-100/70 w-fit">
+                                                        <Clock className="w-3 h-3 text-indigo-500 shrink-0" />
+                                                        <span>টাইমলাইন আপডেট: {formatDateTime(item.latest_action_at)}</span>
+                                                    </div>
                                                     <VerificationThread
                                                         item={item}
                                                         isApproved={isApproved}
@@ -1032,8 +1080,8 @@ export default function VerificationIndex({ items, stats, filters, permissions, 
                                                             <XCircle className="w-3 h-3" /> বাতিলকৃত
                                                         </span>
                                                     ) : item.is_zm_approved ? (
-                                                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-indigo-100 text-indigo-800 border border-indigo-300" title="ZM অনুমোদন সম্পন্ন, হেড অফিস ফাইনাল অ্যাপ্রুভালের অপেক্ষায়">
-                                                            <ShieldCheck className="w-3 h-3 text-indigo-600" /> ZM অনুমোদিত (HO অপেক্ষমান)
+                                                        <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-bold bg-emerald-600 text-white shadow-2xs" title="ZM অনুমোদন সম্পন্ন, হেড অফিস ফাইনাল অনুমোদনের জন্য প্রস্তুত">
+                                                            <ShieldCheck className="w-3.5 h-3.5 text-white" /> ZM অনুমোদিত (HO প্রস্তুত)
                                                         </span>
                                                     ) : item.has_replied ? (
                                                         <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-sky-100 text-sky-800 border border-sky-300" title="শাখা থেকে জবাব দেওয়া হয়েছে, ZM অনুমোদনের অপেক্ষায়">
@@ -1177,15 +1225,13 @@ export default function VerificationIndex({ items, stats, filters, permissions, 
                                                         )}
 
                                                         {/* 5. View Details */}
-                                                        <a
+                                                        <Link
                                                             href={item.view_url}
-                                                            target="_blank"
-                                                            rel="noreferrer"
                                                             className="p-1.5 bg-indigo-50 hover:bg-indigo-600 text-indigo-700 hover:text-white border border-indigo-200 rounded-lg transition"
                                                             title="সম্পূর্ণ আবেদন দেখুন"
                                                         >
                                                             <Eye className="w-4 h-4" />
-                                                        </a>
+                                                        </Link>
 
                                                         {/* 6. Manage issues / Inquiry modal (Only for HO or history viewing) */}
                                                         <button
@@ -1656,28 +1702,36 @@ function VerificationThread({
     const issues =
         item.issues.length > 0
             ? [...item.issues].sort((a, b) => (a.created_at || '').localeCompare(b.created_at || ''))
-            : [
-                  {
-                      id: 0,
-                      issue_description: item.latest_issue_description,
-                      reporter_name: 'হেড অফিস',
-                      status: item.has_pending_issue ? 'pending' : 'resolved',
-                      reply_message: item.latest_reply_message,
-                      responder_name: item.latest_reply_by_name || null,
-                      created_at: item.created_at,
-                      replied_at: item.reply_date || null,
-                      is_zm_approved: item.is_zm_approved,
-                      zm_approved_at: item.zm_approved_at,
-                      zm_approver_name: item.zm_approver_name,
-                      zm_approval_note: item.zm_approval_note,
-                  } satisfies IssueDetail,
-              ];
+            : (item.latest_issue_description
+                ? [
+                      {
+                          id: 0,
+                          issue_description: item.latest_issue_description,
+                          reporter_name: 'হেড অফিস',
+                          status: item.has_pending_issue ? 'pending' : 'resolved',
+                          reply_message: item.latest_reply_message,
+                          responder_name: item.latest_reply_by_name || null,
+                          created_at: item.created_at,
+                          replied_at: item.reply_date || null,
+                          is_zm_approved: item.is_zm_approved,
+                          zm_approved_at: item.zm_approved_at,
+                          zm_approver_name: item.zm_approver_name,
+                          zm_approval_note: item.zm_approval_note,
+                      } satisfies IssueDetail,
+                  ]
+                : []);
 
     const textClass = compact ? 'text-xs' : 'text-sm';
 
     return (
         <div className="relative space-y-2 pl-3">
             <div className="absolute left-[5px] top-2 bottom-2 w-px bg-slate-200" />
+
+            {issues.length === 0 && !isApproved && !isRejected && (
+                <div className="text-[11px] text-slate-400 italic py-1">
+                    কোনো আপত্তি বা পর্যবেক্ষণ নেই (প্রাথমিক অবস্থায় অপেক্ষমান)
+                </div>
+            )}
 
             {issues.map((issue, index) => (
                 <div key={issue.id || `round-${index}`} className="space-y-2">
@@ -1738,10 +1792,10 @@ function VerificationThread({
                                 issue.is_zm_approved ? (
                                     <span
                                         className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-emerald-100 text-emerald-800 border border-emerald-300 font-bold text-[10px]"
-                                        title={`ZM অনুমোদিত (${issue.zm_approver_name || 'জোনাল ম্যানেজার'}${issue.zm_approved_at ? ' - ' + formatDateTime(issue.zm_approved_at) : ''})`}
+                                        title={`ZM অনুমোদিত (${issue.zm_approver_name || 'জোনাল ম্যানেজার'})`}
                                     >
                                         <Check className="w-3.5 h-3.5 text-emerald-600 stroke-[2.5]" />
-                                        ZM অনুমোদিত
+                                        ZM অনুমোদিত {issue.zm_approved_at ? ` · ${formatDateTime(issue.zm_approved_at)}` : ''}
                                     </span>
                                 ) : (
                                     <span
@@ -1749,7 +1803,7 @@ function VerificationThread({
                                         title="জোনাল ম্যানেজার এখনও অনুমোদন দেননি (ZM অনুমোদন অপেক্ষমান)"
                                     >
                                         <X className="w-3.5 h-3.5 text-rose-600 stroke-[2.5]" />
-                                        ZM অনুমোদন নেই (অপেক্ষমান)
+                                        ZM অনুমোদন অপেক্ষমান
                                     </span>
                                 )
                             )}

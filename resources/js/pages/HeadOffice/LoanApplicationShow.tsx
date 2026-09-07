@@ -26,6 +26,7 @@ import {
     Lock,
     Edit,
     X,
+    RotateCcw,
 } from 'lucide-react';
 import GuarantorCommitment from '../Member/LoanApplications/Forms/GuarantorCommitment';
 import DeathRiskFund from '../Member/LoanApplications/Forms/DeathRiskFund';
@@ -36,6 +37,11 @@ import HeadOfficeModificationModal, { useCanHeadOfficeModify } from '@/component
 import SuperAdminDeletePinModal from '@/components/SuperAdminDeletePinModal';
 import { PhoneCallLink } from '@/components/ui/PhoneCallLink';
 import { toEnglishDigits, formatBranchCode, parseMemberCode } from '@/utils/memberCodeUtils';
+import LoanShowTabs from '../Member/LoanApplications/Components/LoanShowTabs';
+import MemberLoanDetailsTab from '../Member/LoanApplications/Components/MemberLoanDetailsTab';
+import ApprovalTimelineTab from '../Member/LoanApplications/Components/ApprovalTimelineTab';
+import EditApprovalCommentModal from '../Member/LoanApplications/Components/EditApprovalCommentModal';
+import EditLoanDetailsModal from '../Member/LoanApplications/Components/EditLoanDetailsModal';
 
 interface Loan {
     id: number;
@@ -145,6 +151,7 @@ interface Loan {
 
 interface Props {
     loan: Loan;
+    categories?: any[];
     flash?: { success?: string; error?: string };
 }
 
@@ -189,8 +196,9 @@ const PIPELINE_STAGES = [
     { key: 'disbursed', label: '৫. বিতরণ সম্পন্ন', desc: 'ঋণ বিতরণ' },
 ];
 
-export default function LoanApplicationShow({ loan, flash }: Props) {
+export default function LoanApplicationShow({ loan, categories = [], flash }: Props) {
     const canModify = useCanHeadOfficeModify();
+    const [loanDetailsModalOpen, setLoanDetailsModalOpen] = useState(false);
     const [showIssueModal, setShowIssueModal] = useState(false);
     const [showRejectModal, setShowRejectModal] = useState(false);
     const [showModificationModal, setShowModificationModal] = useState(false);
@@ -198,8 +206,61 @@ export default function LoanApplicationShow({ loan, flash }: Props) {
     const [pinProcessing, setPinProcessing] = useState(false);
     const [selectedFormId, setSelectedFormId] = useState<number | null>(null);
     const [printBlank, setPrintBlank] = useState(false);
-    const [activeTab, setActiveTab] = useState<'forms' | 'details' | 'issues'>('forms');
+    const [activeTab, setActiveTab] = useState<'forms' | 'details' | 'approvals'>('forms');
     const formPrintRef = useRef<HTMLDivElement>(null);
+
+    const approvalsList = loan.approvals || [];
+    const commentsCount = approvalsList.filter((a: any) => Boolean(a.comments)).length;
+
+    // Approval Comment Edit Modal State (Super Admin / Head Office)
+    const [editingApproval, setEditingApproval] = useState<{
+        id: number;
+        level?: string;
+        userName?: string;
+        roleName?: string;
+        comments?: string;
+    } | null>(null);
+    const [commentInput, setCommentInput] = useState('');
+    const [savingComment, setSavingComment] = useState(false);
+    const [commentError, setCommentError] = useState<string | null>(null);
+
+    const openEditCommentModal = (approval: any) => {
+        setEditingApproval({
+            id: approval.id,
+            level: approval.level,
+            userName: approval.user?.name,
+            roleName: approval.user?.role?.name,
+            comments: approval.comments || '',
+            currentComment: approval.comments || '',
+        });
+        setCommentInput(approval.comments || '');
+        setCommentError(null);
+    };
+
+    const handleCommentSubmit = (e: React.FormEvent) => {
+        e.preventDefault();
+        if (!editingApproval) return;
+        setSavingComment(true);
+        setCommentError(null);
+
+        router.patch(
+            `/loan-application-approvals/${editingApproval.id}/update-comment`,
+            { comments: commentInput },
+            {
+                preserveScroll: true,
+                onSuccess: () => {
+                    setEditingApproval(null);
+                    setCommentInput('');
+                },
+                onError: (errs: any) => {
+                    setCommentError(errs.comments || errs.error || 'মন্তব্য সংরক্ষণ করা সম্ভব হয়নি।');
+                },
+                onFinish: () => {
+                    setSavingComment(false);
+                },
+            }
+        );
+    };
 
     const { data, setData, post, processing, reset } = useForm({
         issue_description: '',
@@ -978,9 +1039,11 @@ export default function LoanApplicationShow({ loan, flash }: Props) {
                                 <Banknote className="w-4 h-4 sm:w-5 sm:h-5" />
                             </div>
                             <div className="min-w-0">
-                                <p className="text-[10px] sm:text-[11px] font-semibold uppercase tracking-wider text-slate-400">আবেদিত / অনুমোদিত</p>
+                                <p className="text-[10px] sm:text-[11px] font-semibold uppercase tracking-wider text-slate-400">
+                                    আবেদিত / অনুমোদিত
+                                </p>
                                 <p className="text-xs sm:text-sm font-bold text-emerald-700 truncate">
-                                    ৳{Number(loan.requested_amount || 0).toLocaleString('bn-BD')}
+                                    ৳{Number(loan.disbursed_amount ?? loan.approved_amount ?? loan.requested_amount ?? 0).toLocaleString('bn-BD')}
                                 </p>
                                 {loan.approved_amount != null && (
                                     <p className="text-[10px] sm:text-xs text-slate-500 truncate">
@@ -1009,85 +1072,19 @@ export default function LoanApplicationShow({ loan, flash }: Props) {
                         </div>
                     </div>
 
-                    {/* Urgent Action Banner for Pending Issues */}
-                    {pendingIssues.length > 0 && (
-                        <div className="rounded-2xl border border-amber-300 bg-amber-50/90 p-3.5 sm:p-4 text-xs sm:text-sm text-amber-950 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 print:hidden shadow-xs">
-                            <div className="flex items-start gap-2.5">
-                                <AlertCircle className="w-4 h-4 sm:w-5 sm:h-5 shrink-0 text-amber-600 mt-0.5" />
-                                <div>
-                                    <p className="font-bold text-amber-900">হেড অফিস থেকে {pendingIssues.length} টি সমস্যা পাঠানো হয়েছে</p>
-                                    <p className="text-xs text-amber-800 mt-0.5">
-                                        শাখা থেকে এখনও সমাধান বা উত্তর পাওয়া যায়নি।
-                                    </p>
-                                </div>
-                            </div>
-                            <Button 
-                                size="sm" 
-                                className="w-full sm:w-auto bg-amber-600 hover:bg-amber-700 text-white shrink-0 rounded-xl text-xs font-semibold"
-                                onClick={() => setActiveTab('issues')}
-                            >
-                                <MessageSquare className="w-3.5 h-3.5 mr-1.5" />
-                                সমস্যা দেখুন ({pendingIssues.length})
-                            </Button>
-                        </div>
-                    )}
-
                     {/* Navigation Tabs Bar */}
-                    <div className="bg-white rounded-2xl shadow-xs border border-slate-200/80 overflow-hidden print:hidden">
-                        <div className="flex border-b border-slate-200 bg-slate-50/50 p-1 sm:p-1.5 gap-1 overflow-x-auto">
-                            <button
-                                type="button"
-                                onClick={() => setActiveTab('forms')}
-                                className={[
-                                    'flex items-center gap-1.5 sm:gap-2 px-3 sm:px-4 py-2 sm:py-2.5 rounded-xl font-semibold text-xs sm:text-sm transition whitespace-nowrap flex-1 sm:flex-initial justify-center',
-                                    activeTab === 'forms'
-                                        ? 'bg-white text-indigo-700 shadow-xs border border-slate-200/80 font-bold'
-                                        : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100/60',
-                                ].join(' ')}
-                            >
-                                <FileText className={`w-3.5 h-3.5 sm:w-4 sm:h-4 ${activeTab === 'forms' ? 'text-indigo-600' : 'text-slate-400'}`} />
-                                📄 ঋণ আবেদন ফর্মসমূহ
-                                <Badge className={`ml-1 text-[10px] ${activeTab === 'forms' ? 'bg-indigo-100 text-indigo-800' : 'bg-slate-200 text-slate-700'}`}>
-                                    {savedFormCount}/{totalFormCount}
-                                </Badge>
-                            </button>
+                    <LoanShowTabs
+                        activeTab={activeTab}
+                        setActiveTab={setActiveTab}
+                        savedFormCount={savedFormCount}
+                        totalFormCount={totalFormCount}
+                        commentsCount={commentsCount}
+                        pendingIssuesCount={pendingIssues.length}
+                    />
 
-                            <button
-                                type="button"
-                                onClick={() => setActiveTab('details')}
-                                className={[
-                                    'flex items-center gap-1.5 sm:gap-2 px-3 sm:px-4 py-2 sm:py-2.5 rounded-xl font-semibold text-xs sm:text-sm transition whitespace-nowrap flex-1 sm:flex-initial justify-center',
-                                    activeTab === 'details'
-                                        ? 'bg-white text-indigo-700 shadow-xs border border-slate-200/80 font-bold'
-                                        : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100/60',
-                                ].join(' ')}
-                            >
-                                <User className={`w-3.5 h-3.5 sm:w-4 sm:h-4 ${activeTab === 'details' ? 'text-indigo-600' : 'text-slate-400'}`} />
-                                👤 সদস্য ও ঋণ বিস্তারিত
-                            </button>
-
-                            <button
-                                type="button"
-                                onClick={() => setActiveTab('issues')}
-                                className={[
-                                    'flex items-center gap-1.5 sm:gap-2 px-3 sm:px-4 py-2 sm:py-2.5 rounded-xl font-semibold text-xs sm:text-sm transition whitespace-nowrap flex-1 sm:flex-initial justify-center',
-                                    activeTab === 'issues'
-                                        ? 'bg-white text-indigo-700 shadow-xs border border-slate-200/80 font-bold'
-                                        : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100/60',
-                                ].join(' ')}
-                            >
-                                <MessageSquare className={`w-3.5 h-3.5 sm:w-4 sm:h-4 ${activeTab === 'issues' ? 'text-indigo-600' : 'text-slate-400'}`} />
-                                💬 সমস্যা ও পর্যবেক্ষণ
-                                {issues.length > 0 && (
-                                    <Badge className={`ml-1 text-[10px] ${pendingIssues.length > 0 ? 'bg-amber-500 text-white animate-pulse' : 'bg-slate-200 text-slate-700'}`}>
-                                        {pendingIssues.length > 0 ? `${pendingIssues.length} পেন্ডিং` : issues.length}
-                                    </Badge>
-                                )}
-                            </button>
-                        </div>
-
-                        {/* TAB 1: FORMS WORKSPACE */}
-                        {activeTab === 'forms' && (
+                        <div className="bg-white rounded-2xl shadow-xs border border-slate-200 overflow-hidden">
+                            {/* TAB 1: FORMS WORKSPACE */}
+                            {activeTab === 'forms' && (
                             <div className="p-3.5 sm:p-6 space-y-4">
                                 
                                 {/* Form Selector Pills */}
@@ -1214,229 +1211,35 @@ export default function LoanApplicationShow({ loan, flash }: Props) {
 
                         {/* TAB 2: MEMBER & LOAN DETAILS OVERVIEW */}
                         {activeTab === 'details' && (
-                            <div className="printable-area p-3.5 sm:p-6 grid grid-cols-1 lg:grid-cols-2 gap-4 sm:gap-6">
-                                <Card className="border-slate-200/80 shadow-xs rounded-2xl overflow-hidden">
-                                    <CardHeader className="bg-slate-50/60 pb-3 border-b">
-                                        <CardTitle className="text-sm sm:text-base font-bold text-slate-900 flex items-center gap-2">
-                                            <User className="w-4 h-4 sm:w-5 sm:h-5 text-indigo-600" /> সদস্যের বিস্তারিত তথ্য
-                                        </CardTitle>
-                                    </CardHeader>
-                                    <CardContent className="p-3.5 sm:p-4 space-y-2.5 sm:space-y-3 text-xs sm:text-sm">
-                                        <div className="flex justify-between py-1.5 border-b border-slate-100">
-                                            <span className="text-slate-500">মেম্বার কোড:</span>
-                                            <span className="font-mono font-bold text-indigo-700">{memberNo || '-'}</span>
-                                        </div>
-                                        <div className="flex justify-between py-1.5 border-b border-slate-100">
-                                            <span className="text-slate-500">নাম (বাংলা/ইংরেজি):</span>
-                                            <span className="font-semibold text-slate-900">{memberName}</span>
-                                        </div>
-                                        <div className="flex justify-between py-1.5 border-b border-slate-100">
-                                            <span className="text-slate-500">জাতীয় পরিচয়পত্র (NID):</span>
-                                            <span className="font-semibold text-slate-900">{memberAdmission?.nid_number || memberAdmission?.nid_no || '-'}</span>
-                                        </div>
-                                        <div className="flex justify-between py-1.5 border-b border-slate-100">
-                                            <span className="text-slate-500">মোবাইল নম্বর:</span>
-                                            <PhoneCallLink
-                                                phone={memberAdmission?.mobile_number || memberAdmission?.mobile_no}
-                                                className="font-mono font-semibold text-blue-700"
-                                                iconClassName="w-3.5 h-3.5 text-blue-500"
-                                            />
-                                        </div>
-                                        <div className="flex justify-between py-1.5 border-b border-slate-100">
-                                            <span className="text-slate-500">বর্তমান ঠিকানা:</span>
-                                            <span className="font-medium text-slate-800 text-right max-w-[200px] sm:max-w-[240px]">
-                                                {memberAdmission?.present_village_road || memberAdmission?.present_address_en || '-'}
-                                            </span>
-                                        </div>
-                                        {applicant && (
-                                            <div className="flex justify-between py-1.5">
-                                                <span className="text-slate-500">জমা প্রদানকারী:</span>
-                                                <span className="font-semibold text-slate-900">{applicant.name}</span>
-                                            </div>
-                                        )}
-                                    </CardContent>
-                                </Card>
-
-                                <Card className="border-slate-200/80 shadow-xs rounded-2xl overflow-hidden">
-                                    <CardHeader className="bg-slate-50/60 pb-3 border-b">
-                                        <CardTitle className="text-sm sm:text-base font-bold text-slate-900 flex items-center gap-2">
-                                            <Banknote className="w-4 h-4 sm:w-5 sm:h-5 text-emerald-600" /> ঋণ বিবরণ ও শর্তাবলী
-                                        </CardTitle>
-                                    </CardHeader>
-                                    <CardContent className="p-3.5 sm:p-4 space-y-2.5 sm:space-y-3 text-xs sm:text-sm">
-                                        <div className="flex justify-between py-1.5 border-b border-slate-100">
-                                            <span className="text-slate-500">আবেদন নং:</span>
-                                            <span className="font-mono font-bold text-indigo-700">{loan.application_no || '-'}</span>
-                                        </div>
-                                        <div className="flex justify-between py-1.5 border-b border-slate-100">
-                                            <span className="text-slate-500">ঋণ ক্যাটাগরি:</span>
-                                            <span className="font-semibold text-slate-900">
-                                                {loanCategory?.category_name_bn || loanCategory?.category_name || '-'}
-                                            </span>
-                                        </div>
-                                        <div className="flex justify-between py-1.5 border-b border-slate-100">
-                                            <span className="text-slate-500">ঋণ পণ্য:</span>
-                                            <span className="font-semibold text-slate-900">
-                                                {loanProduct?.product_name_bn || loanProduct?.product_name || '-'}
-                                            </span>
-                                        </div>
-                                        <div className="flex justify-between py-1.5 border-b border-slate-100">
-                                            <span className="text-slate-500">আবেদিত ঋণ পরিমাণ:</span>
-                                            <span className="font-bold text-slate-900">৳{Number(loan.requested_amount || 0).toLocaleString('bn-BD')}</span>
-                                        </div>
-                                        {loan.approved_amount != null && (
-                                            <div className="flex justify-between py-1.5 border-b border-slate-100">
-                                                <span className="text-slate-500">অনুমোদিত পরিমাণ:</span>
-                                                <span className="font-bold text-emerald-700">৳{Number(loan.approved_amount).toLocaleString('bn-BD')}</span>
-                                            </div>
-                                        )}
-                                        <div className="flex justify-between py-1.5 border-b border-slate-100">
-                                            <span className="text-slate-500">শাখা:</span>
-                                            <span className="font-semibold text-slate-900">{loan.branch?.name || '-'}</span>
-                                        </div>
-                                        {(loan.samity || memberAdmission?.samity) && (
-                                            <div className="flex justify-between py-1.5 border-b border-slate-100">
-                                                <span className="text-slate-500">সমিতি:</span>
-                                                <span className="font-semibold text-slate-900">
-                                                    {loan.samity?.samity_name_bn || loan.samity?.samity_name || memberAdmission?.samity?.samity_name_bn || memberAdmission?.samity?.samity_name || '-'}
-                                                </span>
-                                            </div>
-                                        )}
-                                        {loan.purpose_of_loan && (
-                                            <div className="flex justify-between py-1.5">
-                                                <span className="text-slate-500">ঋণের উদ্দেশ্য:</span>
-                                                <span className="font-semibold text-slate-900 text-right max-w-[200px] sm:max-w-[240px]">{loan.purpose_of_loan}</span>
-                                            </div>
-                                        )}
-                                    </CardContent>
-                                </Card>
-                            </div>
+                            <MemberLoanDetailsTab
+                                application={loan}
+                                memberName={memberName}
+                                applicant={applicant}
+                                isBranchUser={false}
+                                isBranchManager={false}
+                                isSuperAdmin={canModify}
+                                isFieldOfficer={false}
+                                onOpenMemberCodeModal={() => {
+                                    const p = parseMemberCode(memberNo, branchPrefix);
+                                    setSerialInput(p.serial);
+                                    setMemberCodeError(null);
+                                    setMemberCodeModalOpen(true);
+                                }}
+                                onOpenEditLoanModal={() => setLoanDetailsModalOpen(true)}
+                            />
                         )}
-
-                        {/* TAB 3: ISSUES & INQUIRIES WORKSPACE */}
-                        {activeTab === 'issues' && (
-                            <div className="p-3.5 sm:p-6 space-y-4">
-                                <div className="flex items-center justify-between flex-wrap gap-2">
-                                    <div>
-                                        <h3 className="font-bold text-slate-900 text-sm sm:text-base">হেড অফিস পর্যবেক্ষণ ও সমস্যা ট্র্যাকার</h3>
-                                        <p className="text-xs text-slate-500">হেড অফিস থেকে উত্থাপিত সমস্যা এবং শাখা থেকে প্রদত্ত উত্তর</p>
-                                    </div>
-                                    <div className="flex items-center gap-2">
-                                        <Button
-                                            size="sm"
-                                            onClick={() => setShowIssueModal(true)}
-                                            disabled={loan.status === 'approved' || loan.status === 'disbursed'}
-                                            className="rounded-xl text-xs bg-amber-600 hover:bg-amber-700 text-white font-semibold shadow-xs"
-                                        >
-                                            <AlertCircle className="w-3.5 h-3.5 mr-1.5" />
-                                            নতুন সমস্যা লিখুন
-                                        </Button>
-                                    </div>
-                                </div>
-
-                                {issues.length === 0 ? (
-                                    <div className="text-center py-12 bg-slate-50/50 rounded-2xl border border-dashed border-slate-200">
-                                        <CheckCircle2 className="w-10 h-10 text-emerald-500 mx-auto mb-2 opacity-80" />
-                                        <p className="font-bold text-slate-700 text-sm">কোনো সমস্যা বা পর্যবেক্ষণ নেই</p>
-                                        <p className="text-xs text-slate-500 mt-1">আবেদনটিতে কোনো ত্রুটি পাওয়া গেলে উপরে "নতুন সমস্যা লিখুন" বাটনে ক্লিক করুন।</p>
-                                    </div>
-                                ) : (
-                                    <div id="issues-print-area" className="space-y-3">
-                                        {issues.map((issue) => (
-                                            <div 
-                                                key={issue.id} 
-                                                className={`p-4 border rounded-2xl text-xs sm:text-sm shadow-2xs ${
-                                                    issue.status === 'pending' 
-                                                        ? 'bg-amber-50/80 border-amber-200' 
-                                                        : issue.status === 'resolved'
-                                                        ? 'bg-emerald-50/80 border-emerald-200'
-                                                        : 'bg-rose-50/80 border-rose-200'
-                                                }`}
-                                            >
-                                                {/* Issue Question */}
-                                                <div className={`p-3.5 rounded-xl mb-3 ${
-                                                    issue.status === 'pending' 
-                                                        ? 'bg-amber-100/90' 
-                                                        : issue.status === 'resolved'
-                                                        ? 'bg-emerald-100/90'
-                                                        : 'bg-rose-100/90'
-                                                }`}>
-                                                    <div className="flex items-start justify-between gap-2">
-                                                        <div className="flex-1">
-                                                            <div className="flex items-center gap-2 mb-1.5 flex-wrap">
-                                                                <AlertCircle className={`w-4 h-4 ${
-                                                                    issue.status === 'pending' 
-                                                                        ? 'text-amber-700' 
-                                                                        : issue.status === 'resolved'
-                                                                        ? 'text-emerald-700'
-                                                                        : 'text-rose-700'
-                                                                }`} />
-                                                                <span className={`font-bold ${
-                                                                    issue.status === 'pending' 
-                                                                        ? 'text-amber-950' 
-                                                                        : issue.status === 'resolved'
-                                                                        ? 'text-emerald-950'
-                                                                        : 'text-rose-950'
-                                                                }`}>
-                                                                    হেড অফিস বার্তা
-                                                                </span>
-                                                                <Badge className={`${
-                                                                    issue.status === 'pending' 
-                                                                        ? 'bg-amber-200 text-amber-900 border-amber-300' 
-                                                                        : issue.status === 'resolved'
-                                                                        ? 'bg-emerald-200 text-emerald-900 border-emerald-300'
-                                                                        : 'bg-rose-200 text-rose-900 border-rose-300'
-                                                                } text-[10px]`}>
-                                                                    {issue.status === 'pending' ? 'পেন্ডিং' : issue.status === 'resolved' ? 'সমাধান করা হয়েছে' : 'প্রত্যাখ্যাত'}
-                                                                </Badge>
-                                                            </div>
-                                                            <p className={`${
-                                                                issue.status === 'pending' 
-                                                                    ? 'text-amber-950' 
-                                                                    : issue.status === 'resolved'
-                                                                    ? 'text-emerald-950'
-                                                                    : 'text-rose-950'
-                                                            } leading-relaxed`}>
-                                                                {issue.issue_description}
-                                                            </p>
-                                                            <p className={`text-[11px] mt-2 font-medium ${
-                                                                issue.status === 'pending' 
-                                                                    ? 'text-amber-800' 
-                                                                    : issue.status === 'resolved'
-                                                                    ? 'text-emerald-800'
-                                                                    : 'text-rose-800'
-                                                            }`}>
-                                                                — {issue.reporter?.name || 'হেড অফিস কর্মকর্তা'}, {formatDateTime(issue.created_at)}
-                                                            </p>
-                                                        </div>
-                                                    </div>
-                                                </div>
-
-                                                {/* Branch Response */}
-                                                {issue.response_message ? (
-                                                    <div className="p-3.5 rounded-xl bg-blue-50/90 border border-blue-200">
-                                                        <div className="flex items-center gap-2 mb-1.5">
-                                                            <MessageSquare className="w-4 h-4 text-blue-700" />
-                                                            <span className="font-bold text-blue-950">শাখার উত্তর</span>
-                                                        </div>
-                                                        <p className="text-blue-950 whitespace-pre-wrap leading-relaxed">{issue.response_message}</p>
-                                                        {issue.responder && (
-                                                            <p className="text-[11px] font-medium text-blue-700 mt-2">
-                                                                — {issue.responder.name}
-                                                                {issue.responded_at && `, ${formatDateTime(issue.responded_at)}`}
-                                                            </p>
-                                                        )}
-                                                    </div>
-                                                ) : issue.status === 'pending' && (
-                                                    <div className="p-2.5 bg-white/80 rounded-xl text-xs text-slate-500 italic border border-slate-200/60">
-                                                        শাখা থেকে এখনও কোনো উত্তর পাওয়া যায়নি।
-                                                    </div>
-                                                )}
-                                            </div>
-                                        ))}
-                                    </div>
-                                )}
-                            </div>
+                        {/* TAB 3: APPROVAL TIMELINE & ISSUES */}
+                        {activeTab === 'approvals' && (
+                            <ApprovalTimelineTab
+                                approvalsList={approvalsList}
+                                commentsCount={commentsCount}
+                                canModifyComment={canModify}
+                                onEditComment={openEditCommentModal}
+                                issues={issues}
+                                canRespondToIssues={false}
+                                onNewIssue={() => setShowIssueModal(true)}
+                                isHeadOffice={true}
+                            />
                         )}
                     </div>
                 </div>
@@ -1592,6 +1395,21 @@ export default function LoanApplicationShow({ loan, flash }: Props) {
                     </div>
                 </div>
             )}
+            {/* ── APPROVAL COMMENT EDIT MODAL (Super Admin / Head Office) ───────────── */}
+            <EditApprovalCommentModal
+                editingApproval={editingApproval}
+                onClose={() => setEditingApproval(null)}
+            />
+
+            {/* ── LOAN DETAILS & TERMS EDIT MODAL (Super Admin / Head Office) ───────────── */}
+            <EditLoanDetailsModal
+                open={loanDetailsModalOpen}
+                onClose={() => setLoanDetailsModalOpen(false)}
+                application={loan}
+                categories={categories}
+                isSuperAdmin={canModify}
+                isFieldOfficer={false}
+            />
         </AdminLayout>
     );
 }

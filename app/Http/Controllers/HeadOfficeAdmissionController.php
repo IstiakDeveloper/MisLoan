@@ -610,11 +610,6 @@ class HeadOfficeAdmissionController extends Controller
 
         return Inertia::render('MemberAdmission/Show', [
             'admission' => $admission,
-            'auth' => [
-                'user' => [
-                    'has_all_access' => auth()->user()->has_all_access,
-                ],
-            ],
         ]);
     }
 

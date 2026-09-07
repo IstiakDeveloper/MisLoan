@@ -493,15 +493,13 @@ export default function AdmissionMembers({ admissions, filters, stats, zones, ar
 
     const ActionButtons = ({ admission }: { admission: MemberAdmission }) => (
         <div className="flex items-center justify-end gap-1">
-            <a
+            <Link
                 href={`/head-office/admissions/${admission.id}`}
-                target="_blank"
-                rel="noreferrer"
                 className="p-1.5 text-blue-600 hover:text-white hover:bg-blue-600 border border-blue-200 hover:border-blue-600 rounded-md transition"
                 title="দেখুন"
             >
                 <Eye className="w-4 h-4" />
-            </a>
+            </Link>
             <Link
                 href={`/member-admissions/${admission.id}/edit`}
                 className="p-1.5 text-sky-700 hover:text-white hover:bg-sky-600 border border-sky-200 hover:border-sky-600 rounded-md transition"

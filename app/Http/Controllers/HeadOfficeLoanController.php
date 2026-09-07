@@ -7,6 +7,7 @@ use App\Models\Area;
 use App\Models\Branch;
 use App\Models\LoanApplication;
 use App\Models\LoanApplicationIssue;
+use App\Models\LoanCategory;
 use App\Models\Role;
 use App\Models\User;
 use App\Models\Zone;
@@ -669,7 +670,7 @@ class HeadOfficeLoanController extends Controller
             'memberAdmission.familyMembers',
             'memberAdmission.otherAssets',
             'submittedBy',
-            'approvals.user',
+            'approvals.user.role',
             'issues.reporter',
             'issues.responder',
         ]);
@@ -694,8 +695,16 @@ class HeadOfficeLoanController extends Controller
         $loanApplication->superadmin_can_pin_edit = $isSuperAdmin;
         $loanApplication->superadmin_edit_unlocked = $isSuperAdmin && $this->isLoanEditUnlocked((int) $loanApplication->id);
 
+        $categories = LoanCategory::with(['loanProducts' => function ($q) {
+            $q->where('is_active', true)->orderBy('display_order');
+        }])
+            ->where('is_active', true)
+            ->orderBy('display_order')
+            ->get();
+
         return Inertia::render('HeadOffice/LoanApplicationShow', [
             'loan' => $loanApplication,
+            'categories' => $categories,
         ]);
     }
 

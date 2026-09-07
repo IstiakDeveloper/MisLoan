@@ -844,12 +844,6 @@ export default function BranchDashboard({
                         </div>
 
                         <div className="flex items-center gap-3.5 font-semibold flex-wrap">
-                            <Link href="/team-based-approvals/drafts" className="text-slate-600 hover:text-slate-900 flex items-center gap-1.5">
-                                <span className="w-1.5 h-1.5 rounded-full bg-slate-400"></span>
-                                <span>ড্রাফট:</span>
-                                <strong className="text-slate-900 font-bold">{teamBasedStats.draft_count}</strong>
-                            </Link>
-                            <span className="text-slate-200">|</span>
                             <Link href="/team-based-approvals" className="text-amber-600 hover:text-amber-700 flex items-center gap-1.5">
                                 <span className="w-1.5 h-1.5 rounded-full bg-amber-500"></span>
                                 <span>জমা দেওয়া:</span>

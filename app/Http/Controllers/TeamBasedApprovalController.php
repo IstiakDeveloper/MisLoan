@@ -17,160 +17,24 @@ class TeamBasedApprovalController extends Controller
 {
     /**
      * Show Team Based approval entry form for branch user.
+     * (Temporarily disabled: Team Based sheets are auto-created upon loan forward)
      */
     public function create(Request $request)
     {
-        $user = $request->user();
-        $branch = $user->branch;
-
-        if (! $branch) {
-            abort(403, 'এই ফর্ম শুধু শাখা ব্যবহারকারীদের (branch_manager/branch_user/field_officer) জন্য।');
-        }
-
-        $branch->load(['area.zone']);
-
-        // Area & Zone managers who can access this branch
-        $areaZoneUsers = User::query()
-            ->active()
-            ->whereHas('role', function ($q) {
-                $q->whereIn('name', [Role::AREA_MANAGER, Role::ZONE_MANAGER]);
-            })
-            ->canAccessBranch($branch->id)
-            ->with('role:id,name,display_name')
-            ->orderBy('name')
-            ->get();
-
-        $admfDmfEd = User::getApproversSelectableByBranch($branch->id)
-            ->loadMissing('role:id,name,display_name');
-
-        // Single approver list (১ জন নির্বাচন করবে) - area/zone + ADMF/DMF/ED
-        $approverOptions = collect();
-        $approverOptions = $approverOptions->merge(
-            $areaZoneUsers->map(function (User $u) {
-                return [
-                    'id' => $u->id,
-                    'name' => $u->name,
-                    'role_name' => $u->role->display_name ?? $u->role->name,
-                    'level' => $u->role->name,
-                ];
-            })
-        );
-        $approverOptions = $approverOptions->merge(
-            $admfDmfEd->map(function (User $u) {
-                return [
-                    'id' => $u->id,
-                    'name' => $u->name,
-                    'role_name' => $u->role->display_name ?? $u->role->name,
-                    'level' => $u->role->name,
-                ];
-            })
-        );
-
-        return Inertia::render('TeamBased/ApprovalForm', [
-            'branch' => [
-                'id' => $branch->id,
-                'name' => $branch->name,
-                'code' => $branch->code,
-                'area_name' => $branch->area?->name,
-                'zone_name' => $branch->area?->zone?->name,
-            ],
-            'approverOptions' => $approverOptions->values(),
-            'today' => now()->toDateString(),
-        ]);
+        return redirect()
+            ->route('team-based-approvals.index')
+            ->with('warning', 'টিম-বেসড আবেদন স্বয়ংক্রিয়ভাবে তৈরি হয়। নতুন ফরম তৈরি সাময়িকভাবে বন্ধ রাখা হয়েছে।');
     }
 
     /**
      * Save Team Based sheet as draft (branch can submit later).
+     * (Temporarily disabled)
      */
     public function saveDraft(Request $request)
     {
-        $user = $request->user();
-        $branch = $user->branch;
-
-        if (! $branch) {
-            abort(403, 'এই ফর্ম শুধু শাখা ব্যবহারকারীদের (branch_manager/branch_user/field_officer) জন্য।');
-        }
-
-        $validated = $request->validate([
-            'sheet_date' => ['required', 'date'],
-            'approver_user_id' => ['required', 'exists:users,id'],
-            'items' => ['required', 'array', 'min:1'],
-            'items.*.member_name' => ['required', 'string', 'max:255'],
-            'items.*.member_code' => ['nullable', 'string', 'max:50'],
-            'items.*.member_phone' => ['nullable', 'string', 'max:20'],
-            'items.*.samity_number' => ['nullable', 'string', 'max:50'],
-            'items.*.savings_general' => ['nullable', 'numeric', 'min:0'],
-            'items.*.savings_other' => ['nullable', 'numeric', 'min:0'],
-            'items.*.savings_total' => ['nullable', 'numeric', 'min:0'],
-            'items.*.repaid_loan_amount' => ['nullable', 'string', 'max:50'],
-            'items.*.repaid_installment_no' => ['nullable', 'string', 'max:50'],
-            'items.*.other_institution_loan_amount' => ['nullable', 'string', 'max:500'],
-            'items.*.proposed_loan_amount' => ['nullable', 'string', 'max:50'],
-            'items.*.loan_term_years' => ['nullable', 'numeric', 'in:0.5,1,1.5,2,3'],
-            'items.*.loan_type' => ['nullable', 'string', 'max:100'],
-            'items.*.project_name' => ['nullable', 'string', 'max:255'],
-        ], [
-            'items.required' => 'কমপক্ষে ১ জন সদস্যের তথ্য দিতে হবে।',
-            'items.*.member_name.required' => 'সদস্যের নাম ফাঁকা রাখা যাবে না।',
-        ]);
-
-        DB::transaction(function () use ($validated, $branch, $user) {
-            // Determine selected approver role (Area/Zone/ADMF/DMF/ED) - only ONE approver
-            $approver = User::with('role')->findOrFail($validated['approver_user_id']);
-
-            $areaManagerId = null;
-            $zoneManagerId = null;
-            $admfId = null;
-            $dmfId = null;
-            $edId = null;
-
-            switch ($approver->role?->name) {
-                case Role::AREA_MANAGER:
-                    $areaManagerId = $approver->id;
-                    break;
-                case Role::ZONE_MANAGER:
-                    $zoneManagerId = $approver->id;
-                    break;
-                case Role::ADMF:
-                    $admfId = $approver->id;
-                    break;
-                case Role::DMF:
-                    $dmfId = $approver->id;
-                    break;
-                case Role::ED:
-                    $edId = $approver->id;
-                    break;
-            }
-
-            $approval = TeamBasedApproval::create([
-                'branch_id' => $branch->id,
-                'created_by' => $user->id,
-                'sheet_date' => $validated['sheet_date'],
-                'area_manager_id' => $areaManagerId,
-                'zone_manager_id' => $zoneManagerId,
-                'admf_id' => $admfId,
-                'dmf_id' => $dmfId,
-                'ed_id' => $edId,
-                'status' => 'draft',
-            ]);
-
-            $items = [];
-            foreach ($validated['items'] as $index => $item) {
-                $items[] = new TeamBasedApprovalItem(array_merge($item, [
-                    'serial_no' => $index + 1,
-                ]));
-            }
-
-            $approval->items()->saveMany($items);
-            // Keep a snapshot for future change-highlighting
-            $approval->update([
-                'last_items_snapshot' => $validated['items'],
-            ]);
-        });
-
         return redirect()
-            ->back()
-            ->with('success', 'টিম ভিত্তিক ঋণ তালিকা ড্রাফট হিসেবে সংরক্ষিত হয়েছে।');
+            ->route('team-based-approvals.index')
+            ->with('warning', 'টিম-বেসড আবেদন স্বয়ংক্রিয়ভাবে তৈরি হয়। ড্রাফট সংরক্ষণ সাময়িকভাবে বন্ধ রাখা হয়েছে।');
     }
 
     /**
@@ -1317,239 +1181,35 @@ class TeamBasedApprovalController extends Controller
 
     /**
      * List only drafts for current branch (Draft List page).
+     * (Temporarily disabled: Team Based sheets are auto-created upon loan forward)
      */
     public function drafts(Request $request)
     {
-        $user = $request->user();
-        $branch = $user->branch;
-        if (! $branch) {
-            abort(403, 'Draft list শুধুমাত্র শাখা ব্যবহারকারীরা দেখতে পারবেন।');
-        }
-
-        // Default: show all drafts. Apply date filter only when user selects dates.
-        $dateFrom = $request->input('date_from');
-        $dateTo = $request->input('date_to');
-
-        $approvals = TeamBasedApproval::with(['branch', 'creator', 'areaManager', 'zoneManager', 'admf', 'dmf', 'ed'])
-            ->where('branch_id', $branch->id)
-            ->where('status', 'draft')
-            ->when($dateFrom || $dateTo, function ($q) use ($dateFrom, $dateTo) {
-                $from = $dateFrom ?: $dateTo;
-                $to = $dateTo ?: $dateFrom;
-                $q->whereBetween('sheet_date', [$from, $to]);
-            })
-            ->latest()
-            ->paginate(20)
-            ->through(function (TeamBasedApproval $approval) {
-                $approverUser = $approval->areaManager
-                    ?? $approval->zoneManager
-                    ?? $approval->admf
-                    ?? $approval->dmf
-                    ?? $approval->ed;
-
-                return [
-                    'id' => $approval->id,
-                    'sheet_date' => optional($approval->sheet_date)->toDateString(),
-                    'status' => $approval->status,
-                    'created_at' => $approval->created_at?->toDateTimeString(),
-                    'approver_name' => $approverUser?->name,
-                ];
-            });
-
-        return Inertia::render('TeamBased/ApprovalDraftIndex', [
-            'approvals' => $approvals,
-            'filters' => [
-                'date_from' => $dateFrom ?? '',
-                'date_to' => $dateTo ?? '',
-            ],
-        ]);
+        return redirect()
+            ->route('team-based-approvals.index')
+            ->with('info', 'টিম-বেসড আবেদন স্বয়ংক্রিয়ভাবে তৈরি হয়। ড্রাফট তালিকা সাময়িকভাবে বন্ধ রাখা হয়েছে।');
     }
 
     /**
      * Edit a draft sheet.
+     * (Temporarily disabled)
      */
     public function edit(Request $request, TeamBasedApproval $teamBasedApproval)
     {
-        $user = $request->user();
-        if ($teamBasedApproval->branch_id !== $user->branch_id || $teamBasedApproval->status !== 'draft') {
-            abort(403);
-        }
-
-        $branch = $user->branch;
-        $branch->load(['area.zone']);
-
-        // Reuse approver list
-        $areaZoneUsers = User::query()
-            ->active()
-            ->whereHas('role', function ($q) {
-                $q->whereIn('name', [Role::AREA_MANAGER, Role::ZONE_MANAGER]);
-            })
-            ->canAccessBranch($branch->id)
-            ->with('role:id,name,display_name')
-            ->orderBy('name')
-            ->get();
-
-        $admfDmfEd = User::getApproversSelectableByBranch($branch->id)
-            ->loadMissing('role:id,name,display_name');
-
-        $approverOptions = collect();
-        $approverOptions = $approverOptions->merge(
-            $areaZoneUsers->map(function (User $u) {
-                return [
-                    'id' => $u->id,
-                    'name' => $u->name,
-                    'role_name' => $u->role->display_name ?? $u->role->name,
-                    'level' => $u->role->name,
-                ];
-            })
-        );
-        $approverOptions = $approverOptions->merge(
-            $admfDmfEd->map(function (User $u) {
-                return [
-                    'id' => $u->id,
-                    'name' => $u->name,
-                    'role_name' => $u->role->display_name ?? $u->role->name,
-                    'level' => $u->role->name,
-                ];
-            })
-        );
-
-        $teamBasedApproval->load('items');
-
-        // Determine selected approver user id
-        $approverUserId = $teamBasedApproval->area_manager_id
-            ?? $teamBasedApproval->zone_manager_id
-            ?? $teamBasedApproval->admf_id
-            ?? $teamBasedApproval->dmf_id
-            ?? $teamBasedApproval->ed_id;
-
-        $existingApproval = [
-            'id' => $teamBasedApproval->id,
-            'sheet_date' => optional($teamBasedApproval->sheet_date)->toDateString(),
-            'approver_user_id' => $approverUserId,
-            'status' => $teamBasedApproval->status,
-            'items' => $teamBasedApproval->items->map(function (TeamBasedApprovalItem $item) {
-                return [
-                    'member_name' => $item->member_name,
-                    'member_code' => $item->member_code ?? '',
-                    'member_phone' => $item->member_phone ?? '',
-                    'samity_number' => $item->samity_number ?? '',
-                    'savings_general' => $item->savings_general !== null ? (string) (int) round((float) $item->savings_general) : '',
-                    'savings_other' => $item->savings_other !== null ? (string) (int) round((float) $item->savings_other) : '',
-                    'savings_total' => $item->savings_total !== null ? (string) (int) round((float) $item->savings_total) : '',
-                    'repaid_loan_amount' => TeamBasedApprovalItem::asWholeNumber($item->repaid_loan_amount) ?? '',
-                    'repaid_installment_no' => $item->repaid_installment_no !== null ? (string) $item->repaid_installment_no : '',
-                    'other_institution_loan_amount' => $item->other_institution_loan_amount !== null
-                        ? (string) $item->other_institution_loan_amount
-                        : '',
-                    'proposed_loan_amount' => TeamBasedApprovalItem::asWholeNumber($item->proposed_loan_amount) ?? '',
-                    'loan_term_years' => $item->loan_term_years !== null ? (string) $item->loan_term_years : '',
-                    'loan_type' => $item->loan_type ?? '',
-                    'project_name' => $item->project_name ?? '',
-                ];
-            })->values(),
-        ];
-
-        return Inertia::render('TeamBased/ApprovalForm', [
-            'branch' => [
-                'id' => $branch->id,
-                'name' => $branch->name,
-                'code' => $branch->code,
-                'area_name' => $branch->area?->name,
-                'zone_name' => $branch->area?->zone?->name,
-            ],
-            'approverOptions' => $approverOptions->values(),
-            'today' => now()->toDateString(),
-            'existingApproval' => $existingApproval,
-        ]);
+        return redirect()
+            ->route('team-based-approvals.index')
+            ->with('warning', 'টিম-বেসড আবেদন স্বয়ংক্রিয়ভাবে তৈরি হয়। ড্রাফট সম্পাদনা সাময়িকভাবে বন্ধ রাখা হয়েছে।');
     }
 
     /**
      * Update a draft sheet.
+     * (Temporarily disabled)
      */
     public function updateDraft(Request $request, TeamBasedApproval $teamBasedApproval)
     {
-        $user = $request->user();
-        if ($teamBasedApproval->branch_id !== $user->branch_id || $teamBasedApproval->status !== 'draft') {
-            abort(403);
-        }
-
-        $validated = $request->validate([
-            'sheet_date' => ['required', 'date'],
-            'approver_user_id' => ['required', 'exists:users,id'],
-            'items' => ['required', 'array', 'min:1'],
-            'items.*.member_name' => ['required', 'string', 'max:255'],
-            'items.*.member_code' => ['nullable', 'string', 'max:50'],
-            'items.*.member_phone' => ['nullable', 'string', 'max:20'],
-            'items.*.samity_number' => ['nullable', 'string', 'max:50'],
-            'items.*.savings_general' => ['nullable', 'numeric', 'min:0'],
-            'items.*.savings_other' => ['nullable', 'numeric', 'min:0'],
-            'items.*.savings_total' => ['nullable', 'numeric', 'min:0'],
-            'items.*.repaid_loan_amount' => ['nullable', 'string', 'max:50'],
-            'items.*.repaid_installment_no' => ['nullable', 'string', 'max:50'],
-            'items.*.other_institution_loan_amount' => ['nullable', 'string', 'max:500'],
-            'items.*.proposed_loan_amount' => ['nullable', 'string', 'max:50'],
-            'items.*.loan_term_years' => ['nullable', 'numeric', 'in:0.5,1,1.5,2,3'],
-            'items.*.loan_type' => ['nullable', 'string', 'max:100'],
-            'items.*.project_name' => ['nullable', 'string', 'max:255'],
-        ]);
-
-        DB::transaction(function () use ($validated, $teamBasedApproval) {
-            $approver = User::with('role')->findOrFail($validated['approver_user_id']);
-
-            $areaManagerId = null;
-            $zoneManagerId = null;
-            $admfId = null;
-            $dmfId = null;
-            $edId = null;
-
-            switch ($approver->role?->name) {
-                case Role::AREA_MANAGER:
-                    $areaManagerId = $approver->id;
-                    break;
-                case Role::ZONE_MANAGER:
-                    $zoneManagerId = $approver->id;
-                    break;
-                case Role::ADMF:
-                    $admfId = $approver->id;
-                    break;
-                case Role::DMF:
-                    $dmfId = $approver->id;
-                    break;
-                case Role::ED:
-                    $edId = $approver->id;
-                    break;
-            }
-
-            $teamBasedApproval->update([
-                'sheet_date' => $validated['sheet_date'],
-                'area_manager_id' => $areaManagerId,
-                'zone_manager_id' => $zoneManagerId,
-                'admf_id' => $admfId,
-                'dmf_id' => $dmfId,
-                'ed_id' => $edId,
-            ]);
-
-            // Replace items
-            $teamBasedApproval->items()->delete();
-
-            $items = [];
-            foreach ($validated['items'] as $index => $item) {
-                $items[] = new TeamBasedApprovalItem(array_merge($this->roundItemNumbers($item), [
-                    'serial_no' => $index + 1,
-                ]));
-            }
-
-            $teamBasedApproval->items()->saveMany($items);
-
-            $teamBasedApproval->update([
-                'last_items_snapshot' => $validated['items'],
-            ]);
-        });
-
         return redirect()
-            ->route('team-based-approvals.index', ['view' => 'drafts'])
-            ->with('success', 'Draft updated successfully.');
+            ->route('team-based-approvals.index')
+            ->with('warning', 'টিম-বেসড আবেদন স্বয়ংক্রিয়ভাবে তৈরি হয়। ড্রাফট সম্পাদনা সাময়িকভাবে বন্ধ রাখা হয়েছে।');
     }
 
     /**

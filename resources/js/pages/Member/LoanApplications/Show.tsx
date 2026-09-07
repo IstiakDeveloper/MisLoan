@@ -40,15 +40,20 @@ import GuarantorCommitment from './Forms/GuarantorCommitment';
 import DeathRiskFund from './Forms/DeathRiskFund';
 import LoanAgreement from './Forms/LoanAgreement';
 import FieldInvestigation from './Forms/FieldInvestigation';
-import LoanApplicationApproval from './Forms/LoanApplicationApproval';
 import SendLoanToHoModal from '@/components/LoanApplications/SendLoanToHoModal';
 import { useHoSendCutoff } from '@/hooks/use-ho-send-cutoff';
+import { canHeadOfficeModify } from '@/components/HeadOfficeModificationModal';
 import {
     disburseFormIds,
     disburseWizardFormUrl,
     isDisburseWizardSearch,
     nextDisburseFormId,
 } from '@/utils/loanFormNavigation';
+import LoanShowTabs from './Components/LoanShowTabs';
+import MemberLoanDetailsTab from './Components/MemberLoanDetailsTab';
+import ApprovalTimelineTab from './Components/ApprovalTimelineTab';
+import EditApprovalCommentModal from './Components/EditApprovalCommentModal';
+import EditLoanDetailsModal from './Components/EditLoanDetailsModal';
 
 interface LoanApplication {
     id: number;
@@ -269,6 +274,7 @@ export default function Show({ application, routes, categories = [] }: Props) {
     const isBranchUser = pageAuth?.user?.role?.name === 'branch_user';
     const hoSendCutoff = useHoSendCutoff();
     const isBranchManager = pageAuth?.user?.role?.name === 'branch_manager' || pageAuth?.user?.role?.name === 'super_admin';
+    const isSuperAdmin = canHeadOfficeModify(pageAuth);
     const canRespondToIssues = isBranchUser || isBranchManager;
     const showBranchApproveButton = isBranchManager &&
         !!application.can_branch_approve &&
@@ -276,6 +282,59 @@ export default function Show({ application, routes, categories = [] }: Props) {
         (application.status === 'submitted' || application.status === 'under_review');
     const mustForwardApproval = showBranchApproveButton && !!application.must_forward_approval;
     const escalationApprovers = application.escalation_approvers ?? [];
+
+    const approvalsList = application.approvals || [];
+    const commentsCount = approvalsList.filter((a: any) => Boolean(a.comments)).length;
+
+    // Approval Comment Edit Modal State (Super Admin / Head Office)
+    const [editingApproval, setEditingApproval] = useState<{
+        id: number;
+        level?: string;
+        userName?: string;
+        roleName?: string;
+        comments?: string;
+    } | null>(null);
+    const [commentInput, setCommentInput] = useState('');
+    const [savingComment, setSavingComment] = useState(false);
+    const [commentError, setCommentError] = useState<string | null>(null);
+
+    const openEditCommentModal = (approval: any) => {
+        setEditingApproval({
+            id: approval.id,
+            level: approval.level,
+            userName: approval.user?.name,
+            roleName: approval.user?.role?.name,
+            comments: approval.comments || '',
+            currentComment: approval.comments || '',
+        });
+        setCommentInput(approval.comments || '');
+        setCommentError(null);
+    };
+
+    const handleCommentSubmit = (e: React.FormEvent) => {
+        e.preventDefault();
+        if (!editingApproval) return;
+        setSavingComment(true);
+        setCommentError(null);
+
+        router.patch(
+            `/loan-application-approvals/${editingApproval.id}/update-comment`,
+            { comments: commentInput },
+            {
+                preserveScroll: true,
+                onSuccess: () => {
+                    setEditingApproval(null);
+                    setCommentInput('');
+                },
+                onError: (errs: any) => {
+                    setCommentError(errs.comments || errs.error || 'মন্তব্য সংরক্ষণ করা সম্ভব হয়নি।');
+                },
+                onFinish: () => {
+                    setSavingComment(false);
+                },
+            }
+        );
+    };
 
     const [selectedIssueId, setSelectedIssueId] = useState<number | null>(null);
     const [issueAction, setIssueAction] = useState<'resolve' | 'reject' | null>(null);
@@ -398,9 +457,9 @@ export default function Show({ application, routes, categories = [] }: Props) {
     const initialForm = Number(searchParams.get('form') || searchParams.get('step') || '');
     const initialTabParam = searchParams.get('tab');
 
-    const [activeTab, setActiveTab] = useState<'forms' | 'details' | 'issues'>(
-        initialTabParam === 'details' || initialTabParam === 'issues'
-            ? initialTabParam
+    const [activeTab, setActiveTab] = useState<'forms' | 'details' | 'approvals'>(
+        initialTabParam === 'details' || initialTabParam === 'approvals' || initialTabParam === 'issues'
+            ? (initialTabParam === 'issues' ? 'approvals' : initialTabParam as any)
             : 'forms'
     );
 
@@ -1619,59 +1678,16 @@ export default function Show({ application, routes, categories = [] }: Props) {
                     )}
 
                     {/* Navigation Tabs Bar */}
-                    <div className="bg-white rounded-2xl shadow-xs border border-slate-200/80 overflow-hidden print:hidden">
-                        <div className="flex border-b border-slate-200 bg-slate-50/50 p-1 sm:p-1.5 gap-1 overflow-x-auto">
-                            <button
-                                type="button"
-                                onClick={() => setActiveTab('forms')}
-                                className={[
-                                    'flex items-center gap-1.5 sm:gap-2 px-3 sm:px-4 py-2 sm:py-2.5 rounded-xl font-semibold text-xs sm:text-sm transition whitespace-nowrap flex-1 sm:flex-initial justify-center',
-                                    activeTab === 'forms'
-                                        ? 'bg-white text-indigo-700 shadow-xs border border-slate-200/80 font-bold'
-                                        : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100/60',
-                                ].join(' ')}
-                            >
-                                <FileText className={`w-3.5 h-3.5 sm:w-4 sm:h-4 ${activeTab === 'forms' ? 'text-indigo-600' : 'text-slate-400'}`} />
-                                📄 ঋণ আবেদন ফর্মসমূহ
-                                <Badge className={`ml-1 text-[10px] ${activeTab === 'forms' ? 'bg-indigo-100 text-indigo-800' : 'bg-slate-200 text-slate-700'}`}>
-                                    {savedFormCount}/{totalFormCount}
-                                </Badge>
-                            </button>
+                    <LoanShowTabs
+                        activeTab={activeTab}
+                        setActiveTab={setActiveTab}
+                        savedFormCount={savedFormCount}
+                        totalFormCount={totalFormCount}
+                        commentsCount={commentsCount}
+                        pendingIssuesCount={pendingIssues.length}
+                    />
 
-                            <button
-                                type="button"
-                                onClick={() => setActiveTab('details')}
-                                className={[
-                                    'flex items-center gap-1.5 sm:gap-2 px-3 sm:px-4 py-2 sm:py-2.5 rounded-xl font-semibold text-xs sm:text-sm transition whitespace-nowrap flex-1 sm:flex-initial justify-center',
-                                    activeTab === 'details'
-                                        ? 'bg-white text-indigo-700 shadow-xs border border-slate-200/80 font-bold'
-                                        : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100/60',
-                                ].join(' ')}
-                            >
-                                <User className={`w-3.5 h-3.5 sm:w-4 sm:h-4 ${activeTab === 'details' ? 'text-indigo-600' : 'text-slate-400'}`} />
-                                👤 সদস্য ও ঋণ বিস্তারিত
-                            </button>
-
-                            <button
-                                type="button"
-                                onClick={() => setActiveTab('issues')}
-                                className={[
-                                    'flex items-center gap-1.5 sm:gap-2 px-3 sm:px-4 py-2 sm:py-2.5 rounded-xl font-semibold text-xs sm:text-sm transition whitespace-nowrap flex-1 sm:flex-initial justify-center',
-                                    activeTab === 'issues'
-                                        ? 'bg-white text-indigo-700 shadow-xs border border-slate-200/80 font-bold'
-                                        : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100/60',
-                                ].join(' ')}
-                            >
-                                <MessageSquare className={`w-3.5 h-3.5 sm:w-4 sm:h-4 ${activeTab === 'issues' ? 'text-indigo-600' : 'text-slate-400'}`} />
-                                💬 হেড অফিস বার্তা
-                                {issues.length > 0 && (
-                                    <Badge className={`ml-1 text-[10px] ${pendingIssues.length > 0 ? 'bg-amber-500 text-white animate-pulse' : 'bg-slate-200 text-slate-700'}`}>
-                                        {pendingIssues.length > 0 ? `${pendingIssues.length} পেন্ডিং` : issues.length}
-                                    </Badge>
-                                )}
-                            </button>
-                        </div>
-
+                    <div className="bg-white rounded-2xl shadow-xs border border-slate-200/80 overflow-hidden">
                         {/* TAB 1: FORMS WORKSPACE */}
                         {activeTab === 'forms' && (
                             <div className="p-3.5 sm:p-6 space-y-4">
@@ -1984,233 +2000,36 @@ export default function Show({ application, routes, categories = [] }: Props) {
 
                         {/* TAB 2: MEMBER & LOAN DETAILS OVERVIEW */}
                         {activeTab === 'details' && (
-                            <div className="printable-area p-3.5 sm:p-6 grid grid-cols-1 lg:grid-cols-2 gap-4 sm:gap-6">
-                                <Card className="border-slate-200/80 shadow-xs">
-                                    <CardHeader className="bg-slate-50/60 pb-3 border-b flex flex-row items-center justify-between">
-                                        <CardTitle className="text-sm sm:text-base font-bold text-slate-900 flex items-center gap-2">
-                                            <User className="w-4 h-4 sm:w-5 sm:h-5 text-indigo-600" /> সদস্যের বিস্তারিত তথ্য
-                                        </CardTitle>
-                                        {application.status !== 'disbursed' && (
-                                            <Button
-                                                size="sm"
-                                                variant="outline"
-                                                className="text-xs h-8 border-indigo-200 text-indigo-700 hover:bg-indigo-50 font-semibold"
-                                                onClick={() => {
-                                                    const p = parseMemberCode(application.member_admission?.application_no, branchPrefix);
-                                                    setSerialInput(p.serial);
-                                                    setMemberCodeError(null);
-                                                    setMemberCodeModalOpen(true);
-                                                }}
-                                            >
-                                                <Edit className="w-3.5 h-3.5 mr-1" /> মেম্বার কোড পরিবর্তন
-                                            </Button>
-                                        )}
-                                    </CardHeader>
-                                    <CardContent className="p-3.5 sm:p-4 space-y-2.5 sm:space-y-3 text-xs sm:text-sm">
-                                        <div className="flex justify-between py-1.5 border-b border-slate-100">
-                                            <span className="text-slate-500">মেম্বার কোড:</span>
-                                            <span className="font-mono font-bold text-indigo-700">{application.member_admission?.application_no || '-'}</span>
-                                        </div>
-                                        <div className="flex justify-between py-1.5 border-b border-slate-100">
-                                            <span className="text-slate-500">নাম (বাংলা/ইংরেজি):</span>
-                                            <span className="font-semibold text-slate-900">{memberName}</span>
-                                        </div>
-                                        <div className="flex justify-between py-1.5 border-b border-slate-100">
-                                            <span className="text-slate-500">জাতীয় পরিচয়পত্র (NID):</span>
-                                            <span className="font-semibold text-slate-900">{application.member_admission?.nid_number || application.member_admission?.nid_no || '-'}</span>
-                                        </div>
-                                        <div className="flex justify-between py-1.5 border-b border-slate-100">
-                                            <span className="text-slate-500">মোবাইল নম্বর:</span>
-                                            <span className="font-semibold text-slate-900">{application.member_admission?.mobile_number || application.member_admission?.mobile_no || '-'}</span>
-                                        </div>
-                                        <div className="flex justify-between py-1.5 border-b border-slate-100">
-                                            <span className="text-slate-500">বর্তমান ঠিকানা:</span>
-                                            <span className="font-medium text-slate-800 text-right max-w-[200px] sm:max-w-[240px]">
-                                                {application.member_admission?.present_village_road || application.member_admission?.present_address_en || '-'}
-                                            </span>
-                                        </div>
-                                        {applicant && (
-                                            <div className="flex justify-between py-1.5">
-                                                <span className="text-slate-500">জমা প্রদানকারী:</span>
-                                                <span className="font-semibold text-slate-900">{applicant.name}</span>
-                                            </div>
-                                        )}
-                                    </CardContent>
-                                </Card>
-
-                                <Card className="border-slate-200/80 shadow-xs">
-                                    <CardHeader className="bg-slate-50/60 pb-3 border-b flex flex-row items-center justify-between">
-                                        <CardTitle className="text-sm sm:text-base font-bold text-slate-900 flex items-center gap-2">
-                                            <Banknote className="w-4 h-4 sm:w-5 sm:h-5 text-emerald-600" /> ঋণ বিবরণ ও শর্তাবলী
-                                        </CardTitle>
-                                        {application.status !== 'disbursed' && (isBranchUser || isBranchManager) && (
-                                            <Button
-                                                size="sm"
-                                                variant="outline"
-                                                className="text-xs h-8 border-indigo-200 text-indigo-700 hover:bg-indigo-50 font-semibold"
-                                                onClick={openLoanProductModal}
-                                            >
-                                                <Edit className="w-3.5 h-3.5 mr-1" /> ঋণ প্রোডাক্ট পরিবর্তন
-                                            </Button>
-                                        )}
-                                    </CardHeader>
-                                    <CardContent className="p-3.5 sm:p-4 space-y-2.5 sm:space-y-3 text-xs sm:text-sm">
-                                        <div className="flex justify-between py-1.5 border-b border-slate-100">
-                                            <span className="text-slate-500">আবেদন নং:</span>
-                                            <span className="font-mono font-bold text-indigo-700">{application.application_no || '-'}</span>
-                                        </div>
-                                        <div className="flex justify-between py-1.5 border-b border-slate-100">
-                                            <span className="text-slate-500">ঋণ ক্যাটাগরি:</span>
-                                            <span className="font-semibold text-slate-900">
-                                                {application.loan_category?.category_name_bn || application.loan_category?.category_name || '-'}
-                                            </span>
-                                        </div>
-                                        <div className="flex justify-between py-1.5 border-b border-slate-100">
-                                            <span className="text-slate-500">ঋণ পণ্য:</span>
-                                            <span className="font-semibold text-slate-900">
-                                                {application.loan_product?.product_name_bn || application.loan_product?.product_name || '-'}
-                                            </span>
-                                        </div>
-                                        <div className="flex justify-between py-1.5 border-b border-slate-100">
-                                            <span className="text-slate-500">আবেদিত ঋণ পরিমাণ:</span>
-                                            <span className="font-bold text-slate-900">৳{Number(application.requested_amount || 0).toLocaleString('bn-BD')}</span>
-                                        </div>
-                                        {application.approved_amount != null && (
-                                            <div className="flex justify-between py-1.5 border-b border-slate-100">
-                                                <span className="text-slate-500">অনুমোদিত পরিমাণ:</span>
-                                                <span className="font-bold text-emerald-700">৳{Number(application.approved_amount).toLocaleString('bn-BD')}</span>
-                                            </div>
-                                        )}
-                                        {application.amount_change_pending && application.pending_approved_amount != null && (
-                                            <div className="flex justify-between py-1.5 border-b border-orange-100 bg-orange-50/80 px-2 rounded-lg -mx-2">
-                                                <span className="font-semibold text-orange-900">প্রস্তাবিত নতুন পরিমাণ:</span>
-                                                <span className="font-black text-orange-700">৳{Number(application.pending_approved_amount).toLocaleString('bn-BD')}</span>
-                                            </div>
-                                        )}
-                                        {application.disbursed_amount != null && (
-                                            <div className="flex justify-between py-1.5 border-b border-slate-100 bg-emerald-50/70 px-2 rounded-lg -mx-2">
-                                                <span className="font-semibold text-emerald-900">প্রকৃত বিতরণ পরিমাণ:</span>
-                                                <span className="font-black text-emerald-700">৳{Number(application.disbursed_amount).toLocaleString('bn-BD')}</span>
-                                            </div>
-                                        )}
-                                        {application.disbursement_method && (
-                                            <div className="flex justify-between py-1.5 border-b border-slate-100">
-                                                <span className="text-slate-500">বিতরণ মাধ্যম:</span>
-                                                <span className="font-semibold text-slate-800 uppercase">{application.disbursement_method}</span>
-                                            </div>
-                                        )}
-                                        {application.disbursement_reference && (
-                                            <div className="flex justify-between py-1.5 border-b border-slate-100">
-                                                <span className="text-slate-500">রেফারেন্স / ভাউচার নং:</span>
-                                                <span className="font-mono text-slate-800">{application.disbursement_reference}</span>
-                                            </div>
-                                        )}
-                                        <div className="flex justify-between py-1.5 border-b border-slate-100">
-                                            <span className="text-slate-500">শাখা:</span>
-                                            <span className="font-semibold text-slate-900">{application.branch?.name || '-'}</span>
-                                        </div>
-                                        {application.samity && (
-                                            <div className="flex justify-between py-1.5 border-b border-slate-100">
-                                                <span className="text-slate-500">সমিতি:</span>
-                                                <span className="font-semibold text-slate-900">
-                                                    {application.samity.samity_name_bn || application.samity.samity_name || '-'}
-                                                </span>
-                                            </div>
-                                        )}
-                                        {application.purpose_of_loan && (
-                                            <div className="flex justify-between py-1.5">
-                                                <span className="text-slate-500">ঋণের উদ্দেশ্য:</span>
-                                                <span className="font-medium text-slate-800 text-right max-w-[200px] sm:max-w-[240px]">{application.purpose_of_loan}</span>
-                                            </div>
-                                        )}
-                                    </CardContent>
-                                </Card>
-                            </div>
+                            <MemberLoanDetailsTab
+                                application={application}
+                                memberName={memberName}
+                                applicant={applicant}
+                                isBranchUser={isBranchUser}
+                                isBranchManager={isBranchManager}
+                                isSuperAdmin={isSuperAdmin}
+                                isFieldOfficer={isFieldOfficer}
+                                onOpenMemberCodeModal={() => {
+                                    const p = parseMemberCode(application.member_admission?.application_no, branchPrefix);
+                                    setSerialInput(p.serial);
+                                    setMemberCodeError(null);
+                                    setMemberCodeModalOpen(true);
+                                }}
+                                onOpenLoanProductModal={openLoanProductModal}
+                                onOpenEditLoanModal={openLoanProductModal}
+                            />
                         )}
 
-                        {/* TAB 3: HEAD OFFICE ISSUES & FEEDBACK */}
-                        {activeTab === 'issues' && (
-                            <div className="printable-area p-3.5 sm:p-6 space-y-4">
-                                {issues.length === 0 ? (
-                                    <div className="text-center py-12 bg-slate-50/50 rounded-xl border border-dashed border-slate-300">
-                                        <CheckCircle2 className="w-10 h-10 text-emerald-500 mx-auto mb-2 opacity-80" />
-                                        <p className="font-semibold text-slate-700">কোনো সমস্যা বা বার্তা পাওয়া যায়নি</p>
-                                        <p className="text-xs text-slate-500 mt-1">হেড অফিস থেকে কোনো ফিডব্যাক বা সংশোধন নির্দেশ থাকলে তা এখানে দেখাবে।</p>
-                                    </div>
-                                ) : (
-                                    <div className="space-y-4">
-                                        {issues.map((issue) => (
-                                            <div
-                                                key={issue.id}
-                                                className={`p-3.5 sm:p-4 rounded-xl border text-xs sm:text-sm transition shadow-xs ${
-                                                    issue.status === 'pending'
-                                                        ? 'bg-amber-50/80 border-amber-200'
-                                                        : issue.status === 'resolved'
-                                                          ? 'bg-emerald-50/50 border-emerald-200'
-                                                          : 'bg-rose-50/50 border-rose-200'
-                                                }`}
-                                            >
-                                                <div className="flex items-start justify-between gap-3 mb-2">
-                                                    <div className="flex items-center gap-2 flex-wrap">
-                                                        <span className="font-bold text-slate-900">হেড অফিসের নির্দেশ/সমস্যা</span>
-                                                        <Badge
-                                                            className={
-                                                                issue.status === 'pending'
-                                                                    ? 'bg-amber-200 text-amber-900 border-amber-300'
-                                                                    : issue.status === 'resolved'
-                                                                      ? 'bg-emerald-200 text-emerald-900 border-emerald-300'
-                                                                      : 'bg-rose-200 text-rose-900 border-rose-300'
-                                                            }
-                                                        >
-                                                            {issue.status === 'pending'
-                                                                ? 'পেন্ডিং'
-                                                                : issue.status === 'resolved'
-                                                                  ? 'সমাধান করা হয়েছে'
-                                                                  : 'প্রত্যাখ্যান করা হয়েছে'}
-                                                        </Badge>
-                                                    </div>
-                                                    <span className="text-[11px] text-slate-500 font-mono whitespace-nowrap">
-                                                        {formatDateTime(issue.created_at)}
-                                                    </span>
-                                                </div>
-
-                                                <p className="text-slate-800 whitespace-pre-wrap bg-white/70 p-3 rounded-lg border border-slate-200/50">{issue.issue_description}</p>
-                                                <p className="text-xs text-slate-500 mt-2">
-                                                    প্রেরক: <span className="font-semibold text-slate-700">{issue.reporter?.name || 'হেড অফিস'}</span>
-                                                </p>
-
-                                                {issue.response_message && (
-                                                    <div className="mt-3 p-3 rounded-lg bg-indigo-50/80 border border-indigo-200/80">
-                                                        <div className="flex items-center gap-2 mb-1">
-                                                            <MessageSquare className="w-4 h-4 text-indigo-700" />
-                                                            <span className="font-bold text-indigo-900">শাখার উত্তর</span>
-                                                        </div>
-                                                        <p className="text-indigo-950 whitespace-pre-wrap">{issue.response_message}</p>
-                                                    </div>
-                                                )}
-
-                                                {issue.status === 'pending' && canRespondToIssues && (
-                                                    <div className="mt-3 flex flex-wrap gap-2">
-                                                        <Button size="sm" className="bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs" onClick={() => openIssueAction(issue.id, 'resolve')}>
-                                                            <CheckCircle2 className="w-4 h-4 mr-1" />
-                                                            সমাধান করেছি — উত্তর দিন
-                                                        </Button>
-                                                        <Button
-                                                            size="sm"
-                                                            variant="outline"
-                                                            className="border-rose-200 text-rose-700 hover:bg-rose-50 rounded-lg text-xs"
-                                                            onClick={() => openIssueAction(issue.id, 'reject')}
-                                                        >
-                                                            <XCircle className="w-4 h-4 mr-1" />
-                                                            সমস্যা অস্বীকার করুন
-                                                        </Button>
-                                                    </div>
-                                                )}
-                                            </div>
-                                        ))}
-                                    </div>
-                                )}
-                            </div>
+                        {/* TAB 3: APPROVAL TIMELINE & ISSUES */}
+                        {activeTab === 'approvals' && (
+                            <ApprovalTimelineTab
+                                approvalsList={approvalsList}
+                                commentsCount={commentsCount}
+                                canModifyComment={isSuperAdmin}
+                                onEditComment={openEditCommentModal}
+                                issues={issues}
+                                canRespondToIssues={canRespondToIssues}
+                                onOpenIssueAction={openIssueAction}
+                            />
                         )}
                     </div>
                 </div>
@@ -2626,140 +2445,15 @@ export default function Show({ application, routes, categories = [] }: Props) {
                 </div>
             )}
 
-            {/* Loan Product Change Modal */}
-            {loanProductModalOpen && (
-                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-xs p-4 print:hidden">
-                    <div className="w-full max-w-lg rounded-2xl bg-white shadow-2xl overflow-hidden border border-slate-200 animate-in fade-in zoom-in-95 duration-150">
-                        <div className="border-b px-5 py-4 bg-gradient-to-r from-indigo-600 to-indigo-700 text-white flex items-center justify-between">
-                            <div>
-                                <h3 className="text-base font-bold flex items-center gap-2">
-                                    <CreditCard className="w-5 h-5 text-indigo-200" /> ঋণ প্রোডাক্ট ও ক্যাটাগরি পরিবর্তন
-                                </h3>
-                                <p className="text-xs text-indigo-100 mt-0.5">আবেদন নং: {application.application_no}</p>
-                            </div>
-                            <button
-                                type="button"
-                                onClick={() => setLoanProductModalOpen(false)}
-                                className="text-white/80 hover:text-white p-1 rounded-lg hover:bg-white/10 transition cursor-pointer"
-                            >
-                                <X className="w-5 h-5" />
-                            </button>
-                        </div>
-                        <form onSubmit={handleLoanProductSubmit} className="p-5 space-y-4">
-                            {/* Current Product Info Banner */}
-                            <div className="bg-slate-50 border border-slate-200/80 rounded-xl p-3 space-y-1 text-xs">
-                                <p className="text-slate-500 font-semibold uppercase tracking-wider text-[10px]">বর্তমান প্রোডাক্ট ও ক্যাটাগরি</p>
-                                <p className="font-bold text-slate-800 text-sm">
-                                    {application.loan_product?.product_name_bn || application.loan_product?.product_name || '-'}
-                                    <span className="text-xs font-normal text-slate-500 ml-1.5">
-                                        ({application.loan_category?.category_name_bn || application.loan_category?.category_name || '-'})
-                                    </span>
-                                </p>
-                            </div>
-
-                            {/* Loan Category Select */}
-                            <div>
-                                <label className="block text-xs font-bold text-slate-700 mb-1">
-                                    ঋণ ক্যাটাগরি নির্বাচন করুন: <span className="text-rose-500">*</span>
-                                </label>
-                                <select
-                                    value={selectedCategoryId}
-                                    onChange={(e) => handleCategoryChange(e.target.value)}
-                                    className="w-full rounded-xl border border-slate-300 px-3.5 py-2.5 text-sm bg-white font-semibold focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 shadow-xs cursor-pointer"
-                                    required
-                                >
-                                    <option value="">ক্যাটাগরি নির্বাচন করুন...</option>
-                                    {categories.map((cat) => (
-                                        <option key={cat.id} value={cat.id}>
-                                            {cat.category_name_bn || cat.category_name} {cat.category_code ? `(${cat.category_code})` : ''}
-                                        </option>
-                                    ))}
-                                </select>
-                            </div>
-
-                            {/* Loan Product Select */}
-                            <div>
-                                <label className="block text-xs font-bold text-slate-700 mb-1">
-                                    নতুন ঋণ প্রোডাক্ট নির্বাচন করুন: <span className="text-rose-500">*</span>
-                                </label>
-                                <select
-                                    value={selectedProductId}
-                                    onChange={(e) => setSelectedProductId(e.target.value)}
-                                    disabled={!selectedCategoryId || modalCategoryProducts.length === 0}
-                                    className="w-full rounded-xl border border-slate-300 px-3.5 py-2.5 text-sm bg-white font-bold text-indigo-900 focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 shadow-xs disabled:bg-slate-100 disabled:text-slate-400 cursor-pointer"
-                                    required
-                                >
-                                    <option value="">
-                                        {modalCategoryProducts.length === 0 ? 'এই ক্যাটাগরিতে কোনো সক্রিয় প্রোডাক্ট নেই' : 'প্রোডাক্ট নির্বাচন করুন...'}
-                                    </option>
-                                    {modalCategoryProducts.map((prod) => (
-                                        <option key={prod.id} value={prod.id}>
-                                            {prod.product_name_bn || prod.product_name} {prod.product_code ? `[${prod.product_code}]` : ''}
-                                        </option>
-                                    ))}
-                                </select>
-                            </div>
-
-                            {/* Selected Product Specs Preview */}
-                            {modalActiveProduct && (
-                                <div className="bg-indigo-50/70 border border-indigo-200/80 rounded-xl p-3.5 space-y-2 text-xs text-indigo-950 animate-in fade-in duration-100">
-                                    <p className="font-bold text-indigo-900 text-xs flex items-center gap-1.5">
-                                        <Info className="w-4 h-4 text-indigo-600" /> নতুন প্রোডাক্টের বিবরণ ও শর্তাবলী:
-                                    </p>
-                                    <div className="grid grid-cols-2 gap-2 pt-1 border-t border-indigo-200/60 text-[11px]">
-                                        <div>
-                                            <span className="text-slate-500 font-medium">কিস্তির ধরন:</span>{' '}
-                                            <span className="font-bold text-slate-800">
-                                                {modalActiveProduct.installment_type === 'weekly' ? 'সাপ্তাহিক (Weekly)' : modalActiveProduct.installment_type === 'monthly' ? 'মাসিক (Monthly)' : modalActiveProduct.installment_type || '-'}
-                                            </span>
-                                        </div>
-                                        <div>
-                                            <span className="text-slate-500 font-medium">মেয়াদ:</span>{' '}
-                                            <span className="font-bold text-slate-800">{modalActiveProduct.duration_months || 12} মাস</span>
-                                        </div>
-                                        <div>
-                                            <span className="text-slate-500 font-medium">মোট কিস্তি:</span>{' '}
-                                            <span className="font-bold text-slate-800">{modalActiveProduct.number_of_installments || '-'} টি</span>
-                                        </div>
-                                        <div>
-                                            <span className="text-slate-500 font-medium">সুদের হার:</span>{' '}
-                                            <span className="font-bold text-emerald-700">{modalActiveProduct.interest_rate || 0}%</span>
-                                        </div>
-                                    </div>
-                                    {Number(modalActiveProduct.max_amount || 0) > 0 && (
-                                        <p className="text-[10px] text-slate-600 mt-1">
-                                            ঋণ সীমা: ৳{Number(modalActiveProduct.min_amount || 0).toLocaleString('bn-BD')} হতে ৳{Number(modalActiveProduct.max_amount || 0).toLocaleString('bn-BD')} পর্যন্ত
-                                        </p>
-                                    )}
-                                </div>
-                            )}
-
-                            <p className="text-[11px] text-slate-500 leading-relaxed">
-                                💡 প্রোডাক্ট পরিবর্তন করলে আবেদনপত্রের কিস্তির ধরন, মেয়াদ এবং সংশ্লিষ্ট ফর্মগুলোর প্রোডাক্ট রেফারেন্স তথ্য স্বয়ংক্রিয়ভাবে আপডেট হবে।
-                            </p>
-
-                            <div className="flex justify-end gap-2 pt-3 border-t">
-                                <Button
-                                    type="button"
-                                    variant="outline"
-                                    className="rounded-xl text-xs"
-                                    onClick={() => setLoanProductModalOpen(false)}
-                                    disabled={submittingLoanProduct}
-                                >
-                                    বাতিল
-                                </Button>
-                                <Button
-                                    type="submit"
-                                    className="bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-bold shadow-xs px-4"
-                                    disabled={submittingLoanProduct || !selectedCategoryId || !selectedProductId || (String(selectedProductId) === String(application.loan_product_id) && String(selectedCategoryId) === String(application.loan_category_id))}
-                                >
-                                    {submittingLoanProduct ? 'পরিবর্তন হচ্ছে...' : 'প্রোডাক্ট পরিবর্তন করুন'}
-                                </Button>
-                            </div>
-                        </form>
-                    </div>
-                </div>
-            )}
+            {/* Loan Details & Terms Edit Modal (Super Admin / Field Officer) */}
+            <EditLoanDetailsModal
+                open={loanProductModalOpen}
+                onClose={() => setLoanProductModalOpen(false)}
+                application={application}
+                categories={categories}
+                isSuperAdmin={isSuperAdmin}
+                isFieldOfficer={isFieldOfficer}
+            />
 
             {/* Head Office Dispatch Confirmation / Warning Modal */}
             <SendLoanToHoModal
@@ -2789,6 +2483,11 @@ export default function Show({ application, routes, categories = [] }: Props) {
                 cutoffBadge={hoSendCutoff.badge}
                 isBlocked={hoSendCutoff.is_blocked}
                 blockedMessage={hoSendCutoff.blocked_message}
+            />
+            {/* ── APPROVAL COMMENT EDIT MODAL (Super Admin / Head Office) ───────────── */}
+            <EditApprovalCommentModal
+                editingApproval={editingApproval}
+                onClose={() => setEditingApproval(null)}
             />
         </AdminLayout>
     );

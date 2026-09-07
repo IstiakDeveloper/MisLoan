@@ -601,27 +601,7 @@ export default function TeamBasedApprovalIndex({ approvals, filters, draftCount,
                         </div>
                     </div>
 
-                    <div className="flex flex-wrap items-center justify-between gap-4 pt-1 border-t border-slate-200/50">
-                        <div className="flex flex-wrap gap-2">
-                            <Link
-                                href="/team-based-approvals/drafts"
-                                className="inline-flex items-center justify-center gap-1.5 px-4 py-2 rounded-lg text-xs font-semibold border border-amber-300 text-amber-700 bg-amber-50/50 hover:bg-amber-500 hover:text-white transition-all shadow-sm active:scale-[0.98]"
-                            >
-                                <span>Draft List</span>
-                                {draftCount > 0 && (
-                                    <span className="inline-flex items-center justify-center min-w-[18px] h-4 px-1.5 rounded-full bg-amber-600 text-white text-[9px] font-bold">
-                                        {draftCount}
-                                    </span>
-                                )}
-                            </Link>
-                            <Link
-                                href="/team-based-approvals/create"
-                                className="inline-flex items-center justify-center px-4 py-2 rounded-lg bg-blue-600 text-white text-xs font-semibold hover:bg-blue-700 transition-all shadow-sm hover:shadow active:scale-[0.98]"
-                            >
-                                New Form
-                            </Link>
-                        </div>
-
+                    <div className="flex flex-wrap items-center justify-end gap-4 pt-1 border-t border-slate-200/50">
                         <div className="flex gap-2">
                             <button
                                 type="button"

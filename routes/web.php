@@ -210,6 +210,14 @@ Route::middleware(['auth', 'verified'])->group(function () {
         Route::patch('{memberAdmission}/update-member-code', [MemberAdmissionController::class, 'updateMemberCode'])->name('update-member-code');
     });
 
+    Route::patch('member-admission-approvals/{approval}/update-comment', [MemberAdmissionController::class, 'updateApprovalComment'])
+        ->name('member-admission-approvals.update-comment')
+        ->middleware('auth');
+
+    Route::patch('loan-application-approvals/{approval}/update-comment', [App\Http\Controllers\Member\LoanApplicationController::class, 'updateApprovalComment'])
+        ->name('loan-application-approvals.update-comment')
+        ->middleware('auth');
+
     // Team Based Approval Routes - Branch users + Approver roles
     Route::prefix('team-based-approvals')->name('team-based-approvals.')->middleware('auth')->group(function () {
         // Branch-side: all applications + drafts + form

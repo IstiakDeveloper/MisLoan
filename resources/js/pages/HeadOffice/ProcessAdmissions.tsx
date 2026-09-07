@@ -1,5 +1,5 @@
 import React, { useState, useMemo } from 'react';
-import { Head, router, useForm, usePage } from '@inertiajs/react';
+import { Head, router, useForm, usePage, Link } from '@inertiajs/react';
 import AdminLayout from '@/layouts/admin-layout';
 import { formatDate, formatDateTime, formatTime } from '@/utils/dateUtils';
 import ListPagination from '@/components/ListPagination';
@@ -1253,14 +1253,12 @@ export default function ProcessAdmissions({ admissions, filters, zones = [], are
                             )}
 
                             <div className="flex justify-end gap-2.5 pt-3 border-t border-slate-100">
-                                <a
+                                <Link
                                     href={`/head-office/admissions/${selectedAdmission.id}`}
-                                    target="_blank"
-                                    rel="noreferrer"
                                     className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-semibold rounded-xl shadow-sm transition flex items-center gap-1"
                                 >
                                     সম্পূর্ণ প্রোফাইল দেখুন <ChevronRight className="w-3.5 h-3.5" />
-                                </a>
+                                </Link>
                                 <button
                                     onClick={closeViewModal}
                                     className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-semibold rounded-xl transition"

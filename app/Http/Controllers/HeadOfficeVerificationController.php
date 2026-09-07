@@ -32,8 +32,8 @@ class HeadOfficeVerificationController extends Controller
 
         $isBranchOrApprover = in_array($roleName, ['branch_user', 'branch_manager', 'field_officer', 'area_manager', 'zone_manager', 'admf', 'dmf'], true);
         $today = now()->toDateString();
-        $dateFrom = $request->has('date_from') ? $request->input('date_from') : ($isBranchOrApprover ? null : $today);
-        $dateTo = $request->has('date_to') ? $request->input('date_to') : ($isBranchOrApprover ? null : $today);
+        $dateFrom = $request->filled('date_from') ? $request->input('date_from') : null;
+        $dateTo = $request->filled('date_to') ? $request->input('date_to') : null;
 
         // If date_from is given without date_to, default date_to to date_from (single date filter)
         if ($dateFrom && ! $dateTo) {
@@ -45,7 +45,7 @@ class HeadOfficeVerificationController extends Controller
 
         $search = $request->input('search');
         $type = $request->input('type', 'all'); // 'all', 'admission', 'loan'
-        $issueStatus = $request->input('issue_status', 'all'); // 'all', 'pending', 'replied', 'resolved', 'approved', 'rejected'
+        $issueStatus = $request->input('issue_status', 'pending_action'); // 'pending_action', 'all', 'zm_approved', 'branch_replied', 'pending', 'approved', 'rejected'
         $zoneId = $request->input('zone_id');
         $areaId = $request->input('area_id');
         $branchId = $request->input('branch_id');
@@ -72,42 +72,6 @@ class HeadOfficeVerificationController extends Controller
             $admissionQuery->assignedToOfficer((int) $authUser->id);
         }
 
-        // Date filter - checks verification action & sent dates (excluding draft created_at)
-        if ($dateFrom && $dateTo) {
-            $admissionQuery->where(function ($q) use ($startOfDay, $endOfDay) {
-                $q->whereBetween('submitted_at', [$startOfDay, $endOfDay])
-                    ->orWhereBetween('returned_at', [$startOfDay, $endOfDay])
-                    ->orWhereBetween('reviewed_at', [$startOfDay, $endOfDay])
-                    ->orWhereHas('issues', function ($iq) use ($startOfDay, $endOfDay) {
-                        $iq->whereBetween('created_at', [$startOfDay, $endOfDay])
-                            ->orWhereBetween('resolved_at', [$startOfDay, $endOfDay])
-                            ->orWhereBetween('zm_approved_at', [$startOfDay, $endOfDay]);
-                    });
-            });
-        } elseif ($dateFrom) {
-            $admissionQuery->where(function ($q) use ($startOfDay) {
-                $q->where('submitted_at', '>=', $startOfDay)
-                    ->orWhere('returned_at', '>=', $startOfDay)
-                    ->orWhere('reviewed_at', '>=', $startOfDay)
-                    ->orWhereHas('issues', function ($iq) use ($startOfDay) {
-                        $iq->where('created_at', '>=', $startOfDay)
-                            ->orWhere('resolved_at', '>=', $startOfDay)
-                            ->orWhere('zm_approved_at', '>=', $startOfDay);
-                    });
-            });
-        } elseif ($dateTo) {
-            $admissionQuery->where(function ($q) use ($endOfDay) {
-                $q->where('submitted_at', '<=', $endOfDay)
-                    ->orWhere('returned_at', '<=', $endOfDay)
-                    ->orWhere('reviewed_at', '<=', $endOfDay)
-                    ->orWhereHas('issues', function ($iq) use ($endOfDay) {
-                        $iq->where('created_at', '<=', $endOfDay)
-                            ->orWhere('resolved_at', '<=', $endOfDay)
-                            ->orWhere('zm_approved_at', '<=', $endOfDay);
-                    });
-            });
-        }
-
         // Branch / Area / Zone filters
         if ($zoneId) {
             $admissionQuery->whereHas('branch.area', fn ($q) => $q->where('zone_id', $zoneId));
@@ -130,24 +94,6 @@ class HeadOfficeVerificationController extends Controller
             });
         }
 
-        // Issue status filter for Admissions
-        if ($issueStatus === 'pending') {
-            $admissionQuery->whereHas('issues', fn ($q) => $q->where('status', 'pending')->where(function ($sq) {
-                $sq->whereNull('resolution_note')->orWhere('resolution_note', '');
-            }));
-        } elseif ($issueStatus === 'branch_replied') {
-            $admissionQuery->whereHas('issues', fn ($q) => $q->whereNotNull('resolution_note')->where('resolution_note', '!=', '')->whereNull('zm_approved_at'));
-        } elseif ($issueStatus === 'zm_approved' || $issueStatus === 'replied') {
-            $admissionQuery->whereHas('issues', fn ($q) => $q->whereNotNull('zm_approved_at'));
-        } elseif ($issueStatus === 'resolved') {
-            $admissionQuery->whereDoesntHave('issues', fn ($q) => $q->where('status', 'pending'))
-                ->whereHas('issues', fn ($q) => $q->where('status', 'resolved'));
-        } elseif ($issueStatus === 'approved') {
-            $admissionQuery->where('status', 'approved');
-        } elseif ($issueStatus === 'rejected') {
-            $admissionQuery->where('status', 'rejected');
-        }
-
         // 2. Query Loan Applications with issues or revisions
         $loanQuery = LoanApplication::with([
             'branch' => fn ($q) => $q->withTrashed()->with(['area.zone']),
@@ -168,39 +114,6 @@ class HeadOfficeVerificationController extends Controller
 
         if ($roleName === 'field_officer') {
             $loanQuery->where('submitted_by', $authUser->id);
-        }
-
-        // Date filter - checks verification action & sent dates (excluding draft created_at)
-        if ($dateFrom && $dateTo) {
-            $loanQuery->where(function ($q) use ($startOfDay, $endOfDay) {
-                $q->whereBetween('submitted_at', [$startOfDay, $endOfDay])
-                    ->orWhereBetween('reviewed_at', [$startOfDay, $endOfDay])
-                    ->orWhereHas('issues', function ($iq) use ($startOfDay, $endOfDay) {
-                        $iq->whereBetween('created_at', [$startOfDay, $endOfDay])
-                            ->orWhereBetween('responded_at', [$startOfDay, $endOfDay])
-                            ->orWhereBetween('zm_approved_at', [$startOfDay, $endOfDay]);
-                    });
-            });
-        } elseif ($dateFrom) {
-            $loanQuery->where(function ($q) use ($startOfDay) {
-                $q->where('submitted_at', '>=', $startOfDay)
-                    ->orWhere('reviewed_at', '>=', $startOfDay)
-                    ->orWhereHas('issues', function ($iq) use ($startOfDay) {
-                        $iq->where('created_at', '>=', $startOfDay)
-                            ->orWhere('responded_at', '>=', $startOfDay)
-                            ->orWhere('zm_approved_at', '>=', $startOfDay);
-                    });
-            });
-        } elseif ($dateTo) {
-            $loanQuery->where(function ($q) use ($endOfDay) {
-                $q->where('submitted_at', '<=', $endOfDay)
-                    ->orWhere('reviewed_at', '<=', $endOfDay)
-                    ->orWhereHas('issues', function ($iq) use ($endOfDay) {
-                        $iq->where('created_at', '<=', $endOfDay)
-                            ->orWhere('responded_at', '<=', $endOfDay)
-                            ->orWhere('zm_approved_at', '<=', $endOfDay);
-                    });
-            });
         }
 
         // Branch / Area / Zone filters
@@ -226,28 +139,6 @@ class HeadOfficeVerificationController extends Controller
                             ->orWhere('application_no', 'like', "%{$search}%");
                     });
             });
-        }
-
-        // Issue status filter for Loans
-        if ($issueStatus === 'pending') {
-            $loanQuery->whereHas('issues', fn ($q) => $q->where('status', 'pending')->where(function ($sq) {
-                $sq->whereNull('response_message')->orWhere('response_message', '');
-            }));
-        } elseif ($issueStatus === 'branch_replied') {
-            $loanQuery->whereHas('issues', fn ($q) => $q->whereNotNull('response_message')->where('response_message', '!=', '')->whereNull('zm_approved_at'));
-        } elseif ($issueStatus === 'zm_approved' || $issueStatus === 'replied') {
-            $loanQuery->whereHas('issues', fn ($q) => $q->whereNotNull('zm_approved_at'));
-        } elseif ($issueStatus === 'resolved') {
-            $loanQuery->whereDoesntHave('issues', fn ($q) => $q->where('status', 'pending'))
-                ->whereHas('issues', fn ($q) => $q->where('status', 'resolved'));
-        } elseif ($issueStatus === 'approved') {
-            $loanQuery->whereIn('status', [
-                LoanApplication::STATUS_APPROVED,
-                LoanApplication::STATUS_PENDING_DISBURSEMENT,
-                LoanApplication::STATUS_DISBURSED,
-            ]);
-        } elseif ($issueStatus === 'rejected') {
-            $loanQuery->where('status', LoanApplication::STATUS_REJECTED);
         }
 
         $admissionList = ($type === 'loan') ? collect() : $admissionQuery->get();
@@ -316,16 +207,29 @@ class HeadOfficeVerificationController extends Controller
             $hasUnapprovedPendingIssue = $admission->issues->contains(fn ($i) => $i->status === 'pending' && empty($i->zm_approved_at));
             $isZmApproved = ! $hasUnapprovedPendingIssue && $admission->issues->contains(fn ($i) => ! empty($i->zm_approved_at));
 
-            $sentDate = collect([
-                $latestIssue?->zm_approved_at,
-                $latestIssue?->resolved_at,
-                $latestIssue?->created_at,
-                $admission->returned_at,
-                $admission->reviewed_at,
-                $admission->submitted_at,
-            ])->filter()->max();
+            $timelineDates = collect();
+            foreach ($mappedIssues as $issue) {
+                if (! empty($issue['created_at'])) {
+                    $timelineDates->push(Carbon::parse($issue['created_at'])->toIso8601String());
+                }
+                if (! empty($issue['replied_at'])) {
+                    $timelineDates->push(Carbon::parse($issue['replied_at'])->toIso8601String());
+                }
+                if (! empty($issue['zm_approved_at'])) {
+                    $timelineDates->push(Carbon::parse($issue['zm_approved_at'])->toIso8601String());
+                }
+            }
 
-            $effectiveActionAt = $sentDate ?: $admission->submitted_at ?: $admission->created_at;
+            if (in_array($admission->status, ['approved', 'pending_disbursement', 'disbursed', 'rejected'], true) && $admission->reviewed_at) {
+                $timelineDates->push(Carbon::parse($admission->reviewed_at)->toIso8601String());
+            }
+
+            if ($timelineDates->isEmpty()) {
+                $fallback = $admission->submitted_at ?: $admission->created_at;
+                $timelineDates->push(Carbon::parse($fallback)->toIso8601String());
+            }
+
+            $effectiveActionAt = $timelineDates->max();
 
             $verificationItems->push([
                 'id' => 'admission_'.$admission->id,
@@ -346,7 +250,7 @@ class HeadOfficeVerificationController extends Controller
                 'samity_name' => $admission->samity?->samity_name ?? '—',
                 'status' => $admission->status,
                 'submitted_at' => $admission->submitted_at ? Carbon::parse($admission->submitted_at)->toIso8601String() : null,
-                'sent_at' => $sentDate ? Carbon::parse($sentDate)->toIso8601String() : null,
+                'sent_at' => $effectiveActionAt ? Carbon::parse($effectiveActionAt)->toIso8601String() : null,
                 'issue_date' => $latestIssue?->created_at ? Carbon::parse($latestIssue->created_at)->toIso8601String() : null,
                 'reply_date' => $latestIssue?->resolved_at ? Carbon::parse($latestIssue->resolved_at)->toIso8601String() : null,
                 'created_at' => $admission->created_at->toIso8601String(),
@@ -419,15 +323,29 @@ class HeadOfficeVerificationController extends Controller
             $hasUnapprovedPendingIssue = $loan->issues->contains(fn ($i) => $i->status === 'pending' && empty($i->zm_approved_at));
             $isZmApproved = ! $hasUnapprovedPendingIssue && $loan->issues->contains(fn ($i) => ! empty($i->zm_approved_at));
 
-            $sentDate = collect([
-                $latestIssue?->zm_approved_at,
-                $latestIssue?->responded_at,
-                $latestIssue?->created_at,
-                $loan->reviewed_at,
-                $loan->submitted_at,
-            ])->filter()->max();
+            $timelineDates = collect();
+            foreach ($mappedIssues as $issue) {
+                if (! empty($issue['created_at'])) {
+                    $timelineDates->push(Carbon::parse($issue['created_at'])->toIso8601String());
+                }
+                if (! empty($issue['replied_at'])) {
+                    $timelineDates->push(Carbon::parse($issue['replied_at'])->toIso8601String());
+                }
+                if (! empty($issue['zm_approved_at'])) {
+                    $timelineDates->push(Carbon::parse($issue['zm_approved_at'])->toIso8601String());
+                }
+            }
 
-            $effectiveActionAt = $sentDate ?: $loan->submitted_at ?: $loan->created_at;
+            if (in_array($loan->status, [LoanApplication::STATUS_APPROVED, LoanApplication::STATUS_PENDING_DISBURSEMENT, LoanApplication::STATUS_DISBURSED, LoanApplication::STATUS_REJECTED], true) && $loan->reviewed_at) {
+                $timelineDates->push(Carbon::parse($loan->reviewed_at)->toIso8601String());
+            }
+
+            if ($timelineDates->isEmpty()) {
+                $fallback = $loan->submitted_at ?: $loan->created_at;
+                $timelineDates->push(Carbon::parse($fallback)->toIso8601String());
+            }
+
+            $effectiveActionAt = $timelineDates->max();
 
             $verificationItems->push([
                 'id' => 'loan_'.$loan->id,
@@ -448,7 +366,7 @@ class HeadOfficeVerificationController extends Controller
                 'samity_name' => $loan->samity?->samity_name ?? '—',
                 'status' => $loan->status,
                 'submitted_at' => $loan->submitted_at ? Carbon::parse($loan->submitted_at)->toIso8601String() : null,
-                'sent_at' => $sentDate ? Carbon::parse($sentDate)->toIso8601String() : null,
+                'sent_at' => $effectiveActionAt ? Carbon::parse($effectiveActionAt)->toIso8601String() : null,
                 'issue_date' => $latestIssue?->created_at ? Carbon::parse($latestIssue->created_at)->toIso8601String() : null,
                 'reply_date' => $latestIssue?->responded_at ? Carbon::parse($latestIssue->responded_at)->toIso8601String() : null,
                 'created_at' => $loan->created_at->toIso8601String(),
@@ -493,25 +411,45 @@ class HeadOfficeVerificationController extends Controller
             });
         }
 
-        // Sort items by Branch Code in branch serial order, then by latest action date
-        $sortedItems = $verificationItems->sort(function ($a, $b) {
-            if ($a['branch_code_int'] !== $b['branch_code_int']) {
-                return $a['branch_code_int'] <=> $b['branch_code_int'];
+        // Calculate statistics across all active items for the tabs
+        $stats = [
+            'total' => $verificationItems->count(),
+            'pending_action' => $verificationItems->filter(fn ($i) => ! in_array($i['status'], ['approved', 'pending_disbursement', 'disbursed', 'rejected'], true))->count(),
+            'admission_count' => $verificationItems->where('item_type', 'admission')->count(),
+            'loan_count' => $verificationItems->where('item_type', 'loan')->count(),
+            'pending_issues' => $verificationItems->filter(fn ($i) => $i['has_pending_issue'] && ! $i['has_replied'] && ! in_array($i['status'], ['approved', 'pending_disbursement', 'disbursed', 'rejected'], true))->count(),
+            'branch_replied' => $verificationItems->filter(fn ($i) => $i['has_replied'] && ! $i['is_zm_approved'] && ! in_array($i['status'], ['approved', 'pending_disbursement', 'disbursed', 'rejected'], true))->count(),
+            'zm_approved' => $verificationItems->filter(fn ($i) => $i['is_zm_approved'] && ! in_array($i['status'], ['approved', 'pending_disbursement', 'disbursed', 'rejected'], true))->count(),
+            'approved' => $verificationItems->whereIn('status', ['approved', 'pending_disbursement', 'disbursed'])->count(),
+            'rejected' => $verificationItems->where('status', 'rejected')->count(),
+        ];
+
+        // Apply issue status filter
+        $filteredItems = $verificationItems;
+        if ($issueStatus === 'pending_action') {
+            $filteredItems = $verificationItems->filter(fn ($i) => ! in_array($i['status'], ['approved', 'pending_disbursement', 'disbursed', 'rejected'], true));
+        } elseif ($issueStatus === 'zm_approved') {
+            $filteredItems = $verificationItems->filter(fn ($i) => $i['is_zm_approved'] && ! in_array($i['status'], ['approved', 'pending_disbursement', 'disbursed', 'rejected'], true));
+        } elseif ($issueStatus === 'branch_replied') {
+            $filteredItems = $verificationItems->filter(fn ($i) => $i['has_replied'] && ! $i['is_zm_approved'] && ! in_array($i['status'], ['approved', 'pending_disbursement', 'disbursed', 'rejected'], true));
+        } elseif ($issueStatus === 'pending') {
+            $filteredItems = $verificationItems->filter(fn ($i) => $i['has_pending_issue'] && ! $i['has_replied'] && ! in_array($i['status'], ['approved', 'pending_disbursement', 'disbursed', 'rejected'], true));
+        } elseif ($issueStatus === 'approved') {
+            $filteredItems = $verificationItems->filter(fn ($i) => in_array($i['status'], ['approved', 'pending_disbursement', 'disbursed'], true));
+        } elseif ($issueStatus === 'rejected') {
+            $filteredItems = $verificationItems->filter(fn ($i) => $i['status'] === 'rejected');
+        } // 'all' keeps all items
+
+        // Sort items strictly by latest action date DESCENDING (latest update first)
+        $sortedItems = $filteredItems->sort(function ($a, $b) {
+            $timeA = ! empty($a['latest_action_at']) ? strtotime($a['latest_action_at']) : 0;
+            $timeB = ! empty($b['latest_action_at']) ? strtotime($b['latest_action_at']) : 0;
+            if ($timeA !== $timeB) {
+                return $timeB <=> $timeA;
             }
 
-            return strcmp($b['latest_action_at'], $a['latest_action_at']);
+            return $a['branch_code_int'] <=> $b['branch_code_int'];
         })->values();
-
-        // Calculate statistics
-        $stats = [
-            'total' => $sortedItems->count(),
-            'admission_count' => $sortedItems->where('item_type', 'admission')->count(),
-            'loan_count' => $sortedItems->where('item_type', 'loan')->count(),
-            'pending_issues' => $sortedItems->filter(fn ($i) => $i['has_pending_issue'] && ! $i['has_replied'])->count(),
-            'branch_replied' => $sortedItems->filter(fn ($i) => $i['has_replied'] && ! $i['is_zm_approved'] && ! in_array($i['status'], ['approved', 'pending_disbursement', 'disbursed', 'rejected']))->count(),
-            'zm_approved' => $sortedItems->filter(fn ($i) => $i['is_zm_approved'] && ! in_array($i['status'], ['approved', 'pending_disbursement', 'disbursed', 'rejected']))->count(),
-            'approved' => $sortedItems->whereIn('status', ['approved', 'pending_disbursement', 'disbursed'])->count(),
-        ];
 
         // Paginate in memory or return sorted collection
         $page = (int) $request->input('page', 1);
