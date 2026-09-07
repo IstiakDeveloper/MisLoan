@@ -578,6 +578,13 @@ export default function AgrosorProfile({
             delete merged.loan_duration_label;
             delete merged.service_charge_rate;
             delete merged.member_signature;
+            delete (merged as any).branch_manager_post_inspection_comments;
+            delete (merged as any).bm_comments;
+            delete (merged as any).regional_manager_comments;
+            delete (merged as any).rm_comments;
+            delete (merged as any).zonal_manager_comments;
+            delete (merged as any).final_approver_comments;
+            delete (merged as any).final_approver_remarks;
             setData((prev) => withLiveMemberCode({ ...prev, ...merged }, member));
             setLocalRestored(true);
         }
@@ -597,6 +604,45 @@ export default function AgrosorProfile({
     useEffect(() => {
         if (flashError) setSaveError(flashError);
     }, [flashError]);
+
+    useEffect(() => {
+        if (savedData && Object.keys(savedData).length > 0) {
+            setData((prev) => ({
+                ...prev,
+                branch_manager_post_inspection_comments:
+                    str((savedData as any).branch_manager_post_inspection_comments) ||
+                    str((savedData as any).bm_comments) ||
+                    prev.branch_manager_post_inspection_comments,
+                bm_comments:
+                    str((savedData as any).bm_comments) ||
+                    str((savedData as any).branch_manager_post_inspection_comments) ||
+                    prev.bm_comments,
+                regional_manager_comments:
+                    str((savedData as any).regional_manager_comments) ||
+                    str((savedData as any).rm_comments) ||
+                    prev.regional_manager_comments,
+                rm_comments:
+                    str((savedData as any).rm_comments) ||
+                    str((savedData as any).regional_manager_comments) ||
+                    prev.rm_comments,
+                zonal_manager_comments:
+                    str((savedData as any).zonal_manager_comments) ||
+                    prev.zonal_manager_comments,
+                final_approver_comments:
+                    str((savedData as any).final_approver_comments) ||
+                    str((savedData as any).final_approver_remarks) ||
+                    prev.final_approver_comments,
+            }));
+        }
+    }, [
+        (savedData as any)?.branch_manager_post_inspection_comments,
+        (savedData as any)?.bm_comments,
+        (savedData as any)?.regional_manager_comments,
+        (savedData as any)?.rm_comments,
+        (savedData as any)?.zonal_manager_comments,
+        (savedData as any)?.final_approver_comments,
+        (savedData as any)?.final_approver_remarks,
+    ]);
 
     const handleFocusInLeftPane = (e: React.FocusEvent | React.MouseEvent | React.KeyboardEvent) => {
         const target = e.target as HTMLElement;

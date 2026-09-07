@@ -3232,6 +3232,11 @@ class LoanApplicationController extends Controller
             'comments' => $validated['comments'] ?? null,
         ]);
 
+        $loan = $approval->loanApplication;
+        if ($loan) {
+            app(ApprovalService::class)->syncAllApprovalCommentsToBusinessPlan($loan);
+        }
+
         return back()->with('success', 'অনুমোদনকারীর মন্তব্য সফলভাবে আপডেট করা হয়েছে।');
     }
 }

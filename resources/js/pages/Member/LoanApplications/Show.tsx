@@ -40,6 +40,7 @@ import GuarantorCommitment from './Forms/GuarantorCommitment';
 import DeathRiskFund from './Forms/DeathRiskFund';
 import LoanAgreement from './Forms/LoanAgreement';
 import FieldInvestigation from './Forms/FieldInvestigation';
+import LoanApplicationApproval from './Forms/LoanApplicationApproval';
 import SendLoanToHoModal from '@/components/LoanApplications/SendLoanToHoModal';
 import { useHoSendCutoff } from '@/hooks/use-ho-send-cutoff';
 import { canHeadOfficeModify } from '@/components/HeadOfficeModificationModal';
@@ -271,9 +272,11 @@ const PIPELINE_STAGES = [
 
 export default function Show({ application, routes, categories = [] }: Props) {
     const pageAuth = usePage().props.auth as { user?: { role?: { name: string } } } | undefined;
-    const isBranchUser = pageAuth?.user?.role?.name === 'branch_user';
+    const roleName = pageAuth?.user?.role?.name;
+    const isBranchUser = roleName === 'branch_user';
+    const isFieldOfficer = roleName === 'field_officer';
     const hoSendCutoff = useHoSendCutoff();
-    const isBranchManager = pageAuth?.user?.role?.name === 'branch_manager' || pageAuth?.user?.role?.name === 'super_admin';
+    const isBranchManager = roleName === 'branch_manager' || roleName === 'super_admin';
     const isSuperAdmin = canHeadOfficeModify(pageAuth);
     const canRespondToIssues = isBranchUser || isBranchManager;
     const showBranchApproveButton = isBranchManager &&
@@ -1131,7 +1134,12 @@ export default function Show({ application, routes, categories = [] }: Props) {
             case 4:
                 return <FieldInvestigation {...common} />;
             case 5:
-                return <LoanApplicationApproval {...common} />;
+                return (
+                    <LoanApplicationApproval
+                        key={`form-5-${saved?.branch_manager_post_inspection_comments || ''}-${saved?.regional_manager_comments || ''}-${saved?.zonal_manager_comments || ''}-${saved?.final_approver_comments || ''}-${application.updated_at || ''}`}
+                        {...common}
+                    />
+                );
             default:
                 return null;
         }

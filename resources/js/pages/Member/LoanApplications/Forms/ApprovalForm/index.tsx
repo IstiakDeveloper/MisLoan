@@ -487,6 +487,13 @@ export default function ApprovalForm({
             delete restored.total_payable;
             delete restored.applied_service_charge_rate;
             delete restored.loan_duration_months;
+            delete (restored as any).branch_manager_post_inspection_comments;
+            delete (restored as any).bm_comments;
+            delete (restored as any).regional_manager_comments;
+            delete (restored as any).rm_comments;
+            delete (restored as any).zonal_manager_comments;
+            delete (restored as any).final_approver_comments;
+            delete (restored as any).final_approver_remarks;
             setData((prev) => {
                 const merged = { ...prev, ...restored };
                 return withLiveMemberCode({
@@ -562,6 +569,27 @@ export default function ApprovalForm({
         if (next) setData('loan_repayment_date', next);
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [data.loan_disbursement_date]);
+
+    useEffect(() => {
+        if (savedData && Object.keys(savedData).length > 0) {
+            setData((prev) => ({
+                ...prev,
+                branch_manager_post_inspection_comments:
+                    (savedData as any).branch_manager_post_inspection_comments ?? prev.branch_manager_post_inspection_comments,
+                regional_manager_comments:
+                    (savedData as any).regional_manager_comments ?? prev.regional_manager_comments,
+                zonal_manager_comments:
+                    (savedData as any).zonal_manager_comments ?? prev.zonal_manager_comments,
+                final_approver_comments:
+                    (savedData as any).final_approver_comments ?? prev.final_approver_comments,
+            }));
+        }
+    }, [
+        (savedData as any)?.branch_manager_post_inspection_comments,
+        (savedData as any)?.regional_manager_comments,
+        (savedData as any)?.zonal_manager_comments,
+        (savedData as any)?.final_approver_comments,
+    ]);
 
     const handleImageUpload = async (field: string, file: File | null) => {
         if (!file) return;

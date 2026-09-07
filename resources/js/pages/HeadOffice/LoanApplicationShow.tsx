@@ -695,7 +695,12 @@ export default function LoanApplicationShow({ loan, categories = [], flash }: Pr
             case 4:
                 return <FieldInvestigation {...common} />;
             case 5:
-                return <LoanApplicationApproval {...common} />;
+                return (
+                    <LoanApplicationApproval
+                        key={`ho-form-5-${data?.branch_manager_post_inspection_comments || ''}-${data?.regional_manager_comments || ''}-${data?.zonal_manager_comments || ''}-${data?.final_approver_comments || ''}-${loan.updated_at || ''}`}
+                        {...common}
+                    />
+                );
             default:
                 return null;
         }

@@ -1525,7 +1525,7 @@ class ApprovalService
      * Map approver-level comments into loan business_plan office section fields
      * (4-page + Agrosor Profile print/form).
      */
-    private function syncLoanApproverCommentsToBusinessPlan(
+    public function syncLoanApproverCommentsToBusinessPlan(
         LoanApplication $loan,
         string $level,
         ?string $comments,
@@ -1535,27 +1535,67 @@ class ApprovalService
         $text = is_string($comments) ? trim($comments) : '';
         $businessPlan = is_array($loan->business_plan) ? $loan->business_plan : [];
 
-        if ($text !== '') {
-            if ($level === 'branch') {
-                $businessPlan['branch_manager_post_inspection_comments'] = $text;
-                $businessPlan['bm_comments'] = $text;
-            } elseif ($level === 'area') {
-                $businessPlan['regional_manager_comments'] = $text;
-                $businessPlan['rm_comments'] = $text;
-            } elseif ($level === 'zone') {
-                $businessPlan['zonal_manager_comments'] = $text;
-                // Agrosor PDF has no separate ZM slot — keep on zonal; if final, also final below
-            }
+        if ($level === 'branch') {
+            $businessPlan['branch_manager_post_inspection_comments'] = $text;
+            $businessPlan['bm_comments'] = $text;
+        } elseif ($level === 'area') {
+            $businessPlan['regional_manager_comments'] = $text;
+            $businessPlan['rm_comments'] = $text;
+        } elseif ($level === 'zone') {
+            $businessPlan['zonal_manager_comments'] = $text;
+            // Agrosor PDF has no separate ZM slot — keep on zonal; if final, also final below
+        }
 
-            if ($isFinal || $level === 'escalation') {
-                $businessPlan['final_approver_comments'] = $text;
-            }
+        if ($isFinal || $level === 'escalation') {
+            $businessPlan['final_approver_comments'] = $text;
+            $businessPlan['final_approver_remarks'] = $text;
         }
 
         if ($isFinal && $approvedAmount !== null) {
             $words = NumberToWordsBangla::convert($approvedAmount);
             $businessPlan['final_approved_loan_amount_digits'] = (string) $approvedAmount;
             $businessPlan['final_approved_loan_amount_words'] = $words ? $words.' টাকা' : '';
+        }
+
+        $loan->update(['business_plan' => $businessPlan]);
+    }
+
+    /**
+     * Resync all approval comments of a loan into its business_plan.
+     */
+    public function syncAllApprovalCommentsToBusinessPlan(LoanApplication $loan): void
+    {
+        $approvals = $loan->approvals()
+            ->orderBy('sequence', 'asc')
+            ->get();
+
+        if ($approvals->isEmpty()) {
+            return;
+        }
+
+        $businessPlan = is_array($loan->business_plan) ? $loan->business_plan : [];
+
+        $approvedList = $approvals->where('status', 'approved');
+        $finalApproval = $approvedList->last() ?? $approvals->last();
+
+        foreach ($approvals as $app) {
+            $text = is_string($app->comments) ? trim($app->comments) : '';
+            $isFinal = $finalApproval && $finalApproval->id === $app->id;
+
+            if ($app->level === 'branch') {
+                $businessPlan['branch_manager_post_inspection_comments'] = $text;
+                $businessPlan['bm_comments'] = $text;
+            } elseif ($app->level === 'area') {
+                $businessPlan['regional_manager_comments'] = $text;
+                $businessPlan['rm_comments'] = $text;
+            } elseif ($app->level === 'zone') {
+                $businessPlan['zonal_manager_comments'] = $text;
+            }
+
+            if ($isFinal || $app->level === 'escalation') {
+                $businessPlan['final_approver_comments'] = $text;
+                $businessPlan['final_approver_remarks'] = $text;
+            }
         }
 
         $loan->update(['business_plan' => $businessPlan]);
