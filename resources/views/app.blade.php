@@ -50,6 +50,20 @@
         @inertiaHead
     </head>
     <body class="font-sans antialiased">
+        <div id="initial-page-loader" style="position:fixed;inset:0;z-index:999999;display:flex;align-items:center;justify-content:center;background-color:inherit;transition:opacity 0.3s ease-out;">
+            <div style="display:flex;flex-direction:column;align-items:center;gap:14px;">
+                <div style="position:relative;width:64px;height:64px;display:flex;align-items:center;justify-content:center;">
+                    <div style="position:absolute;inset:0;border-radius:50%;border:3px solid transparent;border-top-color:#008030;border-right-color:#10a020;border-bottom-color:#f59e0b;animation:initial-spin 0.9s linear infinite;"></div>
+                    <img src="/icons/logo.png" alt="MisLoan" style="width:36px;height:36px;object-fit:contain;" />
+                </div>
+                <div style="font-family:'Instrument Sans', sans-serif;font-weight:700;font-size:15px;letter-spacing:0.5px;color:#008030;display:flex;align-items:center;gap:6px;">
+                    <span>MisLoan</span>
+                </div>
+            </div>
+            <style>
+                @keyframes initial-spin { 100% { transform: rotate(360deg); } }
+            </style>
+        </div>
         @inertia
     </body>
 </html>

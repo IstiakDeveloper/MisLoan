@@ -583,7 +583,7 @@ export default function LoanApplicationsPrint({ loans, filters, zones, areas, br
                         <div style={{ textAlign: 'center' }}>
                             <p className="org">মৌসুমী</p>
                             <p className="address">উকিলপাড়া, নওগাঁ।</p>
-                            <p className="title">ঋণ আবেদন যাচাই ও অনুমোদন সংক্রান্ত তথ্য।</p>
+                            <p className="title">ঋণ আবেদন যাচাই ও অনুমোদন সংক্রান্ত তথ্য</p>
                         </div>
                     </div>
                     <table className="header-meta-table">
