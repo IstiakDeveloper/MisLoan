@@ -770,6 +770,8 @@ class HeadOfficeLoanController extends Controller
      */
     public function approveSingle(LoanApplication $loanApplication)
     {
+        $this->ensureCanAccessBranch($loanApplication->branch_id);
+
         if ($loanApplication->status !== LoanApplication::STATUS_PENDING_HEAD_OFFICE) {
             return back()->with('error', 'শুধুমাত্র হেড অফিসে প্রেরিত আবেদন অনুমোদন করা যাবে।');
         }
@@ -845,7 +847,9 @@ class HeadOfficeLoanController extends Controller
         ]);
 
         $ids = $validated['ids'];
-        $loans = LoanApplication::whereIn('id', $ids)->get();
+        $query = LoanApplication::whereIn('id', $ids);
+        $this->applyAccessibleBranchScope($query);
+        $loans = $query->get();
 
         $approvedCount = 0;
         $skippedCount = 0;
@@ -966,6 +970,8 @@ class HeadOfficeLoanController extends Controller
             if ($request->filled('branch_id')) {
                 $query->where('branch_id', $request->branch_id);
             }
+
+            $this->applyAccessibleBranchScope($query);
 
             $loans = $query->get();
 

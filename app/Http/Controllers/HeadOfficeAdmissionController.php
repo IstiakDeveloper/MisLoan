@@ -881,6 +881,8 @@ class HeadOfficeAdmissionController extends Controller
      */
     public function approveSingle(MemberAdmission $admission)
     {
+        $this->ensureCanAccessBranch($admission->branch_id);
+
         // Block if has ANY issue without ZM approval
         if ($admission->issues()->whereNull('zm_approved_at')->exists()) {
             return back()->with('error', 'জোনাল ম্যানেজার (ZM) কর্তৃক অনুমোদন না হওয়া পর্যন্ত হেড অফিস থেকে অনুমোদন করা যাবে না।');
@@ -1037,7 +1039,9 @@ class HeadOfficeAdmissionController extends Controller
         ]);
 
         $ids = $validated['ids'];
-        $admissions = MemberAdmission::whereIn('id', $ids)->get();
+        $query = MemberAdmission::whereIn('id', $ids);
+        $this->applyAccessibleBranchScope($query);
+        $admissions = $query->get();
 
         $approvedCount = 0;
         $skippedCount = 0;
@@ -1152,6 +1156,8 @@ class HeadOfficeAdmissionController extends Controller
             if ($request->filled('branch_id')) {
                 $query->where('branch_id', $request->branch_id);
             }
+
+            $this->applyAccessibleBranchScope($query);
 
             $admissions = $query->get();
 
