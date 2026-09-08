@@ -13,6 +13,7 @@ use App\Services\ApprovalService;
 use App\Services\BlockListService;
 use App\Services\MemberCodeService;
 use App\Services\NotificationService;
+use App\Services\VerificationIssueService;
 use App\Support\RoleListWorkQueue;
 use Carbon\Carbon;
 use Illuminate\Http\Request;
@@ -1176,7 +1177,10 @@ class HeadOfficeAdmissionController extends Controller
                     $admission->update([
                         'status' => 'needs_revision',
                         'revision_count' => ($admission->revision_count ?? 0) + 1,
-                        'revision_comments' => $comments,
+                        'revision_comments' => app(VerificationIssueService::class)->appendUniqueComment(
+                            $admission->revision_comments,
+                            $comments
+                        ),
                         'returned_at' => now(),
                         'returned_by' => auth()->id(),
                     ]);
@@ -1254,6 +1258,10 @@ class HeadOfficeAdmissionController extends Controller
      */
     public function deleteIssue(MemberAdmissionIssue $issue)
     {
+        if ($blocked = app(VerificationIssueService::class)->mutationError($issue)) {
+            return back()->with('error', $blocked);
+        }
+
         $issue->delete();
 
         return back()->with('success', 'Issue deleted successfully!');

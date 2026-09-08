@@ -59,6 +59,23 @@ class Role extends Model
         return [self::ADMF, self::DMF, self::ED];
     }
 
+    /**
+     * Loan / team-based approval chain, lowest to highest.
+     * Branch Manager (1) → Area Manager → Zone Manager → ADMF → DMF → ED (6).
+     */
+    public static function approvalHierarchyRank(?string $name): int
+    {
+        return match ($name) {
+            self::BRANCH_MANAGER => 1,
+            self::AREA_MANAGER => 2,
+            self::ZONE_MANAGER => 3,
+            self::ADMF => 4,
+            self::DMF => 5,
+            self::ED => 6,
+            default => 0,
+        };
+    }
+
     public function isApproverRole(): bool
     {
         return in_array($this->name, self::approverRoleNames(), true);

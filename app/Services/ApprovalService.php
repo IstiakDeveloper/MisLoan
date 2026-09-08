@@ -377,11 +377,14 @@ class ApprovalService
                 'approved_at' => now(),
             ]);
 
-            // Update admission status and revision info
+            // Update admission status and revision info — never overwrite prior HO notes
             $admission->update([
                 'status' => 'needs_revision',
                 'revision_count' => $admission->revision_count + 1,
-                'revision_comments' => $comments,
+                'revision_comments' => app(VerificationIssueService::class)->appendUniqueComment(
+                    $admission->revision_comments,
+                    $comments
+                ),
                 'returned_at' => now(),
                 'returned_by' => auth()->id(),
             ]);
@@ -548,6 +551,50 @@ class ApprovalService
         $approvers = $approvers->merge($escalationUsers);
 
         return $approvers->unique('id')->values();
+    }
+
+    /**
+     * Any Area / Zone / ADMF / DMF / ED on this branch, except the current approver.
+     * Area Manager can send to everyone; ADMF can send back to Zone or Area as well.
+     */
+    public function getForwardTargetsForLoanApproval(LoanApplicationApproval $approval)
+    {
+        $loan = $approval->loanApplication;
+        if (! $loan?->branch_id || $this->isLoanAmountChangeApproval($loan)) {
+            return collect();
+        }
+
+        $forwardRoles = self::loanForwardTargetRoles();
+
+        return $this->getEscalationApprovers((int) $loan->branch_id)
+            ->filter(function ($user) use ($approval, $forwardRoles) {
+                if ((int) $user->id === (int) $approval->user_id) {
+                    return false;
+                }
+
+                return in_array($user->role->name ?? '', $forwardRoles, true);
+            })
+            ->sortBy(function ($user) {
+                $rank = Role::approvalHierarchyRank($user->role->name ?? null);
+                $name = mb_strtolower((string) $user->name);
+
+                return sprintf('%d_%s', $rank, $name);
+            })
+            ->values();
+    }
+
+    /**
+     * @return list<string>
+     */
+    public static function loanForwardTargetRoles(): array
+    {
+        return [
+            Role::AREA_MANAGER,
+            Role::ZONE_MANAGER,
+            Role::ADMF,
+            Role::DMF,
+            Role::ED,
+        ];
     }
 
     /**
@@ -808,16 +855,19 @@ class ApprovalService
     public const BRANCH_MANAGER_LOAN_CEILING = 70000;
 
     /**
-     * Branch manager forwards loan application to selected approver (Area/Zone/ADMF/DMF/ED).
-     * When amount is above BM ceiling, also auto-creates a Team Based Approval draft
-     * for the selected approver, filled from loan + member admission data.
+     * Forward a pending loan approval to another approver (Area / Zone / ADMF / DMF / ED).
+     * Any of those roles may send to any other (including lower or same level), except themselves.
+     * The current step is recorded as approved; the loan stays under review until the next person
+     * gives a final approve (or forwards again). Branch Manager above ceiling also creates Team Based.
      */
     public function forwardLoanToApprover(LoanApplicationApproval $approval, int $userId, ?string $comments = null): bool
     {
         if ($approval->status !== 'pending' || ! $approval->isCurrentPending()) {
             return false;
         }
-        if ($approval->level !== 'branch') {
+
+        $loan = $approval->loanApplication;
+        if ($this->isLoanAmountChangeApproval($loan)) {
             return false;
         }
 
@@ -825,21 +875,27 @@ class ApprovalService
         if (! $targetUser || ! $targetUser->is_active) {
             return false;
         }
-        $roleName = $targetUser->role->name ?? '';
-        $level = 'escalation';
-        if ($roleName === 'area_manager') {
-            $level = 'area';
-        } elseif ($roleName === 'zone_manager') {
-            $level = 'zone';
-        } elseif (in_array($roleName, ['admf', 'dmf', 'ed'], true)) {
-            $level = 'escalation';
+        if ((int) $targetUser->id === (int) $approval->user_id) {
+            throw new \Exception('আপনি নিজের কাছে ফরওয়ার্ড করতে পারবেন না।');
         }
 
-        $loan = $approval->loanApplication;
+        $roleName = $targetUser->role->name ?? '';
+        if (! in_array($roleName, self::loanForwardTargetRoles(), true)) {
+            throw new \Exception('কেবল এরিয়া/জোন ম্যানেজার বা ADMF / DMF / ED এর কাছে ফরওয়ার্ড করা যাবে।');
+        }
+
+        $level = match ($roleName) {
+            Role::AREA_MANAGER => 'area',
+            Role::ZONE_MANAGER => 'zone',
+            default => 'escalation',
+        };
+
         $loan->loadMissing('loanProduct');
         LoanFormVisibility::assertBmFormsComplete($loan);
 
-        DB::transaction(function () use ($approval, $userId, $comments, $level, $targetUser) {
+        $isBranch = $approval->level === 'branch';
+
+        DB::transaction(function () use ($approval, $userId, $comments, $level, $targetUser, $isBranch) {
             $loan = $approval->loanApplication;
             $approval->update([
                 'status' => 'approved',
@@ -847,15 +903,19 @@ class ApprovalService
                 'approved_at' => now(),
                 'approver_signature' => $approval->user->signature ?? null,
             ]);
-            $loan->approvals()
-                ->where('level', 'branch')
-                ->where('id', '!=', $approval->id)
-                ->where('status', 'pending')
-                ->update([
-                    'status' => 'approved',
-                    'comments' => 'Forwarded by another branch manager',
-                    'approved_at' => now(),
-                ]);
+
+            if ($isBranch) {
+                $loan->approvals()
+                    ->where('level', 'branch')
+                    ->where('id', '!=', $approval->id)
+                    ->where('status', 'pending')
+                    ->update([
+                        'status' => 'approved',
+                        'comments' => 'Forwarded by another branch manager',
+                        'approved_at' => now(),
+                    ]);
+            }
+
             $nextSequence = $loan->approvals()->max('sequence') + 1;
             LoanApplicationApproval::create([
                 'loan_application_id' => $loan->id,
@@ -866,16 +926,15 @@ class ApprovalService
             ]);
             $loan->update(['status' => LoanApplication::STATUS_UNDER_REVIEW]);
 
-            // BM forward comments → office section (খ)
             $this->syncLoanApproverCommentsToBusinessPlan(
                 $loan->fresh(),
-                'branch',
+                $approval->level,
                 $comments,
                 false,
                 null,
             );
 
-            if ((float) ($loan->requested_amount ?? 0) >= self::BRANCH_MANAGER_LOAN_CEILING) {
+            if ($isBranch && (float) ($loan->requested_amount ?? 0) >= self::BRANCH_MANAGER_LOAN_CEILING) {
                 $loan->loadMissing([
                     'memberAdmission.samity',
                     'loanProduct',
@@ -884,13 +943,14 @@ class ApprovalService
                     'branch',
                 ]);
                 $this->createTeamBasedApprovalFromLoan($loan, $targetUser, $approval->user);
+            } elseif (! $isBranch) {
+                $this->syncTeamBasedApprovalOnLoanForward($loan, $approval->user, $targetUser, $comments);
             }
         });
 
-        // Send notifications
         $loan = $approval->loanApplication->fresh(['submittedBy', 'memberAdmission', 'branch']);
+        $forwardedBy = $approval->user?->name ?? (auth()->user()?->name ?? 'অনুমোদনকারী');
 
-        // 1. Notify target approver
         app(NotificationService::class)->send(
             users: $targetUser,
             type: 'loan_application',
@@ -903,11 +963,10 @@ class ApprovalService
                 'সদস্যের নাম' => $loan->memberAdmission?->applicant_name_bn ?: ($loan->memberAdmission?->applicant_name_en ?? 'N/A'),
                 'চাহিদাকৃত ঋণ' => number_format($loan->requested_amount ?? 0).' টাকা',
                 'শাখা' => $loan->branch?->name ?? 'N/A',
-                'ফরোয়ার্ড করেছেন' => auth()->user()?->name ?? 'Branch Manager',
+                'ফরোয়ার্ড করেছেন' => $forwardedBy,
             ]
         );
 
-        // 2. Notify submitter
         if ($loan->submittedBy) {
             app(NotificationService::class)->send(
                 users: $loan->submittedBy,
@@ -1203,6 +1262,70 @@ class ApprovalService
             'status' => 'rejected',
             'approved_total_amount' => null,
         ]);
+    }
+
+    /**
+     * When a higher approver forwards a loan, also move the linked Team Based review
+     * to the next superior (same pattern as Team Based inbox forward).
+     */
+    private function syncTeamBasedApprovalOnLoanForward(
+        LoanApplication $loan,
+        User $fromUser,
+        User $toUser,
+        ?string $comments
+    ): void {
+        $teamBased = $this->findTeamBasedApprovalForLoan($loan, $fromUser);
+        if (! $teamBased) {
+            return;
+        }
+
+        $review = $teamBased->reviews()
+            ->where('user_id', $fromUser->id)
+            ->where('status', 'pending')
+            ->whereNotNull('team_based_approval_item_id')
+            ->first();
+
+        if (! $review) {
+            return;
+        }
+
+        $forwardNote = trim((string) $comments);
+        $review->update([
+            'status' => 'forwarded',
+            'comments' => trim(($review->comments ? $review->comments."\n" : '').'ফরওয়ার্ড: '.$forwardNote),
+            'approver_signature' => $fromUser->signature ?? null,
+            'decided_at' => now(),
+        ]);
+
+        $alreadyPending = TeamBasedApprovalReview::query()
+            ->where('team_based_approval_id', $teamBased->id)
+            ->where('team_based_approval_item_id', $review->team_based_approval_item_id)
+            ->where('user_id', $toUser->id)
+            ->where('status', 'pending')
+            ->exists();
+
+        if (! $alreadyPending) {
+            TeamBasedApprovalReview::create([
+                'team_based_approval_id' => $teamBased->id,
+                'team_based_approval_item_id' => $review->team_based_approval_item_id,
+                'user_id' => $toUser->id,
+                'level' => $toUser->role?->name,
+                'status' => 'pending',
+            ]);
+        }
+
+        $column = match ($toUser->role?->name) {
+            Role::AREA_MANAGER => 'area_manager_id',
+            Role::ZONE_MANAGER => 'zone_manager_id',
+            Role::ADMF => 'admf_id',
+            Role::DMF => 'dmf_id',
+            Role::ED => 'ed_id',
+            default => null,
+        };
+
+        if ($column && ! $teamBased->{$column}) {
+            $teamBased->update([$column => $toUser->id]);
+        }
     }
 
     /**

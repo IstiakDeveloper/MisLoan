@@ -77,6 +77,7 @@ interface LoanApproval {
     level: string;
     sequence?: number;
     escalation_approvers?: EscalationApprover[];
+    can_forward?: boolean;
     block_list?: BlockListFields;
 }
 
@@ -191,6 +192,18 @@ function loanIsHighAmount(la: LoanApproval): boolean {
         && Number(la.requested_amount || 0) >= 70000;
 }
 
+function loanCanForwardFurther(la: LoanApproval): boolean {
+    if (la.is_amount_change_approval) {
+        return false;
+    }
+
+    if (la.can_forward === false) {
+        return false;
+    }
+
+    return (la.escalation_approvers?.length ?? 0) > 0 && la.level !== 'branch';
+}
+
 function LoanApprovalsPanel({
     items,
     title,
@@ -201,6 +214,7 @@ function LoanApprovalsPanel({
     onView,
     onApprove,
     onReject,
+    onForward,
 }: {
     items: LoanApproval[];
     title: string;
@@ -211,6 +225,7 @@ function LoanApprovalsPanel({
     onView: (loanApplicationId: number) => void;
     onApprove: (la: LoanApproval) => void;
     onReject: (la: LoanApproval) => void;
+    onForward?: (la: LoanApproval) => void;
 }) {
     const isAmountChange = variant === 'amount_change';
     const countBadgeClass = isAmountChange
@@ -231,6 +246,7 @@ function LoanApprovalsPanel({
             <div className="md:hidden flex flex-col gap-2.5">
                 {items.map((la) => {
                     const isHighAmount = loanIsHighAmount(la);
+                    const canForwardFurther = Boolean(onForward) && loanCanForwardFurther(la);
                     const memberCode = loanMemberCode(la);
                     const canCopy = memberCode !== '—';
 
@@ -286,6 +302,12 @@ function LoanApprovalsPanel({
                                     <span>৭০,০০০+ টাকার ঋণ: উচ্চতর অনুমোদন প্রয়োজন</span>
                                 </div>
                             )}
+                            {canForwardFurther && (
+                                <div className="flex items-center gap-1 p-1.5 rounded-lg bg-sky-50 border border-sky-200 text-sky-900 text-[10px] font-semibold">
+                                    <ArrowUpRight className="w-3 h-3 text-sky-600 shrink-0" />
+                                    <span>নিজে অনুমোদন দিতে পারেন, অথবা আরও একজনের অনুমোদনের জন্য ফরওয়ার্ড করুন</span>
+                                </div>
+                            )}
                             {la.is_amount_change_approval && (
                                 <div className="flex items-center gap-1 p-1.5 rounded-lg bg-orange-50 border border-orange-200 text-orange-900 text-[10px] font-semibold">
                                     <AlertCircle className="w-3 h-3 text-orange-600 shrink-0" />
@@ -308,7 +330,7 @@ function LoanApprovalsPanel({
                                 </div>
                             </div>
 
-                            <div className="grid grid-cols-3 gap-1.5 pt-1 border-t border-slate-100">
+                            <div className={`grid gap-1.5 pt-1 border-t border-slate-100 ${canForwardFurther ? 'grid-cols-2' : 'grid-cols-3'}`}>
                                 <button
                                     onClick={() => onView(la.loan_application_id)}
                                     className="inline-flex items-center justify-center gap-1 px-2 py-1.5 rounded-lg text-xs font-semibold text-slate-700 bg-white hover:bg-slate-50 border border-slate-200"
@@ -324,6 +346,14 @@ function LoanApprovalsPanel({
                                     {isHighAmount ? <ArrowUpRight className="w-3 h-3" /> : <CheckCircle2 className="w-3 h-3" />}
                                     <span>{isHighAmount ? 'ফরওয়ার্ড' : 'অনুমোদন'}</span>
                                 </button>
+                                {canForwardFurther && (
+                                    <button
+                                        onClick={() => onForward?.(la)}
+                                        className="inline-flex items-center justify-center gap-1 px-2 py-1.5 rounded-lg text-xs font-bold text-white bg-blue-600 hover:bg-blue-700"
+                                    >
+                                        <ArrowUpRight className="w-3 h-3" /> ফরওয়ার্ড
+                                    </button>
+                                )}
                                 <button
                                     onClick={() => onReject(la)}
                                     className="inline-flex items-center justify-center gap-1 px-2 py-1.5 rounded-lg text-xs font-bold text-rose-700 bg-rose-50 hover:bg-rose-100 border border-rose-200"
@@ -359,6 +389,7 @@ function LoanApprovalsPanel({
                         <tbody className="divide-y divide-slate-100 text-xs">
                             {items.map((la) => {
                                 const isHighAmount = loanIsHighAmount(la);
+                                const canForwardFurther = Boolean(onForward) && loanCanForwardFurther(la);
                                 const memberCode = loanMemberCode(la);
                                 const canCopy = memberCode !== '—';
 
@@ -417,6 +448,12 @@ function LoanApprovalsPanel({
                                                         উচ্চতর অনুমোদন
                                                     </span>
                                                 )}
+                                                {canForwardFurther && (
+                                                    <span className="inline-flex items-center gap-1 text-[9px] font-bold text-sky-700 bg-sky-50 border border-sky-200 px-1 py-0.2 rounded mt-0.5">
+                                                        <ArrowUpRight className="w-2.5 h-2.5 text-sky-600" />
+                                                        আরও অনুমোদন
+                                                    </span>
+                                                )}
                                                 {la.is_amount_change_approval && (
                                                     <span className="inline-flex items-center gap-1 text-[9px] font-bold text-orange-700 bg-orange-50 border border-orange-200 px-1 py-0.2 rounded mt-0.5">
                                                         আগে: ৳ {Number(la.approved_amount || 0).toLocaleString('bn-BD')}
@@ -461,6 +498,17 @@ function LoanApprovalsPanel({
                                                         </>
                                                     )}
                                                 </button>
+
+                                                {canForwardFurther && (
+                                                    <button
+                                                        onClick={() => onForward?.(la)}
+                                                        className="inline-flex items-center gap-1 px-2.5 py-1 text-xs font-bold text-white bg-blue-600 hover:bg-blue-700 rounded shadow-2xs transition active:scale-95"
+                                                        title="অন্য অনুমোদনকারীর কাছে ফরওয়ার্ড"
+                                                    >
+                                                        <ArrowUpRight className="w-3 h-3" />
+                                                        <span>ফরওয়ার্ড</span>
+                                                    </button>
+                                                )}
 
                                                 <button
                                                     onClick={() => onReject(la)}
@@ -1806,6 +1854,7 @@ export default function Index({
                                 onView={(id) => router.visit(`/member/loan-applications/${id}`)}
                                 onApprove={(la) => handleLoanAction(la, 'approve')}
                                 onReject={(la) => handleLoanAction(la, 'reject')}
+                                onForward={(la) => handleLoanAction(la, 'forward')}
                             />
                         )}
 
@@ -2219,7 +2268,7 @@ export default function Index({
                                     {loanAction === 'approve'
                                         ? 'ঋণ আবেদন অনুমোদন'
                                         : loanAction === 'forward'
-                                          ? 'উচ্চতর অনুমোদনকারীর নিকট ফরওয়ার্ড'
+                                          ? 'অন্য অনুমোদনকারীর নিকট ফরওয়ার্ড'
                                           : 'ঋণ আবেদন প্রত্যাখ্যান'}
                                 </h3>
                             </div>
@@ -2295,7 +2344,9 @@ export default function Index({
                                     ))}
                                 </select>
                                 <p className="text-[11px] text-amber-800 bg-amber-50 border border-amber-200 rounded-lg p-2">
-                                    ৭০,০০০ টাকা বা তার বেশি ঋণের জন্য উচ্চতর কর্মকর্তার কাছে ফরওয়ার্ড করা হচ্ছে।
+                                    {selectedLoanApproval.level === 'branch'
+                                        ? '৭০,০০০ টাকা বা তার বেশি ঋণের জন্য অন্য অনুমোদনকারীর কাছে ফরওয়ার্ড করা হচ্ছে।'
+                                        : 'এরিয়া ম্যানেজার, জোন ম্যানেজার, ADMF, DMF বা ED — যেকোনো অনুমোদনকারীকে পাঠাতে পারবেন। আপনার সিদ্ধান্ত সংরক্ষিত থাকবে।'}
                                 </p>
                             </div>
                         )}

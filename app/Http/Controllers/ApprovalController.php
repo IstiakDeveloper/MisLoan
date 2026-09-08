@@ -111,12 +111,17 @@ class ApprovalController extends Controller
                 'sequence' => $approval->sequence,
                 'block_list' => $member ? $this->blockListFieldsFromMember($member) : null,
             ];
-            if ($approval->level === 'branch') {
-                $data['escalation_approvers'] = $this->approvalService->getEscalationApprovers($loan->branch_id)
-                    ->map(fn ($u) => ['id' => $u->id, 'name' => $u->name, 'email' => $u->email ?? '', 'level' => $u->level ?? '', 'role_name' => $u->role->name ?? '']);
-            } else {
-                $data['escalation_approvers'] = [];
-            }
+            $forwardTargets = $this->approvalService->getForwardTargetsForLoanApproval($approval);
+            $data['escalation_approvers'] = $forwardTargets
+                ->map(fn ($u) => [
+                    'id' => $u->id,
+                    'name' => $u->name,
+                    'email' => $u->email ?? '',
+                    'level' => $u->level ?? '',
+                    'role_name' => $u->role->display_name ?? $u->role->name ?? '',
+                ])
+                ->values();
+            $data['can_forward'] = $forwardTargets->isNotEmpty();
 
             return $data;
         });
@@ -330,7 +335,7 @@ class ApprovalController extends Controller
     }
 
     /**
-     * Branch manager forwards loan application to selected approver (Area/Zone/ADMF/DMF/ED)
+     * Forward a pending loan approval to another approver (Area / Zone / ADMF / DMF / ED).
      */
     public function forwardLoan(Request $request, LoanApplicationApproval $loanApproval)
     {
@@ -340,8 +345,19 @@ class ApprovalController extends Controller
             'comments' => 'nullable|string|max:1000',
         ]);
 
+        $allowedIds = $this->approvalService
+            ->getForwardTargetsForLoanApproval($loanApproval)
+            ->pluck('id')
+            ->map(fn ($id) => (int) $id);
+
+        if ($allowedIds->isEmpty() || ! $allowedIds->contains((int) $request->forward_to_user_id)) {
+            return back()->with('error', 'নির্বাচিত কর্মকর্তার কাছে ফরওয়ার্ড করা যাবে না। এরিয়া/জোন ম্যানেজার বা ADMF / DMF / ED নির্বাচন করুন।');
+        }
+
         $loan = $loanApproval->loanApplication;
-        $aboveCeiling = (float) ($loan?->requested_amount ?? 0) >= ApprovalService::BRANCH_MANAGER_LOAN_CEILING;
+        $isBranch = $loanApproval->level === 'branch';
+        $aboveCeiling = $isBranch
+            && (float) ($loan?->requested_amount ?? 0) >= ApprovalService::BRANCH_MANAGER_LOAN_CEILING;
 
         try {
             $success = $this->approvalService->forwardLoanToApprover(
@@ -358,7 +374,7 @@ class ApprovalController extends Controller
         }
 
         if ($success) {
-            $message = 'ঋণ আবেদন নির্বাচিত অনুমোদনকারীর কাছে ফরওয়ার্ড হয়েছে।';
+            $message = 'ঋণ আবেদন নির্বাচিত অনুমোদনকারীর কাছে ফরওয়ার্ড হয়েছে। চূড়ান্ত অনুমোদনের জন্য তাঁর সিদ্ধান্ত প্রয়োজন।';
             if ($aboveCeiling) {
                 $message .= ' টিম ভিত্তিক অনুমোদন স্বয়ংক্রিয়ভাবে পোস্ট হয়েছে।';
             }

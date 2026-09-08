@@ -10,6 +10,7 @@ use App\Models\MemberAdmissionIssue;
 use App\Models\Role;
 use App\Models\User;
 use App\Services\NotificationService;
+use App\Services\VerificationIssueService;
 use Carbon\Carbon;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -19,6 +20,8 @@ class HeadOfficeVerificationController extends Controller
 {
     use Concerns\ResolvesListPerPage;
     use Concerns\ScopesToAccessibleBranches;
+
+    public function __construct(private VerificationIssueService $verificationIssues) {}
 
     /**
      * Display Verification list (Admissions & Loans with inquiries/issues)
@@ -522,34 +525,29 @@ class HeadOfficeVerificationController extends Controller
             $admission = MemberAdmission::findOrFail($validated['raw_id']);
             $this->ensureCanAccessBranch($admission->branch_id);
 
-            $updateData = [
-                'resolution_note' => $validated['reply_message'],
-                'resolved_at' => now(),
-                'resolved_by' => $authUser->id,
-            ];
-
-            if ($isZmOrAdmin) {
-                $updateData['zm_approved_at'] = now();
-                $updateData['zm_approved_by'] = $authUser->id;
-            }
-
+            $issue = null;
             if (! empty($validated['issue_id'])) {
                 $issue = MemberAdmissionIssue::where('member_admission_id', $admission->id)
                     ->where('id', $validated['issue_id'])
                     ->first();
-                if ($issue) {
-                    $issue->update($updateData);
-                }
-            } else {
-                $latestIssue = $admission->issues()->where('status', 'pending')->latest()->first();
-                if ($latestIssue) {
-                    $latestIssue->update($updateData);
-                }
+            }
+            $issue ??= $admission->issues()->where('status', 'pending')->latest()->first();
+
+            if (! $issue) {
+                return back()->with('error', 'হেড অফিসের আপত্তি খুঁজে পাওয়া যায়নি। আপত্তি মুছে গেলে জবাব দেওয়া যাবে না।');
             }
 
-            // Update admission revision note and refresh submitted_at to now
+            $replyError = $this->verificationIssues->recordAdmissionReply(
+                $issue,
+                $authUser,
+                $validated['reply_message'],
+                $isZmOrAdmin
+            );
+            if ($replyError) {
+                return back()->with('error', $replyError);
+            }
+
             $admission->update([
-                'revision_comments' => $validated['reply_message'],
                 'submitted_at' => now(),
                 'submitted_by' => $authUser->id,
             ]);
@@ -592,32 +590,28 @@ class HeadOfficeVerificationController extends Controller
             $loan = LoanApplication::findOrFail($validated['raw_id']);
             $this->ensureCanAccessBranch($loan->branch_id);
 
-            $updateData = [
-                'response_message' => $validated['reply_message'],
-                'responded_by' => $authUser->id,
-                'responded_at' => now(),
-            ];
-
-            if ($isZmOrAdmin) {
-                $updateData['zm_approved_at'] = now();
-                $updateData['zm_approved_by'] = $authUser->id;
-            }
-
+            $issue = null;
             if (! empty($validated['issue_id'])) {
                 $issue = LoanApplicationIssue::where('loan_application_id', $loan->id)
                     ->where('id', $validated['issue_id'])
                     ->first();
-                if ($issue) {
-                    $issue->update($updateData);
-                }
-            } else {
-                $latestIssue = $loan->issues()->where('status', 'pending')->latest()->first();
-                if ($latestIssue) {
-                    $latestIssue->update($updateData);
-                }
+            }
+            $issue ??= $loan->issues()->where('status', 'pending')->latest()->first();
+
+            if (! $issue) {
+                return back()->with('error', 'হেড অফিসের আপত্তি খুঁজে পাওয়া যায়নি। আপত্তি মুছে গেলে জবাব দেওয়া যাবে না।');
             }
 
-            // Update loan submission timestamp
+            $replyError = $this->verificationIssues->recordLoanReply(
+                $issue,
+                $authUser,
+                $validated['reply_message'],
+                $isZmOrAdmin
+            );
+            if ($replyError) {
+                return back()->with('error', $replyError);
+            }
+
             $loan->update([
                 'submitted_at' => now(),
                 'submitted_by' => $authUser->id,

@@ -1664,9 +1664,6 @@ class MemberAdmissionController extends Controller
                     'comments' => 'Re-approved after revision',
                 ]);
 
-            // Clear all issues
-            $memberAdmission->issues()->delete();
-
             $authUser = auth()->user();
             $memberAdmission->update([
                 'status' => 'pending_head_office',

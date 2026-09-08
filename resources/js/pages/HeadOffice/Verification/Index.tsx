@@ -507,10 +507,8 @@ export default function VerificationIndex({ items, stats, filters, permissions, 
 
     // Universal Reply to Issue
     const handleOpenReplyModal = (item: VerificationItem) => {
-        const hoText = (item.latest_issue_description || '').trim();
-        const existingReply = (item.latest_reply_message || '').trim();
         setReplyModalItem(item);
-        setReplyText(existingReply && existingReply !== hoText ? existingReply : '');
+        setReplyText('');
     };
 
     const handleSendReply = (e: React.FormEvent) => {
@@ -1223,15 +1221,15 @@ export default function VerificationIndex({ items, stats, filters, permissions, 
                                                 <td className="py-3.5 px-3 text-center align-top">
                                                     <div className="flex items-center justify-center gap-1.5 flex-wrap">
                                                         {/* 1. Branch User Reply Button (FO, BM, AM) */}
-                                                        {permissions.can_reply && !permissions.is_zone_manager && !permissions.is_head_office && !isApproved && !isRejected && (
+                                                        {permissions.can_reply && !permissions.is_zone_manager && !permissions.is_head_office && !isApproved && !isRejected && !item.is_zm_approved && (
                                                             <button
                                                                 type="button"
                                                                 onClick={() => handleOpenReplyModal(item)}
                                                                 className="px-2.5 py-1.5 bg-sky-600 hover:bg-sky-700 text-white rounded-lg text-xs font-semibold flex items-center gap-1 shadow-sm transition"
-                                                                title="আপত্তির ব্যাখ্যা/জবাব প্রদান বা সংশোধন করুন"
+                                                                title={item.has_replied ? 'আগের জবাব থাকবে; নতুন জবাব যোগ হবে' : 'আপত্তির ব্যাখ্যা/জবাব প্রদান করুন'}
                                                             >
                                                                 <Reply className="w-3.5 h-3.5" />
-                                                                {item.has_replied ? 'জবাব সংশোধন' : 'জবাব/ব্যাখ্যা দিন'}
+                                                                {item.has_replied ? 'আরেকটি জবাব যোগ করুন' : 'জবাব/ব্যাখ্যা দিন'}
                                                             </button>
                                                         )}
 
@@ -1427,6 +1425,13 @@ export default function VerificationIndex({ items, stats, filters, permissions, 
                             <p className="text-amber-950 font-medium leading-relaxed">{replyModalItem.latest_issue_description}</p>
                         </div>
 
+                        {replyModalItem.latest_reply_message ? (
+                            <div className="bg-sky-50 rounded-xl p-3 text-xs border border-sky-200 space-y-1">
+                                <div className="font-bold text-sky-900">আগের জবাব (মুছে যাবে না):</div>
+                                <p className="text-sky-950 font-medium leading-relaxed whitespace-pre-wrap">{replyModalItem.latest_reply_message}</p>
+                            </div>
+                        ) : null}
+
                         {/* Informational note on workflow */}
                         <div className="bg-indigo-50/70 rounded-xl p-2.5 text-[11px] text-indigo-900 border border-indigo-200 flex items-start gap-2">
                             <HelpCircle className="w-4 h-4 text-indigo-600 shrink-0 mt-0.5" />
@@ -1434,7 +1439,7 @@ export default function VerificationIndex({ items, stats, filters, permissions, 
                                 {permissions.is_zone_manager ? (
                                     <span>জোনাল ম্যানেজার হিসেবে আপনার ব্যাখ্যা সরাসরি ZM-অনুমোদিত হিসেবে হেড অফিসে সংরক্ষিত ও প্রেরিত হবে।</span>
                                 ) : (
-                                    <span>শাখা থেকে আপনার ব্যাখ্যা সংরক্ষিত হবে এবং জোনাল ম্যানেজারের (ZM) পর্যালোচনার পর হেড অফিসের অনুমোদনে যাবে।</span>
+                                    <span>শাখা থেকে আপনার ব্যাখ্যা সংরক্ষিত হবে এবং জোনাল ম্যানেজারের (ZM) পর্যালোচনার পর হেড অফিসের অনুমোদনে যাবে। আগের জবাব কখনো মুছে যাবে না; নতুন লেখা যোগ হবে।</span>
                                 )}
                             </div>
                         </div>
@@ -1448,7 +1453,11 @@ export default function VerificationIndex({ items, stats, filters, permissions, 
                                 <textarea
                                     value={replyText}
                                     onChange={(e) => setReplyText(e.target.value)}
-                                    placeholder="হেড অফিসের আপত্তির প্রেক্ষিতে স্পষ্ট ব্যাখ্যা বা সমাধানের বিবরণ এখানে লিখুন..."
+                                    placeholder={
+                                        replyModalItem.latest_reply_message
+                                            ? 'অতিরিক্ত ব্যাখ্যা এখানে লিখুন — আগের জবাব থাকবে'
+                                            : 'হেড অফিসের আপত্তির প্রেক্ষিতে স্পষ্ট ব্যাখ্যা বা সমাধানের বিবরণ এখানে লিখুন...'
+                                    }
                                     rows={4}
                                     required
                                     className="w-full text-xs p-3 border border-slate-300 rounded-xl focus:ring-2 focus:ring-sky-500/20 focus:border-sky-500"
@@ -1925,7 +1934,7 @@ function VerificationThread({
                                 {issue.created_at ? ` · ${formatDateTime(issue.created_at)}` : ''}
                             </span>
                         </div>
-                        <p className={`${textClass} text-amber-950 font-medium leading-relaxed`}>
+                        <p className={`${textClass} text-amber-950 font-medium leading-relaxed whitespace-pre-wrap`}>
                             {issue.issue_description}
                         </p>
                     </div>
@@ -1989,7 +1998,7 @@ function VerificationThread({
                         {/* Reply Text */}
                         {issue.reply_message ? (
                             <div className="space-y-1">
-                                <p className={`${textClass} text-sky-950 font-medium leading-relaxed`}>
+                                <p className={`${textClass} text-sky-950 font-medium leading-relaxed whitespace-pre-wrap`}>
                                     {issue.reply_message}
                                 </p>
                                 {issue.zm_approval_note && (
