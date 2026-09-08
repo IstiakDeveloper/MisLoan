@@ -496,3 +496,143 @@ it('moves the linked team based review when a higher approver forwards', functio
         ->and((int) $tba->admf_id)->toBe($admf->id)
         ->and($nextReview)->not->toBeNull();
 });
+
+it('approves the linked team based sheet when a higher approver approves the loan', function () {
+    createLoanHigherApproverForwardTables();
+
+    $amRole = Role::create(['name' => Role::AREA_MANAGER, 'display_name' => 'Area Manager']);
+
+    $am = User::create([
+        'name' => 'Area Manager',
+        'email' => 'am-loan-approve@test.com',
+        'role_id' => $amRole->id,
+        'is_active' => true,
+    ]);
+
+    $loan = LoanApplication::create([
+        'application_no' => 'LN-APR-TBA',
+        'status' => LoanApplication::STATUS_UNDER_REVIEW,
+        'requested_amount' => 150000,
+        'submitted_by' => $am->id,
+    ]);
+
+    $amApproval = LoanApplicationApproval::create([
+        'loan_application_id' => $loan->id,
+        'user_id' => $am->id,
+        'level' => 'area',
+        'sequence' => 2,
+        'status' => 'pending',
+    ]);
+
+    $tba = TeamBasedApproval::create([
+        'loan_application_id' => $loan->id,
+        'created_by' => $am->id,
+        'sheet_date' => now()->toDateString(),
+        'area_manager_id' => $am->id,
+        'status' => 'pending',
+    ]);
+
+    $item = new TeamBasedApprovalItem([
+        'serial_no' => 1,
+        'member_name' => 'Test Member',
+        'member_code' => 'M-APR',
+        'proposed_loan_amount' => '150000',
+    ]);
+    $tba->items()->save($item);
+
+    $review = TeamBasedApprovalReview::create([
+        'team_based_approval_id' => $tba->id,
+        'team_based_approval_item_id' => $item->id,
+        'user_id' => $am->id,
+        'level' => Role::AREA_MANAGER,
+        'status' => 'pending',
+    ]);
+
+    $service = app(ApprovalService::class);
+
+    mockLoanForwardNotifications();
+
+    $result = $service->approveLoan($amApproval, 'ঋণ অনুমোদন করুন', 150000);
+
+    expect($result)->toBeTrue();
+
+    $loan->refresh();
+    $review->refresh();
+    $tba->refresh();
+    $item->refresh();
+
+    expect($loan->status)->toBe(LoanApplication::STATUS_READY_FOR_HEAD_OFFICE)
+        ->and((int) $loan->approved_amount)->toBe(150000)
+        ->and($amApproval->fresh()->status)->toBe('approved')
+        ->and($review->status)->toBe('approved')
+        ->and((int) $review->approved_amount)->toBe(150000)
+        ->and($tba->status)->toBe('approved')
+        ->and((int) $tba->approved_total_amount)->toBe(150000)
+        ->and((int) $item->approved_amount)->toBe(150000);
+});
+
+it('rejects the linked team based sheet when a higher approver rejects the loan', function () {
+    createLoanHigherApproverForwardTables();
+
+    $amRole = Role::create(['name' => Role::AREA_MANAGER, 'display_name' => 'Area Manager']);
+
+    $am = User::create([
+        'name' => 'Area Manager',
+        'email' => 'am-loan-reject@test.com',
+        'role_id' => $amRole->id,
+        'is_active' => true,
+    ]);
+
+    $loan = LoanApplication::create([
+        'application_no' => 'LN-REJ-TBA',
+        'status' => LoanApplication::STATUS_UNDER_REVIEW,
+        'requested_amount' => 150000,
+        'submitted_by' => $am->id,
+    ]);
+
+    $amApproval = LoanApplicationApproval::create([
+        'loan_application_id' => $loan->id,
+        'user_id' => $am->id,
+        'level' => 'area',
+        'sequence' => 2,
+        'status' => 'pending',
+    ]);
+
+    $tba = TeamBasedApproval::create([
+        'loan_application_id' => $loan->id,
+        'created_by' => $am->id,
+        'sheet_date' => now()->toDateString(),
+        'area_manager_id' => $am->id,
+        'status' => 'pending',
+    ]);
+
+    $item = new TeamBasedApprovalItem([
+        'serial_no' => 1,
+        'member_name' => 'Test Member',
+        'member_code' => 'M-REJ',
+        'proposed_loan_amount' => '150000',
+    ]);
+    $tba->items()->save($item);
+
+    $review = TeamBasedApprovalReview::create([
+        'team_based_approval_id' => $tba->id,
+        'team_based_approval_item_id' => $item->id,
+        'user_id' => $am->id,
+        'level' => Role::AREA_MANAGER,
+        'status' => 'waiting',
+    ]);
+
+    mockLoanForwardNotifications();
+
+    $result = app(ApprovalService::class)->rejectLoan($amApproval, 'প্রয়োজন নেই');
+
+    expect($result)->toBeTrue();
+
+    $loan->refresh();
+    $review->refresh();
+    $tba->refresh();
+
+    expect($loan->status)->toBe(LoanApplication::STATUS_REJECTED)
+        ->and($review->status)->toBe('rejected')
+        ->and($tba->status)->toBe('rejected');
+});

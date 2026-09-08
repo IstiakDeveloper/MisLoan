@@ -1669,7 +1669,6 @@ class MemberAdmissionController extends Controller
                 'status' => 'pending_head_office',
                 'revision_comments' => $currentComments.$newComment,
                 'submitted_by' => $authUser->id,
-                'submitted_at' => now(),
             ]);
         });
 

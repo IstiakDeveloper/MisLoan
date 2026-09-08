@@ -547,11 +547,6 @@ class HeadOfficeVerificationController extends Controller
                 return back()->with('error', $replyError);
             }
 
-            $admission->update([
-                'submitted_at' => now(),
-                'submitted_by' => $authUser->id,
-            ]);
-
             if ($isZmOrAdmin) {
                 // Directly ZM-approved -> notify Head Office
                 $this->notifyHeadOffice(
@@ -611,11 +606,6 @@ class HeadOfficeVerificationController extends Controller
             if ($replyError) {
                 return back()->with('error', $replyError);
             }
-
-            $loan->update([
-                'submitted_at' => now(),
-                'submitted_by' => $authUser->id,
-            ]);
 
             if ($isZmOrAdmin) {
                 // Directly ZM-approved -> notify Head Office
@@ -696,10 +686,6 @@ class HeadOfficeVerificationController extends Controller
                 $admission->issues()->whereNull('zm_approved_at')->update($updateData);
             }
 
-            $admission->update([
-                'submitted_at' => now(),
-            ]);
-
             $this->notifyHeadOffice(
                 type: 'member_admission',
                 title: 'সদস্য ভর্তি আপত্তিতে জোনাল অনুমোদন সম্পন্ন হয়েছে',
@@ -734,10 +720,6 @@ class HeadOfficeVerificationController extends Controller
             } else {
                 $loan->issues()->whereNull('zm_approved_at')->update($updateData);
             }
-
-            $loan->update([
-                'submitted_at' => now(),
-            ]);
 
             $this->notifyHeadOffice(
                 type: 'loan_application',
@@ -803,7 +785,6 @@ class HeadOfficeVerificationController extends Controller
                         $admission->issues()->whereNull('zm_approved_at')->update($updateData);
                     }
 
-                    $admission->update(['submitted_at' => now()]);
                     $approvedCount++;
                 } else {
                     $loan = LoanApplication::find($itemData['raw_id']);
@@ -826,7 +807,6 @@ class HeadOfficeVerificationController extends Controller
                         $loan->issues()->whereNull('zm_approved_at')->update($updateData);
                     }
 
-                    $loan->update(['submitted_at' => now()]);
                     $approvedCount++;
                 }
             }

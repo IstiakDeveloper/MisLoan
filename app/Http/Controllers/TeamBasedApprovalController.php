@@ -2,14 +2,17 @@
 
 namespace App\Http\Controllers;
 
+use App\Models\Area;
 use App\Models\Branch;
 use App\Models\Role;
 use App\Models\TeamBasedApproval;
 use App\Models\TeamBasedApprovalItem;
 use App\Models\TeamBasedApprovalReview;
 use App\Models\User;
+use App\Models\Zone;
 use App\Services\BlockListService;
 use Illuminate\Http\Request;
+use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 use Inertia\Inertia;
 
@@ -485,8 +488,10 @@ class TeamBasedApprovalController extends Controller
                     'can_act' => $review->user_id === $user->id,
                     'approver_name' => $review->user?->name,
                     'approver_role' => $review->user?->role?->display_name ?? $review->user?->role?->name,
+                    'loan_application_id' => $approval->loan_application_id,
                     'sheet' => [
                         'id' => $approval->id,
+                        'loan_application_id' => $approval->loan_application_id,
                         'sheet_date' => optional($approval->sheet_date)->toDateString(),
                         'status' => $approval->status,
                         'branch_name' => $approval->branch?->name,
@@ -512,13 +517,13 @@ class TeamBasedApprovalController extends Controller
             ]);
 
         $areaIds = $branches->pluck('area_id')->filter()->unique();
-        $areas = \App\Models\Area::query()
+        $areas = Area::query()
             ->whereIn('id', $areaIds)
             ->orderBy('name')
             ->get(['id', 'name', 'code', 'zone_id']);
 
         $zoneIds = $areas->pluck('zone_id')->filter()->unique();
-        $zones = \App\Models\Zone::query()
+        $zones = Zone::query()
             ->whereIn('id', $zoneIds)
             ->orderBy('name')
             ->get(['id', 'name', 'code']);
@@ -836,6 +841,7 @@ class TeamBasedApprovalController extends Controller
 
     /**
      * Approver decision: approve or reject with comments & optional approved amount.
+     * Loan-linked sheets are decided from the loan inbox; Team Based then auto-syncs.
      */
     public function decide(Request $request, TeamBasedApprovalReview $review, BlockListService $blockListService)
     {
@@ -849,6 +855,15 @@ class TeamBasedApprovalController extends Controller
             return redirect()
                 ->back()
                 ->with('error', 'এই আবেদনের সিদ্ধান্ত ইতিমধ্যে নেওয়া হয়েছে।');
+        }
+
+        $review->loadMissing('approval');
+        if ($review->approval?->loan_application_id) {
+            return $this->redirectToApproverIndex(
+                $request,
+                'এখানে আলাদা অনুমোদনের প্রয়োজন নেই। ঋণ আবেদন অনুমোদন দিলে Team Based-ও স্বয়ংক্রিয়ভাবে অনুমোদিত হবে।',
+                'warning',
+            );
         }
 
         $rules = [
@@ -942,42 +957,42 @@ class TeamBasedApprovalController extends Controller
                         );
                     }
                 } elseif ($data['decision'] === 'waiting') {
-                $review->update([
-                    'status' => 'waiting',
-                    'comments' => $data['comments'] ?? null,
-                    'approved_amount' => null,
-                    'approver_signature' => $user->signature,
-                    'decided_at' => $now,
-                ]);
-            } else {
-                $approvedAmount = $data['approved_amount'];
-
-                $review->update([
-                    'status' => 'approved',
-                    'comments' => $data['comments'] ?? null,
-                    'approved_amount' => $approvedAmount,
-                    'approver_signature' => $user->signature,
-                    'decided_at' => $now,
-                ]);
-
-                if ($item) {
-                    // If this item was previously approved+forwarded, mark earlier forwarded review(s) as approved
-                    TeamBasedApprovalReview::query()
-                        ->where('team_based_approval_id', $approval->id)
-                        ->where('team_based_approval_item_id', $item->id)
-                        ->where('status', 'forwarded')
-                        ->where('id', '!=', $review->id)
-                        ->update([
-                            'status' => 'approved',
-                        ]);
-
-                    // Store approved amount per loan row
-                    $item->update([
-                        'approved_amount' => $approvedAmount,
+                    $review->update([
+                        'status' => 'waiting',
+                        'comments' => $data['comments'] ?? null,
+                        'approved_amount' => null,
+                        'approver_signature' => $user->signature,
+                        'decided_at' => $now,
                     ]);
+                } else {
+                    $approvedAmount = $data['approved_amount'];
+
+                    $review->update([
+                        'status' => 'approved',
+                        'comments' => $data['comments'] ?? null,
+                        'approved_amount' => $approvedAmount,
+                        'approver_signature' => $user->signature,
+                        'decided_at' => $now,
+                    ]);
+
+                    if ($item) {
+                        // If this item was previously approved+forwarded, mark earlier forwarded review(s) as approved
+                        TeamBasedApprovalReview::query()
+                            ->where('team_based_approval_id', $approval->id)
+                            ->where('team_based_approval_item_id', $item->id)
+                            ->where('status', 'forwarded')
+                            ->where('id', '!=', $review->id)
+                            ->update([
+                                'status' => 'approved',
+                            ]);
+
+                        // Store approved amount per loan row
+                        $item->update([
+                            'approved_amount' => $approvedAmount,
+                        ]);
+                    }
                 }
-            }
-        });
+            });
         } catch (\RuntimeException $e) {
             return redirect()
                 ->back()
@@ -1106,6 +1121,15 @@ class TeamBasedApprovalController extends Controller
 
         if (! $review) {
             return redirect()->back()->with('error', 'এই লোন সারির জন্য আপনার কোনো পেন্ডিং রিভিউ নেই।');
+        }
+
+        $review->loadMissing('approval');
+        if ($review->approval?->loan_application_id) {
+            return $this->redirectToApproverIndex(
+                $request,
+                'এখানে আলাদা অনুমোদনের প্রয়োজন নেই। ঋণ আবেদন অনুমোদন দিলে Team Based-ও স্বয়ংক্রিয়ভাবে অনুমোদিত হবে।',
+                'warning',
+            );
         }
 
         DB::transaction(function () use ($teamBasedApproval, $user, $forwardTo, $review, $validated) {
@@ -1278,7 +1302,7 @@ class TeamBasedApprovalController extends Controller
      * Round numeric item fields to integers (no decimals).
      */
     /**
-     * @return \Illuminate\Http\RedirectResponse
+     * @return RedirectResponse
      */
     private function redirectToApproverIndex(Request $request, string $message, string $flashKey = 'success')
     {
@@ -1451,7 +1475,7 @@ class TeamBasedApprovalController extends Controller
     }
 
     /**
-     * @return \Illuminate\Support\Collection<int, array<string, mixed>>
+     * @return Collection<int, array<string, mixed>>
      */
     private function flattenApproverReviewToExportRows(TeamBasedApprovalReview $review, User $user)
     {
@@ -1481,7 +1505,7 @@ class TeamBasedApprovalController extends Controller
     }
 
     /**
-     * @param  \Illuminate\Support\Collection<int, TeamBasedApprovalReview>  $reviewsForItem
+     * @param  Collection<int, TeamBasedApprovalReview>  $reviewsForItem
      * @return array<string, mixed>
      */
     private function formatApproverExportRow(

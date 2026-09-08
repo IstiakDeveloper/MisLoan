@@ -1,10 +1,14 @@
-import { Head, router, usePage } from '@inertiajs/react';
+import { Head, Link, router, usePage } from '@inertiajs/react';
 import AdminLayout from '@/layouts/admin-layout';
 import TeamBasedExportBar from '@/components/team-based/TeamBasedExportBar';
 import TeamBasedDecisionModal, { type DecisionFormState } from '@/components/team-based/TeamBasedDecisionModal';
 import React from 'react';
 import { formatDate } from '@/utils/dateUtils';
 import { formatBranchLabel, sortBranchesByCode } from '@/utils/branchLabel';
+
+function isLoanLinked(loanApplicationId?: number | null): boolean {
+    return loanApplicationId != null && Number(loanApplicationId) > 0;
+}
 
 function rowHasReviewHistory(row: {
     review_status?: string;
@@ -106,6 +110,7 @@ function hasNumericishField(v: string | number | null | undefined): boolean {
 
 interface SheetInfo {
     id: number;
+    loan_application_id?: number | null;
     sheet_date: string | null;
     status: string;
     branch_name?: string | null;
@@ -126,6 +131,7 @@ interface ReviewRow {
     can_act: boolean;
     approver_name?: string | null;
     approver_role?: string | null;
+    loan_application_id?: number | null;
     sheet: SheetInfo;
 }
 
@@ -619,6 +625,7 @@ export default function TeamBasedApprovalApproverIndex({ reviews, filters, zones
                 can_act: review.can_act,
                 approver_name: review.approver_name,
                 approver_role: review.approver_role,
+                loan_application_id: review.loan_application_id ?? sheet.loan_application_id ?? null,
                 approvers: it.approvers ?? [],
             });
         });
@@ -1090,6 +1097,14 @@ export default function TeamBasedApprovalApproverIndex({ reviews, filters, zones
                     ))}
                 </div>
 
+                <div className="mb-4 print:hidden rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-[12px] text-amber-900">
+                    এখানে অনুমোদন নয় —{' '}
+                    <Link href="/approvals" className="font-bold underline underline-offset-2">
+                        ঋণ পেজ
+                    </Link>
+                    {' '}থেকে হবে।
+                </div>
+
                 {/* Filters - only visible on screen */}
                 <div className="bg-white border border-slate-200/80 rounded-2xl p-4 mb-4 print:hidden shadow-sm">
                     {/* Mobile filter header toggle */}
@@ -1517,23 +1532,45 @@ export default function TeamBasedApprovalApproverIndex({ reviews, filters, zones
 
                                     {/* Action Buttons for Pending / Waiting Review */}
                                     {(review.status === 'pending' || review.status === 'waiting') && row.can_act && (
-                                        <div className="pt-3 border-t border-slate-100 flex gap-2.5">
-                                            <button
-                                                type="button"
-                                                onClick={() => openEditModal(review.review_id, { ...row, review_id: review.review_id })}
-                                                className="flex-1 inline-flex items-center justify-center gap-1.5 px-3 py-2.5 rounded-xl border border-slate-200 bg-white text-xs font-semibold text-slate-600 hover:bg-slate-50 transition-all active:scale-[0.97]"
-                                            >
-                                                <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/></svg>
-                                                সম্পাদনা
-                                            </button>
-                                            <button
-                                                type="button"
-                                                onClick={() => openDecisionModal(review, row)}
-                                                className="flex-[1.3] inline-flex items-center justify-center gap-1.5 px-3 py-2.5 rounded-xl bg-gradient-to-r from-blue-600 to-indigo-600 text-white text-xs font-bold shadow-sm hover:from-blue-700 hover:to-indigo-700 transition-all active:scale-[0.97]"
-                                            >
-                                                <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
-                                                সিদ্ধান্ত দিন
-                                            </button>
+                                        <div className="pt-3 border-t border-slate-100 flex flex-col gap-2.5">
+                                            {isLoanLinked(row.loan_application_id) ? (
+                                                <div className="flex items-center gap-2">
+                                                    <Link
+                                                        href="/approvals"
+                                                        title="ঋণ অনুমোদন দিলেই এখানেও হবে"
+                                                        className="inline-flex items-center rounded-full border border-amber-200 bg-amber-50 px-2.5 py-1 text-[11px] font-bold text-amber-800"
+                                                    >
+                                                        ঋণ থেকে
+                                                    </Link>
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => openEditModal(review.review_id, { ...row, review_id: review.review_id })}
+                                                        className="inline-flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl border border-slate-200 bg-white text-xs font-semibold text-slate-600 hover:bg-slate-50 transition-all active:scale-[0.97]"
+                                                    >
+                                                        <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/></svg>
+                                                        সম্পাদনা
+                                                    </button>
+                                                </div>
+                                            ) : (
+                                                <div className="flex gap-2.5">
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => openEditModal(review.review_id, { ...row, review_id: review.review_id })}
+                                                        className="flex-1 inline-flex items-center justify-center gap-1.5 px-3 py-2.5 rounded-xl border border-slate-200 bg-white text-xs font-semibold text-slate-600 hover:bg-slate-50 transition-all active:scale-[0.97]"
+                                                    >
+                                                        <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/></svg>
+                                                        সম্পাদনা
+                                                    </button>
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => openDecisionModal(review, row)}
+                                                        className="flex-[1.3] inline-flex items-center justify-center gap-1.5 px-3 py-2.5 rounded-xl bg-gradient-to-r from-blue-600 to-indigo-600 text-white text-xs font-bold shadow-sm hover:from-blue-700 hover:to-indigo-700 transition-all active:scale-[0.97]"
+                                                    >
+                                                        <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+                                                        সিদ্ধান্ত দিন
+                                                    </button>
+                                                </div>
+                                            )}
                                         </div>
                                     )}
                                 </div>
@@ -1822,14 +1859,24 @@ export default function TeamBasedApprovalApproverIndex({ reviews, filters, zones
                                             )}
                                             <td className="border px-2 py-1.5">
                                                 {(review.status === 'pending' || review.status === 'waiting') && row.can_act ? (
-                                                    <button
-                                                        type="button"
-                                                        onClick={() => openDecisionModal(review, row)}
-                                                        className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[10px] font-bold bg-gradient-to-r from-blue-600 to-indigo-600 text-white hover:from-blue-700 hover:to-indigo-700 transition-all shadow-sm shadow-blue-500/20 active:scale-[0.98] print:hidden"
-                                                    >
-                                                        <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
-                                                        সিদ্ধান্ত
-                                                    </button>
+                                                    isLoanLinked(row.loan_application_id) ? (
+                                                        <Link
+                                                            href="/approvals"
+                                                            title="ঋণ অনুমোদন দিলেই এখানেও হবে"
+                                                            className="print:hidden inline-flex items-center rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 text-[10px] font-bold text-amber-800"
+                                                        >
+                                                            ঋণ থেকে
+                                                        </Link>
+                                                    ) : (
+                                                        <button
+                                                            type="button"
+                                                            onClick={() => openDecisionModal(review, row)}
+                                                            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[10px] font-bold bg-gradient-to-r from-blue-600 to-indigo-600 text-white hover:from-blue-700 hover:to-indigo-700 transition-all shadow-sm shadow-blue-500/20 active:scale-[0.98] print:hidden"
+                                                        >
+                                                            <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+                                                            সিদ্ধান্ত
+                                                        </button>
+                                                    )
                                                 ) : (
                                                     <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[9px] font-semibold uppercase tracking-wider border ${statusClass[review.status] || 'bg-slate-100 text-slate-800 border-slate-200'}`}>
                                                         {statusLabel[review.status] || review.status}

@@ -1190,7 +1190,7 @@ class ApprovalService
 
         $review = $teamBased->reviews()
             ->where('user_id', $approver->id)
-            ->where('status', 'pending')
+            ->whereIn('status', ['pending', 'waiting'])
             ->whereNotNull('team_based_approval_item_id')
             ->first();
 
@@ -1281,7 +1281,7 @@ class ApprovalService
 
         $review = $teamBased->reviews()
             ->where('user_id', $fromUser->id)
-            ->where('status', 'pending')
+            ->whereIn('status', ['pending', 'waiting'])
             ->whereNotNull('team_based_approval_item_id')
             ->first();
 
