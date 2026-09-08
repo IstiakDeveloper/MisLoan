@@ -23,7 +23,14 @@ import { getRequiredSavingsPercent } from '@/components/LoanApplications/General
 import { afterLoanFormSaveUrl } from '@/utils/loanFormNavigation';
 import { getLoanYears, scaleAnnualToLoanYears } from './FormPage3';
 import { calculateLoanSchedule, getReducingServiceChargeRate, installmentFormFields } from '@/utils/loanInterest';
-import { withLiveMemberCode } from '@/utils/memberCodeUtils';
+import { withLiveMemberCode, toEnglishDigits } from '@/utils/memberCodeUtils';
+import { getFamilyAssetsFromMember, mergeFamilyAssets } from './familyAssets';
+import {
+    handleNumericBeforeInput,
+    handleNumericCompositionEnd,
+    handleNumericKeyDown,
+    handleNumericPaste,
+} from '@/utils/numericInput';
 
 export const toInputDate = (value: string | null | undefined): string => {
     if (value == null || value === '') return '';
@@ -129,32 +136,6 @@ function getSelfOccupationAndEducation(member: any): {
     return { occupation, educational_qualification };
 }
 
-const fromData = (v: any): string => (v !== null && v !== undefined && v !== '' ? String(v) : '');
-const fmtValue = (v: any): string => {
-    if (v === null || v === undefined || v === '') return '';
-    const n = Number(v);
-    return Number.isNaN(n) ? String(v) : String(Math.round(n));
-};
-
-function getFamilyAssetsFromMember(member: any) {
-    if (!member) return [];
-    const otherAssets = member.other_assets ?? member.otherAssets ?? [];
-    const rows = [];
-    const cultAmt = fromData(member.cultivable_land_amount);
-    const cultVal = fmtValue(member.cultivable_land_value);
-    const nonCultAmt = fromData(member.non_cultivable_land_amount);
-    const nonCultVal = fmtValue(member.non_cultivable_land_value);
-    const mov = (a: any) => ({
-        movable_desc: a?.asset_description ?? '',
-        movable_value: a?.estimated_value != null ? fmtValue(a.estimated_value) : '',
-    });
-    rows.push({ fixed_quantity: cultAmt, fixed_value: cultVal, ...mov(otherAssets[0]) });
-    rows.push({ fixed_quantity: nonCultAmt, fixed_value: nonCultVal, ...mov(otherAssets[1]) });
-    for (let i = 2; i < otherAssets.length; i++) {
-        rows.push({ fixed_quantity: '', fixed_value: '', ...mov(otherAssets[i]) });
-    }
-    return rows;
-}
 
 function resolveBackUrl(
     isLegacy: boolean,
@@ -230,6 +211,12 @@ export default function ApprovalForm({
                 }
             }, 100);
         }
+    };
+
+    const fmtValue = (v: any): string => {
+        if (v === null || v === undefined || v === '') return '';
+        const n = Number(v);
+        return Number.isNaN(n) ? String(v) : String(Math.round(n));
     };
 
     const isOldMemberFromAdmission = !!(member?.is_legacy);
@@ -468,6 +455,10 @@ export default function ApprovalForm({
         educational_qualification:
             String((savedData as any)?.educational_qualification || '').trim() ||
             selfFromFamily.educational_qualification,
+        family_assets: mergeFamilyAssets(
+            getFamilyAssetsFromMember(member),
+            (savedData as any)?.family_assets,
+        ),
     }, member));
 
     useEffect(() => {
@@ -536,6 +527,10 @@ export default function ApprovalForm({
                     est_main_income_amount:
                         durationNetFromAdmission || merged.est_main_income_amount,
                     member_code: member?.application_no || merged.member_code || prev.member_code,
+                    family_assets: mergeFamilyAssets(
+                        getFamilyAssetsFromMember(member),
+                        (merged as any).family_assets,
+                    ),
                 }, member);
             });
             setLocalRestored(true);
@@ -748,9 +743,23 @@ export default function ApprovalForm({
         });
     };
 
+    const setFormData: typeof setData = ((key: any, value?: any) => {
+        if (typeof key === 'function') {
+            return (setData as any)(key);
+        }
+        if (typeof value === 'string' && /[০-৯]/.test(value)) {
+            const converted = toEnglishDigits(value);
+            const numericOnly = converted.replace(/,/g, '');
+            if (/^[+-]?[0-9]*[.]?[0-9]*$/.test(numericOnly)) {
+                return setData(key, converted);
+            }
+        }
+        return setData(key, value);
+    }) as typeof setData;
+
     const commonProps = {
         data,
-        setData,
+        setData: setFormData,
         member,
         isLegacy,
         handleImageUpload,
@@ -933,6 +942,10 @@ export default function ApprovalForm({
                             className={`w-full ${showPreview ? 'hidden lg:block lg:w-1/2' : 'lg:w-1/2'} print:hidden lg:h-[calc(100vh-160px)] overflow-y-auto pr-1 custom-scrollbar`}
                             onFocusCapture={handleFocusInLeftPane}
                             onClickCapture={handleFocusInLeftPane}
+                            onKeyDownCapture={handleNumericKeyDown}
+                            onBeforeInput={handleNumericBeforeInput}
+                            onPasteCapture={handleNumericPaste}
+                            onCompositionEnd={handleNumericCompositionEnd}
                             ref={leftPaneRef}
                         >
                             <div className="bg-gray-50/60 p-3 lg:p-5 rounded-lg min-h-full">

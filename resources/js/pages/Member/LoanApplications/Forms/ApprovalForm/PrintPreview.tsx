@@ -1,7 +1,8 @@
 import React from 'react';
-import { formatDateBangla } from '@/utils/dateUtils';
+import { formatDateBangla, toBanglaDigits } from '@/utils/dateUtils';
 import { useAutoFitPrint } from '@/hooks/useAutoFitPrint';
 import { formatLoanYearsLabel, getReducingServiceChargeRate } from './FormPage3';
+import { formatFixedAssetLabel, isFamilyAssetRowPopulated } from './familyAssets';
 
 const PRINT_FONT = 'Kalpurush, Arial, sans-serif';
 const pageFontStyle = { fontFamily: PRINT_FONT, color: '#000' } as const;
@@ -22,16 +23,24 @@ const DateDigitBoxes = ({ dateStr }: { dateStr: string }) => {
     );
 };
 
-const dofaLabel = (round: number | undefined): string => {
-    if (round == null || round < 1) return '১ম দফা';
-    const labels: Record<number, string> = { 1: '১ম দফা', 2: '২য় দফা', 3: '৩য় দফা', 4: '৪র্থ দফা', 5: '৫ম দফা', 6: '৬ষ্ঠ দফা', 7: '৭ম দফা', 8: '৮ম দফা', 9: '৯ম দফা', 10: '১০ম দফা' };
-    return labels[round] || `${round}তম দফা`;
+const bn = (v: unknown): string => {
+    if (v === null || v === undefined || v === '') {
+        return '';
+    }
+    return toBanglaDigits(v);
 };
 
 const noDecimal = (v: any): string => {
     if (v === null || v === undefined || v === '') return '';
     const n = Number(String(v).replace(/[^\d.-]/g, ''));
-    return Number.isNaN(n) ? String(v).replace(/\.[0-9]+$/, '') : String(Math.round(n));
+    const result = Number.isNaN(n) ? String(v).replace(/\.[0-9]+$/, '') : String(Math.round(n));
+    return bn(result);
+};
+
+const dofaLabel = (round: number | undefined): string => {
+    if (round == null || round < 1) return '১ম দফা';
+    const labels: Record<number, string> = { 1: '১ম দফা', 2: '২য় দফা', 3: '৩য় দফা', 4: '৪র্থ দফা', 5: '৫ম দফা', 6: '৬ষ্ঠ দফা', 7: '৭ম দফা', 8: '৮ম দফা', 9: '৯ম দফা', 10: '১০ম দফা' };
+    return labels[round] || `${bn(round)}তম দফা`;
 };
 
 const BANGLA_0_TO_99: Record<number, string> = {
@@ -83,7 +92,7 @@ export function numberToWordsBangla(value: string | number | null | undefined): 
 function renderPage1(d: any, branch?: any, categoryName?: string) {
     const cat = categoryName || d.category_name || 'ঋণ';
     const fmt = formatDateBangla;
-    const nidDigits = (d.nid_smart_card || '').replace(/\D/g, '').slice(0, 17).split('');
+    const nidDigits = (d.nid_smart_card || '').replace(/\D/g, '').slice(0, 17).split('').map((digit: string) => bn(digit));
     const durationLabel = `${formatLoanYearsLabel(d.loan_duration_months)} বছর`;
     const branchName = branch?.name || branch?.branch_name || d.branch_name || '';
     return (
@@ -144,7 +153,7 @@ function renderPage1(d: any, branch?: any, categoryName?: string) {
                     {/* Intro paragraph */}
                     <div className="leading-relaxed text-[12.5px] print:text-[12px] mb-2">
                         <p>
-                            জনাব, আমি নিম্নস্বাক্ষরকারী অত্র সংস্থার আওতাধীন <strong className="border-b border-dotted border-gray-600 px-1">{d.committee_name || '.............'}</strong> সমিতির (সমিতি কোড: <strong className="font-mono border-b border-dotted border-gray-600 px-1">{(d.committee_code || '').length >= 4 ? (d.committee_code || '').slice(4) : (d.committee_code || '.....')}</strong>) একজন <strong className="underline underline-offset-2">{(d.member_type === 'old' ? 'পুরাতন' : 'নতুন')}</strong> সদস্য।{d.member_type === 'old' ? ` দফা: ${d.years_involved || '......'}।` : ''} বর্তমানে আমার ব্যবসা পরিচালনা ও পরিধি বৃদ্ধির লক্ষ্যে <strong className="px-0.5">{cat}</strong> কর্মসূচির আওতায় ঋণ গ্রহণ করতে ইচ্ছুক। এমতাবস্থায় ঋণ গ্রহণার্থে প্রয়োজনীয় তথ্যাবলি নিম্নে প্রদান করলাম:
+                            জনাব, আমি নিম্নস্বাক্ষরকারী অত্র সংস্থার আওতাধীন <strong className="border-b border-dotted border-gray-600 px-1">{d.committee_name || '.............'}</strong> সমিতির (সমিতি কোড: <strong className="font-mono border-b border-dotted border-gray-600 px-1">{(d.committee_code || '').length >= 4 ? bn((d.committee_code || '').slice(4)) : (bn(d.committee_code) || '.....')}</strong>) একজন <strong className="underline underline-offset-2">{(d.member_type === 'old' ? 'পুরাতন' : 'নতুন')}</strong> সদস্য।{d.member_type === 'old' ? ` দফা: ${bn(d.years_involved) || '......'}।` : ''} বর্তমানে আমার ব্যবসা পরিচালনা ও পরিধি বৃদ্ধির লক্ষ্যে <strong className="px-0.5">{cat}</strong> কর্মসূচির আওতায় ঋণ গ্রহণ করতে ইচ্ছুক। এমতাবস্থায় ঋণ গ্রহণার্থে প্রয়োজনীয় তথ্যাবলি নিম্নে প্রদান করলাম:
                         </p>
                     </div>
 
@@ -152,8 +161,8 @@ function renderPage1(d: any, branch?: any, categoryName?: string) {
                     <div className="space-y-1.5 text-[12.5px] print:text-[12px] leading-normal">
                         <div data-sync="item-1" className="flex flex-wrap items-baseline gap-x-3">
                             <span>১. আবেদনকারীর নাম: <strong className="border-b border-dotted border-gray-600 inline-block min-w-[150px]">{d.member_name_detail || d.applicant_name_bn || d.member_name || ''}</strong></span>
-                            <span>সদস্য কোড: <strong className="font-mono border-b border-dotted border-gray-600 inline-block min-w-[80px]">{d.member_code || ''}</strong></span>
-                            <span>বয়স: <strong className="border-b border-dotted border-gray-600 inline-block min-w-[35px] text-center">{d.age ?? ''}</strong> বছর</span>
+                            <span>সদস্য কোড: <strong className="font-mono border-b border-dotted border-gray-600 inline-block min-w-[80px]">{bn(d.member_code)}</strong></span>
+                            <span>বয়স: <strong className="border-b border-dotted border-gray-600 inline-block min-w-[35px] text-center">{bn(d.age)}</strong> বছর</span>
                         </div>
                         <div data-sync="item-2">
                             <span>২. পিতা/স্বামীর নাম: <span className="border-b border-dotted border-gray-600 inline-block min-w-[220px] font-medium">{d.father_husband_name || ''}</span></span>
@@ -163,13 +172,13 @@ function renderPage1(d: any, branch?: any, categoryName?: string) {
                             <div className="ml-3 pl-2 border-l-2 border-gray-300 space-y-1">
                                 <div className="flex flex-wrap items-baseline gap-x-2">
                                     <span>ক) স্থায়ী: গ্রাম/মহল্লা: <span className="border-b border-dotted border-gray-600 inline-block min-w-[100px] font-medium">{d.permanent_address_line1 || ''}</span></span>
-                                    <span>পোস্ট: <span className="border-b border-dotted border-gray-600 inline-block min-w-[60px] font-medium">{d.permanent_address_line2 || ''}</span></span>
+                                    <span>পোস্ট: <span className="border-b border-dotted border-gray-600 inline-block min-w-[60px] font-medium">{bn(d.permanent_address_line2)}</span></span>
                                     <span>উপজেলা: <span className="border-b border-dotted border-gray-600 inline-block min-w-[90px] font-medium">{d.permanent_address_line3?.split(',')[0]?.trim() || ''}</span></span>
                                     <span>জেলা: <span className="border-b border-dotted border-gray-600 inline-block min-w-[90px] font-medium">{d.permanent_address_line3?.split(',')[1]?.trim() || ''}</span></span>
                                 </div>
                                 <div className="flex flex-wrap items-baseline gap-x-2">
                                     <span>খ) বর্তমান: গ্রাম/মহল্লা: <span className="border-b border-dotted border-gray-600 inline-block min-w-[100px] font-medium">{d.current_address_line1 || ''}</span></span>
-                                    <span>পোস্ট: <span className="border-b border-dotted border-gray-600 inline-block min-w-[60px] font-medium">{d.current_address_line2 || ''}</span></span>
+                                    <span>পোস্ট: <span className="border-b border-dotted border-gray-600 inline-block min-w-[60px] font-medium">{bn(d.current_address_line2)}</span></span>
                                     <span>উপজেলা: <span className="border-b border-dotted border-gray-600 inline-block min-w-[90px] font-medium">{d.current_address_line3?.split(',')[0]?.trim() || ''}</span></span>
                                     <span>জেলা: <span className="border-b border-dotted border-gray-600 inline-block min-w-[90px] font-medium">{d.current_address_line3?.split(',')[1]?.trim() || ''}</span></span>
                                 </div>
@@ -189,12 +198,12 @@ function renderPage1(d: any, branch?: any, categoryName?: string) {
                         </div>
                         <div className="flex flex-wrap items-baseline gap-x-3">
                             <span>৭. সমিতিতে ভর্তির তারিখ: <span className="border-b border-dotted border-gray-600 inline-block min-w-[85px] font-medium">{fmt(d.admission_date)}</span></span>
-                            <span>৮. পরিবারের মোট সদস্য: <span className="border-b border-dotted border-gray-600 inline-block min-w-[35px] text-center font-medium">{d.family_members_count ?? ''}</span></span>
-                            <span>৯. উপার্জনক্ষম সদস্য: <span className="border-b border-dotted border-gray-600 inline-block min-w-[35px] text-center font-medium">{d.earning_members_count ?? ''}</span></span>
+                            <span>৮. পরিবারের মোট সদস্য: <span className="border-b border-dotted border-gray-600 inline-block min-w-[35px] text-center font-medium">{bn(d.family_members_count)}</span></span>
+                            <span>৯. উপার্জনক্ষম সদস্য: <span className="border-b border-dotted border-gray-600 inline-block min-w-[35px] text-center font-medium">{bn(d.earning_members_count)}</span></span>
                         </div>
                         {d.member_type === 'old' && (
                             <div className="flex flex-wrap items-baseline gap-x-2.5">
-                                <span>১০. পূর্বে গৃহীত ঋণ: <span className="border-b border-dotted border-gray-600 inline-block min-w-[45px] text-center font-medium">{d.previous_loan_times || ''}</span> বার</span>
+                                <span>১০. পূর্বে গৃহীত ঋণ: <span className="border-b border-dotted border-gray-600 inline-block min-w-[45px] text-center font-medium">{bn(d.previous_loan_times)}</span> বার</span>
                                 <span>মোট: <span className="border-b border-dotted border-gray-600 inline-block min-w-[75px] font-medium">{noDecimal(d.previous_loan_amount)}</span> ৳</span>
                                 <span>১১. সর্বশেষ পরিশোধ: <span className="border-b border-dotted border-gray-600 inline-block min-w-[75px] font-medium">{noDecimal(d.last_repaid_loan_amount)}</span> ৳</span>
                                 <span>১২. প্রকল্প: <span className="border-b border-dotted border-gray-600 inline-block min-w-[100px] font-medium">{d.last_repaid_project_name || ''}</span></span>
@@ -212,7 +221,7 @@ function renderPage1(d: any, branch?: any, categoryName?: string) {
                         <div className="flex flex-wrap items-baseline gap-x-3">
                             <span>১৪. ঋণ প্রস্তাবনার তারিখ: <span className="border-b border-dotted border-gray-600 inline-block min-w-[85px] font-medium">{fmt(d.loan_proposal_date)}</span></span>
                             <span>১৫. প্রকল্পের নাম: <strong className="border-b border-dotted border-gray-600 inline-block min-w-[120px]">{d.project_name || d.proposed_project_name || ''}</strong></span>
-                            <span>১৬. জনবল: <span className="border-b border-dotted border-gray-600 inline-block min-w-[40px] text-center font-medium">{d.project_manpower || ''}</span> জন</span>
+                            <span>১৬. জনবল: <span className="border-b border-dotted border-gray-600 inline-block min-w-[40px] text-center font-medium">{bn(d.project_manpower)}</span> জন</span>
                         </div>
                         <div className="flex flex-wrap items-baseline gap-x-3">
                             <span>১৭. সম্ভাব্য আয় ({durationLabel}): <span className="border-b border-dotted border-gray-600 inline-block min-w-[70px] font-medium">{noDecimal(d.project_income_1_2_yr)}</span> ৳</span>
@@ -232,18 +241,18 @@ function renderPage1(d: any, branch?: any, categoryName?: string) {
                         <table className="w-full border-collapse border border-gray-600 text-[12px] print:text-[11.5px]">
                             <thead>
                                 <tr className="bg-gray-100/70 text-[11.5px] print:text-[11px]">
-                                    <th className="border border-gray-600 px-2 py-1">সম্পদের পরিমাণ (স্থাবর)</th>
+                                    <th className="border border-gray-600 px-2 py-1">সম্পদের বিবরণ (স্থাবর)</th>
                                     <th className="border border-gray-600 px-2 py-1">আনুমানিক মূল্য (৳)</th>
                                     <th className="border border-gray-600 px-2 py-1">সম্পদের বিবরণ (অস্থাবর)</th>
                                     <th className="border border-gray-600 px-2 py-1">আনুমানিক মূল্য (৳)</th>
                                 </tr>
                             </thead>
                             <tbody>
-                                {((d.family_assets || []) as any[]).map((row, idx) => (
+                                {((d.family_assets || []) as any[]).filter(isFamilyAssetRowPopulated).map((row, idx) => (
                                     <tr key={idx}>
-                                        <td className="border border-gray-600 px-2 py-1">{noDecimal(row.fixed_quantity)}</td>
+                                        <td className="border border-gray-600 px-2 py-1">{bn(formatFixedAssetLabel(row))}</td>
                                         <td className="border border-gray-600 px-2 py-1 text-center font-medium">{noDecimal(row.fixed_value)}</td>
-                                        <td className="border border-gray-600 px-2 py-1">{row.movable_desc || ''}</td>
+                                        <td className="border border-gray-600 px-2 py-1">{bn(row.movable_desc)}</td>
                                         <td className="border border-gray-600 px-2 py-1 text-center font-medium">{noDecimal(row.movable_value)}</td>
                                     </tr>
                                 ))}
@@ -251,12 +260,12 @@ function renderPage1(d: any, branch?: any, categoryName?: string) {
                                     <td className="border border-gray-600 px-2 py-1">মোট</td>
                                     <td className="border border-gray-600 px-2 py-1 text-center">{(() => {
                                         const total = ((d.family_assets || []) as any[]).reduce((s, r) => s + (Number(String(r.fixed_value || '').replace(/[^\d.-]/g, '')) || 0), 0);
-                                        return total ? String(total) : '';
+                                        return total ? bn(total) : '';
                                     })()}</td>
                                     <td className="border border-gray-600 px-2 py-1">মোট</td>
                                     <td className="border border-gray-600 px-2 py-1 text-center">{(() => {
                                         const total = ((d.family_assets || []) as any[]).reduce((s, r) => s + (Number(String(r.movable_value || '').replace(/[^\d.-]/g, '')) || 0), 0);
-                                        return total ? String(total) : '';
+                                        return total ? bn(total) : '';
                                     })()}</td>
                                 </tr>
                             </tbody>
@@ -338,16 +347,16 @@ function renderPage2(d: any, categoryName?: string) {
                             <div><span>১. প্রস্তাবিত প্রকল্পের নাম:</span><span className="border-b border-dotted border-gray-600 inline-block min-w-[300px] ml-1 align-bottom">{d.proposed_project_name || d.project_name || ''}</span></div>
                             <div><span>২. উদ্যোক্তাদের সংশ্লিষ্টতা-</span>
                                 <div className="ml-4 mt-1">
-                                    <div><span>(ক) সার্বক্ষণিক: কতোদিন কাজটিতে নিযুক্ত আছে</span><span className="border-b border-dotted border-gray-600 inline-block min-w-[40px] mx-1 align-bottom text-center">{d.entrepreneur_fulltime_years || ''}</span> বছর, <span className="border-b border-dotted border-gray-600 inline-block min-w-[40px] mx-1 align-bottom text-center">{d.entrepreneur_fulltime_months || ''}</span> মাস</div>
-                                    <div><span>(খ) খণ্ডকালীন: কতোদিন কাজটিতে নিযুক্ত আছে</span><span className="border-b border-dotted border-gray-600 inline-block min-w-[40px] mx-1 align-bottom text-center">{d.entrepreneur_parttime_years || ''}</span> বছর, <span className="border-b border-dotted border-gray-600 inline-block min-w-[40px] mx-1 align-bottom text-center">{d.entrepreneur_parttime_months || ''}</span> মাস</div>
+                                    <div><span>(ক) সার্বক্ষণিক: কতোদিন কাজটিতে নিযুক্ত আছে</span><span className="border-b border-dotted border-gray-600 inline-block min-w-[40px] mx-1 align-bottom text-center">{bn(d.entrepreneur_fulltime_years)}</span> বছর, <span className="border-b border-dotted border-gray-600 inline-block min-w-[40px] mx-1 align-bottom text-center">{bn(d.entrepreneur_fulltime_months)}</span> মাস</div>
+                                    <div><span>(খ) খণ্ডকালীন: কতোদিন কাজটিতে নিযুক্ত আছে</span><span className="border-b border-dotted border-gray-600 inline-block min-w-[40px] mx-1 align-bottom text-center">{bn(d.entrepreneur_parttime_years)}</span> বছর, <span className="border-b border-dotted border-gray-600 inline-block min-w-[40px] mx-1 align-bottom text-center">{bn(d.entrepreneur_parttime_months)}</span> মাস</div>
                                 </div>
                             </div>
-                            <div><span>৩. ঋণ কার্যক্রমে উদ্যোক্তার অভিজ্ঞতা:</span><span className="border-b border-dotted border-gray-600 inline-block min-w-[40px] mx-1 align-bottom text-center">{d.loan_experience_years || ''}</span> বছর, <span className="border-b border-dotted border-gray-600 inline-block min-w-[40px] mx-1 align-bottom text-center">{d.loan_experience_months || ''}</span> মাস</div>
+                            <div><span>৩. ঋণ কার্যক্রমে উদ্যোক্তার অভিজ্ঞতা:</span><span className="border-b border-dotted border-gray-600 inline-block min-w-[40px] mx-1 align-bottom text-center">{bn(d.loan_experience_years)}</span> বছর, <span className="border-b border-dotted border-gray-600 inline-block min-w-[40px] mx-1 align-bottom text-center">{bn(d.loan_experience_months)}</span> মাস</div>
                             <div>
                                 <div>
                                     <span>৪. প্রকল্পে নিয়োগকৃত জনবল</span>
                                     <span className="border-b border-dotted border-gray-600 inline-block min-w-[120px] mx-1 align-bottom text-center">
-                                        {d.project_manpower_total || d.project_manpower || ''}
+                                        {bn(d.project_manpower_total || d.project_manpower)}
                                     </span>
                                     <span>জন।</span>
                                 </div>
@@ -355,21 +364,21 @@ function renderPage2(d: any, categoryName?: string) {
                                     <div>
                                         <span>(ক) পরিবারের মধ্যে</span>
                                         <span className="border-b border-dotted border-gray-600 inline-block min-w-[80px] mx-1 align-bottom text-center">
-                                            {d.project_manpower_family || ''}
+                                            {bn(d.project_manpower_family)}
                                         </span>
                                         <span>জন</span>
                                     </div>
                                     <div>
                                         <span>(খ) পরিবারের বাইরে</span>
                                         <span className="border-b border-dotted border-gray-600 inline-block min-w-[80px] mx-1 align-bottom text-center">
-                                            {d.project_manpower_outside || ''}
+                                            {bn(d.project_manpower_outside)}
                                         </span>
                                         <span>জন</span>
                                     </div>
                                     <div>
                                         <span>(গ) প্রশিক্ষণপ্রাপ্ত লোকবল</span>
                                         <span className="border-b border-dotted border-gray-600 inline-block min-w-[80px] mx-1 align-bottom text-center">
-                                            {d.project_manpower_trained || ''}
+                                            {bn(d.project_manpower_trained)}
                                         </span>
                                         <span>জন</span>
                                     </div>
@@ -434,13 +443,13 @@ function renderPage2(d: any, categoryName?: string) {
                                 <div>
                                     <div>
                                         <span>(ক) লাইসেন্স প্রদানকারী কর্তৃপক্ষ</span><span className="border-b border-dotted border-gray-600 inline-block min-w-[120px] mx-0.5 align-bottom">{d.license_authority_1 || ''}</span>
-                                        <span>লাইসেন্স নম্বর</span><span className="border-b border-dotted border-gray-600 inline-block min-w-[90px] mx-0.5 align-bottom">{d.license_number_1 || ''}</span>
-                                        <span>মেয়াদ</span><span className="border-b border-dotted border-gray-600 inline-block min-w-[70px] mx-0.5 align-bottom">{d.license_validity_1 || ''}</span>
+                                        <span>লাইসেন্স নম্বর</span><span className="border-b border-dotted border-gray-600 inline-block min-w-[90px] mx-0.5 align-bottom">{bn(d.license_number_1)}</span>
+                                        <span>মেয়াদ</span><span className="border-b border-dotted border-gray-600 inline-block min-w-[70px] mx-0.5 align-bottom">{bn(d.license_validity_1)}</span>
                                     </div>
                                     <div>
                                         <span>(খ) লাইসেন্স প্রদানকারী কর্তৃপক্ষ</span><span className="border-b border-dotted border-gray-600 inline-block min-w-[120px] mx-0.5 align-bottom">{d.license_authority_2 || ''}</span>
-                                        <span>লাইসেন্স নম্বর</span><span className="border-b border-dotted border-gray-600 inline-block min-w-[90px] mx-0.5 align-bottom">{d.license_number_2 || ''}</span>
-                                        <span>মেয়াদ</span><span className="border-b border-dotted border-gray-600 inline-block min-w-[70px] mx-0.5 align-bottom">{d.license_validity_2 || ''}</span>
+                                        <span>লাইসেন্স নম্বর</span><span className="border-b border-dotted border-gray-600 inline-block min-w-[90px] mx-0.5 align-bottom">{bn(d.license_number_2)}</span>
+                                        <span>মেয়াদ</span><span className="border-b border-dotted border-gray-600 inline-block min-w-[70px] mx-0.5 align-bottom">{bn(d.license_validity_2)}</span>
                                     </div>
                                     <div className="flex items-center gap-2">
                                         <span>(গ) আয়ের প্রত্যয়ন আছে কি?</span>
@@ -466,16 +475,16 @@ function renderPage2(d: any, categoryName?: string) {
                             <div>
                                 <span>০১. সদস্য এ' পর্যন্ত </span>
                                 <span className="border-b border-dotted border-gray-600 inline-block min-w-[120px] mx-1 align-bottom text-center font-bold">
-                                    {d.total_loans_taken || d.previous_loan_times || ''}
+                                    {bn(d.total_loans_taken || d.previous_loan_times)}
                                 </span>
                                 <span>দফায় ঋণ গ্রহণ করেছেন। সর্বশেষ ৩ দফার ঋণ গ্রহণ সংক্রান্ত তথ্য:</span>
                                 <table className="w-full border-collapse border border-gray-600 text-[12px] mt-1">
                                     <thead>
                                         <tr className="bg-gray-50 font-semibold text-center">
                                             <td className="border border-gray-600 px-1 py-0.5 w-[26%]">বিবরণ</td>
-                                            <td className="border border-gray-600 px-1 py-0.5">দফা নং {d.last_three_loans?.[0]?.loan_number || '...'}</td>
-                                            <td className="border border-gray-600 px-1 py-0.5">দফা নং {d.last_three_loans?.[1]?.loan_number || '...'}</td>
-                                            <td className="border border-gray-600 px-1 py-0.5">দফা নং {d.last_three_loans?.[2]?.loan_number || '...'}</td>
+                                            <td className="border border-gray-600 px-1 py-0.5">দফা নং {bn(d.last_three_loans?.[0]?.loan_number) || '...'}</td>
+                                            <td className="border border-gray-600 px-1 py-0.5">দফা নং {bn(d.last_three_loans?.[1]?.loan_number) || '...'}</td>
+                                            <td className="border border-gray-600 px-1 py-0.5">দফা নং {bn(d.last_three_loans?.[2]?.loan_number) || '...'}</td>
                                         </tr>
                                     </thead>
                                     <tbody>
@@ -483,7 +492,7 @@ function renderPage2(d: any, categoryName?: string) {
                                             const loans = ((d.last_three_loans || []) as any[]).slice(0, 3);
                                             const cell = (i: number, v: any) => (
                                                 <td className="border border-gray-600 px-1 py-0.5 text-center">
-                                                    <span className="inline-block min-w-[100px] min-h-[14px]">{v ?? ''}</span>
+                                                    <span className="inline-block min-w-[100px] min-h-[14px]">{bn(v ?? '')}</span>
                                                 </td>
                                             );
                                             const l = (i: number) => loans[i] || {};
@@ -538,10 +547,10 @@ function renderPage2(d: any, categoryName?: string) {
                                         {(['ব্যাংক', 'এনজিও', 'গ্রামীণ বাংলাদেশ', 'আন্তর্জাতিক/বেসরকারি', 'অন্যান্য', '', ''] as string[]).map((label, idx) => (
                                             <tr key={idx}>
                                                 <td className="border border-gray-600 px-1 py-0.5">{d.other_loan_status?.[idx]?.source_name || label}</td>
-                                                <td className="border border-gray-600 px-1 py-0.5 text-center"><span className="inline-block w-full min-h-[14px]">{d.other_loan_status?.[idx]?.current_status || ''}</span></td>
-                                                <td className="border border-gray-600 px-1 py-0.5 text-center"><span className="inline-block w-full min-h-[14px]">{d.other_loan_status?.[idx]?.round || ''}</span></td>
+                                                <td className="border border-gray-600 px-1 py-0.5 text-center"><span className="inline-block w-full min-h-[14px]">{bn(d.other_loan_status?.[idx]?.current_status)}</span></td>
+                                                <td className="border border-gray-600 px-1 py-0.5 text-center"><span className="inline-block w-full min-h-[14px]">{bn(d.other_loan_status?.[idx]?.round)}</span></td>
                                                 <td className="border border-gray-600 px-1 py-0.5"><span className="inline-block w-full min-h-[14px]">{d.other_loan_status?.[idx]?.borrower_name || ''}</span></td>
-                                                <td className="border border-gray-600 px-1 py-0.5 text-center font-mono text-[10px]"><span className="inline-block w-full min-h-[14px]">{d.other_loan_status?.[idx]?.mobile || ''}</span></td>
+                                                <td className="border border-gray-600 px-1 py-0.5 text-center font-mono text-[10px]"><span className="inline-block w-full min-h-[14px]">{bn(d.other_loan_status?.[idx]?.mobile)}</span></td>
                                                 <td className="border border-gray-600 px-1 py-0.5"><span className="inline-block w-full min-h-[14px]">{d.other_loan_status?.[idx]?.remarks || ''}</span></td>
                                             </tr>
                                         ))}
@@ -626,11 +635,7 @@ function renderPage3(d: any) {
     const yearsEng = years > 0
         ? (Number.isInteger(years) ? String(years) : String(Math.round(years * 10) / 10))
         : '১/১.৫/২';
-    const banglaMap: Record<string, string> = {
-        '0': '০', '1': '১', '2': '২', '3': '৩', '4': '৪',
-        '5': '৫', '6': '৬', '7': '৭', '8': '৮', '9': '৯',
-    };
-    const yearsLabel = yearsEng.replace(/[0-9]/g, (digit: string) => banglaMap[digit] ?? digit);
+    const yearsLabel = years > 0 ? bn(yearsEng) : yearsEng;
 
     // Calculations for Income/Expense
     const exp_emp = Number(d.est_emp_salary) || 0;
@@ -707,14 +712,14 @@ function renderPage3(d: any) {
                                         (জ) {d.est_other_exp_3_name || '.............................................'}
                                     </td>
                                     <td className="border border-gray-600 p-2 align-top pt-4 leading-normal">
-                                        {d.est_emp_salary || ''}<br />
-                                        {d.est_transport || ''}<br />
-                                        {d.est_bills || ''}<br />
-                                        {d.est_rent || ''}<br />
-                                        {d.est_loan_charge || ''}<br />
-                                        {d.est_other_exp_1_amount || ''}<br />
-                                        {d.est_other_exp_2_amount || ''}<br />
-                                        {d.est_other_exp_3_amount || ''}
+                                        {bn(d.est_emp_salary)}<br />
+                                        {bn(d.est_transport)}<br />
+                                        {bn(d.est_bills)}<br />
+                                        {bn(d.est_rent)}<br />
+                                        {bn(d.est_loan_charge)}<br />
+                                        {bn(d.est_other_exp_1_amount)}<br />
+                                        {bn(d.est_other_exp_2_amount)}<br />
+                                        {bn(d.est_other_exp_3_amount)}
                                     </td>
                                     <td className="border border-gray-600 p-2 text-left align-top leading-normal">
                                         উদ্যোগের মূল আয়<br />
@@ -726,33 +731,33 @@ function renderPage3(d: any) {
                                         </div>
                                     </td>
                                     <td className="border border-gray-600 p-2 align-top pt-7 leading-normal">
-                                        {d.est_main_income_amount || ''}
-                                        <div className="mt-10">{d.est_other_income_amount || ''}</div>
+                                        {bn(d.est_main_income_amount)}
+                                        <div className="mt-10">{bn(d.est_other_income_amount)}</div>
                                     </td>
                                 </tr>
                                 <tr>
                                     <td className="border border-gray-600 p-1.5 text-left font-semibold">মোট ব্যয়:</td>
-                                    <td className="border border-gray-600 p-1.5 font-bold">{total_exp || ''}</td>
+                                    <td className="border border-gray-600 p-1.5 font-bold">{bn(total_exp || '')}</td>
                                     <td className="border border-gray-600 p-1.5 border-b-0 bg-gray-50"></td>
                                     <td className="border border-gray-600 p-1.5 border-b-0 bg-gray-50"></td>
                                 </tr>
                                 <tr>
                                     <td className="border border-gray-600 p-1.5 text-left font-semibold">নিট লাভ/উদ্বৃত্ত</td>
-                                    <td className="border border-gray-600 p-1.5 font-bold">{net_profit || ''}</td>
+                                    <td className="border border-gray-600 p-1.5 font-bold">{bn(net_profit || '')}</td>
                                     <td className="border border-gray-600 p-1.5 text-center font-bold">মোট আয়</td>
-                                    <td className="border border-gray-600 p-1.5 font-bold">{total_inc || ''}</td>
+                                    <td className="border border-gray-600 p-1.5 font-bold">{bn(total_inc || '')}</td>
                                 </tr>
                                 <tr className="bg-gray-50 font-bold">
                                     <td className="border border-gray-600 p-1.5 text-center">মোট (ব্যয় + লাভ)</td>
-                                    <td className="border border-gray-600 p-1.5">{total_exp + net_profit || ''}</td>
+                                    <td className="border border-gray-600 p-1.5">{bn(total_exp + net_profit || '')}</td>
                                     <td className="border border-gray-600 p-1.5"></td>
                                     <td className="border border-gray-600 p-1.5"></td>
                                 </tr>
                             </tbody>
                         </table>
                         <div className="text-[12px] mt-1.5 leading-tight flex justify-between">
-                            <span>উদ্যোগের মোট আয়ের <span className="underline font-bold px-1">{exp_percent}%</span> ব্যয় হবে</span>
-                            <span>উদ্যোগের মোট আয়ের <span className="underline font-bold px-1">{profit_percent}%</span> নিট লাভ থাকবে</span>
+                            <span>উদ্যোগের মোট আয়ের <span className="underline font-bold px-1">{bn(exp_percent)}%</span> ব্যয় হবে</span>
+                            <span>উদ্যোগের মোট আয়ের <span className="underline font-bold px-1">{bn(profit_percent)}%</span> নিট লাভ থাকবে</span>
                         </div>
                     </div>
 
@@ -760,8 +765,8 @@ function renderPage3(d: any) {
                     <div className="mb-3">
                         <div className="inline-block border border-gray-600 px-3 py-1 font-bold mb-2 bg-gray-100 text-[12.5px]">গ. অন্যান্য তথ্যাবলী:</div>
                         <div className="flex justify-between text-[12.5px] mb-1.5">
-                            <span>০১. (ক) ঋণের মেয়াদ: <span className="underline font-bold px-1">{d.loan_duration_months || ''} মাস</span></span>
-                            <span>(খ) সার্ভিস চার্জের হার: <span className="underline font-bold px-1">{getReducingServiceChargeRate(null, d.applied_service_charge_rate, d.loan_duration_months) || d.applied_service_charge_rate || ''}%</span></span>
+                            <span>০১. (ক) ঋণের মেয়াদ: <span className="underline font-bold px-1">{bn(d.loan_duration_months)} মাস</span></span>
+                            <span>(খ) সার্ভিস চার্জের হার: <span className="underline font-bold px-1">{bn(getReducingServiceChargeRate(null, d.applied_service_charge_rate, d.loan_duration_months) || d.applied_service_charge_rate)}%</span></span>
                             <span>(গ) ঋণ পরিশোধের তফসিল:</span>
                         </div>
                         <table className="w-full border-collapse border border-gray-600 text-center align-middle text-[12px]">
@@ -776,15 +781,15 @@ function renderPage3(d: any) {
                             <tbody>
                                 <tr>
                                     <td className="border border-gray-600 p-1.5">{d.installment_type || 'মাসিক কিস্তি'}</td>
-                                    <td className="border border-gray-600 p-1.5">{d.installment_principal || ''}</td>
-                                    <td className="border border-gray-600 p-1.5">{d.installment_service_charge || ''}</td>
-                                    <td className="border border-gray-600 p-1.5 font-semibold">{inst_total || ''}</td>
+                                    <td className="border border-gray-600 p-1.5">{bn(d.installment_principal)}</td>
+                                    <td className="border border-gray-600 p-1.5">{bn(d.installment_service_charge)}</td>
+                                    <td className="border border-gray-600 p-1.5 font-semibold">{bn(inst_total || '')}</td>
                                 </tr>
                                 <tr>
                                     <td className="border border-gray-600 p-1.5 text-left font-bold pl-3">মোট পরিশোধের পরিমাণ</td>
-                                    <td className="border border-gray-600 p-1.5 font-bold">{total_principal || ''}</td>
-                                    <td className="border border-gray-600 p-1.5 font-bold">{total_sc || ''}</td>
-                                    <td className="border border-gray-600 p-1.5 font-bold">{total_payable || ''}</td>
+                                    <td className="border border-gray-600 p-1.5 font-bold">{bn(total_principal || '')}</td>
+                                    <td className="border border-gray-600 p-1.5 font-bold">{bn(total_sc || '')}</td>
+                                    <td className="border border-gray-600 p-1.5 font-bold">{bn(total_payable || '')}</td>
                                 </tr>
                             </tbody>
                         </table>
@@ -800,19 +805,19 @@ function renderPage3(d: any) {
                             <div className="border border-dotted border-gray-600 p-2 break-words">
                                 জামিনদারের নাম: {d.guarantor_1_name || '...........................................'}<br />
                                 ঠিকানা: {d.guarantor_1_address || '......................................................'}<br />
-                                মোবাইল নম্বর: <span className="font-mono">{d.guarantor_1_mobile || '............................................'}</span><br />
+                                মোবাইল নম্বর: <span className="font-mono">{bn(d.guarantor_1_mobile) || '............................................'}</span><br />
                                 ঋণীর সাথে সম্পর্ক: {d.guarantor_1_relation || '....................'} পেশা: {d.guarantor_1_profession || '......................'}<br />
-                                মাসিক আয়: {d.guarantor_1_monthly_income || '.............'} সম্পদ: {d.guarantor_1_assets_amount || '.............'}<br />
-                                সম্ভাব্য মূল্য: {d.guarantor_1_potential_value || '............................................'}<br />
+                                মাসিক আয়: {bn(d.guarantor_1_monthly_income) || '.............'} সম্পদ: {bn(d.guarantor_1_assets_amount) || '.............'}<br />
+                                সম্ভাব্য মূল্য: {bn(d.guarantor_1_potential_value) || '............................................'}<br />
                                 সাক্ষাৎকারীর নাম: {d.guarantor_1_interviewer_name || '.....................'} পদবী: {d.guarantor_1_interviewer_designation || 'বিএম/আরএম/জেডএম'}
                             </div>
                             <div className="border border-dotted border-gray-600 p-2 break-words">
                                 জামিনদারের নাম: {d.guarantor_2_name || '...........................................'}<br />
                                 ঠিকানা: {d.guarantor_2_address || '......................................................'}<br />
-                                মোবাইল নম্বর: <span className="font-mono">{d.guarantor_2_mobile || '............................................'}</span><br />
+                                মোবাইল নম্বর: <span className="font-mono">{bn(d.guarantor_2_mobile) || '............................................'}</span><br />
                                 ঋণীর সাথে সম্পর্ক: {d.guarantor_2_relation || '....................'} পেশা: {d.guarantor_2_profession || '......................'}<br />
-                                মাসিক আয়: {d.guarantor_2_monthly_income || '.............'} সম্পদ: {d.guarantor_2_assets_amount || '.............'}<br />
-                                সম্ভাব্য মূল্য: {d.guarantor_2_potential_value || '............................................'}<br />
+                                মাসিক আয়: {bn(d.guarantor_2_monthly_income) || '.............'} সম্পদ: {bn(d.guarantor_2_assets_amount) || '.............'}<br />
+                                সম্ভাব্য মূল্য: {bn(d.guarantor_2_potential_value) || '............................................'}<br />
                                 সাক্ষাৎকারীর নাম: {d.guarantor_2_interviewer_name || '.....................'} পদবী: {d.guarantor_2_interviewer_designation || 'বিএম/আরএম/জেডএম'}
                             </div>
                         </div>
@@ -828,7 +833,7 @@ function renderPage3(d: any) {
                             <div className="border border-dotted border-gray-600 p-2 break-words">
                                 নাম: {d.informant_1_name || '..........................................'}<br />
                                 ঠিকানা: {d.informant_1_address || '......................................................'}<br />
-                                মোবাইল: <span className="font-mono">{d.informant_1_mobile || '............................................'}</span><br />
+                                মোবাইল: <span className="font-mono">{bn(d.informant_1_mobile) || '............................................'}</span><br />
                                 সম্পর্ক: {d.informant_1_relation || '....................'} পেশা: {d.informant_1_profession || '......................'}<br />
                                 ঋণ তথ্য: {d.informant_1_loan_info || '............................................'}<br />
                                 সম্পদ তথ্য: {d.informant_1_asset_info || '.........................................'}<br />
@@ -837,7 +842,7 @@ function renderPage3(d: any) {
                             <div className="border border-dotted border-gray-600 p-2 break-words">
                                 নাম: {d.informant_2_name || '..........................................'}<br />
                                 ঠিকানা: {d.informant_2_address || '......................................................'}<br />
-                                মোবাইল: <span className="font-mono">{d.informant_2_mobile || '............................................'}</span><br />
+                                মোবাইল: <span className="font-mono">{bn(d.informant_2_mobile) || '............................................'}</span><br />
                                 সম্পর্ক: {d.informant_2_relation || '....................'} পেশা: {d.informant_2_profession || '......................'}<br />
                                 ঋণ তথ্য: {d.informant_2_loan_info || '............................................'}<br />
                                 সম্পদ তথ্য: {d.informant_2_asset_info || '.........................................'}<br />
@@ -869,7 +874,7 @@ function renderPage4(d: any) {
                     {/* ০৪. চাকরিজীবীর ক্ষেত্রে */}
                     <div className="mb-2 text-[12.5px] print:text-[12px] leading-relaxed">
                         <div className="font-bold mb-1">০৪. চাকরিজীবীর ক্ষেত্রে (প্রযোজ্য ক্ষেত্রে): <span className="font-normal border-b border-dotted border-gray-600 inline-block min-w-[180px]">{d.employee_workplace_name || ''}</span> মাসিক বেতন: <span className="font-normal border-b border-dotted border-gray-600 inline-block min-w-[90px] text-center">{noDecimal(d.employee_monthly_salary)}</span> হাতে প্রাপ্তি: <span className="font-normal border-b border-dotted border-gray-600 inline-block min-w-[90px] text-center">{noDecimal(d.employee_received_in_hand)}</span></div>
-                        <div className="mb-1">অন্যান্য খাতের আয়: <span className="border-b border-dotted border-gray-600 inline-block min-w-[90px] text-center">{noDecimal(d.employee_other_income)}</span> কর্মস্থলে ঋণ অনুমোদনকারীর উপস্থিতি: <span className="border-b border-dotted border-gray-600 inline-block min-w-[120px]">{(d.employee_approver_presence_time || '').replace('T', ' ')}</span> সাথে কে ছিলো: <span className="border-b border-dotted border-gray-600 inline-block min-w-[110px]">{d.employee_who_was_with || ''}</span></div>
+                        <div className="mb-1">অন্যান্য খাতের আয়: <span className="border-b border-dotted border-gray-600 inline-block min-w-[90px] text-center">{noDecimal(d.employee_other_income)}</span> কর্মস্থলে ঋণ অনুমোদনকারীর উপস্থিতি: <span className="border-b border-dotted border-gray-600 inline-block min-w-[120px]">{bn((d.employee_approver_presence_time || '').replace('T', ' '))}</span> সাথে কে ছিলো: <span className="border-b border-dotted border-gray-600 inline-block min-w-[110px]">{d.employee_who_was_with || ''}</span></div>
                         <div>যে ব্যাংকে বেতন হয়: <span className="border-b border-dotted border-gray-600 inline-block min-w-[150px]">{d.employee_bank_name || ''}</span> ব্যাংক স্টেটমেন্ট অনুযায়ী বেতন: <span className="border-b border-dotted border-gray-600 inline-block min-w-[90px] text-center">{noDecimal(d.employee_salary_per_statement)}</span></div>
                     </div>
 
@@ -946,7 +951,7 @@ function renderPage4(d: any) {
                                 <span>মোবাইল নং</span>
                                 <div className="flex border border-gray-600">
                                     {String(d.member_mobile || d.member?.mobile_number || '').padEnd(11, ' ').slice(0, 11).split('').map((char, i) => (
-                                        <div key={i} className={`w-4 h-5 flex items-center justify-center font-mono text-[11px] ${i > 0 ? 'border-l border-gray-600' : ''}`}>{char.trim()}</div>
+                                        <div key={i} className={`w-4 h-5 flex items-center justify-center font-mono text-[11px] ${i > 0 ? 'border-l border-gray-600' : ''}`}>{char.trim() ? bn(char) : ''}</div>
                                     ))}
                                 </div>
                             </div>
@@ -964,7 +969,7 @@ function renderPage4(d: any) {
                         <div className="border-b border-black p-2 min-h-[58px] flex flex-col justify-between">
                             <div>
                                 <div className="font-bold text-[12.5px]">(ক) অফিসারের পরিদর্শনোত্তর মন্তব্য, স্বাক্ষর ও সিল:</div>
-                                <div className="mt-1 leading-relaxed break-words text-[12px] text-gray-900">{d.officer_post_inspection_comments || ''}</div>
+                                <div className="mt-1 leading-relaxed break-words text-[12px] text-gray-900">{bn(d.officer_post_inspection_comments)}</div>
                             </div>
                             <div className="flex justify-end pt-2">
                                 <span className="border-t border-dotted border-gray-400 min-w-[140px] text-[10.5px] text-gray-500 text-center">স্বাক্ষর ও সিল</span>
@@ -974,7 +979,7 @@ function renderPage4(d: any) {
                         <div className="border-b border-black p-2 min-h-[58px] flex flex-col justify-between">
                             <div>
                                 <div className="font-bold text-[12.5px]">(খ) শাখা ব্যবস্থাপকের পরিদর্শনোত্তর মন্তব্য, স্বাক্ষর ও সিল:</div>
-                                <div className="mt-1 leading-relaxed break-words text-[12px] text-gray-900">{d.branch_manager_post_inspection_comments || ''}</div>
+                                <div className="mt-1 leading-relaxed break-words text-[12px] text-gray-900">{bn(d.branch_manager_post_inspection_comments)}</div>
                             </div>
                             <div className="flex justify-end pt-2">
                                 <span className="border-t border-dotted border-gray-400 min-w-[140px] text-[10.5px] text-gray-500 text-center">স্বাক্ষর ও সিল</span>
@@ -984,7 +989,7 @@ function renderPage4(d: any) {
                         <div className="border-b border-black p-2 min-h-[58px] flex flex-col justify-between">
                             <div>
                                 <div className="font-bold text-[12.5px]">(গ) আঞ্চলিক ব্যবস্থাপকের পরিদর্শনোত্তর মন্তব্য, স্বাক্ষর ও সিল:</div>
-                                <div className="mt-1 leading-relaxed break-words text-[12px] text-gray-900">{d.regional_manager_comments || ''}</div>
+                                <div className="mt-1 leading-relaxed break-words text-[12px] text-gray-900">{bn(d.regional_manager_comments)}</div>
                             </div>
                             <div className="flex justify-end pt-2">
                                 <span className="border-t border-dotted border-gray-400 min-w-[140px] text-[10.5px] text-gray-500 text-center">স্বাক্ষর ও সিল</span>
@@ -994,7 +999,7 @@ function renderPage4(d: any) {
                         <div className="border-b border-black p-2 min-h-[58px] flex flex-col justify-between">
                             <div>
                                 <div className="font-bold text-[12.5px]">(ঘ) জোনাল ম্যানেজারের পরিদর্শনোত্তর মন্তব্য, স্বাক্ষর ও সিল:</div>
-                                <div className="mt-1 leading-relaxed break-words text-[12px] text-gray-900">{d.zonal_manager_comments || ''}</div>
+                                <div className="mt-1 leading-relaxed break-words text-[12px] text-gray-900">{bn(d.zonal_manager_comments)}</div>
                             </div>
                             <div className="flex justify-end pt-2">
                                 <span className="border-t border-dotted border-gray-400 min-w-[140px] text-[10.5px] text-gray-500 text-center">স্বাক্ষর ও সিল</span>
@@ -1004,7 +1009,7 @@ function renderPage4(d: any) {
                         <div className="p-2 min-h-[64px] flex flex-col justify-between">
                             <div>
                                 <div className="font-bold text-[12.5px]">(ঙ) সংস্থার চূড়ান্ত অনুমোদনকারীর মন্তব্য ও অনুমোদিত ঋণের বিবরণ:</div>
-                                <div className="mt-1 leading-relaxed break-words text-[12px] text-gray-900">{d.final_approver_comments || ''}</div>
+                                <div className="mt-1 leading-relaxed break-words text-[12px] text-gray-900">{bn(d.final_approver_comments)}</div>
                             </div>
                             <div className="flex justify-end pt-2">
                                 <span className="border-t border-dotted border-gray-400 min-w-[140px] text-[10.5px] text-gray-500 text-center">স্বাক্ষর ও সিল</span>

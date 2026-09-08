@@ -71,11 +71,30 @@ class MemberAdmissionLoanSyncService
             $this->investigationFields($member),
             $dirty,
         );
+        $approvalFields = $this->approvalFields($member);
+        $familyAssets = $approvalFields['family_assets'] ?? null;
+        unset($approvalFields['family_assets']);
+
         $loan->business_plan = $this->overlayJson(
             $loan->business_plan,
-            $this->approvalFields($member),
+            $approvalFields,
             $dirty,
         );
+
+        if (is_array($familyAssets) && is_array($loan->business_plan) && $loan->business_plan !== []) {
+            $existing = $loan->business_plan['family_assets'] ?? [];
+            $merged = $this->overlayFamilyAssets(
+                is_array($existing) ? $existing : [],
+                $familyAssets,
+            );
+
+            if (($loan->business_plan['family_assets'] ?? null) !== $merged) {
+                $businessPlan = $loan->business_plan;
+                $businessPlan['family_assets'] = $merged;
+                $loan->business_plan = $businessPlan;
+                $dirty = true;
+            }
+        }
 
         $snapshot = $loan->legacy_member_snapshot;
         if (is_array($snapshot) && $snapshot !== []) {
@@ -366,6 +385,32 @@ class MemberAdmissionLoanSyncService
     /**
      * @return list<array<string, mixed>>
      */
+    /**
+     * @param  list<array<string, mixed>>  $existing
+     * @param  list<array<string, mixed>>  $fromAdmission
+     * @return list<array<string, mixed>>
+     */
+    private function overlayFamilyAssets(array $existing, array $fromAdmission): array
+    {
+        $hasFlag = collect($existing)->contains(
+            fn ($row) => is_array($row) && array_key_exists('from_admission', $row)
+        );
+
+        if (! $hasFlag) {
+            return $fromAdmission;
+        }
+
+        $extras = collect($existing)
+            ->filter(fn ($row) => is_array($row) && ($row['from_admission'] ?? true) === false)
+            ->values()
+            ->all();
+
+        return array_values([...$fromAdmission, ...$extras]);
+    }
+
+    /**
+     * @return list<array<string, mixed>>
+     */
     private function familyAssets(MemberAdmission $member): array
     {
         $assets = $member->otherAssets->values();
@@ -382,21 +427,27 @@ class MemberAdmissionLoanSyncService
 
         $rows = [
             [
-                'fixed_quantity' => $this->positiveString($member->cultivable_land_amount) ?: '',
+                'fixed_desc' => 'আবাদী',
+                'fixed_quantity' => $this->landQuantity($member->cultivable_land_amount),
                 'fixed_value' => $this->positiveString($member->cultivable_land_value) ?: '',
+                'from_admission' => true,
                 ...$movable(0),
             ],
             [
-                'fixed_quantity' => $this->positiveString($member->non_cultivable_land_amount) ?: '',
+                'fixed_desc' => 'অনাবাদী',
+                'fixed_quantity' => $this->landQuantity($member->non_cultivable_land_amount),
                 'fixed_value' => $this->positiveString($member->non_cultivable_land_value) ?: '',
+                'from_admission' => true,
                 ...$movable(1),
             ],
         ];
 
         for ($i = 2; $i < $assets->count(); $i++) {
             $rows[] = [
+                'fixed_desc' => '',
                 'fixed_quantity' => '',
                 'fixed_value' => '',
+                'from_admission' => true,
                 ...$movable($i),
             ];
         }
@@ -475,6 +526,20 @@ class MemberAdmissionLoanSyncService
     private function upazilaDistrict(?string $upazila, ?string $district): string
     {
         return collect([$upazila, $district])->filter()->implode(', ');
+    }
+
+    private function landQuantity(mixed $value): string
+    {
+        $raw = $this->positiveString($value);
+        if ($raw === null) {
+            return '';
+        }
+
+        if (! is_numeric($raw)) {
+            return $raw;
+        }
+
+        return rtrim(rtrim(number_format((float) $raw, 2, '.', ''), '0'), '.');
     }
 
     private function positiveString(mixed $value): ?string

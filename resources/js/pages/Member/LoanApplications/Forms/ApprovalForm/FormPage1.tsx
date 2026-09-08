@@ -2,7 +2,13 @@ import React, { useEffect } from 'react';
 import { FormPageProps } from './Types';
 import GeneralSavingsSection from '@/components/LoanApplications/GeneralSavingsSection';
 import { SmartDateInput } from '@/components/ui/SmartDateInput';
-import { Calendar, User, Home, Building2, Wallet, Briefcase, Calculator, Lock } from 'lucide-react';
+import { Calendar, User, Home, Building2, Wallet, Briefcase, Calculator, Lock, Plus, Trash2 } from 'lucide-react';
+import {
+    emptyFamilyAssetRow,
+    formatFixedAssetLabel,
+    isAdmissionFamilyAssetRow,
+    isFamilyAssetRowPopulated,
+} from './familyAssets';
 import { formatLoanYearsLabel, getLoanYears, scaleAnnualToLoanYears } from './FormPage3';
 import { numberToWordsBangla } from './PrintPreview';
 
@@ -492,61 +498,111 @@ export default function FormPage1({
 
             {/* Family Assets Card Grid */}
             <div data-sync="item-21" className="bg-white p-4 md:p-5 rounded-xl border border-gray-200 shadow-sm space-y-4">
-                <div className="flex items-center justify-between border-b pb-2">
+                <div className="flex flex-wrap items-center justify-between gap-2 border-b pb-2">
                     <div className="flex items-center gap-2 text-gray-800 font-bold text-sm">
                         <Calculator className="w-4 h-4 text-teal-600" />
                         <span>২১. পারিবারিক সম্পদ (স্থাবর ও অস্থাবর)</span>
                     </div>
-                    {fromAdmission && (
-                        <span className="text-[11px] bg-gray-100 text-gray-600 px-2.5 py-0.5 rounded-full font-medium flex items-center gap-1">
-                            <Lock className="w-3 h-3 text-gray-400" /> ভর্তি ফরম থেকে প্রাপ্ত
-                        </span>
-                    )}
+                    <div className="flex items-center gap-2">
+                        {fromAdmission && (
+                            <span className="text-[11px] bg-gray-100 text-gray-600 px-2.5 py-0.5 rounded-full font-medium flex items-center gap-1">
+                                <Lock className="w-3 h-3 text-gray-400" /> ভর্তি ফরম থেকে প্রাপ্ত
+                            </span>
+                        )}
+                        <button
+                            type="button"
+                            onClick={() => {
+                                setData('family_assets', [...(data.family_assets || []), emptyFamilyAssetRow()]);
+                            }}
+                            className="text-[11px] bg-teal-50 text-teal-700 border border-teal-200 px-2.5 py-1 rounded-lg font-semibold hover:bg-teal-100 active:scale-95 transition-all flex items-center gap-1"
+                        >
+                            <Plus className="w-3.5 h-3.5" />
+                            সম্পদ যোগ করুন
+                        </button>
+                    </div>
                 </div>
 
                 {(() => {
-                    const populatedAssets = (data.family_assets || []).filter(
-                        (item: any) =>
-                            String(item?.fixed_quantity ?? '').trim() !== '' ||
-                            String(item?.fixed_value ?? '').trim() !== '' ||
-                            String(item?.movable_desc ?? '').trim() !== '' ||
-                            String(item?.movable_value ?? '').trim() !== ''
-                    );
-                    const assetRowsToDisplay = fromAdmission ? populatedAssets : (data.family_assets || []);
+                    const assets = data.family_assets || [];
+                    const displayRows = assets
+                        .map((item: any, idx: number) => ({ item, idx }))
+                        .filter(({ item }: { item: any }) => {
+                            if (!isAdmissionFamilyAssetRow(item)) {
+                                return true;
+                            }
+                            if (!fromAdmission) {
+                                return true;
+                            }
+                            return isFamilyAssetRowPopulated(item);
+                        });
 
-                    if (fromAdmission && assetRowsToDisplay.length === 0) {
+                    if (displayRows.length === 0) {
                         return (
                             <div className="p-3 bg-gray-50 rounded-xl border border-gray-200 text-xs text-gray-500 italic flex items-center justify-between">
-                                <span>ভর্তি ফরম থেকে কোনো স্থাবর/অস্থাবর সম্পদ নিবন্ধিত পাওয়া যায়নি।</span>
-                                <Lock className="w-3.5 h-3.5 text-gray-400" />
+                                <span>
+                                    {fromAdmission
+                                        ? 'ভর্তি ফরম থেকে কোনো স্থাবর/অস্থাবর সম্পদ নিবন্ধিত পাওয়া যায়নি। প্রয়োজনে নতুন সম্পদ যোগ করুন।'
+                                        : 'এখনো কোনো সম্পদ যোগ করা হয়নি।'}
+                                </span>
+                                {fromAdmission && <Lock className="w-3.5 h-3.5 text-gray-400" />}
                             </div>
                         );
                     }
 
+                    const updateAsset = (idx: number, field: string, value: string) => {
+                        const next = [...(data.family_assets || [])];
+                        if (!next[idx]) next[idx] = emptyFamilyAssetRow();
+                        next[idx] = { ...next[idx], [field]: value };
+                        setData('family_assets', next);
+                    };
+
                     return (
                         <div className="space-y-3">
-                            {assetRowsToDisplay.map((item: any, idx: number) => (
+                            {displayRows.map(({ item, idx }: { item: any; idx: number }, displayIdx: number) => {
+                                const locked = fromAdmission && isAdmissionFamilyAssetRow(item);
+                                const fieldClass = locked ? inputClass : editableClass;
+
+                                return (
                                 <div key={idx} className="bg-gray-50/80 p-3 rounded-xl border border-gray-200 space-y-2">
                                     <div className="text-[11px] font-bold text-gray-700 flex items-center justify-between border-b pb-1">
-                                        <span>সম্পদ বিবরণী #{idx + 1}</span>
+                                        <span>সম্পদ বিবরণী #{displayIdx + 1}</span>
+                                        {!locked && (
+                                            <button
+                                                type="button"
+                                                onClick={() => {
+                                                    const next = [...(data.family_assets || [])];
+                                                    next.splice(idx, 1);
+                                                    setData('family_assets', next);
+                                                }}
+                                                className="inline-flex items-center gap-1 text-[11px] text-red-600 font-semibold hover:text-red-800 hover:bg-red-50 px-1.5 py-0.5 rounded-lg transition-all"
+                                            >
+                                                <Trash2 className="w-3.5 h-3.5" />
+                                                মুছে ফেলুন
+                                            </button>
+                                        )}
                                     </div>
                                     <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
                                         <div>
-                                            <label className="block text-[10px] text-gray-500 font-medium mb-0.5">স্থাবর পরিমাণ</label>
-                                            <input
-                                                type="text"
-                                                placeholder="স্থাবর পরিমাণ"
-                                                value={item?.fixed_quantity || ''}
-                                                onChange={(e) => {
-                                                    if (fromAdmission) return;
-                                                    const assets = [...(data.family_assets || [])];
-                                                    if (!assets[idx]) assets[idx] = {};
-                                                    assets[idx].fixed_quantity = e.target.value;
-                                                    setData('family_assets', assets);
-                                                }}
-                                                readOnly={fromAdmission}
-                                                className={inputClass}
-                                            />
+                                            <label className="block text-[10px] text-gray-500 font-medium mb-0.5">
+                                                {locked ? 'স্থাবর বিবরণ (পরিমাণ)' : 'স্থাবর বিবরণ'}
+                                            </label>
+                                            {locked ? (
+                                                <input
+                                                    type="text"
+                                                    placeholder="স্থাবর বিবরণ (পরিমাণ)"
+                                                    value={formatFixedAssetLabel(item)}
+                                                    readOnly
+                                                    className={fieldClass}
+                                                />
+                                            ) : (
+                                                <input
+                                                    type="text"
+                                                    placeholder="বিবরণ"
+                                                    value={item?.fixed_desc || ''}
+                                                    onChange={(e) => updateAsset(idx, 'fixed_desc', e.target.value)}
+                                                    className={fieldClass}
+                                                />
+                                            )}
                                         </div>
                                         <div>
                                             <label className="block text-[10px] text-gray-500 font-medium mb-0.5">স্থাবর মূল্য</label>
@@ -555,14 +611,11 @@ export default function FormPage1({
                                                 placeholder="স্থাবর মূল্য"
                                                 value={item?.fixed_value || ''}
                                                 onChange={(e) => {
-                                                    if (fromAdmission) return;
-                                                    const assets = [...(data.family_assets || [])];
-                                                    if (!assets[idx]) assets[idx] = {};
-                                                    assets[idx].fixed_value = e.target.value;
-                                                    setData('family_assets', assets);
+                                                    if (locked) return;
+                                                    updateAsset(idx, 'fixed_value', e.target.value);
                                                 }}
-                                                readOnly={fromAdmission}
-                                                className={inputClass}
+                                                readOnly={locked}
+                                                className={fieldClass}
                                             />
                                         </div>
                                         <div>
@@ -572,14 +625,11 @@ export default function FormPage1({
                                                 placeholder="অস্থাবর বিবরণ"
                                                 value={item?.movable_desc || ''}
                                                 onChange={(e) => {
-                                                    if (fromAdmission) return;
-                                                    const assets = [...(data.family_assets || [])];
-                                                    if (!assets[idx]) assets[idx] = {};
-                                                    assets[idx].movable_desc = e.target.value;
-                                                    setData('family_assets', assets);
+                                                    if (locked) return;
+                                                    updateAsset(idx, 'movable_desc', e.target.value);
                                                 }}
-                                                readOnly={fromAdmission}
-                                                className={inputClass}
+                                                readOnly={locked}
+                                                className={fieldClass}
                                             />
                                         </div>
                                         <div>
@@ -589,19 +639,17 @@ export default function FormPage1({
                                                 placeholder="অস্থাবর মূল্য"
                                                 value={item?.movable_value || ''}
                                                 onChange={(e) => {
-                                                    if (fromAdmission) return;
-                                                    const assets = [...(data.family_assets || [])];
-                                                    if (!assets[idx]) assets[idx] = {};
-                                                    assets[idx].movable_value = e.target.value;
-                                                    setData('family_assets', assets);
+                                                    if (locked) return;
+                                                    updateAsset(idx, 'movable_value', e.target.value);
                                                 }}
-                                                readOnly={fromAdmission}
-                                                className={inputClass}
+                                                readOnly={locked}
+                                                className={fieldClass}
                                             />
                                         </div>
                                     </div>
                                 </div>
-                            ))}
+                                );
+                            })}
                         </div>
                     );
                 })()}
