@@ -261,4 +261,233 @@ class LoanFormVisibilityTest extends TestCase
 
         $this->assertEqualsCanonicalizing([1], $editable);
     }
+
+    public function test_branch_user_can_edit_loan_details_until_head_office(): void
+    {
+        foreach ([
+            LoanApplication::STATUS_DRAFT,
+            LoanApplication::STATUS_SUBMITTED,
+            LoanApplication::STATUS_UNDER_REVIEW,
+            LoanApplication::STATUS_READY_FOR_HEAD_OFFICE,
+            LoanApplication::STATUS_NEEDS_CORRECTION,
+        ] as $status) {
+            $this->assertTrue(
+                LoanFormVisibility::canEditLoanDetails(Role::BRANCH_USER, $status),
+                "Branch user should edit loan details at {$status}"
+            );
+        }
+    }
+
+    public function test_branch_user_cannot_edit_loan_details_after_sent_to_head_office(): void
+    {
+        foreach ([
+            LoanApplication::STATUS_PENDING_HEAD_OFFICE,
+            LoanApplication::STATUS_APPROVED,
+            LoanApplication::STATUS_PENDING_DISBURSEMENT,
+            LoanApplication::STATUS_DISBURSED,
+            LoanApplication::STATUS_CANCELLED,
+        ] as $status) {
+            $this->assertFalse(
+                LoanFormVisibility::canEditLoanDetails(Role::BRANCH_USER, $status),
+                "Branch user should not edit loan details at {$status}"
+            );
+        }
+    }
+
+    public function test_field_officer_can_edit_loan_details_only_before_submit(): void
+    {
+        $this->assertTrue(LoanFormVisibility::canEditLoanDetails(Role::FIELD_OFFICER, LoanApplication::STATUS_DRAFT));
+        $this->assertTrue(LoanFormVisibility::canEditLoanDetails(Role::FIELD_OFFICER, LoanApplication::STATUS_NEEDS_CORRECTION));
+        $this->assertFalse(LoanFormVisibility::canEditLoanDetails(Role::FIELD_OFFICER, LoanApplication::STATUS_SUBMITTED));
+        $this->assertFalse(LoanFormVisibility::canEditLoanDetails(Role::FIELD_OFFICER, LoanApplication::STATUS_READY_FOR_HEAD_OFFICE));
+    }
+
+    public function test_privileged_user_can_edit_loan_details_at_any_status(): void
+    {
+        $this->assertTrue(LoanFormVisibility::canEditLoanDetails(Role::BRANCH_USER, LoanApplication::STATUS_PENDING_HEAD_OFFICE, true));
+        $this->assertTrue(LoanFormVisibility::canEditLoanDetails(Role::HEAD_OFFICE, LoanApplication::STATUS_DISBURSED, true));
+    }
+
+    public function test_loan_details_denied_message_explains_head_office_lock(): void
+    {
+        $this->assertSame(
+            'আবেদনটি হেড অফিসে পাঠানোর পর শাখা থেকে ঋণ বিবরণ পরিবর্তন করা যাবে না।',
+            LoanFormVisibility::loanDetailsDeniedMessage(LoanApplication::STATUS_PENDING_HEAD_OFFICE)
+        );
+    }
+
+    public function test_switching_weekly_to_monthly_product_changes_required_forms(): void
+    {
+        $weekly = $this->weeklyProduct();
+        $monthly = (object) [
+            'installment_type' => 'monthly',
+            'product_code' => 'AGR',
+            'product_name' => 'Agrosor',
+            'product_name_bn' => '',
+        ];
+        $amount = 50000.0;
+
+        $weeklyForms = LoanFormVisibility::visibleFormIdsForShow(
+            Role::BRANCH_USER,
+            LoanApplication::STATUS_SUBMITTED,
+            $weekly,
+            $amount
+        );
+        $monthlyForms = LoanFormVisibility::visibleFormIdsForShow(
+            Role::BRANCH_USER,
+            LoanApplication::STATUS_SUBMITTED,
+            $monthly,
+            $amount
+        );
+
+        $this->assertContains(1, $weeklyForms);
+        $this->assertNotContains(5, $weeklyForms);
+        $this->assertContains(5, $monthlyForms);
+        $this->assertNotContains(1, $monthlyForms);
+    }
+
+    public function test_primary_form_type_matches_create_rules(): void
+    {
+        $weekly = $this->weeklyProduct();
+        $monthly = (object) [
+            'installment_type' => 'monthly',
+            'product_code' => 'AGR',
+            'product_name' => 'Agrosor',
+            'product_name_bn' => '',
+        ];
+        $sufolonCategory = (object) [
+            'category_code' => 'SFL',
+            'category_name' => 'Sufolon',
+            'category_name_bn' => 'সুফলন',
+        ];
+
+        $this->assertSame('loan_agreement', LoanFormVisibility::primaryFormType($weekly, 50000.0));
+        $this->assertSame('loan_application_approval', LoanFormVisibility::primaryFormType($monthly, 50000.0));
+        $this->assertSame('loan_agreement', LoanFormVisibility::primaryFormType($weekly, 50000.0, $sufolonCategory));
+        $this->assertSame('loan_application_approval', LoanFormVisibility::primaryFormType($weekly, 100000.0, $sufolonCategory));
+    }
+
+    public function test_switching_to_monthly_product_clears_loan_agreement_form_column(): void
+    {
+        $monthly = (object) [
+            'installment_type' => 'monthly',
+            'product_code' => 'AGR',
+            'product_name' => 'Agrosor',
+            'product_name_bn' => '',
+        ];
+        $visible = LoanFormVisibility::visibleFormIdsForShow(
+            Role::BRANCH_USER,
+            LoanApplication::STATUS_SUBMITTED,
+            $monthly,
+            50000.0
+        );
+
+        $this->assertContains('loan_agreement_data', LoanFormVisibility::formColumnsToClear($visible));
+        $this->assertNotContains('business_plan', LoanFormVisibility::formColumnsToClear($visible));
+        $this->assertNotContains(1, $visible);
+        $this->assertContains(5, $visible);
+    }
+
+    public function test_switching_below_guarantor_threshold_clears_guarantor_form_column(): void
+    {
+        $visible = LoanFormVisibility::visibleFormIdsForShow(
+            Role::BRANCH_USER,
+            LoanApplication::STATUS_DRAFT,
+            $this->weeklyProduct(),
+            15000.0
+        );
+
+        $this->assertContains('guarantor_info', LoanFormVisibility::formColumnsToClear($visible));
+        $this->assertNotContains('nominee_info', LoanFormVisibility::formColumnsToClear($visible));
+        $this->assertNotContains(2, $visible);
+        $this->assertContains(3, $visible);
+    }
+
+    public function test_overlay_updates_saved_loan_agreement_even_when_already_filled(): void
+    {
+        $product = (object) [
+            'installment_type' => 'weekly',
+            'product_code' => 'JAG',
+            'product_name' => 'Jagoron',
+            'product_name_bn' => 'জাগরণ',
+            'interest_rate' => 12.5,
+        ];
+        $category = (object) [
+            'category_code' => 'JAG',
+            'category_name' => 'Jagoron',
+            'category_name_bn' => 'জাগরণ',
+        ];
+
+        $updated = LoanFormVisibility::overlaySavedFormLoanTerms(
+            1,
+            [
+                'member_name_bn' => 'রহিমা',
+                'loan_product_name' => 'পুরনো পণ্য',
+                'loan_category_name' => 'পুরনো ক্যাটাগরি',
+                'loan_amount' => 10000,
+                'field_officer_pin' => '1234',
+            ],
+            $product,
+            $category,
+            50000.0,
+            46,
+            12,
+            6250.0,
+            56250.0,
+            1223.0,
+            'পঞ্চাশ হাজার টাকা',
+            'ছাপ্পান্ন হাজার দুইশত পঞ্চাশ টাকা',
+            'ব্যবসা সম্প্রসারণ'
+        );
+
+        $this->assertSame('রহিমা', $updated['member_name_bn']);
+        $this->assertSame('1234', $updated['field_officer_pin']);
+        $this->assertSame('জাগরণ', $updated['loan_product_name']);
+        $this->assertSame('জাগরণ', $updated['loan_category_name']);
+        $this->assertSame(50000.0, $updated['loan_amount']);
+        $this->assertSame(46, $updated['number_of_installments']);
+        $this->assertSame('ব্যবসা সম্প্রসারণ', $updated['loan_purpose']);
+    }
+
+    public function test_overlay_updates_saved_approval_form_amount_and_category(): void
+    {
+        $product = (object) [
+            'installment_type' => 'monthly',
+            'product_code' => 'AGR',
+            'product_name' => 'Agrosor',
+            'product_name_bn' => 'আগ্রসর',
+            'interest_rate' => 18,
+        ];
+        $category = (object) [
+            'category_code' => 'AGR',
+            'category_name' => 'Agrosor',
+            'category_name_bn' => 'আগ্রসর',
+        ];
+
+        $updated = LoanFormVisibility::overlaySavedFormLoanTerms(
+            5,
+            [
+                'member_name_detail' => 'করিম',
+                'applied_loan_amount' => '20000',
+                'capital_applied_loan' => '20000',
+                'category_name' => 'জাগরণ',
+            ],
+            $product,
+            $category,
+            80000.0,
+            12,
+            12,
+            14400.0,
+            94400.0,
+            7867.0,
+            'আশি হাজার টাকা',
+            'চুরাশি হাজার চারশত টাকা',
+            null
+        );
+
+        $this->assertSame('করিম', $updated['member_name_detail']);
+        $this->assertSame('80000', $updated['applied_loan_amount']);
+        $this->assertSame('80000', $updated['capital_applied_loan']);
+        $this->assertSame('আগ্রসর', $updated['category_name']);
+    }
 }

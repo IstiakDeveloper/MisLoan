@@ -401,6 +401,12 @@ export default function ApprovalForm({
         ...(savedData || {}),
         // Always recompute schedule from product factors — never keep stale draft values
         ...computedInstallment,
+        category_name: categoryName,
+        ...(Number(requestedAmount) > 0 ? {
+            capital_applied_loan: String(requestedAmount),
+            approval_amount_digits: String(requestedAmount),
+            approval_amount_words: numberToWordsBangla(Number(requestedAmount)),
+        } : {}),
         loan_duration_months: loanProduct?.duration_months
             ? String(loanProduct.duration_months)
             : (loanProduct?.loan_duration_months ? String(loanProduct.loan_duration_months) : ''),
@@ -489,6 +495,12 @@ export default function ApprovalForm({
                 const merged = { ...prev, ...restored };
                 return withLiveMemberCode({
                     ...merged,
+                    category_name: categoryName,
+                    ...(Number(requestedAmount) > 0 ? {
+                        capital_applied_loan: String(requestedAmount),
+                        approval_amount_digits: String(requestedAmount),
+                        approval_amount_words: numberToWordsBangla(Number(requestedAmount)),
+                    } : {}),
                     loan_approval_date: String(merged.loan_approval_date || '').trim() || prev.loan_approval_date,
                     loan_disbursement_date: String(merged.loan_disbursement_date || '').trim() || prev.loan_disbursement_date,
                     loan_repayment_date: String(merged.loan_repayment_date || '').trim() || prev.loan_repayment_date,
@@ -498,9 +510,9 @@ export default function ApprovalForm({
                         String(merged.educational_qualification || '').trim() ||
                         selfFromFamily.educational_qualification,
                     ...installmentFormFields(
-                        Number(merged.invest_plan_applied_amount) ||
+                        Number(requestedAmount) ||
+                            Number(merged.invest_plan_applied_amount) ||
                             Number(merged.capital_applied_loan) ||
-                            Number(requestedAmount) ||
                             0,
                         loanProduct,
                         loanCategory,

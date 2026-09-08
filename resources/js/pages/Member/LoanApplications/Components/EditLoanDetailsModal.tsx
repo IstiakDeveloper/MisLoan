@@ -20,6 +20,7 @@ interface Props {
     categories: any[];
     isSuperAdmin?: boolean;
     isFieldOfficer?: boolean;
+    isBranchUser?: boolean;
 }
 
 export default function EditLoanDetailsModal({
@@ -29,6 +30,7 @@ export default function EditLoanDetailsModal({
     categories = [],
     isSuperAdmin = false,
     isFieldOfficer = false,
+    isBranchUser = false,
 }: Props) {
     if (!open || !application) return null;
 
@@ -169,18 +171,23 @@ export default function EditLoanDetailsModal({
             },
             {
                 preserveScroll: true,
+                preserveState: false,
                 onSuccess: () => {
-                    setIsSubmitting(false);
                     onClose();
                 },
                 onError: (errs) => {
-                    setIsSubmitting(false);
-                    const firstErr = Object.values(errs)[0];
+                    const firstErr =
+                        (typeof errs.error === 'string' && errs.error) ||
+                        (typeof errs.loan_product_id === 'string' && errs.loan_product_id) ||
+                        Object.values(errs)[0];
                     setError(
                         typeof firstErr === 'string'
                             ? firstErr
                             : 'ঋণ বিবরণ সংরক্ষণ করতে ব্যর্থ হয়েছে।'
                     );
+                },
+                onFinish: () => {
+                    setIsSubmitting(false);
                 },
             }
         );
@@ -223,10 +230,20 @@ export default function EditLoanDetailsModal({
                             সুপার অ্যাডমিন ক্ষমতা: আপনি যেকোনো পর্যায়ে ঋণের বিবরণ ও শর্তাবলী সম্পাদনা করতে পারেন।
                         </span>
                     </div>
+                ) : isBranchUser ? (
+                    <div className="bg-blue-50 border-b border-blue-100 px-5 py-2.5 flex items-center gap-2 text-xs text-blue-900 font-semibold">
+                        <Info className="w-4 h-4 text-blue-600 shrink-0" />
+                        <span>হেড অফিসে পাঠানোর আগে পর্যন্ত প্রোডাক্ট, পরিমাণ ও শর্তাবলী পরিবর্তন করা যাবে। প্রোডাক্ট বদলালে প্রয়োজনীয় ফর্ম আপডেট হবে।</span>
+                    </div>
+                ) : isFieldOfficer ? (
+                    <div className="bg-blue-50 border-b border-blue-100 px-5 py-2.5 flex items-center gap-2 text-xs text-blue-900 font-semibold">
+                        <Info className="w-4 h-4 text-blue-600 shrink-0" />
+                        <span>খসড়া বা সংশোধনের জন্য ফেরত অবস্থায় ঋণ বিবরণ পরিবর্তন করা যাবে।</span>
+                    </div>
                 ) : (
                     <div className="bg-blue-50 border-b border-blue-100 px-5 py-2.5 flex items-center gap-2 text-xs text-blue-900 font-semibold">
                         <Info className="w-4 h-4 text-blue-600 shrink-0" />
-                        <span>ফিল্ড অফিসার মোড: খসড়া অবস্থায় ঋণ বিবরণ পরিবর্তন করা যাবে।</span>
+                        <span>হেড অফিসে পাঠানোর আগে পর্যন্ত ঋণ বিবরণ পরিবর্তন করা যাবে।</span>
                     </div>
                 )}
 
@@ -415,7 +432,7 @@ export default function EditLoanDetailsModal({
                     <div className="bg-amber-50/80 border border-amber-200 rounded-xl p-3 text-[11px] text-amber-900 leading-relaxed flex items-start gap-2">
                         <Info className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
                         <span>
-                            <b>সরাসরি ফর্ম আপডেট:</b> তথ্য সংরক্ষণ করলে ঋণ আবেদনপত্রের পাশাপাশি এর সাথে যুক্ত সকল ফর্ম (চুক্তিপত্র ফর্ম ১, জামিনদার ফর্ম ২, মৃত্যুঝুঁকি ফর্ম ৩, সরেজমিন ফর্ম ৪ ও অগ্রগতির প্রোফাইল ফর্ম ৫) স্বয়ংক্রিয়ভাবে নতুন তথ্যে হালনাগাদ হয়ে যাবে।
+                            <b>প্রোডাক্ট অনুযায়ী ফর্ম:</b> সংরক্ষণ করলে সংশ্লিষ্ট ফর্মের পরিমাণ হালনাগাদ হবে। সাপ্তাহিক/মাসিক বা সুফলন প্রোডাক্ট বদলালে প্রয়োজনীয় ফর্ম (চুক্তিপত্র, অনুমোদনপত্র ইত্যাদি) স্বয়ংক্রিয়ভাবে পরিবর্তন হবে — নতুন ফর্মগুলো পূরণ করতে হবে।
                         </span>
                     </div>
 

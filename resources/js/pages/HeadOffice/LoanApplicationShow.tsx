@@ -382,11 +382,19 @@ export default function LoanApplicationShow({ loan, categories = [], flash }: Pr
     const totalFormCount = visibleFormIds.length;
     const progressPercent = totalFormCount > 0 ? Math.round((savedFormCount / totalFormCount) * 100) : 0;
 
+    const visibleFormKey = visibleFormIds.join(',');
+
     useEffect(() => {
-        if (selectedFormId == null && visibleFormIds.length > 0) {
+        if (visibleFormIds.length === 0) {
+            if (selectedFormId != null) {
+                setSelectedFormId(null);
+            }
+            return;
+        }
+        if (selectedFormId == null || !visibleFormIds.includes(selectedFormId)) {
             setSelectedFormId(visibleFormIds[0]);
         }
-    }, [selectedFormId, visibleFormIds]);
+    }, [selectedFormId, visibleFormKey]);
 
     // Top-Level Dedicated Print Portal Setup (Guarantees zero blank print output)
     useEffect(() => {
@@ -1250,6 +1258,7 @@ export default function LoanApplicationShow({ loan, categories = [], flash }: Pr
                                 isBranchManager={false}
                                 isSuperAdmin={canModify}
                                 isFieldOfficer={false}
+                                canEditLoanDetails={canModify}
                                 onOpenMemberCodeModal={() => {
                                     const p = parseMemberCode(memberNo, branchPrefix);
                                     setSerialInput(p.serial);

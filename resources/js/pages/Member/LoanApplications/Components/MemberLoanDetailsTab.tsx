@@ -13,6 +13,7 @@ interface Props {
     isBranchManager?: boolean;
     isSuperAdmin?: boolean;
     isFieldOfficer?: boolean;
+    canEditLoanDetails?: boolean;
     onOpenMemberCodeModal?: () => void;
     onOpenLoanProductModal?: () => void;
     onOpenEditLoanModal?: () => void;
@@ -26,6 +27,7 @@ export default function MemberLoanDetailsTab({
     isBranchManager,
     isSuperAdmin,
     isFieldOfficer,
+    canEditLoanDetails,
     onOpenMemberCodeModal,
     onOpenLoanProductModal,
     onOpenEditLoanModal,
@@ -33,6 +35,18 @@ export default function MemberLoanDetailsTab({
     const admission = application.member_admission || application.memberAdmission;
     const loanProduct = application.loan_product || application.loanProduct;
     const loanCategory = application.loan_category || application.loanCategory;
+    const canEditTerms =
+        canEditLoanDetails ??
+        Boolean(isSuperAdmin || application.status === 'draft');
+    const isAtOrPastHeadOffice = [
+        'pending_head_office',
+        'approved',
+        'pending_disbursement',
+        'pending_amount_approval',
+    ].includes(application.status);
+    const lockLabel = isAtOrPastHeadOffice
+        ? 'হেড অফিসে পাঠানো হয়েছে (লক)'
+        : 'জমা হয়েছে (লক)';
     const displayName =
         memberName ||
         admission?.applicant_name_bn ||
@@ -106,30 +120,28 @@ export default function MemberLoanDetailsTab({
                     <CardTitle className="text-sm sm:text-base font-bold text-slate-900 flex items-center gap-2">
                         <Banknote className="w-4 h-4 sm:w-5 sm:h-5 text-emerald-600" /> ঋণ বিবরণ ও শর্তাবলী
                     </CardTitle>
-                    {application.status !== 'disbursed' && (
-                        isSuperAdmin || application.status === 'draft' ? (
-                            onOpenEditLoanModal ? (
-                                <Button
-                                    size="sm"
-                                    variant="outline"
-                                    className="text-xs h-8 border-indigo-300 bg-indigo-50/50 text-indigo-700 hover:bg-indigo-100 font-bold rounded-lg cursor-pointer transition shadow-2xs"
-                                    onClick={onOpenEditLoanModal}
-                                >
-                                    <Edit className="w-3.5 h-3.5 mr-1 text-indigo-600" /> শর্তাবলী সম্পাদনা
-                                </Button>
-                            ) : onOpenLoanProductModal ? (
-                                <Button
-                                    size="sm"
-                                    variant="outline"
-                                    className="text-xs h-8 border-indigo-200 text-indigo-700 hover:bg-indigo-50 font-semibold rounded-lg cursor-pointer"
-                                    onClick={onOpenLoanProductModal}
-                                >
-                                    <Edit className="w-3.5 h-3.5 mr-1" /> ঋণ প্রোডাক্ট পরিবর্তন
-                                </Button>
-                            ) : null
+                    {application.status !== 'disbursed' && application.status !== 'cancelled' && (
+                        canEditTerms && onOpenEditLoanModal ? (
+                            <Button
+                                size="sm"
+                                variant="outline"
+                                className="text-xs h-8 border-indigo-300 bg-indigo-50/50 text-indigo-700 hover:bg-indigo-100 font-bold rounded-lg cursor-pointer transition shadow-2xs"
+                                onClick={onOpenEditLoanModal}
+                            >
+                                <Edit className="w-3.5 h-3.5 mr-1 text-indigo-600" /> শর্তাবলী সম্পাদনা
+                            </Button>
+                        ) : canEditTerms && onOpenLoanProductModal ? (
+                            <Button
+                                size="sm"
+                                variant="outline"
+                                className="text-xs h-8 border-indigo-200 text-indigo-700 hover:bg-indigo-50 font-semibold rounded-lg cursor-pointer"
+                                onClick={onOpenLoanProductModal}
+                            >
+                                <Edit className="w-3.5 h-3.5 mr-1" /> ঋণ প্রোডাক্ট পরিবর্তন
+                            </Button>
                         ) : (
-                            <span className="text-[10px] font-semibold text-slate-400 bg-slate-100 px-2 py-1 rounded-md">
-                                জমা হয়েছে (লক)
+                            <span className="text-[10px] font-semibold text-slate-500 bg-slate-100 px-2 py-1 rounded-md" title="হেড অফিসে পাঠানোর আগে শাখা ব্যবহারকারী পরিবর্তন করতে পারবেন।">
+                                {lockLabel}
                             </span>
                         )
                     )}

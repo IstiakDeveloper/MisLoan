@@ -121,6 +121,25 @@ export function buildLoanAgreementDefaults(
     };
 }
 
+function liveLoanAgreementTerms(defaults: LoanAgreementData): Partial<LoanAgreementData> {
+    return {
+        loan_amount: defaults.loan_amount,
+        loan_amount_words: defaults.loan_amount_words,
+        loan_category_name: defaults.loan_category_name,
+        loan_product_name: defaults.loan_product_name,
+        loan_duration_months: defaults.loan_duration_months,
+        service_charge: defaults.service_charge,
+        service_charge_rate: defaults.service_charge_rate,
+        interest_rate: defaults.interest_rate,
+        total_amount: defaults.total_amount,
+        number_of_installments: defaults.number_of_installments,
+        installment_amount: defaults.installment_amount,
+        last_installment_amount: defaults.last_installment_amount,
+        last_installment_date: defaults.last_installment_date,
+        ...(defaults.loan_purpose ? { loan_purpose: defaults.loan_purpose } : {}),
+    };
+}
+
 function mergeFormData<T extends Record<string, any>>(defaults: T, savedData?: any, baseAmount?: number, member?: any): T {
     if (!savedData || typeof savedData !== 'object' || Object.keys(savedData).length === 0) {
         return withLiveMemberCode(defaults, member);
@@ -128,16 +147,7 @@ function mergeFormData<T extends Record<string, any>>(defaults: T, savedData?: a
     return withLiveMemberCode({
         ...defaults,
         ...savedData,
-        ...((baseAmount && baseAmount > 0) ? {
-            loan_amount: defaults.loan_amount,
-            loan_amount_words: defaults.loan_amount_words,
-            service_charge: defaults.service_charge,
-            total_amount: defaults.total_amount,
-            installment_amount: defaults.installment_amount,
-            last_installment_amount: defaults.last_installment_amount,
-            number_of_installments: defaults.number_of_installments,
-            last_installment_date: defaults.last_installment_date,
-        } : {}),
+        ...liveLoanAgreementTerms(defaults as unknown as LoanAgreementData),
     }, member);
 }
 
@@ -196,10 +206,12 @@ export default function LoanAgreement({
     useEffect(() => {
         const local = loadLoanDraftLocal<Partial<LoanAgreementData>>(draftKey);
         if (savedData || local?.data) {
+            const defaults = buildLoanAgreementDefaults(member, loanProduct, loanCategory, requestedAmount, branch);
             setData((prev) => withLiveMemberCode({
                 ...prev,
                 ...(savedData || {}),
                 ...(local?.data || {}),
+                ...liveLoanAgreementTerms(defaults),
             }, member));
             setShowPreview(true);
             if (local?.data) {

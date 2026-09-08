@@ -144,6 +144,12 @@ class LoanApplicationController extends Controller
             && ! $application->hasPendingAmountChange();
         $application->can_change_approved_amount = $this->isBranchUserRole($user)
             && $application->canRequestApprovedAmountChange();
+        $isPrivilegedLoanEditor = (bool) ($user->has_all_access || $user->isSuperAdmin() || $user->isHeadOffice());
+        $application->can_edit_loan_details = LoanFormVisibility::canEditLoanDetails(
+            $roleName,
+            $status,
+            $isPrivilegedLoanEditor
+        );
         $lastAmountApproval = app(ApprovalService::class)->lastLoanAmountApproval($application);
         $application->amount_change_pending = $application->hasPendingAmountChange();
         $application->amount_change_approver_name = $application->hasPendingAmountChange()
@@ -3044,24 +3050,16 @@ class LoanApplicationController extends Controller
     public function updateLoanProduct(Request $request, $id)
     {
         $user = $request->user();
+        $user?->loadMissing('role');
         $application = LoanApplication::with(['memberAdmission', 'branch', 'loanProduct', 'loanCategory'])->findOrFail($id);
         $this->ensureApplicationAccessibleToUser($application, $user);
 
         $isSuperAdmin = $user && ($user->has_all_access || $user->isSuperAdmin() || $user->isHeadOffice());
-        $isFieldOfficerOrBranch = $this->canCreateLoanApplication($user) || $user->role?->name === Role::BRANCH_MANAGER;
+        $roleName = $user?->role?->name;
+        $status = (string) $application->status;
 
-        if ($application->status === LoanApplication::STATUS_DISBURSED && ! $isSuperAdmin) {
-            return back()->withErrors(['error' => 'ঋণ বিতরণ সম্পন্ন হওয়ার পর ঋণ বিবরণ পরিবর্তন করা যাবে না।']);
-        }
-
-        if (! $isSuperAdmin) {
-            // Field Officer / Branch user can only edit if status is draft (before submission)
-            if ($application->status !== LoanApplication::STATUS_DRAFT) {
-                return back()->withErrors(['error' => 'আবেদনটি জমা (Submitted) হয়ে গেছে। শুধুমাত্র সুপার অ্যাডমিন যেকোনো পর্যায়ে এটি সম্পাদনা করতে পারবেন।']);
-            }
-            if (! $isFieldOfficerOrBranch) {
-                abort(403, 'ঋণ বিবরণ পরিবর্তনের অনুমতি নেই।');
-            }
+        if (! LoanFormVisibility::canEditLoanDetails($roleName, $status, (bool) $isSuperAdmin)) {
+            return back()->withErrors(['error' => LoanFormVisibility::loanDetailsDeniedMessage($status)]);
         }
 
         $validated = $request->validate([
@@ -3089,9 +3087,29 @@ class LoanApplicationController extends Controller
             return back()->withErrors(['loan_product_id' => 'নির্বাচিত ক্যাটাগরির অধীনে এই ঋণ প্রোডাক্টটি পাওয়া যায়নি বা নিষ্ক্রিয়।']);
         }
 
+        $newProduct->loadMissing('loanCategory');
+
         $requestedAmount = isset($validated['requested_amount']) && (float) $validated['requested_amount'] > 0
             ? (float) $validated['requested_amount']
             : (float) $application->requested_amount;
+
+        $oldVisibleFormIds = LoanFormVisibility::visibleFormIdsForShow(
+            $roleName,
+            $status,
+            $application->loanProduct,
+            (float) $application->requested_amount,
+            $application->loanCategory
+        );
+        $newVisibleFormIds = LoanFormVisibility::visibleFormIdsForShow(
+            $roleName,
+            $status,
+            $newProduct,
+            $requestedAmount,
+            $newProduct->loanCategory
+        );
+        sort($oldVisibleFormIds);
+        sort($newVisibleFormIds);
+        $requiredFormsChanged = $oldVisibleFormIds !== $newVisibleFormIds;
 
         $numberOfInstallments = isset($validated['number_of_installments']) && (int) $validated['number_of_installments'] > 0
             ? (int) $validated['number_of_installments']
@@ -3105,12 +3123,18 @@ class LoanApplicationController extends Controller
             ? $validated['repayment_frequency']
             : ($newProduct->installment_type === 'weekly' ? 'weekly' : 'monthly');
 
+        if ((int) $application->loan_product_id !== (int) $validated['loan_product_id']) {
+            $repaymentFreq = strtolower((string) ($newProduct->installment_type ?? 'monthly')) === 'weekly'
+                ? 'weekly'
+                : 'monthly';
+        }
+
         $purposeOfLoan = array_key_exists('purpose_of_loan', $validated)
             ? $validated['purpose_of_loan']
             : $application->purpose_of_loan;
 
         $effectiveAmount = $requestedAmount;
-        $formType = ($repaymentFreq === 'weekly' ? 1 : 2);
+        $formType = LoanFormVisibility::primaryFormType($newProduct, $effectiveAmount, $newProduct->loanCategory);
         $totServiceCharge = $this->calculateTotalServiceCharge($effectiveAmount, $newProduct);
         $totalRepayable = $effectiveAmount + $totServiceCharge;
         $newInstallmentAmount = round($totalRepayable / max(1, $numberOfInstallments), 2);
@@ -3123,6 +3147,7 @@ class LoanApplicationController extends Controller
             $validated,
             $newProduct,
             $formType,
+            $newVisibleFormIds,
             $numberOfInstallments,
             $loanTermMonths,
             $repaymentFreq,
@@ -3155,63 +3180,128 @@ class LoanApplicationController extends Controller
                 $updateData['purpose_of_loan'] = $purposeOfLoan;
             }
 
-            // 1. Form 1: Loan Agreement Data
-            $agreementData = is_array($application->loan_agreement_data) ? $application->loan_agreement_data : [];
-            if (! empty($agreementData)) {
-                $agreementData['loan_amount'] = $effectiveAmount;
-                $agreementData['loan_amount_words'] = $wordsAmount ? $wordsAmount.' টাকা' : '';
-                $agreementData['product_name'] = $newProduct->product_name_bn ?: $newProduct->product_name;
-                $agreementData['service_charge'] = $totServiceCharge;
-                $agreementData['total_amount'] = $totalRepayable;
-                $agreementData['number_of_installments'] = $numberOfInstallments;
-                $agreementData['installment_amount'] = $newInstallmentAmount;
-                $agreementData['last_installment_amount'] = $newInstallmentAmount;
-                if ($purposeOfLoan) {
-                    $agreementData['loan_purpose'] = $purposeOfLoan;
+            foreach (LoanFormVisibility::formColumnsToClear($newVisibleFormIds) as $column) {
+                $updateData[$column] = null;
+            }
+
+            if (in_array(1, $newVisibleFormIds, true)) {
+                $agreementData = is_array($application->loan_agreement_data) ? $application->loan_agreement_data : [];
+                if ($agreementData !== []) {
+                    $updateData['loan_agreement_data'] = LoanFormVisibility::overlaySavedFormLoanTerms(
+                        1,
+                        $agreementData,
+                        $newProduct,
+                        $newProduct->loanCategory,
+                        $effectiveAmount,
+                        $numberOfInstallments,
+                        $loanTermMonths,
+                        $totServiceCharge,
+                        $totalRepayable,
+                        $newInstallmentAmount,
+                        $wordsAmount ? $wordsAmount.' টাকা' : '',
+                        $wordsTotal ? $wordsTotal.' টাকা' : '',
+                        $purposeOfLoan
+                    );
                 }
-                $updateData['loan_agreement_data'] = $agreementData;
             }
 
-            // 2. Form 2: Guarantor Commitment
-            $guarantorInfo = is_array($application->guarantor_info) ? $application->guarantor_info : [];
-            if (! empty($guarantorInfo)) {
-                $guarantorInfo['loan_amount'] = round($totalRepayable);
-                $guarantorInfo['loan_amount_words'] = $wordsTotal ? $wordsTotal.' টাকা' : '';
-                $updateData['guarantor_info'] = $guarantorInfo;
-            }
-
-            // 3. Form 3: Death Risk Fund
-            $nomineeInfo = is_array($application->nominee_info) ? $application->nominee_info : [];
-            if (! empty($nomineeInfo)) {
-                $nomineeInfo['loan_amount_received'] = $effectiveAmount;
-                $nomineeInfo['loan_amount_words'] = $wordsAmount ? $wordsAmount.' টাকা' : '';
-                $updateData['nominee_info'] = $nomineeInfo;
-            }
-
-            // 4. Form 4: Field Investigation
-            $assetInfo = is_array($application->asset_info) ? $application->asset_info : [];
-            if (! empty($assetInfo)) {
-                $assetInfo['current_loan_demand'] = $effectiveAmount;
-                $assetInfo['recommended_loan_amount'] = $effectiveAmount;
-                $updateData['asset_info'] = $assetInfo;
-            }
-
-            // 5. Form 5: Agrosor Profile / Approval Form (business_plan)
-            $businessPlan = is_array($application->business_plan) ? $application->business_plan : [];
-            if (! empty($businessPlan)) {
-                $businessPlan['applied_loan_amount'] = (string) $effectiveAmount;
-                $businessPlan['fund_applied_loan'] = (string) $effectiveAmount;
-                if ($application->status === 'approved' || $application->status === 'pending_disbursement') {
-                    $businessPlan['final_approved_loan_amount_digits'] = (string) $effectiveAmount;
-                    $businessPlan['final_approved_loan_amount_words'] = $wordsAmount ? $wordsAmount.' টাকা' : '';
+            if (in_array(2, $newVisibleFormIds, true)) {
+                $guarantorInfo = is_array($application->guarantor_info) ? $application->guarantor_info : [];
+                if ($guarantorInfo !== []) {
+                    $updateData['guarantor_info'] = LoanFormVisibility::overlaySavedFormLoanTerms(
+                        2,
+                        $guarantorInfo,
+                        $newProduct,
+                        $newProduct->loanCategory,
+                        $effectiveAmount,
+                        $numberOfInstallments,
+                        $loanTermMonths,
+                        $totServiceCharge,
+                        $totalRepayable,
+                        $newInstallmentAmount,
+                        $wordsAmount ? $wordsAmount.' টাকা' : '',
+                        $wordsTotal ? $wordsTotal.' টাকা' : '',
+                        $purposeOfLoan
+                    );
                 }
-                $updateData['business_plan'] = $businessPlan;
+            }
+
+            if (in_array(3, $newVisibleFormIds, true)) {
+                $nomineeInfo = is_array($application->nominee_info) ? $application->nominee_info : [];
+                if ($nomineeInfo !== []) {
+                    $updateData['nominee_info'] = LoanFormVisibility::overlaySavedFormLoanTerms(
+                        3,
+                        $nomineeInfo,
+                        $newProduct,
+                        $newProduct->loanCategory,
+                        $effectiveAmount,
+                        $numberOfInstallments,
+                        $loanTermMonths,
+                        $totServiceCharge,
+                        $totalRepayable,
+                        $newInstallmentAmount,
+                        $wordsAmount ? $wordsAmount.' টাকা' : '',
+                        $wordsTotal ? $wordsTotal.' টাকা' : '',
+                        $purposeOfLoan
+                    );
+                }
+            }
+
+            if (in_array(4, $newVisibleFormIds, true)) {
+                $assetInfo = is_array($application->asset_info) ? $application->asset_info : [];
+                if ($assetInfo !== []) {
+                    $updateData['asset_info'] = LoanFormVisibility::overlaySavedFormLoanTerms(
+                        4,
+                        $assetInfo,
+                        $newProduct,
+                        $newProduct->loanCategory,
+                        $effectiveAmount,
+                        $numberOfInstallments,
+                        $loanTermMonths,
+                        $totServiceCharge,
+                        $totalRepayable,
+                        $newInstallmentAmount,
+                        $wordsAmount ? $wordsAmount.' টাকা' : '',
+                        $wordsTotal ? $wordsTotal.' টাকা' : '',
+                        $purposeOfLoan
+                    );
+                }
+            }
+
+            if (in_array(5, $newVisibleFormIds, true)) {
+                $businessPlan = is_array($application->business_plan) ? $application->business_plan : [];
+                if ($businessPlan !== []) {
+                    $overlaid = LoanFormVisibility::overlaySavedFormLoanTerms(
+                        5,
+                        $businessPlan,
+                        $newProduct,
+                        $newProduct->loanCategory,
+                        $effectiveAmount,
+                        $numberOfInstallments,
+                        $loanTermMonths,
+                        $totServiceCharge,
+                        $totalRepayable,
+                        $newInstallmentAmount,
+                        $wordsAmount ? $wordsAmount.' টাকা' : '',
+                        $wordsTotal ? $wordsTotal.' টাকা' : '',
+                        $purposeOfLoan
+                    );
+                    if ($application->status === 'approved' || $application->status === 'pending_disbursement') {
+                        $overlaid['final_approved_loan_amount_digits'] = (string) $effectiveAmount;
+                        $overlaid['final_approved_loan_amount_words'] = $wordsAmount ? $wordsAmount.' টাকা' : '';
+                    }
+                    $updateData['business_plan'] = $overlaid;
+                }
             }
 
             $application->update($updateData);
         });
 
-        return back()->with('success', 'ঋণ বিবরণ ও শর্তাবলী সফলভাবে আপডেট করা হয়েছে এবং সংশ্লিষ্ট সকল ফর্ম হালনাগাদ হয়েছে।');
+        $successMessage = $requiredFormsChanged
+            ? 'ঋণ বিবরণ ও শর্তাবলী আপডেট হয়েছে। নতুন প্রোডাক্ট অনুযায়ী প্রয়োজনীয় ফর্ম পরিবর্তন হয়েছে — নতুন ফর্মগুলো পূরণ করুন।'
+            : 'ঋণ বিবরণ ও শর্তাবলী সফলভাবে আপডেট করা হয়েছে এবং সংশ্লিষ্ট সকল ফর্ম হালনাগাদ হয়েছে।';
+
+        return back()->with('success', $successMessage);
     }
 
     /**

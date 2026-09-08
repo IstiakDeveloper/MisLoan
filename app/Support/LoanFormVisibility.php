@@ -211,6 +211,78 @@ class LoanFormVisibility
     }
 
     /**
+     * Statuses where the application is still at branch (not yet received by Head Office).
+     *
+     * @return string[]
+     */
+    public static function preHeadOfficeStatuses(): array
+    {
+        return [
+            LoanApplication::STATUS_DRAFT,
+            LoanApplication::STATUS_PENDING,
+            LoanApplication::STATUS_SUBMITTED,
+            LoanApplication::STATUS_UNDER_REVIEW,
+            LoanApplication::STATUS_READY_FOR_HEAD_OFFICE,
+            LoanApplication::STATUS_REJECTED,
+            LoanApplication::STATUS_NEEDS_CORRECTION,
+        ];
+    }
+
+    public static function isBeforeHeadOffice(string $status): bool
+    {
+        return in_array($status, self::preHeadOfficeStatuses(), true);
+    }
+
+    /**
+     * Who may change loan product, amount, and terms.
+     * Branch users (accountants) may edit until the file reaches Head Office.
+     * Field officers may edit only while the application is still a draft / sent back.
+     */
+    public static function canEditLoanDetails(?string $roleName, string $status, bool $isPrivileged = false): bool
+    {
+        if ($isPrivileged) {
+            return true;
+        }
+
+        $roleName = strtolower((string) $roleName);
+
+        if (in_array($status, [LoanApplication::STATUS_DISBURSED, LoanApplication::STATUS_CANCELLED], true)) {
+            return false;
+        }
+
+        if (in_array($roleName, [Role::BRANCH_USER, Role::BRANCH_MANAGER], true)) {
+            return self::isBeforeHeadOffice($status);
+        }
+
+        if ($roleName === Role::FIELD_OFFICER) {
+            return in_array($status, [
+                LoanApplication::STATUS_DRAFT,
+                LoanApplication::STATUS_REJECTED,
+                LoanApplication::STATUS_NEEDS_CORRECTION,
+            ], true);
+        }
+
+        return false;
+    }
+
+    public static function loanDetailsDeniedMessage(string $status): string
+    {
+        if ($status === LoanApplication::STATUS_DISBURSED) {
+            return 'ঋণ বিতরণ সম্পন্ন হওয়ার পর ঋণ বিবরণ পরিবর্তন করা যাবে না।';
+        }
+
+        if ($status === LoanApplication::STATUS_CANCELLED) {
+            return 'বাতিল আবেদনের ঋণ বিবরণ পরিবর্তন করা যাবে না।';
+        }
+
+        if (! self::isBeforeHeadOffice($status)) {
+            return 'আবেদনটি হেড অফিসে পাঠানোর পর শাখা থেকে ঋণ বিবরণ পরিবর্তন করা যাবে না।';
+        }
+
+        return 'ঋণ বিবরণ পরিবর্তনের অনুমতি নেই।';
+    }
+
+    /**
      * Statuses where Branch Manager has not yet approved / forwarded (their submit).
      *
      * @return string[]
@@ -265,6 +337,114 @@ class LoanFormVisibility
         }
 
         return [];
+    }
+
+    /**
+     * Primary application form type stored on create / product change.
+     * Weekly / Sufolon ≤99k → loan agreement (Form 1); otherwise Form 5.
+     */
+    public static function primaryFormType(?object $product, float $amount, ?object $category = null): string
+    {
+        $foForms = self::foSubmitFormIds($product, $amount, $category);
+
+        return (($foForms[0] ?? 1) === 5) ? 'loan_application_approval' : 'loan_agreement';
+    }
+
+    /**
+     * Overwrite product / amount / term fields on an already-saved form payload.
+     * Member, signature, and narrative fields are kept.
+     *
+     * @param  array<string, mixed>  $data
+     * @return array<string, mixed>
+     */
+    public static function overlaySavedFormLoanTerms(
+        int $formId,
+        array $data,
+        object $product,
+        ?object $category,
+        float $amount,
+        int $installments,
+        int $termMonths,
+        float $serviceCharge,
+        float $totalRepayable,
+        float $installmentAmount,
+        string $wordsAmount,
+        string $wordsTotal,
+        ?string $purpose = null,
+    ): array {
+        $productName = (string) ($product->product_name_bn ?: $product->product_name ?: '');
+        $categoryName = (string) ($category?->category_name_bn ?: $category?->category_name ?: '');
+        $interestRate = (float) ($product->interest_rate ?? $product->service_charge ?? 0);
+        $amountWords = $wordsAmount !== '' ? $wordsAmount : '';
+        $totalWords = $wordsTotal !== '' ? $wordsTotal : '';
+
+        return match ($formId) {
+            1 => array_merge($data, [
+                'loan_amount' => $amount,
+                'loan_amount_words' => $amountWords,
+                'loan_category_name' => $categoryName,
+                'loan_product_name' => $productName,
+                'product_name' => $productName,
+                'loan_duration_months' => $termMonths,
+                'service_charge' => $serviceCharge,
+                'service_charge_rate' => $interestRate > 0 ? (string) $interestRate : ($data['service_charge_rate'] ?? ''),
+                'interest_rate' => $interestRate,
+                'total_amount' => $totalRepayable,
+                'number_of_installments' => $installments,
+                'installment_amount' => $installmentAmount,
+                'last_installment_amount' => $installmentAmount,
+                ...($purpose !== null && $purpose !== '' ? ['loan_purpose' => $purpose] : []),
+            ]),
+            2 => array_merge($data, [
+                'loan_amount' => round($totalRepayable),
+                'loan_amount_words' => $totalWords,
+            ]),
+            3 => array_merge($data, [
+                'loan_amount_received' => $amount,
+                'loan_amount_words' => $amountWords,
+            ]),
+            4 => array_merge($data, [
+                'current_loan_demand' => $amount,
+                'recommended_loan_amount' => $amount,
+            ]),
+            5 => array_merge($data, [
+                'applied_loan_amount' => (string) $amount,
+                'fund_applied_loan' => (string) $amount,
+                'capital_applied_loan' => (string) $amount,
+                'approval_amount_digits' => (string) $amount,
+                'approval_amount_words' => $amountWords,
+                'category_name' => $categoryName,
+                'loan_duration_months' => (string) $termMonths,
+                'loan_duration_label' => $termMonths.' মাস',
+                'service_charge_rate' => $interestRate > 0 ? (string) $interestRate : ($data['service_charge_rate'] ?? ''),
+                ...($purpose !== null && $purpose !== '' ? ['loan_purpose' => $purpose, 'proposed_project_name' => $purpose] : []),
+            ]),
+            default => $data,
+        };
+    }
+
+    /**
+     * JSON columns for forms that must be cleared when the product/amount
+     * no longer uses them (same set as creating a new loan).
+     *
+     * @param  int[]  $newVisibleFormIds
+     * @return string[]
+     */
+    public static function formColumnsToClear(array $newVisibleFormIds): array
+    {
+        $columns = [];
+        foreach ([1, 2, 3, 4, 5] as $formId) {
+            if (in_array($formId, $newVisibleFormIds, true)) {
+                continue;
+            }
+
+            $column = self::formIdToColumn($formId);
+            if ($column !== null) {
+                $columns[] = $column;
+            }
+        }
+
+        return $columns;
     }
 
     /**

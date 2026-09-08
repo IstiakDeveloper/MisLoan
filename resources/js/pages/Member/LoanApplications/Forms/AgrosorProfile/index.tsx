@@ -378,8 +378,9 @@ function buildInitialData(
         guarantor_2_name: str(savedData?.guarantor_2_name) || base.guarantor_2_name,
         guarantor_2_mobile: str(savedData?.guarantor_2_mobile) || base.guarantor_2_mobile,
         guarantor_2_address: str(savedData?.guarantor_2_address) || base.guarantor_2_address,
-        applied_loan_amount: str(savedData?.applied_loan_amount) || base.applied_loan_amount,
-        fund_applied_loan: str(savedData?.fund_applied_loan) || base.fund_applied_loan,
+        applied_loan_amount: amount ? String(amount) : (str(savedData?.applied_loan_amount) || ''),
+        fund_applied_loan: amount ? String(amount) : (str(savedData?.fund_applied_loan) || ''),
+        category_name: loanCategory?.category_name_bn || loanCategory?.category_name || base.category_name,
         other_loans: normalizeOtherLoans(
             savedData?.other_loan_status || savedData?.other_loans || base.other_loans,
         ),

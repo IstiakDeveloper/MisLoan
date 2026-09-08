@@ -16,6 +16,10 @@ use Illuminate\Foundation\Application;
 use Illuminate\Foundation\Configuration\Exceptions;
 use Illuminate\Foundation\Configuration\Middleware;
 use Illuminate\Http\Middleware\AddLinkHeadersForPreloadedAssets;
+use Illuminate\Http\Request;
+use Inertia\Inertia;
+use Symfony\Component\HttpFoundation\Response;
+use Symfony\Component\HttpKernel\Exception\HttpExceptionInterface;
 
 return Application::configure(basePath: dirname(__DIR__))
     ->withRouting(
@@ -48,5 +52,29 @@ return Application::configure(basePath: dirname(__DIR__))
         ]);
     })
     ->withExceptions(function (Exceptions $exceptions): void {
-        //
+        $exceptions->respond(function (Response $response, Throwable $exception, Request $request) {
+            if ($response->getStatusCode() !== 404) {
+                return $response;
+            }
+
+            if ($request->expectsJson() || $request->is('api/*')) {
+                return $response;
+            }
+
+            $message = trim($exception->getMessage());
+            $isGenericMessage = $message === ''
+                || strcasecmp($message, 'Not Found') === 0
+                || str_starts_with($message, 'No route found')
+                || str_starts_with($message, 'The route ');
+
+            $customMessage = $exception instanceof HttpExceptionInterface && ! $isGenericMessage
+                ? $message
+                : null;
+
+            return Inertia::render('errors/404', [
+                'message' => $customMessage,
+            ])
+                ->toResponse($request)
+                ->setStatusCode(404);
+        });
     })->create();

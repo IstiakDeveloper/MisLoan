@@ -482,6 +482,7 @@ export default function FieldInvestigation({
                     ...savedData,
                     ...(reqAmt > 0 ? {
                         current_loan_demand: reqAmt,
+                        recommended_loan_amount: reqAmt,
                     } : {}),
                 }
                 : defaults,
@@ -567,10 +568,14 @@ export default function FieldInvestigation({
     useEffect(() => {
         if (savedData) {
             setData((prev) => {
+                const reqAmt = Number(requestedAmount) || 0;
                 const merged = { ...prev, ...savedData };
-                // Older drafts may have blank nid — fill from admission (NID or smart card)
                 if (!String(merged.nid_number || '').trim()) {
                     merged.nid_number = resolveMemberIdentityNumber(member);
+                }
+                if (reqAmt > 0) {
+                    merged.current_loan_demand = reqAmt;
+                    merged.recommended_loan_amount = reqAmt;
                 }
                 return withLiveMemberCode(merged, member);
             });

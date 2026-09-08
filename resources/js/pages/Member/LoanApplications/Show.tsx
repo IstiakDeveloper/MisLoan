@@ -132,6 +132,7 @@ interface LoanApplication {
     can_submit?: boolean;
     can_disburse?: boolean;
     can_change_approved_amount?: boolean;
+    can_edit_loan_details?: boolean;
     amount_change_pending?: boolean;
     amount_change_approver_name?: string | null;
     final_approver?: {
@@ -625,12 +626,20 @@ export default function Show({ application, routes, categories = [] }: Props) {
         selectedFormId != null &&
         (selectedFormId === 2 || selectedFormId === 3);
 
+    const visibleFormKey = visibleFormIds.join(',');
+
     useEffect(() => {
-        if (selectedFormId == null && visibleFormIds.length > 0) {
+        if (visibleFormIds.length === 0) {
+            if (selectedFormId != null) {
+                setSelectedFormId(null);
+            }
+            return;
+        }
+        if (selectedFormId == null || !visibleFormIds.includes(selectedFormId)) {
             const firstPending = visibleFormIds.find((id) => fillableFormIds.includes(id) && !isFormSaved(id));
             setSelectedFormId(firstPending ?? visibleFormIds[0]);
         }
-    }, []);
+    }, [selectedFormId, visibleFormKey]);
 
     useEffect(() => {
         setFillMode(false);
@@ -2028,6 +2037,7 @@ export default function Show({ application, routes, categories = [] }: Props) {
                                 isBranchManager={isBranchManager}
                                 isSuperAdmin={isSuperAdmin}
                                 isFieldOfficer={isFieldOfficer}
+                                canEditLoanDetails={Boolean(application.can_edit_loan_details) || isSuperAdmin}
                                 onOpenMemberCodeModal={() => {
                                     const p = parseMemberCode(application.member_admission?.application_no, branchPrefix);
                                     setSerialInput(p.serial);
@@ -2473,6 +2483,7 @@ export default function Show({ application, routes, categories = [] }: Props) {
                 categories={categories}
                 isSuperAdmin={isSuperAdmin}
                 isFieldOfficer={isFieldOfficer}
+                isBranchUser={isBranchUser}
             />
 
             {/* Head Office Dispatch Confirmation / Warning Modal */}
