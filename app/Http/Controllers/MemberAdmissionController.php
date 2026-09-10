@@ -5,6 +5,8 @@ namespace App\Http\Controllers;
 use App\Models\Area;
 use App\Models\Branch;
 use App\Models\LoanApplication;
+use App\Models\LoanCategory;
+use App\Models\LoanProduct;
 use App\Models\MemberAdmission;
 use App\Models\MemberAdmissionApproval;
 use App\Models\MemberCategory;
@@ -19,6 +21,7 @@ use App\Services\MemberAdmissionLoanSyncService;
 use App\Services\MemberCodeService;
 use App\Services\NotificationService;
 use App\Support\AdmissionFormVisibility;
+use App\Support\LoanFormVisibility;
 use App\Support\RoleListWorkQueue;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -193,25 +196,29 @@ class MemberAdmissionController extends Controller
      *
      * @return array<string, string>
      */
-    private function uniqueIdentityErrors(mixed $nid, mixed $smartCard, mixed $mobile, ?int $ignoreId = null): array
+    private function uniqueIdentityErrors(mixed $nid, mixed $smartCard, mixed $mobile, ?int $ignoreId = null, ?string $ignoreApplicationNo = null): array
     {
         $nid = is_scalar($nid) ? trim((string) $nid) : '';
         $smartCard = is_scalar($smartCard) ? trim((string) $smartCard) : '';
         $mobile = is_scalar($mobile) ? trim((string) $mobile) : '';
 
+        if (! $ignoreApplicationNo && $ignoreId) {
+            $ignoreApplicationNo = MemberAdmission::where('id', $ignoreId)->value('application_no');
+        }
+
         $errors = [];
 
-        $nidDup = MemberAdmission::findDuplicateByIdentity($nid, $ignoreId);
+        $nidDup = MemberAdmission::findDuplicateByIdentity($nid, $ignoreId, $ignoreApplicationNo);
         if ($nidDup) {
             $errors['nid_number'] = $this->duplicateIdentityMessage($nidDup);
         }
 
-        $smartDup = MemberAdmission::findDuplicateByIdentity($smartCard, $ignoreId);
+        $smartDup = MemberAdmission::findDuplicateByIdentity($smartCard, $ignoreId, $ignoreApplicationNo);
         if ($smartDup) {
             $errors['smart_card_number'] = $this->duplicateIdentityMessage($smartDup);
         }
 
-        $mobileDup = MemberAdmission::findDuplicateByMobile($mobile, $ignoreId);
+        $mobileDup = MemberAdmission::findDuplicateByMobile($mobile, $ignoreId, $ignoreApplicationNo);
         if ($mobileDup) {
             $errors['mobile_number'] = $this->duplicateMobileMessage($mobileDup);
         }
@@ -235,9 +242,9 @@ class MemberAdmissionController extends Controller
         return "এই মোবাইল নম্বর ইতিমধ্যে ব্যবহৃত হয়েছে (আবেদন নং: {$appNo}, নাম: {$name})। আলাদা মোবাইল নম্বর দিন।";
     }
 
-    private function assertUniqueIdentity(mixed $nid, mixed $smartCard, mixed $mobile, ?int $ignoreId = null): void
+    private function assertUniqueIdentity(mixed $nid, mixed $smartCard, mixed $mobile, ?int $ignoreId = null, ?string $ignoreApplicationNo = null): void
     {
-        $errors = $this->uniqueIdentityErrors($nid, $smartCard, $mobile, $ignoreId);
+        $errors = $this->uniqueIdentityErrors($nid, $smartCard, $mobile, $ignoreId, $ignoreApplicationNo);
         if ($errors !== []) {
             throw ValidationException::withMessages($errors);
         }
@@ -249,13 +256,15 @@ class MemberAdmissionController extends Controller
     public function checkUnique(Request $request)
     {
         $ignoreId = $request->filled('ignore_id') ? (int) $request->input('ignore_id') : 0;
+        $ignoreAppNo = $request->input('application_no');
 
         return response()->json([
             'errors' => $this->uniqueIdentityErrors(
                 $request->input('nid_number'),
                 $request->input('smart_card_number'),
                 $request->input('mobile_number'),
-                $ignoreId > 0 ? $ignoreId : null
+                $ignoreId > 0 ? $ignoreId : null,
+                $ignoreAppNo
             ),
         ]);
     }
@@ -459,11 +468,13 @@ class MemberAdmissionController extends Controller
             $arr['active_loan_status'] = $activeLoan?->status;
             $hasDisbursedLoan = (bool) ($admission->has_disbursed_loan ?? false);
             $arr['has_disbursed_loan'] = $hasDisbursedLoan;
+            $isRenewalOrLegacy = (bool) (($admission->previous_admission_id ?? null) || ((int) ($admission->loan_dofa ?? 0) > 1) || ($admission->is_legacy ?? false));
             $arr['can_be_edited'] = AdmissionFormVisibility::canEditAdmissionForm(
                 $user->role?->name,
                 (string) $admission->status,
                 $hasDisbursedLoan,
-                $this->canManageAnyStatus()
+                $this->canManageAnyStatus(),
+                $isRenewalOrLegacy
             );
 
             return $arr;
@@ -663,11 +674,21 @@ class MemberAdmissionController extends Controller
             $approvers = $approvalService->getAvailableApprovers(auth()->user()->branch_id);
         }
 
+        $loanCategories = LoanCategory::with(['loanProducts' => function ($query) {
+            $query->where('is_active', true)->orderBy('product_name');
+        }])->where('is_active', true)->orderBy('display_order')->get()->map(function ($cat) {
+            $cat->loan_products = $cat->loanProducts;
+            unset($cat->loanProducts);
+
+            return $cat;
+        });
+
         return Inertia::render('MemberAdmission/Create', [
             'branches' => $branches,
             'categories' => $categories,
             'samities' => $samities,
             'availableApprovers' => $approvers,
+            'loanCategories' => $loanCategories,
             'suggested_application_no' => MemberAdmission::generateApplicationNumber(),
         ]);
     }
@@ -907,8 +928,8 @@ class MemberAdmissionController extends Controller
             if (empty($admissionData['branch_id']) && auth()->user()?->branch_id) {
                 $admissionData['branch_id'] = auth()->user()->branch_id;
             }
-            $admissionData['is_legacy'] = $isLegacy;
-            $admissionData['loan_dofa'] = $isLegacy ? ($validated['loan_dofa'] ?? null) : null;
+            $admissionData['is_legacy'] = $isLegacy || !empty($validated['loan_dofa']) || $request->filled('loan_dofa');
+            $admissionData['loan_dofa'] = $admissionData['is_legacy'] ? ($validated['loan_dofa'] ?? ($request->input('loan_dofa') ?: null)) : null;
             $admissionData['nid_both_sides'] = $request->boolean('nid_both_sides');
             if (! $admissionData['nid_both_sides']) {
                 $admissionData['customer_nid_back_photo_path'] = null;
@@ -936,16 +957,16 @@ class MemberAdmissionController extends Controller
                 $admissionData['employee_name'] = $admissionData['employee_name'] ?: ($authUser->pin ?: $authUser->username);
             }
 
-            // Draft = always draft status; legacy final submit auto-approves
-            if ($saveAsDraft || ! $isLegacy) {
-                $admissionData['status'] = 'draft';
-            }
-            if ($isLegacy && ! $saveAsDraft) {
+            // Draft = always draft status; legacy / renewal / loan application auto-approves
+            $isProceedingToLoan = $request->input('next_action') === 'loan_application' || $request->boolean('redirect_to_loan') || $request->boolean('cycle_renewal');
+            if ($isLegacy || $admissionData['is_legacy'] || $isProceedingToLoan) {
                 $admissionData['status'] = 'approved';
                 $admissionData['submitted_by'] = $authUser->id;
                 $admissionData['submitted_at'] = now();
                 $admissionData['reviewed_by'] = $authUser->id;
                 $admissionData['reviewed_at'] = now();
+            } elseif ($saveAsDraft) {
+                $admissionData['status'] = 'draft';
             }
 
             $admission = MemberAdmission::create($admissionData);
@@ -966,6 +987,11 @@ class MemberAdmissionController extends Controller
             }
 
             DB::commit();
+
+            // Redirect directly to loan selection or draft if officer clicked 'Save & Proceed to Loan'
+            if ($request->input('next_action') === 'loan_application' || $request->boolean('redirect_to_loan') || $request->boolean('cycle_renewal')) {
+                return $this->handleLoanRedirectOrDraft($request, $admission);
+            }
 
             if ($isLegacy && ! $saveAsDraft) {
                 return redirect()->route('member-admissions.index')
@@ -1046,12 +1072,22 @@ class MemberAdmissionController extends Controller
             $approvers = $approvalService->getAvailableApprovers($memberAdmission->branch_id);
         }
 
+        $loanCategories = LoanCategory::with(['loanProducts' => function ($query) {
+            $query->where('is_active', true)->orderBy('product_name');
+        }])->where('is_active', true)->orderBy('display_order')->get()->map(function ($cat) {
+            $cat->loan_products = $cat->loanProducts;
+            unset($cat->loanProducts);
+
+            return $cat;
+        });
+
         return Inertia::render('MemberAdmission/Edit', [
             'admission' => $memberAdmission,
             'branches' => $branches,
             'categories' => $categories,
             'samities' => $samities,
             'availableApprovers' => $approvers,
+            'loanCategories' => $loanCategories,
             'for_submit' => $request->boolean('for_submit'),
         ]);
     }
@@ -1066,7 +1102,7 @@ class MemberAdmissionController extends Controller
         $saveAsDraft = $this->isDraftSave($request);
 
         $validated = $request->validate([
-            'application_no' => 'nullable|string|max:50|unique:member_admissions,application_no,'.$memberAdmission->id,
+            'application_no' => 'nullable|string|max:50',
             'branch_id' => 'nullable|exists:branches,id',
             'samity_id' => 'nullable|exists:samities,id',
             'member_category_id' => 'nullable|exists:member_categories,id',
@@ -1206,7 +1242,8 @@ class MemberAdmissionController extends Controller
             $request->input('nid_number'),
             $request->input('smart_card_number'),
             $request->input('mobile_number'),
-            $memberAdmission->id
+            $memberAdmission->id,
+            $memberAdmission->application_no
         );
 
         $canChangeMemberType = $memberAdmission->isDraft();
@@ -1228,13 +1265,22 @@ class MemberAdmissionController extends Controller
             $compressionService = app(ImageCompressionService::class);
             $oldPathsToDelete = [];
 
+            $isRenewalOrOld = $isLegacy || (bool) $memberAdmission->previous_admission_id || (int) ($validated['loan_dofa'] ?? $memberAdmission->loan_dofa) > 1 || !empty($validated['loan_dofa']) || $request->filled('loan_dofa');
+
             $updateData = $validated;
-            if ($canChangeMemberType) {
-                $updateData['is_legacy'] = $isLegacy;
+            if ($canChangeMemberType || $isRenewalOrOld) {
+                $updateData['is_legacy'] = $isRenewalOrOld;
             } else {
                 unset($updateData['is_legacy']);
             }
-            if ($isLegacy) {
+
+            if ($request->filled('loan_dofa') || !empty($validated['loan_dofa'])) {
+                $updateData['loan_dofa'] = (int) ($validated['loan_dofa'] ?? $request->input('loan_dofa'));
+                $updateData['is_legacy'] = true;
+            } elseif (!empty($memberAdmission->loan_dofa)) {
+                $updateData['loan_dofa'] = $memberAdmission->loan_dofa;
+                $updateData['is_legacy'] = true;
+            } elseif ($isLegacy || $isRenewalOrOld) {
                 $updateData['loan_dofa'] = $validated['loan_dofa'] ?? $memberAdmission->loan_dofa;
             } else {
                 $updateData['loan_dofa'] = null;
@@ -1365,14 +1411,15 @@ class MemberAdmissionController extends Controller
 
             $updateData = $this->coerceNotNullCounts($updateData);
 
-            // Legacy draft: final save (not draft) → auto-approve
+            // Legacy / renewal draft: when proceeding to loan or saving renewal, auto-approve
+            $isProceedingToLoan = $request->input('next_action') === 'loan_application' || $request->boolean('redirect_to_loan') || $request->boolean('cycle_renewal');
             $legacyAutoApproved = false;
-            if ($isLegacy && ! $saveAsDraft && $memberAdmission->isDraft()) {
+            if (($isLegacy || $isRenewalOrOld || $isProceedingToLoan) && ($memberAdmission->isDraft() || ! $saveAsDraft || $isProceedingToLoan)) {
                 $updateData['status'] = 'approved';
-                $updateData['submitted_by'] = auth()->id();
-                $updateData['submitted_at'] = now();
-                $updateData['reviewed_by'] = auth()->id();
-                $updateData['reviewed_at'] = now();
+                $updateData['submitted_by'] = $updateData['submitted_by'] ?? auth()->id();
+                $updateData['submitted_at'] = $updateData['submitted_at'] ?? now();
+                $updateData['reviewed_by'] = $updateData['reviewed_by'] ?? auth()->id();
+                $updateData['reviewed_at'] = $updateData['reviewed_at'] ?? now();
                 $legacyAutoApproved = true;
             } elseif ($saveAsDraft && $memberAdmission->isDraft()) {
                 $updateData['status'] = 'draft';
@@ -1403,6 +1450,11 @@ class MemberAdmissionController extends Controller
 
             foreach ($oldPathsToDelete as $oldPath) {
                 $compressionService->delete($oldPath);
+            }
+
+            // Redirect directly to loan selection or draft if officer clicked 'Save & Proceed to Loan'
+            if ($request->input('next_action') === 'loan_application' || $request->boolean('redirect_to_loan') || $request->boolean('cycle_renewal')) {
+                return $this->handleLoanRedirectOrDraft($request, $memberAdmission);
             }
 
             if ($legacyAutoApproved) {
@@ -1902,5 +1954,118 @@ class MemberAdmissionController extends Controller
         ]);
 
         return back()->with('success', 'অনুমোদনকারীর মন্তব্য সফলভাবে আপডেট করা হয়েছে।');
+    }
+
+    /**
+     * Handle seamless redirect to loan form (Show hub) or fallback to loan product selection
+     */
+    private function handleLoanRedirectOrDraft(Request $request, MemberAdmission $memberAdmission)
+    {
+        // Ensure member admission is approved for loan application
+        if ($memberAdmission->status !== 'approved') {
+            $memberAdmission->update([
+                'status' => 'approved',
+                'submitted_by' => $memberAdmission->submitted_by ?: auth()->id(),
+                'submitted_at' => $memberAdmission->submitted_at ?: now(),
+                'reviewed_by' => $memberAdmission->reviewed_by ?: auth()->id(),
+                'reviewed_at' => $memberAdmission->reviewed_at ?: now(),
+            ]);
+            $memberAdmission->refresh();
+        }
+
+        $loanProductId = (int) $request->input('loan_product_id');
+        $loanCategoryId = (int) $request->input('loan_category_id');
+        $requestedAmount = (float) ($request->input('requested_amount') ?: ($request->input('requested_loan_amount') ?: ($memberAdmission->requested_loan_amount ?: 0)));
+
+        // If product or category not explicitly selected, try to find an existing draft or fallback to first active product
+        if ($loanProductId <= 0 || $loanCategoryId <= 0) {
+            $existingDraft = LoanApplication::where('member_admission_id', $memberAdmission->id)
+                ->where('status', LoanApplication::STATUS_DRAFT)
+                ->latest('id')
+                ->first();
+
+            if ($existingDraft) {
+                return redirect()
+                    ->route('member.loan-applications.show', $existingDraft->id)
+                    ->with('success', 'ভর্তি তথ্য সংরক্ষণ সম্পন্ন হয়েছে। ঋণের ফর্ম পূরণ করুন।');
+            }
+
+            $defaultProduct = LoanProduct::where('is_active', true)->orderBy('display_order')->first()
+                ?? LoanProduct::where('is_active', true)->first();
+            if ($defaultProduct) {
+                $loanProductId = $defaultProduct->id;
+                $loanCategoryId = $defaultProduct->loan_category_id;
+                if ($requestedAmount <= 0) {
+                    $requestedAmount = (float) ($defaultProduct->min_amount ?? 50000);
+                }
+            }
+        }
+
+        if ($loanProductId > 0 && $loanCategoryId > 0) {
+            $loanProduct = LoanProduct::with('loanCategory')->find($loanProductId);
+            $loanCategory = LoanCategory::find($loanCategoryId);
+
+            if ($loanProduct && $loanCategory) {
+                $user = auth()->user();
+                $draft = LoanApplication::firstOrNew([
+                    'member_admission_id' => $memberAdmission->id,
+                    'loan_product_id' => $loanProductId,
+                    'loan_category_id' => $loanCategoryId,
+                    'status' => LoanApplication::STATUS_DRAFT,
+                ]);
+
+                $installmentType = strtolower((string) ($loanProduct->installment_type ?? 'monthly'));
+                $durationMonths = (int) ($loanProduct->duration_months ?? 12);
+                if ($durationMonths <= 0) {
+                    $durationMonths = 12;
+                }
+
+                if ($installmentType === 'weekly') {
+                    $numberOfInstallments = (int) ceil(($durationMonths * 30) / 7);
+                    $repaymentFrequency = 'weekly';
+                } else {
+                    $numberOfInstallments = $durationMonths;
+                    $repaymentFrequency = 'monthly';
+                }
+
+                $foForms = LoanFormVisibility::foSubmitFormIds($loanProduct, $requestedAmount, $loanCategory);
+                $primaryFormId = $foForms[0] ?? 1;
+                $formType = match ($primaryFormId) {
+                    5 => 'loan_application_approval',
+                    default => 'loan_agreement',
+                };
+
+                if (! $draft->exists || ! $draft->application_no) {
+                    $draft->application_no = LoanApplication::generateApplicationNo();
+                }
+                $draft->status = LoanApplication::STATUS_DRAFT;
+                $draft->requested_amount = $requestedAmount ?: ($loanProduct->min_amount ?? 50000);
+                $draft->loan_product_id = $loanProductId;
+                $draft->loan_category_id = $loanCategoryId;
+                $draft->branch_id = $memberAdmission->branch_id ?: $user->branch_id;
+                $draft->samity_id = $memberAdmission->samity_id;
+                $draft->submitted_by = $user->id;
+                $draft->form_type = $draft->form_type ?: $formType;
+                $draft->repayment_frequency = $draft->repayment_frequency ?: $repaymentFrequency;
+                $draft->loan_term_months = $draft->loan_term_months ?: $durationMonths;
+                $draft->number_of_installments = $draft->number_of_installments ?: max(1, $numberOfInstallments);
+                $draft->purpose_of_loan = $draft->purpose_of_loan ?: 'ঋণ আবেদন';
+                if (! $draft->proposed_start_date) {
+                    $draft->proposed_start_date = now()->addDay()->toDateString();
+                }
+                $draft->save();
+
+                // Automatically clone previous loan forms (Guarantor, Death Risk, Agreement, Investigation, Approval)
+                app(\App\Services\LoanApplicationCloneService::class)->cloneAndMerge($draft);
+                $draft->refresh();
+
+                return redirect()
+                    ->route('member.loan-applications.show', $draft->id)
+                    ->with('success', 'ভর্তি তথ্য সংরক্ষণ সম্পন্ন হয়েছে। আগের ঋণের তথ্যের ভিত্তিতে ফর্মগুলো ক্লোন করা হয়েছে।');
+            }
+        }
+
+        return redirect()->route('member.loan-applications.index', ['member_id' => $memberAdmission->id])
+            ->with('success', 'ভর্তি তথ্য সংরক্ষণ সম্পন্ন হয়েছে। এবার ঋণের তথ্য নির্বাচন করুন।');
     }
 }

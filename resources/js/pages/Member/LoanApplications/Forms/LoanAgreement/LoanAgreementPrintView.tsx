@@ -50,7 +50,7 @@ export function LoanAgreementPrintView({ data }: { data: LoanAgreementData }) {
 
     return (
         <div
-            className="bg-white border border-gray-300 p-6 sm:p-8 rounded-lg text-gray-900 print:border-none print:p-0 print:m-0 w-full overflow-x-auto"
+            className="bg-white border border-gray-300 p-6 sm:p-8 rounded-lg text-gray-900 print:border-none print:p-0 print:m-0 w-full max-w-[210mm] mx-auto shadow-sm overflow-x-auto"
             style={{ fontFamily: 'Kalpurush, Arial, sans-serif', fontSize: '14px', lineHeight: '1.6', color: '#000' }}
         >
             {/* PAGE 1: Everything above "সাক্ষীগণের স্বাক্ষর :" */}

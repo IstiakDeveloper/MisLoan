@@ -16,6 +16,7 @@ use App\Http\Controllers\LoanApplicationController;
 use App\Http\Controllers\LoanCategoryController;
 use App\Http\Controllers\LoanProductController;
 use App\Http\Controllers\MaintenanceController;
+use App\Http\Controllers\Member\MemberCycleHubController;
 use App\Http\Controllers\Member\SavingsApplicationController;
 use App\Http\Controllers\MemberAdmissionController;
 use App\Http\Controllers\MemberCategoryController;
@@ -272,6 +273,18 @@ Route::middleware(['auth', 'verified'])->group(function () {
 
     // Member Loan & Savings Application Routes - For members/branch users
     Route::prefix('member')->name('member.')->middleware('auth')->group(function () {
+        // Member Cycle & Portfolio Hub
+        Route::prefix('cycle-hub')->name('cycle-hub.')->group(function () {
+            Route::get('/', [MemberCycleHubController::class, 'index'])->name('index');
+            Route::get('search', [MemberCycleHubController::class, 'search'])->name('search');
+            Route::get('member/{id}', [MemberCycleHubController::class, 'getMemberDetails'])->name('member-details');
+            Route::get('cycle/{admission}', [MemberCycleHubController::class, 'showCycle'])->name('cycle-view');
+            Route::post('loans/{loan}/repay', [MemberCycleHubController::class, 'repayLoan'])->name('loans.repay');
+            Route::post('admissions/{memberAdmission}/start-next-cycle', [MemberCycleHubController::class, 'startNextCycle'])->name('admissions.start-next-cycle');
+            Route::delete('loans/{loan}/draft', [MemberCycleHubController::class, 'deleteDraftLoan'])->name('loans.delete-draft');
+            Route::delete('admissions/{memberAdmission}/draft', [MemberCycleHubController::class, 'deleteDraftAdmission'])->name('admissions.delete-draft');
+        });
+
         // Loan Applications
         Route::prefix('loan-applications')->name('loan-applications.')->group(function () {
             Route::get('/', [App\Http\Controllers\Member\LoanApplicationController::class, 'index'])->name('index');

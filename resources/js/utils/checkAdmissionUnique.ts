@@ -5,6 +5,7 @@ export async function checkAdmissionUnique(params: {
     smart_card_number?: string | null;
     mobile_number?: string | null;
     ignore_id?: number | null;
+    application_no?: string | null;
 }): Promise<Record<string, string>> {
     const query: Record<string, string | number> = {};
     if (params.nid_number?.trim()) {
@@ -18,6 +19,9 @@ export async function checkAdmissionUnique(params: {
     }
     if (params.ignore_id) {
         query.ignore_id = params.ignore_id;
+    }
+    if (params.application_no?.trim()) {
+        query.application_no = params.application_no.trim();
     }
 
     const hasField =

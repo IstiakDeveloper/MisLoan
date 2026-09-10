@@ -144,9 +144,11 @@ class MemberAdmission extends Model
         // Legacy / old member data entry
         'is_legacy',
         'loan_dofa',
+        'previous_admission_id',
     ];
 
     protected $casts = [
+        'previous_admission_id' => 'integer',
         'survey_date' => 'date',
         'admission_date' => 'date',
         'date_of_birth' => 'date',
@@ -289,6 +291,16 @@ class MemberAdmission extends Model
         return $this->hasMany(LoanApplication::class);
     }
 
+    public function previousAdmission(): BelongsTo
+    {
+        return $this->belongsTo(MemberAdmission::class, 'previous_admission_id');
+    }
+
+    public function nextAdmissions(): HasMany
+    {
+        return $this->hasMany(MemberAdmission::class, 'previous_admission_id');
+    }
+
     public function currentPendingApproval()
     {
         return $this->approvals()
@@ -384,11 +396,14 @@ class MemberAdmission extends Model
 
         $user->loadMissing('role');
 
+        $isRenewalOrLegacy = (bool) ($this->previous_admission_id || (int) $this->loan_dofa > 1 || $this->is_legacy);
+
         return AdmissionFormVisibility::canEditAdmissionForm(
             $user->role?->name,
             (string) $this->status,
             $this->hasDisbursedLoan(),
-            (bool) ($user->has_all_access || $user->isSuperAdmin() || $user->isHeadOffice())
+            (bool) ($user->has_all_access || $user->isSuperAdmin() || $user->isHeadOffice()),
+            $isRenewalOrLegacy
         );
     }
 
@@ -574,17 +589,22 @@ class MemberAdmission extends Model
     /**
      * Another admission already uses this NID or Smart Card (either field).
      */
-    public static function findDuplicateByIdentity(?string $value, ?int $ignoreId = null): ?self
+    public static function findDuplicateByIdentity(?string $value, ?int $ignoreId = null, ?string $ignoreApplicationNo = null): ?self
     {
         $normalized = self::normalizeIdentityNumber($value);
         if ($normalized === '') {
             return null;
         }
 
+        if (! $ignoreApplicationNo && $ignoreId) {
+            $ignoreApplicationNo = static::where('id', $ignoreId)->value('application_no');
+        }
+
         $strip = "REPLACE(REPLACE(REPLACE(REPLACE(IFNULL(%s, ''), ' ', ''), '-', ''), '/', ''), '.', '')";
 
         return static::query()
             ->when($ignoreId, fn ($q) => $q->where('id', '!=', $ignoreId))
+            ->when(! empty($ignoreApplicationNo), fn ($q) => $q->where('application_no', '!=', $ignoreApplicationNo))
             ->where(function ($q) use ($normalized, $strip) {
                 $q->whereRaw(sprintf($strip, 'nid_number').' = ?', [$normalized])
                     ->orWhereRaw(sprintf($strip, 'smart_card_number').' = ?', [$normalized]);
@@ -595,17 +615,22 @@ class MemberAdmission extends Model
     /**
      * Another admission already uses this mobile number.
      */
-    public static function findDuplicateByMobile(?string $value, ?int $ignoreId = null): ?self
+    public static function findDuplicateByMobile(?string $value, ?int $ignoreId = null, ?string $ignoreApplicationNo = null): ?self
     {
         $normalized = self::normalizeMobileNumber($value);
         if ($normalized === '' || strlen($normalized) < 10) {
             return null;
         }
 
+        if (! $ignoreApplicationNo && $ignoreId) {
+            $ignoreApplicationNo = static::where('id', $ignoreId)->value('application_no');
+        }
+
         $last10 = strlen($normalized) >= 10 ? substr($normalized, -10) : $normalized;
 
         $matches = static::query()
             ->when($ignoreId, fn ($q) => $q->where('id', '!=', $ignoreId))
+            ->when(! empty($ignoreApplicationNo), fn ($q) => $q->where('application_no', '!=', $ignoreApplicationNo))
             ->whereNotNull('mobile_number')
             ->where('mobile_number', '!=', '')
             ->where(function ($q) use ($value, $normalized, $last10) {

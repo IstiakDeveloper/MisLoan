@@ -17,23 +17,32 @@ class AdmissionFormVisibility
     }
 
     /**
-     * Branch User (accountant) may edit the admission form until a loan is disbursed,
-     * matching loan-form edits before disbursement.
+     * Branch User (accountant) and staff on cycle renewal / legacy admissions may edit
+     * the admission form until a loan is disbursed.
      */
     public static function canEditAdmissionForm(
         ?string $roleName,
         string $status,
         bool $hasDisbursedLoan,
-        bool $canManageAnyStatus = false
+        bool $canManageAnyStatus = false,
+        bool $isRenewalOrLegacy = false
     ): bool {
         if ($canManageAnyStatus) {
             return true;
+        }
+
+        if ($hasDisbursedLoan) {
+            return false;
         }
 
         $roleName = strtolower((string) $roleName);
 
         if ($roleName === Role::BRANCH_USER) {
             return ! $hasDisbursedLoan;
+        }
+
+        if ($isRenewalOrLegacy && ! $hasDisbursedLoan) {
+            return true;
         }
 
         return in_array($status, self::staffEditableStatuses(), true);

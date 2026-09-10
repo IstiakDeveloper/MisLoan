@@ -1730,8 +1730,17 @@ export default function Index({
                                                                     <div className="text-sm font-extrabold text-slate-900">
                                                                         {member.applicant_name_bn || member.applicant_name_en}
                                                                     </div>
-                                                                    <div className="text-xs text-slate-500 font-medium mt-0.5">
-                                                                        {member.application_no} | Mobile: {member.mobile_number}
+                                                                    <div className="text-xs text-slate-500 font-medium mt-0.5 flex items-center gap-2 flex-wrap">
+                                                                        <span>{member.application_no} | Mobile: {member.mobile_number}</span>
+                                                                        {member.is_legacy ? (
+                                                                            <span className="inline-flex items-center px-1.5 py-0.5 bg-amber-100 text-amber-900 border border-amber-300 text-[10px] font-bold rounded">
+                                                                                পুরাতন{member.loan_dofa ? ` · দফা ${member.loan_dofa}` : ''}
+                                                                            </span>
+                                                                        ) : (
+                                                                            <span className="inline-flex items-center px-1.5 py-0.5 bg-emerald-100 text-emerald-900 border border-emerald-300 text-[10px] font-bold rounded">
+                                                                                নতুন সদস্য
+                                                                            </span>
+                                                                        )}
                                                                     </div>
                                                                 </div>
                                                                 <div className="flex flex-col items-end gap-1">
@@ -1763,10 +1772,21 @@ export default function Index({
                                                 <h4 className="text-sm font-extrabold text-slate-900">
                                                     {selectedMember.applicant_name_bn || selectedMember.applicant_name_en}
                                                 </h4>
-                                                <p className="text-xs text-slate-600 font-medium">
-                                                    {selectedMember.application_no} | Mobile: {selectedMember.mobile_number}
-                                                </p>
-                                                {selectedMember.status !== 'approved' && (
+                                                <div className="flex items-center gap-2 flex-wrap mt-0.5">
+                                                    <span className="text-xs text-slate-600 font-medium">
+                                                        {selectedMember.application_no} | Mobile: {selectedMember.mobile_number}
+                                                    </span>
+                                                    {selectedMember.is_legacy ? (
+                                                        <span className="inline-flex items-center px-2 py-0.5 bg-amber-100 text-amber-900 border border-amber-300 text-[10px] font-bold rounded-full">
+                                                            পুরাতন{selectedMember.loan_dofa ? ` · দফা ${selectedMember.loan_dofa}` : ''}
+                                                        </span>
+                                                    ) : (
+                                                        <span className="inline-flex items-center px-2 py-0.5 bg-emerald-100 text-emerald-900 border border-emerald-300 text-[10px] font-bold rounded-full">
+                                                            নতুন সদস্য
+                                                        </span>
+                                                    )}
+                                                </div>
+                                                {selectedMember.status !== 'approved' && !selectedMember.is_legacy && !selectedMember.previous_admission_id && !(Number(selectedMember.loan_dofa) > 1) && (
                                                     <p className="text-[11px] text-amber-700 font-semibold mt-1">
                                                         ভর্তি অনুমোদিত নয় — ফর্ম পূরণ করা যাবে, জমা দেওয়া যাবে না
                                                     </p>

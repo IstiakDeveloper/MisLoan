@@ -492,7 +492,7 @@ export default function FieldInvestigation({
             previewData.nid_number = resolveMemberIdentityNumber(member);
         }
         return (
-            <div className="print-container">
+            <div className="print-container w-full max-w-[210mm] mx-auto">
                 <FieldInvestigationPrintView formData={previewData} />
             </div>
         );

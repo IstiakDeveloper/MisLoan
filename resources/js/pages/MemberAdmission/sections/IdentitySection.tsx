@@ -48,6 +48,7 @@ export default function IdentitySection({
             const result = await checkAdmissionUnique({
                 [field]: trimmed,
                 ignore_id: ignoreAdmissionId,
+                application_no: data.application_no,
             });
             setUniqueErrors((prev) => {
                 const next = { ...prev };

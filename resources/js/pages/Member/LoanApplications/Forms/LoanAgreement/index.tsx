@@ -170,7 +170,7 @@ export default function LoanAgreement({
             member,
         );
         return (
-            <div className="print-container">
+            <div className="print-container w-full max-w-[210mm] mx-auto">
                 <LoanAgreementPrintView data={previewData} />
             </div>
         );

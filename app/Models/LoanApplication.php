@@ -86,6 +86,9 @@ class LoanApplication extends Model
         'branch_remarks',
         'disbursed_by',
         'disbursed_at',
+        'repaid_by',
+        'repaid_at',
+        'repayment_notes',
         'disbursement_method',
         'disbursement_reference',
         'officer_reviewed_at',
@@ -135,6 +138,7 @@ class LoanApplication extends Model
         'reviewed_at' => 'datetime',
         'amount_change_requested_at' => 'datetime',
         'disbursed_at' => 'datetime',
+        'repaid_at' => 'datetime',
         'printed_at' => 'datetime',
         'officer_reviewed_at' => 'datetime',
         'manager_reviewed_at' => 'datetime',
@@ -192,6 +196,8 @@ class LoanApplication extends Model
 
     const STATUS_DISBURSED = 'disbursed';
 
+    const STATUS_REPAID = 'repaid';
+
     const STATUS_CANCELLED = 'cancelled';
 
     const STATUS_NEEDS_CORRECTION = 'needs_correction';
@@ -235,6 +241,11 @@ class LoanApplication extends Model
     public function disbursedBy(): BelongsTo
     {
         return $this->belongsTo(User::class, 'disbursed_by');
+    }
+
+    public function repaidBy(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'repaid_by');
     }
 
     public function amountChangeRequestedBy(): BelongsTo

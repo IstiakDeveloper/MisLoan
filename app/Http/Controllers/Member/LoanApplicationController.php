@@ -22,6 +22,7 @@ use App\Models\User;
 use App\Models\Zone;
 use App\Services\ApprovalService;
 use App\Services\HoSendCutoffService;
+use App\Services\LoanApplicationCloneService;
 use App\Services\MemberCodeService;
 use App\Services\NotificationService;
 use App\Support\LoanFormVisibility;
@@ -94,7 +95,7 @@ class LoanApplicationController extends Controller
             return;
         }
 
-        if ($member->status !== 'approved') {
+        if ($member->status !== 'approved' && ! ($member->previous_admission_id || (int) $member->loan_dofa > 1 || $member->is_legacy)) {
             abort(403, 'শুধুমাত্র অনুমোদিত সদস্যের জন্য ঋণ আবেদন করা যাবে।');
         }
     }
@@ -136,8 +137,10 @@ class LoanApplicationController extends Controller
         $application->form_saved = $formSaved;
         $application->all_forms_complete = LoanFormVisibility::allRequiredFormsSaved($submitRequired, $formSaved);
         $application->disburse_forms_complete = LoanFormVisibility::allRequiredFormsSaved($disburseRequired, $formSaved);
-        $application->can_submit = $application->all_forms_complete
-            && ($memberAdmission === null || $memberAdmission->status === 'approved');
+        $isMemberApproved = $memberAdmission === null
+            || $memberAdmission->status === 'approved'
+            || (bool) ($memberAdmission->previous_admission_id || (int) $memberAdmission->loan_dofa > 1 || $memberAdmission->is_legacy);
+        $application->can_submit = $application->all_forms_complete && $isMemberApproved;
         $application->can_disburse = $status === LoanApplication::STATUS_PENDING_DISBURSEMENT
             && $this->isBranchUserRole($user)
             && $application->disburse_forms_complete
@@ -211,6 +214,18 @@ class LoanApplicationController extends Controller
     private function ensureMemberApprovedForLoanSubmit(MemberAdmission $member): void
     {
         if ($member->status !== 'approved') {
+            if ($member->previous_admission_id || (int) $member->loan_dofa > 1 || $member->is_legacy) {
+                $member->update([
+                    'status' => 'approved',
+                    'submitted_by' => $member->submitted_by ?: auth()->id(),
+                    'submitted_at' => $member->submitted_at ?: now(),
+                    'reviewed_by' => $member->reviewed_by ?: auth()->id(),
+                    'reviewed_at' => $member->reviewed_at ?: now(),
+                ]);
+
+                return;
+            }
+
             abort(403, 'সদস্য ভর্তি অনুমোদিত না হওয়া পর্যন্ত ঋণ আবেদন জমা দেওয়া যাবে না।');
         }
     }
@@ -910,6 +925,7 @@ class LoanApplicationController extends Controller
             'pending_disbursement' => 'বিতরণ অপেক্ষা (Pending Disburse)',
             'rejected' => 'প্রত্যাখ্যাত (Rejected)',
             'disbursed' => 'বিতরণকৃত (Disbursed)',
+            'repaid' => 'পরিশোধিত (Repaid)',
         ];
 
         $spreadsheet = new Spreadsheet;
@@ -1021,7 +1037,7 @@ class LoanApplicationController extends Controller
 
         $user = $request->user();
         $member = MemberAdmission::with('samity:id,samity_name,samity_name_bn')
-            ->select('id', 'application_no', 'applicant_name_en', 'applicant_name_bn', 'nid_number', 'mobile_number', 'father_name_en', 'mother_name_en', 'samity_id', 'status', 'branch_id', 'created_by', 'requested_loan_amount')
+            ->select('id', 'application_no', 'applicant_name_en', 'applicant_name_bn', 'nid_number', 'mobile_number', 'father_name_en', 'mother_name_en', 'samity_id', 'status', 'branch_id', 'created_by', 'requested_loan_amount', 'is_legacy', 'loan_dofa', 'previous_admission_id')
             ->find($request->integer('member_id'));
 
         if (! $member) {
@@ -1076,6 +1092,9 @@ class LoanApplicationController extends Controller
             'has_active_loan' => $hasActiveLoan,
             'active_loans' => $activeLoans,
             'samity' => $member->samity,
+            'requested_loan_amount' => $member->requested_loan_amount,
+            'is_legacy' => (bool) ($member->is_legacy || $member->previous_admission_id || (int) $member->loan_dofa > 1),
+            'loan_dofa' => $member->loan_dofa,
         ];
     }
 
@@ -1182,7 +1201,7 @@ class LoanApplicationController extends Controller
             ->where(function ($query) use ($search) {
                 MemberCodeService::applyAdmissionSearch($query, $search);
             })
-            ->select('id', 'application_no', 'applicant_name_en', 'applicant_name_bn', 'nid_number', 'mobile_number', 'father_name_en', 'mother_name_en', 'samity_id', 'status', 'requested_loan_amount')
+            ->select('id', 'application_no', 'applicant_name_en', 'applicant_name_bn', 'nid_number', 'mobile_number', 'father_name_en', 'mother_name_en', 'samity_id', 'status', 'requested_loan_amount', 'is_legacy', 'loan_dofa', 'previous_admission_id')
             ->with('samity:id,samity_name,samity_name_bn')
             ->orderBy('created_at', 'desc')
             ->limit(20)
@@ -1209,6 +1228,7 @@ class LoanApplicationController extends Controller
                 ->groupBy('member_admission_id');
 
             $members = $members->map(function ($member) use ($activeLoans) {
+                $member->is_legacy = (bool) ($member->is_legacy || $member->previous_admission_id || (int) $member->loan_dofa > 1);
                 $memberLoans = $activeLoans->get($member->id, collect());
                 if ($memberLoans->isNotEmpty()) {
                     $member->has_active_loan = true;
@@ -1250,6 +1270,7 @@ class LoanApplicationController extends Controller
             });
         } else {
             $members = $members->map(function ($member) {
+                $member->is_legacy = (bool) ($member->is_legacy || $member->previous_admission_id || (int) $member->loan_dofa > 1);
                 $member->has_active_loan = false;
                 $member->active_loans = [];
 
@@ -1484,6 +1505,12 @@ class LoanApplicationController extends Controller
             },
         ])->findOrFail($id);
         $this->ensureApplicationAccessibleToUser($application, request()->user());
+
+        // Automatically clone & prefill missing forms from previous loan if draft or empty
+        if ($application->isDraft() || empty($application->guarantor_info) || empty($application->nominee_info) || empty($application->loan_agreement_data)) {
+            app(LoanApplicationCloneService::class)->cloneAndMerge($application);
+            $application->refresh();
+        }
 
         $this->attachFormMeta($application, request()->user(), null, true);
 
@@ -2017,22 +2044,28 @@ class LoanApplicationController extends Controller
     /**
      * Print loan application
      */
-    public function print($id)
+    public function print(Request $request, $id)
     {
         $application = LoanApplication::with([
             'loanProduct',
             'loanCategory',
-            'memberAdmission',
+            'memberAdmission.samity',
+            'memberAdmission.branch',
+            'memberAdmission.memberCategory',
+            'memberAdmission.approvals.user',
             'branch',
             'samity',
             'submittedBy',
             'reviewedBy',
             'disbursedBy',
         ])->findOrFail($id);
-        $this->ensureApplicationAccessibleToUser($application, request()->user());
+        $this->ensureApplicationAccessibleToUser($application, $request->user());
+
+        $formId = $request->input('form') ? (int) $request->input('form') : null;
 
         return Inertia::render('Member/LoanApplications/Print', [
             'application' => $application,
+            'initialFormId' => $formId,
         ]);
     }
 
@@ -2141,6 +2174,10 @@ class LoanApplicationController extends Controller
         }
         $draft->save();
 
+        // Clone previous loan data onto this draft
+        app(LoanApplicationCloneService::class)->cloneAndMerge($draft);
+        $draft->refresh();
+
         return redirect()
             ->route('member.loan-applications.show', $draft->id)
             ->with('success', 'ঋণ আবেদন খসড়া তৈরি হয়েছে। সব ফর্ম এখানে দেখা যাবে — যেটা পূরণযোগ্য সেটা আপডেট/সাবমিট করুন।');
@@ -2247,6 +2284,10 @@ class LoanApplicationController extends Controller
         if ($existingApplication) {
             $this->ensureApplicationAccessibleToUser($existingApplication, $user);
             $this->ensureSuperAdminLoanFormsUnlocked($request, $existingApplication);
+            if ($existingApplication->isDraft() || empty($existingApplication->guarantor_info) || empty($existingApplication->nominee_info) || empty($existingApplication->loan_agreement_data)) {
+                app(LoanApplicationCloneService::class)->cloneAndMerge($existingApplication);
+                $existingApplication->refresh();
+            }
         }
 
         return [$member, $existingApplication, null];
@@ -2315,7 +2356,11 @@ class LoanApplicationController extends Controller
         $draft->branch_id = $user->branch_id;
         $draft->samity_id = $member->samity_id;
         $draft->requested_amount = $requestedAmount;
-        $draft->submitted_by = $user->id;
+        if (! $draft->exists) {
+            $draft->save();
+            app(LoanApplicationCloneService::class)->cloneAndMerge($draft);
+            $draft->refresh();
+        }
 
         return $draft;
     }
@@ -2682,6 +2727,11 @@ class LoanApplicationController extends Controller
             $loanCategoryId = (int) $loanCategory->id;
             $requestedAmount = (float) ($existingApplication->requested_amount ?? 0);
             $legacyKey = null;
+
+            if ($existingApplication->isDraft() || empty($existingApplication->asset_info)) {
+                app(LoanApplicationCloneService::class)->cloneAndMerge($existingApplication);
+                $existingApplication->refresh();
+            }
         } else {
             $loanProductId = (int) $request->input('product_id');
             $loanCategoryId = (int) $request->input('category_id');
@@ -2819,6 +2869,10 @@ class LoanApplicationController extends Controller
 
         if (! $request->boolean('legacy')) {
             $member = MemberAdmission::with(['samity', 'familyMembers', 'otherAssets', 'branch'])->find($member->id);
+        }
+        if ($existingApplication && ($existingApplication->isDraft() || empty($existingApplication->business_plan))) {
+            app(LoanApplicationCloneService::class)->cloneAndMerge($existingApplication);
+            $existingApplication->refresh();
         }
         $loanProduct = LoanProduct::findOrFail($loanProductId);
         $loanCategory = LoanCategory::findOrFail($loanCategoryId);

@@ -28,6 +28,7 @@ interface OrganizationSectionProps {
     selectedSamity?: SamityItem;
     categories: Array<{ id: number; category_name: string }>;
     isLegacyMember: boolean;
+    disableMemberCode?: boolean;
 }
 
 export default function OrganizationSection({
@@ -46,6 +47,7 @@ export default function OrganizationSection({
     selectedSamity,
     categories,
     isLegacyMember,
+    disableMemberCode = false,
 }: OrganizationSectionProps) {
     const currentBranch = branches.find((b) => Number(b.id) === Number(data.branch_id));
     const branchPrefix = formatBranchCode(currentBranch?.code || (data.branch_id ? String(data.branch_id) : '0001'));
@@ -102,7 +104,7 @@ export default function OrganizationSection({
                         <label className="mb-0.5 block text-xs font-semibold text-gray-700">
                             Member Code / মেম্বার কোড (১০ ডিজিট)
                         </label>
-                        <div className="flex items-stretch rounded-xl border border-gray-300 overflow-hidden focus-within:border-indigo-500 focus-within:ring-2 focus-within:ring-indigo-500/20 bg-white shadow-2xs">
+                        <div className={`flex items-stretch rounded-xl border border-gray-300 overflow-hidden shadow-2xs ${disableMemberCode ? 'bg-slate-100 opacity-90 cursor-not-allowed' : 'bg-white focus-within:border-indigo-500 focus-within:ring-2 focus-within:ring-indigo-500/20'}`}>
                             <div
                                 className="flex items-center gap-1.5 bg-slate-100 px-3 py-2 border-r border-gray-300 text-xs font-mono font-bold text-slate-700 select-none shrink-0"
                                 title="শাখা কোড (অপরিবর্তনীয় ও ফিক্সড)"
@@ -116,12 +118,14 @@ export default function OrganizationSection({
                                 onChange={handleSerialChange}
                                 maxLength={6}
                                 placeholder="যেমন: 590 বা 000590"
-                                className="w-full border-0 px-3 py-2 text-xs md:text-sm font-mono font-bold text-indigo-700 focus:outline-hidden focus:ring-0"
+                                disabled={disableMemberCode}
+                                readOnly={disableMemberCode}
+                                className={`w-full border-0 px-3 py-2 text-xs md:text-sm font-mono font-bold text-indigo-700 focus:outline-hidden focus:ring-0 ${disableMemberCode ? 'bg-slate-100 cursor-not-allowed text-slate-600' : ''}`}
                             />
                         </div>
                         <div className="mt-1 flex items-center justify-between text-[11px] text-gray-500 flex-wrap gap-1">
                             <span>১০ ডিজিট কোড: <span className="font-mono font-bold text-blue-700">{previewCode}</span></span>
-                            <span className="text-[10px] text-slate-400">শাখা কোড {branchPrefix} ফিক্সড, বাকি ৬ ডিজিট মেম্বার কোড</span>
+                            <span className="text-[10px] text-slate-400">{disableMemberCode ? '🔒 মেম্বার কোড অপরিবর্তনীয় (ফিক্সড)' : `শাখা কোড ${branchPrefix} ফিক্সড, বাকি ৬ ডিজিট মেম্বার কোড`}</span>
                         </div>
                         {errors.application_no && (
                             <p className="mt-1 text-xs text-red-600 font-medium">{errors.application_no}</p>

@@ -183,7 +183,7 @@ function GuarantorCommitmentOnlyPreview({ member, loanProduct, requestedAmount, 
     useAutoFitPrint([previewData], '.guarantor-commitment-sheet');
 
     return (
-        <div className="print-container">
+        <div className="print-container w-full max-w-[210mm] mx-auto">
             <GuarantorCommitmentPrintView data={previewData} />
         </div>
     );
@@ -899,7 +899,7 @@ export function GuarantorCommitmentPrintView({ data }: { data: any }) {
     return (
         <div
             data-print-page="1"
-            className="guarantor-commitment-sheet bg-white rounded-lg border border-gray-300 px-8 py-6 sm:px-12 sm:py-8 text-gray-950 print:border-none print:px-2 print:py-0 w-full"
+            className="guarantor-commitment-sheet bg-white rounded-lg border border-gray-300 px-8 py-6 sm:px-12 sm:py-8 text-gray-950 print:border-none print:px-2 print:py-0 w-full max-w-[210mm] mx-auto shadow-sm"
             style={{ fontFamily: 'Kalpurush, "Noto Sans Bengali", Arial, sans-serif', fontSize: '13.5px', lineHeight: '1.75', color: '#000' }}
         >
             {/* Header Section: Logo on Left Corner */}

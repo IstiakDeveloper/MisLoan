@@ -132,6 +132,7 @@ export default function PersonalInfoSection({
                                     const result = await checkAdmissionUnique({
                                         mobile_number: value,
                                         ignore_id: ignoreAdmissionId,
+                                        application_no: data.application_no,
                                     });
                                     setMobileUniqueError(result.mobile_number || '');
                                 } catch {

@@ -38,6 +38,22 @@ class AdmissionFormVisibilityTest extends TestCase
         );
     }
 
+    public function test_field_officer_can_edit_cycle_renewal_or_legacy_before_loan_disbursement(): void
+    {
+        $this->assertTrue(
+            AdmissionFormVisibility::canEditAdmissionForm(Role::FIELD_OFFICER, 'approved', false, false, true),
+            'Field officer should be able to edit approved cycle renewal before loan is disbursed'
+        );
+        $this->assertTrue(
+            AdmissionFormVisibility::canEditAdmissionForm(Role::FIELD_OFFICER, 'draft', false, false, true),
+            'Field officer should be able to edit draft cycle renewal'
+        );
+        $this->assertFalse(
+            AdmissionFormVisibility::canEditAdmissionForm(Role::FIELD_OFFICER, 'approved', true, false, true),
+            'Field officer cannot edit after loan is disbursed even on cycle renewal'
+        );
+    }
+
     public function test_head_office_can_edit_after_disbursement(): void
     {
         $this->assertTrue(

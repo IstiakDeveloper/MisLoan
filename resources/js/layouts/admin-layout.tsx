@@ -37,6 +37,7 @@ import {
     Sparkles,
     CalendarDays,
     Clock,
+    RotateCw,
 } from 'lucide-react';
 import { useIsMobile } from '@/hooks/use-mobile';
 import { usePwaInstallPrompt } from '@/hooks/usePwaInstallPrompt';
@@ -103,6 +104,7 @@ function isGmailAddress(email?: string | null): boolean {
 
 function getPageTitle(currentPath: string): string {
     if (currentPath === '/dashboard') return 'Dashboard';
+    if (currentPath.includes('/cycle-hub')) return 'Cycle Hub (সাইকেল হাব)';
     if (currentPath.includes('/cso-duty-roster')) return 'CSO Duty Roster';
     if (currentPath.includes('/send-cutoff')) return 'Send Deadline';
     if (currentPath.includes('/cluster-handover')) return 'Cluster Handover';
@@ -249,6 +251,7 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
 
     const branchMenuItemsFull = [
         { name: 'Dashboard', href: '/dashboard', icon: LayoutDashboard },
+        { name: 'Cycle Hub', href: '/member/cycle-hub', icon: RotateCw },
         { name: 'Member Admissions', href: '/member-admissions', icon: UserPlus },
         { name: 'Loan Applications', href: '/member/loan-applications', icon: Banknote },
         { name: 'Verification', href: '/verifications', icon: SearchCheck, badge: badgeCounts.pendingVerifications || 0 },
@@ -258,9 +261,9 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
         { name: 'Cluster Handover', href: '/cluster-handover', icon: Users, badge: badgeCounts.pendingClusterHandovers || 0 },
     ];
 
-    // Field officer: admissions plus loan applications for their approved members + verifications
+    // Field officer: admissions plus loan applications for their approved members + verifications + cycle hub
     const branchMenuItems = isFieldOfficer
-        ? branchMenuItemsFull.filter((m) => m.name === 'Dashboard' || m.name === 'Member Admissions' || m.name === 'Loan Applications' || m.name === 'Verification')
+        ? branchMenuItemsFull.filter((m) => m.name === 'Dashboard' || m.name === 'Cycle Hub' || m.name === 'Member Admissions' || m.name === 'Loan Applications' || m.name === 'Verification')
         : roleName === 'branch_user'
         ? branchMenuItemsFull.filter((m) => m.name !== 'Pending Approvals')
         : branchMenuItemsFull;
@@ -283,6 +286,7 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
 
     // Admission / Loan / Verification / Savings for approvers & managers (scoped by assigned zone/area on backend)
     const approverOperationsItems = [
+        { name: 'Cycle Hub', href: '/member/cycle-hub', icon: RotateCw },
         { name: 'Member Admissions', href: '/member-admissions', icon: UserPlus, badge: badgeCounts.pendingAdmissions || 0 },
         { name: 'Loan Applications', href: '/member/loan-applications', icon: Banknote, badge: badgeCounts.pendingLoanApplications || 0 },
         { name: 'Verification', href: '/verifications', icon: SearchCheck, badge: badgeCounts.pendingVerifications || 0 },
@@ -291,6 +295,7 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
 
     const headOfficeMainItems = [
         { name: 'Dashboard', href: '/dashboard', icon: LayoutDashboard },
+        { name: 'Cycle Hub', href: '/member/cycle-hub', icon: RotateCw },
         { name: 'Admission Members', href: '/head-office/admission-members', icon: UserPlus, badge: badgeCounts.pendingAdmissions || 0 },
         { name: 'Loan Applications', href: '/head-office/loan-applications', icon: Banknote, badge: badgeCounts.pendingLoanApplications || 0 },
         { name: 'Verification', href: '/verifications', icon: SearchCheck, badge: badgeCounts.pendingVerifications || 0 },
@@ -344,7 +349,7 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
     const menuGroups = useMemo(() => {
         if (isBranchRole) {
             const dashboardItem = branchMenuItems.find(m => m.href === '/dashboard');
-            const operationsItems = branchMenuItems.filter(m => ['/member-admissions', '/member/loan-applications', '/verifications', '/member/savings-applications'].includes(m.href));
+            const operationsItems = branchMenuItems.filter(m => ['/member-admissions', '/member/loan-applications', '/member/cycle-hub', '/verifications', '/member/savings-applications'].includes(m.href));
             const approvalsItems = branchMenuItems.filter(m => ['/team-based-approvals', '/approvals'].includes(m.href));
             const clusterItem = branchMenuItems.find(m => m.href === '/cluster-handover');
 
@@ -360,7 +365,7 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
         if (isCsoRole) {
             const dashboardItem = headOfficeMainItems.find(m => m.href === '/dashboard');
             const operationsItems = headOfficeMainItems.filter(m =>
-                ['/head-office/admission-members', '/head-office/loan-applications', '/verifications', '/head-office/savings-applications'].includes(m.href)
+                ['/member/cycle-hub', '/head-office/admission-members', '/head-office/loan-applications', '/verifications', '/head-office/savings-applications'].includes(m.href)
             );
 
             const groups = [];
@@ -373,7 +378,7 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
         if (isEdRole) {
             const dashboardItem = headOfficeMainItems.find(m => m.href === '/dashboard');
             const operationsItems = headOfficeMainItems.filter(m =>
-                ['/head-office/admission-members', '/head-office/loan-applications', '/verifications', '/head-office/savings-applications'].includes(m.href)
+                ['/member/cycle-hub', '/head-office/admission-members', '/head-office/loan-applications', '/verifications', '/head-office/savings-applications'].includes(m.href)
             );
             const approvalsItems = [
                 ...approverMenuItems.filter(m => m.href !== '/dashboard'),
@@ -400,7 +405,7 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
 
         // Head office / default roles
         const dashboardItem = headOfficeMainItems.find(m => m.href === '/dashboard');
-        const operationsItems = headOfficeMainItems.filter(m => ['/head-office/admission-members', '/head-office/loan-applications', '/verifications', '/head-office/savings-applications'].includes(m.href));
+        const operationsItems = headOfficeMainItems.filter(m => ['/member/cycle-hub', '/head-office/admission-members', '/head-office/loan-applications', '/verifications', '/head-office/savings-applications'].includes(m.href));
         const approvalsItems = headOfficeMainItems.filter(m => ['/head-office/team-based-approvals'].includes(m.href));
 
         const groups = [];

@@ -246,7 +246,6 @@ export default function ApprovalForm({
     );
 
     const { data, setData, processing } = useForm<LoanApplicationApprovalData>(withLiveMemberCode({
-        category_name: categoryName,
         branch_name: branch?.name || branch?.branch_name || member?.branch?.name || (savedData as any)?.branch_name || '',
         branch_address: branch?.address || member?.branch?.address || (savedData as any)?.branch_address || '',
         application_date: todayIsoDate(),
@@ -297,7 +296,6 @@ export default function ApprovalForm({
         capital_applied_loan: requestedAmount ? String(requestedAmount) : '',
         approval_amount_digits: requestedAmount ? String(requestedAmount) : '',
         approval_amount_words: requestedAmount ? numberToWordsBangla(Number(requestedAmount)) : '',
-        family_assets: getFamilyAssetsFromMember(member),
         applicant_signature: '',
         approver_signature: '',
         
