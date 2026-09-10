@@ -40,6 +40,7 @@ interface Props {
     admission: any;
     loanApplication: any | null;
     formSaved?: Record<number, boolean>;
+    visibleFormIds?: number[];
     otherCycles: Array<{
         id: number;
         dofa: number;
@@ -60,6 +61,7 @@ export default function CycleView({
     admission,
     loanApplication,
     formSaved = {},
+    visibleFormIds,
     otherCycles,
     currentDofa,
     userPermissions,
@@ -88,12 +90,20 @@ export default function CycleView({
         return true;
     };
 
-    // Determine strictly which forms are saved and filled
-    const hasAgreement = !!loanApplication && (formSaved[1] === true || (formSaved[1] === undefined && hasMeaningfulData(loanApplication.loan_agreement_data)));
-    const hasGuarantor = !!loanApplication && (formSaved[2] === true || (formSaved[2] === undefined && hasMeaningfulData(loanApplication.guarantor_info)));
-    const hasDeathRisk = !!loanApplication && (formSaved[3] === true || (formSaved[3] === undefined && hasMeaningfulData(loanApplication.nominee_info)));
-    const hasInvestigation = !!loanApplication && (formSaved[4] === true || (formSaved[4] === undefined && hasMeaningfulData(loanApplication.asset_info)));
-    const hasApproval = !!loanApplication && (formSaved[5] === true || (formSaved[5] === undefined && (hasMeaningfulData(loanApplication.business_plan) || loanApplication.approved_amount != null)));
+    const formIsVisible = (formId: number): boolean => {
+        if (visibleFormIds === undefined) {
+            return true;
+        }
+
+        return visibleFormIds.includes(formId);
+    };
+
+    // Determine strictly which forms are saved, filled, and required for this product
+    const hasAgreement = formIsVisible(1) && !!loanApplication && (formSaved[1] === true || (formSaved[1] === undefined && hasMeaningfulData(loanApplication.loan_agreement_data)));
+    const hasGuarantor = formIsVisible(2) && !!loanApplication && (formSaved[2] === true || (formSaved[2] === undefined && hasMeaningfulData(loanApplication.guarantor_info)));
+    const hasDeathRisk = formIsVisible(3) && !!loanApplication && (formSaved[3] === true || (formSaved[3] === undefined && hasMeaningfulData(loanApplication.nominee_info)));
+    const hasInvestigation = formIsVisible(4) && !!loanApplication && (formSaved[4] === true || (formSaved[4] === undefined && hasMeaningfulData(loanApplication.asset_info)));
+    const hasApproval = formIsVisible(5) && !!loanApplication && (formSaved[5] === true || (formSaved[5] === undefined && (hasMeaningfulData(loanApplication.business_plan) || loanApplication.approved_amount != null)));
 
     // Available active tabs
     const availableTabs: Array<{ id: string; label: string; icon: any }> = [

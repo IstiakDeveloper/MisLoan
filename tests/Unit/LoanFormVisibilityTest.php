@@ -388,6 +388,30 @@ class LoanFormVisibilityTest extends TestCase
         $this->assertContains(5, $visible);
     }
 
+    public function test_agrosor_two_lakh_uses_application_form_not_agreement(): void
+    {
+        $monthly = (object) [
+            'installment_type' => 'monthly',
+            'product_code' => 'AGR',
+            'product_name' => 'Agrosor',
+            'product_name_bn' => 'আগ্রসর',
+        ];
+        $visible = LoanFormVisibility::visibleFormIdsForShow(
+            Role::FIELD_OFFICER,
+            LoanApplication::STATUS_DRAFT,
+            $monthly,
+            200000.0
+        );
+
+        $this->assertSame([5], LoanFormVisibility::foSubmitFormIds($monthly, 200000.0));
+        $this->assertSame('loan_application_approval', LoanFormVisibility::primaryFormType($monthly, 200000.0));
+        $this->assertContains(5, $visible);
+        $this->assertNotContains(1, $visible);
+        $this->assertNotContains(4, $visible);
+        $this->assertContains('loan_agreement_data', LoanFormVisibility::formColumnsToClear($visible));
+        $this->assertContains('asset_info', LoanFormVisibility::formColumnsToClear($visible));
+    }
+
     public function test_switching_below_guarantor_threshold_clears_guarantor_form_column(): void
     {
         $visible = LoanFormVisibility::visibleFormIdsForShow(

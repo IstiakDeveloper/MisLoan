@@ -5,6 +5,7 @@ namespace App\Services;
 use App\Models\LoanApplication;
 use App\Models\LoanProduct;
 use App\Models\MemberAdmission;
+use App\Support\LoanFormVisibility;
 use App\Support\NumberToWordsBangla;
 
 class LoanApplicationCloneService
@@ -18,7 +19,7 @@ class LoanApplicationCloneService
         if ($currentLoanOrAdmission instanceof LoanApplication) {
             $excludeLoanId = $excludeLoanId ?: (int) $currentLoanOrAdmission->id;
             $memberAdmission = $currentLoanOrAdmission->memberAdmission;
-            if (!$memberAdmission && $currentLoanOrAdmission->member_admission_id) {
+            if (! $memberAdmission && $currentLoanOrAdmission->member_admission_id) {
                 $memberAdmission = MemberAdmission::find($currentLoanOrAdmission->member_admission_id);
             }
         } elseif ($currentLoanOrAdmission instanceof MemberAdmission) {
@@ -27,7 +28,7 @@ class LoanApplicationCloneService
             $memberAdmission = MemberAdmission::find($currentLoanOrAdmission);
         }
 
-        if (!$memberAdmission) {
+        if (! $memberAdmission) {
             return null;
         }
 
@@ -42,7 +43,7 @@ class LoanApplicationCloneService
         }
 
         // Also check by member code / application_no or NID if existing member
-        if (!empty($memberAdmission->application_no)) {
+        if (! empty($memberAdmission->application_no)) {
             $sameCodeIds = MemberAdmission::where('application_no', $memberAdmission->application_no)
                 ->where('branch_id', $memberAdmission->branch_id)
                 ->pluck('id')
@@ -50,7 +51,7 @@ class LoanApplicationCloneService
             $admissionIds = array_unique(array_merge($admissionIds, $sameCodeIds));
         }
 
-        if (!empty($memberAdmission->nid_number)) {
+        if (! empty($memberAdmission->nid_number)) {
             $sameNidIds = MemberAdmission::where('nid_number', $memberAdmission->nid_number)
                 ->pluck('id')
                 ->toArray();
@@ -112,6 +113,7 @@ class LoanApplicationCloneService
         }
         if (is_string($data)) {
             $trimmed = trim($data);
+
             return $trimmed !== '' && $trimmed !== 'null' && $trimmed !== '{}' && $trimmed !== '[]';
         }
         if (is_array($data)) {
@@ -120,8 +122,10 @@ class LoanApplicationCloneService
                     return true;
                 }
             }
+
             return false;
         }
+
         return true;
     }
 
@@ -137,7 +141,7 @@ class LoanApplicationCloneService
         $category = $targetLoan->loanCategory ?? $product?->loanCategory;
         $requestedAmount = (float) ($targetLoan->requested_amount ?? ($product?->min_amount ?? 50000));
 
-        if (!$previousLoan) {
+        if (! $previousLoan) {
             $previousLoan = $this->findPreviousLoan($targetLoan, (int) $targetLoan->id);
         }
 
@@ -147,13 +151,40 @@ class LoanApplicationCloneService
         $samity = $targetLoan->samity ?? $member?->samity;
 
         $totalWithServiceCharge = $this->calcLoanAmountWithServiceCharge($requestedAmount, $product);
-        $totalWithServiceWords = $totalWithServiceCharge > 0 ? NumberToWordsBangla::convert($totalWithServiceCharge) . ' টাকা' : '';
-        $requestedWords = $requestedAmount > 0 ? NumberToWordsBangla::convert($requestedAmount) . ' টাকা' : '';
+        $totalWithServiceWords = $totalWithServiceCharge > 0 ? NumberToWordsBangla::convert($totalWithServiceCharge).' টাকা' : '';
+        $requestedWords = $requestedAmount > 0 ? NumberToWordsBangla::convert($requestedAmount).' টাকা' : '';
+        $termMonths = (int) ($targetLoan->loan_term_months ?: ($product?->duration_months ?? 12));
+        $installments = (int) ($targetLoan->number_of_installments ?: ($product?->number_of_installments ?? $termMonths));
+        $serviceCharge = max(0, $totalWithServiceCharge - $requestedAmount);
+        $installmentAmount = (float) ($targetLoan->installment_amount ?: round($totalWithServiceCharge / max(1, $installments)));
+
+        $visibleFormIds = LoanFormVisibility::visibleFormIdsForShow(
+            null,
+            (string) ($targetLoan->status ?: LoanApplication::STATUS_DRAFT),
+            $product,
+            $requestedAmount,
+            $category
+        );
+
+        $primaryFormType = LoanFormVisibility::primaryFormType($product, $requestedAmount, $category);
+        if (($targetLoan->form_type ?: '') !== $primaryFormType) {
+            $targetLoan->form_type = $primaryFormType;
+            $dirty = true;
+        }
+
+        foreach (LoanFormVisibility::formColumnsToClear($visibleFormIds) as $column) {
+            if ($targetLoan->{$column} !== null) {
+                $targetLoan->{$column} = null;
+                $dirty = true;
+            }
+        }
+
+        $shouldFillForm = fn (int $formId): bool => in_array($formId, $visibleFormIds, true);
 
         // ----------------------------------------------------
         // 1. GUARANTOR INFO (Form 2 - জামিনদার অঙ্গীকারনামা)
         // ----------------------------------------------------
-        if (!$this->hasMeaningfulData($targetLoan->guarantor_info)) {
+        if ($shouldFillForm(2) && ! $this->hasMeaningfulData($targetLoan->guarantor_info)) {
             if ($previousLoan && $this->hasMeaningfulData($previousLoan->guarantor_info)) {
                 $guarantorData = is_array($previousLoan->guarantor_info) ? $previousLoan->guarantor_info : [];
             } else {
@@ -194,7 +225,7 @@ class LoanApplicationCloneService
             $dirty = true;
         }
 
-        if (!$this->hasMeaningfulData($targetLoan->guarantors_list) && $previousLoan && $this->hasMeaningfulData($previousLoan->guarantors_list)) {
+        if ($shouldFillForm(2) && ! $this->hasMeaningfulData($targetLoan->guarantors_list) && $previousLoan && $this->hasMeaningfulData($previousLoan->guarantors_list)) {
             $targetLoan->guarantors_list = $previousLoan->guarantors_list;
             $dirty = true;
         }
@@ -202,7 +233,7 @@ class LoanApplicationCloneService
         // ----------------------------------------------------
         // 2. NOMINEE INFO (Form 3 - মৃত্যুঝুঁকি তহবিল আবেদন)
         // ----------------------------------------------------
-        if (!$this->hasMeaningfulData($targetLoan->nominee_info)) {
+        if ($shouldFillForm(3) && ! $this->hasMeaningfulData($targetLoan->nominee_info)) {
             if ($previousLoan && $this->hasMeaningfulData($previousLoan->nominee_info)) {
                 $nomineeData = is_array($previousLoan->nominee_info) ? $previousLoan->nominee_info : [];
             } else {
@@ -240,12 +271,12 @@ class LoanApplicationCloneService
             $nomineeData['loan_sanction_date'] = $today;
             $nomineeData['loan_amount_received'] = $requestedAmount;
             $nomineeData['loan_amount_words'] = $requestedWords;
-            $nomineeData['loan_term'] = ($product?->duration_months ?? 12) . ' মাস';
+            $nomineeData['loan_term'] = ($product?->duration_months ?? 12).' মাস';
 
-            if (!empty($member?->customer_photo_path) && empty($nomineeData['loan_recipient_photo'])) {
+            if (! empty($member?->customer_photo_path) && empty($nomineeData['loan_recipient_photo'])) {
                 $nomineeData['loan_recipient_photo'] = $member->customer_photo_path;
             }
-            if (!empty($member?->guardian_photo_path) && empty($nomineeData['guardian_photo'])) {
+            if (! empty($member?->guardian_photo_path) && empty($nomineeData['guardian_photo'])) {
                 $nomineeData['guardian_photo'] = $member->guardian_photo_path;
             }
 
@@ -256,7 +287,7 @@ class LoanApplicationCloneService
         // ----------------------------------------------------
         // 3. LOAN AGREEMENT DATA (Form 1 - ঋণ চুক্তি পত্র)
         // ----------------------------------------------------
-        if (!$this->hasMeaningfulData($targetLoan->loan_agreement_data)) {
+        if ($shouldFillForm(1) && ! $this->hasMeaningfulData($targetLoan->loan_agreement_data)) {
             if ($previousLoan && $this->hasMeaningfulData($previousLoan->loan_agreement_data)) {
                 $agreementData = is_array($previousLoan->loan_agreement_data) ? $previousLoan->loan_agreement_data : [];
             } else {
@@ -309,7 +340,7 @@ class LoanApplicationCloneService
         // ----------------------------------------------------
         // 4. ASSET INFO (Form 4 - সরেজমিন তদন্ত প্রতিবেদন)
         // ----------------------------------------------------
-        if (!$this->hasMeaningfulData($targetLoan->asset_info)) {
+        if ($shouldFillForm(4) && ! $this->hasMeaningfulData($targetLoan->asset_info)) {
             if ($previousLoan && $this->hasMeaningfulData($previousLoan->asset_info)) {
                 $assetData = is_array($previousLoan->asset_info) ? $previousLoan->asset_info : [];
             } else {
@@ -336,11 +367,11 @@ class LoanApplicationCloneService
             $dirty = true;
         }
 
-        if (!$this->hasMeaningfulData($targetLoan->asset_details) && $previousLoan && $this->hasMeaningfulData($previousLoan->asset_details)) {
+        if ($shouldFillForm(4) && ! $this->hasMeaningfulData($targetLoan->asset_details) && $previousLoan && $this->hasMeaningfulData($previousLoan->asset_details)) {
             $targetLoan->asset_details = $previousLoan->asset_details;
             $dirty = true;
         }
-        if (!$this->hasMeaningfulData($targetLoan->liability_details) && $previousLoan && $this->hasMeaningfulData($previousLoan->liability_details)) {
+        if ($shouldFillForm(4) && ! $this->hasMeaningfulData($targetLoan->liability_details) && $previousLoan && $this->hasMeaningfulData($previousLoan->liability_details)) {
             $targetLoan->liability_details = $previousLoan->liability_details;
             $dirty = true;
         }
@@ -348,7 +379,7 @@ class LoanApplicationCloneService
         // ----------------------------------------------------
         // 5. BUSINESS PLAN & APPROVAL (Form 5 - আবেদন ও অনুমোদনপত্র)
         // ----------------------------------------------------
-        if (!$this->hasMeaningfulData($targetLoan->business_plan)) {
+        if ($shouldFillForm(5) && ! $this->hasMeaningfulData($targetLoan->business_plan)) {
             if ($previousLoan && $this->hasMeaningfulData($previousLoan->business_plan)) {
                 $businessData = is_array($previousLoan->business_plan) ? $previousLoan->business_plan : [];
             } else {
@@ -358,6 +389,24 @@ class LoanApplicationCloneService
                     'business_income' => (float) ($member?->estimated_annual_project_income ?? 0),
                     'business_capital' => (float) ($member?->total_asset_value ?? 0),
                 ];
+            }
+
+            if ($product) {
+                $businessData = LoanFormVisibility::overlaySavedFormLoanTerms(
+                    5,
+                    $businessData,
+                    $product,
+                    $category,
+                    $requestedAmount,
+                    $installments,
+                    $termMonths,
+                    $serviceCharge,
+                    $totalWithServiceCharge,
+                    $installmentAmount,
+                    $requestedWords,
+                    $totalWithServiceWords,
+                    $targetLoan->purpose_of_loan
+                );
             }
 
             $targetLoan->business_plan = $businessData;

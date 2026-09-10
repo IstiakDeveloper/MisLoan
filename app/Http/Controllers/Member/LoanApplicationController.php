@@ -1506,8 +1506,9 @@ class LoanApplicationController extends Controller
         ])->findOrFail($id);
         $this->ensureApplicationAccessibleToUser($application, request()->user());
 
-        // Automatically clone & prefill missing forms from previous loan if draft or empty
-        if ($application->isDraft() || empty($application->guarantor_info) || empty($application->nominee_info) || empty($application->loan_agreement_data)) {
+        // Prefill missing forms from the previous cycle. Do not use empty
+        // loan_agreement_data as a trigger — monthly / Agrosor loans use Form 5.
+        if ($application->isDraft() || empty($application->guarantor_info) || empty($application->nominee_info)) {
             app(LoanApplicationCloneService::class)->cloneAndMerge($application);
             $application->refresh();
         }

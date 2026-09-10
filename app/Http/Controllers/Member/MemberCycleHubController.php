@@ -12,10 +12,11 @@ use App\Models\MemberFamilyMember;
 use App\Models\MemberOtherAsset;
 use App\Models\Role;
 use App\Models\Samity;
+use App\Services\LoanApplicationCloneService;
 use App\Services\MemberCodeService;
+use App\Support\LoanFormVisibility;
 use Carbon\Carbon;
 use Illuminate\Http\JsonResponse;
-use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Inertia\Inertia;
@@ -283,6 +284,17 @@ class MemberCycleHubController extends Controller
         $cycles = $allAdmissions->map(function ($admission) {
             $dofa = (int) ($admission->loan_dofa ?: 1);
             $loans = $admission->loanApplications->map(function ($loan) {
+                $product = $loan->loanProduct;
+                $category = $loan->loanCategory ?? $product?->loanCategory;
+                $amount = (float) ($loan->requested_amount ?? 0);
+                $visibleFormIds = LoanFormVisibility::visibleFormIdsForShow(
+                    null,
+                    (string) $loan->status,
+                    $product,
+                    $amount,
+                    $category
+                );
+
                 return [
                     'id' => $loan->id,
                     'application_no' => $loan->application_no,
@@ -300,10 +312,10 @@ class MemberCycleHubController extends Controller
                     'repaid_by_name' => $loan->repaidBy?->name,
                     'repayment_notes' => $loan->repayment_notes,
                     'created_at' => $loan->created_at ? $loan->created_at->format('Y-m-d') : null,
-                    'has_agreement' => ! empty($loan->loan_agreement_data),
-                    'has_guarantor' => ! empty($loan->guarantor_info),
-                    'has_investigation' => ! empty($loan->asset_info),
-                    'has_approval' => ! empty($loan->business_plan),
+                    'has_agreement' => in_array(1, $visibleFormIds, true) && ! empty($loan->loan_agreement_data),
+                    'has_guarantor' => in_array(2, $visibleFormIds, true) && ! empty($loan->guarantor_info),
+                    'has_investigation' => in_array(4, $visibleFormIds, true) && ! empty($loan->asset_info),
+                    'has_approval' => in_array(5, $visibleFormIds, true) && ! empty($loan->business_plan),
                 ];
             });
 
@@ -554,12 +566,30 @@ class MemberCycleHubController extends Controller
             });
 
         $loanApplication = $admission->loanApplications->first();
-        $formSaved = $loanApplication ? \App\Support\LoanFormVisibility::buildFormSavedMap($loanApplication) : [];
+        if ($loanApplication?->isDraft()) {
+            app(LoanApplicationCloneService::class)->cloneAndMerge($loanApplication);
+            $loanApplication->refresh();
+        }
+
+        $formSaved = $loanApplication ? LoanFormVisibility::buildFormSavedMap($loanApplication) : [];
+        $visibleFormIds = [];
+        if ($loanApplication) {
+            $product = $loanApplication->loanProduct;
+            $category = $loanApplication->loanCategory ?? $product?->loanCategory;
+            $visibleFormIds = LoanFormVisibility::visibleFormIdsForShow(
+                $user->role?->name,
+                (string) $loanApplication->status,
+                $product,
+                (float) ($loanApplication->requested_amount ?? 0),
+                $category
+            );
+        }
 
         return Inertia::render('Member/CycleHub/CycleView', [
             'admission' => $admission,
             'loanApplication' => $loanApplication,
             'formSaved' => $formSaved,
+            'visibleFormIds' => $visibleFormIds,
             'otherCycles' => $otherCycles,
             'currentDofa' => (int) ($admission->loan_dofa ?: 1),
             'userPermissions' => [
@@ -671,4 +701,3 @@ class MemberCycleHubController extends Controller
         ]);
     }
 }
-
