@@ -9,6 +9,7 @@ use Illuminate\Http\Request;
 class RoleListWorkQueue
 {
     public const ALL = 'all';
+
     public const PENDING_MY_APPROVAL = 'pending_my_approval';
 
     public static function defaultStatus(?User $user): ?string
@@ -57,6 +58,7 @@ class RoleListWorkQueue
         return in_array($status, [
             'ready_for_head_office',
             'pending_head_office',
+            'awaiting_takeup',
             self::PENDING_MY_APPROVAL,
         ], true);
     }
@@ -66,6 +68,7 @@ class RoleListWorkQueue
         return match ($status) {
             'ready_for_head_office' => 'হেড অফিসে পাঠান',
             'pending_head_office' => 'হেড অফিস পেন্ডিং',
+            'awaiting_takeup' => 'পরে নেবে',
             self::PENDING_MY_APPROVAL => 'আমার অনুমোদন',
             default => 'সর্বমোট',
         };
@@ -76,6 +79,7 @@ class RoleListWorkQueue
         return match ($status) {
             'ready_for_head_office' => 'ডিফল্টে হেড অফিসে পাঠানোর বাকি আবেদন দেখানো হচ্ছে। সব দেখতে “সর্বমোট” চাপুন।',
             'pending_head_office' => 'ডিফল্টে হেড অফিসে পেন্ডিং আবেদন দেখানো হচ্ছে। সব দেখতে “সর্বমোট” চাপুন।',
+            'awaiting_takeup' => 'সদস্য এখন নেবেন না — পরে HO রেডি করে আবার অনুমোদন নিতে হবে।',
             self::PENDING_MY_APPROVAL => 'ডিফল্টে আপনার অনুমোদনের অপেক্ষায় থাকা আবেদন দেখানো হচ্ছে। সব দেখতে “সর্বমোট” চাপুন।',
             default => null,
         };

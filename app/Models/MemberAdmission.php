@@ -12,6 +12,8 @@ use Illuminate\Support\Facades\Schema;
 
 class MemberAdmission extends Model
 {
+    public const LOAN_HEAD_OFFICE_REQUIRES_APPROVED_ADMISSION = 'সদস্য ভর্তি অনুমোদিত না হওয়া পর্যন্ত এই ঋণ আবেদন Head Office এ পাঠানো যাবে না। আগে ভর্তি অনুমোদন সম্পন্ন করতে হবে।';
+
     protected $fillable = [
         'application_no',
         'branch_id',
@@ -353,6 +355,68 @@ class MemberAdmission extends Model
     }
 
     /**
+     * Finished loans — only repaid unlocks the next দফা via Cycle Hub.
+     *
+     * @return list<string>
+     */
+    public static function closedLoanFormStatuses(): array
+    {
+        return [
+            LoanApplication::STATUS_REPAID,
+            LoanApplication::STATUS_CANCELLED,
+            LoanApplication::STATUS_REJECTED,
+        ];
+    }
+
+    public function sisterLoanQuery(): Builder
+    {
+        return LoanApplication::query()->whereIn('member_admission_id', $this->sisterAdmissionIds());
+    }
+
+    public function existingLoanForm(): ?LoanApplication
+    {
+        return $this->sisterLoanQuery()
+            ->whereNotIn('status', self::closedLoanFormStatuses())
+            ->latest('id')
+            ->first();
+    }
+
+    public function hasExistingLoanForm(): bool
+    {
+        return $this->existingLoanForm() !== null;
+    }
+
+    public function hasRepaidLoanHistory(): bool
+    {
+        return $this->sisterLoanQuery()->where('status', LoanApplication::STATUS_REPAID)->exists();
+    }
+
+    /**
+     * After repayment the next loan must start from Cycle Hub, not ঋণ আবেদন create.
+     */
+    public function mustUseCycleHubForNextLoan(): bool
+    {
+        return ! $this->hasExistingLoanForm()
+            && $this->hasRepaidLoanHistory()
+            && ! $this->previous_admission_id;
+    }
+
+    public static function alreadyLoanFormMessage(?LoanApplication $loan = null): string
+    {
+        $no = $loan?->application_no;
+        if ($no) {
+            return "Already Loan Form আছে (আবেদন নং: {$no})। একই সদস্যের নতুন ঋণ ফর্ম করা যাবে না। পরিশোধের পর সাইকেল হাব থেকে পরবর্তী দফা করা যাবে।";
+        }
+
+        return 'Already Loan Form আছে। একই সদস্যের নতুন ঋণ ফর্ম করা যাবে না। পরিশোধের পর সাইকেল হাব থেকে পরবর্তী দফা করা যাবে।';
+    }
+
+    public static function nextLoanViaCycleHubMessage(): string
+    {
+        return 'এই সদস্যের আগের ঋণ পরিশোধিত। পরবর্তী ঋণ সাইকেল হাব থেকে করতে হবে।';
+    }
+
+    /**
      * Cycle survey dossiers for this member (master + later দফা), oldest first.
      *
      * @return list<array{id: int, dofa: int, status: string, survey_date: string|null, admission_date: string|null, is_cycle_survey: bool}>
@@ -560,6 +624,20 @@ class MemberAdmission extends Model
     public function isLegacy(): bool
     {
         return (bool) $this->is_legacy;
+    }
+
+    public function isRepeatOrLegacyMember(): bool
+    {
+        return (bool) ($this->previous_admission_id || (int) $this->loan_dofa > 1 || $this->is_legacy);
+    }
+
+    /**
+     * Branch may prepare/submit a loan before admission approval, but Head Office
+     * send still requires an approved (or already-admitted repeat/legacy) member.
+     */
+    public function allowsLoanHeadOfficeSend(): bool
+    {
+        return $this->isApproved() || $this->isRepeatOrLegacyMember();
     }
 
     public function canBeEdited(): bool

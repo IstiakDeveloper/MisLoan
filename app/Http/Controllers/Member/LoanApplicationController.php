@@ -77,7 +77,8 @@ class LoanApplicationController extends Controller
 
     /**
      * Draft/fill loan forms: field officers of the member's branch may prepare
-     * applications (before admission is approved); branch users need an approved member.
+     * applications before admission is approved; branch users still need an
+     * approved (or repeat/legacy) member to start a new loan.
      */
     private function ensureMemberAccessibleForLoanDraft(MemberAdmission $member, $user): void
     {
@@ -91,11 +92,11 @@ class LoanApplicationController extends Controller
             abort(403, 'প্রত্যাখ্যাত সদস্যের জন্য ঋণ আবেদন করা যাবে না।');
         }
 
-        if ($this->isFieldOfficer($user)) {
+        if ($this->isFieldOfficer($user) || $member->isRepeatOrLegacyMember() || $member->isApproved()) {
             return;
         }
 
-        if ($member->status !== 'approved' && ! ($member->previous_admission_id || (int) $member->loan_dofa > 1 || $member->is_legacy)) {
+        if ($member->status !== 'approved') {
             abort(403, 'শুধুমাত্র অনুমোদিত সদস্যের জন্য ঋণ আবেদন করা যাবে।');
         }
     }
@@ -137,10 +138,9 @@ class LoanApplicationController extends Controller
         $application->form_saved = $formSaved;
         $application->all_forms_complete = LoanFormVisibility::allRequiredFormsSaved($submitRequired, $formSaved);
         $application->disburse_forms_complete = LoanFormVisibility::allRequiredFormsSaved($disburseRequired, $formSaved);
-        $isMemberApproved = $memberAdmission === null
-            || $memberAdmission->status === 'approved'
-            || (bool) ($memberAdmission->previous_admission_id || (int) $memberAdmission->loan_dofa > 1 || $memberAdmission->is_legacy);
-        $application->can_submit = $application->all_forms_complete && $isMemberApproved;
+        $application->can_submit = $application->all_forms_complete;
+        $application->can_send_to_head_office = $memberAdmission === null
+            || $memberAdmission->allowsLoanHeadOfficeSend();
         $application->can_disburse = $status === LoanApplication::STATUS_PENDING_DISBURSEMENT
             && $this->isBranchUserRole($user)
             && $application->disburse_forms_complete
@@ -211,23 +211,28 @@ class LoanApplicationController extends Controller
         }
     }
 
-    private function ensureMemberApprovedForLoanSubmit(MemberAdmission $member): void
+    private function maybeApproveRepeatOrLegacyMember(MemberAdmission $member): void
     {
-        if ($member->status !== 'approved') {
-            if ($member->previous_admission_id || (int) $member->loan_dofa > 1 || $member->is_legacy) {
-                $member->update([
-                    'status' => 'approved',
-                    'submitted_by' => $member->submitted_by ?: auth()->id(),
-                    'submitted_at' => $member->submitted_at ?: now(),
-                    'reviewed_by' => $member->reviewed_by ?: auth()->id(),
-                    'reviewed_at' => $member->reviewed_at ?: now(),
-                ]);
-
-                return;
-            }
-
-            abort(403, 'সদস্য ভর্তি অনুমোদিত না হওয়া পর্যন্ত ঋণ আবেদন জমা দেওয়া যাবে না।');
+        if ($member->status === 'approved' || ! $member->isRepeatOrLegacyMember()) {
+            return;
         }
+
+        $member->update([
+            'status' => 'approved',
+            'submitted_by' => $member->submitted_by ?: auth()->id(),
+            'submitted_at' => $member->submitted_at ?: now(),
+            'reviewed_by' => $member->reviewed_by ?: auth()->id(),
+            'reviewed_at' => $member->reviewed_at ?: now(),
+        ]);
+    }
+
+    private function admissionBlocksHeadOfficeSend(?MemberAdmission $member): ?string
+    {
+        if ($member && ! $member->allowsLoanHeadOfficeSend()) {
+            return MemberAdmission::LOAN_HEAD_OFFICE_REQUIRES_APPROVED_ADMISSION;
+        }
+
+        return null;
     }
 
     /**
@@ -596,70 +601,28 @@ class LoanApplicationController extends Controller
     }
 
     /**
-     * Member already has an in-progress or not-yet-matured loan → cannot start another.
+     * @return array{ok: true}|array{ok: false, redirect: RedirectResponse}
      */
-    private function memberHasActiveLoan(int $memberId): bool
+    private function guardNewLoanForm(MemberAdmission $member): array
     {
-        $blockingStatuses = [
-            LoanApplication::STATUS_SUBMITTED,
-            LoanApplication::STATUS_UNDER_REVIEW,
-            LoanApplication::STATUS_READY_FOR_HEAD_OFFICE,
-            LoanApplication::STATUS_PENDING_HEAD_OFFICE,
-            LoanApplication::STATUS_NEEDS_CORRECTION,
-            LoanApplication::STATUS_APPROVED,
-            LoanApplication::STATUS_PENDING_DISBURSEMENT,
-            LoanApplication::STATUS_DISBURSED,
-        ];
-
-        $member = MemberAdmission::find($memberId);
-        $admissionIds = $member ? $member->sisterAdmissionIds() : [$memberId];
-
-        return LoanApplication::whereIn('member_admission_id', $admissionIds)
-            ->whereIn('status', $blockingStatuses)
-            ->with('loanProduct:id,duration_months')
-            ->get()
-            ->contains(fn ($loan) => $this->loanIsStillActive($loan));
-    }
-
-    /**
-     * In-progress applications always block; disbursed loans block until term end.
-     */
-    private function loanIsStillActive(LoanApplication $loan): bool
-    {
-        // Any application still in the pipeline blocks a second application
-        if ($loan->status !== LoanApplication::STATUS_DISBURSED) {
-            return true;
+        $existing = $member->existingLoanForm();
+        if ($existing) {
+            return [
+                'ok' => false,
+                'redirect' => redirect()->route('member.loan-applications.index')
+                    ->with('error', MemberAdmission::alreadyLoanFormMessage($existing)),
+            ];
         }
 
-        $today = now()->startOfDay();
-
-        if ($loan->expected_end_date) {
-            return Carbon::parse($loan->expected_end_date)->startOfDay()->gte($today);
+        if ($member->mustUseCycleHubForNextLoan()) {
+            return [
+                'ok' => false,
+                'redirect' => redirect()->route('member.cycle-hub.index')
+                    ->with('error', MemberAdmission::nextLoanViaCycleHubMessage()),
+            ];
         }
 
-        $duration = (int) (
-            $loan->loan_term_months
-            ?: $loan->loanProduct?->duration_months
-            ?: 0
-        );
-
-        $start = $loan->approved_start_date
-            ?: $loan->disbursed_at
-            ?: $loan->created_at;
-
-        if ($duration > 0 && $start) {
-            $endDate = Carbon::parse($start)->addMonths($duration)->startOfDay();
-
-            return $endDate->gte($today);
-        }
-
-        // Disbursed with unknown term → treat as still active (conservative)
-        return true;
-    }
-
-    private function activeLoanBlockMessage(): string
-    {
-        return 'ঋণ সক্রিয় থাকা পর্যন্ত একই সদস্যের নামে ২ বার ঋণ আবেদন করা যাবে না।';
+        return ['ok' => true];
     }
 
     /**
@@ -827,6 +790,7 @@ class LoanApplicationController extends Controller
             'submitted' => (clone $statsBaseQuery)->where('status', LoanApplication::STATUS_SUBMITTED)->count(),
             'approved' => (clone $statsBaseQuery)->where('status', LoanApplication::STATUS_APPROVED)->count(),
             'pending_disbursement' => (clone $statsBaseQuery)->where('status', LoanApplication::STATUS_PENDING_DISBURSEMENT)->count(),
+            'awaiting_takeup' => (clone $statsBaseQuery)->where('status', LoanApplication::STATUS_AWAITING_TAKEUP)->count(),
             'rejected' => (clone $statsBaseQuery)->where('status', LoanApplication::STATUS_REJECTED)->count(),
             'ready_for_head_office' => (clone $statsBaseQuery)->where('status', LoanApplication::STATUS_READY_FOR_HEAD_OFFICE)->count(),
             'pending_head_office' => (clone $statsBaseQuery)->where('status', LoanApplication::STATUS_PENDING_HEAD_OFFICE)->count(),
@@ -926,6 +890,7 @@ class LoanApplicationController extends Controller
             'pending_head_office' => 'হেড অফিসে (Pending HO)',
             'approved' => 'অনুমোদিত (Approved)',
             'pending_disbursement' => 'বিতরণ অপেক্ষা (Pending Disburse)',
+            'awaiting_takeup' => 'পরে নেবে (Awaiting Take-up)',
             'rejected' => 'প্রত্যাখ্যাত (Rejected)',
             'disbursed' => 'বিতরণকৃত (Disbursed)',
             'repaid' => 'পরিশোধিত (Repaid)',
@@ -1053,35 +1018,22 @@ class LoanApplicationController extends Controller
             return null;
         }
 
-        $hasActiveLoan = $this->memberHasActiveLoan((int) $member->id);
+        $existingForm = $member->existingLoanForm();
+        $hasActiveLoan = $existingForm !== null;
+        $mustUseCycleHub = $member->mustUseCycleHubForNextLoan();
 
         $activeLoans = [];
-        if ($hasActiveLoan) {
-            $activeLoans = LoanApplication::where('member_admission_id', $member->id)
-                ->whereIn('status', [
-                    LoanApplication::STATUS_SUBMITTED,
-                    LoanApplication::STATUS_UNDER_REVIEW,
-                    LoanApplication::STATUS_READY_FOR_HEAD_OFFICE,
-                    LoanApplication::STATUS_PENDING_HEAD_OFFICE,
-                    LoanApplication::STATUS_NEEDS_CORRECTION,
-                    LoanApplication::STATUS_APPROVED,
-                    LoanApplication::STATUS_PENDING_DISBURSEMENT,
-                    LoanApplication::STATUS_DISBURSED,
-                ])
-                ->with(['loanProduct:id,product_name,product_name_bn,duration_months', 'loanCategory:id,category_name,category_name_bn'])
-                ->get()
-                ->filter(fn ($loan) => $this->loanIsStillActive($loan))
-                ->map(fn ($loan) => [
-                    'id' => $loan->id,
-                    'application_no' => $loan->application_no,
-                    'status' => $loan->status,
-                    'product_name' => $loan->loanProduct->product_name ?? '',
-                    'product_name_bn' => $loan->loanProduct->product_name_bn ?? '',
-                    'category_name' => $loan->loanCategory->category_name ?? '',
-                    'requested_amount' => $loan->requested_amount,
-                ])
-                ->values()
-                ->all();
+        if ($existingForm) {
+            $existingForm->loadMissing(['loanProduct:id,product_name,product_name_bn,duration_months', 'loanCategory:id,category_name,category_name_bn']);
+            $activeLoans = [[
+                'id' => $existingForm->id,
+                'application_no' => $existingForm->application_no,
+                'status' => $existingForm->status,
+                'product_name' => $existingForm->loanProduct->product_name ?? '',
+                'product_name_bn' => $existingForm->loanProduct->product_name_bn ?? '',
+                'category_name' => $existingForm->loanCategory->category_name ?? '',
+                'requested_amount' => $existingForm->requested_amount,
+            ]];
         }
 
         return [
@@ -1093,6 +1045,12 @@ class LoanApplicationController extends Controller
             'mobile_number' => $member->mobile_number,
             'status' => $member->status,
             'has_active_loan' => $hasActiveLoan,
+            'must_use_cycle_hub' => $mustUseCycleHub,
+            'existing_loan_form' => $existingForm ? [
+                'id' => $existingForm->id,
+                'application_no' => $existingForm->application_no,
+                'status' => $existingForm->status,
+            ] : null,
             'active_loans' => $activeLoans,
             'samity' => $member->samity,
             'requested_loan_amount' => $member->requested_loan_amount,
@@ -1211,76 +1169,36 @@ class LoanApplicationController extends Controller
             ->limit(20)
             ->get();
 
-        // Check for active loans for each member (ANY product)
-        $memberIds = $members->pluck('id');
-
-        if ($memberIds->isNotEmpty()) {
-            $activeLoans = LoanApplication::whereIn('member_admission_id', $memberIds)
-                ->whereIn('status', [
-                    LoanApplication::STATUS_SUBMITTED,
-                    LoanApplication::STATUS_UNDER_REVIEW,
-                    LoanApplication::STATUS_READY_FOR_HEAD_OFFICE,
-                    LoanApplication::STATUS_PENDING_HEAD_OFFICE,
-                    LoanApplication::STATUS_NEEDS_CORRECTION,
-                    LoanApplication::STATUS_APPROVED,
-                    LoanApplication::STATUS_PENDING_DISBURSEMENT,
-                    LoanApplication::STATUS_DISBURSED,
-                ])
-                ->with(['loanProduct:id,product_name,product_name_bn,duration_months', 'loanCategory:id,category_name,category_name_bn'])
-                ->get()
-                ->filter(fn ($loan) => $this->loanIsStillActive($loan))
-                ->groupBy('member_admission_id');
-
-            $members = $members->map(function ($member) use ($activeLoans) {
-                $member->is_legacy = (bool) ($member->is_legacy || $member->previous_admission_id || (int) $member->loan_dofa > 1);
-                $memberLoans = $activeLoans->get($member->id, collect());
-                if ($memberLoans->isNotEmpty()) {
-                    $member->has_active_loan = true;
-                    $member->active_loans = $memberLoans->map(function ($loan) {
-                        $endDate = $loan->expected_end_date;
-                        if (! $endDate) {
-                            $duration = (int) (
-                                $loan->loan_term_months
-                                ?: $loan->loanProduct?->duration_months
-                                ?: 0
-                            );
-                            $start = $loan->approved_start_date
-                                ?: $loan->disbursed_at
-                                ?: $loan->created_at;
-                            if ($duration > 0 && $start) {
-                                $endDate = Carbon::parse($start)->addMonths($duration)->toDateString();
-                            }
-                        }
-
-                        return [
-                            'id' => $loan->id,
-                            'application_no' => $loan->application_no,
-                            'status' => $loan->status,
-                            'product_name' => $loan->loanProduct->product_name ?? '',
-                            'product_name_bn' => $loan->loanProduct->product_name_bn ?? '',
-                            'category_name' => $loan->loanCategory->category_name ?? '',
-                            'requested_amount' => $loan->requested_amount,
-                            'expected_end_date' => $endDate,
-                            'created_at' => $loan->created_at,
-                            'loan_term_months' => $loan->loan_term_months ?? $loan->loanProduct->duration_months ?? null,
-                        ];
-                    })->values();
-                } else {
-                    $member->has_active_loan = false;
-                    $member->active_loans = [];
-                }
-
-                return $member;
-            });
-        } else {
-            $members = $members->map(function ($member) {
-                $member->is_legacy = (bool) ($member->is_legacy || $member->previous_admission_id || (int) $member->loan_dofa > 1);
-                $member->has_active_loan = false;
+        $members = $members->map(function ($member) {
+            $member->is_legacy = (bool) ($member->is_legacy || $member->previous_admission_id || (int) $member->loan_dofa > 1);
+            $existing = $member->existingLoanForm();
+            $member->has_active_loan = $existing !== null;
+            $member->must_use_cycle_hub = $member->mustUseCycleHubForNextLoan();
+            $member->existing_loan_form = $existing ? [
+                'id' => $existing->id,
+                'application_no' => $existing->application_no,
+                'status' => $existing->status,
+            ] : null;
+            if ($existing) {
+                $existing->loadMissing(['loanProduct:id,product_name,product_name_bn,duration_months', 'loanCategory:id,category_name,category_name_bn']);
+                $member->active_loans = [[
+                    'id' => $existing->id,
+                    'application_no' => $existing->application_no,
+                    'status' => $existing->status,
+                    'product_name' => $existing->loanProduct->product_name ?? '',
+                    'product_name_bn' => $existing->loanProduct->product_name_bn ?? '',
+                    'category_name' => $existing->loanCategory->category_name ?? '',
+                    'requested_amount' => $existing->requested_amount,
+                    'expected_end_date' => $existing->expected_end_date,
+                    'created_at' => $existing->created_at,
+                    'loan_term_months' => $existing->loan_term_months ?? $existing->loanProduct->duration_months ?? null,
+                ]];
+            } else {
                 $member->active_loans = [];
+            }
 
-                return $member;
-            });
-        }
+            return $member;
+        });
 
         return response()->json($members);
     }
@@ -1326,12 +1244,19 @@ class LoanApplicationController extends Controller
     {
         $this->ensureCanCreateLoanApplication($request->user());
 
-        // Check if member has active loan
         $memberId = $request->input('member_admission_id');
-        if ($memberId && $this->memberHasActiveLoan((int) $memberId)) {
-            return back()->withErrors([
-                'member_admission_id' => $this->activeLoanBlockMessage(),
-            ])->withInput();
+        if ($memberId) {
+            $memberForGuard = MemberAdmission::find((int) $memberId);
+            if ($memberForGuard?->hasExistingLoanForm()) {
+                return back()->withErrors([
+                    'member_admission_id' => MemberAdmission::alreadyLoanFormMessage($memberForGuard->existingLoanForm()),
+                ])->withInput();
+            }
+            if ($memberForGuard?->mustUseCycleHubForNextLoan()) {
+                return back()->withErrors([
+                    'member_admission_id' => MemberAdmission::nextLoanViaCycleHubMessage(),
+                ])->withInput();
+            }
         }
 
         $validated = $request->validate([
@@ -1537,6 +1462,8 @@ class LoanApplicationController extends Controller
                 'print' => route('member.loan-applications.print', $application->id),
                 'submit' => route('member.loan-applications.submit', $application->id),
                 'disburse' => route('member.loan-applications.disburse', $application->id),
+                'deferTakeup' => route('member.loan-applications.defer-takeup', $application->id),
+                'readyFromAwaiting' => route('member.loan-applications.ready-from-awaiting', $application->id),
                 'requestAmountChange' => route('member.loan-applications.request-amount-change', $application->id),
                 'updateLoanProduct' => route('member.loan-applications.update-loan-product', $application->id),
             ],
@@ -1561,11 +1488,7 @@ class LoanApplicationController extends Controller
             if (! $member) {
                 return back()->withErrors(['error' => 'সদস্য ভর্তি তথ্য পাওয়া যায়নি।']);
             }
-            try {
-                $this->ensureMemberApprovedForLoanSubmit($member);
-            } catch (HttpException $e) {
-                return back()->withErrors(['error' => 'সদস্য ভর্তি অনুমোদিত না হওয়া পর্যন্ত ঋণ আবেদন জমা দেওয়া যাবে না।']);
-            }
+            $this->maybeApproveRepeatOrLegacyMember($member);
         }
 
         $product = $application->loanProduct;
@@ -1634,11 +1557,15 @@ class LoanApplicationController extends Controller
             abort(403, 'শুধুমাত্র শাখা ব্যবহারকারী (Branch User) ঋণ আবেদন হেড অফিসে পাঠাতে পারবেন।');
         }
 
-        $application = LoanApplication::findOrFail($id);
+        $application = LoanApplication::with('memberAdmission')->findOrFail($id);
         $this->ensureApplicationAccessibleToUser($application, $user);
 
         if ($application->status !== LoanApplication::STATUS_READY_FOR_HEAD_OFFICE) {
             return back()->withErrors(['error' => 'শুধু শাখা অনুমোদিত ঋণ আবেদন Head Office এ পাঠানো যাবে।']);
+        }
+
+        if ($admissionBlock = $this->admissionBlocksHeadOfficeSend($application->memberAdmission)) {
+            return back()->withErrors(['error' => $admissionBlock]);
         }
 
         if ($blocked = app(HoSendCutoffService::class)->redirectIfBlocked()) {
@@ -1707,7 +1634,15 @@ class LoanApplicationController extends Controller
             ->where('status', LoanApplication::STATUS_READY_FOR_HEAD_OFFICE)
             ->get();
 
+        $blockedByAdmission = $applications->contains(
+            fn (LoanApplication $application) => $this->admissionBlocksHeadOfficeSend($application->memberAdmission) !== null
+        );
+
         $eligible = $applications->filter(function (LoanApplication $application) use ($user) {
+            if ($this->admissionBlocksHeadOfficeSend($application->memberAdmission) !== null) {
+                return false;
+            }
+
             try {
                 $this->ensureApplicationAccessibleToUser($application, $user);
 
@@ -1718,6 +1653,10 @@ class LoanApplicationController extends Controller
         })->values();
 
         if ($eligible->isEmpty()) {
+            if ($blockedByAdmission) {
+                return back()->withErrors(['error' => MemberAdmission::LOAN_HEAD_OFFICE_REQUIRES_APPROVED_ADMISSION]);
+            }
+
             return back()->withErrors(['error' => 'পাঠানোর মতো শাখা অনুমোদিত ঋণ আবেদন পাওয়া যায়নি।']);
         }
 
@@ -1758,6 +1697,61 @@ class LoanApplicationController extends Controller
         }
 
         return $this->redirectToListPreservingFilters('member.loan-applications.index', "{$count}টি ঋণ আবেদন Head Office এ পাঠানো হয়েছে।");
+    }
+
+    /**
+     * Branch user: member will take the approved loan later — leave disbursement queue.
+     */
+    public function deferTakeup(Request $request, $id)
+    {
+        $user = $request->user();
+        if (! $this->isBranchUserRole($user)) {
+            abort(403, 'শুধুমাত্র শাখা ব্যবহারকারী ঋণ «পরে নেবে» কিউতে রাখতে পারবেন।');
+        }
+
+        $application = LoanApplication::findOrFail($id);
+        $this->ensureApplicationAccessibleToUser($application, $user);
+
+        if ($application->status !== LoanApplication::STATUS_PENDING_DISBURSEMENT) {
+            return back()->withErrors(['error' => 'শুধু বিতরণ অপেক্ষায় থাকা ঋণ «পরে নেবে» কিউতে রাখা যাবে।']);
+        }
+
+        $validated = $request->validate([
+            'awaiting_note' => ['nullable', 'string', 'max:500'],
+        ]);
+
+        $application->update([
+            'status' => LoanApplication::STATUS_AWAITING_TAKEUP,
+            'awaiting_takeup_at' => now(),
+            'awaiting_takeup_by' => $user->id,
+            'awaiting_note' => $validated['awaiting_note'] ?? $application->awaiting_note,
+        ]);
+
+        return back()->with('success', 'ঋণটি «পরে নেবে» কিউতে রাখা হয়েছে। সদস্য নিতে চাইলে HO পাঠানোর জন্য রেডি করুন।');
+    }
+
+    /**
+     * Branch user: move an awaiting loan back to the HO-send queue (cutoff applies only when sending).
+     */
+    public function markReadyForHoFromAwaiting(Request $request, $id)
+    {
+        $user = $request->user();
+        if (! $this->isBranchUserRole($user)) {
+            abort(403, 'শুধুমাত্র শাখা ব্যবহারকারী ঋণ হেড অফিসে পাঠানোর জন্য রেডি করতে পারবেন।');
+        }
+
+        $application = LoanApplication::findOrFail($id);
+        $this->ensureApplicationAccessibleToUser($application, $user);
+
+        if ($application->status !== LoanApplication::STATUS_AWAITING_TAKEUP) {
+            return back()->withErrors(['error' => 'শুধু «পরে নেবে» কিউয়ের ঋণ HO পাঠানোর জন্য রেডি করা যাবে।']);
+        }
+
+        $application->update([
+            'status' => LoanApplication::STATUS_READY_FOR_HEAD_OFFICE,
+        ]);
+
+        return back()->with('success', 'ঋণটি হেড অফিসে পাঠানোর জন্য রেডি হয়েছে। এখন «HO পাঠান» চাপুন।');
     }
 
     /**
@@ -2114,9 +2108,9 @@ class LoanApplicationController extends Controller
             }
             $member = MemberAdmission::findOrFail($memberId);
             $this->ensureMemberAccessibleForLoanDraft($member, $user);
-            if ($this->memberHasActiveLoan($memberId)) {
-                return redirect()->route('member.loan-applications.index')
-                    ->with('error', $this->activeLoanBlockMessage());
+            $guard = $this->guardNewLoanForm($member);
+            if (! $guard['ok']) {
+                return $guard['redirect'];
             }
         }
 
@@ -2355,8 +2349,10 @@ class LoanApplicationController extends Controller
         ]);
         if ($draft->exists) {
             $this->ensureApplicationAccessibleToUser($draft, $user);
-        } elseif ($this->memberHasActiveLoan((int) $member->id)) {
-            abort(403, $this->activeLoanBlockMessage());
+        } elseif ($existing = $member->existingLoanForm()) {
+            abort(403, MemberAdmission::alreadyLoanFormMessage($existing));
+        } elseif ($member->mustUseCycleHubForNextLoan()) {
+            abort(403, MemberAdmission::nextLoanViaCycleHubMessage());
         }
         if (! $draft->exists || ! $draft->application_no) {
             $draft->application_no = LoanApplication::generateApplicationNo();

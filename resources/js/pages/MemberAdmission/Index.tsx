@@ -285,6 +285,7 @@ export default function Index({ admissions, zones = [], areas = [], branches = [
         if (!admission.has_active_loan) return null;
 
         const isDisbursed = admission.active_loan_status === 'disbursed';
+        const loanNo = admission.existing_loan_form?.application_no;
         return (
             <span className={`inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full border text-[11px] font-bold tracking-wide ${
                 isDisbursed
@@ -292,7 +293,7 @@ export default function Index({ admissions, zones = [], areas = [], branches = [
                     : 'bg-amber-50 border-amber-200 text-amber-700'
             }`}>
                 <span className={`w-1.5 h-1.5 rounded-full ${isDisbursed ? 'bg-rose-500' : 'bg-amber-500'}`} />
-                {isDisbursed ? 'ঋণ সক্রিয়' : 'ঋণ চলমান'}
+                Already Loan Form আছে{loanNo ? ` · ${loanNo}` : ''}
             </span>
         );
     };

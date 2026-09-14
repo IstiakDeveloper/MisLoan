@@ -77,8 +77,22 @@ export default function Show({ admission, cycleSurveys = [] }: Props) {
     const isBranchUser = roleName === 'branch_user';
     const hoSendCutoff = useHoSendCutoff();
     const isFieldOfficer = roleName === 'field_officer';
-    const canApplyLoan =
-        admission.status === 'approved' && (roleName === 'branch_user' || isFieldOfficer);
+    const currentUserId = pageAuth?.user?.id;
+    const canApplyLoan = (() => {
+        if (admission.status === 'rejected') return false;
+        if (admission.has_active_loan) return false;
+        if (roleName === 'branch_user') return admission.status === 'approved';
+        if (!isFieldOfficer) return false;
+        const assignedId =
+            typeof admission.assigned_officer_id === 'object'
+                ? admission.assigned_officer_id?.id
+                : admission.assigned_officer_id;
+        const creatorId =
+            typeof admission.created_by === 'object'
+                ? admission.created_by?.id
+                : admission.created_by ?? admission.createdBy?.id;
+        return Number(assignedId ?? creatorId) === Number(currentUserId);
+    })();
 
     const isApproverRole = [
         'branch_manager',

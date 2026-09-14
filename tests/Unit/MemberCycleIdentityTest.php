@@ -317,6 +317,127 @@ it('blocks next cycle while an active loan exists', function () {
         ->and(MemberAdmission::count())->toBe(1);
 });
 
+it('treats a draft loan form as already existing so a second form cannot start', function () {
+    $branch = Branch::create(['name' => 'Dhaka', 'code' => '0001']);
+
+    $admission = MemberAdmission::create([
+        'application_no' => '0001008703',
+        'nid_number' => '1990123456789',
+        'mobile_number' => '01711111111',
+        'branch_id' => $branch->id,
+        'status' => 'approved',
+    ]);
+
+    $draft = LoanApplication::create([
+        'application_no' => 'LN20260900808',
+        'member_admission_id' => $admission->id,
+        'branch_id' => $branch->id,
+        'status' => LoanApplication::STATUS_DRAFT,
+    ]);
+
+    expect($admission->hasExistingLoanForm())->toBeTrue()
+        ->and($admission->existingLoanForm()?->id)->toBe($draft->id)
+        ->and($admission->mustUseCycleHubForNextLoan())->toBeFalse()
+        ->and(MemberAdmission::alreadyLoanFormMessage($draft))->toContain('Already Loan Form আছে')
+        ->and(MemberAdmission::alreadyLoanFormMessage($draft))->toContain('LN20260900808');
+});
+
+it('blocks next cycle while a draft loan form exists', function () {
+    $branch = Branch::create(['name' => 'Dhaka', 'code' => '0001']);
+    $user = createCycleHubOfficer($branch);
+
+    $admission = MemberAdmission::create([
+        'application_no' => '0001000055',
+        'nid_number' => '1990123456789',
+        'mobile_number' => '01711111111',
+        'branch_id' => $branch->id,
+        'status' => 'approved',
+    ]);
+
+    LoanApplication::create([
+        'application_no' => 'LN-DRAFT',
+        'member_admission_id' => $admission->id,
+        'branch_id' => $branch->id,
+        'status' => LoanApplication::STATUS_DRAFT,
+    ]);
+
+    $request = Request::create('/', 'POST');
+    $request->setUserResolver(fn () => $user);
+
+    $response = app(MemberCycleHubController::class)->startNextCycle($request, $admission);
+
+    expect($response->getStatusCode())->toBe(422)
+        ->and($response->getData(true)['message'])->toContain('Already Loan Form আছে')
+        ->and(MemberAdmission::count())->toBe(1);
+});
+
+it('requires cycle hub for the next loan after repayment', function () {
+    $branch = Branch::create(['name' => 'Dhaka', 'code' => '0001']);
+
+    $admission = MemberAdmission::create([
+        'application_no' => '0001008703',
+        'nid_number' => '1990123456789',
+        'mobile_number' => '01711111111',
+        'branch_id' => $branch->id,
+        'status' => 'approved',
+    ]);
+
+    LoanApplication::create([
+        'application_no' => 'LN-REPAID',
+        'member_admission_id' => $admission->id,
+        'branch_id' => $branch->id,
+        'status' => LoanApplication::STATUS_REPAID,
+    ]);
+
+    $cycleSurvey = MemberAdmission::create([
+        'application_no' => '0001008703',
+        'nid_number' => '1990123456789',
+        'mobile_number' => '01711111111',
+        'branch_id' => $branch->id,
+        'previous_admission_id' => $admission->id,
+        'status' => 'approved',
+        'loan_dofa' => 2,
+    ]);
+
+    expect($admission->hasExistingLoanForm())->toBeFalse()
+        ->and($admission->mustUseCycleHubForNextLoan())->toBeTrue()
+        ->and($cycleSurvey->mustUseCycleHubForNextLoan())->toBeFalse()
+        ->and($cycleSurvey->hasExistingLoanForm())->toBeFalse();
+});
+
+it('sees a loan on a cycle clone as the same members existing form', function () {
+    $branch = Branch::create(['name' => 'Dhaka', 'code' => '0001']);
+
+    $master = MemberAdmission::create([
+        'application_no' => '0001008703',
+        'nid_number' => '1990123456789',
+        'mobile_number' => '01711111111',
+        'branch_id' => $branch->id,
+        'status' => 'approved',
+    ]);
+
+    $clone = MemberAdmission::create([
+        'application_no' => '0001008703',
+        'nid_number' => '1990123456789',
+        'mobile_number' => '01711111111',
+        'branch_id' => $branch->id,
+        'previous_admission_id' => $master->id,
+        'status' => 'approved',
+        'loan_dofa' => 2,
+    ]);
+
+    LoanApplication::create([
+        'application_no' => 'LN-HO',
+        'member_admission_id' => $clone->id,
+        'branch_id' => $branch->id,
+        'status' => LoanApplication::STATUS_PENDING_HEAD_OFFICE,
+    ]);
+
+    expect($master->hasExistingLoanForm())->toBeTrue()
+        ->and($master->existingLoanForm()?->application_no)->toBe('LN-HO')
+        ->and($clone->hasExistingLoanForm())->toBeTrue();
+});
+
 it('syncs nid phone and names onto leftover cloned admissions', function () {
     $branch = Branch::create(['name' => 'Dhaka', 'code' => '0001']);
 

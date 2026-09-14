@@ -148,6 +148,7 @@ export interface MemberAdmission {
     revision_comments?: string;
     has_active_loan?: boolean;
     active_loan_status?: string | null;
+    existing_loan_form?: { id: number; application_no: string; status: string } | null;
     has_disbursed_loan?: boolean;
     can_be_edited?: boolean;
 

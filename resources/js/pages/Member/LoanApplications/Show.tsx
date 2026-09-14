@@ -34,6 +34,7 @@ import {
     Lock,
     X,
     Wrench,
+    PauseCircle,
 } from 'lucide-react';
 import SuperAdminDeletePinModal from '@/components/SuperAdminDeletePinModal';
 import { toEnglishDigits, formatBranchCode, parseMemberCode } from '@/utils/memberCodeUtils';
@@ -130,6 +131,7 @@ interface LoanApplication {
     all_forms_complete?: boolean;
     disburse_forms_complete?: boolean;
     can_submit?: boolean;
+    can_send_to_head_office?: boolean;
     can_disburse?: boolean;
     can_change_approved_amount?: boolean;
     can_edit_loan_details?: boolean;
@@ -233,6 +235,8 @@ interface Props {
         print: string;
         submit: string;
         disburse?: string;
+        deferTakeup?: string;
+        readyFromAwaiting?: string;
         requestAmountChange?: string;
         updateLoanProduct?: string;
     };
@@ -256,6 +260,7 @@ const statusConfig = {
     pending_head_office: { label: 'হেড অফিসে প্রেরিত', color: 'bg-indigo-100 text-indigo-800 border-indigo-300', icon: Clock },
     approved: { label: 'অনুমোদিত', color: 'bg-green-100 text-green-800 border-green-300', icon: CheckCircle2 },
     pending_disbursement: { label: 'বিতরণের অপেক্ষায়', color: 'bg-amber-100 text-amber-800 border-amber-300', icon: Clock },
+    awaiting_takeup: { label: 'পরে নেবে', color: 'bg-violet-100 text-violet-800 border-violet-300', icon: PauseCircle },
     pending_amount_approval: { label: 'পরিমাণ পরিবর্তনের অনুমোদন অপেক্ষা', color: 'bg-orange-100 text-orange-800 border-orange-300', icon: Clock },
     rejected: { label: 'প্রত্যাখ্যাত', color: 'bg-rose-100 text-rose-800 border-rose-300', icon: XCircle },
     disbursed: { label: 'বিতরণ হয়েছে', color: 'bg-emerald-100 text-emerald-800 border-emerald-300', icon: CheckCircle2 },
@@ -272,12 +277,22 @@ const PIPELINE_STAGES = [
     { key: 'disbursed', label: '৫. বিতরণ সম্পন্ন', desc: 'ঋণ বিতরণ' },
 ];
 
+const ADMISSION_HO_BLOCKED_MESSAGE =
+    'সদস্য ভর্তি অনুমোদিত না হওয়া পর্যন্ত Head Office এ পাঠানো যাবে না। আগে ভর্তি অনুমোদন সম্পন্ন করতে হবে।';
+
 export default function Show({ application, routes, categories = [] }: Props) {
     const pageAuth = usePage().props.auth as { user?: { role?: { name: string } } } | undefined;
     const roleName = pageAuth?.user?.role?.name;
     const isBranchUser = roleName === 'branch_user';
     const isFieldOfficer = roleName === 'field_officer';
     const hoSendCutoff = useHoSendCutoff();
+    const admissionBlocksHoSend = application.can_send_to_head_office === false;
+    const hoSendBlocked = hoSendCutoff.is_blocked || admissionBlocksHoSend;
+    const hoSendBlockedMessage = hoSendCutoff.is_blocked
+        ? hoSendCutoff.blocked_message
+        : admissionBlocksHoSend
+            ? ADMISSION_HO_BLOCKED_MESSAGE
+            : undefined;
     const isBranchManager = roleName === 'branch_manager' || roleName === 'super_admin';
     const isSuperAdmin = canHeadOfficeModify(pageAuth);
     const canRespondToIssues = isBranchUser || isBranchManager;
@@ -955,6 +970,7 @@ export default function Show({ application, routes, categories = [] }: Props) {
             case 'submitted':
             case 'under_review':
             case 'ready_for_head_office':
+            case 'awaiting_takeup':
                 return 1;
             case 'pending_head_office':
             case 'needs_correction':
@@ -993,15 +1009,6 @@ export default function Show({ application, routes, categories = [] }: Props) {
                         iconColor: 'text-amber-600',
                     };
                 }
-                if (!application.can_submit) {
-                    return {
-                        title: 'পেন্ডিং অবস্থা: সদস্য ভর্তি অনুমোদন অপেক্ষমাণ',
-                        desc: 'সদস্যের ভর্তি প্রক্রিয়া হেড অফিসে অনুমোদিত হওয়ার পর এই ঋণ আবেদনটি সাবমিট করা যাবে।',
-                        badgeColor: 'bg-amber-100 text-amber-900 border-amber-300',
-                        cardBg: 'bg-amber-50/90 border-amber-300/80 text-amber-950',
-                        iconColor: 'text-amber-600',
-                    };
-                }
                 return {
                     title: 'পেন্ডিং অবস্থা: শাখা সাবমিটের জন্য প্রস্তুত',
                     desc: 'সকল ফর্ম সংরক্ষণ সম্পন্ন হয়েছে। উপরের "সাবমিট করুন" বাটনে ক্লিক করে শাখা ব্যবস্থাপকের কাছে জমা দিন।',
@@ -1023,12 +1030,29 @@ export default function Show({ application, routes, categories = [] }: Props) {
                     iconColor: 'text-yellow-600',
                 };
             case 'ready_for_head_office':
+                if (admissionBlocksHoSend) {
+                    return {
+                        title: 'পেন্ডিং অবস্থা: সদস্য ভর্তি অনুমোদন অপেক্ষমাণ',
+                        desc: ADMISSION_HO_BLOCKED_MESSAGE,
+                        badgeColor: 'bg-amber-100 text-amber-900 border-amber-300',
+                        cardBg: 'bg-amber-50/90 border-amber-300/80 text-amber-950',
+                        iconColor: 'text-amber-600',
+                    };
+                }
                 return {
                     title: 'পেন্ডিং অবস্থা: শাখা অনুমোদিত — হেড অফিসে পাঠানো প্রয়োজন',
                     desc: 'শাখা থেকে আবেদনটি অনুমোদিত হয়েছে। "Head Office এ পাঠান" বাটনে ক্লিক করে পাঠিয়ে দিন।',
                     badgeColor: 'bg-emerald-100 text-emerald-900 border-emerald-300',
                     cardBg: 'bg-emerald-50/90 border-emerald-200 text-emerald-950',
                     iconColor: 'text-emerald-600',
+                };
+            case 'awaiting_takeup':
+                return {
+                    title: 'পেন্ডিং অবস্থা: পরে নেবে — শাখা কিউ',
+                    desc: 'সদস্য এখন ঋণ নেবেন না। নেওয়ার সময় «HO রেডি» চাপুন, তারপর হেড অফিসে পাঠিয়ে আবার অনুমোদন নিন। এই অবস্থায় বিতরণ বা সরাসরি HO পাঠানো যাবে না।',
+                    badgeColor: 'bg-violet-100 text-violet-900 border-violet-300',
+                    cardBg: 'bg-violet-50/90 border-violet-200 text-violet-950',
+                    iconColor: 'text-violet-600',
                 };
             case 'pending_head_office':
                 return {
@@ -1377,36 +1401,29 @@ export default function Show({ application, routes, categories = [] }: Props) {
                                 </Button>
                             )}
 
-                            {application.status === 'draft' && application.all_forms_complete && (
-                                application.can_submit ? (
-                                    <Button
-                                        className="w-full sm:w-auto bg-emerald-600 hover:bg-emerald-700 text-white shadow-xs font-semibold rounded-xl text-xs sm:text-sm h-9 sm:h-10"
-                                        onClick={() => {
-                                            if (confirm('ঋণ আবেদনটি শাখা ব্যবস্থাপকের কাছে জমা দিতে চান?')) {
-                                                router.patch(routes.submit);
-                                            }
-                                        }}
-                                    >
-                                        <Send className="w-4 h-4 mr-1.5" />
-                                        সাবমিট করুন
-                                    </Button>
-                                ) : (
-                                    <Button disabled variant="outline" className="w-full sm:w-auto rounded-xl text-xs h-9 sm:h-10" title="সদস্য ভর্তি অনুমোদিত হলে জমা দেওয়া যাবে">
-                                        <Send className="w-4 h-4 mr-1.5" />
-                                        সাবমিট (ভর্তি অনুমোদন অপেক্ষমান)
-                                    </Button>
-                                )
+                            {application.status === 'draft' && application.can_submit && (
+                                <Button
+                                    className="w-full sm:w-auto bg-emerald-600 hover:bg-emerald-700 text-white shadow-xs font-semibold rounded-xl text-xs sm:text-sm h-9 sm:h-10"
+                                    onClick={() => {
+                                        if (confirm('ঋণ আবেদনটি শাখা ব্যবস্থাপকের কাছে জমা দিতে চান?')) {
+                                            router.patch(routes.submit);
+                                        }
+                                    }}
+                                >
+                                    <Send className="w-4 h-4 mr-1.5" />
+                                    সাবমিট করুন
+                                </Button>
                             )}
                             {application.status === 'ready_for_head_office' && isBranchUser && (
                                 <Button
                                     className="w-full sm:w-auto bg-indigo-600 hover:bg-indigo-700 text-white shadow-xs font-semibold rounded-xl text-xs sm:text-sm h-9 sm:h-10"
                                     onClick={() => {
-                                        if (!hoSendCutoff.is_blocked) {
+                                        if (!hoSendBlocked) {
                                             setShowLoanHoModal(true);
                                         }
                                     }}
-                                    disabled={hoSendCutoff.is_blocked}
-                                    title={hoSendCutoff.is_blocked ? hoSendCutoff.blocked_message : undefined}
+                                    disabled={hoSendBlocked}
+                                    title={hoSendBlockedMessage}
                                 >
                                     <Send className="w-4 h-4 mr-1.5" />
                                     Head Office এ পাঠান
@@ -1428,7 +1445,7 @@ export default function Show({ application, routes, categories = [] }: Props) {
                             {application.status === 'pending_disbursement' && isBranchUser && routes.disburse && (
                                 <div
                                     ref={disburseCtaRef}
-                                    className={wantsDisburseAction ? 'w-full sm:w-auto rounded-xl ring-4 ring-emerald-200' : 'w-full sm:w-auto'}
+                                    className={`flex flex-wrap gap-2 ${wantsDisburseAction ? 'w-full sm:w-auto rounded-xl ring-4 ring-emerald-200' : 'w-full sm:w-auto'}`}
                                 >
                                     <Button
                                         className="w-full sm:w-auto bg-emerald-600 hover:bg-emerald-700 text-white shadow-xs font-semibold rounded-xl text-xs sm:text-sm h-9 sm:h-10"
@@ -1437,7 +1454,34 @@ export default function Show({ application, routes, categories = [] }: Props) {
                                         <CheckCircle2 className="w-4 h-4 mr-1.5" />
                                         বিতরণ করুন
                                     </Button>
+                                    {routes.deferTakeup && (
+                                        <Button
+                                            variant="outline"
+                                            className="w-full sm:w-auto rounded-xl text-xs sm:text-sm h-9 sm:h-10 border-violet-300 text-violet-800 hover:bg-violet-50"
+                                            onClick={() => {
+                                                if (confirm('সদস্য এখন ঋণ নেবেন না? আবেদনটি «পরে নেবে» কিউতে যাবে। পরে HO রেডি করে আবার অনুমোদন নিতে হবে।')) {
+                                                    router.patch(routes.deferTakeup!);
+                                                }
+                                            }}
+                                        >
+                                            <PauseCircle className="w-4 h-4 mr-1.5" />
+                                            পরে নেবে
+                                        </Button>
+                                    )}
                                 </div>
+                            )}
+                            {application.status === 'awaiting_takeup' && isBranchUser && routes.readyFromAwaiting && (
+                                <Button
+                                    className="w-full sm:w-auto bg-indigo-600 hover:bg-indigo-700 text-white shadow-xs font-semibold rounded-xl text-xs sm:text-sm h-9 sm:h-10"
+                                    onClick={() => {
+                                        if (confirm('এই ঋণ হেড অফিসে পাঠানোর জন্য রেডি করবেন? এরপর «HO পাঠান» চাপতে হবে।')) {
+                                            router.patch(routes.readyFromAwaiting!);
+                                        }
+                                    }}
+                                >
+                                    <Send className="w-4 h-4 mr-1.5" />
+                                    HO রেডি
+                                </Button>
                             )}
                             {isSuperAdmin && application.status !== 'draft' && application.status !== 'disbursed' && application.status !== 'cancelled' && (
                                 <Button
@@ -1585,11 +1629,42 @@ export default function Show({ application, routes, categories = [] }: Props) {
                                             <CheckCircle2 className="w-4 h-4 mr-1" />
                                             {application.can_disburse ? 'এখান থেকেই বিতরণ করুন' : 'বিতরণ করুন — ফর্ম পূরণ শুরু'}
                                         </Button>
+                                        {routes.deferTakeup && (
+                                            <Button
+                                                size="sm"
+                                                variant="outline"
+                                                className="border-violet-300 text-violet-800 hover:bg-violet-50 font-bold rounded-lg text-xs"
+                                                onClick={() => {
+                                                    if (confirm('সদস্য এখন ঋণ নেবেন না? আবেদনটি «পরে নেবে» কিউতে যাবে। পরে HO রেডি করে আবার অনুমোদন নিতে হবে।')) {
+                                                        router.patch(routes.deferTakeup!);
+                                                    }
+                                                }}
+                                            >
+                                                <PauseCircle className="w-4 h-4 mr-1" />
+                                                পরে নেবে
+                                            </Button>
+                                        )}
                                         {!application.can_disburse && pendingDisburseFormIds.length > 0 && (
                                             <span className="text-[11px] font-semibold text-amber-800">
                                                 বাকি: {pendingDisburseFormIds.map((id) => `ফর্ম ${id}`).join(' ও ')}
                                             </span>
                                         )}
+                                    </div>
+                                )}
+                                {application.status === 'awaiting_takeup' && isBranchUser && routes.readyFromAwaiting && (
+                                    <div className="mt-2.5">
+                                        <Button
+                                            size="sm"
+                                            className="bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-lg text-xs"
+                                            onClick={() => {
+                                                if (confirm('এই ঋণ হেড অফিসে পাঠানোর জন্য রেডি করবেন? এরপর «HO পাঠান» চাপতে হবে।')) {
+                                                    router.patch(routes.readyFromAwaiting!);
+                                                }
+                                            }}
+                                        >
+                                            <Send className="w-4 h-4 mr-1" />
+                                            HO রেডি
+                                        </Button>
                                     </div>
                                 )}
                             </div>
@@ -2512,8 +2587,9 @@ export default function Show({ application, routes, categories = [] }: Props) {
                 ]}
                 cutoffLabel={hoSendCutoff.label}
                 cutoffBadge={hoSendCutoff.badge}
-                isBlocked={hoSendCutoff.is_blocked}
-                blockedMessage={hoSendCutoff.blocked_message}
+                isBlocked={hoSendBlocked}
+                blockedMessage={hoSendBlockedMessage}
+                blockedTitle={admissionBlocksHoSend && !hoSendCutoff.is_blocked ? 'ভর্তি অনুমোদন প্রয়োজন' : 'সময়সীমা শেষ'}
             />
             {/* ── APPROVAL COMMENT EDIT MODAL (Super Admin / Head Office) ───────────── */}
             <EditApprovalCommentModal

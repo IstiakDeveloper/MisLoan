@@ -30,6 +30,7 @@ interface Props {
     cutoffBadge?: string;
     isBlocked?: boolean;
     blockedMessage?: string;
+    blockedTitle?: string;
 }
 
 export default function SendLoanToHoModal({
@@ -42,6 +43,7 @@ export default function SendLoanToHoModal({
     cutoffBadge = '৫:০০ PM',
     isBlocked = false,
     blockedMessage,
+    blockedTitle = 'সময়সীমা শেষ',
 }: Props) {
     if (!isOpen) return null;
 
@@ -88,7 +90,7 @@ export default function SendLoanToHoModal({
                         isBlocked ? 'text-rose-800' : 'text-amber-800'
                     }`}>
                         <Clock className={`w-4 h-4 shrink-0 stroke-[2.5] ${isBlocked ? 'text-rose-600' : 'text-amber-600'}`} />
-                        <span>{isBlocked ? 'সময়সীমা শেষ' : 'জরুরি সময়সীমা ও ব্যবসায়িক নিয়মাবলী'}</span>
+                        <span>{isBlocked ? blockedTitle : 'জরুরি সময়সীমা ও ব্যবসায়িক নিয়মাবলী'}</span>
                     </div>
                     <p className={`text-xs leading-relaxed font-semibold ${isBlocked ? 'text-rose-900' : 'text-amber-900'}`}>
                         {isBlocked

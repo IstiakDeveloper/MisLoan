@@ -494,19 +494,14 @@ class MemberAdmissionController extends Controller
         $admissions = $admissions->through(function (MemberAdmission $admission) use ($user) {
             $arr = $admission->toArray();
             $arr['tracking_state'] = $admission->getTrackingState();
-            $activeLoan = $admission->loanApplications()
-                ->whereIn('status', [
-                    LoanApplication::STATUS_SUBMITTED,
-                    LoanApplication::STATUS_UNDER_REVIEW,
-                    LoanApplication::STATUS_READY_FOR_HEAD_OFFICE,
-                    LoanApplication::STATUS_PENDING_HEAD_OFFICE,
-                    LoanApplication::STATUS_PENDING_DISBURSEMENT,
-                    LoanApplication::STATUS_DISBURSED,
-                ])
-                ->latest('id')
-                ->first();
+            $activeLoan = $admission->existingLoanForm();
             $arr['has_active_loan'] = $activeLoan !== null;
             $arr['active_loan_status'] = $activeLoan?->status;
+            $arr['existing_loan_form'] = $activeLoan ? [
+                'id' => $activeLoan->id,
+                'application_no' => $activeLoan->application_no,
+                'status' => $activeLoan->status,
+            ] : null;
             $hasDisbursedLoan = (bool) ($admission->has_disbursed_loan ?? false);
             $arr['has_disbursed_loan'] = $hasDisbursedLoan;
             $isRenewalOrLegacy = (bool) (($admission->previous_admission_id ?? null) || ((int) ($admission->loan_dofa ?? 0) > 1) || ($admission->is_legacy ?? false));
@@ -1004,9 +999,10 @@ class MemberAdmissionController extends Controller
                 $admissionData['employee_name'] = $admissionData['employee_name'] ?: ($authUser->pin ?: $authUser->username);
             }
 
-            // Draft = always draft status; legacy / renewal / loan application auto-approves
+            // Draft stays draft; only legacy/old members auto-approve. New members keep
+            // their own admission workflow even when proceeding to a loan form.
             $isProceedingToLoan = $request->input('next_action') === 'loan_application' || $request->boolean('redirect_to_loan') || $request->boolean('cycle_renewal');
-            if ($isLegacy || $admissionData['is_legacy'] || $isProceedingToLoan) {
+            if ($isLegacy || $admissionData['is_legacy']) {
                 $admissionData['status'] = 'approved';
                 $admissionData['submitted_by'] = $authUser->id;
                 $admissionData['submitted_at'] = now();
@@ -1036,7 +1032,7 @@ class MemberAdmissionController extends Controller
             DB::commit();
 
             // Redirect directly to loan selection or draft if officer clicked 'Save & Proceed to Loan'
-            if ($request->input('next_action') === 'loan_application' || $request->boolean('redirect_to_loan') || $request->boolean('cycle_renewal')) {
+            if ($isProceedingToLoan) {
                 return $this->handleLoanRedirectOrDraft($request, $admission);
             }
 
@@ -1493,10 +1489,11 @@ class MemberAdmissionController extends Controller
                 }
             }
 
-            // Legacy / renewal draft: when proceeding to loan or saving renewal, auto-approve
+            // Legacy / renewal draft auto-approves. New members keep the admission workflow
+            // even when the officer proceeds to fill a loan form.
             $isProceedingToLoan = $request->input('next_action') === 'loan_application' || $request->boolean('redirect_to_loan') || $request->boolean('cycle_renewal');
             $legacyAutoApproved = false;
-            if (($isLegacy || $isRenewalOrOld || $isProceedingToLoan) && ($memberAdmission->isDraft() || ! $saveAsDraft || $isProceedingToLoan)) {
+            if (($isLegacy || $isRenewalOrOld) && ($memberAdmission->isDraft() || ! $saveAsDraft || $isProceedingToLoan)) {
                 $updateData['status'] = 'approved';
                 $updateData['submitted_by'] = $updateData['submitted_by'] ?? auth()->id();
                 $updateData['submitted_at'] = $updateData['submitted_at'] ?? now();
@@ -1538,7 +1535,7 @@ class MemberAdmissionController extends Controller
             }
 
             // Redirect directly to loan selection or draft if officer clicked 'Save & Proceed to Loan'
-            if ($request->input('next_action') === 'loan_application' || $request->boolean('redirect_to_loan') || $request->boolean('cycle_renewal')) {
+            if ($isProceedingToLoan) {
                 return $this->handleLoanRedirectOrDraft($request, $memberAdmission);
             }
 
@@ -2049,8 +2046,12 @@ class MemberAdmissionController extends Controller
      */
     private function handleLoanRedirectOrDraft(Request $request, MemberAdmission $memberAdmission)
     {
-        // Ensure member admission is approved for loan application
-        if ($memberAdmission->status !== 'approved') {
+        if ($memberAdmission->status === 'rejected') {
+            return redirect()->route('member-admissions.index')
+                ->with('error', 'প্রত্যাখ্যাত সদস্যের জন্য ঋণ আবেদন করা যাবে না।');
+        }
+
+        if ($memberAdmission->status !== 'approved' && $memberAdmission->isRepeatOrLegacyMember()) {
             $memberAdmission->update([
                 'status' => 'approved',
                 'submitted_by' => $memberAdmission->submitted_by ?: auth()->id(),
@@ -2064,6 +2065,19 @@ class MemberAdmissionController extends Controller
         $loanProductId = (int) $request->input('loan_product_id');
         $loanCategoryId = (int) $request->input('loan_category_id');
         $requestedAmount = (float) ($request->input('requested_amount') ?: ($request->input('requested_loan_amount') ?: ($memberAdmission->requested_loan_amount ?: 0)));
+
+        $existingForm = $memberAdmission->existingLoanForm();
+        if ($existingForm) {
+            return redirect()
+                ->route('member.loan-applications.show', $existingForm->id)
+                ->with('error', MemberAdmission::alreadyLoanFormMessage($existingForm));
+        }
+
+        if ($memberAdmission->mustUseCycleHubForNextLoan()) {
+            return redirect()
+                ->route('member.cycle-hub.index')
+                ->with('error', MemberAdmission::nextLoanViaCycleHubMessage());
+        }
 
         // If product or category not explicitly selected, try to find an existing draft or fallback to first active product
         if ($loanProductId <= 0 || $loanCategoryId <= 0) {

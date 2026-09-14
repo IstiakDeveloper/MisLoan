@@ -6,7 +6,7 @@ import {
     Plus, Calendar, FileText, CheckCircle, XCircle, Clock,
     Search, Eye, Edit, Trash2, X, AlertTriangle, MessageSquare, Send,
     Filter, RefreshCw, UserCheck, Layers, CreditCard, ChevronRight, AlertCircle, ArrowUpRight, Sparkles,
-    Download, Printer, Building2, CheckCircle2, Banknote, Ban
+    Download, Printer, Building2, CheckCircle2, Banknote, Ban, PauseCircle
 } from 'lucide-react';
 import ListPagination from '@/components/ListPagination';
 import AutoFitTableContainer from '@/components/AutoFitTableContainer';
@@ -119,6 +119,7 @@ interface LoanApplication {
     form_saved?: Record<number, boolean>;
     all_forms_complete?: boolean;
     can_submit?: boolean;
+    can_send_to_head_office?: boolean;
     can_disburse?: boolean;
     can_change_approved_amount?: boolean;
     amount_change_pending?: boolean;
@@ -142,6 +143,7 @@ interface Stats {
     submitted: number;
     approved: number;
     pending_disbursement?: number;
+    awaiting_takeup?: number;
     rejected: number;
     ready_for_head_office?: number;
     pending_head_office?: number;
@@ -196,6 +198,7 @@ const statusLabels: Record<string, { label: string; bg: string; text: string; bo
     pending_head_office: { label: 'Pending Head Office', bg: 'bg-indigo-50', text: 'text-indigo-700', border: 'border-indigo-200' },
     approved: { label: 'Approved (অনুমোদিত)', bg: 'bg-emerald-100', text: 'text-emerald-800', border: 'border-emerald-300' },
     pending_disbursement: { label: 'Disburse Pending (বিতরণ অপেক্ষা)', bg: 'bg-amber-50', text: 'text-amber-800', border: 'border-amber-200' },
+    awaiting_takeup: { label: 'পরে নেবে', bg: 'bg-violet-50', text: 'text-violet-800', border: 'border-violet-200' },
     pending_amount_approval: { label: 'Amount Re-approval (পরিমাণ অনুমোদন)', bg: 'bg-orange-50', text: 'text-orange-800', border: 'border-orange-200' },
     rejected: { label: 'Rejected (প্রত্যাখ্যাত)', bg: 'bg-rose-50', text: 'text-rose-700', border: 'border-rose-200' },
     disbursed: { label: 'Disbursed (বিতরণকৃত)', bg: 'bg-purple-50', text: 'text-purple-700', border: 'border-purple-200' },
@@ -231,6 +234,8 @@ interface Member {
     status: string;
     requested_loan_amount?: number | string;
     has_active_loan?: boolean;
+    must_use_cycle_hub?: boolean;
+    existing_loan_form?: { id: number; application_no: string; status: string } | null;
     active_loans?: ActiveLoan[];
 }
 
@@ -259,6 +264,19 @@ export default function Index({
     const isBranchManager = roleName === 'branch_manager';
     const isFieldOfficer = roleName === 'field_officer';
     const canCreateLoanApplication = isFieldOfficer || roleName === 'branch_user';
+    const ADMISSION_HO_BLOCKED_MESSAGE =
+        'সদস্য ভর্তি অনুমোদিত না হওয়া পর্যন্ত Head Office এ পাঠানো যাবে না। আগে ভর্তি অনুমোদন সম্পন্ন করতে হবে।';
+    const canSendLoanToHo = (app: LoanApplication) =>
+        app.status === 'ready_for_head_office' && app.can_send_to_head_office !== false;
+    const loanHoSendBlockedMessage = (app: LoanApplication) => {
+        if (hoSendCutoff.is_blocked) {
+            return hoSendCutoff.blocked_message;
+        }
+        if (app.can_send_to_head_office === false) {
+            return ADMISSION_HO_BLOCKED_MESSAGE;
+        }
+        return 'Head Office এ পাঠান';
+    };
 
     const handleSubmitApplication = (app: LoanApplication) => {
         if (!app.can_submit) return;
@@ -269,6 +287,20 @@ export default function Index({
 
     const canChangeApprovedAmount = (app: LoanApplication) =>
         Boolean(isBranchUser && app.can_change_approved_amount);
+
+    const deferTakeup = (app: LoanApplication) => {
+        if (!confirm('সদস্য এখন ঋণ নেবেন না? আবেদনটি «পরে নেবে» কিউতে যাবে। পরে HO রেডি করে আবার অনুমোদন নিতে হবে।')) {
+            return;
+        }
+        router.patch(`/member/loan-applications/${app.id}/defer-takeup`, {}, keepListFilters);
+    };
+
+    const markReadyFromAwaiting = (app: LoanApplication) => {
+        if (!confirm('এই ঋণ হেড অফিসে পাঠানোর জন্য রেডি করবেন? এরপর «HO পাঠান» চাপতে হবে।')) {
+            return;
+        }
+        router.patch(`/member/loan-applications/${app.id}/ready-from-awaiting`, {}, keepListFilters);
+    };
 
     const currentApprovedAmount = (app: LoanApplication) =>
         Math.round(Number(app.approved_amount ?? app.requested_amount ?? 0));
@@ -539,7 +571,16 @@ export default function Index({
     const handleMemberSelect = (member: Member) => {
         if (member.status === 'rejected') return;
         if (member.has_active_loan) {
-            alert('ঋণ সক্রিয় থাকা পর্যন্ত একই সদস্যের নামে ২ বার ঋণ আবেদন করা যাবে না।');
+            const loanNo = member.existing_loan_form?.application_no || member.active_loans?.[0]?.application_no;
+            alert(loanNo ? `Already Loan Form আছে (আবেদন নং: ${loanNo})` : 'Already Loan Form আছে');
+            if (member.existing_loan_form?.id) {
+                router.visit(`/member/loan-applications/${member.existing_loan_form.id}`);
+            }
+            return;
+        }
+        if (member.must_use_cycle_hub) {
+            alert('এই সদস্যের আগের ঋণ পরিশোধিত। পরবর্তী ঋণ সাইকেল হাব থেকে করতে হবে।');
+            router.visit('/member/cycle-hub');
             return;
         }
         setSelectedMember(member);
@@ -552,7 +593,13 @@ export default function Index({
 
     const handleSubmit = () => {
         if (selectedMember?.has_active_loan) {
-            alert('ঋণ সক্রিয় থাকা পর্যন্ত একই সদস্যের নামে ২ বার ঋণ আবেদন করা যাবে না।');
+            const loanNo = selectedMember.existing_loan_form?.application_no || selectedMember.active_loans?.[0]?.application_no;
+            alert(loanNo ? `Already Loan Form আছে (আবেদন নং: ${loanNo})` : 'Already Loan Form আছে');
+            return;
+        }
+        if (selectedMember?.must_use_cycle_hub) {
+            alert('এই সদস্যের আগের ঋণ পরিশোধিত। পরবর্তী ঋণ সাইকেল হাব থেকে করতে হবে।');
+            router.visit('/member/cycle-hub');
             return;
         }
         if (selectedCategory && selectedProduct && selectedMember && requestedAmount) {
@@ -610,6 +657,7 @@ export default function Index({
             submitted: stats.submitted || 0,
             approved: stats.approved || 0,
             pending_disbursement: stats.pending_disbursement || 0,
+            awaiting_takeup: stats.awaiting_takeup || 0,
             rejected: stats.rejected || 0,
             pending_head_office: (stats as any).pending_head_office || 0,
             ready_for_head_office: (stats as any).ready_for_head_office || 0,
@@ -719,6 +767,16 @@ export default function Index({
             barColor: 'from-amber-500 to-amber-600',
             activeBg: 'bg-amber-600 border-amber-600 text-white',
         },
+        {
+            key: 'awaiting_takeup',
+            label: 'পরে নেবে',
+            count: filteredStats.awaiting_takeup,
+            icon: PauseCircle,
+            iconColor: 'text-violet-600',
+            iconBg: 'bg-violet-50',
+            barColor: 'from-violet-500 to-violet-600',
+            activeBg: 'bg-violet-600 border-violet-600 text-white',
+        },
         ...(isBranchUser
             ? [{
                 key: 'disbursed',
@@ -752,7 +810,7 @@ export default function Index({
     const isStatActive = (key: string) => (key === 'all' ? isAllStatus : currentStatusFilter === key);
 
     const readyForHoIds = useMemo(
-        () => applicationRows.filter((a) => a.status === 'ready_for_head_office').map((a) => a.id),
+        () => applicationRows.filter((a) => canSendLoanToHo(a)).map((a) => a.id),
         [applicationRows],
     );
     const allReadySelected =
@@ -771,7 +829,7 @@ export default function Index({
     const [isSendingLoanToHo, setIsSendingLoanToHo] = useState(false);
 
     const openSendSingleToHo = (app: LoanApplication) => {
-        if (hoSendCutoff.is_blocked) return;
+        if (hoSendCutoff.is_blocked || app.can_send_to_head_office === false) return;
         const member = app.member_display ?? app.member_admission;
         const memberName = member?.applicant_name_bn || member?.applicant_name_en || 'সদস্য';
         setLoanHoModalItems([
@@ -1185,7 +1243,9 @@ export default function Index({
                                                         type="checkbox"
                                                         checked={selectedHoIds.includes(app.id)}
                                                         onChange={() => toggleHoSelect(app.id)}
-                                                        className="rounded border-slate-300 text-indigo-600 focus:ring-indigo-500 shrink-0"
+                                                        disabled={!canSendLoanToHo(app)}
+                                                        title={!canSendLoanToHo(app) ? ADMISSION_HO_BLOCKED_MESSAGE : undefined}
+                                                        className="rounded border-slate-300 text-indigo-600 focus:ring-indigo-500 shrink-0 disabled:opacity-40"
                                                     />
                                                 )}
                                                 <div className="w-9 h-9 rounded-xl bg-gradient-to-tr from-blue-600 to-indigo-600 text-white font-extrabold flex items-center justify-center text-xs shadow-sm">
@@ -1293,26 +1353,15 @@ export default function Index({
                                                     <span>ফর্ম</span>
                                                 </button>
                                             )}
-                                            {app.status === 'draft' && app.all_forms_complete && (
-                                                app.can_submit ? (
-                                                    <button
-                                                        onClick={() => handleSubmitApplication(app)}
-                                                        className="inline-flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold text-white bg-emerald-600 hover:bg-emerald-700 border border-emerald-700 transition active:scale-95"
-                                                        title="শাখা ব্যবস্থাপকের কাছে জমা দিন"
-                                                    >
-                                                        <Send className="w-3.5 h-3.5" />
-                                                        <span>সাবমিট</span>
-                                                    </button>
-                                                ) : (
-                                                    <button
-                                                        disabled
-                                                        className="inline-flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold text-slate-400 bg-slate-100 border border-slate-200 cursor-not-allowed"
-                                                        title="সদস্য ভর্তি অনুমোদিত হলে জমা দেওয়া যাবে"
-                                                    >
-                                                        <Send className="w-3.5 h-3.5" />
-                                                        <span>সাবমিট</span>
-                                                    </button>
-                                                )
+                                            {app.status === 'draft' && app.can_submit && (
+                                                <button
+                                                    onClick={() => handleSubmitApplication(app)}
+                                                    className="inline-flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold text-white bg-emerald-600 hover:bg-emerald-700 border border-emerald-700 transition active:scale-95"
+                                                    title="শাখা ব্যবস্থাপকের কাছে জমা দিন"
+                                                >
+                                                    <Send className="w-3.5 h-3.5" />
+                                                    <span>সাবমিট</span>
+                                                </button>
                                             )}
                                             {app.status === 'draft' && (
                                                 <button
@@ -1323,6 +1372,17 @@ export default function Index({
                                                     <Edit className="w-4 h-4" />
                                                 </button>
                                             )}
+                                        {app.status === 'ready_for_head_office' && isBranchUser && (
+                                            <button
+                                                onClick={() => openSendSingleToHo(app)}
+                                                disabled={hoSendCutoff.is_blocked || app.can_send_to_head_office === false}
+                                                className="inline-flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold text-white bg-indigo-600 hover:bg-indigo-700 border border-indigo-700 transition active:scale-95 disabled:opacity-40 disabled:cursor-not-allowed"
+                                                title={loanHoSendBlockedMessage(app)}
+                                            >
+                                                <Send className="w-3.5 h-3.5" />
+                                                <span>HO পাঠান</span>
+                                            </button>
+                                        )}
                                         {canChangeApprovedAmount(app) && (
                                             <button
                                                 onClick={() => openAmountChange(app)}
@@ -1334,6 +1394,7 @@ export default function Index({
                                             </button>
                                         )}
                                         {app.status === 'pending_disbursement' && isBranchUser && (
+                                            <>
                                             <button
                                                 onClick={() => {
                                                     router.get(`/member/loan-applications/${app.id}?action=disburse`);
@@ -1343,6 +1404,25 @@ export default function Index({
                                             >
                                                 <CheckCircle className="w-3.5 h-3.5" />
                                                 <span>বিতরণ</span>
+                                            </button>
+                                            <button
+                                                onClick={() => deferTakeup(app)}
+                                                className="inline-flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold text-violet-800 bg-violet-50 hover:bg-violet-100 border border-violet-200 transition active:scale-95"
+                                                title="সদস্য এখন নেবেন না — পরে নেবে কিউতে রাখুন"
+                                            >
+                                                <PauseCircle className="w-3.5 h-3.5" />
+                                                <span>পরে নেবে</span>
+                                            </button>
+                                            </>
+                                        )}
+                                        {app.status === 'awaiting_takeup' && isBranchUser && (
+                                            <button
+                                                onClick={() => markReadyFromAwaiting(app)}
+                                                className="inline-flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold text-white bg-indigo-600 hover:bg-indigo-700 border border-indigo-700 transition active:scale-95"
+                                                title="হেড অফিসে পাঠানোর জন্য রেডি করুন"
+                                            >
+                                                <Send className="w-3.5 h-3.5" />
+                                                <span>HO রেডি</span>
                                             </button>
                                         )}
                                         </div>
@@ -1425,7 +1505,9 @@ export default function Index({
                                                                     type="checkbox"
                                                                     checked={selectedHoIds.includes(app.id)}
                                                                     onChange={() => toggleHoSelect(app.id)}
-                                                                    className="rounded border-slate-300 text-indigo-600 focus:ring-indigo-500"
+                                                                    disabled={!canSendLoanToHo(app)}
+                                                                    title={!canSendLoanToHo(app) ? ADMISSION_HO_BLOCKED_MESSAGE : undefined}
+                                                                    className="rounded border-slate-300 text-indigo-600 focus:ring-indigo-500 disabled:opacity-40"
                                                                 />
                                                             ) : null}
                                                         </td>
@@ -1553,26 +1635,15 @@ export default function Index({
                                                             )}
                                                             {app.status === 'draft' && (
                                                                 <>
-                                                                    {app.all_forms_complete && (
-                                                                        app.can_submit ? (
-                                                                            <button
-                                                                                onClick={() => handleSubmitApplication(app)}
-                                                                                className="inline-flex items-center gap-1 text-xs px-2.5 py-1 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-xl shadow-sm transition active:scale-95"
-                                                                                title=" শাখা ব্যবস্থাপকের কাছে জমা দিন"
-                                                                            >
-                                                                                <Send className="w-3 h-3" />
-                                                                                <span>সাবমিট</span>
-                                                                            </button>
-                                                                        ) : (
-                                                                            <button
-                                                                                disabled
-                                                                                className="inline-flex items-center gap-1 text-xs px-2.5 py-1 bg-slate-100 text-slate-400 font-bold rounded-xl border border-slate-200 cursor-not-allowed"
-                                                                                title="সদস্য ভর্তি অনুমোদিত হলে জমা দেওয়া যাবে"
-                                                                            >
-                                                                                <Send className="w-3 h-3" />
-                                                                                <span>সাবমিট</span>
-                                                                            </button>
-                                                                        )
+                                                                    {app.can_submit && (
+                                                                        <button
+                                                                            onClick={() => handleSubmitApplication(app)}
+                                                                            className="inline-flex items-center gap-1 text-xs px-2.5 py-1 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-xl shadow-sm transition active:scale-95"
+                                                                            title=" শাখা ব্যবস্থাপকের কাছে জমা দিন"
+                                                                        >
+                                                                            <Send className="w-3 h-3" />
+                                                                            <span>সাবমিট</span>
+                                                                        </button>
                                                                     )}
                                                                     <button
                                                                         onClick={() => router.get(`/member/loan-applications/${app.id}`)}
@@ -1597,9 +1668,9 @@ export default function Index({
                                                             {app.status === 'ready_for_head_office' && isBranchUser && (
                                                                 <button
                                                                     onClick={() => openSendSingleToHo(app)}
-                                                                    disabled={hoSendCutoff.is_blocked}
+                                                                    disabled={hoSendCutoff.is_blocked || app.can_send_to_head_office === false}
                                                                     className="inline-flex items-center gap-1 text-xs px-2.5 py-1 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-xl shadow-sm transition active:scale-95 shadow-2xs disabled:opacity-40 disabled:cursor-not-allowed"
-                                                                    title={hoSendCutoff.is_blocked ? hoSendCutoff.blocked_message : 'Head Office এ পাঠান'}
+                                                                    title={loanHoSendBlockedMessage(app)}
                                                                 >
                                                                     <Send className="w-3 h-3" />
                                                                     <span>HO পাঠান</span>
@@ -1616,6 +1687,7 @@ export default function Index({
                                                                 </button>
                                                             )}
                                                             {app.status === 'pending_disbursement' && isBranchUser && (
+                                                                <>
                                                                 <button
                                                                     onClick={() => {
                                                                         router.get(`/member/loan-applications/${app.id}?action=disburse`);
@@ -1625,6 +1697,25 @@ export default function Index({
                                                                 >
                                                                     <CheckCircle className="w-3 h-3" />
                                                                     <span>বিতরণ</span>
+                                                                </button>
+                                                                <button
+                                                                    onClick={() => deferTakeup(app)}
+                                                                    className="inline-flex items-center gap-1 text-xs px-2.5 py-1 bg-violet-50 hover:bg-violet-100 text-violet-800 font-bold rounded-xl border border-violet-200 transition active:scale-95"
+                                                                    title="সদস্য এখন নেবেন না — পরে নেবে কিউতে রাখুন"
+                                                                >
+                                                                    <PauseCircle className="w-3 h-3" />
+                                                                    <span>পরে নেবে</span>
+                                                                </button>
+                                                                </>
+                                                            )}
+                                                            {app.status === 'awaiting_takeup' && isBranchUser && (
+                                                                <button
+                                                                    onClick={() => markReadyFromAwaiting(app)}
+                                                                    className="inline-flex items-center gap-1 text-xs px-2.5 py-1 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-xl shadow-sm transition active:scale-95"
+                                                                    title="হেড অফিসে পাঠানোর জন্য রেডি করুন"
+                                                                >
+                                                                    <Send className="w-3 h-3" />
+                                                                    <span>HO রেডি</span>
                                                                 </button>
                                                             )}
                                                         </div>
@@ -1700,7 +1791,8 @@ export default function Index({
                                                     const isRejected = member.status === 'rejected';
                                                     const isApproved = member.status === 'approved';
                                                     const hasActiveLoan = !!member.has_active_loan;
-                                                    const isDisabled = isRejected || hasActiveLoan;
+                                                    const mustUseCycleHub = !!member.must_use_cycle_hub;
+                                                    const isDisabled = isRejected || hasActiveLoan || mustUseCycleHub;
 
                                                     const statusLabels: Record<string, string> = {
                                                         draft: 'খসড়া',
@@ -1708,6 +1800,7 @@ export default function Index({
                                                         under_review: 'পর্যালোচনায়',
                                                         ready_for_head_office: 'শাখা অনুমোদিত',
                                                         pending_head_office: 'হেড অফিসে',
+                                                        awaiting_takeup: 'পরে নেবে',
                                                         needs_revision: 'সংশোধন',
                                                         approved: 'অনুমোদিত',
                                                         rejected: 'প্রত্যাখ্যাত',
@@ -1751,7 +1844,15 @@ export default function Index({
                                                                     )}
                                                                     {hasActiveLoan && (
                                                                         <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-rose-100 text-rose-800">
-                                                                            সক্রিয় ঋণ আছে
+                                                                            Already Loan Form আছে
+                                                                            {member.existing_loan_form?.application_no
+                                                                                ? ` · ${member.existing_loan_form.application_no}`
+                                                                                : ''}
+                                                                        </span>
+                                                                    )}
+                                                                    {mustUseCycleHub && !hasActiveLoan && (
+                                                                        <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-amber-100 text-amber-800">
+                                                                            সাইকেল হাব থেকে করুন
                                                                         </span>
                                                                     )}
                                                                 </div>

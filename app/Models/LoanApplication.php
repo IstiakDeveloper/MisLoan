@@ -89,6 +89,9 @@ class LoanApplication extends Model
         'repaid_by',
         'repaid_at',
         'repayment_notes',
+        'awaiting_takeup_by',
+        'awaiting_takeup_at',
+        'awaiting_note',
         'disbursement_method',
         'disbursement_reference',
         'officer_reviewed_at',
@@ -139,6 +142,7 @@ class LoanApplication extends Model
         'amount_change_requested_at' => 'datetime',
         'disbursed_at' => 'datetime',
         'repaid_at' => 'datetime',
+        'awaiting_takeup_at' => 'datetime',
         'printed_at' => 'datetime',
         'officer_reviewed_at' => 'datetime',
         'manager_reviewed_at' => 'datetime',
@@ -189,6 +193,8 @@ class LoanApplication extends Model
     const STATUS_APPROVED = 'approved';
 
     const STATUS_PENDING_DISBURSEMENT = 'pending_disbursement';
+
+    const STATUS_AWAITING_TAKEUP = 'awaiting_takeup';
 
     const STATUS_PENDING_AMOUNT_APPROVAL = 'pending_amount_approval';
 
@@ -246,6 +252,11 @@ class LoanApplication extends Model
     public function repaidBy(): BelongsTo
     {
         return $this->belongsTo(User::class, 'repaid_by');
+    }
+
+    public function awaitingTakeupBy(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'awaiting_takeup_by');
     }
 
     public function amountChangeRequestedBy(): BelongsTo
@@ -390,6 +401,10 @@ class LoanApplication extends Model
 
         if ($status === self::STATUS_PENDING_DISBURSEMENT) {
             return ['label' => 'বিতরণের জন্য অপেক্ষা (শাখা)', 'pending_with_name' => null];
+        }
+
+        if ($status === self::STATUS_AWAITING_TAKEUP) {
+            return ['label' => 'পরে নেবে (শাখা কিউ)', 'pending_with_name' => null];
         }
 
         if ($status === self::STATUS_NEEDS_CORRECTION) {

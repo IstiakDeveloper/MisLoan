@@ -72,21 +72,7 @@ class MemberCycleHubController extends Controller
      */
     private function loanIsStillActive(LoanApplication $loan): bool
     {
-        if (in_array($loan->status, [
-            LoanApplication::STATUS_REPAID,
-            LoanApplication::STATUS_CANCELLED,
-            LoanApplication::STATUS_REJECTED,
-            LoanApplication::STATUS_DRAFT,
-        ], true)) {
-            return false;
-        }
-
-        if ($loan->status !== LoanApplication::STATUS_DISBURSED) {
-            return true;
-        }
-
-        // Disbursed loans without explicit repayment are considered active
-        return true;
+        return ! in_array($loan->status, MemberAdmission::closedLoanFormStatuses(), true);
     }
 
     /**
@@ -308,6 +294,11 @@ class MemberCycleHubController extends Controller
                 'category_name' => $latestAdmission->memberCategory?->category_name_bn ?: $latestAdmission->memberCategory?->category_name,
                 'customer_photo_path' => $latestAdmission->customer_photo_path,
                 'has_active_loan' => $hasActiveLoan,
+                'existing_loan_form' => $activeLoan ? [
+                    'id' => $activeLoan->id,
+                    'application_no' => $activeLoan->application_no,
+                    'status' => $activeLoan->status,
+                ] : null,
                 'active_loan' => $activeLoan ? [
                     'id' => $activeLoan->id,
                     'application_no' => $activeLoan->application_no,
@@ -483,18 +474,15 @@ class MemberCycleHubController extends Controller
         $canonical = $memberAdmission->canonicalAdmission();
         $sisterIds = $canonical->sisterAdmissionIds();
 
-        $hasActive = LoanApplication::whereIn('member_admission_id', $sisterIds)
-            ->whereNotIn('status', [
-                LoanApplication::STATUS_REPAID,
-                LoanApplication::STATUS_CANCELLED,
-                LoanApplication::STATUS_REJECTED,
-                LoanApplication::STATUS_DRAFT,
-            ])
-            ->exists();
-
-        if ($hasActive) {
+        $existingForm = $canonical->existingLoanForm();
+        if ($existingForm) {
             return response()->json([
-                'message' => 'সদস্যের সক্রিয় ঋণ চলমান রয়েছে। ঋণ পরিশোধের পর পরবর্তী সাইকেল আবেদন করা যাবে।',
+                'message' => MemberAdmission::alreadyLoanFormMessage($existingForm),
+                'existing_loan_form' => [
+                    'id' => $existingForm->id,
+                    'application_no' => $existingForm->application_no,
+                    'status' => $existingForm->status,
+                ],
             ], 422);
         }
 

@@ -146,6 +146,11 @@ interface MemberDetail {
     category_name: string;
     customer_photo_path: string | null;
     has_active_loan: boolean;
+    existing_loan_form?: {
+        id: number;
+        application_no: string;
+        status: string;
+    } | null;
     active_loan: {
         id: number;
         application_no: string;
@@ -683,7 +688,13 @@ export default function Index({
                                         <div className="flex items-center gap-1.5 bg-amber-50 text-amber-900 px-3 py-1.5 rounded-xl border border-amber-200 font-semibold text-xs sm:text-sm">
                                             <Clock className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-amber-600 shrink-0" />
                                             <span>
-                                                সক্রিয় ঋণ চলমান (দফা {memberData.member.current_max_dofa}) — ঋণ পরিশোধ সাপেক্ষে পরবর্তী সাইকেল উন্মুক্ত হবে
+                                                Already Loan Form আছে
+                                                {memberData.member.existing_loan_form?.application_no
+                                                    ? ` (আবেদন নং: ${memberData.member.existing_loan_form.application_no})`
+                                                    : memberData.member.active_loan?.application_no
+                                                      ? ` (আবেদন নং: ${memberData.member.active_loan.application_no})`
+                                                      : ''}
+                                                {' '}— পরিশোধের পর পরবর্তী সাইকেল করা যাবে
                                             </span>
                                         </div>
                                     ) : (

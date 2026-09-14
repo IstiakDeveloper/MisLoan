@@ -319,6 +319,8 @@ Route::middleware(['auth', 'verified'])->group(function () {
             Route::patch('{id}/submit', [App\Http\Controllers\Member\LoanApplicationController::class, 'submit'])->name('submit');
             Route::patch('{id}/send-to-head-office', [App\Http\Controllers\Member\LoanApplicationController::class, 'sendToHeadOffice'])->name('send-to-head-office');
             Route::patch('{id}/disburse', [App\Http\Controllers\Member\LoanApplicationController::class, 'disburse'])->name('disburse');
+            Route::patch('{id}/defer-takeup', [App\Http\Controllers\Member\LoanApplicationController::class, 'deferTakeup'])->name('defer-takeup');
+            Route::patch('{id}/ready-from-awaiting', [App\Http\Controllers\Member\LoanApplicationController::class, 'markReadyForHoFromAwaiting'])->name('ready-from-awaiting');
             Route::patch('{id}/request-amount-change', [App\Http\Controllers\Member\LoanApplicationController::class, 'requestAmountChange'])->name('request-amount-change');
             Route::patch('{id}/update-member-code', [App\Http\Controllers\Member\LoanApplicationController::class, 'updateMemberCode'])->name('update-member-code');
             Route::patch('{id}/update-loan-product', [App\Http\Controllers\Member\LoanApplicationController::class, 'updateLoanProduct'])->name('update-loan-product');
