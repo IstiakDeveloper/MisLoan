@@ -12,3 +12,8 @@ Schedule::command('images:compress-existing --only-unconverted')
     ->dailyAt('02:15')
     ->withoutOverlapping()
     ->name('images-compress-existing');
+
+Schedule::command('notifications:prune --days=15')
+    ->dailyAt('03:00')
+    ->withoutOverlapping()
+    ->name('notifications-prune');

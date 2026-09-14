@@ -4,6 +4,10 @@ namespace App\Providers;
 
 use App\Models\LoanApplication;
 use Illuminate\Http\Resources\Json\JsonResource;
+use Illuminate\Queue\Events\JobFailed;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Queue;
+use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\ServiceProvider;
 use Illuminate\Validation\Rules\Password;
 use Inertia\Inertia;
@@ -36,6 +40,18 @@ class AppServiceProvider extends ServiceProvider
         config([
             'app.json_encode_options' => JSON_INVALID_UTF8_SUBSTITUTE | JSON_UNESCAPED_UNICODE,
         ]);
+
+        Queue::failing(function (JobFailed $event): void {
+            $name = $event->job->resolveName();
+            if (! str_contains($name, 'App\\Mail\\')) {
+                return;
+            }
+
+            $uuid = $event->job->uuid();
+            if ($uuid && Schema::hasTable('failed_jobs')) {
+                DB::table('failed_jobs')->where('uuid', $uuid)->delete();
+            }
+        });
 
         // Share unread submissions count with all Inertia views
         Inertia::share([

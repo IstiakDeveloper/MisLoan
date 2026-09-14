@@ -96,6 +96,7 @@ class NotificationService
 
                 $notification->markAsEmailSent();
             } catch (\Throwable $e) {
+                // Mail is best-effort: never queue or store failures.
                 Log::warning("Email dispatch failed for notification ID {$notification->id} to {$user->email}: " . $e->getMessage());
             }
         });
