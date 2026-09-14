@@ -43,12 +43,14 @@ interface Props {
     visibleFormIds?: number[];
     otherCycles: Array<{
         id: number;
+        loan_id?: number | null;
         dofa: number;
         admission_status: string;
         loan_status?: string | null;
         loan_amount?: number | string | null;
     }>;
     currentDofa: number;
+    canDeleteAdmission?: boolean;
     userPermissions: {
         canCreateLoan: boolean;
         canRepayLoan: boolean;
@@ -64,6 +66,7 @@ export default function CycleView({
     visibleFormIds,
     otherCycles,
     currentDofa,
+    canDeleteAdmission = false,
     userPermissions,
 }: Props) {
     const [viewMode, setViewMode] = useState<'single' | 'tabs'>('single');
@@ -302,10 +305,10 @@ export default function CycleView({
                                 <div className="flex gap-1 shrink-0">
                                     {otherCycles.map((c: any) => (
                                         <Link
-                                            key={c.id}
-                                            href={`/member/cycle-hub/cycle/${c.id}`}
+                                            key={`${c.id}-${c.loan_id ?? 0}`}
+                                            href={c.loan_id ? `/member/cycle-hub/cycle/${c.id}?loan_id=${c.loan_id}` : `/member/cycle-hub/cycle/${c.id}`}
                                             className={`px-2 py-0.5 sm:px-2.5 sm:py-1 rounded-lg text-xs font-bold transition-all border ${
-                                                c.id === admission.id
+                                                (c.loan_id && c.loan_id === loanApplication?.id) || (!c.loan_id && c.id === admission.id && c.dofa === currentDofa)
                                                     ? 'bg-emerald-600 text-white border-emerald-600 shadow-xs'
                                                     : 'bg-slate-50 text-slate-700 border-slate-200 hover:bg-slate-100'
                                             }`}
@@ -338,18 +341,16 @@ export default function CycleView({
                             </>
                         )}
 
-                        {/* Admission Edit button (for draft or un-disbursed renewal) */}
                         {(!hasLoan || loanApplication.status === 'draft') && (
                             <a href={`/member-admissions/${admission.id}/edit?cycle_renewal=1`}>
                                 <Button size="sm" variant="outline" className="h-8 text-xs font-semibold text-blue-700 border-blue-200 hover:bg-blue-50 rounded-xl">
                                     <Pencil className="w-3.5 h-3.5 mr-1 text-blue-600" />
-                                    ভর্তি এডিট
+                                    ভর্তি আপডেট
                                 </Button>
                             </a>
                         )}
 
-                        {/* Cycle Delete button */}
-                        {(!hasLoan || loanApplication.status === 'draft' || loanApplication.status === 'rejected') && (
+                        {canDeleteAdmission && (!hasLoan || loanApplication.status === 'draft' || loanApplication.status === 'rejected') && (
                             <Button
                                 size="sm"
                                 variant="outline"

@@ -4,6 +4,7 @@ namespace App\Models;
 
 use App\Services\MemberCodeService;
 use App\Support\AdmissionFormVisibility;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
@@ -256,6 +257,31 @@ class MemberAdmission extends Model
         });
     }
 
+    /**
+     * One row per person on member lists.
+     * Cycle-survey clones stay hidden; if two master rows share a member code, keep the oldest.
+     */
+    public function scopeMasterMembers(Builder $query): Builder
+    {
+        $table = $query->getModel()->getTable();
+
+        return $query
+            ->whereNull("{$table}.previous_admission_id")
+            ->where(function (Builder $outer) use ($table) {
+                $outer->whereNull("{$table}.application_no")
+                    ->orWhere("{$table}.application_no", '')
+                    ->orWhereNotExists(function ($sub) use ($table) {
+                        $sub->from("{$table} as earlier_member")
+                            ->whereColumn('earlier_member.branch_id', "{$table}.branch_id")
+                            ->whereColumn('earlier_member.application_no', "{$table}.application_no")
+                            ->whereNull('earlier_member.previous_admission_id')
+                            ->whereNotNull('earlier_member.application_no')
+                            ->where('earlier_member.application_no', '!=', '')
+                            ->whereColumn('earlier_member.id', '<', "{$table}.id");
+                    });
+            });
+    }
+
     public function submittedBy(): BelongsTo
     {
         return $this->belongsTo(User::class, 'submitted_by');
@@ -299,6 +325,174 @@ class MemberAdmission extends Model
     public function nextAdmissions(): HasMany
     {
         return $this->hasMany(MemberAdmission::class, 'previous_admission_id');
+    }
+
+    /**
+     * All admission rows that represent the same person (same member code + branch).
+     */
+    public function sisterAdmissionQuery(): Builder
+    {
+        if (empty($this->application_no) || empty($this->branch_id)) {
+            return static::query()->whereKey($this->id);
+        }
+
+        return static::query()
+            ->where('branch_id', $this->branch_id)
+            ->where('application_no', $this->application_no);
+    }
+
+    /**
+     * @return list<int>
+     */
+    public function sisterAdmissionIds(): array
+    {
+        return $this->sisterAdmissionQuery()
+            ->pluck('id')
+            ->map(fn ($id) => (int) $id)
+            ->all();
+    }
+
+    /**
+     * Cycle survey dossiers for this member (master + later দফা), oldest first.
+     *
+     * @return list<array{id: int, dofa: int, status: string, survey_date: string|null, admission_date: string|null, is_cycle_survey: bool}>
+     */
+    public function cycleSurveyList(): array
+    {
+        return $this->sisterAdmissionQuery()
+            ->orderBy('loan_dofa')
+            ->orderBy('id')
+            ->get(['id', 'loan_dofa', 'status', 'survey_date', 'admission_date', 'previous_admission_id'])
+            ->map(fn (self $row) => [
+                'id' => (int) $row->id,
+                'dofa' => (int) ($row->loan_dofa ?: 1),
+                'status' => (string) $row->status,
+                'survey_date' => $row->survey_date?->format('Y-m-d'),
+                'admission_date' => $row->admission_date?->format('Y-m-d'),
+                'is_cycle_survey' => (bool) $row->previous_admission_id,
+            ])
+            ->values()
+            ->all();
+    }
+
+    /**
+     * The original admission for this member (not a cycle-cloned copy).
+     */
+    public function canonicalAdmission(): self
+    {
+        $canonical = $this->sisterAdmissionQuery()
+            ->orderByRaw('CASE WHEN previous_admission_id IS NULL THEN 0 ELSE 1 END')
+            ->orderBy('id')
+            ->first();
+
+        return $canonical ?? $this;
+    }
+
+    /**
+     * Identity and personal fields that stay the same across loan cycles.
+     *
+     * @return list<string>
+     */
+    public static function identitySyncFields(): array
+    {
+        return [
+            'application_no',
+            'nid_number',
+            'smart_card_number',
+            'birth_certificate_number',
+            'mobile_number',
+            'alternative_mobile',
+            'family_member_mobile',
+            'applicant_name_en',
+            'applicant_name_bn',
+            'father_name_en',
+            'father_name_bn',
+            'mother_name_en',
+            'mother_name_bn',
+            'spouse_name_en',
+            'spouse_name_bn',
+            'marital_status',
+            'date_of_birth',
+            'gender',
+            'customer_photo_path',
+            'customer_nid_photo_path',
+            'customer_nid_back_photo_path',
+            'nid_both_sides',
+        ];
+    }
+
+    /**
+     * Copy locked identity fields from the member master onto this cycle survey.
+     */
+    public function applyLockedIdentityFrom(self $source): void
+    {
+        foreach (self::identitySyncFields() as $field) {
+            if (! Schema::hasColumn($this->getTable(), $field)) {
+                continue;
+            }
+
+            $this->{$field} = $source->{$field};
+        }
+    }
+
+    /**
+     * Keep Member Code, NID, phone and personal info identical on leftover cycle copies.
+     */
+    public function syncIdentityToSisterCycles(): void
+    {
+        $sisterIds = array_values(array_filter(
+            $this->sisterAdmissionIds(),
+            fn (int $id) => $id !== (int) $this->id
+        ));
+
+        if ($sisterIds === []) {
+            return;
+        }
+
+        $payload = [];
+        foreach (self::identitySyncFields() as $field) {
+            if (! Schema::hasColumn($this->getTable(), $field)) {
+                continue;
+            }
+
+            $payload[$field] = $this->{$field};
+        }
+
+        if ($payload === []) {
+            return;
+        }
+
+        static::query()->whereIn('id', $sisterIds)->update($payload);
+    }
+
+    /**
+     * Raise loan_dofa to match how many loans this member has (never decrease).
+     */
+    public function refreshCycleDofaFromLoans(): void
+    {
+        $loanCount = LoanApplication::query()
+            ->whereIn('member_admission_id', $this->sisterAdmissionIds())
+            ->whereNotIn('status', [
+                LoanApplication::STATUS_CANCELLED,
+                LoanApplication::STATUS_REJECTED,
+            ])
+            ->count();
+
+        $canonical = $this->canonicalAdmission();
+        $newDofa = max((int) ($canonical->loan_dofa ?: 1), $loanCount);
+        $updates = [];
+
+        if ((int) $canonical->loan_dofa !== $newDofa) {
+            $updates['loan_dofa'] = $newDofa;
+        }
+
+        if ($newDofa > 1 && ! $canonical->is_legacy) {
+            $updates['is_legacy'] = true;
+        }
+
+        if ($updates !== []) {
+            $canonical->update($updates);
+        }
     }
 
     public function currentPendingApproval()
@@ -560,7 +754,7 @@ class MemberAdmission extends Model
      */
     public static function normalizeIdentityNumber(?string $value): string
     {
-        return preg_replace('/\D+/', '', (string) $value) ?? '';
+        return preg_replace('/\D+/', '', MemberCodeService::toEnglishDigits($value)) ?? '';
     }
 
     /**
@@ -568,7 +762,7 @@ class MemberAdmission extends Model
      */
     public static function normalizeMobileNumber(?string $value): string
     {
-        $digits = preg_replace('/\D+/', '', (string) $value) ?? '';
+        $digits = preg_replace('/\D+/', '', MemberCodeService::toEnglishDigits($value)) ?? '';
         if ($digits === '') {
             return '';
         }
@@ -587,6 +781,24 @@ class MemberAdmission extends Model
     }
 
     /**
+     * SQL expression that turns Bengali digits into English and strips separators.
+     */
+    public static function englishDigitsSql(string $column): string
+    {
+        $allowed = ['nid_number', 'smart_card_number', 'mobile_number', 'application_no'];
+        if (! in_array($column, $allowed, true)) {
+            throw new \InvalidArgumentException("Unsupported column [{$column}] for digit normalization.");
+        }
+
+        $expr = "IFNULL({$column}, '')";
+        foreach (['০' => '0', '১' => '1', '২' => '2', '৩' => '3', '৪' => '4', '৫' => '5', '৬' => '6', '৭' => '7', '৮' => '8', '৯' => '9'] as $bn => $en) {
+            $expr = "REPLACE({$expr}, '{$bn}', '{$en}')";
+        }
+
+        return "REPLACE(REPLACE(REPLACE(REPLACE({$expr}, ' ', ''), '-', ''), '/', ''), '.', '')";
+    }
+
+    /**
      * Another admission already uses this NID or Smart Card (either field).
      */
     public static function findDuplicateByIdentity(?string $value, ?int $ignoreId = null, ?string $ignoreApplicationNo = null): ?self
@@ -600,14 +812,15 @@ class MemberAdmission extends Model
             $ignoreApplicationNo = static::where('id', $ignoreId)->value('application_no');
         }
 
-        $strip = "REPLACE(REPLACE(REPLACE(REPLACE(IFNULL(%s, ''), ' ', ''), '-', ''), '/', ''), '.', '')";
+        $nidSql = self::englishDigitsSql('nid_number');
+        $smartSql = self::englishDigitsSql('smart_card_number');
 
         return static::query()
             ->when($ignoreId, fn ($q) => $q->where('id', '!=', $ignoreId))
             ->when(! empty($ignoreApplicationNo), fn ($q) => $q->where('application_no', '!=', $ignoreApplicationNo))
-            ->where(function ($q) use ($normalized, $strip) {
-                $q->whereRaw(sprintf($strip, 'nid_number').' = ?', [$normalized])
-                    ->orWhereRaw(sprintf($strip, 'smart_card_number').' = ?', [$normalized]);
+            ->where(function ($q) use ($normalized, $nidSql, $smartSql) {
+                $q->whereRaw($nidSql.' = ?', [$normalized])
+                    ->orWhereRaw($smartSql.' = ?', [$normalized]);
             })
             ->first();
     }
@@ -626,23 +839,53 @@ class MemberAdmission extends Model
             $ignoreApplicationNo = static::where('id', $ignoreId)->value('application_no');
         }
 
-        $last10 = strlen($normalized) >= 10 ? substr($normalized, -10) : $normalized;
+        $last10 = substr($normalized, -10);
+        $mobileSql = self::englishDigitsSql('mobile_number');
 
         $matches = static::query()
             ->when($ignoreId, fn ($q) => $q->where('id', '!=', $ignoreId))
             ->when(! empty($ignoreApplicationNo), fn ($q) => $q->where('application_no', '!=', $ignoreApplicationNo))
             ->whereNotNull('mobile_number')
             ->where('mobile_number', '!=', '')
-            ->where(function ($q) use ($value, $normalized, $last10) {
-                $raw = trim((string) $value);
-                $q->where('mobile_number', $raw)
-                    ->orWhere('mobile_number', $normalized)
-                    ->orWhere('mobile_number', 'like', '%'.$last10);
-            })
+            ->whereRaw($mobileSql.' LIKE ?', ['%'.$last10])
             ->get();
 
         return $matches->first(
             fn (self $row) => self::normalizeMobileNumber($row->mobile_number) === $normalized
         );
+    }
+
+    /**
+     * Another person already uses this member code (including serial variants).
+     */
+    public static function findDuplicateByMemberCode(?string $value, ?int $ignoreId = null, ?string $ignoreApplicationNo = null, mixed $branchId = null): ?self
+    {
+        $raw = trim(MemberCodeService::toEnglishDigits($value));
+        if ($raw === '') {
+            return null;
+        }
+
+        if (! $ignoreApplicationNo && $ignoreId) {
+            $ignoreApplicationNo = static::where('id', $ignoreId)->value('application_no');
+        }
+
+        $branchId = is_numeric($branchId) ? (int) $branchId : null;
+        $normalized = MemberCodeService::normalizeMemberCode($raw, $branchId);
+
+        $conflict = MemberCodeService::findConflictingAdmission(
+            $normalized,
+            $ignoreId ?: 0,
+            $branchId
+        );
+
+        if (! $conflict) {
+            return null;
+        }
+
+        if ($ignoreApplicationNo && (string) $conflict->application_no === (string) $ignoreApplicationNo) {
+            return null;
+        }
+
+        return $conflict;
     }
 }

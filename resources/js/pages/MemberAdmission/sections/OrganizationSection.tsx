@@ -3,6 +3,7 @@ import FormSection from '@/components/MemberAdmission/FormSection';
 import { SmartDateInput } from '@/components/ui/SmartDateInput';
 import { Building2, ChevronDown, Search, Lock } from 'lucide-react';
 import { toEnglishDigits, formatBranchCode, parseMemberCode } from '@/utils/memberCodeUtils';
+import { checkAdmissionUnique } from '@/utils/checkAdmissionUnique';
 
 interface SamityItem {
     id: number;
@@ -29,6 +30,7 @@ interface OrganizationSectionProps {
     categories: Array<{ id: number; category_name: string }>;
     isLegacyMember: boolean;
     disableMemberCode?: boolean;
+    ignoreAdmissionId?: number | null;
 }
 
 export default function OrganizationSection({
@@ -48,6 +50,7 @@ export default function OrganizationSection({
     categories,
     isLegacyMember,
     disableMemberCode = false,
+    ignoreAdmissionId,
 }: OrganizationSectionProps) {
     const currentBranch = branches.find((b) => Number(b.id) === Number(data.branch_id));
     const branchPrefix = formatBranchCode(currentBranch?.code || (data.branch_id ? String(data.branch_id) : '0001'));
@@ -66,6 +69,7 @@ export default function OrganizationSection({
     };
 
     const [serialInput, setSerialInput] = useState<string>(getInitialSerial);
+    const [codeUniqueError, setCodeUniqueError] = useState('');
 
     // Sync serial input if branch or application_no changes externally (e.g. initial form fill / branch switch)
     const prevBranchRef = useRef(branchPrefix);
@@ -81,10 +85,28 @@ export default function OrganizationSection({
     const handleSerialChange = (e: React.ChangeEvent<HTMLInputElement>) => {
         const clean = toEnglishDigits(e.target.value).replace(/\D/g, '').slice(0, 6);
         setSerialInput(clean);
+        setCodeUniqueError('');
         if (!clean) {
             setData('application_no', '');
         } else {
             setData('application_no', `${branchPrefix}${clean.padStart(6, '0')}`);
+        }
+    };
+
+    const checkMemberCodeUnique = async (code: string) => {
+        if (disableMemberCode || !code.trim()) {
+            setCodeUniqueError('');
+            return;
+        }
+        try {
+            const result = await checkAdmissionUnique({
+                application_no: code,
+                branch_id: data.branch_id,
+                ignore_id: ignoreAdmissionId,
+            });
+            setCodeUniqueError(result.application_no || '');
+        } catch {
+            // Server save still enforces uniqueness.
         }
     };
 
@@ -116,6 +138,13 @@ export default function OrganizationSection({
                                 type="text"
                                 value={serialInput}
                                 onChange={handleSerialChange}
+                                onBlur={() => {
+                                    if (!serialInput) {
+                                        setCodeUniqueError('');
+                                        return;
+                                    }
+                                    void checkMemberCodeUnique(`${branchPrefix}${serialInput.padStart(6, '0')}`);
+                                }}
                                 maxLength={6}
                                 placeholder="যেমন: 590 বা 000590"
                                 disabled={disableMemberCode}
@@ -127,8 +156,8 @@ export default function OrganizationSection({
                             <span>১০ ডিজিট কোড: <span className="font-mono font-bold text-blue-700">{previewCode}</span></span>
                             <span className="text-[10px] text-slate-400">{disableMemberCode ? '🔒 মেম্বার কোড অপরিবর্তনীয় (ফিক্সড)' : `শাখা কোড ${branchPrefix} ফিক্সড, বাকি ৬ ডিজিট মেম্বার কোড`}</span>
                         </div>
-                        {errors.application_no && (
-                            <p className="mt-1 text-xs text-red-600 font-medium">{errors.application_no}</p>
+                        {(codeUniqueError || errors.application_no) && (
+                            <p className="mt-1 text-xs text-red-600 font-medium">{errors.application_no || codeUniqueError}</p>
                         )}
                     </div>
 

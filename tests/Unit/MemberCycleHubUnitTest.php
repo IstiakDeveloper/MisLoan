@@ -4,7 +4,6 @@ namespace Tests\Unit;
 
 use App\Models\LoanApplication;
 use App\Models\MemberAdmission;
-use App\Models\Role;
 use Tests\TestCase;
 
 class MemberCycleHubUnitTest extends TestCase
@@ -39,5 +38,15 @@ class MemberCycleHubUnitTest extends TestCase
         $this->assertEquals('0001000055', $admission->application_no);
         $this->assertEquals(2, $admission->loan_dofa);
         $this->assertEquals(10, $admission->previous_admission_id);
+    }
+
+    public function test_identity_sync_fields_include_member_code_nid_and_phone(): void
+    {
+        $fields = MemberAdmission::identitySyncFields();
+
+        $this->assertContains('application_no', $fields);
+        $this->assertContains('nid_number', $fields);
+        $this->assertContains('mobile_number', $fields);
+        $this->assertContains('applicant_name_bn', $fields);
     }
 }

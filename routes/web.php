@@ -201,6 +201,7 @@ Route::middleware(['auth', 'verified'])->group(function () {
         Route::post('send-to-head-office-bulk', [MemberAdmissionController::class, 'sendToHeadOfficeBulk'])->name('send-to-head-office-bulk')->middleware('branch.user');
         Route::get('{memberAdmission}', [MemberAdmissionController::class, 'show'])->name('show')->middleware('member.admission.view');
         Route::get('{memberAdmission}/print', [MemberAdmissionController::class, 'printSingle'])->name('print')->middleware('member.admission.view');
+        Route::get('{memberAdmission}/print-all', [MemberAdmissionController::class, 'printAllCycleSurveys'])->name('print-all')->middleware('member.admission.view');
         Route::get('{memberAdmission}/edit', [MemberAdmissionController::class, 'edit'])->name('edit')->middleware('member.admission.view');
         Route::put('{memberAdmission}', [MemberAdmissionController::class, 'update'])->name('update')->middleware('member.admission.view');
         Route::delete('{memberAdmission}', [MemberAdmissionController::class, 'destroy'])->name('destroy')->middleware('branch.user');

@@ -22,6 +22,7 @@ import {
     Lock,
     X,
     Wrench,
+    Layers,
 } from 'lucide-react';
 import { MemberAdmission } from '@/types/memberAdmission';
 import MemberAdmissionFormView from '@/components/MemberAdmissionFormView';
@@ -31,8 +32,19 @@ import SendAdmissionToHoModal from '@/components/MemberAdmission/SendAdmissionTo
 import { useHoSendCutoff } from '@/hooks/use-ho-send-cutoff';
 import { formatDate, formatDateTime } from '@/utils/dateUtils';
 
+interface CycleSurveyItem {
+    id: number;
+    dofa: number;
+    status: string;
+    survey_date: string | null;
+    admission_date: string | null;
+    is_cycle_survey: boolean;
+}
+
 interface Props {
+    cycleSurveys?: CycleSurveyItem[];
     admission: MemberAdmission & {
+        previous_admission_id?: number | null;
         customer_photo_path?: string;
         customer_nid_photo_path?: string;
         customer_nid_back_photo_path?: string | null;
@@ -57,7 +69,7 @@ interface Props {
     };
 }
 
-export default function Show({ admission }: Props) {
+export default function Show({ admission, cycleSurveys = [] }: Props) {
     const pageAuth = usePage().props.auth as { user?: { id?: number; has_all_access?: boolean; role?: { name: string } } } | undefined;
     const roleName = pageAuth?.user?.role?.name?.toLowerCase() || '';
     const isHeadOffice = canHeadOfficeModify(pageAuth);
@@ -257,11 +269,25 @@ export default function Show({ admission }: Props) {
         );
     };
 
-    const handlePrint = () => {
-        const printUrl = isHeadOffice
-            ? `/head-office/admissions/${admission.id}/print`
-            : `/member-admissions/${admission.id}/print`;
-        window.open(printUrl, '_blank');
+    const surveys = cycleSurveys.length > 0 ? cycleSurveys : [{
+        id: admission.id,
+        dofa: Number(admission.loan_dofa) || 1,
+        status: admission.status,
+        survey_date: null,
+        admission_date: null,
+        is_cycle_survey: !!admission.previous_admission_id,
+    }];
+    const hasMultipleSurveys = surveys.length > 1;
+
+    const printUrlFor = (id: number) =>
+        isHeadOffice ? `/head-office/admissions/${id}/print` : `/member-admissions/${id}/print`;
+
+    const handlePrint = (id: number = admission.id) => {
+        window.open(printUrlFor(id), '_blank');
+    };
+
+    const handlePrintAllSurveys = () => {
+        window.open(`/member-admissions/${admission.id}/print-all`, '_blank');
     };
 
     const isEditable = admission.can_be_edited ?? (
@@ -390,12 +416,22 @@ export default function Show({ admission }: Props) {
                             )}
                             <button
                                 type="button"
-                                onClick={handlePrint}
+                                onClick={() => handlePrint()}
                                 className="inline-flex items-center justify-center gap-1.5 px-3 py-2.5 min-h-11 sm:min-h-9 sm:h-9 bg-slate-800 text-white rounded-xl text-xs font-bold hover:bg-slate-900 shadow-xs transition touch-manipulation"
                             >
                                 <Printer className="w-4 h-4 shrink-0" />
-                                <span>প্রিন্ট</span>
+                                <span>{hasMultipleSurveys ? `দফা ${Number(admission.loan_dofa) || 1} প্রিন্ট` : 'প্রিন্ট'}</span>
                             </button>
+                            {hasMultipleSurveys && (
+                                <button
+                                    type="button"
+                                    onClick={handlePrintAllSurveys}
+                                    className="inline-flex items-center justify-center gap-1.5 px-3 py-2.5 min-h-11 sm:min-h-9 sm:h-9 bg-emerald-800 text-white rounded-xl text-xs font-bold hover:bg-emerald-900 shadow-xs transition touch-manipulation"
+                                >
+                                    <Printer className="w-4 h-4 shrink-0" />
+                                    <span>সব জরিপ প্রিন্ট ({surveys.length})</span>
+                                </button>
+                            )}
                             {isEditable && (
                                 <Link
                                     href={`/member-admissions/${admission.id}/edit`}
@@ -440,6 +476,46 @@ export default function Show({ admission }: Props) {
                         </div>
                     </div>
                 </div>
+
+                {hasMultipleSurveys && (
+                    <div className="print:hidden mx-2 sm:mx-0 rounded-2xl border border-emerald-200 bg-emerald-50/70 p-3 sm:p-4">
+                        <div className="flex items-center gap-2 mb-2.5">
+                            <Layers className="w-4 h-4 text-emerald-700 shrink-0" />
+                            <p className="text-xs sm:text-sm font-bold text-emerald-950">
+                                এই সদস্যের {surveys.length}টি জরিপ ফর্ম আছে — প্রতি দফা আলাদা প্রিন্ট করা যাবে
+                            </p>
+                        </div>
+                        <div className="flex flex-wrap gap-2">
+                            {surveys.map((survey) => {
+                                const isCurrent = survey.id === admission.id;
+                                return (
+                                    <div key={survey.id} className="flex items-center gap-1.5">
+                                        {isCurrent ? (
+                                            <span className="inline-flex items-center px-3 py-1.5 rounded-xl text-xs font-bold bg-emerald-700 text-white shadow-xs">
+                                                দফা {survey.dofa} জরিপ
+                                            </span>
+                                        ) : (
+                                            <Link
+                                                href={isHeadOffice ? `/head-office/admissions/${survey.id}` : `/member-admissions/${survey.id}`}
+                                                className="inline-flex items-center px-3 py-1.5 rounded-xl text-xs font-bold bg-white text-emerald-800 border border-emerald-200 hover:bg-emerald-100"
+                                            >
+                                                দফা {survey.dofa} জরিপ
+                                            </Link>
+                                        )}
+                                        <button
+                                            type="button"
+                                            onClick={() => handlePrint(survey.id)}
+                                            className="inline-flex items-center justify-center h-8 w-8 rounded-xl bg-white border border-emerald-200 text-emerald-800 hover:bg-emerald-100 cursor-pointer"
+                                            title={`দফা ${survey.dofa} জরিপ প্রিন্ট`}
+                                        >
+                                            <Printer className="w-3.5 h-3.5" />
+                                        </button>
+                                    </div>
+                                );
+                            })}
+                        </div>
+                    </div>
+                )}
 
                 {/* ── TABS NAVIGATION BAR (Hidden on Print) ─────────────────────────────────── */}
                 <div className="print:hidden mx-0 sm:mx-0 px-2 sm:px-0">

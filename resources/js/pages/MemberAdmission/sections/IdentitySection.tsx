@@ -9,6 +9,7 @@ interface IdentitySectionProps {
     setData: (field: string, value: any) => void;
     errors: Record<string, string>;
     ignoreAdmissionId?: number | null;
+    lockIdentity?: boolean;
 }
 
 export default function IdentitySection({
@@ -16,12 +17,13 @@ export default function IdentitySection({
     setData,
     errors,
     ignoreAdmissionId,
+    lockIdentity = false,
 }: IdentitySectionProps) {
     const [uniqueErrors, setUniqueErrors] = useState<Record<string, string>>({});
     const shown = { ...uniqueErrors, ...errors };
 
     const inputClass = (hasErr?: boolean) =>
-        `w-full rounded-xl border ${hasErr ? 'border-red-500 bg-red-50/50 ring-2 ring-red-200' : 'border-gray-300 bg-white'} px-3 py-2 text-xs md:text-sm focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 font-medium transition-all`;
+        `w-full rounded-xl border ${hasErr ? 'border-red-500 bg-red-50/50 ring-2 ring-red-200' : lockIdentity ? 'border-slate-200 bg-slate-50 text-slate-700' : 'border-gray-300 bg-white'} px-3 py-2 text-xs md:text-sm focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 font-medium transition-all ${lockIdentity ? 'cursor-not-allowed' : ''}`;
 
     const setField = (field: 'nid_number' | 'smart_card_number', value: string) => {
         setUniqueErrors((prev) => {
@@ -49,6 +51,7 @@ export default function IdentitySection({
                 [field]: trimmed,
                 ignore_id: ignoreAdmissionId,
                 application_no: data.application_no,
+                branch_id: data.branch_id,
             });
             setUniqueErrors((prev) => {
                 const next = { ...prev };
@@ -68,7 +71,7 @@ export default function IdentitySection({
         <FormSection
             title="৪. জাতীয় পরিচয়পত্র ও ডকুমেন্টস"
             icon={<FileText className="w-4 h-4 text-purple-600" />}
-            subtitle="NID, স্মার্ট কার্ড, জন্ম সনদ ও প্রফেশনাল ফটো আপলোড"
+            subtitle={lockIdentity ? 'NID ও পরিচয় আগের সদস্যের মতোই লক' : 'NID, স্মার্ট কার্ড, জন্ম সনদ ও প্রফেশনাল ফটো আপলোড'}
         >
             <div className="space-y-4">
                 <h4 className="text-xs font-bold text-gray-800 mb-2">১২. Identity Information (পরিচয় তথ্য)</h4>
@@ -83,6 +86,8 @@ export default function IdentitySection({
                             value={data.nid_number}
                             onChange={(e) => setField('nid_number', e.target.value)}
                             onBlur={(e) => void checkField('nid_number', e.target.value)}
+                            disabled={lockIdentity}
+                            readOnly={lockIdentity}
                             className={inputClass(Boolean(shown.nid_number))}
                         />
                         {shown.nid_number && (
@@ -97,6 +102,8 @@ export default function IdentitySection({
                             value={data.smart_card_number}
                             onChange={(e) => setField('smart_card_number', e.target.value)}
                             onBlur={(e) => void checkField('smart_card_number', e.target.value)}
+                            disabled={lockIdentity}
+                            readOnly={lockIdentity}
                             className={inputClass(Boolean(shown.smart_card_number))}
                         />
                         {shown.smart_card_number && (
@@ -117,6 +124,8 @@ export default function IdentitySection({
                             type="text"
                             value={data.birth_certificate_number}
                             onChange={(e) => setData('birth_certificate_number', e.target.value)}
+                            disabled={lockIdentity}
+                            readOnly={lockIdentity}
                             className={inputClass()}
                         />
                     </div>
@@ -127,7 +136,8 @@ export default function IdentitySection({
                             value={data.date_of_birth}
                             onChange={(val) => setData('date_of_birth', val)}
                             error={Boolean(errors.date_of_birth)}
-                            className="w-full rounded-xl border border-gray-300 text-xs md:text-sm focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 font-medium"
+                            disabled={lockIdentity}
+                            className={`w-full rounded-xl border text-xs md:text-sm focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 font-medium ${lockIdentity ? 'border-slate-200 bg-slate-50 cursor-not-allowed' : 'border-gray-300'}`}
                         />
                     </div>
 
@@ -138,6 +148,7 @@ export default function IdentitySection({
                         <select
                             value={data.gender}
                             onChange={(e) => setData('gender', e.target.value)}
+                            disabled={lockIdentity}
                             className={inputClass(Boolean(errors.gender))}
                         >
                             <option value="male">পুরুষ (Male)</option>
@@ -157,6 +168,8 @@ export default function IdentitySection({
                             type="text"
                             value={data.family_member_mobile}
                             onChange={(e) => setData('family_member_mobile', e.target.value)}
+                            disabled={lockIdentity}
+                            readOnly={lockIdentity}
                             className={inputClass()}
                         />
                     </div>

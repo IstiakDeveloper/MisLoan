@@ -8,6 +8,7 @@ interface PersonalInfoSectionProps {
     setData: (field: string, value: any) => void;
     errors: Record<string, string>;
     ignoreAdmissionId?: number | null;
+    lockIdentity?: boolean;
 }
 
 export default function PersonalInfoSection({
@@ -15,17 +16,18 @@ export default function PersonalInfoSection({
     setData,
     errors,
     ignoreAdmissionId,
+    lockIdentity = false,
 }: PersonalInfoSectionProps) {
     const [mobileUniqueError, setMobileUniqueError] = useState('');
     const mobileError = errors.mobile_number || mobileUniqueError;
     const inputClass = (hasErr?: boolean) =>
-        `w-full rounded-xl border ${hasErr ? 'border-red-500 bg-red-50/50 ring-2 ring-red-200' : 'border-gray-300 bg-white'} px-3 py-2 text-xs md:text-sm focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 font-medium transition-all`;
+        `w-full rounded-xl border ${hasErr ? 'border-red-500 bg-red-50/50 ring-2 ring-red-200' : lockIdentity ? 'border-slate-200 bg-slate-50 text-slate-700' : 'border-gray-300 bg-white'} px-3 py-2 text-xs md:text-sm focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 font-medium transition-all ${lockIdentity ? 'cursor-not-allowed' : ''}`;
 
     return (
         <FormSection
             title="২. আবেদনকারীর নাম ও ব্যক্তিগত তথ্য"
             icon={<User className="w-4 h-4 text-indigo-600" />}
-            subtitle="আবেদনকারী ও পিতা/মাতা/স্বামীর নামসমূহ (বাংলা ও ইংরেজি)"
+            subtitle={lockIdentity ? 'ব্যক্তিগত তথ্য আগের সদস্যের মতোই লক — আয়-ব্যয় নিচে বদলাতে পারবেন' : 'আবেদনকারী ও পিতা/মাতা/স্বামীর নামসমূহ (বাংলা ও ইংরেজি)'}
         >
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 sm:gap-6">
                 {/* কলাম ১ — বাংলা */}
@@ -38,6 +40,8 @@ export default function PersonalInfoSection({
                             type="text"
                             value={data.applicant_name_bn}
                             onChange={(e) => setData('applicant_name_bn', e.target.value)}
+                            disabled={lockIdentity}
+                            readOnly={lockIdentity}
                             className={inputClass(Boolean(errors.applicant_name_bn))}
                         />
                         {errors.applicant_name_bn && (
@@ -53,6 +57,8 @@ export default function PersonalInfoSection({
                             type="text"
                             value={data.father_name_bn}
                             onChange={(e) => setData('father_name_bn', e.target.value)}
+                            disabled={lockIdentity}
+                            readOnly={lockIdentity}
                             className={inputClass(Boolean(errors.father_name_bn))}
                         />
                         {errors.father_name_bn && (
@@ -68,6 +74,8 @@ export default function PersonalInfoSection({
                             type="text"
                             value={data.mother_name_bn}
                             onChange={(e) => setData('mother_name_bn', e.target.value)}
+                            disabled={lockIdentity}
+                            readOnly={lockIdentity}
                             className={inputClass(Boolean(errors.mother_name_bn))}
                         />
                         {errors.mother_name_bn && (
@@ -82,6 +90,7 @@ export default function PersonalInfoSection({
                         <select
                             value={data.marital_status}
                             onChange={(e) => setData('marital_status', e.target.value)}
+                            disabled={lockIdentity}
                             className={inputClass(Boolean(errors.marital_status))}
                         >
                             <option value="single">অবিবাহিত (Single)</option>
@@ -103,6 +112,8 @@ export default function PersonalInfoSection({
                                 type="text"
                                 value={data.spouse_name_bn}
                                 onChange={(e) => setData('spouse_name_bn', e.target.value)}
+                                disabled={lockIdentity}
+                                readOnly={lockIdentity}
                                 className={inputClass(Boolean(errors.spouse_name_bn))}
                             />
                             {errors.spouse_name_bn && (
@@ -118,6 +129,8 @@ export default function PersonalInfoSection({
                         <input
                             type="text"
                             value={data.mobile_number}
+                            disabled={lockIdentity}
+                            readOnly={lockIdentity}
                             onChange={(e) => {
                                 setMobileUniqueError('');
                                 setData('mobile_number', e.target.value);
@@ -133,6 +146,7 @@ export default function PersonalInfoSection({
                                         mobile_number: value,
                                         ignore_id: ignoreAdmissionId,
                                         application_no: data.application_no,
+                                        branch_id: data.branch_id,
                                     });
                                     setMobileUniqueError(result.mobile_number || '');
                                 } catch {
@@ -155,6 +169,8 @@ export default function PersonalInfoSection({
                             type="text"
                             value={data.alternative_mobile}
                             onChange={(e) => setData('alternative_mobile', e.target.value)}
+                            disabled={lockIdentity}
+                            readOnly={lockIdentity}
                             className={inputClass(Boolean(errors.alternative_mobile))}
                         />
                     </div>
@@ -170,6 +186,8 @@ export default function PersonalInfoSection({
                             type="text"
                             value={data.applicant_name_en}
                             onChange={(e) => setData('applicant_name_en', e.target.value)}
+                            disabled={lockIdentity}
+                            readOnly={lockIdentity}
                             className={inputClass(Boolean(errors.applicant_name_en))}
                         />
                         {errors.applicant_name_en && (
@@ -185,6 +203,8 @@ export default function PersonalInfoSection({
                             type="text"
                             value={data.father_name_en}
                             onChange={(e) => setData('father_name_en', e.target.value)}
+                            disabled={lockIdentity}
+                            readOnly={lockIdentity}
                             className={inputClass(Boolean(errors.father_name_en))}
                         />
                         {errors.father_name_en && (
@@ -200,6 +220,8 @@ export default function PersonalInfoSection({
                             type="text"
                             value={data.mother_name_en}
                             onChange={(e) => setData('mother_name_en', e.target.value)}
+                            disabled={lockIdentity}
+                            readOnly={lockIdentity}
                             className={inputClass(Boolean(errors.mother_name_en))}
                         />
                         {errors.mother_name_en && (
@@ -216,6 +238,8 @@ export default function PersonalInfoSection({
                                 type="text"
                                 value={data.spouse_name_en}
                                 onChange={(e) => setData('spouse_name_en', e.target.value)}
+                                disabled={lockIdentity}
+                                readOnly={lockIdentity}
                                 className={inputClass(Boolean(errors.spouse_name_en))}
                             />
                         </div>

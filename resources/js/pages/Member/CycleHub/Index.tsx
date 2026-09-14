@@ -109,12 +109,15 @@ interface LoanInfo {
 
 interface CycleItem {
     admission_id: number;
+    loan_id?: number | null;
     dofa: number;
     admission_status: string;
     admission_date: string | null;
     survey_date: string | null;
     created_at: string | null;
     is_legacy: boolean;
+    is_cloned_admission?: boolean;
+    can_delete_admission?: boolean;
     family_count: number;
     assets_count: number;
     loans: LoanInfo[];
@@ -309,9 +312,14 @@ export default function Index({
         }
     };
 
+    const cycleFileUrl = (cycle: CycleItem): string => {
+        const base = `/member/cycle-hub/cycle/${cycle.admission_id}`;
+        return cycle.loan_id ? `${base}?loan_id=${cycle.loan_id}` : base;
+    };
+
     const handleStartNextCycle = async () => {
         if (!memberData?.member.latest_admission_id) return;
-        if (!confirm(`আপনি কি এই সদস্যের পরবর্তী সাইকেল (দফা ${memberData.member.next_dofa}) শুরু করতে চান?\n\nপূর্ববর্তী ভর্তি ফর্মের তথ্য স্বয়ংক্রিয়ভাবে ক্লোন হয়ে সরাসরি এডিট পেজে যাবে এবং মেম্বার কোড অপরিবর্তিত থাকবে।`)) {
+        if (!confirm(`আপনি কি এই সদস্যের পরবর্তী সাইকেল (দফা ${memberData.member.next_dofa}) শুরু করতে চান?\n\nনতুন সদস্য হবে না। ব্যক্তিগত তথ্য আগের মতোই থাকবে। আয়-ব্যয় এই দফায় আলাদা করতে পারবেন।`)) {
             return;
         }
 
@@ -327,7 +335,6 @@ export default function Index({
 
             const result = await res.json();
             if (res.ok && result.success && result.edit_admission_url) {
-                // Instantly redirect to the prefilled edit form for the new cycle
                 window.location.href = result.edit_admission_url;
             } else {
                 alert(result.message || 'পরবর্তী সাইকেল শুরু করতে সমস্যা হয়েছে।');
@@ -642,6 +649,15 @@ export default function Index({
 
                                 {/* Primary Action: Start Next Cycle */}
                                 <div className="flex flex-wrap items-center gap-3 w-full lg:w-auto">
+                                    <a href={`/member-admissions/${memberData.member.latest_admission_id}/edit?cycle_renewal=1`} className="w-full sm:w-auto">
+                                        <Button
+                                            variant="outline"
+                                            className="w-full sm:w-auto h-11 sm:h-12 text-xs sm:text-sm font-bold text-blue-700 border-blue-200 hover:bg-blue-50 rounded-2xl justify-center"
+                                        >
+                                            <Pencil className="w-4 h-4 mr-2 shrink-0" />
+                                            ভর্তি তথ্য আপডেট
+                                        </Button>
+                                    </a>
                                     {memberData.member.can_start_next_cycle && userPermissions.canCreateLoan && (
                                         <Button
                                             onClick={handleStartNextCycle}
@@ -694,7 +710,7 @@ export default function Index({
                                         সাইকেল ও ফরমসমূহের তালিকা (Cycle Dossiers)
                                     </CardTitle>
                                     <CardDescription className="text-xs sm:text-sm text-slate-500 mt-0.5 sm:mt-1">
-                                        যেকোনো সাইকেলের ভর্তি ও ঋণের সকল ফর্ম একসাথে দেখতে «সম্পূর্ণ সাইকেল ফাইল দেখুন» চাপুন
+                                        একই সদস্যের প্রতি দফায় জরিপ আলাদা। ব্যক্তিগত তথ্য একই থাকে; আয়-ব্যয় সাইকেল অনুযায়ী বদলাতে পারে
                                     </CardDescription>
                                 </div>
                                 <Badge className="bg-emerald-100 text-emerald-800 border-emerald-200 text-xs font-bold px-2.5 py-1 self-start sm:self-auto">
@@ -713,7 +729,7 @@ export default function Index({
 
                                         return (
                                             <div
-                                                key={cycle.admission_id}
+                                                key={`${cycle.admission_id}-${cycle.loan_id ?? 0}`}
                                                 className={`p-4 rounded-2xl border transition-all ${
                                                     isLatest
                                                         ? 'bg-emerald-50/30 border-emerald-200/80 shadow-xs'
@@ -815,35 +831,32 @@ export default function Index({
                                                         </div>
                                                     )}
 
-                                                    {/* Admission Edit & Delete buttons */}
-                                                    {(!latestLoan || latestLoan.status === 'draft' || latestLoan.status === 'rejected') && (
-                                                        <div className="grid grid-cols-2 gap-2">
-                                                            {(!latestLoan || latestLoan.status === 'draft') && (
-                                                                <a href={`/member-admissions/${cycle.admission_id}/edit?cycle_renewal=1`} className="w-full">
-                                                                    <Button
-                                                                        size="sm"
-                                                                        variant="outline"
-                                                                        className="w-full h-8 text-xs font-semibold text-blue-700 border-blue-200 hover:bg-blue-50 rounded-xl"
-                                                                    >
-                                                                        <Pencil className="w-3.5 h-3.5 mr-1 text-blue-600" />
-                                                                        ভর্তি এডিট
-                                                                    </Button>
-                                                                </a>
-                                                            )}
+                                                    {(!latestLoan || latestLoan.status === 'draft') && (
+                                                        <a href={`/member-admissions/${cycle.admission_id}/edit?cycle_renewal=1`} className="w-full">
                                                             <Button
                                                                 size="sm"
                                                                 variant="outline"
-                                                                onClick={() => handleDeleteDraftAdmission(cycle.admission_id, cycle.dofa)}
-                                                                className="w-full h-8 text-xs font-bold text-rose-600 border-rose-200 hover:bg-rose-50 rounded-xl shadow-xs"
+                                                                className="w-full h-8 text-xs font-semibold text-blue-700 border-blue-200 hover:bg-blue-50 rounded-xl"
                                                             >
-                                                                <Trash2 className="w-3.5 h-3.5 mr-1 text-rose-500" />
-                                                                দফা {cycle.dofa} মুছুন
+                                                                <Pencil className="w-3.5 h-3.5 mr-1 text-blue-600" />
+                                                                ভর্তি আপডেট
                                                             </Button>
-                                                        </div>
+                                                        </a>
+                                                    )}
+                                                    {cycle.can_delete_admission && (!latestLoan || latestLoan.status === 'draft' || latestLoan.status === 'rejected') && (
+                                                        <Button
+                                                            size="sm"
+                                                            variant="outline"
+                                                            onClick={() => handleDeleteDraftAdmission(cycle.admission_id, cycle.dofa)}
+                                                            className="w-full h-8 text-xs font-bold text-rose-600 border-rose-200 hover:bg-rose-50 rounded-xl shadow-xs"
+                                                        >
+                                                            <Trash2 className="w-3.5 h-3.5 mr-1 text-rose-500" />
+                                                            দফা {cycle.dofa} মুছুন
+                                                        </Button>
                                                     )}
 
                                                     {/* Primary View File Button */}
-                                                    <Link href={`/member/cycle-hub/cycle/${cycle.admission_id}`} className="w-full">
+                                                    <Link href={cycleFileUrl(cycle)} className="w-full">
                                                         <Button
                                                             size="sm"
                                                             className="w-full h-9 text-xs font-bold bg-slate-900 hover:bg-slate-800 text-white shadow-xs rounded-xl transition-all justify-center"
@@ -881,7 +894,7 @@ export default function Index({
 
                                                 return (
                                                     <tr
-                                                        key={cycle.admission_id}
+                                                        key={`${cycle.admission_id}-${cycle.loan_id ?? 0}`}
                                                         className={`hover:bg-slate-50/80 transition-colors ${
                                                             isLatest ? 'bg-emerald-50/20' : ''
                                                         }`}
@@ -979,7 +992,6 @@ export default function Index({
                                                                     </>
                                                                 )}
 
-                                                                {/* Admission Edit button (for draft or un-disbursed renewal admission) */}
                                                                 {(!latestLoan || latestLoan.status === 'draft') && (
                                                                     <a href={`/member-admissions/${cycle.admission_id}/edit?cycle_renewal=1`}>
                                                                         <Button
@@ -988,13 +1000,12 @@ export default function Index({
                                                                             className="h-8 text-xs font-semibold text-blue-700 border-blue-200 hover:bg-blue-50 rounded-xl"
                                                                         >
                                                                             <Pencil className="w-3.5 h-3.5 mr-1 text-blue-600" />
-                                                                            ভর্তি এডিট
+                                                                            ভর্তি আপডেট
                                                                         </Button>
                                                                     </a>
                                                                 )}
 
-                                                                {/* Cycle Delete button: available when there is no loan or loan is draft */}
-                                                                {(!latestLoan || latestLoan.status === 'draft' || latestLoan.status === 'rejected') && (
+                                                                {cycle.can_delete_admission && (!latestLoan || latestLoan.status === 'draft' || latestLoan.status === 'rejected') && (
                                                                     <Button
                                                                         size="sm"
                                                                         variant="outline"
@@ -1007,8 +1018,7 @@ export default function Index({
                                                                     </Button>
                                                                 )}
 
-                                                                {/* Single Unified View Button */}
-                                                                <Link href={`/member/cycle-hub/cycle/${cycle.admission_id}`}>
+                                                                <Link href={cycleFileUrl(cycle)}>
                                                                     <Button
                                                                         size="sm"
                                                                         className="h-8 text-xs font-bold bg-slate-900 hover:bg-slate-800 text-white shadow-xs px-4 rounded-xl transition-all"

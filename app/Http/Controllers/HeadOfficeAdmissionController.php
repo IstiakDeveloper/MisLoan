@@ -611,6 +611,7 @@ class HeadOfficeAdmissionController extends Controller
 
         return Inertia::render('MemberAdmission/Show', [
             'admission' => $admission,
+            'cycleSurveys' => $admission->cycleSurveyList(),
         ]);
     }
 
@@ -1344,6 +1345,8 @@ class HeadOfficeAdmissionController extends Controller
 
     private function applyHeadOfficeStageVisibility($query): void
     {
+        $query->masterMembers();
+
         if ($this->shouldRestrictToHeadOfficeStage()) {
             $query->whereIn('status', [
                 'pending_head_office',

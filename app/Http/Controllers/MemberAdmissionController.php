@@ -17,6 +17,7 @@ use App\Models\Zone;
 use App\Services\ApprovalService;
 use App\Services\HoSendCutoffService;
 use App\Services\ImageCompressionService;
+use App\Services\LoanApplicationCloneService;
 use App\Services\MemberAdmissionLoanSyncService;
 use App\Services\MemberCodeService;
 use App\Services\NotificationService;
@@ -192,21 +193,34 @@ class MemberAdmissionController extends Controller
     }
 
     /**
-     * Duplicate NID / Smart Card / mobile — same identity number in either field is rejected.
+     * Duplicate member code / NID / Smart Card / mobile — same person cannot be admitted twice.
      *
      * @return array<string, string>
      */
-    private function uniqueIdentityErrors(mixed $nid, mixed $smartCard, mixed $mobile, ?int $ignoreId = null, ?string $ignoreApplicationNo = null): array
-    {
+    private function uniqueIdentityErrors(
+        mixed $nid,
+        mixed $smartCard,
+        mixed $mobile,
+        ?int $ignoreId = null,
+        ?string $ignoreApplicationNo = null,
+        mixed $applicationNo = null,
+        mixed $branchId = null,
+    ): array {
         $nid = is_scalar($nid) ? trim((string) $nid) : '';
         $smartCard = is_scalar($smartCard) ? trim((string) $smartCard) : '';
         $mobile = is_scalar($mobile) ? trim((string) $mobile) : '';
+        $applicationNo = is_scalar($applicationNo) ? trim((string) $applicationNo) : '';
 
         if (! $ignoreApplicationNo && $ignoreId) {
             $ignoreApplicationNo = MemberAdmission::where('id', $ignoreId)->value('application_no');
         }
 
         $errors = [];
+
+        $codeDup = MemberAdmission::findDuplicateByMemberCode($applicationNo, $ignoreId, $ignoreApplicationNo, $branchId);
+        if ($codeDup) {
+            $errors['application_no'] = $this->duplicateMemberCodeMessage($codeDup);
+        }
 
         $nidDup = MemberAdmission::findDuplicateByIdentity($nid, $ignoreId, $ignoreApplicationNo);
         if ($nidDup) {
@@ -226,6 +240,14 @@ class MemberAdmissionController extends Controller
         return $errors;
     }
 
+    private function duplicateMemberCodeMessage(MemberAdmission $dup): string
+    {
+        $name = trim((string) ($dup->applicant_name_bn ?: $dup->applicant_name_en)) ?: 'অজানা';
+        $appNo = $dup->application_no ?: '—';
+
+        return "এই মেম্বার কোড ইতিমধ্যে ব্যবহৃত হয়েছে (আবেদন নং: {$appNo}, নাম: {$name})। একই কোড দিয়ে নতুন সদস্য নেওয়া যাবে না।";
+    }
+
     private function duplicateIdentityMessage(MemberAdmission $dup): string
     {
         $name = trim((string) ($dup->applicant_name_bn ?: $dup->applicant_name_en)) ?: 'অজানা';
@@ -242,9 +264,24 @@ class MemberAdmissionController extends Controller
         return "এই মোবাইল নম্বর ইতিমধ্যে ব্যবহৃত হয়েছে (আবেদন নং: {$appNo}, নাম: {$name})। আলাদা মোবাইল নম্বর দিন।";
     }
 
-    private function assertUniqueIdentity(mixed $nid, mixed $smartCard, mixed $mobile, ?int $ignoreId = null, ?string $ignoreApplicationNo = null): void
-    {
-        $errors = $this->uniqueIdentityErrors($nid, $smartCard, $mobile, $ignoreId, $ignoreApplicationNo);
+    private function assertUniqueIdentity(
+        mixed $nid,
+        mixed $smartCard,
+        mixed $mobile,
+        ?int $ignoreId = null,
+        ?string $ignoreApplicationNo = null,
+        mixed $applicationNo = null,
+        mixed $branchId = null,
+    ): void {
+        $errors = $this->uniqueIdentityErrors(
+            $nid,
+            $smartCard,
+            $mobile,
+            $ignoreId,
+            $ignoreApplicationNo,
+            $applicationNo,
+            $branchId
+        );
         if ($errors !== []) {
             throw ValidationException::withMessages($errors);
         }
@@ -256,7 +293,9 @@ class MemberAdmissionController extends Controller
     public function checkUnique(Request $request)
     {
         $ignoreId = $request->filled('ignore_id') ? (int) $request->input('ignore_id') : 0;
-        $ignoreAppNo = $request->input('application_no');
+        $ignoreAppNo = $ignoreId > 0
+            ? MemberAdmission::where('id', $ignoreId)->value('application_no')
+            : null;
 
         return response()->json([
             'errors' => $this->uniqueIdentityErrors(
@@ -264,7 +303,9 @@ class MemberAdmissionController extends Controller
                 $request->input('smart_card_number'),
                 $request->input('mobile_number'),
                 $ignoreId > 0 ? $ignoreId : null,
-                $ignoreAppNo
+                $ignoreAppNo,
+                $request->input('application_no'),
+                $request->input('branch_id')
             ),
         ]);
     }
@@ -356,7 +397,7 @@ class MemberAdmissionController extends Controller
             'submittedBy',
             'createdBy',
             'approvals.user',
-        ]);
+        ])->masterMembers();
 
         $zoneId = $request->input('zone_id');
         $areaId = $request->input('area_id');
@@ -371,7 +412,7 @@ class MemberAdmissionController extends Controller
         }
 
         // Build stats query with active date, branch, and search filters (excluding status filter for stats)
-        $statsQuery = MemberAdmission::query();
+        $statsQuery = MemberAdmission::query()->masterMembers();
         if (! $user->has_all_access && ! $user->isApproverRole() && ! $user->isEd() && ! $user->isSuperAdmin() && ! $user->isHeadOffice()) {
             $statsQuery->whereIn('branch_id', $user->getAccessibleBranches()->pluck('id'));
         }
@@ -515,7 +556,7 @@ class MemberAdmissionController extends Controller
             'submittedBy',
             'createdBy',
             'approvals.user',
-        ]);
+        ])->masterMembers();
 
         if (! $user->has_all_access && ! $user->isApproverRole() && ! $user->isEd() && ! $user->isSuperAdmin() && ! $user->isHeadOffice()) {
             $query->whereIn('branch_id', $user->getAccessibleBranches()->pluck('id'));
@@ -833,12 +874,18 @@ class MemberAdmissionController extends Controller
             // Legacy / old member
             'is_legacy' => 'nullable|boolean',
             'loan_dofa' => 'nullable|integer|min:1|max:999',
-        ], $this->admissionFileValidationMessages());
+        ], array_merge($this->admissionFileValidationMessages(), [
+            'application_no.unique' => 'এই মেম্বার কোড ইতিমধ্যে অন্য সদস্যের জন্য ব্যবহার করা হয়েছে। একই কোড দিয়ে নতুন সদস্য নেওয়া যাবে না।',
+        ]));
 
         $this->assertUniqueIdentity(
             $request->input('nid_number'),
             $request->input('smart_card_number'),
-            $request->input('mobile_number')
+            $request->input('mobile_number'),
+            null,
+            null,
+            $request->input('application_no'),
+            $request->input('branch_id')
         );
 
         $isLegacy = $request->boolean('is_legacy');
@@ -928,7 +975,7 @@ class MemberAdmissionController extends Controller
             if (empty($admissionData['branch_id']) && auth()->user()?->branch_id) {
                 $admissionData['branch_id'] = auth()->user()->branch_id;
             }
-            $admissionData['is_legacy'] = $isLegacy || !empty($validated['loan_dofa']) || $request->filled('loan_dofa');
+            $admissionData['is_legacy'] = $isLegacy || ! empty($validated['loan_dofa']) || $request->filled('loan_dofa');
             $admissionData['loan_dofa'] = $admissionData['is_legacy'] ? ($validated['loan_dofa'] ?? ($request->input('loan_dofa') ?: null)) : null;
             $admissionData['nid_both_sides'] = $request->boolean('nid_both_sides');
             if (! $admissionData['nid_both_sides']) {
@@ -1030,6 +1077,7 @@ class MemberAdmissionController extends Controller
 
         return Inertia::render('MemberAdmission/Show', [
             'admission' => $memberAdmission,
+            'cycleSurveys' => $memberAdmission->cycleSurveyList(),
         ]);
     }
 
@@ -1050,6 +1098,31 @@ class MemberAdmissionController extends Controller
 
         return Inertia::render('HeadOffice/AdmissionPrintSingle', [
             'admission' => $memberAdmission,
+        ]);
+    }
+
+    /**
+     * Print every cycle survey for this member (দফা ১, দফা ২, …).
+     */
+    public function printAllCycleSurveys(MemberAdmission $memberAdmission)
+    {
+        $admissions = $memberAdmission->sisterAdmissionQuery()
+            ->with([
+                'branch.area.zone',
+                'samity',
+                'memberCategory',
+                'submittedBy',
+                'reviewedBy',
+                'familyMembers',
+                'otherAssets',
+            ])
+            ->orderBy('loan_dofa')
+            ->orderBy('id')
+            ->get();
+
+        return Inertia::render('HeadOffice/AdmissionPrintSingle', [
+            'admission' => $admissions->first() ?? $memberAdmission,
+            'admissions' => $admissions,
         ]);
     }
 
@@ -1243,7 +1316,9 @@ class MemberAdmissionController extends Controller
             $request->input('smart_card_number'),
             $request->input('mobile_number'),
             $memberAdmission->id,
-            $memberAdmission->application_no
+            $memberAdmission->application_no,
+            $request->input('application_no'),
+            $request->input('branch_id') ?: $memberAdmission->branch_id
         );
 
         $canChangeMemberType = $memberAdmission->isDraft();
@@ -1265,7 +1340,7 @@ class MemberAdmissionController extends Controller
             $compressionService = app(ImageCompressionService::class);
             $oldPathsToDelete = [];
 
-            $isRenewalOrOld = $isLegacy || (bool) $memberAdmission->previous_admission_id || (int) ($validated['loan_dofa'] ?? $memberAdmission->loan_dofa) > 1 || !empty($validated['loan_dofa']) || $request->filled('loan_dofa');
+            $isRenewalOrOld = $isLegacy || (bool) $memberAdmission->previous_admission_id || (int) ($validated['loan_dofa'] ?? $memberAdmission->loan_dofa) > 1 || ! empty($validated['loan_dofa']) || $request->filled('loan_dofa');
 
             $updateData = $validated;
             if ($canChangeMemberType || $isRenewalOrOld) {
@@ -1274,10 +1349,10 @@ class MemberAdmissionController extends Controller
                 unset($updateData['is_legacy']);
             }
 
-            if ($request->filled('loan_dofa') || !empty($validated['loan_dofa'])) {
+            if ($request->filled('loan_dofa') || ! empty($validated['loan_dofa'])) {
                 $updateData['loan_dofa'] = (int) ($validated['loan_dofa'] ?? $request->input('loan_dofa'));
                 $updateData['is_legacy'] = true;
-            } elseif (!empty($memberAdmission->loan_dofa)) {
+            } elseif (! empty($memberAdmission->loan_dofa)) {
                 $updateData['loan_dofa'] = $memberAdmission->loan_dofa;
                 $updateData['is_legacy'] = true;
             } elseif ($isLegacy || $isRenewalOrOld) {
@@ -1411,6 +1486,13 @@ class MemberAdmissionController extends Controller
 
             $updateData = $this->coerceNotNullCounts($updateData);
 
+            if ($memberAdmission->previous_admission_id) {
+                $canonical = $memberAdmission->canonicalAdmission();
+                foreach (MemberAdmission::identitySyncFields() as $field) {
+                    $updateData[$field] = $canonical->{$field};
+                }
+            }
+
             // Legacy / renewal draft: when proceeding to loan or saving renewal, auto-approve
             $isProceedingToLoan = $request->input('next_action') === 'loan_application' || $request->boolean('redirect_to_loan') || $request->boolean('cycle_renewal');
             $legacyAutoApproved = false;
@@ -1444,6 +1526,9 @@ class MemberAdmissionController extends Controller
             }
 
             $memberAdmission->load(['samity', 'familyMembers', 'otherAssets']);
+            if (! $memberAdmission->previous_admission_id) {
+                $memberAdmission->syncIdentityToSisterCycles();
+            }
             app(MemberAdmissionLoanSyncService::class)->syncBoundLoans($memberAdmission);
 
             DB::commit();
@@ -1575,7 +1660,10 @@ class MemberAdmissionController extends Controller
             $memberAdmission->nid_number,
             $memberAdmission->smart_card_number,
             $memberAdmission->mobile_number,
-            $memberAdmission->id
+            $memberAdmission->id,
+            $memberAdmission->application_no,
+            $memberAdmission->application_no,
+            $memberAdmission->branch_id
         );
         if ($uniqueErrors !== []) {
             return redirect()->route('member-admissions.edit', [
@@ -1583,7 +1671,7 @@ class MemberAdmissionController extends Controller
                 'for_submit' => 1,
             ])
                 ->withErrors($uniqueErrors)
-                ->with('error', 'এই NID, স্মার্ট কার্ড অথবা মোবাইল নম্বর ইতিমধ্যে অন্য ভর্তি আবেদনে ব্যবহৃত হয়েছে।');
+                ->with('error', 'এই মেম্বার কোড, NID, স্মার্ট কার্ড অথবা মোবাইল নম্বর ইতিমধ্যে অন্য সদস্যের জন্য ব্যবহৃত হয়েছে।');
         }
 
         // «নিজ» family row is required and must be filled (feeds loan application later)
@@ -2056,8 +2144,9 @@ class MemberAdmissionController extends Controller
                 $draft->save();
 
                 // Automatically clone previous loan forms (Guarantor, Death Risk, Agreement, Investigation, Approval)
-                app(\App\Services\LoanApplicationCloneService::class)->cloneAndMerge($draft);
+                app(LoanApplicationCloneService::class)->cloneAndMerge($draft);
                 $draft->refresh();
+                $memberAdmission->refreshCycleDofaFromLoans();
 
                 return redirect()
                     ->route('member.loan-applications.show', $draft->id)

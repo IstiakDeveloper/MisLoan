@@ -611,7 +611,10 @@ class LoanApplicationController extends Controller
             LoanApplication::STATUS_DISBURSED,
         ];
 
-        return LoanApplication::where('member_admission_id', $memberId)
+        $member = MemberAdmission::find($memberId);
+        $admissionIds = $member ? $member->sisterAdmissionIds() : [$memberId];
+
+        return LoanApplication::whereIn('member_admission_id', $admissionIds)
             ->whereIn('status', $blockingStatuses)
             ->with('loanProduct:id,duration_months')
             ->get()
@@ -1193,6 +1196,7 @@ class LoanApplicationController extends Controller
         $branchId = $user->branch_id;
 
         $members = MemberAdmission::where('branch_id', $branchId)
+            ->masterMembers()
             ->when($this->isFieldOfficer($user), function ($query) {
                 $query->where('status', '!=', 'rejected');
             }, function ($query) {
@@ -2178,6 +2182,9 @@ class LoanApplicationController extends Controller
         // Clone previous loan data onto this draft
         app(LoanApplicationCloneService::class)->cloneAndMerge($draft);
         $draft->refresh();
+        if (! empty($memberId)) {
+            MemberAdmission::find($memberId)?->refreshCycleDofaFromLoans();
+        }
 
         return redirect()
             ->route('member.loan-applications.show', $draft->id)
@@ -2361,6 +2368,7 @@ class LoanApplicationController extends Controller
             $draft->save();
             app(LoanApplicationCloneService::class)->cloneAndMerge($draft);
             $draft->refresh();
+            $member->refreshCycleDofaFromLoans();
         }
 
         return $draft;

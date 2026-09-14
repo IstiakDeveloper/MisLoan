@@ -6,9 +6,12 @@ import { triggerPrintWithAutoFit } from '@/hooks/useAutoFitPrint';
 
 interface Props {
     admission: MemberAdmission;
+    admissions?: MemberAdmission[];
 }
 
-export default function AdmissionPrintSingle({ admission }: Props) {
+export default function AdmissionPrintSingle({ admission, admissions }: Props) {
+    const forms = admissions && admissions.length > 0 ? admissions : [admission];
+
     useEffect(() => {
         const timer = setTimeout(() => {
             triggerPrintWithAutoFit('.member-admission-print');
@@ -18,7 +21,7 @@ export default function AdmissionPrintSingle({ admission }: Props) {
 
     return (
         <>
-            <Head title={`প্রিন্ট - ${admission.application_no}`}>
+            <Head title={forms.length > 1 ? `প্রিন্ট - সব জরিপ (${admission.application_no})` : `প্রিন্ট - ${admission.application_no}`}>
                 <style>{`
                     * {
                         margin: 0;
@@ -37,6 +40,10 @@ export default function AdmissionPrintSingle({ admission }: Props) {
                         max-width: 210mm;
                         margin: 0 auto;
                         padding: 0;
+                    }
+                    .cycle-survey-print-break {
+                        page-break-before: always;
+                        break-before: page;
                     }
                     @media print {
                         @page {
@@ -58,7 +65,14 @@ export default function AdmissionPrintSingle({ admission }: Props) {
             </Head>
 
             <div className="print-wrapper">
-                <MemberAdmissionFormView admission={admission as any} printMode={true} />
+                {forms.map((form, index) => (
+                    <div
+                        key={form.id}
+                        className={index > 0 ? 'cycle-survey-print-break' : undefined}
+                    >
+                        <MemberAdmissionFormView admission={form as any} printMode={true} />
+                    </div>
+                ))}
             </div>
         </>
     );

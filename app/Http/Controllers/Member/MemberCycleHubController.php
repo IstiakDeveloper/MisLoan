@@ -18,6 +18,7 @@ use App\Support\LoanFormVisibility;
 use Carbon\Carbon;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 use Inertia\Inertia;
 use Inertia\Response;
@@ -265,7 +266,10 @@ class MemberCycleHubController extends Controller
             $allAdmissions = collect([$targetAdmission]);
         }
 
-        $latestAdmission = $allAdmissions->sortByDesc('loan_dofa')->first();
+        $canonicalAdmission = $allAdmissions
+            ->sortBy(fn ($admission) => [(int) (bool) $admission->previous_admission_id, $admission->id])
+            ->first();
+        $latestAdmission = $canonicalAdmission ?? $allAdmissions->sortByDesc('loan_dofa')->first();
 
         // Calculate overall active loan state
         $allLoans = $allAdmissions->flatMap->loanApplications;
@@ -276,62 +280,9 @@ class MemberCycleHubController extends Controller
         // Find the latest disbursed loan that can be repaid
         $disbursedNonRepaidLoan = $allLoans->firstWhere('status', LoanApplication::STATUS_DISBURSED);
 
-        // Highest dofa
-        $maxDofa = (int) ($allAdmissions->max('loan_dofa') ?: 1);
+        $cycles = $this->buildLoanCycles($allAdmissions, $canonicalAdmission);
+        $maxDofa = (int) ($cycles->max('dofa') ?: ($allAdmissions->max('loan_dofa') ?: 1));
         $nextDofa = $maxDofa + 1;
-
-        // Construct structured cycle list
-        $cycles = $allAdmissions->map(function ($admission) {
-            $dofa = (int) ($admission->loan_dofa ?: 1);
-            $loans = $admission->loanApplications->map(function ($loan) {
-                $product = $loan->loanProduct;
-                $category = $loan->loanCategory ?? $product?->loanCategory;
-                $amount = (float) ($loan->requested_amount ?? 0);
-                $visibleFormIds = LoanFormVisibility::visibleFormIdsForShow(
-                    null,
-                    (string) $loan->status,
-                    $product,
-                    $amount,
-                    $category
-                );
-
-                return [
-                    'id' => $loan->id,
-                    'application_no' => $loan->application_no,
-                    'status' => $loan->status,
-                    'requested_amount' => $loan->requested_amount,
-                    'approved_amount' => $loan->approved_amount,
-                    'disbursed_amount' => $loan->disbursed_amount,
-                    'product_name' => $loan->loanProduct?->product_name_bn ?: $loan->loanProduct?->product_name,
-                    'product_code' => $loan->loanProduct?->product_code,
-                    'category_name' => $loan->loanCategory?->category_name_bn ?: $loan->loanCategory?->category_name,
-                    'duration_months' => $loan->loan_term_months ?? $loan->loanProduct?->duration_months,
-                    'disbursed_at' => $loan->disbursed_at ? Carbon::parse($loan->disbursed_at)->format('Y-m-d') : null,
-                    'disbursed_by_name' => $loan->disbursedBy?->name,
-                    'repaid_at' => $loan->repaid_at ? Carbon::parse($loan->repaid_at)->format('Y-m-d') : null,
-                    'repaid_by_name' => $loan->repaidBy?->name,
-                    'repayment_notes' => $loan->repayment_notes,
-                    'created_at' => $loan->created_at ? $loan->created_at->format('Y-m-d') : null,
-                    'has_agreement' => in_array(1, $visibleFormIds, true) && ! empty($loan->loan_agreement_data),
-                    'has_guarantor' => in_array(2, $visibleFormIds, true) && ! empty($loan->guarantor_info),
-                    'has_investigation' => in_array(4, $visibleFormIds, true) && ! empty($loan->asset_info),
-                    'has_approval' => in_array(5, $visibleFormIds, true) && ! empty($loan->business_plan),
-                ];
-            });
-
-            return [
-                'admission_id' => $admission->id,
-                'dofa' => $dofa,
-                'admission_status' => $admission->status,
-                'admission_date' => $admission->admission_date ? Carbon::parse($admission->admission_date)->format('Y-m-d') : null,
-                'survey_date' => $admission->survey_date ? Carbon::parse($admission->survey_date)->format('Y-m-d') : null,
-                'created_at' => $admission->created_at ? $admission->created_at->format('Y-m-d') : null,
-                'is_legacy' => (bool) $admission->is_legacy,
-                'family_count' => $admission->familyMembers->count(),
-                'assets_count' => $admission->otherAssets->count(),
-                'loans' => $loans,
-            ];
-        })->values();
 
         return [
             'member' => [
@@ -371,6 +322,104 @@ class MemberCycleHubController extends Controller
                 'latest_admission_id' => $latestAdmission->id,
             ],
             'cycles' => $cycles,
+        ];
+    }
+
+    /**
+     * One cycle per loan (same member). Leftover cloned admissions stay visible for cleanup.
+     */
+    private function buildLoanCycles($allAdmissions, ?MemberAdmission $canonicalAdmission): Collection
+    {
+        $cycles = collect();
+        $dofa = 1;
+        $allLoans = $allAdmissions->flatMap->loanApplications->sortBy('id')->values();
+
+        foreach ($allLoans as $loan) {
+            $admission = $allAdmissions->firstWhere('id', $loan->member_admission_id) ?? $canonicalAdmission;
+            if (! $admission) {
+                continue;
+            }
+
+            $cycles->push($this->cyclePayload($admission, $dofa, [$this->mapLoanForCycle($loan)]));
+            $dofa++;
+        }
+
+        foreach ($allAdmissions as $admission) {
+            if ($admission->loanApplications->isNotEmpty()) {
+                continue;
+            }
+
+            if ($cycles->isNotEmpty() && ! $admission->previous_admission_id) {
+                continue;
+            }
+
+            $cycles->push($this->cyclePayload($admission, (int) ($admission->loan_dofa ?: $dofa), []));
+            $dofa++;
+        }
+
+        return $cycles->values();
+    }
+
+    /**
+     * @param  array<int, array<string, mixed>>  $loans
+     * @return array<string, mixed>
+     */
+    private function cyclePayload(MemberAdmission $admission, int $dofa, array $loans): array
+    {
+        return [
+            'admission_id' => $admission->id,
+            'loan_id' => $loans[0]['id'] ?? null,
+            'dofa' => $dofa,
+            'admission_status' => $admission->status,
+            'admission_date' => $admission->admission_date ? Carbon::parse($admission->admission_date)->format('Y-m-d') : null,
+            'survey_date' => $admission->survey_date ? Carbon::parse($admission->survey_date)->format('Y-m-d') : null,
+            'created_at' => $admission->created_at ? $admission->created_at->format('Y-m-d') : null,
+            'is_legacy' => (bool) $admission->is_legacy,
+            'is_cloned_admission' => (bool) $admission->previous_admission_id,
+            'can_delete_admission' => (bool) $admission->previous_admission_id,
+            'family_count' => $admission->familyMembers->count(),
+            'assets_count' => $admission->otherAssets->count(),
+            'loans' => $loans,
+        ];
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function mapLoanForCycle(LoanApplication $loan): array
+    {
+        $product = $loan->loanProduct;
+        $category = $loan->loanCategory ?? $product?->loanCategory;
+        $amount = (float) ($loan->requested_amount ?? 0);
+        $visibleFormIds = LoanFormVisibility::visibleFormIdsForShow(
+            null,
+            (string) $loan->status,
+            $product,
+            $amount,
+            $category
+        );
+
+        return [
+            'id' => $loan->id,
+            'application_no' => $loan->application_no,
+            'status' => $loan->status,
+            'requested_amount' => $loan->requested_amount,
+            'approved_amount' => $loan->approved_amount,
+            'disbursed_amount' => $loan->disbursed_amount,
+            'product_name' => $loan->loanProduct?->product_name_bn ?: $loan->loanProduct?->product_name,
+            'product_code' => $loan->loanProduct?->product_code,
+            'category_name' => $loan->loanCategory?->category_name_bn ?: $loan->loanCategory?->category_name,
+            'duration_months' => $loan->loan_term_months ?? $loan->loanProduct?->duration_months,
+            'disbursed_at' => $loan->disbursed_at ? Carbon::parse($loan->disbursed_at)->format('Y-m-d') : null,
+            'disbursed_by_name' => $loan->disbursedBy?->name,
+            'repaid_at' => $loan->repaid_at ? Carbon::parse($loan->repaid_at)->format('Y-m-d') : null,
+            'repaid_by_name' => $loan->repaidBy?->name,
+            'repayment_notes' => $loan->repayment_notes,
+            'created_at' => $loan->created_at ? $loan->created_at->format('Y-m-d') : null,
+            'has_agreement' => in_array(1, $visibleFormIds, true) && ! empty($loan->loan_agreement_data),
+            'has_guarantor' => in_array(2, $visibleFormIds, true) && ! empty($loan->guarantor_info),
+            'has_investigation' => in_array(4, $visibleFormIds, true) && ! empty($loan->asset_info),
+            'has_approval' => in_array(5, $visibleFormIds, true) && ! empty($loan->business_plan),
         ];
     }
 
@@ -416,7 +465,7 @@ class MemberCycleHubController extends Controller
     }
 
     /**
-     * Auto-clone admission form for the next cycle and prepare for new loan application
+     * Open or create the next cycle survey on the same member (not a second enrollment).
      */
     public function startNextCycle(Request $request, MemberAdmission $memberAdmission): JsonResponse
     {
@@ -431,8 +480,10 @@ class MemberCycleHubController extends Controller
             return response()->json(['message' => 'এই সদস্য আপনার শাখার নয়।'], 403);
         }
 
-        // Check if member already has an active loan
-        $hasActive = LoanApplication::where('member_admission_id', $memberAdmission->id)
+        $canonical = $memberAdmission->canonicalAdmission();
+        $sisterIds = $canonical->sisterAdmissionIds();
+
+        $hasActive = LoanApplication::whereIn('member_admission_id', $sisterIds)
             ->whereNotIn('status', [
                 LoanApplication::STATUS_REPAID,
                 LoanApplication::STATUS_CANCELLED,
@@ -447,16 +498,44 @@ class MemberCycleHubController extends Controller
             ], 422);
         }
 
-        // Calculate next dofa
-        $maxDofa = (int) (MemberAdmission::where('branch_id', $memberAdmission->branch_id)
-            ->where('application_no', $memberAdmission->application_no)
-            ->max('loan_dofa') ?: ($memberAdmission->loan_dofa ?: 1));
+        $openCycle = MemberAdmission::query()
+            ->whereIn('id', $sisterIds)
+            ->whereNotNull('previous_admission_id')
+            ->whereDoesntHave('loanApplications', function ($q) {
+                $q->whereNotIn('status', [
+                    LoanApplication::STATUS_DRAFT,
+                    LoanApplication::STATUS_REJECTED,
+                    LoanApplication::STATUS_CANCELLED,
+                ]);
+            })
+            ->orderByDesc('loan_dofa')
+            ->orderByDesc('id')
+            ->first();
 
-        $newDofa = $maxDofa + 1;
+        if ($openCycle) {
+            $openCycle->applyLockedIdentityFrom($canonical);
+            $openCycle->save();
 
-        // Perform cloning inside a transaction
-        $newAdmission = DB::transaction(function () use ($memberAdmission, $newDofa, $user) {
-            $data = $memberAdmission->replicate([
+            return $this->cycleSurveyStartedResponse($openCycle, reused: true);
+        }
+
+        $source = MemberAdmission::query()
+            ->whereIn('id', $sisterIds)
+            ->with(['familyMembers', 'otherAssets'])
+            ->orderByDesc('loan_dofa')
+            ->orderByDesc('id')
+            ->first() ?? $canonical->load(['familyMembers', 'otherAssets']);
+
+        $loanCount = LoanApplication::whereIn('member_admission_id', $sisterIds)
+            ->whereNotIn('status', [
+                LoanApplication::STATUS_CANCELLED,
+                LoanApplication::STATUS_REJECTED,
+            ])
+            ->count();
+        $newDofa = max((int) ($source->loan_dofa ?: 1), $loanCount) + 1;
+
+        $newCycle = DB::transaction(function () use ($source, $canonical, $newDofa, $user) {
+            $data = $source->replicate([
                 'id',
                 'created_at',
                 'updated_at',
@@ -473,42 +552,52 @@ class MemberCycleHubController extends Controller
                 'printed_at',
             ])->toArray();
 
-            $data['application_no'] = $memberAdmission->application_no;
-            $data['previous_admission_id'] = $memberAdmission->id;
+            $data['application_no'] = $canonical->application_no;
+            $data['previous_admission_id'] = $source->id;
             $data['loan_dofa'] = $newDofa;
             $data['is_legacy'] = true;
-            $data['status'] = 'draft'; // Renewal admissions start as draft until finalized with loan
+            $data['status'] = 'draft';
             $data['survey_date'] = now()->toDateString();
-            $data['admission_date'] = $memberAdmission->admission_date ?: now()->toDateString();
+            $data['admission_date'] = $canonical->admission_date ?: $source->admission_date ?: now()->toDateString();
             $data['created_by'] = $user->id;
             $data['assigned_officer_id'] = $user->id;
 
-            $createdAdmission = MemberAdmission::create($data);
+            $created = MemberAdmission::create($data);
+            $created->applyLockedIdentityFrom($canonical);
+            $created->save();
 
-            // Clone family members
-            foreach ($memberAdmission->familyMembers as $family) {
+            foreach ($source->familyMembers as $family) {
                 $familyData = $family->replicate(['id', 'created_at', 'updated_at', 'member_admission_id'])->toArray();
-                $familyData['member_admission_id'] = $createdAdmission->id;
+                $familyData['member_admission_id'] = $created->id;
                 MemberFamilyMember::create($familyData);
             }
 
-            // Clone other assets
-            foreach ($memberAdmission->otherAssets as $asset) {
+            foreach ($source->otherAssets as $asset) {
                 $assetData = $asset->replicate(['id', 'created_at', 'updated_at', 'member_admission_id'])->toArray();
-                $assetData['member_admission_id'] = $createdAdmission->id;
+                $assetData['member_admission_id'] = $created->id;
                 MemberOtherAsset::create($assetData);
             }
 
-            return $createdAdmission;
+            return $created;
         });
+
+        return $this->cycleSurveyStartedResponse($newCycle, reused: false);
+    }
+
+    private function cycleSurveyStartedResponse(MemberAdmission $cycle, bool $reused): JsonResponse
+    {
+        $dofa = (int) ($cycle->loan_dofa ?: 1);
 
         return response()->json([
             'success' => true,
-            'message' => "দফা {$newDofa} এর জন্য সদস্যের ভর্তি ফর্ম সফলভাবে ক্লোন করা হয়েছে।",
-            'new_admission_id' => $newAdmission->id,
-            'new_dofa' => $newDofa,
-            'edit_admission_url' => route('member-admissions.edit', ['memberAdmission' => $newAdmission->id, 'cycle_renewal' => 1]),
-            'loan_create_url' => route('member.loan-applications.form-selection', ['member_id' => $newAdmission->id]),
+            'cloned' => ! $reused,
+            'message' => $reused
+                ? "দফা {$dofa} এর খসড়া জরিপ আগেই খোলা আছে। ব্যক্তিগত তথ্য আগের সদস্যের মতোই — আয়-ব্যয় এই দফায় বদলাতে পারবেন।"
+                : "দফা {$dofa} এর জরিপ ফর্ম তৈরি হয়েছে। একই সদস্য — Member Code, NID ও ব্যক্তিগত তথ্য আগের মতো। আয়-ব্যয় এই দফার জন্য আলাদা করতে পারবেন।",
+            'new_admission_id' => $cycle->id,
+            'new_dofa' => $dofa,
+            'edit_admission_url' => route('member-admissions.edit', ['memberAdmission' => $cycle->id, 'cycle_renewal' => 1]),
+            'loan_create_url' => route('member.loan-applications.form-selection', ['member_id' => $cycle->id]),
         ]);
     }
 
@@ -546,30 +635,46 @@ class MemberCycleHubController extends Controller
             abort(403, 'এই সদস্য আপনার শাখার নয়।');
         }
 
-        // Get all sister cycles for quick switching
-        $otherCycles = MemberAdmission::where('branch_id', $admission->branch_id)
-            ->where('application_no', $admission->application_no)
-            ->with(['loanApplications:id,member_admission_id,status,requested_amount,disbursed_amount'])
-            ->orderBy('loan_dofa', 'asc')
-            ->select('id', 'application_no', 'loan_dofa', 'status', 'admission_date', 'created_at')
-            ->get()
-            ->map(function ($c) {
-                $loan = $c->loanApplications->first();
+        $portfolio = $this->resolveMemberCycleData($admission->id, $user);
+        $otherCycles = collect($portfolio['cycles'] ?? [])->map(function (array $cycle) {
+            $loan = $cycle['loans'][0] ?? null;
 
-                return [
-                    'id' => $c->id,
-                    'dofa' => (int) ($c->loan_dofa ?: 1),
-                    'admission_status' => $c->status,
-                    'loan_status' => $loan?->status,
-                    'loan_amount' => $loan ? ($loan->disbursed_amount ?: $loan->requested_amount) : null,
-                ];
-            });
+            return [
+                'id' => $cycle['admission_id'],
+                'loan_id' => $cycle['loan_id'] ?? null,
+                'dofa' => $cycle['dofa'],
+                'admission_status' => $cycle['admission_status'],
+                'loan_status' => $loan['status'] ?? null,
+                'loan_amount' => $loan
+                    ? ($loan['disbursed_amount'] ?: $loan['approved_amount'] ?: $loan['requested_amount'])
+                    : null,
+            ];
+        })->values();
 
-        $loanApplication = $admission->loanApplications->first();
+        $requestedLoanId = (int) $request->input('loan_id');
+        $sisterIds = $admission->sisterAdmissionIds();
+        $loanApplication = null;
+
+        if ($requestedLoanId > 0) {
+            $loanApplication = $admission->loanApplications->firstWhere('id', $requestedLoanId)
+                ?? LoanApplication::where('id', $requestedLoanId)
+                    ->whereIn('member_admission_id', $sisterIds)
+                    ->with(['loanProduct', 'loanCategory', 'branch', 'samity', 'disbursedBy:id,name', 'repaidBy:id,name', 'submittedBy:id,name'])
+                    ->first();
+        }
+
+        if (! $loanApplication) {
+            $loanApplication = $admission->loanApplications->first();
+        }
+
         if ($loanApplication?->isDraft()) {
             app(LoanApplicationCloneService::class)->cloneAndMerge($loanApplication);
             $loanApplication->refresh();
         }
+
+        $matchedCycle = collect($portfolio['cycles'] ?? [])->first(
+            fn (array $cycle) => ($cycle['loan_id'] ?? null) === $loanApplication?->id
+        );
 
         $formSaved = $loanApplication ? LoanFormVisibility::buildFormSavedMap($loanApplication) : [];
         $visibleFormIds = [];
@@ -591,7 +696,8 @@ class MemberCycleHubController extends Controller
             'formSaved' => $formSaved,
             'visibleFormIds' => $visibleFormIds,
             'otherCycles' => $otherCycles,
-            'currentDofa' => (int) ($admission->loan_dofa ?: 1),
+            'currentDofa' => (int) ($matchedCycle['dofa'] ?? ($admission->loan_dofa ?: 1)),
+            'canDeleteAdmission' => (bool) $admission->previous_admission_id,
             'userPermissions' => [
                 'canCreateLoan' => $this->canCreateLoan($user),
                 'canRepayLoan' => $this->canRepayLoan($user),
@@ -645,6 +751,10 @@ class MemberCycleHubController extends Controller
 
         if (! in_array((int) $memberAdmission->branch_id, $branchIds, true)) {
             return response()->json(['message' => 'এই ভর্তি আবেদনটি আপনার শাখার নয়।'], 403);
+        }
+
+        if (! $memberAdmission->previous_admission_id) {
+            return response()->json(['message' => 'মূল সদস্য ভর্তি মুছে ফেলা যাবে না। শুধু খসড়া ঋণ মুছুন, অথবা ভর্তি তথ্য আপডেট করুন।'], 422);
         }
 
         if ($memberAdmission->hasDisbursedLoan()) {

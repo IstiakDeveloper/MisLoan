@@ -169,6 +169,7 @@ class SavingsApplicationController extends Controller
         }
 
         $members = MemberAdmission::where('branch_id', $user->branch_id)
+            ->masterMembers()
             ->where('status', 'approved')
             ->where(function ($q) use ($query) {
                 MemberCodeService::applyAdmissionSearch($q, $query);

@@ -765,6 +765,7 @@ export default function Edit({
     const validationErrors = (page.props as any).errors || {};
     const mergedErrors = { ...validationErrors, ...serverErrors };
     const errorList = Object.entries(mergedErrors);
+    const lockIdentity = !!admission.previous_admission_id;
 
     return (
         <AdminLayout>
@@ -915,7 +916,7 @@ export default function Edit({
                         <span className="w-2.5 h-2.5 rounded-full bg-emerald-600 shrink-0" />
                         <div className="flex-1">
                             <span className="font-bold text-emerald-950 block">সাইকেল রিনিউয়াল (দফা {data.loan_dofa}):</span>
-                            <span>পূর্ববর্তী সাইকেলের ভর্তি তথ্য অনুযায়ী ফরমটি স্বয়ংক্রিয়ভাবে ক্লোন করা হয়েছে এবং মেম্বার কোড অপরিবর্তিত রাখা হয়েছে। তথ্য হালনাগাদ শেষে সরাসরি <strong>«সংরক্ষণ ও ঋণ আবেদন করুন»</strong> বাটনে চাপুন।</span>
+                            <span>একই সদস্য — Member Code, NID ও ব্যক্তিগত তথ্য আগের মতো লক। আয়-ব্যয়, সম্পদ ও পরিবার এই দফার জন্য আলাদা করতে পারবেন। শেষে <strong>«সংরক্ষণ ও ঋণ আবেদন করুন»</strong> চাপুন।</span>
                         </div>
                     </div>
                 )}
@@ -939,6 +940,7 @@ export default function Edit({
                         categories={categories}
                         isLegacyMember={!!data.is_legacy}
                         disableMemberCode={true}
+                        ignoreAdmissionId={admission.id}
                     />
 
                     <PersonalInfoSection
@@ -946,6 +948,7 @@ export default function Edit({
                         setData={setData}
                         errors={mergedErrors}
                         ignoreAdmissionId={admission.id}
+                        lockIdentity={lockIdentity}
                     />
 
                     <AddressSection
@@ -968,6 +971,7 @@ export default function Edit({
                         setData={setData}
                         errors={mergedErrors}
                         ignoreAdmissionId={admission.id}
+                        lockIdentity={lockIdentity}
                     />
 
                     <EconomicPropertySection
