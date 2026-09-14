@@ -65,6 +65,36 @@ class MemberCodeService
     }
 
     /**
+     * Format 4-digit samity suffix (e.g. 5 -> '0005', '00010005' -> '0005').
+     * Returns an empty string when no digits are present.
+     */
+    public static function formatSamitySuffix(mixed $samityCode): string
+    {
+        $clean = preg_replace('/\D/', '', self::toEnglishDigits((string) $samityCode)) ?? '';
+        if ($clean === '') {
+            return '';
+        }
+
+        return str_pad(substr($clean, -4), 4, '0', STR_PAD_LEFT);
+    }
+
+    /**
+     * Combine 4-digit branch code and 4-digit samity suffix (e.g. 1 + 5 -> '00010005').
+     * Returns an empty string when branch or samity digits are missing.
+     */
+    public static function formatFullSamityCode(mixed $branchCode, mixed $samityCode): string
+    {
+        $branchDigits = preg_replace('/\D/', '', self::toEnglishDigits((string) $branchCode)) ?? '';
+        $suffix = self::formatSamitySuffix($samityCode);
+
+        if ($branchDigits === '' || $suffix === '') {
+            return '';
+        }
+
+        return str_pad(substr($branchDigits, -4), 4, '0', STR_PAD_LEFT).$suffix;
+    }
+
+    /**
      * Resolve Branch Code string from branchId or branch object.
      */
     public static function resolveBranchCode(?int $branchId = null, mixed $branchObj = null): string

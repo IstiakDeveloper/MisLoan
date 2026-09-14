@@ -19,3 +19,20 @@ it('converts english digits to bangla digits for print display', function () {
     expect(MemberCodeService::toBengaliDigits(null))->toBe('');
     expect(MemberCodeService::toBengaliDigits(''))->toBe('');
 });
+
+it('formats a 4-digit samity suffix from short or full codes', function () {
+    expect(MemberCodeService::formatSamitySuffix(5))->toBe('0005');
+    expect(MemberCodeService::formatSamitySuffix('5'))->toBe('0005');
+    expect(MemberCodeService::formatSamitySuffix('০০০৫'))->toBe('0005');
+    expect(MemberCodeService::formatSamitySuffix('00010005'))->toBe('0005');
+    expect(MemberCodeService::formatSamitySuffix(''))->toBe('');
+    expect(MemberCodeService::formatSamitySuffix(null))->toBe('');
+});
+
+it('combines branch and samity into an 8-digit samity code', function () {
+    expect(MemberCodeService::formatFullSamityCode(1, 5))->toBe('00010005');
+    expect(MemberCodeService::formatFullSamityCode('0001', '0005'))->toBe('00010005');
+    expect(MemberCodeService::formatFullSamityCode('1', '00010005'))->toBe('00010005');
+    expect(MemberCodeService::formatFullSamityCode('', 5))->toBe('');
+    expect(MemberCodeService::formatFullSamityCode(1, ''))->toBe('');
+});
