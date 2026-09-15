@@ -603,18 +603,28 @@ class LoanApplicationController extends Controller
     /**
      * @return array{ok: true}|array{ok: false, redirect: RedirectResponse}
      */
-    private function guardNewLoanForm(MemberAdmission $member): array
+    private function guardNewLoanForm(MemberAdmission $member, $user, int $loanProductId, int $loanCategoryId): array
     {
-        $existing = $member->existingLoanForm();
-        if ($existing) {
+        $decision = $member->resolveActiveLoanCreate($loanProductId, $loanCategoryId);
+        if ($decision['action'] === 'block') {
             return [
                 'ok' => false,
-                'redirect' => redirect()->route('member.loan-applications.index')
-                    ->with('error', MemberAdmission::alreadyLoanFormMessage($existing)),
+                'redirect' => $this->redirectAwayFromSecondLoan($user, $decision['loan']),
             ];
         }
 
-        if ($member->mustUseCycleHubForNextLoan()) {
+        if ($decision['action'] === 'reuse') {
+            try {
+                $this->ensureApplicationAccessibleToUser($decision['loan'], $user);
+            } catch (HttpException) {
+                return [
+                    'ok' => false,
+                    'redirect' => $this->redirectAwayFromSecondLoan($user, $decision['loan']),
+                ];
+            }
+        }
+
+        if ($decision['action'] === 'create' && $member->mustUseCycleHubForNextLoan()) {
             return [
                 'ok' => false,
                 'redirect' => redirect()->route('member.cycle-hub.index')
@@ -623,6 +633,27 @@ class LoanApplicationController extends Controller
         }
 
         return ['ok' => true];
+    }
+
+    private function redirectAwayFromSecondLoan($user, LoanApplication $existing): RedirectResponse
+    {
+        $message = MemberAdmission::alreadyLoanFormMessage($existing);
+        $isForeignFieldOfficerLoan = $this->isFieldOfficer($user)
+            && (int) $existing->submitted_by !== (int) $user->id;
+
+        if ($isForeignFieldOfficerLoan) {
+            return redirect()->route('member.loan-applications.index')->with('error', $message);
+        }
+
+        try {
+            $this->ensureApplicationAccessibleToUser($existing, $user);
+        } catch (HttpException) {
+            return redirect()->route('member.loan-applications.index')->with('error', $message);
+        }
+
+        return redirect()
+            ->route('member.loan-applications.show', $existing->id)
+            ->with('error', $message);
     }
 
     /**
@@ -1349,6 +1380,26 @@ class LoanApplicationController extends Controller
 
         DB::beginTransaction();
         try {
+            if (! empty($validated['member_admission_id'])) {
+                $memberForGuard = MemberAdmission::findOrFail((int) $validated['member_admission_id']);
+                $this->ensureMemberAccessibleForLoanDraft($memberForGuard, $user);
+                $memberForGuard->lockActiveLoansForWrite();
+                if ($memberForGuard->hasExistingLoanForm()) {
+                    DB::rollBack();
+
+                    return back()->withErrors([
+                        'member_admission_id' => MemberAdmission::alreadyLoanFormMessage($memberForGuard->existingLoanForm()),
+                    ])->withInput();
+                }
+                if ($memberForGuard->mustUseCycleHubForNextLoan()) {
+                    DB::rollBack();
+
+                    return back()->withErrors([
+                        'member_admission_id' => MemberAdmission::nextLoanViaCycleHubMessage(),
+                    ])->withInput();
+                }
+            }
+
             $application = LoanApplication::create([
                 'application_no' => LoanApplication::generateApplicationNo(),
                 'form_type' => $validated['form_type'],
@@ -2108,7 +2159,7 @@ class LoanApplicationController extends Controller
             }
             $member = MemberAdmission::findOrFail($memberId);
             $this->ensureMemberAccessibleForLoanDraft($member, $user);
-            $guard = $this->guardNewLoanForm($member);
+            $guard = $this->guardNewLoanForm($member, $user, $loanProductId, $loanCategoryId);
             if (! $guard['ok']) {
                 return $guard['redirect'];
             }
@@ -2162,7 +2213,9 @@ class LoanApplicationController extends Controller
         $draft->loan_product_id = $loanProductId;
         $draft->loan_category_id = $loanCategoryId;
         $draft->branch_id = $user->branch_id;
-        $draft->submitted_by = $user->id;
+        if (! $draft->submitted_by) {
+            $draft->submitted_by = $user->id;
+        }
         $draft->form_type = $draft->form_type ?: $formType;
         $draft->repayment_frequency = $draft->repayment_frequency ?: $repaymentFrequency;
         $draft->loan_term_months = $draft->loan_term_months ?: $durationMonths;
@@ -2341,33 +2394,46 @@ class LoanApplicationController extends Controller
             return null;
         }
         $this->ensureMemberAccessibleForLoanDraft($member, $user);
-        $draft = LoanApplication::firstOrNew([
-            'member_admission_id' => $memberId,
-            'loan_product_id' => $loanProductId,
-            'loan_category_id' => $loanCategoryId,
-            'status' => LoanApplication::STATUS_DRAFT,
-        ]);
-        if ($draft->exists) {
-            $this->ensureApplicationAccessibleToUser($draft, $user);
-        } elseif ($existing = $member->existingLoanForm()) {
-            abort(403, MemberAdmission::alreadyLoanFormMessage($existing));
-        } elseif ($member->mustUseCycleHubForNextLoan()) {
-            abort(403, MemberAdmission::nextLoanViaCycleHubMessage());
-        }
-        if (! $draft->exists || ! $draft->application_no) {
+
+        return DB::transaction(function () use ($member, $user, $loanProductId, $loanCategoryId, $requestedAmount, $memberId) {
+            $member->lockActiveLoansForWrite();
+            $decision = $member->resolveActiveLoanCreate($loanProductId, $loanCategoryId);
+
+            if ($decision['action'] === 'block') {
+                abort(403, MemberAdmission::alreadyLoanFormMessage($decision['loan']));
+            }
+
+            if ($decision['action'] === 'reuse') {
+                $this->ensureApplicationAccessibleToUser($decision['loan'], $user);
+                $draft = $decision['loan'];
+                $draft->branch_id = $user->branch_id ?: $draft->branch_id;
+                $draft->samity_id = $member->samity_id ?: $draft->samity_id;
+                $draft->requested_amount = $requestedAmount;
+
+                return $draft;
+            }
+
+            if ($member->mustUseCycleHubForNextLoan()) {
+                abort(403, MemberAdmission::nextLoanViaCycleHubMessage());
+            }
+
+            $draft = new LoanApplication;
+            $draft->member_admission_id = $memberId;
+            $draft->loan_product_id = $loanProductId;
+            $draft->loan_category_id = $loanCategoryId;
+            $draft->status = LoanApplication::STATUS_DRAFT;
             $draft->application_no = LoanApplication::generateApplicationNo();
-        }
-        $draft->branch_id = $user->branch_id;
-        $draft->samity_id = $member->samity_id;
-        $draft->requested_amount = $requestedAmount;
-        if (! $draft->exists) {
+            $draft->branch_id = $user->branch_id;
+            $draft->samity_id = $member->samity_id;
+            $draft->requested_amount = $requestedAmount;
+            $draft->submitted_by = $user->id;
             $draft->save();
             app(LoanApplicationCloneService::class)->cloneAndMerge($draft);
             $draft->refresh();
             $member->refreshCycleDofaFromLoans();
-        }
 
-        return $draft;
+            return $draft;
+        });
     }
 
     /**

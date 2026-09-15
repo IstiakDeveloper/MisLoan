@@ -355,6 +355,51 @@ class MemberAdmission extends Model
     }
 
     /**
+     * Lock this person (sister admissions + their open loans) before insert/reuse.
+     */
+    public function lockActiveLoansForWrite(): void
+    {
+        $ids = $this->sisterAdmissionIds();
+        if ($ids === []) {
+            $ids = [(int) $this->id];
+        }
+
+        static::query()->whereKey($ids)->orderBy('id')->lockForUpdate()->get();
+
+        LoanApplication::query()
+            ->whereIn('member_admission_id', $ids)
+            ->whereNotIn('status', self::closedLoanFormStatuses())
+            ->orderBy('id')
+            ->lockForUpdate()
+            ->get();
+    }
+
+    /**
+     * One open form per member. Changing product must update that row, not insert another.
+     *
+     * @return array{action: 'create'}|array{action: 'reuse', loan: LoanApplication}|array{action: 'block', loan: LoanApplication}
+     */
+    public function resolveActiveLoanCreate(?int $loanProductId = null, ?int $loanCategoryId = null): array
+    {
+        $existing = $this->existingLoanForm();
+        if ($existing === null) {
+            return ['action' => 'create'];
+        }
+
+        $sameProductDraft = $existing->isDraft()
+            && $loanProductId !== null
+            && $loanCategoryId !== null
+            && (int) $existing->loan_product_id === $loanProductId
+            && (int) $existing->loan_category_id === $loanCategoryId;
+
+        if ($sameProductDraft) {
+            return ['action' => 'reuse', 'loan' => $existing];
+        }
+
+        return ['action' => 'block', 'loan' => $existing];
+    }
+
+    /**
      * Finished loans — only repaid unlocks the next দফা via Cycle Hub.
      *
      * @return list<string>

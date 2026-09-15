@@ -24,6 +24,7 @@ use App\Services\NotificationService;
 use App\Support\AdmissionFormVisibility;
 use App\Support\LoanFormVisibility;
 use App\Support\RoleListWorkQueue;
+use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Validator;
@@ -2066,32 +2067,37 @@ class MemberAdmissionController extends Controller
         $loanCategoryId = (int) $request->input('loan_category_id');
         $requestedAmount = (float) ($request->input('requested_amount') ?: ($request->input('requested_loan_amount') ?: ($memberAdmission->requested_loan_amount ?: 0)));
 
-        $existingForm = $memberAdmission->existingLoanForm();
-        if ($existingForm) {
-            return redirect()
-                ->route('member.loan-applications.show', $existingForm->id)
-                ->with('error', MemberAdmission::alreadyLoanFormMessage($existingForm));
-        }
-
-        if ($memberAdmission->mustUseCycleHubForNextLoan()) {
-            return redirect()
-                ->route('member.cycle-hub.index')
-                ->with('error', MemberAdmission::nextLoanViaCycleHubMessage());
-        }
-
-        // If product or category not explicitly selected, try to find an existing draft or fallback to first active product
-        if ($loanProductId <= 0 || $loanCategoryId <= 0) {
-            $existingDraft = LoanApplication::where('member_admission_id', $memberAdmission->id)
-                ->where('status', LoanApplication::STATUS_DRAFT)
-                ->latest('id')
-                ->first();
-
-            if ($existingDraft) {
+        return DB::transaction(function () use ($memberAdmission, $loanProductId, $loanCategoryId, $requestedAmount) {
+            $memberAdmission->lockActiveLoansForWrite();
+            $existingForm = $memberAdmission->existingLoanForm();
+            if ($existingForm) {
                 return redirect()
-                    ->route('member.loan-applications.show', $existingDraft->id)
-                    ->with('success', 'ভর্তি তথ্য সংরক্ষণ সম্পন্ন হয়েছে। ঋণের ফর্ম পূরণ করুন।');
+                    ->route('member.loan-applications.show', $existingForm->id)
+                    ->with('error', MemberAdmission::alreadyLoanFormMessage($existingForm));
             }
 
+            if ($memberAdmission->mustUseCycleHubForNextLoan()) {
+                return redirect()
+                    ->route('member.cycle-hub.index')
+                    ->with('error', MemberAdmission::nextLoanViaCycleHubMessage());
+            }
+
+            return $this->createAdmissionLoanDraftOrRedirect(
+                $memberAdmission,
+                $loanProductId,
+                $loanCategoryId,
+                $requestedAmount
+            );
+        });
+    }
+
+    private function createAdmissionLoanDraftOrRedirect(
+        MemberAdmission $memberAdmission,
+        int $loanProductId,
+        int $loanCategoryId,
+        float $requestedAmount
+    ): RedirectResponse {
+        if ($loanProductId <= 0 || $loanCategoryId <= 0) {
             $defaultProduct = LoanProduct::where('is_active', true)->orderBy('display_order')->first()
                 ?? LoanProduct::where('is_active', true)->first();
             if ($defaultProduct) {
@@ -2109,13 +2115,7 @@ class MemberAdmissionController extends Controller
 
             if ($loanProduct && $loanCategory) {
                 $user = auth()->user();
-                $draft = LoanApplication::firstOrNew([
-                    'member_admission_id' => $memberAdmission->id,
-                    'loan_product_id' => $loanProductId,
-                    'loan_category_id' => $loanCategoryId,
-                    'status' => LoanApplication::STATUS_DRAFT,
-                ]);
-
+                $draft = new LoanApplication;
                 $installmentType = strtolower((string) ($loanProduct->installment_type ?? 'monthly'));
                 $durationMonths = (int) ($loanProduct->duration_months ?? 12);
                 if ($durationMonths <= 0) {
@@ -2137,27 +2137,23 @@ class MemberAdmissionController extends Controller
                     default => 'loan_agreement',
                 };
 
-                if (! $draft->exists || ! $draft->application_no) {
-                    $draft->application_no = LoanApplication::generateApplicationNo();
-                }
+                $draft->application_no = LoanApplication::generateApplicationNo();
                 $draft->status = LoanApplication::STATUS_DRAFT;
+                $draft->member_admission_id = $memberAdmission->id;
                 $draft->requested_amount = $requestedAmount ?: ($loanProduct->min_amount ?? 50000);
                 $draft->loan_product_id = $loanProductId;
                 $draft->loan_category_id = $loanCategoryId;
                 $draft->branch_id = $memberAdmission->branch_id ?: $user->branch_id;
                 $draft->samity_id = $memberAdmission->samity_id;
                 $draft->submitted_by = $user->id;
-                $draft->form_type = $draft->form_type ?: $formType;
-                $draft->repayment_frequency = $draft->repayment_frequency ?: $repaymentFrequency;
-                $draft->loan_term_months = $draft->loan_term_months ?: $durationMonths;
-                $draft->number_of_installments = $draft->number_of_installments ?: max(1, $numberOfInstallments);
-                $draft->purpose_of_loan = $draft->purpose_of_loan ?: 'ঋণ আবেদন';
-                if (! $draft->proposed_start_date) {
-                    $draft->proposed_start_date = now()->addDay()->toDateString();
-                }
+                $draft->form_type = $formType;
+                $draft->repayment_frequency = $repaymentFrequency;
+                $draft->loan_term_months = $durationMonths;
+                $draft->number_of_installments = max(1, $numberOfInstallments);
+                $draft->purpose_of_loan = 'ঋণ আবেদন';
+                $draft->proposed_start_date = now()->addDay()->toDateString();
                 $draft->save();
 
-                // Automatically clone previous loan forms (Guarantor, Death Risk, Agreement, Investigation, Approval)
                 app(LoanApplicationCloneService::class)->cloneAndMerge($draft);
                 $draft->refresh();
                 $memberAdmission->refreshCycleDofaFromLoans();
