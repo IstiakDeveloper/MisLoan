@@ -16,6 +16,7 @@ use App\Services\NotificationService;
 use App\Services\VerificationIssueService;
 use App\Support\RoleListWorkQueue;
 use Carbon\Carbon;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Inertia\Inertia;
@@ -96,14 +97,7 @@ class HeadOfficeAdmissionController extends Controller
             }
         }
 
-        // Printed filter (প্রিন্ট সম্পন্ন / প্রিন্ট হয়নি)
-        if ($request->filled('printed')) {
-            if ($request->printed === 'yes') {
-                $query->whereNotNull('printed_at');
-            } elseif ($request->printed === 'no') {
-                $query->whereNull('printed_at');
-            }
-        }
+        $this->applyPrintedFilter($query, $request);
 
         // Calculate stats based on current filters (excluding status filter for stats)
         $statsQuery = MemberAdmission::query();
@@ -149,13 +143,7 @@ class HeadOfficeAdmissionController extends Controller
             });
         }
 
-        if ($request->filled('printed')) {
-            if ($request->printed === 'yes') {
-                $statsQuery->whereNotNull('printed_at');
-            } elseif ($request->printed === 'no') {
-                $statsQuery->whereNull('printed_at');
-            }
-        }
+        $this->applyPrintedFilter($statsQuery, $request);
 
         $stats = [
             // "Total" mirrors the default (All) list, which excludes drafts.
@@ -261,6 +249,8 @@ class HeadOfficeAdmissionController extends Controller
             }
         }
 
+        $this->applyPrintedFilter($query, $request);
+
         // Get all matching records sorted by branch code (no pagination for print)
         $admissions = $query->orderBy(
             Branch::select('code')->whereColumn('branches.id', 'member_admissions.branch_id'),
@@ -271,7 +261,7 @@ class HeadOfficeAdmissionController extends Controller
 
         return Inertia::render('HeadOffice/AdmissionMembersPrint', [
             'admissions' => $admissions,
-            'filters' => $request->only(['status', 'search', 'zone_id', 'area_id', 'branch_id', 'date_from', 'date_to', 'had_issues']),
+            'filters' => $request->only(['status', 'search', 'zone_id', 'area_id', 'branch_id', 'date_from', 'date_to', 'had_issues', 'printed']),
             'zones' => $orgFilters['zones'],
             'areas' => $orgFilters['areas'],
             'branches' => $orgFilters['branches'],
@@ -328,11 +318,7 @@ class HeadOfficeAdmissionController extends Controller
             });
         }
 
-        if ($request->printed === 'yes') {
-            $query->whereNotNull('printed_at');
-        } elseif ($request->printed === 'no') {
-            $query->whereNull('printed_at');
-        }
+        $this->applyPrintedFilter($query, $request);
 
         $admissions = $query->orderByRaw('COALESCE(submitted_at, created_at) desc')->get();
 
@@ -479,6 +465,8 @@ class HeadOfficeAdmissionController extends Controller
                 $query->where(fn ($q) => $q->whereNull('revision_count')->orWhere('revision_count', 0));
             }
         }
+
+        $this->applyPrintedFilter($query, $request);
 
         $ids = $query->pluck('id');
         MemberAdmission::whereIn('id', $ids)->update(['printed_at' => now()]);
@@ -1320,6 +1308,18 @@ class HeadOfficeAdmissionController extends Controller
             $admission->otherAssets()->delete();
             $admission->delete();
         });
+    }
+
+    /**
+     * @param  Builder<MemberAdmission>  $query
+     */
+    private function applyPrintedFilter($query, Request $request): void
+    {
+        if ($request->printed === 'yes') {
+            $query->whereNotNull('printed_at');
+        } elseif ($request->printed === 'no') {
+            $query->whereNull('printed_at');
+        }
     }
 
     /**

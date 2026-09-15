@@ -93,6 +93,7 @@ interface Filters {
     date_from?: string;
     date_to?: string;
     had_issues?: string;
+    printed?: string;
 }
 
 interface Props {
