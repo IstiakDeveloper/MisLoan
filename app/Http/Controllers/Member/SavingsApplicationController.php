@@ -110,8 +110,8 @@ class SavingsApplicationController extends Controller
     public function index(Request $request)
     {
         $user = $request->user();
-        $dateFrom = $request->input('date_from', now()->toDateString());
-        $dateTo = $request->input('date_to', now()->toDateString());
+        $dateFrom = $request->filled('date_from') ? $request->input('date_from') : null;
+        $dateTo = $request->filled('date_to') ? $request->input('date_to') : null;
         $search = trim($request->input('search', ''));
         $statusFilter = $request->input('status', 'all');
         $perPage = (int) $request->input('per_page', 20);

@@ -22,11 +22,11 @@ class HeadOfficeSavingsController extends Controller
      */
     public function index(Request $request)
     {
-        $dateFrom = $request->date_from ?? now()->toDateString();
-        $dateTo = $request->date_to ?? now()->toDateString();
+        $dateFrom = $request->filled('date_from') ? $request->date_from : null;
+        $dateTo = $request->filled('date_to') ? $request->date_to : null;
 
-        $startOfDay = Carbon::parse($dateFrom)->startOfDay();
-        $endOfDay = Carbon::parse($dateTo)->endOfDay();
+        $startOfDay = $dateFrom ? Carbon::parse($dateFrom)->startOfDay() : null;
+        $endOfDay = $dateTo ? Carbon::parse($dateTo)->endOfDay() : null;
 
         $query = SavingsApplication::with([
             'branch:id,name,area_id',
@@ -89,75 +89,61 @@ class HeadOfficeSavingsController extends Controller
             MemberCodeService::applySavingsSearch($query, $request->search);
         }
 
-        $statsQuery = SavingsApplication::select('id', 'status', 'created_at', 'branch_id');
-        $this->applyAccessibleBranchScope($statsQuery);
+        $statsBaseQuery = SavingsApplication::query();
+        $this->applyAccessibleBranchScope($statsBaseQuery);
         if ($dateFrom && $dateTo) {
-            $statsQuery->whereBetween('created_at', [$startOfDay, $endOfDay]);
+            $statsBaseQuery->whereBetween('created_at', [$startOfDay, $endOfDay]);
         } elseif ($dateFrom) {
-            $statsQuery->where('created_at', '>=', $startOfDay);
+            $statsBaseQuery->where('created_at', '>=', $startOfDay);
         } elseif ($dateTo) {
-            $statsQuery->where('created_at', '<=', $endOfDay);
+            $statsBaseQuery->where('created_at', '<=', $endOfDay);
         }
         if ($request->filled('zone_id')) {
-            $statsQuery->whereHas('branch.area', function ($q) use ($request) {
+            $statsBaseQuery->whereHas('branch.area', function ($q) use ($request) {
                 $q->where('zone_id', $request->zone_id);
             });
         }
         if ($request->filled('area_id')) {
-            $statsQuery->whereHas('branch', function ($q) use ($request) {
+            $statsBaseQuery->whereHas('branch', function ($q) use ($request) {
                 $q->where('area_id', $request->area_id);
             });
         }
         if ($request->filled('branch_id')) {
-            $statsQuery->where('branch_id', $request->branch_id);
+            $statsBaseQuery->where('branch_id', $request->branch_id);
         }
+
+        $totalDeposit = (float) (clone $statsBaseQuery)->where('status', '!=', 'cancelled')->sum('deposit_amount');
+
+        // Calculate total withdrawn from closed applications
+        $closedApps = (clone $statsBaseQuery)->where('status', 'closed')->get(['id', 'form_data', 'deposit_amount', 'maturity_amount']);
+        $totalWithdrawn = 0.0;
+        foreach ($closedApps as $cApp) {
+            $wData = $cApp->form_data['withdrawal'] ?? null;
+            if ($wData && isset($wData['total_payout'])) {
+                $totalWithdrawn += (float) $wData['total_payout'];
+            } else {
+                $totalWithdrawn += (float) ($cApp->maturity_amount ?: $cApp->deposit_amount);
+            }
+        }
+        $netBalance = max(0, $totalDeposit - $totalWithdrawn);
 
         $stats = [
-            'total' => (clone $statsQuery)->count(),
-            'draft' => (clone $statsQuery)->where('status', 'draft')->count(),
-            'submitted' => (clone $statsQuery)->where('status', 'submitted')->count(),
-            'under_review' => (clone $statsQuery)->where('status', 'under_review')->count(),
-            'approved' => (clone $statsQuery)->where('status', 'approved')->count(),
-            'rejected' => (clone $statsQuery)->where('status', 'rejected')->count(),
-            'active' => (clone $statsQuery)->where('status', 'active')->count(),
-            'matured' => (clone $statsQuery)->where('status', 'matured')->count(),
+            'total' => (clone $statsBaseQuery)->count(),
+            'total_accounts' => (clone $statsBaseQuery)->count(),
+            'total_deposit' => $totalDeposit,
+            'total_withdrawn' => $totalWithdrawn,
+            'net_balance' => $netBalance,
+            'draft' => (clone $statsBaseQuery)->where('status', 'draft')->count(),
+            'submitted' => (clone $statsBaseQuery)->where('status', 'submitted')->count(),
+            'under_review' => (clone $statsBaseQuery)->where('status', 'under_review')->count(),
+            'approved' => (clone $statsBaseQuery)->where('status', 'approved')->count(),
+            'rejected' => (clone $statsBaseQuery)->where('status', 'rejected')->count(),
+            'active' => (clone $statsBaseQuery)->where('status', 'active')->count(),
+            'matured' => (clone $statsBaseQuery)->where('status', 'matured')->count(),
+            'closed' => (clone $statsBaseQuery)->where('status', 'closed')->count(),
         ];
 
-        // Branch-wise summary: কতগুলো সেভিংস কোন ব্রাঞ্চ থেকে (same filters)
-        $branchSummaryQuery = SavingsApplication::query()
-            ->selectRaw('branch_id, count(*) as count')
-            ->whereBetween('created_at', [$startOfDay, $endOfDay]);
-        $this->applyAccessibleBranchScope($branchSummaryQuery);
-        if ($request->filled('zone_id')) {
-            $branchSummaryQuery->whereHas('branch.area', function ($q) use ($request) {
-                $q->where('zone_id', $request->zone_id);
-            });
-        }
-        if ($request->filled('area_id')) {
-            $branchSummaryQuery->whereHas('branch', function ($q) use ($request) {
-                $q->where('area_id', $request->area_id);
-            });
-        }
-        if ($request->filled('branch_id')) {
-            $branchSummaryQuery->where('branch_id', $request->branch_id);
-        }
-        if ($request->filled('status')) {
-            $branchSummaryQuery->where('status', $request->status);
-        }
-        $branchSummary = $branchSummaryQuery->groupBy('branch_id')->get();
-        $branchIds = $branchSummary->pluck('branch_id')->filter()->unique()->values()->all();
-        $branchesForSummary = Branch::whereIn('id', $branchIds)->with('area:id,name,zone_id', 'area.zone:id,name')->get()->keyBy('id');
-        $branchSummaryList = $branchSummary->map(function ($row) use ($branchesForSummary) {
-            $branch = $branchesForSummary->get($row->branch_id);
-
-            return [
-                'branch_id' => $row->branch_id,
-                'branch_name' => $branch ? $branch->name : '—',
-                'area_name' => $branch && $branch->area ? $branch->area->name : '—',
-                'zone_name' => $branch && $branch->area && $branch->area->zone ? $branch->area->zone->name : '—',
-                'count' => (int) $row->count,
-            ];
-        })->sortByDesc('count')->values()->all();
+        $branchSummaryList = [];
 
         $applications = $query->orderBy('created_at', 'desc')->paginate(20)->withQueryString();
 

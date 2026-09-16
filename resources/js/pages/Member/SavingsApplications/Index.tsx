@@ -32,6 +32,8 @@ import {
     UserCheck,
     Banknote,
     Receipt,
+    Building2,
+    Phone,
 } from 'lucide-react';
 
 interface ZoneOption {
@@ -641,39 +643,40 @@ export default function Index({
                     </div>
                 )}
 
-                {/* ── 1. SLIM PROFESSIONAL HEADER ─────────────────────────────────────── */}
-                <div className="bg-white px-4 py-3 rounded-2xl border border-slate-200/90 shadow-2xs flex flex-wrap items-center justify-between gap-3 print:hidden">
+                {/* ── 1. COMPACT EXECUTIVE HEADER ─────────────────────────────────────── */}
+                <div className="bg-gradient-to-r from-slate-950 via-slate-900 to-teal-950 text-white rounded-2xl px-4 py-2.5 shadow-md border border-slate-800 flex flex-wrap items-center justify-between gap-3 print:hidden">
                     <div className="flex items-center gap-2.5 min-w-0">
-                        <div className="w-9 h-9 rounded-2xl bg-gradient-to-tr from-emerald-600 to-teal-700 text-white flex items-center justify-center shadow-xs shrink-0">
-                            <PiggyBank size={18} />
+                        <div className="w-8 h-8 rounded-xl bg-gradient-to-tr from-emerald-500 to-teal-600 flex items-center justify-center text-white shadow-sm shrink-0">
+                            <PiggyBank className="w-4 h-4" />
                         </div>
-                        <div>
-                            <div className="flex items-center gap-2">
-                                <h1 className="text-sm sm:text-base font-extrabold text-slate-900 tracking-tight">
-                                    সঞ্চয় হিসাব ও আমানত প্যানেল
+                        <div className="min-w-0">
+                            <div className="flex items-center gap-2 flex-wrap">
+                                <h1 className="text-sm sm:text-base font-black text-white tracking-tight truncate">
+                                    সঞ্চয় হিসাব ও আমানত ব্যবস্থাপনা
                                 </h1>
-                                <span className="text-[10px] font-bold px-2 py-0.5 bg-emerald-50 text-emerald-800 rounded-md border border-emerald-200">
+                                <span className="text-[10px] uppercase font-bold tracking-wider px-2 py-0.2 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-400/30">
+                                    Savings Hub
+                                </span>
+                                <span className="text-[10px] font-bold px-2 py-0.2 rounded-full bg-teal-500/20 text-teal-300 border border-teal-400/30">
                                     মোট {financialStats.total_accounts} টি হিসাব
                                 </span>
                             </div>
-                            <p className="text-[11px] text-slate-500 font-medium hidden sm:block">
-                                আমানত সংগ্রহ, হিসাব সক্রিয়করণ এবং অটো উত্তোলন ও নিষ্পত্তি
-                            </p>
                         </div>
                     </div>
 
-                    <div className="flex items-center gap-2 flex-wrap">
+                    {/* Compact Action Buttons */}
+                    <div className="flex items-center gap-2 flex-wrap shrink-0">
                         <button
                             type="button"
                             onClick={handleTodayFilter}
-                            className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl border text-xs font-semibold transition-all active:scale-95 shadow-2xs ${
+                            className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold transition-all active:scale-95 shadow-2xs ${
                                 isTodayFilter
-                                    ? 'bg-blue-600 text-white border-blue-600 font-bold'
-                                    : 'bg-slate-50 text-slate-700 border-slate-200 hover:bg-slate-100'
+                                    ? 'bg-emerald-500 text-slate-950 font-black shadow-emerald-500/20'
+                                    : 'bg-white/10 text-white hover:bg-white/15 border border-white/10'
                             }`}
                             title="আজকের হিসাবসমূহ"
                         >
-                            <Calendar size={13} />
+                            <Calendar className="w-3.5 h-3.5" />
                             <span>Today (আজ)</span>
                         </button>
 
@@ -684,108 +687,142 @@ export default function Index({
                                 setSelectedProductId('');
                                 setShowProductModal(true);
                             }}
-                            className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 text-white text-xs font-bold shadow-2xs transition-all active:scale-95"
+                            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-600 hover:to-teal-600 text-slate-950 text-xs font-black shadow-2xs transition-all active:scale-95"
                         >
-                            <Plus size={14} />
+                            <Plus className="w-3.5 h-3.5 stroke-[2.5]" />
                             <span>নতুন সঞ্চয় হিসাব</span>
                         </button>
 
                         <button
                             type="button"
                             onClick={() => setShowCalculatorModal(true)}
-                            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-blue-50 text-blue-700 hover:bg-blue-100 border border-blue-200 text-xs font-semibold transition-all active:scale-95 shadow-2xs"
+                            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-white/10 hover:bg-white/20 text-white border border-white/10 text-xs font-semibold transition-all active:scale-95"
                         >
-                            <Calculator size={13} />
+                            <Calculator className="w-3.5 h-3.5 text-emerald-400" />
                             <span>Savings Calculator</span>
                         </button>
 
                         <button
                             type="button"
                             onClick={() => window.print()}
-                            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-200 text-xs font-semibold transition-all active:scale-95 shadow-2xs"
+                            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-white/10 hover:bg-white/20 text-white border border-white/10 text-xs font-semibold transition-all active:scale-95"
                         >
-                            <Printer size={13} />
+                            <Printer className="w-3.5 h-3.5" />
                             <span>প্রিন্ট</span>
+                        </button>
+
+                        <button
+                            type="button"
+                            onClick={resetFilters}
+                            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-white/10 hover:bg-white/20 text-white border border-white/10 text-xs font-semibold transition-all active:scale-95"
+                            title="ফিল্টার রিসেট"
+                        >
+                            <RefreshCw className="w-3.5 h-3.5" />
+                            <span>রিসেট</span>
                         </button>
                     </div>
                 </div>
 
-                {/* ── 2. SAVINGS FINANCIAL METRICS OVERVIEW (5 Cards) ──────────────────── */}
+                {/* ── 2. SAVINGS FINANCIAL METRICS OVERVIEW (5 Compact Cards) ─────────── */}
                 <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-2.5 print:hidden">
                     {/* Card 1: Total Deposit */}
-                    <div className="p-3 sm:p-3.5 rounded-2xl bg-white border border-slate-200/90 shadow-2xs relative overflow-hidden group">
-                        <div className="flex items-center justify-between gap-1 mb-1">
-                            <span className="text-[11px] font-bold text-slate-600">মোট সঞ্চয় জমা</span>
-                            <div className="w-7 h-7 rounded-xl bg-emerald-50 text-emerald-700 flex items-center justify-center">
-                                <PiggyBank size={15} />
+                    <div className="p-3.5 rounded-2xl bg-white border border-slate-200/90 shadow-2xs relative overflow-hidden group hover:shadow-xs transition-all">
+                        <div className="flex items-center justify-between gap-1 mb-1.5">
+                            <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wide truncate">মোট সঞ্চয় জমা</span>
+                            <div className="w-7 h-7 rounded-xl bg-gradient-to-tr from-emerald-500 to-teal-600 text-white flex items-center justify-center shadow-2xs group-hover:scale-105 transition-transform shrink-0">
+                                <PiggyBank className="w-3.5 h-3.5" />
                             </div>
                         </div>
                         <div className="text-base sm:text-lg font-black text-slate-900 tracking-tight">
                             ৳{formatAmount(financialStats.total_deposit)}
                         </div>
-                        <p className="text-[10px] text-slate-400 font-medium mt-0.5">আমানত সংগ্রহ ও জমা</p>
+                        <p className="text-[10px] text-slate-400 font-medium mt-0.5">আমানত সংগ্রহ ও মোট জমা</p>
                         <div className="mt-2 w-full bg-slate-100 rounded-full h-1 overflow-hidden">
-                            <div className="h-full rounded-full bg-emerald-500 w-full" />
+                            <div className="h-full rounded-full bg-gradient-to-r from-emerald-500 to-teal-500 w-full" />
                         </div>
                     </div>
 
                     {/* Card 2: Total Withdrawn */}
-                    <div className="p-3 sm:p-3.5 rounded-2xl bg-white border border-slate-200/90 shadow-2xs relative overflow-hidden group">
-                        <div className="flex items-center justify-between gap-1 mb-1">
-                            <span className="text-[11px] font-bold text-slate-600">মোট উত্তোলন ও নিষ্পত্তি</span>
-                            <div className="w-7 h-7 rounded-xl bg-amber-50 text-amber-700 flex items-center justify-center">
-                                <Coins size={15} />
+                    <div className="p-3.5 rounded-2xl bg-white border border-slate-200/90 shadow-2xs relative overflow-hidden group hover:shadow-xs transition-all">
+                        <div className="flex items-center justify-between gap-1 mb-1.5">
+                            <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wide truncate">মোট উত্তোলন ও নিষ্পত্তি</span>
+                            <div className="w-7 h-7 rounded-xl bg-gradient-to-tr from-amber-500 to-orange-600 text-white flex items-center justify-center shadow-2xs group-hover:scale-105 transition-transform shrink-0">
+                                <Coins className="w-3.5 h-3.5" />
                             </div>
                         </div>
                         <div className="text-base sm:text-lg font-black text-amber-900 tracking-tight">
                             ৳{formatAmount(financialStats.total_withdrawn)}
                         </div>
-                        <p className="text-[10px] text-slate-400 font-medium mt-0.5">পরিশোধকৃত আমানত</p>
+                        <p className="text-[10px] text-slate-400 font-medium mt-0.5">পরিশোধকৃত আমানত ও মুনাফা</p>
                         <div className="mt-2 w-full bg-slate-100 rounded-full h-1 overflow-hidden">
-                            <div className="h-full rounded-full bg-amber-500 w-3/4" />
+                            <div className="h-full rounded-full bg-gradient-to-r from-amber-500 to-orange-500 w-3/4" />
                         </div>
                     </div>
 
                     {/* Card 3: Net Balance */}
-                    <div className="p-3 sm:p-3.5 rounded-2xl bg-white border border-slate-200/90 shadow-2xs relative overflow-hidden group">
-                        <div className="flex items-center justify-between gap-1 mb-1">
-                            <span className="text-[11px] font-bold text-slate-600">বর্তমান নিট স্থিতি</span>
-                            <div className="w-7 h-7 rounded-xl bg-blue-50 text-blue-700 flex items-center justify-center">
-                                <TrendingUp size={15} />
+                    <div className="p-3.5 rounded-2xl bg-white border border-slate-200/90 shadow-2xs relative overflow-hidden group hover:shadow-xs transition-all">
+                        <div className="flex items-center justify-between gap-1 mb-1.5">
+                            <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wide truncate">বর্তমান নিট স্থিতি</span>
+                            <div className="w-7 h-7 rounded-xl bg-gradient-to-tr from-blue-600 to-indigo-600 text-white flex items-center justify-center shadow-2xs group-hover:scale-105 transition-transform shrink-0">
+                                <TrendingUp className="w-3.5 h-3.5" />
                             </div>
                         </div>
                         <div className="text-base sm:text-lg font-black text-blue-700 tracking-tight">
                             ৳{formatAmount(financialStats.net_balance)}
                         </div>
-                        <p className="text-[10px] text-slate-400 font-medium mt-0.5">জমা - উত্তোলন স্থিতি</p>
+                        <p className="text-[10px] text-slate-400 font-medium mt-0.5">জমা স্থিতি হতে বাদ</p>
                         <div className="mt-2 w-full bg-slate-100 rounded-full h-1 overflow-hidden">
-                            <div className="h-full rounded-full bg-blue-500 w-5/6" />
+                            <div className="h-full rounded-full bg-gradient-to-r from-blue-500 to-indigo-500 w-5/6" />
                         </div>
                     </div>
 
                     {/* Card 4: Active Accounts */}
-                    <div className="p-3 sm:p-3.5 rounded-2xl bg-white border border-slate-200/90 shadow-2xs relative overflow-hidden group">
-                        <div className="flex items-center justify-between gap-1 mb-1">
-                            <span className="text-[11px] font-bold text-slate-600">সক্রিয় সঞ্চয় হিসাব</span>
-                            <div className="w-7 h-7 rounded-xl bg-purple-50 text-purple-700 flex items-center justify-center">
-                                <Sparkles size={15} />
+                    <button
+                        type="button"
+                        onClick={() => {
+                            const next = currentStatusFilter === 'active' ? 'all' : 'active';
+                            setCurrentStatusFilter(next);
+                            applyListFilters({ status: next, page: 1 });
+                        }}
+                        className={`p-3.5 rounded-2xl text-left border relative overflow-hidden group hover:shadow-xs transition-all ${
+                            currentStatusFilter === 'active'
+                                ? 'bg-purple-50/60 border-purple-400 ring-2 ring-purple-300 shadow-xs'
+                                : 'bg-white border-slate-200/90 shadow-2xs hover:border-purple-300'
+                        }`}
+                    >
+                        <div className="flex items-center justify-between gap-1 mb-1.5">
+                            <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wide truncate">সক্রিয় সঞ্চয় হিসাব</span>
+                            <div className="w-7 h-7 rounded-xl bg-gradient-to-tr from-purple-600 to-pink-600 text-white flex items-center justify-center shadow-2xs group-hover:scale-105 transition-transform shrink-0">
+                                <Sparkles className="w-3.5 h-3.5" />
                             </div>
                         </div>
                         <div className="text-base sm:text-lg font-black text-purple-900 tracking-tight">
                             {financialStats.active} টি
                         </div>
-                        <p className="text-[10px] text-slate-400 font-medium mt-0.5">চলতি মেয়াদী আমানত</p>
+                        <p className="text-[10px] text-slate-400 font-medium mt-0.5">চলতি মেয়াদী ও সাধারণ</p>
                         <div className="mt-2 w-full bg-slate-100 rounded-full h-1 overflow-hidden">
-                            <div className="h-full rounded-full bg-purple-500 w-full" />
+                            <div className="h-full rounded-full bg-gradient-to-r from-purple-500 to-pink-500 w-full" />
                         </div>
-                    </div>
+                    </button>
 
                     {/* Card 5: Matured Accounts */}
-                    <div className="p-3 sm:p-3.5 rounded-2xl bg-white border border-slate-200/90 shadow-2xs relative overflow-hidden group col-span-2 sm:col-span-1">
-                        <div className="flex items-center justify-between gap-1 mb-1">
-                            <span className="text-[11px] font-bold text-slate-600">পরিপক্ক হিসাব</span>
-                            <div className="w-7 h-7 rounded-xl bg-teal-50 text-teal-700 flex items-center justify-center">
-                                <CheckCircle2 size={15} />
+                    <button
+                        type="button"
+                        onClick={() => {
+                            const next = currentStatusFilter === 'matured' ? 'all' : 'matured';
+                            setCurrentStatusFilter(next);
+                            applyListFilters({ status: next, page: 1 });
+                        }}
+                        className={`p-3.5 rounded-2xl text-left border relative overflow-hidden group hover:shadow-xs transition-all col-span-2 sm:col-span-1 ${
+                            currentStatusFilter === 'matured'
+                                ? 'bg-teal-50/60 border-teal-400 ring-2 ring-teal-300 shadow-xs'
+                                : 'bg-white border-slate-200/90 shadow-2xs hover:border-teal-300'
+                        }`}
+                    >
+                        <div className="flex items-center justify-between gap-1 mb-1.5">
+                            <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wide truncate">পরিপক্ক হিসাব</span>
+                            <div className="w-7 h-7 rounded-xl bg-gradient-to-tr from-teal-600 to-emerald-600 text-white flex items-center justify-center shadow-2xs group-hover:scale-105 transition-transform shrink-0">
+                                <CheckCircle2 className="w-3.5 h-3.5" />
                             </div>
                         </div>
                         <div className="text-base sm:text-lg font-black text-teal-900 tracking-tight">
@@ -793,15 +830,15 @@ export default function Index({
                         </div>
                         <p className="text-[10px] text-slate-400 font-medium mt-0.5">উত্তোলনের জন্য প্রস্তুত</p>
                         <div className="mt-2 w-full bg-slate-100 rounded-full h-1 overflow-hidden">
-                            <div className="h-full rounded-full bg-teal-500 w-full" />
+                            <div className="h-full rounded-full bg-gradient-to-r from-teal-500 to-emerald-500 w-full" />
                         </div>
-                    </div>
+                    </button>
                 </div>
 
-                {/* ── 3. SAVINGS STATUS TABS & SEARCH TOOLBAR ─────────────────────────── */}
-                <div className="bg-white rounded-3xl border border-slate-200/90 shadow-2xs p-3.5 space-y-3.5 print:hidden">
+                {/* ── 3. SAVINGS STATUS TABS & TOOLBAR ─────────────────────────────────── */}
+                <div className="bg-white rounded-3xl border border-slate-200/90 shadow-sm p-4 space-y-4 print:hidden">
                     {/* Status Tabs */}
-                    <div className="flex flex-wrap items-center gap-2">
+                    <div className="flex flex-wrap items-center gap-2 border-b border-slate-100 pb-3">
                         {savingsFilterPills.map((pill) => {
                             const active = pill.key === 'all' ? currentStatusFilter === 'all' || !currentStatusFilter : currentStatusFilter === pill.key;
                             const IconComponent = pill.icon;
@@ -820,11 +857,13 @@ export default function Index({
                                             : 'bg-white hover:bg-slate-50 border-slate-200/90 text-slate-700'
                                     }`}
                                 >
-                                    <IconComponent size={14} className={active ? 'text-white' : 'text-slate-500'} />
+                                    <IconComponent className={`w-3.5 h-3.5 ${active ? 'text-emerald-400' : 'text-slate-400'}`} />
                                     <span>{pill.label}</span>
                                     <span
-                                        className={`px-1.5 py-0.5 rounded-md text-[10px] font-black ${
-                                            active ? 'bg-white/20 text-white' : 'bg-slate-100 text-slate-600'
+                                        className={`px-1.5 py-0.2 rounded-full text-[10px] font-mono font-bold ${
+                                            active
+                                                ? 'bg-slate-800 text-emerald-300'
+                                                : 'bg-slate-100 text-slate-600'
                                         }`}
                                     >
                                         {pill.count}
@@ -834,151 +873,146 @@ export default function Index({
                         })}
                     </div>
 
-                    {/* Filters Toolbar */}
-                    <div className="pt-2 border-t border-slate-100 space-y-2.5 text-xs">
-                        {/* Zone / Area / Branch Filters */}
-                        {(zones.length > 0 || areas.length > 0 || branches.length > 0) && (
-                            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-2">
-                                {zones.length > 0 && (
-                                    <div>
-                                        <select
-                                            value={selectedZone}
-                                            onChange={(e) => handleLocationFilterChange(e.target.value, '', '')}
-                                            className="h-8.5 w-full border border-slate-300 rounded-xl px-2.5 text-xs bg-white text-slate-800 focus:outline-none focus:ring-1 focus:ring-emerald-500 focus:border-emerald-500 transition"
-                                        >
-                                            <option value="">সকল জোন ({zones.length})</option>
-                                            {zones.map((z) => (
-                                                <option key={z.id} value={z.id}>
-                                                    {z.name} {z.code ? `(${z.code})` : ''}
-                                                </option>
-                                            ))}
-                                        </select>
-                                    </div>
-                                )}
-
-                                {areas.length > 0 && (
-                                    <div>
-                                        <select
-                                            value={selectedArea}
-                                            onChange={(e) => handleLocationFilterChange(selectedZone, e.target.value, '')}
-                                            className="h-8.5 w-full border border-slate-300 rounded-xl px-2.5 text-xs bg-white text-slate-800 focus:outline-none focus:ring-1 focus:ring-emerald-500 focus:border-emerald-500 transition"
-                                        >
-                                            <option value="">সকল অঞ্চল ({filteredAreas.length})</option>
-                                            {filteredAreas.map((a) => (
-                                                <option key={a.id} value={a.id}>
-                                                    {a.name} {a.code ? `(${a.code})` : ''}
-                                                </option>
-                                            ))}
-                                        </select>
-                                    </div>
-                                )}
-
-                                {branches.length > 0 && (
-                                    <div className="md:col-span-1 lg:col-span-2">
-                                        <select
-                                            value={selectedBranch}
-                                            onChange={(e) => handleLocationFilterChange(selectedZone, selectedArea, e.target.value)}
-                                            className="h-8.5 w-full border border-slate-300 rounded-xl px-2.5 text-xs bg-white text-slate-800 focus:outline-none focus:ring-1 focus:ring-emerald-500 focus:border-emerald-500 transition"
-                                        >
-                                            <option value="">সকল শাখা ({filteredBranches.length})</option>
-                                            {filteredBranches.map((b) => (
-                                                <option key={b.id} value={b.id}>
-                                                    {formatBranchLabel(b)}
-                                                </option>
-                                            ))}
-                                        </select>
-                                    </div>
-                                )}
+                    {/* Cascading Location Filter (if available) */}
+                    {zones.length > 0 && (
+                        <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5 p-3 rounded-2xl bg-slate-50/70 border border-slate-200/70">
+                            <div>
+                                <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">জোন (Zone)</label>
+                                <select
+                                    value={selectedZone}
+                                    onChange={(e) => handleLocationFilterChange(e.target.value, '', '')}
+                                    className="h-9 w-full border border-slate-300 rounded-xl px-3 text-xs bg-white text-slate-800 font-medium focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 transition shadow-2xs"
+                                >
+                                    <option value="">সকল জোন ({zones.length})</option>
+                                    {zones.map((z) => (
+                                        <option key={z.id} value={z.id}>{z.name} {z.code ? `(${z.code})` : ''}</option>
+                                    ))}
+                                </select>
                             </div>
-                        )}
 
-                        <div className="flex flex-col lg:flex-row items-stretch lg:items-center justify-between gap-2.5 text-xs">
-                            {/* Search Input */}
-                            <div className="relative flex-grow max-w-lg">
-                                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 pointer-events-none" />
-                                <input
-                                    type="text"
-                                    placeholder="সদস্য কোড, নাম, ফোন, এনআইডি, আবেদন নং..."
-                                    value={searchQuery}
-                                    onChange={(e) => setSearchQuery(e.target.value)}
-                                    onKeyDown={(e) => {
-                                        if (e.key === 'Enter') {
-                                            e.preventDefault();
-                                            applyListFilters({ page: 1 });
-                                        }
+                            <div>
+                                <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">অঞ্চল (Area)</label>
+                                <select
+                                    value={selectedArea}
+                                    onChange={(e) => handleLocationFilterChange(selectedZone, e.target.value, '')}
+                                    disabled={!selectedZone && zones.length > 0}
+                                    className="h-9 w-full border border-slate-300 rounded-xl px-3 text-xs bg-white text-slate-800 font-medium focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 transition shadow-2xs disabled:bg-slate-100 disabled:text-slate-400"
+                                >
+                                    <option value="">সকল অঞ্চল ({filteredAreas.length})</option>
+                                    {filteredAreas.map((a) => (
+                                        <option key={a.id} value={a.id}>{a.name} {a.code ? `(${a.code})` : ''}</option>
+                                    ))}
+                                </select>
+                            </div>
+
+                            <div>
+                                <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">শাখা (Branch)</label>
+                                <select
+                                    value={selectedBranch}
+                                    onChange={(e) => handleLocationFilterChange(selectedZone, selectedArea, e.target.value)}
+                                    className="h-9 w-full border border-slate-300 rounded-xl px-3 text-xs bg-white text-slate-800 font-medium focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 transition shadow-2xs"
+                                >
+                                    <option value="">সকল শাখা ({filteredBranches.length})</option>
+                                    {filteredBranches.map((b) => (
+                                        <option key={b.id} value={b.id}>{formatBranchLabel(b)}</option>
+                                    ))}
+                                </select>
+                            </div>
+                        </div>
+                    )}
+
+                    {/* Search & Date Controls */}
+                    <div className="flex flex-col lg:flex-row items-stretch lg:items-center justify-between gap-3 text-xs">
+                        {/* Search Input */}
+                        <div className="relative flex-grow max-w-lg">
+                            <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 pointer-events-none" />
+                            <input
+                                type="text"
+                                placeholder="সদস্য কোড, হিসাব নং, নাম, ফোন, এনআইডি, আবেদন নং..."
+                                value={searchQuery}
+                                onChange={(e) => setSearchQuery(e.target.value)}
+                                onKeyDown={(e) => {
+                                    if (e.key === 'Enter') {
+                                        e.preventDefault();
+                                        applyListFilters({ page: 1 });
+                                    }
+                                }}
+                                className="w-full pl-10 pr-8 py-2.5 text-xs border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 bg-slate-50/50 font-medium transition-all shadow-2xs"
+                            />
+                            {searchQuery && (
+                                <button
+                                    type="button"
+                                    onClick={() => {
+                                        setSearchQuery('');
+                                        applyListFilters({ search: '', page: 1 });
                                     }}
-                                    className="w-full pl-9 pr-7 py-2 text-xs border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 bg-slate-50/50 transition-all font-medium"
+                                    className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
+                                >
+                                    <X className="w-4 h-4" />
+                                </button>
+                            )}
+                        </div>
+
+                        {/* Date Range & Buttons */}
+                        <div className="flex flex-wrap items-center gap-2">
+                            <div className="flex items-center gap-1.5 bg-slate-50 border border-slate-200 px-2 py-1 rounded-xl shadow-2xs">
+                                <input
+                                    type="date"
+                                    value={currentDateFrom}
+                                    onChange={(e) => setCurrentDateFrom(e.target.value)}
+                                    className="px-2 py-1 text-xs border border-slate-300 rounded-lg bg-white focus:outline-none font-medium"
+                                    title="তারিখ হতে"
                                 />
-                                {searchQuery && (
-                                    <button
-                                        type="button"
-                                        onClick={() => {
-                                            setSearchQuery('');
-                                            applyListFilters({ search: '', page: 1 });
-                                        }}
-                                        className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
-                                    >
-                                        <X className="w-3.5 h-3.5" />
-                                    </button>
-                                )}
+                                <span className="text-slate-400 text-xs font-bold">–</span>
+                                <input
+                                    type="date"
+                                    value={currentDateTo}
+                                    onChange={(e) => setCurrentDateTo(e.target.value)}
+                                    className="px-2 py-1 text-xs border border-slate-300 rounded-lg bg-white focus:outline-none font-medium"
+                                    title="তারিখ পর্যন্ত"
+                                />
                             </div>
 
-                            {/* Date Range & Buttons */}
-                            <div className="flex flex-wrap items-center gap-2">
-                                <div className="flex items-center gap-1.5 bg-slate-50 border border-slate-200 p-1 rounded-xl">
-                                    <input
-                                        type="date"
-                                        value={currentDateFrom}
-                                        onChange={(e) => setCurrentDateFrom(e.target.value)}
-                                        className="px-2 py-1 text-xs border border-slate-300 rounded-lg bg-white focus:outline-none"
-                                        title="তারিখ হতে"
-                                    />
-                                    <span className="text-slate-400 text-xs font-bold">–</span>
-                                    <input
-                                        type="date"
-                                        value={currentDateTo}
-                                        onChange={(e) => setCurrentDateTo(e.target.value)}
-                                        className="px-2 py-1 text-xs border border-slate-300 rounded-lg bg-white focus:outline-none"
-                                        title="তারিখ পর্যন্ত"
-                                    />
-                                </div>
+                            <button
+                                type="button"
+                                onClick={handleDateFilterChange}
+                                className="px-4 py-2 text-xs font-bold bg-slate-900 hover:bg-slate-800 text-white rounded-xl transition shadow-sm active:scale-95 flex items-center gap-1.5"
+                            >
+                                <Filter className="w-3.5 h-3.5 text-emerald-400" />
+                                <span>ফিল্টার</span>
+                            </button>
 
-                                <button
-                                    type="button"
-                                    onClick={handleDateFilterChange}
-                                    className="px-4 py-2 text-xs font-bold bg-slate-800 hover:bg-slate-900 text-white rounded-xl transition shadow-2xs active:scale-95 flex items-center gap-1"
-                                >
-                                    <Filter className="w-3.5 h-3.5" />
-                                    <span>ফিল্টার</span>
-                                </button>
-
-                                <button
-                                    type="button"
-                                    onClick={resetFilters}
-                                    className="px-3 py-2 text-xs font-bold text-slate-600 bg-slate-100 hover:bg-slate-200 rounded-xl transition flex items-center gap-1"
-                                    title="ফিল্টার রিসেট"
-                                >
-                                    <RefreshCw className="w-3.5 h-3.5" />
-                                    <span>রিসেট</span>
-                                </button>
-                            </div>
+                            <button
+                                type="button"
+                                onClick={resetFilters}
+                                className="px-3.5 py-2 text-xs font-bold text-slate-600 bg-slate-100 hover:bg-slate-200 rounded-xl transition flex items-center gap-1 shadow-2xs"
+                                title="ফিল্টার রিসেট"
+                            >
+                                <RefreshCw className="w-3.5 h-3.5" />
+                                <span>রিসেট</span>
+                            </button>
                         </div>
                     </div>
                 </div>
 
                 {/* ── 4. APPLICATIONS TABLE CONTAINER ─────────────────────────────────── */}
-                <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden p-3 md:p-4 space-y-3">
-                    <div className="flex items-center justify-between pb-2 border-b border-slate-100 text-xs">
-                        <h3 className="font-bold text-slate-800">সঞ্চয় হিসাবের তালিকা</h3>
-                        <span className="text-slate-500 font-semibold">
-                            মোট হিসাব: <strong className="text-slate-900 font-bold">{applications.total}</strong> টি
+                <div className="bg-white rounded-3xl border border-slate-200/90 shadow-sm overflow-hidden p-3 md:p-5 space-y-4">
+                    <div className="flex items-center justify-between pb-3 border-b border-slate-100">
+                        <div className="flex items-center gap-2">
+                            <h3 className="font-extrabold text-slate-900 text-sm sm:text-base">সঞ্চয় হিসাবের তালিকা</h3>
+                            <span className="text-xs font-bold px-2.5 py-0.5 bg-emerald-50 text-emerald-800 rounded-full border border-emerald-200">
+                                মোট {applications.total} টি হিসাব
+                            </span>
+                        </div>
+                        <span className="text-xs text-slate-400 font-medium hidden sm:block">
+                            পৃষ্ঠা {applications.current_page || 1} / {applications.last_page || 1}
                         </span>
                     </div>
 
                     {/* MOBILE CARDS VIEW (md:hidden) */}
                     <div className="md:hidden flex flex-col gap-3.5">
                         {applicationRows.length === 0 ? (
-                            <div className="p-8 text-center text-slate-400 text-xs font-medium">
+                            <div className="p-12 text-center text-slate-400 text-xs font-medium bg-slate-50/50 rounded-2xl border border-dashed border-slate-200">
                                 কোনো সঞ্চয় হিসাব পাওয়া যায়নি।
                             </div>
                         ) : (
@@ -1006,21 +1040,21 @@ export default function Index({
                                         <div className="flex items-start justify-between gap-2 border-b border-slate-100 pb-2.5">
                                             <div>
                                                 <div className="flex items-center gap-1.5 flex-wrap">
-                                                    <span className="text-xs font-mono font-bold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200">
+                                                    <span className="text-xs font-mono font-bold text-emerald-800 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200">
                                                         {app.application_no}
                                                     </span>
                                                     {app.account_no && (
-                                                        <span className="text-xs font-mono font-semibold text-slate-700 bg-slate-100 px-1.5 py-0.5 rounded border border-slate-200">
+                                                        <span className="text-xs font-mono font-bold text-indigo-700 bg-indigo-50 px-2 py-0.5 rounded border border-indigo-200">
                                                             হিসাব: {app.account_no}
                                                         </span>
                                                     )}
                                                 </div>
-                                                <h4 className="font-bold text-slate-900 text-sm mt-1">
+                                                <h4 className="font-extrabold text-slate-900 text-sm mt-1.5">
                                                     {memberName}
                                                 </h4>
-                                                <div className="flex items-center gap-2 text-[11px] text-slate-400 font-medium">
-                                                    <span>সদস্য আইডি: {memberCode}</span>
-                                                    {phone && <span>| {phone}</span>}
+                                                <div className="flex items-center gap-2 text-[11px] text-slate-500 font-medium">
+                                                    <span>আইডি: {memberCode}</span>
+                                                    {phone && <span>• {phone}</span>}
                                                 </div>
                                             </div>
                                             <div className="shrink-0">{getStatusBadge(app.status)}</div>
@@ -1046,7 +1080,7 @@ export default function Index({
                                                 <span className="text-[10px] font-bold uppercase text-slate-400 block">
                                                     মোট জমার অংক
                                                 </span>
-                                                <p className="font-black text-emerald-700 mt-0.5">
+                                                <p className="font-black text-slate-900 mt-0.5">
                                                     ৳{formatAmount(app.deposit_amount)}
                                                 </p>
                                             </div>
@@ -1075,37 +1109,36 @@ export default function Index({
                                         </div>
 
                                         {/* Action buttons */}
-                                        <div className="flex items-center gap-2 pt-1 border-t border-slate-100">
+                                        <div className="flex items-center justify-between gap-2 pt-2 border-t border-slate-100">
                                             <Link
                                                 href={`/member/savings-applications/${app.id}`}
-                                                className="flex-1 inline-flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl text-xs font-semibold text-slate-700 bg-slate-100 hover:bg-slate-200 transition"
+                                                className="inline-flex items-center gap-1 px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-bold transition"
                                             >
                                                 <Eye className="w-3.5 h-3.5" />
                                                 <span>বিবরণ</span>
                                             </Link>
 
-                                            {!isClosed && (
-                                                <button
-                                                    type="button"
-                                                    onClick={() => openSettlementModal(app)}
-                                                    className="inline-flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold text-white bg-gradient-to-r from-amber-600 to-amber-700 hover:from-amber-700 hover:to-amber-800 shadow-2xs transition"
-                                                >
-                                                    <Coins className="w-3.5 h-3.5" />
-                                                    <span>উত্তোলন</span>
-                                                </button>
-                                            )}
-
-                                            {['draft', 'submitted', 'under_review'].includes(app.status) && (
-                                                <button
-                                                    type="button"
-                                                    onClick={() => handleQuickActivate(app.id)}
-                                                    className="inline-flex items-center justify-center gap-1 px-2.5 py-2 rounded-xl text-xs font-bold text-white bg-emerald-600 hover:bg-emerald-700 shadow-2xs transition"
-                                                    title="অটো সক্রিয় করুন"
-                                                >
-                                                    <Check className="w-3.5 h-3.5" />
-                                                    <span>সক্রিয়</span>
-                                                </button>
-                                            )}
+                                            <div className="flex items-center gap-1.5">
+                                                {!isClosed && (
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => openSettlementModal(app)}
+                                                        className="inline-flex items-center gap-1 px-2.5 py-1.5 text-xs font-bold text-amber-900 bg-amber-50 hover:bg-amber-100 border border-amber-200 rounded-xl transition shadow-2xs"
+                                                    >
+                                                        <Coins className="w-3.5 h-3.5 text-amber-700" />
+                                                        <span>উত্তোলন</span>
+                                                    </button>
+                                                )}
+                                                {['draft', 'rejected'].includes(app.status) && (
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => handleDelete(app.id)}
+                                                        className="p-1.5 text-rose-600 hover:bg-rose-50 rounded-xl transition"
+                                                    >
+                                                        <Trash2 className="w-4 h-4" />
+                                                    </button>
+                                                )}
+                                            </div>
                                         </div>
                                     </div>
                                 );
@@ -1114,17 +1147,17 @@ export default function Index({
                     </div>
 
                     {/* DESKTOP TABLE VIEW (hidden md:block) */}
-                    <div className="hidden md:block overflow-x-auto">
+                    <div className="hidden md:block overflow-x-auto rounded-2xl border border-slate-200">
                         <table className="w-full text-left border-collapse">
                             <thead>
-                                <tr className="bg-slate-50/80 border-b border-slate-200 text-[11px] font-bold text-slate-600 uppercase tracking-wider">
+                                <tr className="bg-slate-900 text-white text-[11px] font-bold uppercase tracking-wider">
                                     <th className="py-3 px-3.5">আবেদন ও হিসাব নং</th>
                                     <th className="py-3 px-3.5">সদস্যের তথ্য</th>
                                     <th className="py-3 px-3.5">সঞ্চয় প্রকল্প</th>
                                     <th className="py-3 px-3.5 text-right">জমার পরিমাণ</th>
                                     <th className="py-3 px-3.5 text-right">মাসিক কিস্তি</th>
                                     <th className="py-3 px-3.5 text-right">পরিপক্ক / পরিশোধ</th>
-                                    <th className="py-3 px-3.5">শাখা / সমিতি</th>
+                                    <th className="py-3 px-3.5">শাখা ও সমিতি</th>
                                     <th className="py-3 px-3.5">স্ট্যাটাস</th>
                                     <th className="py-3 px-3.5">সময়কাল</th>
                                     <th className="py-3 px-3.5 text-right">অ্যাকশন</th>
@@ -1133,7 +1166,7 @@ export default function Index({
                             <tbody className="divide-y divide-slate-100 text-xs">
                                 {applicationRows.length === 0 ? (
                                     <tr>
-                                        <td colSpan={10} className="py-12 text-center text-slate-400 font-medium">
+                                        <td colSpan={10} className="py-16 text-center text-slate-400 font-medium">
                                             কোনো সঞ্চয় হিসাব পাওয়া যায়নি
                                         </td>
                                     </tr>
@@ -1160,18 +1193,23 @@ export default function Index({
                                             app.monthly_savings_amount ||
                                             app.form_data?.monthly_savings_amount;
 
+                                        // Member avatar initial
+                                        const initial = memberName && memberName !== '—' ? memberName.charAt(0) : 'S';
+
                                         return (
-                                            <tr key={app.id} className="hover:bg-slate-50/70 transition-colors">
+                                            <tr key={app.id} className="hover:bg-slate-50/80 transition-colors">
                                                 {/* Account / Application No */}
-                                                <td className="py-3 px-3.5 font-mono">
+                                                <td className="py-3 px-3.5">
                                                     <Link
                                                         href={`/member/savings-applications/${app.id}`}
                                                         className="hover:underline block group"
                                                     >
-                                                        <span className="font-bold text-emerald-800 group-hover:text-emerald-900 block">{app.application_no}</span>
+                                                        <span className="font-mono font-bold text-emerald-800 group-hover:text-emerald-950 block">
+                                                            {app.application_no}
+                                                        </span>
                                                         {app.account_no && (
-                                                            <span className="text-[11px] text-slate-500 font-semibold block mt-0.5">
-                                                                হিসাব: <strong className="text-slate-700">{app.account_no}</strong>
+                                                            <span className="inline-block text-[11px] font-mono font-bold text-indigo-700 bg-indigo-50 border border-indigo-200 px-1.5 py-0.2 rounded mt-0.5">
+                                                                হিসাব: {app.account_no}
                                                             </span>
                                                         )}
                                                     </Link>
@@ -1179,33 +1217,44 @@ export default function Index({
 
                                                 {/* Member Details */}
                                                 <td className="py-3 px-3.5">
-                                                    <div className="font-bold text-slate-900">{memberName}</div>
-                                                    <div className="flex items-center gap-1.5 text-[10px] text-slate-400 mt-0.5">
-                                                        {memberCode && (
-                                                            <span className="font-mono bg-slate-100 text-slate-600 px-1 py-0.2 rounded">
-                                                                {memberCode}
-                                                            </span>
-                                                        )}
-                                                        {phone && <span>{phone}</span>}
+                                                    <div className="flex items-center gap-2.5">
+                                                        <div className="w-8 h-8 rounded-full bg-emerald-100 text-emerald-800 font-bold flex items-center justify-center text-xs shrink-0 border border-emerald-200">
+                                                            {initial}
+                                                        </div>
+                                                        <div>
+                                                            <div className="font-bold text-slate-900">{memberName}</div>
+                                                            <div className="flex items-center gap-1.5 text-[10px] text-slate-400 mt-0.5">
+                                                                {memberCode && (
+                                                                    <span className="font-mono bg-slate-100 text-slate-600 px-1 py-0.2 rounded border border-slate-200">
+                                                                        {memberCode}
+                                                                    </span>
+                                                                )}
+                                                                {phone && <span>{phone}</span>}
+                                                            </div>
+                                                        </div>
                                                     </div>
                                                 </td>
 
                                                 {/* Savings Product */}
                                                 <td className="py-3 px-3.5">
-                                                    <div className="font-semibold text-slate-800">
+                                                    <div className="font-bold text-slate-800">
                                                         {product?.product_name_bn ||
                                                             product?.product_name ||
                                                             '—'}
                                                     </div>
-                                                    <div className="flex items-center gap-1.5 text-[10px] text-slate-500 mt-0.5">
+                                                    <div className="flex items-center gap-1.5 text-[10px] text-slate-500 mt-0.5 flex-wrap">
                                                         {product?.product_code && (
-                                                            <span className="font-mono bg-slate-100 text-slate-600 px-1 rounded">
+                                                            <span className="font-mono bg-slate-100 text-slate-600 px-1 py-0.2 rounded border border-slate-200">
                                                                 {product.product_code}
                                                             </span>
                                                         )}
-                                                        {durationLabel && <span>{durationLabel}</span>}
+                                                        {durationLabel && (
+                                                            <span className="bg-slate-100 text-slate-700 px-1 py-0.2 rounded font-medium">
+                                                                {durationLabel}
+                                                            </span>
+                                                        )}
                                                         {product?.interest_rate != null && (
-                                                            <span className="text-emerald-700 font-bold">
+                                                            <span className="text-emerald-700 font-bold bg-emerald-50 px-1 py-0.2 rounded border border-emerald-200">
                                                                 {product.interest_rate}%
                                                             </span>
                                                         )}
@@ -1213,19 +1262,19 @@ export default function Index({
                                                 </td>
 
                                                 {/* Deposit Amount */}
-                                                <td className="py-3 px-3.5 text-right font-black text-slate-900">
+                                                <td className="py-3 px-3.5 text-right font-black text-slate-900 tabular-nums">
                                                     ৳{formatAmount(app.deposit_amount)}
                                                 </td>
 
                                                 {/* Monthly Installment */}
-                                                <td className="py-3 px-3.5 text-right font-medium text-slate-700">
+                                                <td className="py-3 px-3.5 text-right font-semibold text-slate-700 tabular-nums">
                                                     {monthly
                                                         ? `৳${formatAmount(monthly)}`
                                                         : '—'}
                                                 </td>
 
                                                 {/* Maturity / Settled Amount */}
-                                                <td className="py-3 px-3.5 text-right">
+                                                <td className="py-3 px-3.5 text-right tabular-nums">
                                                     {isClosed ? (
                                                         <div>
                                                             <span className="font-bold text-amber-800 block">
@@ -1246,10 +1295,10 @@ export default function Index({
                                                 {/* Branch / Samity */}
                                                 <td className="py-3 px-3.5 text-slate-600">
                                                     {app.branch?.name && (
-                                                        <div className="truncate font-medium">{app.branch.name}</div>
+                                                        <div className="font-bold text-slate-800 truncate">{app.branch.name}</div>
                                                     )}
                                                     {app.samity?.samity_name_bn || app.samity?.samity_name ? (
-                                                        <div className="text-[10px] text-slate-400 truncate">
+                                                        <div className="text-[10px] text-slate-500 truncate mt-0.5">
                                                             {app.samity.samity_name_bn || app.samity.samity_name}
                                                         </div>
                                                     ) : null}
@@ -1260,7 +1309,7 @@ export default function Index({
 
                                                 {/* Timing Duration */}
                                                 <td className="py-3 px-3.5 text-slate-500 whitespace-nowrap">
-                                                    <div>{formatDate(app.account_opening_date || app.start_date || app.created_at)}</div>
+                                                    <div className="font-medium text-slate-700">{formatDate(app.account_opening_date || app.start_date || app.created_at)}</div>
                                                     {app.maturity_date && (
                                                         <div className="text-[10px] text-slate-400">
                                                             মেয়াদ: {formatDate(app.maturity_date)}
@@ -1274,7 +1323,7 @@ export default function Index({
                                                         {/* Details View */}
                                                         <Link
                                                             href={`/member/savings-applications/${app.id}`}
-                                                            className="p-1.5 text-slate-600 hover:text-emerald-700 hover:bg-emerald-50 rounded-lg transition-colors"
+                                                            className="p-1.5 text-slate-600 hover:text-emerald-700 hover:bg-emerald-50 rounded-lg transition-colors border border-transparent hover:border-emerald-200"
                                                             title="বিবরণ দেখুন"
                                                         >
                                                             <Eye className="w-4 h-4" />
@@ -1285,10 +1334,10 @@ export default function Index({
                                                             <button
                                                                 type="button"
                                                                 onClick={() => handleQuickActivate(app.id)}
-                                                                className="inline-flex items-center gap-1 px-2 py-1 text-[11px] font-bold text-white bg-emerald-600 hover:bg-emerald-700 rounded-lg transition shadow-2xs"
+                                                                className="inline-flex items-center gap-1 px-2.5 py-1 text-[11px] font-bold text-white bg-emerald-600 hover:bg-emerald-700 rounded-lg transition shadow-2xs"
                                                                 title="অবিলম্বে সক্রিয় করুন"
                                                             >
-                                                                <Check className="w-3 h-3" />
+                                                                <Check className="w-3.5 h-3.5" />
                                                                 <span>সক্রিয়</span>
                                                             </button>
                                                         )}
@@ -1311,7 +1360,7 @@ export default function Index({
                                                             <>
                                                                 <Link
                                                                     href={`/member/savings-applications/${app.id}/edit`}
-                                                                    className="p-1.5 text-amber-600 hover:bg-amber-50 rounded-lg transition-colors"
+                                                                    className="p-1.5 text-amber-600 hover:bg-amber-50 rounded-lg transition-colors border border-transparent hover:border-amber-200"
                                                                     title="সম্পাদনা"
                                                                 >
                                                                     <Edit className="w-4 h-4" />
