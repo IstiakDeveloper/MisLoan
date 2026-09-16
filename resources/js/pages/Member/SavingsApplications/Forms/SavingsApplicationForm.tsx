@@ -1,7 +1,37 @@
 import { useState, useEffect, useMemo } from 'react';
 import { Head, useForm, router, usePage } from '@inertiajs/react';
+import type { RequestPayload } from '@inertiajs/core';
 import AdminLayout from '@/layouts/admin-layout';
-import { Plus, Printer, Save, Upload, X } from 'lucide-react';
+import {
+    Plus,
+    Printer,
+    Save,
+    Upload,
+    X,
+    ArrowLeft,
+    Check,
+    CheckCircle2,
+    Copy,
+    Eye,
+    EyeOff,
+    Camera,
+    User,
+    Users,
+    Calendar,
+    Coins,
+    Percent,
+    Clock,
+    Sparkles,
+    AlertCircle,
+    FileText,
+    ShieldCheck,
+    CreditCard,
+    Phone,
+    MapPin,
+    Loader2,
+    Building2,
+    Trash2,
+} from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { formatDateBangla, todayIsoDate } from '@/utils/dateUtils';
 import { Input } from '@/components/ui/input';
@@ -9,6 +39,7 @@ import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { fileToCompressedDataUrl } from '@/utils/imageUpload';
 import { withLiveMemberCode } from '@/utils/memberCodeUtils';
+import { selfOccupation } from '@/utils/memberFamilyInfo';
 
 interface SavingsFormData {
     // Office use
@@ -38,11 +69,10 @@ interface SavingsFormData {
     profession: string;
     source_of_income: string;
     
-    // Nominees (up to 3)
+    // Nominees — one row by default, more can be added
     nominees: Array<{
         name: string;
         relation: string;
-        signature: string | null;
         percentage: number;
         photo: string | null;
         nid_birth_registration: string;
@@ -54,19 +84,16 @@ interface SavingsFormData {
     // Monthly deposit submission date
     monthly_deposit_submission_date: string;
     
-    // Signatures
-    applicant_signature: string | null;
-    officer_signature: string | null;
+    // Signatures are taken by hand on the printed form; only PINs are captured
     officer_pin: string;
-    accountant_signature: string | null;
     accountant_pin: string;
-    branch_manager_signature: string | null;
     branch_manager_pin: string;
     
     // Branch info
     branch_name: string;
     branch_address: string;
     area_name: string;
+    samity_name: string;
 }
 
 interface Props {
@@ -84,53 +111,58 @@ export function SavingsApplicationPrintView({ data }: { data: SavingsFormData })
     const fmt = formatDateBangla;
     const num = (v: any) => (v != null && v !== '' ? Number(v) : 0);
     const str = (v: any) => (v != null && v !== '' ? String(v) : '');
+    const years = d.term_years
+        || ((d as any).duration_months != null && (d as any).duration_months >= 12
+            ? Math.round((d as any).duration_months / 12)
+            : null);
+    const nominees = Array.isArray(d.nominees) ? d.nominees : [];
+    const nomineeRowCount = Math.max(nominees.length, 1);
     
     return (
         <div className="bg-white border border-gray-300 p-4 rounded-lg" style={{ fontFamily: 'system-ui, Arial, sans-serif', fontSize: '13px', maxWidth: '100%' }}>
-            {/* Header */}
-            <div className="mb-3 pb-2 border-b-2 border-gray-400">
-                <div className="flex items-center justify-between mb-2">
-                    <div className="flex items-center gap-2">
-                        <img src="/logo.png" alt="Logo" style={{ height: '40px', width: '40px', objectFit: 'contain' }} onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }} />
-                        <div>
-                            <p className="font-bold mb-0" style={{ fontSize: '18px', fontWeight: 'bold' }}>মৌসুমী</p>
-                            <p className="leading-tight" style={{ fontSize: '12px' }}>{str(d.branch_address)}</p>
+            {/* Header: office box (1fr) | org title (exact center) | photo (1fr right-aligned) */}
+            <div className="mb-3 grid grid-cols-[1fr_1.4fr_1fr] gap-3 items-start">
+                <div className="border-2 border-gray-700 p-2" style={{ fontSize: '11px' }}>
+                    <p className="font-bold mb-2 text-center border-b border-gray-400 pb-1">অফিস কর্তৃক পূরণীয়</p>
+                    <div className="space-y-1.5">
+                        <p>হিসাব খোলার তারিখ: <span className="border-b border-dotted border-gray-600 inline-block min-w-[85px]">{fmt(d.account_opening_date)}</span></p>
+                        <p>মাসিক সঞ্চয়ের পরিমাণ: <span className="border-b border-dotted border-gray-600 inline-block min-w-[65px]">{num(d.monthly_savings_amount).toLocaleString('bn-BD')}</span></p>
+                        <p>
+                            মেয়াদ:{' '}
+                            <span className="inline-flex flex-wrap gap-x-1.5">
+                                <span>{years === 5 ? '☑' : '☐'} ৫ বছর</span>
+                                <span>{years === 10 ? '☑' : '☐'} ১০ বছর</span>
+                                {years && years !== 5 && years !== 10 ? <span>☑ {years} বছর</span> : null}
+                            </span>
+                            <span className="text-[10px] text-gray-500"> (টিক দিন)</span>
+                        </p>
+                        <p>হিসাব নং: <span className="border-b border-dotted border-gray-600 inline-block min-w-[85px]">{str(d.account_no)}</span></p>
+                        <p>সদস্য নং: <span className="border-b border-dotted border-gray-600 inline-block min-w-[85px]">{str(d.member_no)}</span></p>
+                    </div>
+                </div>
+                <div className="flex flex-col items-center justify-center pt-1 text-center">
+                    <div className="flex items-center justify-center gap-2.5 mb-1">
+                        <img
+                            src="/logo.png"
+                            alt="মৌসুমী"
+                            className="h-12 w-12 object-contain shrink-0"
+                            onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}
+                        />
+                        <div className="text-center">
+                            <h1 className="font-black leading-tight text-black" style={{ fontSize: '22px' }}>মৌসুমী</h1>
+                            <p className="leading-tight text-gray-800" style={{ fontSize: '12px' }}>{str(d.branch_address) || str(d.branch_name) || 'উকিলপাড়া, নওগাঁ।'}</p>
                         </div>
                     </div>
-                    <div className="text-right">
-                        <p className="font-bold" style={{ fontSize: '16px' }}>মেয়াদী সঞ্চয় কর্মসূচির আবেদনপত্র</p>
-                        <p style={{ fontSize: '12px' }}>Fixed Deposit Scheme Application Form</p>
-                    </div>
+                    <p className="mt-1 font-bold border border-gray-700 rounded-full px-3 py-0.5 inline-block whitespace-nowrap" style={{ fontSize: '13px' }}>
+                        মেয়াদী সঞ্চয় কর্মসূচির আবেদনপত্র
+                    </p>
                 </div>
-            </div>
-
-            {/* Office Use Section */}
-            <div className="mb-3 grid grid-cols-2 gap-4" style={{ fontSize: '12px' }}>
-                <div className="border border-gray-400 p-2">
-                    <p className="font-bold mb-2">অফিস কর্তৃক পূরণীয়:</p>
-                    <div className="space-y-1">
-                        <p>হিসাব খোলার তারিখ: <span className="border-b border-dotted border-gray-600 inline-block min-w-[120px]">{fmt(d.account_opening_date)}</span></p>
-                        <p>মাসিক সঞ্চয়ের পরিমাণ: <span className="border-b border-dotted border-gray-600 inline-block min-w-[100px]">{num(d.monthly_savings_amount).toLocaleString('bn-BD')}</span> টাকা</p>
-                        <p>মেয়াদ: 
-                            <span className="border-b border-dotted border-gray-600 inline-block min-w-[80px] ml-2">
-                                {(d as any).duration_months != null
-                                    ? (d as any).duration_months >= 12
-                                        ? `${Math.round((d as any).duration_months / 12)} বছর`
-                                        : `${(d as any).duration_months} মাস`
-                                    : d.term_years === 5 ? '৫ বছর' : d.term_years === 10 ? '১০ বছর' : ''}
-                            </span>
-                        </p>
-                        <p>হিসাব নং: <span className="border-b border-dotted border-gray-600 inline-block min-w-[120px]">{str(d.account_no)}</span></p>
-                        <p>সদস্য নং: <span className="border-b border-dotted border-gray-600 inline-block min-w-[120px]">{str(d.member_no)}</span></p>
-                    </div>
-                </div>
-                <div className="border border-gray-400 p-2 flex items-center justify-center">
-                    <div className="text-center">
-                        <p className="mb-2" style={{ fontSize: '11px' }}>আবেদনকারীর ছবি</p>
+                <div className="flex justify-end">
+                    <div className="border-2 border-gray-700 p-2 text-center w-[112px] shrink-0">
                         {d.applicant_photo ? (
-                            <img src={d.applicant_photo} alt="Applicant" style={{ width: '100px', height: '120px', objectFit: 'cover', border: '1px solid #ccc' }} />
+                            <img src={d.applicant_photo} alt="Applicant" className="mx-auto" style={{ width: '92px', height: '110px', objectFit: 'cover', border: '1px solid #ccc' }} />
                         ) : (
-                            <div style={{ width: '100px', height: '120px', border: '1px solid #ccc', backgroundColor: '#f5f5f5' }}></div>
+                            <div className="mx-auto" style={{ width: '92px', height: '110px', border: '1px solid #ccc', backgroundColor: '#f5f5f5' }}></div>
                         )}
                     </div>
                 </div>
@@ -145,12 +177,10 @@ export function SavingsApplicationPrintView({ data }: { data: SavingsFormData })
                 <p className="mb-1">পিতা/স্বামী/অভিভাবক: <span className="border-b border-dotted border-gray-600 inline-block min-w-[200px]">{str(d.father_husband_guardian)}</span></p>
                 <p className="mb-1">বর্তমান ঠিকানা: গ্রাম <span className="border-b border-dotted border-gray-600 inline-block min-w-[100px]">{str(d.current_address_village)}</span>, ডাকঘর <span className="border-b border-dotted border-gray-600 inline-block min-w-[100px]">{str(d.current_address_post_office)}</span>, উপজেলা <span className="border-b border-dotted border-gray-600 inline-block min-w-[100px]">{str(d.current_address_upazila)}</span>, জেলা <span className="border-b border-dotted border-gray-600 inline-block min-w-[100px]">{str(d.current_address_district)}</span></p>
                 <p className="mb-1">স্থায়ী ঠিকানা: গ্রাম <span className="border-b border-dotted border-gray-600 inline-block min-w-[100px]">{str(d.permanent_address_village)}</span>, ডাকঘর <span className="border-b border-dotted border-gray-600 inline-block min-w-[100px]">{str(d.permanent_address_post_office)}</span>, উপজেলা <span className="border-b border-dotted border-gray-600 inline-block min-w-[100px]">{str(d.permanent_address_upazila)}</span>, জেলা <span className="border-b border-dotted border-gray-600 inline-block min-w-[100px]">{str(d.permanent_address_district)}</span></p>
-                <p className="mb-1">পেশা: <span className="border-b border-dotted border-gray-600 inline-block min-w-[150px]">{str(d.profession)}</span> আয়ের উৎস: <span className="border-b border-dotted border-gray-600 inline-block min-w-[150px]">{str(d.source_of_income)}</span></p>
-            </div>
-
-            {/* Declaration */}
-            <div className="mb-3 p-2 border border-gray-400" style={{ fontSize: '11px', lineHeight: '1.6' }}>
-                <p className="mb-1">আমি উক্ত সংস্থার নিয়ম-কানুন ও শর্তাবলী জানি এবং তা মেনে চলার জন্য সম্মত আছি। আমি মেয়াদী সঞ্চয় কর্মসূচিতে অংশগ্রহণের জন্য আবেদন করছি। আমার অনুপস্থিতিতে (মৃত্যু) উল্লেখিত নমিনি/নমিনিগণ উপযুক্ত কাগজপত্র দাখিল করে সঞ্চয়ের টাকা উত্তোলন করতে পারবেন।</p>
+                <p className="mb-1">পেশা: <span className="border-b border-dotted border-gray-600 inline-block min-w-[150px]">{str(d.profession)}</span> আয়ের উৎস: <span className="border-b border-dotted border-gray-600 inline-block min-w-[150px]">{str(d.source_of_income)}</span></p>
+                <p className="mt-2 leading-relaxed" style={{ fontSize: '11px', textAlign: 'justify' }}>
+                    আপনার শাখার <span className="border-b border-dotted border-gray-600 inline-block min-w-[140px]">{str(d.samity_name)}</span> সমিতির একজন সদস্য, মৌসুমী পরিচালিত মেয়াদী সঞ্চয় কর্মসূচির নিয়ম-কানুন সম্পর্কে অবগত হয়ে সঞ্চয় করার আবেদন করছি। উল্লেখ্য যে, আমার অবর্তমানে (মৃত্যুর পর) নিম্নলিখিত নমিনি/নমিনিগণ উপযুক্ত প্রমাণপত্র দাখিল সাপেক্ষে নিম্নোক্ত হারে আমার জমাকৃত সঞ্চয় উত্তোলন করতে পারবেন।
+                </p>
             </div>
 
             {/* Nominee Table */}
@@ -167,59 +197,62 @@ export function SavingsApplicationPrintView({ data }: { data: SavingsFormData })
                         </tr>
                     </thead>
                     <tbody>
-                        {(Array.isArray(d.nominees) ? d.nominees : []).map((nominee: any, idx: number) => (
-                            <tr key={idx}>
-                                <td className="border border-gray-600 px-1 py-1 text-center">{idx + 1}</td>
-                                <td className="border border-gray-600 px-1 py-1">{str(nominee?.name)}</td>
-                                <td className="border border-gray-600 px-1 py-1">{str(nominee?.relation)}</td>
-                                <td className="border border-gray-600 px-1 py-1 text-center">
-                                    {nominee?.signature && <img src={nominee.signature} alt="Signature" style={{ height: '20px', width: '60px', objectFit: 'contain' }} />}
-                                </td>
-                                <td className="border border-gray-600 px-1 py-1 text-center">{num(nominee?.percentage)}%</td>
-                                <td className="border border-gray-600 px-1 py-1 text-center">
-                                    {nominee?.photo ? (
-                                        <img src={nominee.photo} alt="Nominee" style={{ width: '40px', height: '50px', objectFit: 'cover' }} />
-                                    ) : (
-                                        <div style={{ width: '40px', height: '50px', border: '1px solid #ccc', backgroundColor: '#f5f5f5', margin: '0 auto' }}></div>
-                                    )}
-                                </td>
-                            </tr>
-                        ))}
+                        {Array.from({ length: nomineeRowCount }).map((_, idx) => {
+                            const nominee = nominees[idx];
+                            return (
+                                <tr key={idx}>
+                                    <td className="border border-gray-600 px-1 py-2 text-center">{idx + 1}</td>
+                                    <td className="border border-gray-600 px-1 py-2">{str(nominee?.name)}</td>
+                                    <td className="border border-gray-600 px-1 py-2">{str(nominee?.relation)}</td>
+                                    <td className="border border-gray-600 px-1 py-2"></td>
+                                    <td className="border border-gray-600 px-1 py-2 text-center">{nominee?.percentage ? `${num(nominee.percentage)}%` : ''}</td>
+                                    <td className="border border-gray-600 px-1 py-1 text-center align-middle">
+                                        {nominee?.photo ? (
+                                            <img src={nominee.photo} alt={`নমিনি ${idx + 1}`} className="mx-auto" style={{ width: '38px', height: '48px', objectFit: 'cover', border: '1px solid #999' }} />
+                                        ) : (
+                                            <div className="mx-auto" style={{ width: '38px', height: '48px', border: '1px solid #ccc', backgroundColor: '#f5f5f5' }}></div>
+                                        )}
+                                    </td>
+                                </tr>
+                            );
+                        })}
                     </tbody>
                 </table>
-                <p className="mt-1 text-xs" style={{ fontSize: '10px' }}>নমিনির ছবি (ছবির পেছনে নমিনির স্বাক্ষর থাকতে হবে এবং ছবিটি সদস্য কর্তৃক সত্যায়িত হওয়া আবশ্যক)</p>
+                <p className="mt-1 text-[9px] leading-tight text-gray-600">
+                    নমিনির ছবি (ছবির পেছনে নমিনির স্বাক্ষর থাকতে হবে এবং ছবিটি সদস্য কর্তৃক সত্যায়িত হওয়া আবশ্যক)
+                </p>
             </div>
 
             {/* Nominee NID/Birth Registration */}
             <div className="mb-3" style={{ fontSize: '12px' }}>
-                <p>নমিনি/নমিনিগণের জাতীয় পরিচয়পত্র/জন্ম নিবন্ধন নং: <span className="border-b border-dotted border-gray-600 inline-block min-w-[300px]">{str(d.nominee_nid_birth_registration)}</span></p>
+                <p>নমিনি/নমিনিগণের জাতীয় পরিচয়পত্র/জন্ম নিবন্ধন নং: <span className="border-b border-dotted border-gray-600 inline-block min-w-[300px]">{str(d.nominee_nid_birth_registration) || nominees.map((n: any) => n?.nid_birth_registration).filter(Boolean).join(', ')}</span></p>
                 <p>মাসিক জমা প্রদানের তারিখ: <span className="border-b border-dotted border-gray-600 inline-block min-w-[150px]">{fmt(d.monthly_deposit_submission_date)}</span></p>
             </div>
 
-            {/* Signatures */}
+            {/* Signatures — signed by hand on the printed form */}
             <div className="grid grid-cols-2 gap-4 mt-4" style={{ fontSize: '12px' }}>
                 <div>
-                    <p className="mb-2">আবেদনকারীর স্বাক্ষর:</p>
-                    {d.applicant_signature && <img src={d.applicant_signature} alt="Applicant Signature" style={{ height: '30px', width: '80px', objectFit: 'contain' }} />}
+                    <div className="border-b border-gray-600 w-[180px]" style={{ height: '32px' }} />
+                    <p className="mt-1">আবেদনকারীর স্বাক্ষর</p>
                     <p className="mt-1">নাম: <span className="border-b border-dotted border-gray-600 inline-block min-w-[180px]">{str(d.applicant_name_bn)}</span></p>
                 </div>
                 <div></div>
             </div>
 
-            <div className="grid grid-cols-3 gap-4 mt-4" style={{ fontSize: '12px' }}>
+            <div className="grid grid-cols-3 gap-4 mt-6" style={{ fontSize: '12px' }}>
                 <div>
-                    <p className="mb-1">অফিসারের স্বাক্ষর:</p>
-                    {d.officer_signature && <img src={d.officer_signature} alt="Officer Signature" style={{ height: '30px', width: '80px', objectFit: 'contain' }} />}
+                    <div className="border-b border-gray-600 w-[140px]" style={{ height: '32px' }} />
+                    <p className="mt-1">অফিসারের স্বাক্ষর</p>
                     <p className="mt-1">PIN নং: <span className="border-b border-dotted border-gray-600 inline-block min-w-[100px]">{str(d.officer_pin)}</span></p>
                 </div>
                 <div>
-                    <p className="mb-1">হিসাবরক্ষকের স্বাক্ষর:</p>
-                    {d.accountant_signature && <img src={d.accountant_signature} alt="Accountant Signature" style={{ height: '30px', width: '80px', objectFit: 'contain' }} />}
+                    <div className="border-b border-gray-600 w-[140px]" style={{ height: '32px' }} />
+                    <p className="mt-1">হিসাবরক্ষকের স্বাক্ষর</p>
                     <p className="mt-1">PIN নং: <span className="border-b border-dotted border-gray-600 inline-block min-w-[100px]">{str(d.accountant_pin)}</span></p>
                 </div>
                 <div>
-                    <p className="mb-1">শাখা ব্যবস্থাপকের স্বাক্ষর:</p>
-                    {d.branch_manager_signature && <img src={d.branch_manager_signature} alt="Branch Manager Signature" style={{ height: '30px', width: '80px', objectFit: 'contain' }} />}
+                    <div className="border-b border-gray-600 w-[140px]" style={{ height: '32px' }} />
+                    <p className="mt-1">শাখা ব্যবস্থাপকের স্বাক্ষর</p>
                     <p className="mt-1">PIN নং: <span className="border-b border-dotted border-gray-600 inline-block min-w-[100px]">{str(d.branch_manager_pin)}</span></p>
                 </div>
             </div>
@@ -260,27 +293,26 @@ export default function SavingsApplicationForm({ memberAdmission, savingsProduct
         nid_number: memberAdmission?.nid_number || '',
         father_husband_guardian: memberAdmission?.father_name_bn || memberAdmission?.spouse_name_bn || '',
         current_address_village: memberAdmission?.present_village_road || '',
-        current_address_post_office: memberAdmission?.present_post_code || '',
+        current_address_post_office: memberAdmission?.present_union || memberAdmission?.present_post_code || '',
         current_address_upazila: memberAdmission?.present_upazila || '',
         current_address_district: memberAdmission?.present_district || '',
         permanent_address_village: memberAdmission?.permanent_village_road || memberAdmission?.present_village_road || '',
-        permanent_address_post_office: memberAdmission?.permanent_post_code || memberAdmission?.present_post_code || '',
+        permanent_address_post_office: memberAdmission?.permanent_union || memberAdmission?.permanent_post_code || memberAdmission?.present_union || memberAdmission?.present_post_code || '',
         permanent_address_upazila: memberAdmission?.permanent_upazila || memberAdmission?.present_upazila || '',
         permanent_address_district: memberAdmission?.permanent_district || memberAdmission?.present_district || '',
-        profession: existingApplication?.profession || '',
-        source_of_income: existingApplication?.source_of_income || '',
+        profession: existingApplication?.profession || selfOccupation(memberAdmission),
+        source_of_income: existingApplication?.source_of_income || memberAdmission?.project_name || '',
         
         // Nominees – default one; user can add more via button
         nominees: (existingApplication?.nominee_info && existingApplication.nominee_info.length > 0)
             ? existingApplication.nominee_info.map((n: any) => ({
                 name: n.name ?? '',
                 relation: n.relation ?? '',
-                signature: n.signature ?? null,
                 percentage: Number(n.percentage) || 0,
                 photo: n.photo ?? null,
                 nid_birth_registration: n.nid ?? n.birth_registration_no ?? '',
               }))
-            : [{ name: '', relation: '', signature: null, percentage: 0, photo: null, nid_birth_registration: '' }],
+            : [{ name: '', relation: '', percentage: 0, photo: null, nid_birth_registration: '' }],
         
         // Nominee NID/Birth Registration
         nominee_nid_birth_registration: '',
@@ -288,19 +320,16 @@ export default function SavingsApplicationForm({ memberAdmission, savingsProduct
         // Monthly deposit submission date
         monthly_deposit_submission_date: existingApplication?.monthly_deposit_submission_date || '',
         
-        // Signatures
-        applicant_signature: existingApplication?.applicant_signature || null,
-        officer_signature: existingApplication?.officer_signature || null,
+        // Signatures are handwritten on the printed form
         officer_pin: existingApplication?.officer_pin || '',
-        accountant_signature: existingApplication?.accountant_signature || null,
         accountant_pin: existingApplication?.accountant_pin || '',
-        branch_manager_signature: existingApplication?.branch_manager_signature || null,
         branch_manager_pin: existingApplication?.branch_manager_pin || '',
         
         // Branch info
         branch_name: branch?.name || '',
         branch_address: branch?.address || '',
         area_name: branch?.area?.name || '',
+        samity_name: memberAdmission?.samity?.samity_name_bn || memberAdmission?.samity?.samity_name || '',
     }, memberAdmission));
 
     // Get backend validation errors from Inertia
@@ -333,7 +362,7 @@ export default function SavingsApplicationForm({ memberAdmission, savingsProduct
     
     // Merge local validation errors with backend errors
     // Also map deposit_amount errors to monthly_savings_amount for display
-    const errors = useMemo(() => ({
+    const errors = useMemo<Record<string, string>>(() => ({
         ...localErrors, 
         ...backendErrors,
         monthly_savings_amount: localErrors.monthly_savings_amount || backendErrors.monthly_savings_amount || backendErrors.deposit_amount,
@@ -365,7 +394,7 @@ export default function SavingsApplicationForm({ memberAdmission, savingsProduct
         setImagePreview(prev => ({ ...prev, [field]: result.dataUrl }));
     };
 
-    const handleNomineeImageUpload = async (index: number, field: 'photo' | 'signature', file: File | null) => {
+    const handleNomineePhotoUpload = async (index: number, file: File | null) => {
         if (!file) return;
 
         const result = await fileToCompressedDataUrl(file, { maxWidth: 800 });
@@ -375,10 +404,24 @@ export default function SavingsApplicationForm({ memberAdmission, savingsProduct
         }
 
         const updatedNominees = [...data.nominees];
-        updatedNominees[index] = { ...updatedNominees[index], [field]: result.dataUrl };
+        updatedNominees[index] = { ...updatedNominees[index], photo: result.dataUrl };
         setData('nominees', updatedNominees);
-        setImagePreview(prev => ({ ...prev, [`nominee_${index}_${field}`]: result.dataUrl }));
+        setImagePreview(prev => ({ ...prev, [`nominee_${index}_photo`]: result.dataUrl }));
     };
+
+    const copyCurrentToPermanentAddress = () => {
+        setData(prev => ({
+            ...prev,
+            permanent_address_village: prev.current_address_village || '',
+            permanent_address_post_office: prev.current_address_post_office || '',
+            permanent_address_upazila: prev.current_address_upazila || '',
+            permanent_address_district: prev.current_address_district || '',
+        }));
+    };
+
+    const totalNomineePercentage = useMemo(() => {
+        return (data.nominees || []).reduce((acc, curr) => acc + (Number(curr.percentage) || 0), 0);
+    }, [data.nominees]);
 
     const validateForm = (): { valid: boolean; errors: Record<string, string> } => {
         const newErrors: Record<string, string> = {};
@@ -457,12 +500,8 @@ export default function SavingsApplicationForm({ memberAdmission, savingsProduct
                 profession: data.profession,
                 source_of_income: data.source_of_income,
                 monthly_deposit_submission_date: data.monthly_deposit_submission_date,
-                applicant_signature: data.applicant_signature,
-                officer_signature: data.officer_signature,
                 officer_pin: data.officer_pin,
-                accountant_signature: data.accountant_signature,
                 accountant_pin: data.accountant_pin,
-                branch_manager_signature: data.branch_manager_signature,
                 branch_manager_pin: data.branch_manager_pin,
                 nominee_info: data.nominees.filter(n => n.name && n.name.trim() !== '').map(n => ({
                     name: n.name,
@@ -473,10 +512,9 @@ export default function SavingsApplicationForm({ memberAdmission, savingsProduct
                     address: '',
                     percentage: n.percentage || 0,
                     photo: n.photo || null,
-                    signature: n.signature || null,
                 })),
             };
-            router.post(`/member/savings-applications/${existingApplication.id}/save-form`, savePayload, {
+            router.post(`/member/savings-applications/${existingApplication.id}/save-form`, savePayload as unknown as RequestPayload, {
                 preserveScroll: true,
                 onSuccess: () => {
                     setShowPreview(true);
@@ -516,7 +554,6 @@ export default function SavingsApplicationForm({ memberAdmission, savingsProduct
                     address: '',
                     percentage: n.percentage || 0,
                     photo: n.photo || null,
-                    signature: n.signature || null,
                 }));
 
             const payload: Record<string, unknown> = {
@@ -537,18 +574,14 @@ export default function SavingsApplicationForm({ memberAdmission, savingsProduct
                 profession: data.profession || null,
                 source_of_income: data.source_of_income || null,
                 monthly_deposit_submission_date: data.monthly_deposit_submission_date || null,
-                applicant_signature: data.applicant_signature || null,
-                officer_signature: data.officer_signature || null,
                 officer_pin: data.officer_pin || null,
-                accountant_signature: data.accountant_signature || null,
                 accountant_pin: data.accountant_pin || null,
-                branch_manager_signature: data.branch_manager_signature || null,
                 branch_manager_pin: data.branch_manager_pin || null,
                 form_data: data,
                 nominee_info: nomineeInfo,
             };
 
-            router.post('/member/savings-applications', payload, {
+            router.post('/member/savings-applications', payload as RequestPayload, {
                 preserveState: false,
                 preserveScroll: false,
                 onSuccess: () => setLocalErrors({}),
@@ -596,113 +629,208 @@ export default function SavingsApplicationForm({ memberAdmission, savingsProduct
                     }
                 `}</style>
             </Head>
-            <div className="max-w-7xl mx-auto p-6">
-                <div className="mb-4 flex justify-between items-center savings-form-no-print">
-                    <h1 className="text-2xl font-bold">Savings Application Form (মেয়াদী সঞ্চয় আবেদনপত্র)</h1>
-                    <div className="flex gap-2">
-                        <Button onClick={() => setShowPreview(!showPreview)} variant="outline">
-                            {showPreview ? 'Edit' : 'Preview'}
-                        </Button>
-                        <Button onClick={handlePrint} variant="outline">
-                            <Printer className="h-4 w-4 mr-2" />
-                            Print Form
-                        </Button>
+            <div className="max-w-7xl mx-auto p-4 sm:p-6 pb-24 space-y-6">
+                {/* ── TOP ACTION & HEADER BAR ─────────────────────────────────────── */}
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 savings-form-no-print">
+                    <div className="flex items-center gap-3">
+                        <button
+                            type="button"
+                            onClick={() => router.visit('/member/savings-applications')}
+                            className="p-2 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 text-slate-600 transition shadow-2xs"
+                            title="তালিকায় ফিরে যান"
+                        >
+                            <ArrowLeft className="w-4 h-4" />
+                        </button>
+                        <div>
+                            <div className="flex items-center gap-2">
+                                <span className="px-2 py-0.5 rounded-md bg-purple-100 text-purple-800 text-[10px] font-bold font-mono">
+                                    {savingsProduct?.product_code || 'SAVINGS'}
+                                </span>
+                                <h1 className="text-lg sm:text-xl font-black text-slate-900 leading-tight">
+                                    মেয়াদী সঞ্চয় আবেদনপত্র
+                                </h1>
+                            </div>
+                            <p className="text-xs text-slate-500 mt-0.5">
+                                আবেদনকারীর প্রয়োজনীয় তথ্যাবলী সঠিকভাবে পূরণ করুন
+                            </p>
+                        </div>
+                    </div>
+
+                    <div className="flex items-center gap-2 self-end sm:self-center">
+                        <button
+                            type="button"
+                            onClick={() => setShowPreview(!showPreview)}
+                            className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-bold border border-slate-200 bg-white text-slate-700 hover:bg-slate-50 transition shadow-2xs"
+                        >
+                            {showPreview ? (
+                                <>
+                                    <EyeOff className="w-3.5 h-3.5 text-slate-500" />
+                                    <span>প্রিভিউ লুকান</span>
+                                </>
+                            ) : (
+                                <>
+                                    <Eye className="w-3.5 h-3.5 text-purple-600" />
+                                    <span>প্রিভিউ দেখুন</span>
+                                </>
+                            )}
+                        </button>
+
+                        <button
+                            type="button"
+                            onClick={handlePrint}
+                            className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-bold border border-slate-200 bg-white text-slate-700 hover:bg-slate-50 transition shadow-2xs"
+                        >
+                            <Printer className="w-3.5 h-3.5 text-slate-600" />
+                            <span>প্রিন্ট ফরম্যাট</span>
+                        </button>
+
+                        <button
+                            type="button"
+                            onClick={handleSave}
+                            disabled={processing}
+                            className="inline-flex items-center gap-1.5 px-5 py-2 rounded-xl text-xs font-bold bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-700 hover:to-indigo-700 text-white shadow-md shadow-purple-600/20 transition active:scale-95 disabled:opacity-50"
+                        >
+                            {processing ? (
+                                <>
+                                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                                    <span>সংরক্ষণ হচ্ছে...</span>
+                                </>
+                            ) : (
+                                <>
+                                    <Save className="w-3.5 h-3.5" />
+                                    <span>সংরক্ষণ করুন</span>
+                                </>
+                            )}
+                        </button>
                     </div>
                 </div>
 
-                {/* Backend Validation Errors Display - only show if values are actually missing */}
+                {/* ── MEMBER & PRODUCT SUMMARY HERO BAR ───────────────────────────── */}
+                <div className="savings-form-no-print rounded-3xl bg-gradient-to-br from-slate-900 via-slate-800 to-indigo-950 text-white p-5 sm:p-6 shadow-xl border border-slate-700/60">
+                    <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-5">
+                        <div className="flex items-center gap-4">
+                            <div className="w-13 h-13 rounded-2xl bg-gradient-to-tr from-purple-500 to-indigo-500 flex items-center justify-center text-white font-black text-lg shrink-0 shadow-md">
+                                {(memberAdmission?.applicant_name_bn || memberAdmission?.applicant_name_en || 'U').charAt(0)}
+                            </div>
+                            <div>
+                                <div className="flex flex-wrap items-center gap-2">
+                                    <h2 className="text-base sm:text-lg font-bold text-white">
+                                        {memberAdmission?.applicant_name_bn || memberAdmission?.applicant_name_en}
+                                    </h2>
+                                    <span className="px-2 py-0.5 rounded-md bg-purple-500/30 text-purple-200 text-[10px] font-mono font-bold border border-purple-400/20">
+                                        সদস্য নং: {memberAdmission?.application_no || data.member_no || '—'}
+                                    </span>
+                                </div>
+                                <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-slate-300 mt-1">
+                                    <span>NID: {memberAdmission?.nid_number || '—'}</span>
+                                    <span>মোবাইল: {memberAdmission?.mobile_number || '—'}</span>
+                                    {memberAdmission?.samity && (
+                                        <span>সমিতি: {memberAdmission.samity.samity_name_bn || memberAdmission.samity.samity_name}</span>
+                                    )}
+                                </div>
+                            </div>
+                        </div>
+
+                        <div className="flex flex-wrap items-center gap-3 pt-3 lg:pt-0 border-t lg:border-t-0 border-slate-700/60 text-xs">
+                            <div className="px-3 py-2 rounded-xl bg-white/10 border border-white/10">
+                                <span className="text-[10px] text-slate-400 block">স্কিম / পণ্য</span>
+                                <span className="font-bold text-purple-200 truncate block max-w-[160px]">
+                                    {savingsProduct?.product_name_bn || savingsProduct?.product_name}
+                                </span>
+                            </div>
+                            <div className="px-3 py-2 rounded-xl bg-white/10 border border-white/10">
+                                <span className="text-[10px] text-slate-400 block">মেয়াদ</span>
+                                <span className="font-bold text-white">
+                                    {savingsProduct?.duration_months
+                                        ? savingsProduct.duration_months >= 12
+                                            ? `${Math.round(savingsProduct.duration_months / 12)} বছর`
+                                            : `${savingsProduct.duration_months} মাস`
+                                        : '—'}
+                                </span>
+                            </div>
+                            <div className="px-3 py-2 rounded-xl bg-white/10 border border-white/10">
+                                <span className="text-[10px] text-slate-400 block">মুনাফার হার</span>
+                                <span className="font-bold text-emerald-300">
+                                    {savingsProduct?.interest_rate != null ? `${savingsProduct.interest_rate}%` : '—'}
+                                </span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                {/* ── BACKEND ERROR ALERT NOTIFICATION ────────────────────────────── */}
                 {backendErrors && Object.keys(backendErrors).length > 0 && (
-                    <div className="mb-4 bg-red-50 border border-red-200 rounded-lg p-4 savings-form-no-print">
-                        <h3 className="text-red-800 font-semibold mb-2">Errors (ত্রুটি):</h3>
-                        <ul className="list-disc list-inside space-y-1">
-                            {Object.entries(backendErrors).filter(([key]) => {
-                                // Filter out errors if values are actually present
-                                if (key === 'savings_product_id' && savingsProduct?.id) return false;
-                                if (key === 'member_admission_id' && memberAdmission?.id) return false;
-                                if (key === 'deposit_amount' && data.monthly_savings_amount && data.monthly_savings_amount > 0) return false;
-                                return true;
-                            }).map(([key, value]: [string, any]) => {
-                                const errorMessage = Array.isArray(value) ? value[0] : value;
-                                let displayKey = key;
-                                
-                                // Map backend field names to user-friendly Bengali names
-                                if (key === 'savings_product_id') displayKey = 'Savings product';
-                                else if (key === 'member_admission_id') displayKey = 'Member';
-                                else if (key === 'deposit_amount') displayKey = 'জমার পরিমাণ';
-                                else if (key === 'monthly_savings_amount') displayKey = 'মাসিক সঞ্চয়ের পরিমাণ';
-                                else if (key === 'term_years' || key === 'duration_months') displayKey = 'Term';
-                                else if (key === 'applicant_name_bn') displayKey = 'আবেদনকারীর নাম (বাংলা)';
-                                else if (key === 'nid_number') displayKey = 'জাতীয় পরিচয়পত্র নং';
-                                else if (key === 'father_husband_guardian') displayKey = 'পিতা/স্বামী/অভিভাবক';
-                                
-                                return (
-                                    <li key={key} className="text-red-700 text-sm">
-                                        <span className="font-medium">{displayKey}:</span> {errorMessage}
-                                    </li>
-                                );
-                            })}
-                        </ul>
+                    <div className="savings-form-no-print p-4 rounded-2xl bg-red-50/90 border border-red-200 text-red-900 shadow-sm animate-in fade-in">
+                        <div className="flex items-center gap-2 mb-2 font-bold text-xs text-red-800">
+                            <AlertCircle className="w-4 h-4 text-red-600 shrink-0" />
+                            <span>আবেদনের তথ্যে কিছু ত্রুটি রয়েছে, অনুগ্রহ করে সংশোধন করুন:</span>
+                        </div>
+                        <div className="flex flex-wrap gap-2 text-xs">
+                            {Object.entries(backendErrors).map(([key, value]: [string, any]) => (
+                                <span key={key} className="px-2.5 py-1 rounded-lg bg-red-100/80 text-red-800 font-medium">
+                                    {Array.isArray(value) ? value[0] : value}
+                                </span>
+                            ))}
+                        </div>
                     </div>
                 )}
 
                 <form onSubmit={handleSave}>
-                    <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 print:grid-cols-1">
-                        {/* LEFT SIDE: INPUT FORM */}
-                        <div className="space-y-4 savings-form-no-print">
-                            {/* Product summary – auto from selected product */}
-                            <div className="bg-slate-50 border border-slate-200 rounded-lg p-4">
-                                <h3 className="text-sm font-semibold text-slate-800 mb-2">Product Info (পণ্যের তথ্য)</h3>
-                                <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-sm">
-                                    <span className="text-slate-600">Product:</span>
-                                    <span className="font-medium">{savingsProduct?.product_name_bn ?? savingsProduct?.product_name}</span>
-                                    <span className="text-slate-600">Code:</span>
-                                    <span>{savingsProduct?.product_code ?? '—'}</span>
-                                    <span className="text-slate-600">Term (মেয়াদ):</span>
-                                    <span>{savingsProduct?.duration_months ? (savingsProduct.duration_months >= 12 ? `${savingsProduct.duration_months / 12} years` : `${savingsProduct.duration_months} months`) : '—'}</span>
-                                    <span className="text-slate-600">Interest Rate:</span>
-                                    <span>{savingsProduct?.interest_rate != null ? `${savingsProduct.interest_rate}%` : '—'}</span>
-                                    <span className="text-slate-600">Deposit Limit:</span>
-                                    <span>৳{(savingsProduct?.min_amount ?? 0).toLocaleString('bn-BD')}{savingsProduct?.max_amount ? ` – ৳${Number(savingsProduct.max_amount).toLocaleString('bn-BD')}` : ''}</span>
-                                </div>
-                            </div>
-                            <div className="bg-white rounded-lg shadow p-6 space-y-6">
-                                {/* Office Use Section */}
-                                <div className="border-b pb-4">
-                                    <h3 className="font-bold text-sm mb-4">Office Use (অফিস কর্তৃক পূরণীয়)</h3>
-                                    
-                                    {/* Show errors for hidden required fields - only if values are actually missing */}
-                                    {((backendErrors?.savings_product_id && !savingsProduct?.id) || 
-                                      (backendErrors?.member_admission_id && !memberAdmission?.id) || 
-                                      (backendErrors?.deposit_amount && (!data.monthly_savings_amount || data.monthly_savings_amount <= 0))) && (
-                                        <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded">
-                                            <p className="text-red-700 text-sm font-semibold mb-2">System error:</p>
-                                            <ul className="list-disc list-inside text-red-600 text-sm space-y-1">
-                                                {backendErrors.savings_product_id && !savingsProduct?.id && (
-                                                    <li>Savings product not selected</li>
-                                                )}
-                                                {backendErrors.member_admission_id && !memberAdmission?.id && (
-                                                    <li>Member not selected</li>
-                                                )}
-                                                {backendErrors.deposit_amount && (!data.monthly_savings_amount || data.monthly_savings_amount <= 0) && (
-                                                    <li>Deposit amount not set</li>
-                                                )}
-                                            </ul>
+                    <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 print:grid-cols-1">
+                        {/* ── LEFT SIDE: MODERN MINIMAL INPUT FORM ────────────────────── */}
+                        <div className="space-y-6 savings-form-no-print">
+                            {/* SECTION 1: OFFICE USE */}
+                            <div className="bg-white rounded-3xl border border-slate-200/90 shadow-sm p-5 sm:p-6 space-y-4">
+                                <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+                                    <div className="flex items-center gap-2.5">
+                                        <div className="w-8 h-8 rounded-xl bg-purple-50 text-purple-700 flex items-center justify-center font-black text-xs border border-purple-100">
+                                            ১
                                         </div>
-                                    )}
-                                    
-                                    <div className="grid grid-cols-2 gap-4">
                                         <div>
-                                            <Label>Account Opening Date (হিসাব খোলার তারিখ)</Label>
-                                            <Input type="date" value={data.account_opening_date} onChange={(e) => setData('account_opening_date', e.target.value)} />
+                                            <h3 className="text-sm font-bold text-slate-900">
+                                                অফিস কর্তৃক পূরণীয় তথ্য
+                                            </h3>
+                                            <p className="text-[11px] text-slate-400">
+                                                হিসাব ও কিস্তির প্রাথমিক তথ্য
+                                            </p>
                                         </div>
-                                        <div data-field="monthly_savings_amount">
-                                            <Label>Monthly Savings Amount (৳) * (মাসিক সঞ্চয়)</Label>
-                                            <Input
+                                    </div>
+                                    <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-slate-100 text-slate-600">
+                                        Office Use
+                                    </span>
+                                </div>
+
+                                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                                    <div>
+                                        <label className="block text-xs font-bold text-slate-700 mb-1.5">
+                                            হিসাব খোলার তারিখ
+                                        </label>
+                                        <div className="relative">
+                                            <input
+                                                type="date"
+                                                value={data.account_opening_date}
+                                                onChange={(e) => setData('account_opening_date', e.target.value)}
+                                                className="w-full px-3.5 py-2.5 bg-slate-50/70 border border-slate-300 rounded-xl text-xs sm:text-sm font-medium focus:bg-white focus:outline-none focus:ring-2 focus:ring-purple-500/20 focus:border-purple-600 transition"
+                                            />
+                                        </div>
+                                    </div>
+
+                                    <div data-field="monthly_savings_amount">
+                                        <label className="block text-xs font-bold text-slate-700 mb-1.5 flex items-center justify-between">
+                                            <span>মাসিক সঞ্চয়ের পরিমাণ (৳) <span className="text-red-500">*</span></span>
+                                            <span className="text-[10px] font-normal text-slate-400">
+                                                সীমা: ৳{(savingsProduct?.min_amount ?? 0).toLocaleString('bn-BD')}
+                                                {savingsProduct?.max_amount ? ` – ৳${Number(savingsProduct.max_amount).toLocaleString('bn-BD')}` : ''}
+                                            </span>
+                                        </label>
+                                        <div className="relative">
+                                            <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400 font-bold text-sm">৳</span>
+                                            <input
                                                 type="number"
                                                 step="1"
                                                 min={savingsProduct?.min_amount ?? 0}
                                                 max={savingsProduct?.max_amount ?? undefined}
-                                                placeholder={`Min: ৳${(savingsProduct?.min_amount ?? 0).toLocaleString('bn-BD')}`}
+                                                placeholder={`যেমন: ${(savingsProduct?.min_amount ?? 500)}`}
                                                 value={data.monthly_savings_amount || ''}
                                                 onChange={(e) => {
                                                     const value = e.target.value === '' ? 0 : Number(e.target.value);
@@ -716,344 +844,657 @@ export default function SavingsApplicationForm({ memberAdmission, savingsProduct
                                                         });
                                                     }
                                                 }}
-                                                className={(errors.monthly_savings_amount || errors.deposit_amount) ? 'border-red-500' : ''}
+                                                className={`w-full pl-8 pr-3.5 py-2.5 bg-slate-50/70 border rounded-xl text-xs sm:text-sm font-bold text-slate-900 focus:bg-white focus:outline-none focus:ring-2 focus:ring-purple-500/20 focus:border-purple-600 transition ${
+                                                    errors.monthly_savings_amount || errors.deposit_amount ? 'border-red-500 bg-red-50/30' : 'border-slate-300'
+                                                }`}
                                             />
-                                            <p className="text-xs text-gray-500 mt-0.5">
-                                                Limit: ৳{(savingsProduct?.min_amount ?? 0).toLocaleString('bn-BD')}
-                                                {savingsProduct?.max_amount ? ` – ৳${Number(savingsProduct.max_amount).toLocaleString('bn-BD')}` : ''}
-                                            </p>
-                                            {(errors.monthly_savings_amount || errors.deposit_amount) && (
-                                                <p className="text-red-500 text-xs mt-1">
-                                                    {errors.monthly_savings_amount || errors.deposit_amount}
-                                                </p>
-                                            )}
                                         </div>
-                                        <div data-field="duration_months">
-                                            <Label>Term (মেয়াদ)</Label>
-                                            <p className="border rounded px-3 py-2 bg-gray-50 text-gray-700">
-                                                {savingsProduct?.duration_months != null
-                                                    ? savingsProduct.duration_months >= 12
-                                                        ? `${Math.round(savingsProduct.duration_months / 12)} years`
-                                                        : `${savingsProduct.duration_months} months`
-                                                    : '—'}
+                                        {(errors.monthly_savings_amount || errors.deposit_amount) && (
+                                            <p className="text-red-500 text-xs mt-1 font-medium">
+                                                {errors.monthly_savings_amount || errors.deposit_amount}
                                             </p>
-                                            <p className="text-xs text-gray-500 mt-0.5">From product (not editable)</p>
+                                        )}
+                                    </div>
+
+                                    <div>
+                                        <label className="block text-xs font-bold text-slate-700 mb-1.5">
+                                            মেয়াদ (স্কিম অনুযায়ী নির্ধারিত)
+                                        </label>
+                                        <div className="flex items-center gap-2 p-2 rounded-xl bg-slate-50 border border-slate-200 text-xs">
+                                            <span className="px-2.5 py-1 rounded-lg bg-purple-600 text-white font-bold font-mono">
+                                                {savingsProduct?.duration_months ? `${Math.round(savingsProduct.duration_months / 12)} বছর` : '—'}
+                                            </span>
+                                            <span className="text-slate-500 font-medium">
+                                                {savingsProduct?.duration_months} মাস মেয়াদী
+                                            </span>
+                                        </div>
+                                    </div>
+
+                                    <div>
+                                        <label className="block text-xs font-bold text-slate-700 mb-1.5">
+                                            হিসাব নং
+                                        </label>
+                                        <input
+                                            type="text"
+                                            placeholder="হিসাব নম্বর লিখুন"
+                                            value={data.account_no}
+                                            onChange={(e) => setData('account_no', e.target.value)}
+                                            className="w-full px-3.5 py-2.5 bg-slate-50/70 border border-slate-300 rounded-xl text-xs sm:text-sm font-medium focus:bg-white focus:outline-none focus:ring-2 focus:ring-purple-500/20 focus:border-purple-600 transition font-mono"
+                                        />
+                                    </div>
+
+                                    <div className="sm:col-span-2">
+                                        <label className="block text-xs font-bold text-slate-700 mb-1.5">
+                                            সদস্য নং / কোড
+                                        </label>
+                                        <input
+                                            type="text"
+                                            value={data.member_no}
+                                            onChange={(e) => setData('member_no', e.target.value)}
+                                            className="w-full px-3.5 py-2.5 bg-slate-50/70 border border-slate-300 rounded-xl text-xs sm:text-sm font-medium focus:bg-white focus:outline-none focus:ring-2 focus:ring-purple-500/20 focus:border-purple-600 transition font-mono"
+                                        />
+                                    </div>
+                                </div>
+                            </div>
+
+                            {/* SECTION 2: APPLICANT PHOTO & DETAILS */}
+                            <div className="bg-white rounded-3xl border border-slate-200/90 shadow-sm p-5 sm:p-6 space-y-5">
+                                <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+                                    <div className="flex items-center gap-2.5">
+                                        <div className="w-8 h-8 rounded-xl bg-purple-50 text-purple-700 flex items-center justify-center font-black text-xs border border-purple-100">
+                                            ২
                                         </div>
                                         <div>
-                                            <Label>Account No (হিসাব নং)</Label>
-                                            <Input value={data.account_no} onChange={(e) => setData('account_no', e.target.value)} />
-                                        </div>
-                                        <div>
-                                            <Label>Member No (সদস্য নং)</Label>
-                                            <Input value={data.member_no} onChange={(e) => setData('member_no', e.target.value)} />
+                                            <h3 className="text-sm font-bold text-slate-900">
+                                                আবেদনকারীর ব্যক্তিগত তথ্য
+                                            </h3>
+                                            <p className="text-[11px] text-slate-400">
+                                                ছবি, নাম ও পূর্ণাঙ্গ ঠিকানা
+                                            </p>
                                         </div>
                                     </div>
                                 </div>
 
-                                {/* Applicant Photo */}
-                                <div className="border-b pb-4">
-                                    <Label>Applicant Photo (আবেদনকারীর ছবি)</Label>
-                                    <div className="mt-2">
-                                        <input type="file" accept="image/*" onChange={(e) => handleImageUpload('applicant_photo', e.target.files?.[0] || null)} className="mb-2" />
-                                        {imagePreview.applicant_photo && (
-                                            <img src={imagePreview.applicant_photo} alt="Applicant" className="w-24 h-32 object-cover border" />
+                                {/* Applicant Photo Card */}
+                                <div>
+                                    <label className="block text-xs font-bold text-slate-700 mb-2">
+                                        আবেদনকারীর ছবি (পাসপোর্ট সাইজ)
+                                    </label>
+                                    <div className="flex items-center gap-4">
+                                        <div className="relative w-24 h-28 rounded-2xl border-2 border-dashed border-slate-300 bg-slate-50/80 overflow-hidden flex items-center justify-center group shrink-0">
+                                            {imagePreview.applicant_photo || data.applicant_photo ? (
+                                                <>
+                                                    <img
+                                                        src={imagePreview.applicant_photo || data.applicant_photo || ''}
+                                                        alt="আবেদনকারী"
+                                                        className="w-full h-full object-cover"
+                                                    />
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => {
+                                                            setData('applicant_photo', null);
+                                                            setImagePreview(prev => ({ ...prev, applicant_photo: '' }));
+                                                        }}
+                                                        className="absolute top-1 right-1 p-1 rounded-full bg-red-600 text-white shadow-xs opacity-80 hover:opacity-100 transition"
+                                                        title="ছবি মুছুন"
+                                                    >
+                                                        <X className="w-3 h-3" />
+                                                    </button>
+                                                </>
+                                            ) : (
+                                                <div className="text-center p-2">
+                                                    <Camera className="w-6 h-6 text-slate-400 mx-auto mb-1" />
+                                                    <span className="text-[10px] text-slate-400 font-medium">ছবি নেই</span>
+                                                </div>
+                                            )}
+                                        </div>
+
+                                        <div className="space-y-2">
+                                            <label className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-slate-100 hover:bg-slate-200/70 text-slate-700 text-xs font-bold cursor-pointer transition">
+                                                <Upload className="w-3.5 h-3.5" />
+                                                <span>ছবি আপলোড করুন</span>
+                                                <input
+                                                    type="file"
+                                                    accept="image/*"
+                                                    onChange={(e) => handleImageUpload('applicant_photo', e.target.files?.[0] || null)}
+                                                    className="hidden"
+                                                />
+                                            </label>
+                                            <p className="text-[11px] text-slate-400 leading-relaxed">
+                                                JPG বা PNG ফাইল নির্বাচন করুন। ছবি স্বয়ংক্রিয়ভাবে অপ্টিমাইজ হয়ে ফর্মে যুক্ত হবে।
+                                            </p>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                                    <div data-field="applicant_name_bn">
+                                        <label className="block text-xs font-bold text-slate-700 mb-1.5">
+                                            আবেদনকারীর নাম (বাংলা) <span className="text-red-500">*</span>
+                                        </label>
+                                        <input
+                                            type="text"
+                                            value={data.applicant_name_bn}
+                                            onChange={(e) => {
+                                                setData('applicant_name_bn', e.target.value);
+                                                if (localErrors.applicant_name_bn) {
+                                                    setLocalErrors(prev => {
+                                                        const next = { ...prev };
+                                                        delete next.applicant_name_bn;
+                                                        return next;
+                                                    });
+                                                }
+                                            }}
+                                            className={`w-full px-3.5 py-2.5 bg-slate-50/70 border rounded-xl text-xs sm:text-sm font-medium focus:bg-white focus:outline-none focus:ring-2 focus:ring-purple-500/20 focus:border-purple-600 transition ${
+                                                errors.applicant_name_bn ? 'border-red-500 bg-red-50/30' : 'border-slate-300'
+                                            }`}
+                                        />
+                                        {errors.applicant_name_bn && (
+                                            <p className="text-red-500 text-xs mt-1 font-medium">{errors.applicant_name_bn}</p>
+                                        )}
+                                    </div>
+
+                                    <div>
+                                        <label className="block text-xs font-bold text-slate-700 mb-1.5">
+                                            আবেদনকারীর নাম (English)
+                                        </label>
+                                        <input
+                                            type="text"
+                                            value={data.applicant_name_en}
+                                            onChange={(e) => setData('applicant_name_en', e.target.value)}
+                                            className="w-full px-3.5 py-2.5 bg-slate-50/70 border border-slate-300 rounded-xl text-xs sm:text-sm font-medium focus:bg-white focus:outline-none focus:ring-2 focus:ring-purple-500/20 focus:border-purple-600 transition"
+                                        />
+                                    </div>
+
+                                    <div data-field="nid_number">
+                                        <label className="block text-xs font-bold text-slate-700 mb-1.5">
+                                            জাতীয় পরিচয়পত্র নং (NID) <span className="text-red-500">*</span>
+                                        </label>
+                                        <input
+                                            type="text"
+                                            value={data.nid_number}
+                                            onChange={(e) => {
+                                                setData('nid_number', e.target.value);
+                                                if (localErrors.nid_number) {
+                                                    setLocalErrors(prev => {
+                                                        const next = { ...prev };
+                                                        delete next.nid_number;
+                                                        return next;
+                                                    });
+                                                }
+                                            }}
+                                            className={`w-full px-3.5 py-2.5 bg-slate-50/70 border rounded-xl text-xs sm:text-sm font-medium focus:bg-white focus:outline-none focus:ring-2 focus:ring-purple-500/20 focus:border-purple-600 transition font-mono ${
+                                                errors.nid_number ? 'border-red-500 bg-red-50/30' : 'border-slate-300'
+                                            }`}
+                                        />
+                                        {errors.nid_number && (
+                                            <p className="text-red-500 text-xs mt-1 font-medium">{errors.nid_number}</p>
+                                        )}
+                                    </div>
+
+                                    <div data-field="father_husband_guardian">
+                                        <label className="block text-xs font-bold text-slate-700 mb-1.5">
+                                            পিতা/স্বামী/অভিভাবক <span className="text-red-500">*</span>
+                                        </label>
+                                        <input
+                                            type="text"
+                                            value={data.father_husband_guardian}
+                                            onChange={(e) => {
+                                                setData('father_husband_guardian', e.target.value);
+                                                if (localErrors.father_husband_guardian) {
+                                                    setLocalErrors(prev => {
+                                                        const next = { ...prev };
+                                                        delete next.father_husband_guardian;
+                                                        return next;
+                                                    });
+                                                }
+                                            }}
+                                            className={`w-full px-3.5 py-2.5 bg-slate-50/70 border rounded-xl text-xs sm:text-sm font-medium focus:bg-white focus:outline-none focus:ring-2 focus:ring-purple-500/20 focus:border-purple-600 transition ${
+                                                errors.father_husband_guardian ? 'border-red-500 bg-red-50/30' : 'border-slate-300'
+                                            }`}
+                                        />
+                                        {errors.father_husband_guardian && (
+                                            <p className="text-red-500 text-xs mt-1 font-medium">{errors.father_husband_guardian}</p>
                                         )}
                                     </div>
                                 </div>
 
-                                {/* Applicant Details */}
-                                <div className="border-b pb-4">
-                                    <h3 className="font-bold text-sm mb-4">আবেদনকারীর তথ্য:</h3>
-                                    <div className="space-y-4">
-                                        <div className="grid grid-cols-2 gap-4">
-                                            <div data-field="applicant_name_bn">
-                                                <Label>Name (Bangla) * (নাম)</Label>
-                                                <Input
-                                                    value={data.applicant_name_bn}
-                                                    onChange={(e) => {
-                                                        setData('applicant_name_bn', e.target.value);
-                                                        if (localErrors.applicant_name_bn) {
-                                                            setLocalErrors(prev => {
-                                                                const newErrors = { ...prev };
-                                                                delete newErrors.applicant_name_bn;
-                                                                return newErrors;
-                                                            });
-                                                        }
-                                                    }}
-                                                    className={errors.applicant_name_bn ? 'border-red-500' : ''}
+                                {/* Address Section */}
+                                <div className="space-y-4 pt-2">
+                                    {/* Current Address */}
+                                    <div className="p-4 rounded-2xl bg-slate-50/60 border border-slate-200/80 space-y-3">
+                                        <h4 className="text-xs font-bold text-slate-800 flex items-center gap-1.5">
+                                            <MapPin className="w-3.5 h-3.5 text-purple-600" />
+                                            <span>বর্তমান ঠিকানা</span>
+                                        </h4>
+                                        <div className="grid grid-cols-1 sm:grid-cols-4 gap-2.5">
+                                            <div className="sm:col-span-2">
+                                                <label className="block text-[11px] font-semibold text-slate-500 mb-1">গ্রাম/রাস্তা</label>
+                                                <input
+                                                    type="text"
+                                                    value={data.current_address_village}
+                                                    onChange={(e) => setData('current_address_village', e.target.value)}
+                                                    className="w-full px-3 py-2 bg-white border border-slate-200 rounded-xl text-xs font-medium focus:border-purple-600 focus:outline-none"
                                                 />
-                                                {errors.applicant_name_bn && (
-                                                    <p className="text-red-500 text-xs mt-1">{errors.applicant_name_bn}</p>
-                                                )}
                                             </div>
                                             <div>
-                                                <Label>Name (English)</Label>
-                                                <Input value={data.applicant_name_en} onChange={(e) => setData('applicant_name_en', e.target.value)} />
-                                            </div>
-                                        </div>
-                                        <div className="grid grid-cols-2 gap-4">
-                                            <div data-field="nid_number">
-                                                <Label>NID No * (জাতীয় পরিচয়পত্র নং)</Label>
-                                                <Input
-                                                    value={data.nid_number}
-                                                    onChange={(e) => {
-                                                        setData('nid_number', e.target.value);
-                                                        if (localErrors.nid_number) {
-                                                            setLocalErrors(prev => {
-                                                                const newErrors = { ...prev };
-                                                                delete newErrors.nid_number;
-                                                                return newErrors;
-                                                            });
-                                                        }
-                                                    }}
-                                                    className={errors.nid_number ? 'border-red-500' : ''}
+                                                <label className="block text-[11px] font-semibold text-slate-500 mb-1">ডাকঘর</label>
+                                                <input
+                                                    type="text"
+                                                    value={data.current_address_post_office}
+                                                    onChange={(e) => setData('current_address_post_office', e.target.value)}
+                                                    className="w-full px-3 py-2 bg-white border border-slate-200 rounded-xl text-xs font-medium focus:border-purple-600 focus:outline-none"
                                                 />
-                                                {errors.nid_number && (
-                                                    <p className="text-red-500 text-xs mt-1">{errors.nid_number}</p>
-                                                )}
                                             </div>
-                                            <div data-field="father_husband_guardian">
-                                                <Label>Father/Spouse/Guardian * (পিতা/স্বামী/অভিভাবক)</Label>
-                                                <Input
-                                                    value={data.father_husband_guardian}
-                                                    onChange={(e) => {
-                                                        setData('father_husband_guardian', e.target.value);
-                                                        if (localErrors.father_husband_guardian) {
-                                                            setLocalErrors(prev => {
-                                                                const newErrors = { ...prev };
-                                                                delete newErrors.father_husband_guardian;
-                                                                return newErrors;
-                                                            });
-                                                        }
-                                                    }}
-                                                    className={errors.father_husband_guardian ? 'border-red-500' : ''}
+                                            <div>
+                                                <label className="block text-[11px] font-semibold text-slate-500 mb-1">উপজেলা</label>
+                                                <input
+                                                    type="text"
+                                                    value={data.current_address_upazila}
+                                                    onChange={(e) => setData('current_address_upazila', e.target.value)}
+                                                    className="w-full px-3 py-2 bg-white border border-slate-200 rounded-xl text-xs font-medium focus:border-purple-600 focus:outline-none"
                                                 />
-                                                {errors.father_husband_guardian && (
-                                                    <p className="text-red-500 text-xs mt-1">{errors.father_husband_guardian}</p>
-                                                )}
+                                            </div>
+                                            <div className="sm:col-span-2">
+                                                <label className="block text-[11px] font-semibold text-slate-500 mb-1">জেলা</label>
+                                                <input
+                                                    type="text"
+                                                    value={data.current_address_district}
+                                                    onChange={(e) => setData('current_address_district', e.target.value)}
+                                                    className="w-full px-3 py-2 bg-white border border-slate-200 rounded-xl text-xs font-medium focus:border-purple-600 focus:outline-none"
+                                                />
                                             </div>
                                         </div>
-                                        <div>
-                                            <Label>Current Address - Village (বর্তমান ঠিকানা - গ্রাম)</Label>
-                                            <Input value={data.current_address_village} onChange={(e) => setData('current_address_village', e.target.value)} />
+                                    </div>
+
+                                    {/* Permanent Address */}
+                                    <div className="p-4 rounded-2xl bg-slate-50/60 border border-slate-200/80 space-y-3">
+                                        <div className="flex items-center justify-between">
+                                            <h4 className="text-xs font-bold text-slate-800 flex items-center gap-1.5">
+                                                <MapPin className="w-3.5 h-3.5 text-indigo-600" />
+                                                <span>স্থায়ী ঠিকানা</span>
+                                            </h4>
+                                            <button
+                                                type="button"
+                                                onClick={copyCurrentToPermanentAddress}
+                                                className="inline-flex items-center gap-1 px-2.5 py-1 text-[11px] font-bold text-purple-700 bg-purple-50 hover:bg-purple-100 border border-purple-200 rounded-lg transition"
+                                                title="বর্তমান ঠিকানার তথ্য এখানে বসান"
+                                            >
+                                                <Copy className="w-3 h-3" />
+                                                <span>বর্তমান ঠিকানার অনুরূপ</span>
+                                            </button>
                                         </div>
-                                        <div className="grid grid-cols-3 gap-4">
-                                            <div>
-                                                <Label>Post Office (ডাকঘর)</Label>
-                                                <Input value={data.current_address_post_office} onChange={(e) => setData('current_address_post_office', e.target.value)} />
+
+                                        <div className="grid grid-cols-1 sm:grid-cols-4 gap-2.5">
+                                            <div className="sm:col-span-2">
+                                                <label className="block text-[11px] font-semibold text-slate-500 mb-1">গ্রাম/রাস্তা</label>
+                                                <input
+                                                    type="text"
+                                                    value={data.permanent_address_village}
+                                                    onChange={(e) => setData('permanent_address_village', e.target.value)}
+                                                    className="w-full px-3 py-2 bg-white border border-slate-200 rounded-xl text-xs font-medium focus:border-purple-600 focus:outline-none"
+                                                />
                                             </div>
                                             <div>
-                                                <Label>Upazila (উপজেলা)</Label>
-                                                <Input value={data.current_address_upazila} onChange={(e) => setData('current_address_upazila', e.target.value)} />
+                                                <label className="block text-[11px] font-semibold text-slate-500 mb-1">ডাকঘর</label>
+                                                <input
+                                                    type="text"
+                                                    value={data.permanent_address_post_office}
+                                                    onChange={(e) => setData('permanent_address_post_office', e.target.value)}
+                                                    className="w-full px-3 py-2 bg-white border border-slate-200 rounded-xl text-xs font-medium focus:border-purple-600 focus:outline-none"
+                                                />
                                             </div>
                                             <div>
-                                                <Label>District (জেলা)</Label>
-                                                <Input value={data.current_address_district} onChange={(e) => setData('current_address_district', e.target.value)} />
+                                                <label className="block text-[11px] font-semibold text-slate-500 mb-1">উপজেলা</label>
+                                                <input
+                                                    type="text"
+                                                    value={data.permanent_address_upazila}
+                                                    onChange={(e) => setData('permanent_address_upazila', e.target.value)}
+                                                    className="w-full px-3 py-2 bg-white border border-slate-200 rounded-xl text-xs font-medium focus:border-purple-600 focus:outline-none"
+                                                />
                                             </div>
-                                        </div>
-                                        <div>
-                                            <Label>Permanent Address - Village (স্থায়ী ঠিকানা - গ্রাম)</Label>
-                                            <Input value={data.permanent_address_village} onChange={(e) => setData('permanent_address_village', e.target.value)} />
-                                        </div>
-                                        <div className="grid grid-cols-3 gap-4">
-                                            <div>
-                                                <Label>Post Office (ডাকঘর)</Label>
-                                                <Input value={data.permanent_address_post_office} onChange={(e) => setData('permanent_address_post_office', e.target.value)} />
-                                            </div>
-                                            <div>
-                                                <Label>Upazila (উপজেলা)</Label>
-                                                <Input value={data.permanent_address_upazila} onChange={(e) => setData('permanent_address_upazila', e.target.value)} />
-                                            </div>
-                                            <div>
-                                                <Label>District (জেলা)</Label>
-                                                <Input value={data.permanent_address_district} onChange={(e) => setData('permanent_address_district', e.target.value)} />
-                                            </div>
-                                        </div>
-                                        <div className="grid grid-cols-2 gap-4">
-                                            <div>
-                                                <Label>Profession (পেশা)</Label>
-                                                <Input value={data.profession} onChange={(e) => setData('profession', e.target.value)} />
-                                            </div>
-                                            <div>
-                                                <Label>Source of Income (আয়ের উৎস)</Label>
-                                                <Input value={data.source_of_income} onChange={(e) => setData('source_of_income', e.target.value)} />
+                                            <div className="sm:col-span-2">
+                                                <label className="block text-[11px] font-semibold text-slate-500 mb-1">জেলা</label>
+                                                <input
+                                                    type="text"
+                                                    value={data.permanent_address_district}
+                                                    onChange={(e) => setData('permanent_address_district', e.target.value)}
+                                                    className="w-full px-3 py-2 bg-white border border-slate-200 rounded-xl text-xs font-medium focus:border-purple-600 focus:outline-none"
+                                                />
                                             </div>
                                         </div>
                                     </div>
                                 </div>
 
-                                {/* Nominees – default one, add more via button */}
-                                <div className="border-b pb-4">
-                                    <div className="flex items-center justify-between mb-4">
-                                        <h3 className="font-bold text-sm">Nominee(s) Info (নমিনি তথ্য)</h3>
-                                        <Button
-                                            type="button"
-                                            variant="outline"
-                                            size="sm"
-                                            onClick={() => setData('nominees', [...data.nominees, { name: '', relation: '', signature: null, percentage: 0, photo: null, nid_birth_registration: '' }])}
-                                        >
-                                            <Plus className="h-4 w-4 mr-1" />
-                                            Add Nominee
-                                        </Button>
+                                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-1">
+                                    <div>
+                                        <label className="block text-xs font-bold text-slate-700 mb-1.5">
+                                            পেশা
+                                        </label>
+                                        <input
+                                            type="text"
+                                            value={data.profession}
+                                            onChange={(e) => setData('profession', e.target.value)}
+                                            className="w-full px-3.5 py-2.5 bg-slate-50/70 border border-slate-300 rounded-xl text-xs sm:text-sm font-medium focus:bg-white focus:outline-none focus:ring-2 focus:ring-purple-500/20 focus:border-purple-600 transition"
+                                        />
                                     </div>
+                                    <div>
+                                        <label className="block text-xs font-bold text-slate-700 mb-1.5">
+                                            আয়ের উৎস
+                                        </label>
+                                        <input
+                                            type="text"
+                                            value={data.source_of_income}
+                                            onChange={(e) => setData('source_of_income', e.target.value)}
+                                            className="w-full px-3.5 py-2.5 bg-slate-50/70 border border-slate-300 rounded-xl text-xs sm:text-sm font-medium focus:bg-white focus:outline-none focus:ring-2 focus:ring-purple-500/20 focus:border-purple-600 transition"
+                                        />
+                                    </div>
+                                </div>
+                            </div>
+
+                            {/* SECTION 3: NOMINEES */}
+                            <div className="bg-white rounded-3xl border border-slate-200/90 shadow-sm p-5 sm:p-6 space-y-5">
+                                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-100 pb-3">
+                                    <div className="flex items-center gap-2.5">
+                                        <div className="w-8 h-8 rounded-xl bg-purple-50 text-purple-700 flex items-center justify-center font-black text-xs border border-purple-100">
+                                            ৩
+                                        </div>
+                                        <div>
+                                            <h3 className="text-sm font-bold text-slate-900">
+                                                নমিনি সংক্রান্ত তথ্যাবলী
+                                            </h3>
+                                            <p className="text-[11px] text-slate-400">
+                                                মৃত্যুর পর সঞ্চয় উত্তোলনের অধিকারী ব্যক্তি(গণ)
+                                            </p>
+                                        </div>
+                                    </div>
+
+                                    {/* Share percentage tracker pill */}
+                                    <div className="flex items-center gap-2">
+                                        <span className={`px-2.5 py-1 rounded-full text-xs font-bold border ${
+                                            totalNomineePercentage === 100
+                                                ? 'bg-emerald-50 text-emerald-800 border-emerald-200'
+                                                : totalNomineePercentage > 100
+                                                    ? 'bg-red-50 text-red-800 border-red-200'
+                                                    : 'bg-amber-50 text-amber-800 border-amber-200'
+                                        }`}>
+                                            মোট অংশ: {totalNomineePercentage}%
+                                            {totalNomineePercentage === 100 ? ' (সম্পূর্ণ)' : ` (বাকি: ${Math.max(100 - totalNomineePercentage, 0)}%)`}
+                                        </span>
+
+                                        <button
+                                            type="button"
+                                            onClick={() => setData('nominees', [...data.nominees, { name: '', relation: '', percentage: 0, photo: null, nid_birth_registration: '' }])}
+                                            className="inline-flex items-center gap-1 px-3 py-1.5 text-xs font-bold text-purple-700 bg-purple-50 hover:bg-purple-100 border border-purple-200 rounded-xl transition shadow-2xs"
+                                        >
+                                            <Plus className="w-3.5 h-3.5" />
+                                            <span>নমিনি যোগ</span>
+                                        </button>
+                                    </div>
+                                </div>
+
+                                <div className="space-y-4">
                                     {data.nominees.map((nominee, idx) => (
-                                        <div key={idx} className="mb-4 p-3 border rounded">
-                                            <div className="flex items-center justify-between mb-2">
-                                                <h4 className="font-semibold">নমিনি {idx + 1}:</h4>
+                                        <div key={idx} className="p-4 rounded-2xl bg-slate-50/50 border border-slate-200 space-y-3 relative group">
+                                            <div className="flex items-center justify-between">
+                                                <div className="flex items-center gap-2">
+                                                    <span className="w-5 h-5 rounded-full bg-slate-200 text-slate-700 text-[11px] font-bold inline-flex items-center justify-center">
+                                                        {idx + 1}
+                                                    </span>
+                                                    <h4 className="text-xs font-bold text-slate-800">
+                                                        {idx === 0 ? 'প্রধান নমিনি' : `সহ-নমিনি (${idx + 1})`}
+                                                    </h4>
+                                                </div>
+
                                                 {data.nominees.length > 1 && (
-                                                    <Button
+                                                    <button
                                                         type="button"
-                                                        variant="ghost"
-                                                        size="sm"
-                                                        className="text-red-600 hover:text-red-700"
                                                         onClick={() => setData('nominees', data.nominees.filter((_, i) => i !== idx))}
+                                                        className="inline-flex items-center gap-1 text-[11px] font-bold text-red-600 hover:text-red-800 p-1 rounded-lg hover:bg-red-50 transition"
                                                     >
-                                                        <X className="h-4 w-4" /> Remove
-                                                    </Button>
+                                                        <Trash2 className="w-3.5 h-3.5" />
+                                                        <span>মুছুন</span>
+                                                    </button>
                                                 )}
                                             </div>
-                                            <div className="grid grid-cols-2 gap-4">
+
+                                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                                                 <div>
-                                                    <Label>Name</Label>
-                                                    <Input value={nominee.name} onChange={(e) => {
-                                                        const updated = [...data.nominees];
-                                                        updated[idx].name = e.target.value;
-                                                        setData('nominees', updated);
-                                                    }} />
+                                                    <label className="block text-[11px] font-bold text-slate-600 mb-1">নাম</label>
+                                                    <input
+                                                        type="text"
+                                                        value={nominee.name}
+                                                        placeholder="নমিনির নাম লিখুন"
+                                                        onChange={(e) => {
+                                                            const updated = [...data.nominees];
+                                                            updated[idx].name = e.target.value;
+                                                            setData('nominees', updated);
+                                                        }}
+                                                        className="w-full px-3 py-2 bg-white border border-slate-200 rounded-xl text-xs font-medium focus:border-purple-600 focus:outline-none"
+                                                    />
                                                 </div>
+
                                                 <div data-field={`nominee_${idx}_relation`}>
-                                                    <Label>Relation {nominee.name && nominee.name.trim() !== '' && '*'}</Label>
-                                                    <Input 
-                                                        value={nominee.relation} 
+                                                    <label className="block text-[11px] font-bold text-slate-600 mb-1">
+                                                        সম্পর্ক {nominee.name && '*'}
+                                                    </label>
+                                                    <input
+                                                        type="text"
+                                                        value={nominee.relation}
+                                                        placeholder="যেমন: স্বামী, স্ত্রী, পিতা, মাতা"
                                                         onChange={(e) => {
                                                             const updated = [...data.nominees];
                                                             updated[idx].relation = e.target.value;
                                                             setData('nominees', updated);
                                                             if (localErrors[`nominee_${idx}_relation`]) {
                                                                 setLocalErrors(prev => {
-                                                                    const newErrors = { ...prev };
-                                                                    delete newErrors[`nominee_${idx}_relation`];
-                                                                    return newErrors;
+                                                                    const next = { ...prev };
+                                                                    delete next[`nominee_${idx}_relation`];
+                                                                    return next;
                                                                 });
                                                             }
                                                         }}
-                                                        className={errors[`nominee_${idx}_relation`] ? 'border-red-500' : ''}
+                                                        className={`w-full px-3 py-2 bg-white border rounded-xl text-xs font-medium focus:border-purple-600 focus:outline-none ${
+                                                            errors[`nominee_${idx}_relation`] ? 'border-red-500' : 'border-slate-200'
+                                                        }`}
                                                     />
                                                     {errors[`nominee_${idx}_relation`] && (
-                                                        <p className="text-red-500 text-xs mt-1">{errors[`nominee_${idx}_relation`]}</p>
+                                                        <p className="text-red-500 text-[10px] mt-1 font-medium">{errors[`nominee_${idx}_relation`]}</p>
                                                     )}
                                                 </div>
+
                                                 <div>
-                                                    <Label>NID / Birth Registration No</Label>
-                                                    <Input value={nominee.nid_birth_registration} onChange={(e) => {
-                                                        const updated = [...data.nominees];
-                                                        updated[idx].nid_birth_registration = e.target.value;
-                                                        setData('nominees', updated);
-                                                    }} />
-                                                </div>
-                                                <div data-field={`nominee_${idx}_percentage`}>
-                                                    <Label>Share (%) {nominee.name && nominee.name.trim() !== '' && '*'}</Label>
-                                                    <Input 
-                                                        type="number" 
-                                                        value={nominee.percentage} 
+                                                    <label className="block text-[11px] font-bold text-slate-600 mb-1">NID / জন্ম নিবন্ধন নং</label>
+                                                    <input
+                                                        type="text"
+                                                        value={nominee.nid_birth_registration}
+                                                        placeholder="NID বা জন্ম নিবন্ধন নম্বর"
                                                         onChange={(e) => {
                                                             const updated = [...data.nominees];
-                                                            updated[idx].percentage = Number(e.target.value);
+                                                            updated[idx].nid_birth_registration = e.target.value;
                                                             setData('nominees', updated);
-                                                            if (localErrors[`nominee_${idx}_percentage`]) {
-                                                                setLocalErrors(prev => {
-                                                                    const newErrors = { ...prev };
-                                                                    delete newErrors[`nominee_${idx}_percentage`];
-                                                                    return newErrors;
-                                                                });
-                                                            }
                                                         }}
-                                                        className={errors[`nominee_${idx}_percentage`] ? 'border-red-500' : ''}
+                                                        className="w-full px-3 py-2 bg-white border border-slate-200 rounded-xl text-xs font-medium focus:border-purple-600 focus:outline-none font-mono"
                                                     />
+                                                </div>
+
+                                                <div data-field={`nominee_${idx}_percentage`}>
+                                                    <label className="block text-[11px] font-bold text-slate-600 mb-1">
+                                                        প্রাপ্য অংশ (%) {nominee.name && '*'}
+                                                    </label>
+                                                    <div className="relative">
+                                                        <input
+                                                            type="number"
+                                                            min="0"
+                                                            max="100"
+                                                            placeholder="যেমন: 100"
+                                                            value={nominee.percentage || ''}
+                                                            onChange={(e) => {
+                                                                const updated = [...data.nominees];
+                                                                updated[idx].percentage = Number(e.target.value);
+                                                                setData('nominees', updated);
+                                                                if (localErrors[`nominee_${idx}_percentage`]) {
+                                                                    setLocalErrors(prev => {
+                                                                        const next = { ...prev };
+                                                                        delete next[`nominee_${idx}_percentage`];
+                                                                        return next;
+                                                                    });
+                                                                }
+                                                            }}
+                                                            className={`w-full pr-8 pl-3 py-2 bg-white border rounded-xl text-xs font-bold focus:border-purple-600 focus:outline-none ${
+                                                                errors[`nominee_${idx}_percentage`] ? 'border-red-500' : 'border-slate-200'
+                                                            }`}
+                                                        />
+                                                        <span className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 font-bold text-xs">%</span>
+                                                    </div>
                                                     {errors[`nominee_${idx}_percentage`] && (
-                                                        <p className="text-red-500 text-xs mt-1">{errors[`nominee_${idx}_percentage`]}</p>
+                                                        <p className="text-red-500 text-[10px] mt-1 font-medium">{errors[`nominee_${idx}_percentage`]}</p>
                                                     )}
                                                 </div>
-                                                <div>
-                                                    <Label>Photo</Label>
-                                                    <input type="file" accept="image/*" onChange={(e) => handleNomineeImageUpload(idx, 'photo', e.target.files?.[0] || null)} className="mb-2" />
-                                                    {imagePreview[`nominee_${idx}_photo`] && (
-                                                        <img src={imagePreview[`nominee_${idx}_photo`]} alt={`Nominee ${idx + 1}`} className="w-16 h-20 object-cover border" />
-                                                    )}
-                                                </div>
-                                                <div>
-                                                    <Label>Signature</Label>
-                                                    <input type="file" accept="image/*" onChange={(e) => handleNomineeImageUpload(idx, 'signature', e.target.files?.[0] || null)} className="mb-2" />
-                                                    {imagePreview[`nominee_${idx}_signature`] && (
-                                                        <img src={imagePreview[`nominee_${idx}_signature`]} alt={`Signature ${idx + 1}`} className="w-20 h-10 object-contain border" />
-                                                    )}
+
+                                                <div className="sm:col-span-2 flex items-center gap-3 pt-1">
+                                                    <div className="w-12 h-14 rounded-xl border border-dashed border-slate-300 bg-white overflow-hidden flex items-center justify-center shrink-0">
+                                                        {imagePreview[`nominee_${idx}_photo`] || nominee.photo ? (
+                                                            <img
+                                                                src={imagePreview[`nominee_${idx}_photo`] || nominee.photo || ''}
+                                                                alt={`নমিনি ${idx + 1}`}
+                                                                className="w-full h-full object-cover"
+                                                            />
+                                                        ) : (
+                                                            <User className="w-5 h-5 text-slate-300" />
+                                                        )}
+                                                    </div>
+                                                    <div className="space-y-1">
+                                                        <label className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg bg-white border border-slate-200 hover:bg-slate-50 text-slate-700 text-[11px] font-bold cursor-pointer transition shadow-2xs">
+                                                            <Camera className="w-3 h-3 text-slate-500" />
+                                                            <span>স্ট্যাম্প ছবি আপলোড</span>
+                                                            <input
+                                                                type="file"
+                                                                accept="image/*"
+                                                                onChange={(e) => handleNomineePhotoUpload(idx, e.target.files?.[0] || null)}
+                                                                className="hidden"
+                                                            />
+                                                        </label>
+                                                        <p className="text-[10px] text-slate-400">ছোট স্ট্যাম্প সাইজ ছবি</p>
+                                                    </div>
                                                 </div>
                                             </div>
                                         </div>
                                     ))}
+                                </div>
+
+                                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-2">
                                     <div>
-                                        <Label>Nominee(s) NID / Birth Registration No</Label>
-                                        <Input value={data.nominee_nid_birth_registration} onChange={(e) => setData('nominee_nid_birth_registration', e.target.value)} />
+                                        <label className="block text-xs font-bold text-slate-700 mb-1.5">
+                                            নমিনির সম্মিলিত NID / জন্ম নিবন্ধন
+                                        </label>
+                                        <input
+                                            type="text"
+                                            value={data.nominee_nid_birth_registration}
+                                            onChange={(e) => setData('nominee_nid_birth_registration', e.target.value)}
+                                            className="w-full px-3.5 py-2.5 bg-slate-50/70 border border-slate-300 rounded-xl text-xs sm:text-sm font-medium focus:bg-white focus:outline-none focus:ring-2 focus:ring-purple-500/20 focus:border-purple-600 transition"
+                                        />
                                     </div>
-                                    <div className="mt-4">
-                                        <Label>Monthly Deposit Submission Date</Label>
-                                        <Input type="date" value={data.monthly_deposit_submission_date} onChange={(e) => setData('monthly_deposit_submission_date', e.target.value)} />
+                                    <div>
+                                        <label className="block text-xs font-bold text-slate-700 mb-1.5">
+                                            মাসিক সঞ্চয় জমা দেওয়ার তারিখ
+                                        </label>
+                                        <input
+                                            type="date"
+                                            value={data.monthly_deposit_submission_date}
+                                            onChange={(e) => setData('monthly_deposit_submission_date', e.target.value)}
+                                            className="w-full px-3.5 py-2.5 bg-slate-50/70 border border-slate-300 rounded-xl text-xs sm:text-sm font-medium focus:bg-white focus:outline-none focus:ring-2 focus:ring-purple-500/20 focus:border-purple-600 transition"
+                                        />
                                     </div>
                                 </div>
+                            </div>
 
-                                {/* Signatures */}
-                                <div>
-                                    <h3 className="font-bold text-sm mb-4">Signatures (স্বাক্ষর)</h3>
-                                    <div className="space-y-4">
-                                        <div>
-                                            <Label>Applicant Signature</Label>
-                                            <input type="file" accept="image/*" onChange={(e) => handleImageUpload('applicant_signature', e.target.files?.[0] || null)} className="mb-2" />
-                                            {imagePreview.applicant_signature && (
-                                                <img src={imagePreview.applicant_signature} alt="Applicant Signature" className="w-20 h-10 object-contain border" />
-                                            )}
-                                        </div>
-                                        <div className="grid grid-cols-2 gap-4">
-                                            <div>
-                                                <Label>Officer Signature</Label>
-                                                <input type="file" accept="image/*" onChange={(e) => handleImageUpload('officer_signature', e.target.files?.[0] || null)} className="mb-2" />
-                                                {imagePreview.officer_signature && (
-                                                    <img src={imagePreview.officer_signature} alt="Officer Signature" className="w-20 h-10 object-contain border" />
-                                                )}
-                                                <Input placeholder="PIN No" value={data.officer_pin} onChange={(e) => setData('officer_pin', e.target.value)} className="mt-2" />
-                                            </div>
-                                            <div>
-                                                <Label>Accountant Signature</Label>
-                                                <input type="file" accept="image/*" onChange={(e) => handleImageUpload('accountant_signature', e.target.files?.[0] || null)} className="mb-2" />
-                                                {imagePreview.accountant_signature && (
-                                                    <img src={imagePreview.accountant_signature} alt="Accountant Signature" className="w-20 h-10 object-contain border" />
-                                                )}
-                                                <Input placeholder="PIN No" value={data.accountant_pin} onChange={(e) => setData('accountant_pin', e.target.value)} className="mt-2" />
-                                            </div>
+                            {/* SECTION 4: OFFICER PINS */}
+                            <div className="bg-white rounded-3xl border border-slate-200/90 shadow-sm p-5 sm:p-6 space-y-4">
+                                <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+                                    <div className="flex items-center gap-2.5">
+                                        <div className="w-8 h-8 rounded-xl bg-purple-50 text-purple-700 flex items-center justify-center font-black text-xs border border-purple-100">
+                                            ৪
                                         </div>
                                         <div>
-                                            <Label>Branch Manager Signature</Label>
-                                            <input type="file" accept="image/*" onChange={(e) => handleImageUpload('branch_manager_signature', e.target.files?.[0] || null)} className="mb-2" />
-                                            {imagePreview.branch_manager_signature && (
-                                                <img src={imagePreview.branch_manager_signature} alt="Branch Manager Signature" className="w-20 h-10 object-contain border" />
-                                            )}
-                                            <Input placeholder="PIN No" value={data.branch_manager_pin} onChange={(e) => setData('branch_manager_pin', e.target.value)} className="mt-2" />
+                                            <h3 className="text-sm font-bold text-slate-900">
+                                                কর্মকর্তাদের অনুমোদন পিন (PIN)
+                                            </h3>
+                                            <p className="text-[11px] text-slate-400">
+                                                মুদ্রিত ফর্মে হাতে স্বাক্ষর করা হবে; এখানে শুধু PIN প্রদান করুন
+                                            </p>
                                         </div>
                                     </div>
                                 </div>
 
-                                <div className="flex gap-2">
-                                    <Button type="submit" disabled={processing}>
-                                        <Save className="h-4 w-4 mr-2" />
-                                        Save
-                                    </Button>
+                                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3.5">
+                                    <div className="p-3.5 rounded-2xl bg-slate-50/60 border border-slate-200">
+                                        <span className="text-[11px] font-bold text-slate-600 block mb-1">অফিসার PIN</span>
+                                        <input
+                                            type="text"
+                                            placeholder="PIN No"
+                                            value={data.officer_pin}
+                                            onChange={(e) => setData('officer_pin', e.target.value)}
+                                            className="w-full px-3 py-2 bg-white border border-slate-200 rounded-xl text-xs font-mono font-bold focus:border-purple-600 focus:outline-none"
+                                        />
+                                    </div>
+                                    <div className="p-3.5 rounded-2xl bg-slate-50/60 border border-slate-200">
+                                        <span className="text-[11px] font-bold text-slate-600 block mb-1">হিসাবরক্ষক PIN</span>
+                                        <input
+                                            type="text"
+                                            placeholder="PIN No"
+                                            value={data.accountant_pin}
+                                            onChange={(e) => setData('accountant_pin', e.target.value)}
+                                            className="w-full px-3 py-2 bg-white border border-slate-200 rounded-xl text-xs font-mono font-bold focus:border-purple-600 focus:outline-none"
+                                        />
+                                    </div>
+                                    <div className="p-3.5 rounded-2xl bg-slate-50/60 border border-slate-200">
+                                        <span className="text-[11px] font-bold text-slate-600 block mb-1">শাখা ব্যবস্থাপক PIN</span>
+                                        <input
+                                            type="text"
+                                            placeholder="PIN No"
+                                            value={data.branch_manager_pin}
+                                            onChange={(e) => setData('branch_manager_pin', e.target.value)}
+                                            className="w-full px-3 py-2 bg-white border border-slate-200 rounded-xl text-xs font-mono font-bold focus:border-purple-600 focus:outline-none"
+                                        />
+                                    </div>
                                 </div>
+                            </div>
+
+                            {/* BOTTOM SUBMIT BUTTON */}
+                            <div className="pt-2">
+                                <button
+                                    type="submit"
+                                    disabled={processing}
+                                    className="w-full inline-flex items-center justify-center gap-2 py-3.5 px-6 rounded-2xl text-sm font-bold bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-700 hover:to-indigo-700 text-white shadow-lg shadow-purple-600/25 transition active:scale-95 disabled:opacity-50"
+                                >
+                                    {processing ? (
+                                        <>
+                                            <Loader2 className="w-4 h-4 animate-spin" />
+                                            <span>আবেদনপত্র সংরক্ষণ হচ্ছে...</span>
+                                        </>
+                                    ) : (
+                                        <>
+                                            <Save className="w-4 h-4" />
+                                            <span>আবেদনপত্র সংরক্ষণ করুন</span>
+                                        </>
+                                    )}
+                                </button>
                             </div>
                         </div>
 
-                        {/* RIGHT SIDE: PREVIEW - visible on desktop; only this part prints */}
-                        <div className="lg:sticky lg:top-4 lg:h-fit print:block print-container savings-form-print-area">
-                            <div className="bg-white rounded-lg shadow-lg p-4 print:shadow-none print:p-2 print:rounded-none print:bg-white">
-                                <h3 className="text-sm font-bold mb-3 savings-form-no-print">Preview</h3>
+                        {/* ── RIGHT SIDE: LIVE PREVIEW (PRINT COMPLIANT) ─────────────── */}
+                        <div className={`lg:sticky lg:top-4 lg:h-fit print:block print-container savings-form-print-area ${
+                            showPreview ? 'block' : 'hidden lg:block'
+                        }`}>
+                            <div className="bg-white rounded-3xl shadow-sm border border-slate-200 p-4 sm:p-5 print:shadow-none print:p-0 print:border-none print:rounded-none">
+                                <div className="flex items-center justify-between mb-3 border-b border-slate-100 pb-2 savings-form-no-print">
+                                    <span className="text-xs font-bold text-slate-700 flex items-center gap-1.5">
+                                        <Eye className="w-3.5 h-3.5 text-purple-600" />
+                                        <span>লাইভ প্রিন্ট প্রিভিউ</span>
+                                    </span>
+                                    <span className="text-[10px] text-slate-400 font-medium">কাগজের ফর্ম অনুসারে প্রদর্শিত</span>
+                                </div>
                                 <SavingsApplicationPrintView data={withLiveMemberCode(data, memberAdmission)} />
                             </div>
                         </div>

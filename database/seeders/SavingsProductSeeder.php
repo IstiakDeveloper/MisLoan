@@ -2,8 +2,10 @@
 
 namespace Database\Seeders;
 
-use Illuminate\Database\Seeder;
+use App\Models\SavingsCategory;
 use App\Models\SavingsProduct;
+use App\Support\SavingsProductHierarchy;
+use Illuminate\Database\Seeder;
 
 class SavingsProductSeeder extends Seeder
 {
@@ -12,8 +14,20 @@ class SavingsProductSeeder extends Seeder
      */
     public function run(): void
     {
+        [$otherName, $otherNameBn] = SavingsProductHierarchy::defaultCategoryNames(SavingsProductHierarchy::OTHER_CATEGORY_CODE);
+        $otherCategory = SavingsCategory::query()->firstOrCreate(
+            ['category_code' => SavingsProductHierarchy::OTHER_CATEGORY_CODE],
+            [
+                'category_name' => $otherName,
+                'category_name_bn' => $otherNameBn,
+                'is_active' => true,
+                'display_order' => 99,
+            ]
+        );
+
         // 1. Monthly Savings
         SavingsProduct::create([
+            'savings_category_id' => $otherCategory->id,
             'product_name' => 'General Monthly Savings',
             'product_name_bn' => 'সাধারণ মাসিক সঞ্চয়',
             'product_code' => 'GMS-01',
@@ -40,6 +54,7 @@ class SavingsProductSeeder extends Seeder
 
         // 2. Fixed Deposit (Lump Sum)
         SavingsProduct::create([
+            'savings_category_id' => $otherCategory->id,
             'product_name' => 'Fixed Deposit Account',
             'product_name_bn' => 'স্থায়ী আমানত হিসাব',
             'product_code' => 'FD-01',
@@ -66,6 +81,7 @@ class SavingsProductSeeder extends Seeder
 
         // 3. Double Benefit Scheme
         SavingsProduct::create([
+            'savings_category_id' => $otherCategory->id,
             'product_name' => 'Double Benefit Savings',
             'product_name_bn' => 'দ্বিগুণ সুবিধা সঞ্চয়',
             'product_code' => 'DBS-01',
@@ -93,6 +109,7 @@ class SavingsProductSeeder extends Seeder
 
         // 4. Child Education Savings
         SavingsProduct::create([
+            'savings_category_id' => $otherCategory->id,
             'product_name' => 'Child Education Savings',
             'product_name_bn' => 'শিশু শিক্ষা সঞ্চয়',
             'product_code' => 'CES-01',
@@ -120,6 +137,7 @@ class SavingsProductSeeder extends Seeder
 
         // 5. Recurring Deposit
         SavingsProduct::create([
+            'savings_category_id' => $otherCategory->id,
             'product_name' => 'Recurring Deposit Scheme',
             'product_name_bn' => 'পুনরাবৃত্ত আমানত স্কিম',
             'product_code' => 'RDS-01',
@@ -146,6 +164,7 @@ class SavingsProductSeeder extends Seeder
 
         // 6. Women's Special Savings
         SavingsProduct::create([
+            'savings_category_id' => $otherCategory->id,
             'product_name' => 'Women\'s Empowerment Savings',
             'product_name_bn' => 'নারী ক্ষমতায়ন সঞ্চয়',
             'product_code' => 'WES-01',
@@ -171,4 +190,3 @@ class SavingsProductSeeder extends Seeder
         ]);
     }
 }
-

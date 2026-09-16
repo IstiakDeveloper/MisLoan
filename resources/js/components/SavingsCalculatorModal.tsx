@@ -80,7 +80,7 @@ const COMPLETED_TIERS = [
     { key: '7yr', minMonths: 84, rate: 10.0, name: '7-Year Tier (10.0%)', multiplier: 120.454 },
     { key: '5yr', minMonths: 60, rate: 9.0, name: '5-Year Tier (9.0%)', multiplier: 75.188 },
     { key: '3yr', minMonths: 36, rate: 7.0, name: '3-Year Tier (7.0%)', multiplier: 39.817 },
-    { key: 'voluntary', minMonths: 0, rate: 6.0, name: 'Voluntary/General Tier (6.0%)', multiplier: 0 },
+    { key: 'voluntary', minMonths: 1, rate: 6.0, name: 'General Tier (1 Mo+: 6.0%)', multiplier: 0 },
 ];
 
 export default function SavingsCalculatorModal({ open, onOpenChange, onSelectScheme }: Props) {
@@ -166,8 +166,25 @@ export default function SavingsCalculatorModal({ open, onOpenChange, onSelectSch
         if (end.getDate() < start.getDate()) {
             monthsElapsed -= 1;
         }
-        monthsElapsed = Math.max(1, monthsElapsed);
+        monthsElapsed = Math.max(0, monthsElapsed);
         const yearsElapsed = (monthsElapsed / 12).toFixed(1);
+
+        if (monthsElapsed < 1) {
+            return {
+                valid: true,
+                monthsElapsed: 0,
+                yearsElapsed: '0.0',
+                targetMonths: activeScheme.durationMonths,
+                isFullMaturity: false,
+                appliedTierName: '১ মাসের কম (মুনাফাবিহীন)',
+                appliedRate: 0,
+                totalDeposit: p,
+                profitEarned: 0,
+                maturityAmount: p,
+                isFixedInstallment: false,
+                penaltyNotice: 'হিসাব খোলার পর ১ মাস অতিক্রান্ত না হওয়ায় কোনো মুনাফা প্রযোজ্য নয় (ন্যূনতম ১ মাস হতে হবে)।',
+            };
+        }
 
         // 1. Millionaire Scheme Calculation
         if (activeScheme.isMillionaire) {

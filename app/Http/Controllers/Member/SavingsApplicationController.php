@@ -3,12 +3,16 @@
 namespace App\Http\Controllers\Member;
 
 use App\Http\Controllers\Controller;
+use App\Models\Area;
 use App\Models\Branch;
 use App\Models\MemberAdmission;
 use App\Models\SavingsApplication;
+use App\Models\SavingsCategory;
 use App\Models\SavingsProduct;
+use App\Models\Zone;
 use App\Services\ImageCompressionService;
 use App\Services\MemberCodeService;
+use App\Support\SavingsFormVisibility;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
@@ -109,23 +113,33 @@ class SavingsApplicationController extends Controller
         $dateFrom = $request->input('date_from', now()->toDateString());
         $dateTo = $request->input('date_to', now()->toDateString());
         $search = trim($request->input('search', ''));
+        $statusFilter = $request->input('status', 'all');
+        $perPage = (int) $request->input('per_page', 20);
+        $zoneId = $request->input('zone_id');
+        $areaId = $request->input('area_id');
+        $branchId = $request->input('branch_id');
 
-        // Exclude G. Savings (21.01) – not applied via this flow; other savings products only
-        $products = SavingsProduct::where('is_active', true)
-            ->where('product_code', '!=', '21.01')
+        $categories = SavingsCategory::query()
+            ->where('is_active', true)
+            ->with(['savingsProducts' => function ($query) {
+                $query->where('is_active', true)
+                    ->orderBy('display_order')
+                    ->orderBy('product_code');
+            }])
             ->orderBy('display_order')
-            ->orderBy('product_code')
-            ->get();
+            ->orderBy('category_code')
+            ->get(['id', 'category_name', 'category_name_bn', 'category_code', 'display_order']);
 
-        // Select only columns needed for list – exclude LONGTEXT (photos/signatures) to avoid sort buffer overflow
         $query = SavingsApplication::with([
-            'savingsProduct:id,product_name,product_name_bn,product_code,min_amount,max_amount,duration_months',
+            'savingsProduct:id,product_name,product_name_bn,product_code,min_amount,max_amount,duration_months,interest_rate',
             'memberAdmission:id,application_no,applicant_name_en,applicant_name_bn,nid_number,mobile_number',
+            'branch:id,name,code',
+            'samity:id,samity_name,samity_name_bn,samity_code',
         ])
             ->select([
-                'id', 'application_no', 'member_admission_id', 'savings_product_id', 'branch_id', 'samity_id',
-                'status', 'deposit_amount', 'monthly_installment', 'maturity_amount', 'maturity_date',
-                'created_at', 'submitted_at',
+                'id', 'application_no', 'account_no', 'member_no', 'member_admission_id', 'savings_product_id', 'branch_id', 'samity_id',
+                'status', 'deposit_amount', 'monthly_installment', 'monthly_savings_amount', 'duration_months', 'term_years',
+                'maturity_amount', 'maturity_date', 'start_date', 'account_opening_date', 'form_data', 'remarks', 'created_at', 'submitted_at', 'activated_at',
             ])
             ->when(! $user->has_all_access, function ($q) use ($user) {
                 $q->whereIn('branch_id', $user->getAccessibleBranches()->pluck('id'));
@@ -135,21 +149,146 @@ class SavingsApplicationController extends Controller
                     ->orWhere('submitted_by', $user->id);
             });
 
+        if ($branchId) {
+            $query->where('branch_id', $branchId);
+        } elseif ($areaId) {
+            $query->whereHas('branch', fn ($q) => $q->where('area_id', $areaId));
+        } elseif ($zoneId) {
+            $query->whereHas('branch.area', fn ($q) => $q->where('zone_id', $zoneId));
+        }
+
         if ($dateFrom) {
             $query->where('created_at', '>=', $dateFrom.' 00:00:00');
         }
         if ($dateTo) {
             $query->where('created_at', '<=', $dateTo.' 23:59:59');
         }
+        if ($statusFilter && $statusFilter !== 'all') {
+            if ($statusFilter === 'pending') {
+                $query->whereIn('status', ['draft', 'submitted', 'under_review']);
+            } else {
+                $query->where('status', $statusFilter);
+            }
+        }
         if ($search !== '') {
             MemberCodeService::applySavingsSearch($query, $search);
         }
 
-        $applications = $query->orderBy('created_at', 'desc')->paginate(20);
+        $applications = $query->orderBy('created_at', 'desc')->paginate($perPage)->withQueryString();
+
+        $applications->through(function ($app) {
+            $item = $app->toArray();
+            $item['savingsProduct'] = $app->savingsProduct;
+            $item['savings_product'] = $app->savingsProduct;
+            $item['memberAdmission'] = $app->memberAdmission;
+            $item['member_admission'] = $app->memberAdmission;
+            $item['branch'] = $app->branch;
+            $item['samity'] = $app->samity;
+
+            return $item;
+        });
+
+        // Base query for stats (without status filter and search, matching date & location filters)
+        $statsBaseQuery = SavingsApplication::query()
+            ->when(! $user->has_all_access, function ($q) use ($user) {
+                $q->whereIn('branch_id', $user->getAccessibleBranches()->pluck('id'));
+            })
+            ->where(function ($q) use ($user) {
+                $q->where('status', '!=', 'draft')
+                    ->orWhere('submitted_by', $user->id);
+            });
+
+        if ($branchId) {
+            $statsBaseQuery->where('branch_id', $branchId);
+        } elseif ($areaId) {
+            $statsBaseQuery->whereHas('branch', fn ($q) => $q->where('area_id', $areaId));
+        } elseif ($zoneId) {
+            $statsBaseQuery->whereHas('branch.area', fn ($q) => $q->where('zone_id', $zoneId));
+        }
+
+        if ($dateFrom) {
+            $statsBaseQuery->where('created_at', '>=', $dateFrom.' 00:00:00');
+        }
+        if ($dateTo) {
+            $statsBaseQuery->where('created_at', '<=', $dateTo.' 23:59:59');
+        }
+
+        $totalDeposit = (float) (clone $statsBaseQuery)->where('status', '!=', 'cancelled')->sum('deposit_amount');
+
+        // Calculate total withdrawn from closed applications
+        $closedApps = (clone $statsBaseQuery)->where('status', 'closed')->get(['id', 'form_data', 'deposit_amount', 'maturity_amount']);
+        $totalWithdrawn = 0.0;
+        foreach ($closedApps as $cApp) {
+            $wData = $cApp->form_data['withdrawal'] ?? null;
+            if ($wData && isset($wData['total_payout'])) {
+                $totalWithdrawn += (float) $wData['total_payout'];
+            } else {
+                $totalWithdrawn += (float) ($cApp->maturity_amount ?: $cApp->deposit_amount);
+            }
+        }
+        $netBalance = max(0, $totalDeposit - $totalWithdrawn);
+
+        $stats = [
+            'total' => (clone $statsBaseQuery)->count(),
+            'total_accounts' => (clone $statsBaseQuery)->count(),
+            'total_deposit' => $totalDeposit,
+            'total_withdrawn' => $totalWithdrawn,
+            'net_balance' => $netBalance,
+            'active' => (clone $statsBaseQuery)->where('status', 'active')->count(),
+            'matured' => (clone $statsBaseQuery)->where('status', 'matured')->count(),
+            'closed' => (clone $statsBaseQuery)->where('status', 'closed')->count(),
+            'pending' => (clone $statsBaseQuery)->whereIn('status', ['draft', 'submitted', 'under_review'])->count(),
+            'draft' => (clone $statsBaseQuery)->where('status', 'draft')->count(),
+            'submitted' => (clone $statsBaseQuery)->where('status', 'submitted')->count(),
+            'under_review' => (clone $statsBaseQuery)->where('status', 'under_review')->count(),
+            'approved' => (clone $statsBaseQuery)->where('status', 'approved')->count(),
+            'rejected' => (clone $statsBaseQuery)->where('status', 'rejected')->count(),
+        ];
+
+        // Branches, areas, zones for location filter dropdowns
+        $accessibleBranches = $user->getAccessibleBranches()->sortBy('code')->values();
+        if ($accessibleBranches->isEmpty()) {
+            $accessibleBranches = Branch::all()->sortBy('code')->values();
+        }
+
+        $branches = $accessibleBranches->map(fn ($b) => [
+            'id' => $b->id,
+            'name' => $b->name,
+            'code' => $b->code,
+            'area_id' => $b->area_id,
+        ])->values();
+
+        $areaIds = $branches->pluck('area_id')->filter()->unique();
+        $areas = Area::query()
+            ->whereIn('id', $areaIds)
+            ->orderBy('name')
+            ->get(['id', 'name', 'code', 'zone_id']);
+
+        $zoneIds = $areas->pluck('zone_id')->filter()->unique();
+        $zones = Zone::query()
+            ->whereIn('id', $zoneIds)
+            ->orderBy('name')
+            ->get(['id', 'name', 'code']);
 
         return Inertia::render('Member/SavingsApplications/Index', [
-            'products' => $products,
+            'categories' => $categories,
             'applications' => $applications,
+            'stats' => $stats,
+            'zones' => $zones,
+            'areas' => $areas,
+            'branches' => $branches,
+            'filters' => [
+                'zone_id' => $zoneId,
+                'area_id' => $areaId,
+                'branch_id' => $branchId,
+            ],
+            'selectedDate' => $dateFrom,
+            'dateFrom' => $dateFrom,
+            'dateTo' => $dateTo,
+            'statusFilter' => $statusFilter,
+            'searchFilter' => $search,
+            'perPage' => $perPage,
+            'savingsFormRules' => SavingsFormVisibility::frontendRules(),
         ]);
     }
 
@@ -195,10 +334,17 @@ class SavingsApplicationController extends Controller
     public function create(Request $request, $productId)
     {
         $user = $request->user();
-        $savingsProduct = SavingsProduct::findOrFail($productId);
-        if ($savingsProduct->product_code === '21.01') {
+        $savingsProduct = SavingsProduct::query()
+            ->with('savingsCategory:id,category_name,category_name_bn,category_code')
+            ->findOrFail($productId);
+
+        if (! SavingsFormVisibility::requiresApplicationForm($savingsProduct->savingsCategory, $savingsProduct)) {
+            $message = SavingsFormVisibility::isAdmissionOnly($savingsProduct->savingsCategory, $savingsProduct)
+                ? SavingsFormVisibility::ADMISSION_ONLY_MESSAGE
+                : SavingsFormVisibility::FORM_NOT_READY_MESSAGE;
+
             return redirect()->route('member.savings-applications.index')
-                ->with('error', 'জি. সঞ্চয় (G. Savings) এর জন্য এই আবেদন ফ্লো ব্যবহার করা হয় না।');
+                ->with('error', $message);
         }
         $branch = Branch::with('area:id,name')->where('id', $user->branch_id)->first();
 
@@ -207,7 +353,10 @@ class SavingsApplicationController extends Controller
             $memberAdmission = MemberAdmission::where('branch_id', $user->branch_id)
                 ->where('id', $request->member_id)
                 ->where('status', 'approved')
-                ->with('samity:id,samity_name,samity_name_bn,samity_code')
+                ->with([
+                    'samity:id,samity_name,samity_name_bn,samity_code',
+                    'familyMembers:id,member_admission_id,sl_no,member_name,relation_with_head,age_years,age_months,marital_status,education_level,occupation,monthly_income',
+                ])
                 ->first();
         }
 
@@ -238,6 +387,7 @@ class SavingsApplicationController extends Controller
             'memberAdmission' => $memberAdmission,
             'branch' => $branch,
             'existingApplication' => $existingApplication,
+            'formType' => SavingsFormVisibility::formType($savingsProduct->savingsCategory, $savingsProduct),
         ]);
     }
 
@@ -252,6 +402,7 @@ class SavingsApplicationController extends Controller
             'samity_id' => 'nullable|exists:samities,id',
             'deposit_amount' => 'required|numeric|min:0.01',
             'monthly_installment' => 'nullable|numeric|min:0',
+            'maturity_amount' => 'nullable|numeric|min:0',
             'account_opening_date' => 'nullable|date',
             'monthly_savings_amount' => 'nullable|numeric|min:0',
             'term_years' => 'nullable|integer|min:1|max:50',
@@ -283,7 +434,18 @@ class SavingsApplicationController extends Controller
         ]);
 
         $user = $request->user();
-        $product = SavingsProduct::findOrFail($validated['savings_product_id']);
+        $product = SavingsProduct::query()
+            ->with('savingsCategory')
+            ->findOrFail($validated['savings_product_id']);
+
+        if (! SavingsFormVisibility::requiresApplicationForm($product->savingsCategory, $product)) {
+            $message = SavingsFormVisibility::isAdmissionOnly($product->savingsCategory, $product)
+                ? SavingsFormVisibility::ADMISSION_ONLY_MESSAGE
+                : SavingsFormVisibility::FORM_NOT_READY_MESSAGE;
+
+            return back()->withErrors(['savings_product_id' => $message])->withInput();
+        }
+
         $member = MemberAdmission::findOrFail($validated['member_admission_id']);
 
         if ($validated['deposit_amount'] < $product->min_amount || ($product->max_amount && $validated['deposit_amount'] > $product->max_amount)) {
@@ -293,7 +455,9 @@ class SavingsApplicationController extends Controller
         }
 
         $monthlyInstallment = $validated['monthly_installment'] ?? $validated['deposit_amount'];
-        $maturityAmount = $product->calculateMaturityAmount($validated['deposit_amount'], $monthlyInstallment);
+        $maturityAmount = ($validated['maturity_amount'] ?? 0) > 0
+            ? (float) $validated['maturity_amount']
+            : $product->calculateMaturityAmount($validated['deposit_amount'], $monthlyInstallment);
         // Duration from request (product-based) or product default
         $durationMonths = (int) ($validated['duration_months'] ?? ($validated['term_years'] ? (int) $validated['term_years'] * 12 : $product->duration_months));
         if ($durationMonths < 1) {
@@ -309,6 +473,7 @@ class SavingsApplicationController extends Controller
                 'application_no' => SavingsApplication::generateApplicationNo(),
                 'member_admission_id' => $validated['member_admission_id'],
                 'savings_product_id' => $validated['savings_product_id'],
+                'savings_category_id' => $product->savings_category_id,
                 'branch_id' => $user->branch_id,
                 'samity_id' => $validated['samity_id'] ?? $member->samity_id,
                 'deposit_amount' => $validated['deposit_amount'],
@@ -317,7 +482,10 @@ class SavingsApplicationController extends Controller
                 'maturity_amount' => $maturityAmount,
                 'maturity_date' => $maturityDate,
                 'monthly_savings_amount' => $validated['monthly_savings_amount'] ?? $monthlyInstallment,
-                'status' => 'draft',
+                'status' => 'active',
+                'start_date' => $validated['account_opening_date'] ?? now()->toDateString(),
+                'activated_by' => $user->id,
+                'activated_at' => now(),
                 'submitted_by' => $user->id,
                 'form_data' => $validated['form_data'] ?? null,
                 'account_opening_date' => $validated['account_opening_date'] ?? null,
@@ -362,6 +530,9 @@ class SavingsApplicationController extends Controller
 
         $validated = $request->validate([
             'account_opening_date' => 'nullable|date',
+            'deposit_amount' => 'nullable|numeric|min:0.01',
+            'monthly_installment' => 'nullable|numeric|min:0',
+            'maturity_amount' => 'nullable|numeric|min:0',
             'monthly_savings_amount' => 'nullable|numeric|min:0',
             'term_years' => 'nullable|integer|min:1|max:50',
             'duration_months' => 'nullable|integer|min:1|max:600',
@@ -394,9 +565,9 @@ class SavingsApplicationController extends Controller
         if (! empty($validated['duration_months'])) {
             $validated['maturity_date'] = now()->addMonths((int) $validated['duration_months']);
             $product = $application->savingsProduct;
-            if ($product) {
+            if ($product && ($validated['maturity_amount'] ?? 0) <= 0) {
                 $validated['maturity_amount'] = $product->calculateMaturityAmount(
-                    (float) $application->deposit_amount,
+                    (float) ($validated['deposit_amount'] ?? $application->deposit_amount),
                     (float) ($validated['monthly_savings_amount'] ?? $application->monthly_installment)
                 );
             }
@@ -410,8 +581,8 @@ class SavingsApplicationController extends Controller
     public function show($id)
     {
         $application = SavingsApplication::with([
-            'savingsProduct',
-            'memberAdmission',
+            'savingsProduct.savingsCategory',
+            'memberAdmission.samity',
             'branch.area',
             'samity',
         ])->findOrFail($id);
@@ -433,6 +604,10 @@ class SavingsApplicationController extends Controller
 
         return Inertia::render('Member/SavingsApplications/Show', [
             'application' => $app,
+            'formType' => SavingsFormVisibility::formType(
+                $application->savingsProduct?->savingsCategory,
+                $application->savingsProduct
+            ),
         ]);
     }
 
@@ -497,11 +672,74 @@ class SavingsApplicationController extends Controller
             ->with('success', 'আবেদন প্রত্যাখ্যান হয়েছে।');
     }
 
+    public function activate($id)
+    {
+        $user = request()->user();
+        $application = SavingsApplication::findOrFail($id);
+        $application->update([
+            'status' => 'active',
+            'activated_by' => $user->id,
+            'activated_at' => now(),
+            'start_date' => $application->start_date ?? now()->toDateString(),
+            'maturity_date' => $application->maturity_date ?? now()->addMonths($application->duration_months ?: 12)->toDateString(),
+        ]);
+
+        return back()->with('success', 'সঞ্চয় হিসাব সফলভাবে সক্রিয় করা হয়েছে।');
+    }
+
+    public function withdraw(Request $request, $id)
+    {
+        $user = $request->user();
+        $application = SavingsApplication::findOrFail($id);
+
+        $validated = $request->validate([
+            'withdrawal_date' => 'required|date',
+            'months_completed' => 'nullable|integer|min:0',
+            'total_deposit_paid' => 'required|numeric|min:0',
+            'profit_amount' => 'nullable|numeric|min:0',
+            'penalty_or_deduction' => 'nullable|numeric|min:0',
+            'total_payout' => 'required|numeric|min:0',
+            'remarks' => 'nullable|string|max:1000',
+        ]);
+
+        $monthsCompleted = (int) ($validated['months_completed'] ?? 0);
+        $depositPaid = (float) $validated['total_deposit_paid'];
+        $penaltyOrDeduction = (float) ($validated['penalty_or_deduction'] ?? 0);
+        $profitAmount = (float) ($validated['profit_amount'] ?? 0);
+
+        // Minimum 1 month tenure is strictly required for profit. If under 1 month, profit must be 0.
+        if ($monthsCompleted < 1) {
+            $profitAmount = 0.0;
+            $validated['profit_amount'] = 0.0;
+            $validated['total_payout'] = max(0.0, $depositPaid - $penaltyOrDeduction);
+        }
+
+        $formData = $application->form_data ?? [];
+        $formData['withdrawal'] = [
+            'withdrawal_date' => $validated['withdrawal_date'],
+            'months_completed' => $monthsCompleted,
+            'total_deposit_paid' => $depositPaid,
+            'profit_amount' => $profitAmount,
+            'penalty_or_deduction' => $penaltyOrDeduction,
+            'total_payout' => (float) $validated['total_payout'],
+            'withdrawn_by' => $user->id,
+            'withdrawn_at' => now()->toDateTimeString(),
+        ];
+
+        $application->update([
+            'status' => 'closed',
+            'remarks' => $validated['remarks'] ?? $application->remarks,
+            'form_data' => $formData,
+        ]);
+
+        return back()->with('success', 'সঞ্চয় হিসাব উত্তোলন ও নিষ্পত্তি সম্পন্ন হয়েছে। প্রদেয় অর্থ: ৳'.number_format($validated['total_payout'], 2));
+    }
+
     public function destroy($id)
     {
         $application = SavingsApplication::findOrFail($id);
-        if (! in_array($application->status, ['draft', 'submitted'])) {
-            return back()->withErrors(['error' => 'শুধুমাত্র খসড়া/জমা আবেদন মুছতে পারবেন।']);
+        if (! in_array($application->status, ['draft', 'submitted', 'closed', 'cancelled'])) {
+            return back()->withErrors(['error' => 'সক্রিয় সঞ্চয় হিসাব সরাসরি মোছা যাবে না, আগে ক্লোজ করুন।']);
         }
         $application->delete();
 

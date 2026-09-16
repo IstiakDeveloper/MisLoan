@@ -11,6 +11,7 @@ class SavingsApplication extends Model
         'application_no',
         'member_admission_id',
         'savings_product_id',
+        'savings_category_id',
         'branch_id',
         'samity_id',
         'deposit_amount',
@@ -68,13 +69,21 @@ class SavingsApplication extends Model
 
     // Status constants
     const STATUS_DRAFT = 'draft';
+
     const STATUS_SUBMITTED = 'submitted';
+
     const STATUS_UNDER_REVIEW = 'under_review';
+
     const STATUS_APPROVED = 'approved';
+
     const STATUS_REJECTED = 'rejected';
+
     const STATUS_ACTIVE = 'active';
+
     const STATUS_MATURED = 'matured';
+
     const STATUS_CLOSED = 'closed';
+
     const STATUS_CANCELLED = 'cancelled';
 
     // Relationships
@@ -86,6 +95,11 @@ class SavingsApplication extends Model
     public function savingsProduct(): BelongsTo
     {
         return $this->belongsTo(SavingsProduct::class);
+    }
+
+    public function savingsCategory(): BelongsTo
+    {
+        return $this->belongsTo(SavingsCategory::class);
     }
 
     public function branch(): BelongsTo
@@ -124,7 +138,7 @@ class SavingsApplication extends Model
             ->orderBy('id', 'desc')
             ->first();
 
-        $sequence = $lastApplication ? (int)substr($lastApplication->application_no, -5) + 1 : 1;
+        $sequence = $lastApplication ? (int) substr($lastApplication->application_no, -5) + 1 : 1;
 
         return sprintf('%s%s%s%05d', $prefix, $year, $month, $sequence);
     }

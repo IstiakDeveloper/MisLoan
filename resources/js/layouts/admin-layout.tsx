@@ -82,7 +82,7 @@ interface AdminLayoutProps {
     children: ReactNode;
 }
 
-const SETUP_PATHS = ['/loan-categories', '/loan-products', '/savings-products', '/organizations', '/samities', '/member-categories', '/users', '/roles', '/head-office/cso-duty-roster', '/head-office/send-cutoff'];
+const SETUP_PATHS = ['/loan-categories', '/loan-products', '/savings-categories', '/savings-products', '/organizations', '/samities', '/member-categories', '/users', '/roles', '/head-office/cso-duty-roster', '/head-office/send-cutoff'];
 const REPORT_PATHS = ['/head-office/team-based-approvals/report', '/head-office/reports/guarantor-informants'];
 const TEAM_BASED_REPORT_HREF = '/head-office/team-based-approvals/report';
 const GUARANTOR_INFORMANT_REPORT_HREF = '/head-office/reports/guarantor-informants';
@@ -117,6 +117,7 @@ function getPageTitle(currentPath: string): string {
     if (currentPath.includes('/verifications')) return 'Verifications';
     if (currentPath.includes('/loan-categories')) return 'Loan Categories';
     if (currentPath.includes('/loan-products')) return 'Loan Products';
+    if (currentPath.includes('/savings-categories')) return 'Savings Categories';
     if (currentPath.includes('/savings-products')) return 'Savings Products';
     if (currentPath.includes('/organizations')) return 'Organizations';
     if (currentPath.includes('/samities')) return 'Samities';
@@ -313,6 +314,7 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
         { name: 'Send Deadline', href: '/head-office/send-cutoff', icon: Clock },
         { name: 'Loan Categories', href: '/loan-categories', icon: ListTree },
         { name: 'Loan Products', href: '/loan-products', icon: Coins },
+        { name: 'Savings Categories', href: '/savings-categories', icon: ListTree },
         { name: 'Savings Products', href: '/savings-products', icon: Wallet },
         { name: 'Organizations', href: '/organizations', icon: Landmark },
         { name: 'Samities', href: '/samities', icon: Building2 },

@@ -26,6 +26,7 @@ use App\Http\Controllers\PortfolioHandoverController;
 use App\Http\Controllers\ProfileController;
 use App\Http\Controllers\RoleController;
 use App\Http\Controllers\SamityController;
+use App\Http\Controllers\SavingsCategoryController;
 use App\Http\Controllers\SavingsProductController;
 use App\Http\Controllers\TeamBasedApprovalController;
 use App\Http\Controllers\TeamBasedApprovalPrintController;
@@ -177,6 +178,15 @@ Route::middleware(['auth', 'verified'])->group(function () {
         Route::put('{loanProduct}', [LoanProductController::class, 'update'])->name('update');
         Route::delete('{loanProduct}', [LoanProductController::class, 'destroy'])->name('destroy');
         Route::patch('{loanProduct}/toggle-status', [LoanProductController::class, 'toggleStatus'])->name('toggle-status');
+    });
+
+    // Savings Category Management Routes - Only for SuperAdmin/Head Office
+    Route::prefix('savings-categories')->name('savings-categories.')->middleware('head.office')->group(function () {
+        Route::get('/', [SavingsCategoryController::class, 'index'])->name('index');
+        Route::post('/', [SavingsCategoryController::class, 'store'])->name('store');
+        Route::put('{savingsCategory}', [SavingsCategoryController::class, 'update'])->name('update');
+        Route::delete('{savingsCategory}', [SavingsCategoryController::class, 'destroy'])->name('destroy');
+        Route::patch('{savingsCategory}/toggle-status', [SavingsCategoryController::class, 'toggleStatus'])->name('toggle-status');
     });
 
     // Savings Product Management Routes - Only for SuperAdmin/Head Office
@@ -345,6 +355,8 @@ Route::middleware(['auth', 'verified'])->group(function () {
             Route::patch('{id}/submit', [SavingsApplicationController::class, 'submit'])->name('submit');
             Route::patch('{id}/approve', [SavingsApplicationController::class, 'approve'])->name('approve');
             Route::patch('{id}/reject', [SavingsApplicationController::class, 'reject'])->name('reject');
+            Route::patch('{id}/activate', [SavingsApplicationController::class, 'activate'])->name('activate');
+            Route::post('{id}/withdraw', [SavingsApplicationController::class, 'withdraw'])->name('withdraw');
         });
     });
 

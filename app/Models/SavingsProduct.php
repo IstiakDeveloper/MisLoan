@@ -2,12 +2,19 @@
 
 namespace App\Models;
 
+use Database\Factories\SavingsProductFactory;
+use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class SavingsProduct extends Model
 {
+    /** @use HasFactory<SavingsProductFactory> */
+    use HasFactory;
+
     protected $fillable = [
+        'savings_category_id',
         'product_name',
         'product_name_bn',
         'product_code',
@@ -46,7 +53,11 @@ class SavingsProduct extends Model
         'display_order' => 'integer',
     ];
 
-    // Relationships
+    public function savingsCategory(): BelongsTo
+    {
+        return $this->belongsTo(SavingsCategory::class);
+    }
+
     public function savingsApplications(): HasMany
     {
         return $this->hasMany(SavingsApplication::class);
@@ -57,6 +68,7 @@ class SavingsProduct extends Model
     {
         if ($this->deposit_type === 'lump_sum') {
             $interest = ($depositAmount * $this->interest_rate * $this->duration_months) / (12 * 100);
+
             return $depositAmount + $interest;
         }
 
@@ -64,6 +76,7 @@ class SavingsProduct extends Model
             // Simple calculation - can be made more sophisticated
             $totalDeposit = $monthlyInstallment * $this->duration_months;
             $interest = ($totalDeposit * $this->interest_rate * $this->duration_months) / (24 * 100); // Average
+
             return $totalDeposit + $interest;
         }
 

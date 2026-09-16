@@ -2,13 +2,15 @@
 
 namespace App\Http\Controllers;
 
-use App\Models\SavingsApplication;
-use App\Models\Zone;
 use App\Models\Area;
 use App\Models\Branch;
+use App\Models\SavingsApplication;
+use App\Models\Zone;
+use App\Services\MemberCodeService;
+use App\Support\SavingsFormVisibility;
+use Carbon\Carbon;
 use Illuminate\Http\Request;
 use Inertia\Inertia;
-use Carbon\Carbon;
 
 class HeadOfficeSavingsController extends Controller
 {
@@ -81,7 +83,7 @@ class HeadOfficeSavingsController extends Controller
         }
 
         if ($request->filled('search')) {
-            \App\Services\MemberCodeService::applySavingsSearch($query, $request->search);
+            MemberCodeService::applySavingsSearch($query, $request->search);
         }
 
         $statsQuery = SavingsApplication::select('id', 'status', 'created_at', 'branch_id');
@@ -144,6 +146,7 @@ class HeadOfficeSavingsController extends Controller
         $branchesForSummary = Branch::whereIn('id', $branchIds)->with('area:id,name,zone_id', 'area.zone:id,name')->get()->keyBy('id');
         $branchSummaryList = $branchSummary->map(function ($row) use ($branchesForSummary) {
             $branch = $branchesForSummary->get($row->branch_id);
+
             return [
                 'branch_id' => $row->branch_id,
                 'branch_name' => $branch ? $branch->name : '—',
@@ -177,8 +180,8 @@ class HeadOfficeSavingsController extends Controller
     public function show($id)
     {
         $application = SavingsApplication::with([
-            'savingsProduct',
-            'memberAdmission',
+            'savingsProduct.savingsCategory',
+            'memberAdmission.samity',
             'branch.area',
             'samity',
         ])->findOrFail($id);
@@ -191,6 +194,10 @@ class HeadOfficeSavingsController extends Controller
 
         return Inertia::render('Member/SavingsApplications/Show', [
             'application' => $app,
+            'formType' => SavingsFormVisibility::formType(
+                $application->savingsProduct?->savingsCategory,
+                $application->savingsProduct
+            ),
             'fromHeadOffice' => true,
             'backUrl' => '/head-office/savings-applications',
         ]);

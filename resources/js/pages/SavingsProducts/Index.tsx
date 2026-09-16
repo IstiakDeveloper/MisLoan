@@ -31,8 +31,16 @@ import { useMemo, useState } from 'react';
 import ProductModal from './Components/ProductModal';
 import SavingsCalculatorModal from '@/components/SavingsCalculatorModal';
 
+interface SavingsCategory {
+    id: number;
+    category_name: string;
+    category_name_bn: string | null;
+    category_code: string;
+}
+
 interface SavingsProduct {
     id: number;
+    savings_category_id: number | null;
     product_name: string;
     product_name_bn: string | null;
     product_code: string;
@@ -46,11 +54,13 @@ interface SavingsProduct {
     is_active: boolean;
     display_order: number;
     savings_applications_count: number;
+    savings_category?: SavingsCategory | null;
 }
 
 interface Props {
     products: SavingsProduct[];
-    filters: { search?: string; deposit_type?: string };
+    categories: SavingsCategory[];
+    filters: { search?: string; deposit_type?: string; category_id?: string };
 }
 
 const depositTypeLabels: Record<string, { label: string; color: string }> = {
@@ -75,9 +85,10 @@ const formatAmount = (amount: number) => {
     }).format(amount);
 };
 
-export default function Index({ products, filters }: Props) {
+export default function Index({ products, categories, filters }: Props) {
     const [searchQuery, setSearchQuery] = useState(filters.search || '');
     const [filterType, setFilterType] = useState(filters.deposit_type || '');
+    const [filterCategory, setFilterCategory] = useState(filters.category_id || '');
     const [openDropdown, setOpenDropdown] = useState<number | null>(null);
     const [modalOpen, setModalOpen] = useState(false);
     const [calculatorModalOpen, setCalculatorModalOpen] = useState(false);
@@ -93,6 +104,7 @@ export default function Index({ products, filters }: Props) {
     const [importError, setImportError] = useState<string | null>(null);
 
     const productsList = Array.isArray(products) ? products : [];
+    const categoriesList = Array.isArray(categories) ? categories : [];
     const canMutate = useCanMutate();
 
     const handleAddNew = () => {
@@ -166,7 +178,9 @@ export default function Index({ products, filters }: Props) {
                 .toLowerCase()
                 .includes(searchQuery.toLowerCase());
         const matchesType = !filterType || product.deposit_type === filterType;
-        return matchesSearch && matchesType;
+        const matchesCategory =
+            !filterCategory || String(product.savings_category_id) === filterCategory;
+        return matchesSearch && matchesType && matchesCategory;
     });
 
     const totalPages = Math.ceil(filteredProducts.length / itemsPerPage);
@@ -323,8 +337,23 @@ export default function Index({ products, filters }: Props) {
                                 setCurrentPage(1);
                             }}
                         />
-                        <div className="flex w-full items-center gap-2 sm:ml-auto sm:w-auto">
+                        <div className="flex w-full flex-wrap items-center gap-2 sm:ml-auto sm:w-auto">
                             <Filter className="h-3.5 w-3.5 text-gray-400" />
+                            <select
+                                value={filterCategory}
+                                onChange={(e) => {
+                                    setFilterCategory(e.target.value);
+                                    setCurrentPage(1);
+                                }}
+                                className="h-10 w-full min-w-44 rounded-lg border border-slate-300 bg-white px-3 text-sm focus:border-blue-500 focus:ring-4 focus:ring-blue-100 focus:outline-none"
+                            >
+                                <option value="">All Categories</option>
+                                {categoriesList.map((cat) => (
+                                    <option key={cat.id} value={cat.id}>
+                                        {cat.category_code} — {cat.category_name_bn || cat.category_name}
+                                    </option>
+                                ))}
+                            </select>
                             <select
                                 value={filterType}
                                 onChange={(e) => {
@@ -350,6 +379,9 @@ export default function Index({ products, filters }: Props) {
                                     </th>
                                     <th className="px-2 py-2 text-left text-[10px] font-semibold text-gray-600 uppercase">
                                         Product Code
+                                    </th>
+                                    <th className="px-2 py-2 text-left text-[10px] font-semibold text-gray-600 uppercase">
+                                        Category
                                     </th>
                                     <th className="px-2 py-2 text-left text-[10px] font-semibold text-gray-600 uppercase">
                                         Name
@@ -396,6 +428,16 @@ export default function Index({ products, filters }: Props) {
                                                 <span className="font-mono font-medium text-gray-900">
                                                     {product.product_code}
                                                 </span>
+                                            </td>
+                                            <td className="px-2 py-2">
+                                                <div className="font-medium text-gray-900">
+                                                    {product.savings_category?.category_name || '—'}
+                                                </div>
+                                                {product.savings_category?.category_code && (
+                                                    <div className="font-mono text-[10px] text-gray-500">
+                                                        {product.savings_category.category_code}
+                                                    </div>
+                                                )}
                                             </td>
                                             <td className="px-2 py-2">
                                                 <div className="leading-tight font-medium text-gray-900">
@@ -513,6 +555,7 @@ export default function Index({ products, filters }: Props) {
                 isOpen={modalOpen}
                 onClose={() => setModalOpen(false)}
                 product={selectedProduct}
+                categories={categoriesList}
             />
 
             <SavingsCalculatorModal

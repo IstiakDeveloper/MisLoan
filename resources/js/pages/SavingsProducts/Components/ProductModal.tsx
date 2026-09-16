@@ -2,8 +2,16 @@ import { FormEvent, useEffect } from 'react';
 import { useForm } from '@inertiajs/react';
 import { X } from 'lucide-react';
 
+interface SavingsCategory {
+    id: number;
+    category_name: string;
+    category_name_bn: string | null;
+    category_code: string;
+}
+
 interface SavingsProduct {
     id: number;
+    savings_category_id?: number | null;
     product_name: string;
     product_name_bn: string | null;
     product_code: string;
@@ -22,9 +30,11 @@ interface Props {
     isOpen: boolean;
     onClose: () => void;
     product: SavingsProduct | null;
+    categories: SavingsCategory[];
 }
 
 interface FormData {
+    savings_category_id: string;
     product_name: string;
     product_name_bn: string;
     product_code: string;
@@ -40,6 +50,7 @@ interface FormData {
 }
 
 const defaultFormData: FormData = {
+    savings_category_id: '',
     product_name: '',
     product_name_bn: '',
     product_code: '',
@@ -54,13 +65,14 @@ const defaultFormData: FormData = {
     display_order: 0,
 };
 
-export default function ProductModal({ isOpen, onClose, product }: Props) {
+export default function ProductModal({ isOpen, onClose, product, categories }: Props) {
     const form = useForm(defaultFormData);
     const { data, post, put, processing, errors, reset, setData } = form;
 
     useEffect(() => {
         if (product) {
             setData({
+                savings_category_id: product.savings_category_id ? String(product.savings_category_id) : '',
                 product_name: product.product_name,
                 product_name_bn: product.product_name_bn || '',
                 product_code: product.product_code,
@@ -126,6 +138,28 @@ export default function ProductModal({ isOpen, onClose, product }: Props) {
 
                 <form onSubmit={handleSubmit} className="overflow-y-auto max-h-[calc(90vh-140px)]">
                     <div className="p-6 space-y-4">
+                        <div>
+                            <label className="block text-sm font-medium text-gray-700 mb-1">
+                                Category (ক্যাটাগরি) <span className="text-red-500">*</span>
+                            </label>
+                            <select
+                                value={data.savings_category_id}
+                                onChange={(e) => setData('savings_category_id', e.target.value)}
+                                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                                required
+                            >
+                                <option value="">Select (নির্বাচন করুন)</option>
+                                {categories.map((cat) => (
+                                    <option key={cat.id} value={cat.id}>
+                                        {cat.category_code} — {cat.category_name_bn || cat.category_name}
+                                    </option>
+                                ))}
+                            </select>
+                            {errors.savings_category_id && (
+                                <p className="text-red-500 text-sm mt-1">{errors.savings_category_id}</p>
+                            )}
+                        </div>
+
                         <div className="grid grid-cols-2 gap-4">
                             <div>
                                 <label className="block text-sm font-medium text-gray-700 mb-1">
