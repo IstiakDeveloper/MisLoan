@@ -39,6 +39,9 @@ interface SavingsApplication {
     application_no: string;
     status: string;
     deposit_amount: number;
+    account_no?: string;
+    member_no?: string;
+    account_opening_date?: string;
     monthly_installment?: number;
     monthly_savings_amount?: number;
     maturity_amount?: number;
@@ -416,16 +419,25 @@ export default function SavingsApplications({
                                         return (
                                             <tr key={app.id} className="hover:bg-gray-50">
                                                 <td className="px-4 py-3 text-sm font-medium text-gray-900">
-                                                    <Link href={`/head-office/savings-applications/${app.id}`} className="text-blue-600 hover:text-blue-800 hover:underline">
+                                                    <Link href={`/head-office/savings-applications/${app.id}`} className="text-blue-600 hover:text-blue-800 hover:underline font-mono font-bold block">
                                                         {app.application_no}
                                                     </Link>
+                                                    {app.account_no && (
+                                                        <span className="text-xs text-slate-500 font-mono block">
+                                                            হিসাব: <strong className="text-slate-700">{app.account_no}</strong>
+                                                        </span>
+                                                    )}
                                                 </td>
                                                 <td className="px-4 py-3">
-                                                    <div className="text-sm text-gray-900">
+                                                    <div className="text-sm font-semibold text-gray-900">
                                                         {(app.member_admission ?? app.memberAdmission)?.applicant_name_bn || (app.member_admission ?? app.memberAdmission)?.applicant_name_en || '—'}
                                                     </div>
-                                                    <div className="text-xs text-gray-500 flex flex-wrap items-center gap-1">
-                                                        {(app.member_admission ?? app.memberAdmission)?.application_no && <span>Member: {(app.member_admission ?? app.memberAdmission)?.application_no}</span>}
+                                                    <div className="text-xs text-gray-500 flex flex-wrap items-center gap-1 mt-0.5">
+                                                        {(app.member_no || (app.member_admission ?? app.memberAdmission)?.application_no) && (
+                                                            <span className="font-mono bg-slate-100 px-1 py-0.2 rounded text-slate-600">
+                                                                ID: {app.member_no || (app.member_admission ?? app.memberAdmission)?.application_no}
+                                                            </span>
+                                                        )}
                                                         {(app.member_admission ?? app.memberAdmission)?.mobile_number && (
                                                             <>
                                                                 <span>|</span>

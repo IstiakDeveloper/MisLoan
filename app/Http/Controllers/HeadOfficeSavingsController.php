@@ -38,6 +38,8 @@ class HeadOfficeSavingsController extends Controller
             ->select([
                 'id',
                 'application_no',
+                'account_no',
+                'member_no',
                 'member_admission_id',
                 'savings_product_id',
                 'branch_id',
@@ -47,6 +49,7 @@ class HeadOfficeSavingsController extends Controller
                 'monthly_savings_amount',
                 'maturity_amount',
                 'duration_months',
+                'account_opening_date',
                 'created_at',
                 'submitted_at',
                 'reviewed_at',
@@ -156,7 +159,17 @@ class HeadOfficeSavingsController extends Controller
             ];
         })->sortByDesc('count')->values()->all();
 
-        $applications = $query->orderBy('created_at', 'desc')->paginate(20);
+        $applications = $query->orderBy('created_at', 'desc')->paginate(20)->withQueryString();
+
+        $applications->through(function ($app) {
+            $item = $app->toArray();
+            $item['savingsProduct'] = $app->savingsProduct;
+            $item['savings_product'] = $app->savingsProduct;
+            $item['memberAdmission'] = $app->memberAdmission;
+            $item['member_admission'] = $app->memberAdmission;
+            $item['branch'] = $app->branch;
+            return $item;
+        });
 
         $orgFilters = $this->organizationFilterOptions();
 
