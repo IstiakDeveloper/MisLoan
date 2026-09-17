@@ -339,12 +339,26 @@ export default function LoanApplications({ loans, filters, stats, zones, areas, 
     };
 
     const handlePrintConfirm = () => {
-        const params = getQueryParams();
+        const params: Record<string, string> = { ...getQueryParams() };
+        delete params.page;
+        delete params.per_page;
+        if (markAsPrintedCheckbox) {
+            params.mark_as_printed = '1';
+        }
         const printUrl = `/head-office/loan-applications/print?${new URLSearchParams(params).toString()}`;
         window.open(printUrl, '_blank');
 
         if (markAsPrintedCheckbox) {
-            router.post('/head-office/loan-applications/mark-printed', params, keepListFilters);
+            let reloaded = false;
+            const doReload = () => {
+                if (!reloaded) {
+                    reloaded = true;
+                    router.reload(keepListFilters);
+                    window.removeEventListener('focus', doReload);
+                }
+            };
+            window.addEventListener('focus', doReload);
+            setTimeout(doReload, 1200);
         }
 
         setShowPrintModal(false);

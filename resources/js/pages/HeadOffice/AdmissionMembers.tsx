@@ -304,10 +304,23 @@ export default function AdmissionMembers({ admissions, filters, stats, zones, ar
     };
 
     const handlePrintConfirm = () => {
-        const params = getPrintParams();
-        window.open(`/head-office/admission-members/print?${new URLSearchParams(params).toString()}`, '_blank');
+        const params: Record<string, string> = { ...getPrintParams() };
         if (markAsPrintedCheckbox) {
-            router.post('/head-office/admission-members/mark-printed', params, keepListFilters);
+            params.mark_as_printed = '1';
+        }
+        const printUrl = `/head-office/admission-members/print?${new URLSearchParams(params).toString()}`;
+        window.open(printUrl, '_blank');
+        if (markAsPrintedCheckbox) {
+            let reloaded = false;
+            const doReload = () => {
+                if (!reloaded) {
+                    reloaded = true;
+                    router.reload(keepListFilters);
+                    window.removeEventListener('focus', doReload);
+                }
+            };
+            window.addEventListener('focus', doReload);
+            setTimeout(doReload, 1200);
         }
         setShowPrintModal(false);
         setMarkAsPrintedCheckbox(false);

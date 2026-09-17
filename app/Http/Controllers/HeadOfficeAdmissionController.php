@@ -257,6 +257,13 @@ class HeadOfficeAdmissionController extends Controller
             'asc'
         )->orderByRaw('COALESCE(submitted_at, created_at) desc')->get();
 
+        if ($request->boolean('mark_as_printed') && $admissions->isNotEmpty()) {
+            $unprintedAdmissionIds = $admissions->whereNull('printed_at')->pluck('id');
+            if ($unprintedAdmissionIds->isNotEmpty()) {
+                MemberAdmission::whereIn('id', $unprintedAdmissionIds)->update(['printed_at' => now()]);
+            }
+        }
+
         $orgFilters = $this->organizationFilterOptions();
 
         return Inertia::render('HeadOffice/AdmissionMembersPrint', [
@@ -469,7 +476,9 @@ class HeadOfficeAdmissionController extends Controller
         $this->applyPrintedFilter($query, $request);
 
         $ids = $query->pluck('id');
-        MemberAdmission::whereIn('id', $ids)->update(['printed_at' => now()]);
+        if ($ids->isNotEmpty()) {
+            MemberAdmission::whereIn('id', $ids)->update(['printed_at' => now()]);
+        }
 
         return back()->with('success', __('প্রিন্ট সম্পন্ন চিহ্নিত হয়েছে।') ?: 'প্রিন্ট সম্পন্ন চিহ্নিত হয়েছে।');
     }
@@ -1318,7 +1327,14 @@ class HeadOfficeAdmissionController extends Controller
         if ($request->printed === 'yes') {
             $query->whereNotNull('printed_at');
         } elseif ($request->printed === 'no') {
-            $query->whereNull('printed_at');
+            if ($request->boolean('mark_as_printed')) {
+                $query->where(function ($q) {
+                    $q->whereNull('printed_at')
+                        ->orWhere('printed_at', '>=', now()->subMinutes(15));
+                });
+            } else {
+                $query->whereNull('printed_at');
+            }
         }
     }
 

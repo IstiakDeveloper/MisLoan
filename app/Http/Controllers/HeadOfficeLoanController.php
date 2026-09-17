@@ -313,7 +313,14 @@ class HeadOfficeLoanController extends Controller
             if ($request->printed === 'yes') {
                 $query->whereNotNull('printed_at');
             } elseif ($request->printed === 'no') {
-                $query->whereNull('printed_at');
+                if ($request->boolean('mark_as_printed')) {
+                    $query->where(function ($q) {
+                        $q->whereNull('printed_at')
+                            ->orWhere('printed_at', '>=', now()->subMinutes(15));
+                    });
+                } else {
+                    $query->whereNull('printed_at');
+                }
             }
         }
 
@@ -322,6 +329,13 @@ class HeadOfficeLoanController extends Controller
             Branch::select('code')->whereColumn('branches.id', 'loan_applications.branch_id'),
             'asc'
         )->orderByRaw('COALESCE(submitted_at, created_at) desc')->get();
+
+        if ($request->boolean('mark_as_printed') && $loans->isNotEmpty()) {
+            $unprintedLoanIds = $loans->whereNull('printed_at')->pluck('id');
+            if ($unprintedLoanIds->isNotEmpty()) {
+                LoanApplication::whereIn('id', $unprintedLoanIds)->update(['printed_at' => now()]);
+            }
+        }
 
         // Calculate and attach accurate savings details from business_plan, asset_info, and loan attributes
         $loans->transform(function ($loan) {
@@ -424,8 +438,18 @@ class HeadOfficeLoanController extends Controller
             }
         }
 
+        if ($request->filled('printed')) {
+            if ($request->printed === 'yes') {
+                $query->whereNotNull('printed_at');
+            } elseif ($request->printed === 'no') {
+                $query->whereNull('printed_at');
+            }
+        }
+
         $ids = $query->pluck('id');
-        LoanApplication::whereIn('id', $ids)->update(['printed_at' => now()]);
+        if ($ids->isNotEmpty()) {
+            LoanApplication::whereIn('id', $ids)->update(['printed_at' => now()]);
+        }
 
         return back()->with('success', 'প্রিন্ট সম্পন্ন চিহ্নিত হয়েছে।');
     }
