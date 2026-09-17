@@ -38,6 +38,7 @@ import {
     CalendarDays,
     Clock,
     RotateCw,
+    Trash2,
 } from 'lucide-react';
 import { useIsMobile } from '@/hooks/use-mobile';
 import { usePwaInstallPrompt } from '@/hooks/usePwaInstallPrompt';
@@ -82,7 +83,7 @@ interface AdminLayoutProps {
     children: ReactNode;
 }
 
-const SETUP_PATHS = ['/loan-categories', '/loan-products', '/savings-categories', '/savings-products', '/organizations', '/samities', '/member-categories', '/users', '/roles', '/head-office/cso-duty-roster', '/head-office/send-cutoff'];
+const SETUP_PATHS = ['/loan-categories', '/loan-products', '/savings-categories', '/savings-products', '/organizations', '/samities', '/member-categories', '/users', '/roles', '/head-office/cso-duty-roster', '/head-office/send-cutoff', '/head-office/recent-deletions'];
 const REPORT_PATHS = ['/head-office/team-based-approvals/report', '/head-office/reports/guarantor-informants'];
 const TEAM_BASED_REPORT_HREF = '/head-office/team-based-approvals/report';
 const GUARANTOR_INFORMANT_REPORT_HREF = '/head-office/reports/guarantor-informants';
@@ -108,6 +109,7 @@ function getPageTitle(currentPath: string): string {
     if (currentPath.includes('/cso-duty-roster')) return 'CSO Duty Roster';
     if (currentPath.includes('/send-cutoff')) return 'Send Deadline';
     if (currentPath.includes('/cluster-handover')) return 'Cluster Handover';
+    if (currentPath.includes('/recent-deletions')) return 'Recent Deletions (মুছে ফেলা ডাটা)';
     if (currentPath.includes('/member-admissions') || currentPath.includes('/admission-members')) return 'Member Admissions';
     if (currentPath.includes('/loan-applications')) return 'Loan Applications';
     if (currentPath.includes('/savings-applications')) return 'Savings Applications';
@@ -310,6 +312,7 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
     ];
 
     const headOfficeSetupItems = [
+        { name: 'Recent Deletions (7 Days)', href: '/head-office/recent-deletions', icon: Trash2 },
         { name: 'CSO Duty Roster', href: '/head-office/cso-duty-roster', icon: CalendarDays },
         { name: 'Send Deadline', href: '/head-office/send-cutoff', icon: Clock },
         { name: 'Loan Categories', href: '/loan-categories', icon: ListTree },

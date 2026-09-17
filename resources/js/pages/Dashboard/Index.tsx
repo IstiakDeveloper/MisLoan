@@ -26,6 +26,8 @@ import {
     Search,
     Phone,
     Filter,
+    Trash2,
+    ExternalLink,
 } from 'lucide-react';
 
 interface HOItem {
@@ -111,6 +113,31 @@ export interface HOManagersSummary {
     bm_total_pending: number;
 }
 
+interface RecentDeletionItem {
+    id: number;
+    deletable_type: string;
+    application_no: string;
+    applicant_name: string;
+    applicant_phone?: string;
+    member_code?: string;
+    branch_name: string;
+    area_name?: string;
+    samity_name?: string;
+    loan_amount?: number;
+    deleted_by_name: string;
+    deleted_by_role?: string;
+    deleted_at: string;
+    deleted_at_human: string;
+}
+
+interface RecentDeletionsSummary {
+    count_7_days: number;
+    admissions_7_days: number;
+    loans_7_days: number;
+    users_7_days: number;
+    list: RecentDeletionItem[];
+}
+
 interface Props {
     period: 'today' | 'monthly' | 'date_to_date';
     dateFrom: string | null;
@@ -119,6 +146,7 @@ interface Props {
     hoStats: HOStats;
     hoActionQueue: ActionQueueItem[];
     hoManagersSummary?: HOManagersSummary;
+    recentDeletionsSummary?: RecentDeletionsSummary;
     user: {
         id: number;
         name: string;
@@ -224,6 +252,7 @@ export default function HeadOfficeDashboard({
     hoStats,
     hoActionQueue,
     hoManagersSummary,
+    recentDeletionsSummary,
     user,
 }: Props) {
     const [periodSelect, setPeriodSelect] = useState<'today' | 'monthly' | 'date_to_date'>(period);
@@ -233,7 +262,7 @@ export default function HeadOfficeDashboard({
     const [tierTab, setTierTab] = useState<'rm' | 'zm' | 'senior' | 'bm'>('rm');
     const [searchManager, setSearchManager] = useState('');
     const [statusFilterTab, setStatusFilterTab] = useState<'all' | 'pending' | 'zero'>('all');
-    const [viewMode, setViewMode] = useState<'hierarchy' | 'flat'>('hierarchy');
+    const [viewMode, setViewMode] = useState<'hierarchy' | 'flat' | 'recent_deletions'>('hierarchy');
 
     const activeList = useMemo(() => {
         if (!hoManagersSummary) return [];
@@ -887,7 +916,7 @@ export default function HeadOfficeDashboard({
                                 </div>
                             </div>
 
-                            <div className="flex items-center bg-black/30 p-1 rounded-xl text-xs font-bold gap-1 backdrop-blur-md">
+                            <div className="flex items-center bg-black/30 p-1 rounded-xl text-xs font-bold gap-1 backdrop-blur-md flex-wrap">
                                 <button
                                     type="button"
                                     onClick={() => setViewMode('hierarchy')}
@@ -912,6 +941,23 @@ export default function HeadOfficeDashboard({
                                     <BarChart3 size={13} />
                                     <span>আলাদা তালিকা ভিউ (RM/ZM/BM)</span>
                                 </button>
+                                <button
+                                    type="button"
+                                    onClick={() => setViewMode('recent_deletions')}
+                                    className={`px-3 py-1.5 rounded-lg transition-all flex items-center gap-1.5 ${
+                                        viewMode === 'recent_deletions'
+                                            ? 'bg-rose-600 text-white shadow-sm font-extrabold'
+                                            : 'text-purple-200 hover:text-white'
+                                    }`}
+                                >
+                                    <Trash2 size={13} />
+                                    <span>মুছে ফেলা ডাটা (৭ দিন)</span>
+                                    {recentDeletionsSummary && recentDeletionsSummary.count_7_days > 0 && (
+                                        <span className="text-[10px] px-1.5 py-0.2 rounded-full bg-rose-500 text-white font-mono font-bold">
+                                            {recentDeletionsSummary.count_7_days}
+                                        </span>
+                                    )}
+                                </button>
                             </div>
                         </div>
 
@@ -923,7 +969,7 @@ export default function HeadOfficeDashboard({
                                 subtitle="জোন ➔ অঞ্চল ➔ শাখা ক্রমানুসারে এক্সপ্যান্ড করে প্রতিটি স্তরের দায়িত্বপ্রাপ্ত কর্মকর্তা, পেন্ডিং ও স্টেজের লাইভ স্থিতি"
                                 accentColor="purple"
                             />
-                        ) : (
+                        ) : viewMode === 'flat' ? (
                             <div className="bg-white rounded-2xl border border-slate-200/90 shadow-2xs p-4 space-y-4">
                                 {/* Section Header */}
                                 <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3 pb-3 border-b border-slate-100">
@@ -1246,6 +1292,168 @@ export default function HeadOfficeDashboard({
                                     )}
                                 </tbody>
                             </table>
+                        </div>
+                    </div>
+                ) : (
+                    /* Recent Deletions 7-Day Panel */
+                    <div className="bg-white rounded-2xl border border-slate-200/90 shadow-2xs p-5 space-y-5 animate-in fade-in duration-200">
+                        {/* Header Bar */}
+                        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-4 border-b border-slate-100">
+                            <div className="flex items-center gap-2.5">
+                                <div className="w-9 h-9 rounded-xl bg-rose-50 text-rose-600 border border-rose-200 flex items-center justify-center shadow-2xs shrink-0">
+                                    <Trash2 size={18} />
+                                </div>
+                                <div>
+                                    <div className="flex items-center gap-2">
+                                        <h3 className="text-sm sm:text-base font-bold text-slate-800 tracking-tight">
+                                            বিগত ৭ দিনে মুছে ফেলা আবেদন ও সদস্য তালিকা (Recent Deletions)
+                                        </h3>
+                                        <span className="text-[10px] px-2 py-0.5 rounded-full font-bold bg-rose-100 text-rose-800 border border-rose-200">
+                                            ৭ দিনের রেকর্ড
+                                        </span>
+                                    </div>
+                                    <p className="text-[11px] text-slate-400 font-medium mt-0.5">
+                                        প্রধান কার্যালয়ের অনুমোদিত ইউজারদের দ্বারা বাতিল/মুছে ফেলা রেকর্ডের অডিট লগ
+                                    </p>
+                                </div>
+                            </div>
+
+                            <Link
+                                href="/head-office/recent-deletions"
+                                className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl bg-gradient-to-r from-rose-600 to-rose-700 hover:from-rose-700 hover:to-rose-800 text-white text-xs font-bold shadow-2xs hover:shadow transition-all shrink-0 active:scale-95"
+                            >
+                                <span>সম্পূর্ণ অডিট ও ফিল্টার পেজ</span>
+                                <ExternalLink size={13} />
+                            </Link>
+                        </div>
+
+                        {/* 4 Stat Cards */}
+                        <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+                            <div className="p-3.5 rounded-xl bg-gradient-to-br from-rose-50 to-pink-50 border border-rose-100/80">
+                                <div className="flex items-center justify-between">
+                                    <span className="text-xs font-semibold text-rose-900">মোট মুছে ফেলা</span>
+                                    <Trash2 className="w-4 h-4 text-rose-500" />
+                                </div>
+                                <p className="text-xl sm:text-2xl font-black text-rose-700 mt-1.5 font-mono">
+                                    {recentDeletionsSummary?.count_7_days ?? 0}
+                                </p>
+                                <p className="text-[10px] text-rose-600/80 mt-0.5">গত ৭ দিনে সংগৃহীত</p>
+                            </div>
+
+                            <div className="p-3.5 rounded-xl bg-gradient-to-br from-indigo-50 to-blue-50 border border-indigo-100/80">
+                                <div className="flex items-center justify-between">
+                                    <span className="text-xs font-semibold text-indigo-900">সদস্য ভর্তি</span>
+                                    <Users className="w-4 h-4 text-indigo-500" />
+                                </div>
+                                <p className="text-xl sm:text-2xl font-black text-indigo-700 mt-1.5 font-mono">
+                                    {recentDeletionsSummary?.admissions_7_days ?? 0}
+                                </p>
+                                <p className="text-[10px] text-indigo-600/80 mt-0.5">মুছে ফেলা মেম্বার</p>
+                            </div>
+
+                            <div className="p-3.5 rounded-xl bg-gradient-to-br from-blue-50 to-sky-50 border border-blue-100/80">
+                                <div className="flex items-center justify-between">
+                                    <span className="text-xs font-semibold text-blue-900">ঋণ আবেদন</span>
+                                    <Wallet className="w-4 h-4 text-blue-500" />
+                                </div>
+                                <p className="text-xl sm:text-2xl font-black text-blue-700 mt-1.5 font-mono">
+                                    {recentDeletionsSummary?.loans_7_days ?? 0}
+                                </p>
+                                <p className="text-[10px] text-blue-600/80 mt-0.5">মুছে ফেলা ঋণ</p>
+                            </div>
+
+                            <div className="p-3.5 rounded-xl bg-gradient-to-br from-purple-50 to-slate-50 border border-purple-100/80">
+                                <div className="flex items-center justify-between">
+                                    <span className="text-xs font-semibold text-purple-900">অ্যাকশন গ্রহণকারী</span>
+                                    <UserCheck className="w-4 h-4 text-purple-500" />
+                                </div>
+                                <p className="text-xl sm:text-2xl font-black text-purple-700 mt-1.5 font-mono">
+                                    {recentDeletionsSummary?.users_7_days ?? 0}
+                                </p>
+                                <p className="text-[10px] text-purple-600/80 mt-0.5">ইউজার ডিলিট করেছেন</p>
+                            </div>
+                        </div>
+
+                        {/* Recent Items Table */}
+                        <div className="border border-slate-100 rounded-xl overflow-hidden shadow-2xs">
+                            <div className="overflow-x-auto">
+                                <table className="w-full text-left text-xs border-collapse">
+                                    <thead>
+                                        <tr className="bg-gradient-to-r from-rose-700 to-rose-600 text-white text-[11px] font-semibold">
+                                            <th className="py-2.5 px-3">ধরন</th>
+                                            <th className="py-2.5 px-3">আবেদন ও সদস্য নাম</th>
+                                            <th className="py-2.5 px-3">শাখা ও সমিতি</th>
+                                            <th className="py-2.5 px-3">কে মুছেছেন (User)</th>
+                                            <th className="py-2.5 px-3">মুছে ফেলার তারিখ</th>
+                                            <th className="py-2.5 px-3 text-right">অ্যাকশন</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody className="divide-y divide-slate-100">
+                                        {(!recentDeletionsSummary?.list || recentDeletionsSummary.list.length === 0) ? (
+                                            <tr>
+                                                <td colSpan={6} className="py-10 text-center text-slate-400 font-medium">
+                                                    বিগত ৭ দিনে কোনো আবেদন মুছে ফেলা হয়নি।
+                                                </td>
+                                            </tr>
+                                        ) : (
+                                            recentDeletionsSummary.list.map((item, idx) => (
+                                                <tr key={item.id || idx} className={idx % 2 === 1 ? 'bg-rose-50/20 hover:bg-rose-50/40' : 'bg-white hover:bg-slate-50'}>
+                                                    <td className="py-2.5 px-3 whitespace-nowrap">
+                                                        <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-bold ${
+                                                            item.deletable_type === 'member_admission'
+                                                                ? 'bg-purple-100 text-purple-700 border border-purple-200'
+                                                                : 'bg-blue-100 text-blue-700 border border-blue-200'
+                                                        }`}>
+                                                            {item.deletable_type === 'member_admission' ? 'সদস্য ভর্তি' : 'ঋণ আবেদন'}
+                                                        </span>
+                                                    </td>
+                                                    <td className="py-2.5 px-3">
+                                                        <div className="font-bold text-slate-800">{item.applicant_name}</div>
+                                                        <div className="text-[10px] text-slate-400 font-mono">
+                                                            {item.application_no} {item.member_code ? `• ${item.member_code}` : ''}
+                                                        </div>
+                                                    </td>
+                                                    <td className="py-2.5 px-3">
+                                                        <div className="font-medium text-slate-700">{item.branch_name}</div>
+                                                        <div className="text-[10px] text-slate-400">{item.samity_name || item.area_name}</div>
+                                                    </td>
+                                                    <td className="py-2.5 px-3">
+                                                        <div className="font-semibold text-slate-800 flex items-center gap-1">
+                                                            <span className="w-1.5 h-1.5 rounded-full bg-rose-500"></span>
+                                                            {item.deleted_by_name}
+                                                        </div>
+                                                        <div className="text-[10px] text-slate-400 capitalize">{item.deleted_by_role || 'Head Office'}</div>
+                                                    </td>
+                                                    <td className="py-2.5 px-3 whitespace-nowrap">
+                                                        <div className="font-medium text-slate-700">{item.deleted_at}</div>
+                                                        <div className="text-[10px] text-slate-400">{item.deleted_at_human}</div>
+                                                    </td>
+                                                    <td className="py-2.5 px-3 text-right whitespace-nowrap">
+                                                        <Link
+                                                            href={`/head-office/recent-deletions?search=${encodeURIComponent(item.application_no)}`}
+                                                            className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-slate-100 hover:bg-rose-100 hover:text-rose-700 text-slate-700 text-[11px] font-semibold transition-colors"
+                                                        >
+                                                            <span>অডিট দেখুন</span>
+                                                            <ChevronRight size={12} />
+                                                        </Link>
+                                                    </td>
+                                                </tr>
+                                            ))
+                                        )}
+                                    </tbody>
+                                </table>
+                            </div>
+                            {recentDeletionsSummary?.list && recentDeletionsSummary.list.length > 0 && (
+                                <div className="p-3 bg-slate-50 border-t border-slate-100 text-center">
+                                    <Link
+                                        href="/head-office/recent-deletions"
+                                        className="text-xs font-bold text-rose-600 hover:text-rose-800 hover:underline inline-flex items-center gap-1"
+                                    >
+                                        <span>সকল রেকর্ড ও বিস্তারিত ফিল্টার দেখতে Recent Deletions অডিট পেজে যান</span>
+                                        <ArrowUpRight size={13} />
+                                    </Link>
+                                </div>
+                            )}
                         </div>
                     </div>
                 )}

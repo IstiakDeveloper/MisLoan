@@ -163,8 +163,11 @@ interface Props {
 
 export default function LoanApplications({ loans, filters, stats, zones, areas, branches, viewAllLoans = false, workQueue }: Props) {
     const { auth } = usePage().props as any;
-    const roleName = auth?.user?.role?.name || (typeof auth?.user?.role === 'string' ? auth?.user?.role : '');
-    const isSuperAdmin = roleName === 'super_admin' || roleName === 'superadmin' || roleName === 'Super Admin';
+    const roleName = (auth?.user?.role?.name || (typeof auth?.user?.role === 'string' ? auth?.user?.role : '')).toLowerCase();
+    const isSuperAdmin = roleName === 'super_admin' || roleName === 'superadmin' || roleName === 'super admin';
+    const isHeadOffice = roleName === 'head_office';
+    const isCso = roleName === 'cso';
+    const canDelete = (isSuperAdmin || isHeadOffice) && !isCso;
     const canModify = useCanHeadOfficeModify();
     const canViewAllLoans = isSuperAdmin || !!auth?.user?.has_all_access || viewAllLoans;
 
@@ -609,6 +612,17 @@ export default function LoanApplications({ loans, filters, stats, zones, areas, 
                                 <span>{syncProcessing ? 'সিঙ্ক হচ্ছে...' : 'মেম্বার কোড সিঙ্ক'}</span>
                             </button>
                         )}
+
+                        {canDelete && (
+                            <Link
+                                href="/head-office/recent-deletions?type=loan_application"
+                                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-rose-50 text-rose-700 hover:bg-rose-100 border border-rose-200 text-xs font-semibold transition-all active:scale-95 shadow-2xs"
+                                title="বিগত ৭ দিনে মুছে ফেলা ঋণ আবেদন তালিকা"
+                            >
+                                <Trash2 size={13} />
+                                <span>মুছে ফেলা ডাটা (৭ দিন)</span>
+                            </Link>
+                        )}
                     </div>
                 </div>
 
@@ -775,7 +789,7 @@ export default function LoanApplications({ loans, filters, stats, zones, areas, 
                 </div>
 
                 {/* Main Loans Table with AutoFit Container */}
-                {isSuperAdmin && selectedIds.length > 0 && (
+                {canDelete && selectedIds.length > 0 && (
                     <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-rose-200 bg-rose-50 px-4 py-3">
                         <p className="text-sm text-rose-800 font-medium">{selectedIds.length} টি ঋণ আবেদন নির্বাচিত</p>
                         <div className="flex flex-wrap gap-2">
@@ -824,7 +838,7 @@ export default function LoanApplications({ loans, filters, stats, zones, areas, 
                         <table className="w-full text-left border-collapse table-auto">
                             <thead>
                                 <tr className="bg-slate-50 border-b border-slate-200 text-slate-600 text-[11px] font-bold uppercase tracking-wider">
-                                    {isSuperAdmin && (
+                                    {canDelete && (
                                         <th className="py-2.5 px-2 text-center w-8">
                                             <input
                                                 type="checkbox"
@@ -848,7 +862,7 @@ export default function LoanApplications({ loans, filters, stats, zones, areas, 
                             <tbody className="divide-y divide-slate-100 text-xs">
                                 {loans.data.map((loan) => (
                                     <tr key={loan.id} className="hover:bg-slate-50/80 transition-colors">
-                                        {isSuperAdmin && (
+                                        {canDelete && (
                                             <td className="py-2 px-2 text-center">
                                                 <input
                                                     type="checkbox"
@@ -984,7 +998,7 @@ export default function LoanApplications({ loans, filters, stats, zones, areas, 
                                                     </Link>
                                                 )}
 
-                                                {isSuperAdmin && (
+                                                {canDelete && (
                                                     <button
                                                         onClick={() => handleDelete(loan)}
                                                         className="p-1.5 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition"
@@ -1061,9 +1075,11 @@ export default function LoanApplications({ loans, filters, stats, zones, areas, 
                 title="ঋণ আবেদন মুছে ফেলুন"
                 description={
                     deleteIntent?.type === 'bulk'
-                        ? `নির্বাচিত ${selectedIds.length} টি ঋণ আবেদন মুছে ফেলতে PIN দিন।`
-                        : `সদস্য নং ${deleteIntent?.type === 'single' ? deleteIntent.label : ''} মুছে ফেলতে PIN দিন।`
+                        ? `নির্বাচিত ${selectedIds.length} টি ঋণ আবেদন মুছে ফেলতে আপনার লগইন পাসওয়ার্ড দিন।`
+                        : `সদস্য নং ${deleteIntent?.type === 'single' ? deleteIntent.label : ''} মুছে ফেলতে আপনার লগইন পাসওয়ার্ড দিন।`
                 }
+                pinLabel="আপনার পাসওয়ার্ড (User Password)"
+                placeholder="লগইন পাসওয়ার্ড লিখুন"
                 processing={deleteProcessing}
                 onClose={() => setDeleteIntent(null)}
                 onConfirm={confirmDeleteWithPin}

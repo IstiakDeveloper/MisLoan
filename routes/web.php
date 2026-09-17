@@ -8,6 +8,7 @@ use App\Http\Controllers\HeadOffice\GuarantorInformantReportController;
 use App\Http\Controllers\HeadOffice\HoSendCutoffController;
 use App\Http\Controllers\HeadOfficeAdmissionController;
 use App\Http\Controllers\HeadOfficeLoanController;
+use App\Http\Controllers\HeadOfficeRecentDeletionController;
 use App\Http\Controllers\HeadOfficeSavingsController;
 use App\Http\Controllers\HeadOfficeTeamBasedApprovalController;
 use App\Http\Controllers\HeadOfficeVerificationController;
@@ -400,6 +401,10 @@ Route::middleware(['auth', 'verified'])->group(function () {
         Route::patch('loans/{loanApplication}/reset-to-head-office', [HeadOfficeLoanController::class, 'resetToHeadOffice'])->name('loans.reset-to-head-office');
         Route::delete('loans/bulk', [HeadOfficeLoanController::class, 'bulkDestroy'])->name('loans.bulk-destroy');
         Route::delete('loans/{loanApplication}', [HeadOfficeLoanController::class, 'destroy'])->name('loans.destroy');
+
+        // Head Office Recent Deletions (last 7 days audit tracking)
+        Route::get('recent-deletions', [HeadOfficeRecentDeletionController::class, 'index'])->name('recent-deletions');
+        Route::get('recent-deletions/{recentDeletion}', [HeadOfficeRecentDeletionController::class, 'show'])->name('recent-deletions.show');
 
         // Head Office Savings Applications ( HO approval)
         Route::get('savings-applications', [HeadOfficeSavingsController::class, 'index'])->name('savings-applications');

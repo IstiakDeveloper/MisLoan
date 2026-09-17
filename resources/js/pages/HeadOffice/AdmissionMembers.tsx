@@ -132,8 +132,11 @@ function branchLabel(admission: MemberAdmission): { name: string; meta?: string 
 
 export default function AdmissionMembers({ admissions, filters, stats, zones, areas, branches, viewAllAdmissions = false, workQueue }: Props) {
     const { auth } = usePage().props as any;
-    const roleName = auth?.user?.role?.name || (typeof auth?.user?.role === 'string' ? auth?.user?.role : '');
-    const isSuperAdmin = roleName === 'super_admin' || roleName === 'superadmin' || roleName === 'Super Admin';
+    const roleName = (auth?.user?.role?.name || (typeof auth?.user?.role === 'string' ? auth?.user?.role : '')).toLowerCase();
+    const isSuperAdmin = roleName === 'super_admin' || roleName === 'superadmin' || roleName === 'super admin';
+    const isHeadOffice = roleName === 'head_office';
+    const isCso = roleName === 'cso';
+    const canDelete = (isSuperAdmin || isHeadOffice) && !isCso;
     const canModify = useCanHeadOfficeModify();
     const canViewAllAdmissions = isSuperAdmin || !!auth?.user?.has_all_access || viewAllAdmissions;
 
@@ -538,7 +541,7 @@ export default function AdmissionMembers({ admissions, filters, stats, zones, ar
                     <FileText className="w-4 h-4" />
                 </button>
             )}
-            {isSuperAdmin && (
+            {canDelete && (
                     <button
                         onClick={() => handleDelete(admission.id, admission.application_no)}
                         className="p-1.5 text-rose-500 hover:text-white hover:bg-rose-600 border border-rose-200 hover:border-rose-600 rounded-md transition"
@@ -615,6 +618,17 @@ export default function AdmissionMembers({ admissions, filters, stats, zones, ar
                             <Printer size={13} />
                             <span>প্রিন্ট</span>
                         </button>
+
+                        {canDelete && (
+                            <Link
+                                href="/head-office/recent-deletions?type=member_admission"
+                                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-rose-50 text-rose-700 hover:bg-rose-100 border border-rose-200 text-xs font-semibold transition-all active:scale-95 shadow-2xs"
+                                title="বিগত ৭ দিনে মুছে ফেলা সদস্য ভর্তি তালিকা"
+                            >
+                                <Trash2 size={13} />
+                                <span>মুছে ফেলা ডাটা (৭ দিন)</span>
+                            </Link>
+                        )}
                     </div>
                 </div>
 
@@ -786,7 +800,7 @@ export default function AdmissionMembers({ admissions, filters, stats, zones, ar
                     </form>
                 </div>
 
-                {isSuperAdmin && selectedIds.length > 0 && (
+                {canDelete && selectedIds.length > 0 && (
                     <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-rose-200 bg-rose-50 px-4 py-3">
                         <p className="text-sm text-rose-800 font-medium">{selectedIds.length} টি আবেদন নির্বাচিত</p>
                         <div className="flex flex-wrap gap-2">
@@ -825,7 +839,7 @@ export default function AdmissionMembers({ admissions, filters, stats, zones, ar
                                     <div key={admission.id} className="p-4 space-y-3">
                                         <div className="flex items-start justify-between gap-3">
                                             <div className="flex items-start gap-2 min-w-0">
-                                                {isSuperAdmin && (
+                                                {canDelete && (
                                                     <input
                                                         type="checkbox"
                                                         checked={selectedIds.includes(admission.id)}
@@ -916,7 +930,7 @@ export default function AdmissionMembers({ admissions, filters, stats, zones, ar
                             <table className="w-full text-left border-collapse table-auto">
                                 <thead>
                                     <tr className="bg-gradient-to-r from-blue-700 to-blue-600 text-[11px] font-semibold text-white uppercase tracking-wide">
-                                        {isSuperAdmin && (
+                                        {canDelete && (
                                             <th className="py-2.5 px-2 border-b border-blue-500 text-center w-8">
                                                 <input
                                                     type="checkbox"
@@ -940,7 +954,7 @@ export default function AdmissionMembers({ admissions, filters, stats, zones, ar
                                 <tbody>
                                     {admissions.data.length === 0 ? (
                                         <tr>
-                                            <td colSpan={isSuperAdmin ? 10 : 9} className="py-12 text-center text-slate-400 border-b border-blue-100">
+                                            <td colSpan={canDelete ? 10 : 9} className="py-12 text-center text-slate-400 border-b border-blue-100">
                                                 {workQueue?.hint && !isAllStatus
                                                     ? 'এখন কোনো পেন্ডিং কাজ নেই। সব আবেদন দেখতে “সর্বমোট” চাপুন।'
                                                     : 'কোনো ভর্তি আবেদন পাওয়া যায়নি'}
@@ -956,7 +970,7 @@ export default function AdmissionMembers({ admissions, filters, stats, zones, ar
                                                         index % 2 === 1 ? 'bg-sky-50/30' : 'bg-white'
                                                     }`}
                                                 >
-                                                    {isSuperAdmin && (
+                                                    {canDelete && (
                                                         <td className="py-2 px-2 text-center">
                                                             <input
                                                                 type="checkbox"
@@ -1205,9 +1219,11 @@ export default function AdmissionMembers({ admissions, filters, stats, zones, ar
                     title="সদস্য ভর্তি মুছে ফেলুন"
                     description={
                         deleteIntent?.type === 'bulk'
-                            ? `নির্বাচিত ${selectedIds.length} টি সদস্য ভর্তি মুছে ফেলতে PIN দিন। সংশ্লিষ্ট ঋণ আবেদনও মুছে যাবে।`
-                            : `আবেদন নং ${deleteIntent?.type === 'single' ? deleteIntent.label : ''} মুছে ফেলতে PIN দিন।`
+                            ? `নির্বাচিত ${selectedIds.length} টি সদস্য ভর্তি মুছে ফেলতে আপনার লগইন পাসওয়ার্ড দিন। সংশ্লিষ্ট ঋণ আবেদনও মুছে যাবে।`
+                            : `আবেদন নং ${deleteIntent?.type === 'single' ? deleteIntent.label : ''} মুছে ফেলতে আপনার লগইন পাসওয়ার্ড দিন।`
                     }
+                    pinLabel="আপনার পাসওয়ার্ড (User Password)"
+                    placeholder="লগইন পাসওয়ার্ড লিখুন"
                     processing={deleteProcessing}
                     onClose={() => setDeleteIntent(null)}
                     onConfirm={confirmDeleteWithPin}

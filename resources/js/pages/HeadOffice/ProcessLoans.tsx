@@ -1,11 +1,12 @@
 import React, { useState, useMemo } from 'react';
-import { Head, router, useForm } from '@inertiajs/react';
+import { Head, router } from '@inertiajs/react';
 import AdminLayout from '@/layouts/admin-layout';
 import { formatDate, formatDateTime, formatTime } from '@/utils/dateUtils';
 import ListPagination from '@/components/ListPagination';
 import AutoFitTableContainer from '@/components/AutoFitTableContainer';
 import { formatBranchLabel, keepListFilters, sortBranchesByCode } from '@/utils/branchLabel';
 import { PhoneCallLink } from '@/components/ui/PhoneCallLink';
+import { SmartIssueTextarea } from '@/components/SmartIssueTextarea';
 import {
     Search,
     Calendar,
@@ -121,19 +122,30 @@ interface Props {
     zones?: Zone[];
     areas?: Area[];
     branches?: Branch[];
+    common_issues?: string[];
 }
 
-const PRESET_ISSUES = [
+const DEFAULT_LOAN_ISSUES = [
+    'সদস্য কোড সঠিক না।',
+    'সদস্য কোড ভুল।',
+    'সমিতি কোড সঠিক না।',
+    'সমিতি কোড ভুল।',
+    'সমিতি কোড দেওয়া নাই।',
+    'সদস্যের কোনো মেয়াদি সঞ্চয় খোলা নাই।',
+    'সদস্য নিয়মিত সঞ্চয় প্রদান করেন না।',
+    'সদস্যের সঞ্চয়ের তথ্য দেওয়া নেই।',
+    'সদস্যের সাধারণ সঞ্চয় খেলাপি।',
+    'সদস্যের সাধারণ সঞ্চয় 10% এর কম।',
+    'প্রেরিত মেইলে সদস্যের সদস্য কোড সঠিক নয়।',
+    'সদস্যের ১ম দফা অনুযায়ী সাধারণ সঞ্চয় থাকার কথা 10%। কিন্তু সদস্যের সাধারণ সঞ্চয় 10% এর কম।',
+    'সদস্যের সাথে কথা না হওয়া পর্যন্ত ঋণ ছাড়করণ করা হবেনা।',
+    'সদস্যের আয়ের বিবরণীতে অসংগতি রয়েছে।',
     'NID নম্বর অমিল বা অস্পষ্ট',
     'আবেদনকারীর ছবি স্পষ্ট নয়',
-    'আয়ের বিবরণীতে সামঞ্জস্যতাহীনতা',
     'গ্যারান্টরের তথ্যাদি অসম্পূর্ণ',
-    'ব্যবসায়িক পরিকল্পনার তথ্য অসম্পূর্ণ',
-    'সমিতি বা সদস্য ক্যাটাগরি ত্রুটিযুক্ত',
-    'স্বাক্ষর বা প্রয়োজনীয় পেপার্স অনুপস্থিত',
 ];
 
-export default function ProcessLoans({ loans, filters, zones = [], areas = [], branches = [] }: Props) {
+export default function ProcessLoans({ loans, filters, zones = [], areas = [], branches = [], common_issues = [] }: Props) {
     const getCurrentMonth = () => {
         const now = new Date();
         const year = now.getFullYear();
@@ -154,14 +166,10 @@ export default function ProcessLoans({ loans, filters, zones = [], areas = [], b
 
     const [selectedLoan, setSelectedLoan] = useState<Loan | null>(null);
     const [showIssueModal, setShowIssueModal] = useState(false);
-    const [editingIssueId, setEditingIssueId] = useState<number | null>(null);
+    const [editingIssue, setEditingIssue] = useState<Issue | null>(null);
     const [showViewModal, setShowViewModal] = useState(false);
     const [showRejectModal, setShowRejectModal] = useState(false);
     const [rejectionReason, setRejectionReason] = useState('');
-
-    const { data, setData, post, patch, processing, reset, errors } = useForm({
-        issue_description: '',
-    });
 
     // Cascading Filter Computations
     const filteredAreas = useMemo(() => {
@@ -304,51 +312,20 @@ export default function ProcessLoans({ loans, filters, zones = [], areas = [], b
     // Modals
     const openIssueModal = (loan: Loan) => {
         setSelectedLoan(loan);
-        setEditingIssueId(null);
-        reset();
+        setEditingIssue(null);
         setShowIssueModal(true);
     };
 
     const openEditIssueModal = (loan: Loan, issue: Issue) => {
         setSelectedLoan(loan);
-        setEditingIssueId(issue.id);
-        setData('issue_description', issue.issue_description);
+        setEditingIssue(issue);
         setShowIssueModal(true);
     };
 
     const closeIssueModal = () => {
         setShowIssueModal(false);
         setSelectedLoan(null);
-        setEditingIssueId(null);
-        reset();
-    };
-
-    const handleSaveIssue = (e: React.FormEvent) => {
-        e.preventDefault();
-        if (!selectedLoan) return;
-
-        const options = {
-            preserveScroll: true,
-            preserveState: true,
-            onSuccess: () => {
-                closeIssueModal();
-            },
-        };
-
-        if (editingIssueId) {
-            patch(`/head-office/loan-issues/${editingIssueId}`, options);
-            return;
-        }
-
-        post(`/head-office/loans/${selectedLoan.id}/issue`, options);
-    };
-
-    const addPresetIssueTag = (tagText: string) => {
-        if (data.issue_description.includes(tagText)) return;
-        const updated = data.issue_description
-            ? `${data.issue_description}\n- ${tagText}`
-            : `- ${tagText}`;
-        setData('issue_description', updated);
+        setEditingIssue(null);
     };
 
     const handleApproveAll = () => {
@@ -1083,111 +1060,16 @@ export default function ProcessLoans({ loans, filters, zones = [], areas = [], b
                 </div>
             </div>
 
-            {/* Issue Reporting Modal (যাচাই Modal with Preset Quick Tags) */}
+            {/* Issue Reporting Modal (যাচাই Modal with Smart Autocomplete & Tab-fill) */}
             {showIssueModal && selectedLoan && (
-                <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center z-50 p-4 animate-in fade-in duration-200">
-                    <div className="bg-white rounded-2xl max-w-xl w-full shadow-2xl overflow-hidden border border-slate-200">
-                        <div className="bg-slate-900 text-white p-4 flex items-center justify-between">
-                            <div>
-                                <h3 className="text-base font-bold flex items-center gap-2">
-                                    <AlertTriangle className="w-4 h-4 text-amber-400" />
-                                    {editingIssueId ? 'সমস্যা আপডেট করুন' : 'যাচাই ও ঋণ আবেদন সমস্যা চিহ্নিতকরণ'}
-                                </h3>
-                                <p className="text-xs text-slate-300 mt-0.5">
-                                    সদস্য নং: {selectedLoan.member_admission?.application_no || selectedLoan.application_no} | {selectedLoan.member_admission?.applicant_name_bn}
-                                </p>
-                            </div>
-                            <button onClick={closeIssueModal} className="text-slate-400 hover:text-white p-1 rounded-lg hover:bg-slate-800 transition">
-                                <X className="w-5 h-5" />
-                            </button>
-                        </div>
-
-                        <form onSubmit={handleSaveIssue} className="p-5 space-y-4">
-                            <div>
-                                <label className="block text-xs font-semibold text-slate-600 mb-2 flex items-center gap-1.5">
-                                    <Tag className="w-3.5 h-3.5 text-indigo-600" />
-                                    দ্রুত সিলেক্ট ট্যাগ (Quick Tags):
-                                </label>
-                                <div className="flex flex-wrap gap-1.5">
-                                    {PRESET_ISSUES.map((tag, idx) => (
-                                        <button
-                                            key={idx}
-                                            type="button"
-                                            onClick={() => addPresetIssueTag(tag)}
-                                            className="px-2.5 py-1 bg-slate-100 hover:bg-indigo-50 hover:text-indigo-700 hover:border-indigo-300 text-slate-700 border border-slate-200 text-xs rounded-lg transition"
-                                        >
-                                            + {tag}
-                                        </button>
-                                    ))}
-                                </div>
-                            </div>
-
-                            <div>
-                                <label className="block text-xs font-semibold text-slate-700 mb-1">
-                                    সমস্যার বিবরণ (Issue Description) <span className="text-red-500">*</span>
-                                </label>
-                                <textarea
-                                    value={data.issue_description}
-                                    onChange={(e) => setData('issue_description', e.target.value)}
-                                    rows={4}
-                                    className="w-full px-3 py-2 bg-slate-50 border border-slate-300 rounded-xl text-xs text-slate-800 focus:ring-1 focus:ring-indigo-500 focus:bg-white transition"
-                                    placeholder="এখানে ঋণ আবেদনের চিহ্নিত সমস্যার বিস্তারিত বিবরণ লিখুন..."
-                                    required
-                                />
-                                {errors.issue_description && (
-                                    <p className="text-xs text-red-600 mt-1">{errors.issue_description}</p>
-                                )}
-                            </div>
-
-                            {!editingIssueId && selectedLoan.issues.length > 0 && (
-                                <div className="border-t border-slate-100 pt-3">
-                                    <h4 className="text-xs font-semibold text-slate-700 mb-1.5">পূর্বে চিহ্নিত সমস্যাসমূহ:</h4>
-                                    <div className="space-y-1.5 max-h-32 overflow-y-auto">
-                                        {selectedLoan.issues.map((issue) => (
-                                            <div key={issue.id} className="p-2 bg-amber-50 border border-amber-200 rounded-lg text-xs flex items-start justify-between gap-2">
-                                                <div className="min-w-0">
-                                                    <p className="text-amber-900 font-medium text-xs">{issue.issue_description}</p>
-                                                    <p className="text-[10px] text-amber-600 mt-0.5">
-                                                        রিপোর্টার: {issue.reporter?.name}
-                                                    </p>
-                                                </div>
-                                                {canMutateIssue(issue) && (
-                                                    <button
-                                                        type="button"
-                                                        onClick={() => openEditIssueModal(selectedLoan, issue)}
-                                                        className="inline-flex items-center gap-1 px-2 py-0.5 text-[10px] font-semibold text-indigo-700 bg-indigo-50 hover:bg-indigo-100 border border-indigo-200 rounded-lg shrink-0"
-                                                    >
-                                                        <Pencil className="w-3 h-3" />
-                                                        আপডেট
-                                                    </button>
-                                                )}
-                                            </div>
-                                        ))}
-                                    </div>
-                                </div>
-                            )}
-
-                            <div className="flex justify-end gap-2.5 pt-3 border-t border-slate-100">
-                                <button
-                                    type="button"
-                                    onClick={closeIssueModal}
-                                    className="px-4 py-2 bg-slate-100 text-slate-700 hover:bg-slate-200 text-xs font-semibold rounded-xl transition"
-                                >
-                                    বাতিল
-                                </button>
-                                <button
-                                    type="submit"
-                                    disabled={processing}
-                                    className="px-4 py-2 bg-amber-600 hover:bg-amber-700 text-white text-xs font-semibold rounded-xl shadow-sm transition disabled:opacity-50"
-                                >
-                                    {processing
-                                        ? (editingIssueId ? 'আপডেট হচ্ছে...' : 'সংরক্ষণ হচ্ছে...')
-                                        : (editingIssueId ? 'আপডেট করে সাবমিট করুন' : 'সমস্যা সেভ করুন')}
-                                </button>
-                            </div>
-                        </form>
-                    </div>
-                </div>
+                <LoanIssueModal
+                    loan={selectedLoan}
+                    editingIssue={editingIssue}
+                    isOpen={showIssueModal}
+                    onClose={closeIssueModal}
+                    onEditIssue={(issue) => setEditingIssue(issue)}
+                    presets={common_issues && common_issues.length > 0 ? common_issues : DEFAULT_LOAN_ISSUES}
+                />
             )}
 
             {/* Reject Modal */}
@@ -1240,5 +1122,176 @@ export default function ProcessLoans({ loans, filters, zones = [], areas = [], b
                 </div>
             )}
         </AdminLayout>
+    );
+}
+
+/**
+ * Isolated LoanIssueModal
+ * Runs in its own local state to prevent laggy parent re-renders.
+ * Features SmartIssueTextarea for instantaneous typing and Tab-autocomplete.
+ */
+function LoanIssueModal({
+    loan,
+    editingIssue,
+    isOpen,
+    onClose,
+    onEditIssue,
+}: {
+    loan: Loan;
+    editingIssue: Issue | null;
+    isOpen: boolean;
+    onClose: () => void;
+    onEditIssue?: (issue: Issue) => void;
+    presets?: string[];
+}) {
+    const [issueDescription, setIssueDescription] = useState(editingIssue ? editingIssue.issue_description : '');
+    const [isSubmitting, setIsSubmitting] = useState(false);
+    const [error, setError] = useState<string | null>(null);
+
+    React.useEffect(() => {
+        setIssueDescription(editingIssue ? editingIssue.issue_description : '');
+        setError(null);
+    }, [editingIssue]);
+
+    if (!isOpen) return null;
+
+    const handleSubmit = (e: React.FormEvent) => {
+        e.preventDefault();
+        if (!issueDescription.trim()) {
+            setError('অনুগ্রহ করে সমস্যার বিবরণ লিখুন');
+            return;
+        }
+
+        setIsSubmitting(true);
+        const options = {
+            preserveScroll: true,
+            preserveState: true,
+            onSuccess: () => {
+                setIsSubmitting(false);
+                onClose();
+            },
+            onError: (errs: Record<string, string>) => {
+                setIsSubmitting(false);
+                if (errs.issue_description) {
+                    setError(errs.issue_description);
+                }
+            },
+        };
+
+        if (editingIssue) {
+            router.patch(`/head-office/loan-issues/${editingIssue.id}`, {
+                issue_description: issueDescription.trim(),
+            }, options);
+        } else {
+            router.post(`/head-office/loans/${loan.id}/issue`, {
+                issue_description: issueDescription.trim(),
+            }, options);
+        }
+    };
+
+    const canMutateIssue = (issue: Issue) =>
+        (!issue.status || issue.status === 'pending') && !issue.response_message;
+
+    return (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center z-50 p-4 animate-in fade-in duration-200">
+            <div className="bg-white rounded-2xl max-w-xl w-full shadow-2xl overflow-hidden border border-slate-200 max-h-[90vh] flex flex-col">
+                {/* Header */}
+                <div className="bg-slate-900 text-white p-4 flex items-center justify-between shrink-0">
+                    <div>
+                        <h3 className="text-base font-bold flex items-center gap-2">
+                            <AlertTriangle className="w-4 h-4 text-amber-400" />
+                            {editingIssue ? 'সমস্যা আপডেট করুন' : 'যাচাই ও ঋণ আবেদন সমস্যা চিহ্নিতকরণ'}
+                        </h3>
+                        <p className="text-xs text-slate-300 mt-0.5">
+                            সদস্য নং: {loan.member_admission?.application_no || loan.application_no} | {loan.member_admission?.applicant_name_bn || loan.member_admission?.applicant_name_en}
+                        </p>
+                    </div>
+                    <button
+                        type="button"
+                        onClick={onClose}
+                        disabled={isSubmitting}
+                        className="text-slate-400 hover:text-white p-1 rounded-lg hover:bg-slate-800 transition"
+                    >
+                        <X className="w-5 h-5" />
+                    </button>
+                </div>
+
+                <form onSubmit={handleSubmit} className="p-5 space-y-4 overflow-y-auto flex-1">
+                    <div>
+                        <div className="flex items-center justify-between mb-1">
+                            <label className="block text-xs font-semibold text-slate-700">
+                                সমস্যার বিবরণ (Issue Description) <span className="text-red-500">*</span>
+                            </label>
+                            <span className="text-[10px] text-indigo-700 font-bold bg-indigo-50 px-2 py-0.5 rounded-md border border-indigo-200">
+                                টাইপ করলেই সাজেশন (Tab ⇥ চাপলে অটো-ফিল)
+                            </span>
+                        </div>
+
+                        <SmartIssueTextarea
+                            value={issueDescription}
+                            onChange={(val) => {
+                                setIssueDescription(val);
+                                if (error) setError(null);
+                            }}
+                            presets={presets && presets.length > 0 ? presets : DEFAULT_LOAN_ISSUES}
+                            rows={4}
+                            autoFocus
+                            placeholder="এখানে ঋণ আবেদনের সমস্যা লিখুন (যেমন: কোড, সমিতি, সঞ্চয়, খেলাপি, আয়ের)..."
+                        />
+                        {error && (
+                            <p className="text-xs text-red-600 mt-1">{error}</p>
+                        )}
+                    </div>
+
+                    {!editingIssue && loan.issues && loan.issues.length > 0 && (
+                        <div className="border-t border-slate-100 pt-3">
+                            <h4 className="text-xs font-semibold text-slate-700 mb-1.5">পূর্বে চিহ্নিত সমস্যাসমূহ:</h4>
+                            <div className="space-y-1.5 max-h-32 overflow-y-auto">
+                                {loan.issues.map((issue) => (
+                                    <div key={issue.id} className="p-2 bg-amber-50 border border-amber-200 rounded-lg text-xs flex items-start justify-between gap-2">
+                                        <div className="min-w-0">
+                                            <p className="text-amber-900 font-medium text-xs">{issue.issue_description}</p>
+                                            <p className="text-[10px] text-amber-600 mt-0.5">
+                                                রিপোর্টার: {issue.reporter?.name || 'User'}
+                                            </p>
+                                        </div>
+                                        {canMutateIssue(issue) && (
+                                            <button
+                                                type="button"
+                                                onClick={() => onEditIssue?.(issue)}
+                                                className="inline-flex items-center gap-1 px-2 py-0.5 text-[10px] font-semibold text-indigo-700 bg-indigo-50 hover:bg-indigo-100 border border-indigo-200 rounded-lg shrink-0"
+                                            >
+                                                <Pencil className="w-3 h-3" />
+                                                আপডেট
+                                            </button>
+                                        )}
+                                    </div>
+                                ))}
+                            </div>
+                        </div>
+                    )}
+
+                    <div className="flex justify-end gap-2.5 pt-3 border-t border-slate-100 shrink-0">
+                        <button
+                            type="button"
+                            onClick={onClose}
+                            disabled={isSubmitting}
+                            className="px-4 py-2 bg-slate-100 text-slate-700 hover:bg-slate-200 text-xs font-semibold rounded-xl transition"
+                        >
+                            বাতিল
+                        </button>
+                        <button
+                            type="submit"
+                            disabled={isSubmitting || !issueDescription.trim()}
+                            className="px-4 py-2 bg-amber-600 hover:bg-amber-700 text-white text-xs font-semibold rounded-xl shadow-sm transition disabled:opacity-50"
+                        >
+                            {isSubmitting
+                                ? (editingIssue ? 'আপডেট হচ্ছে...' : 'সংরক্ষণ হচ্ছে...')
+                                : (editingIssue ? 'আপডেট করে সাবমিট করুন' : 'সমস্যা সেভ করুন')}
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
     );
 }

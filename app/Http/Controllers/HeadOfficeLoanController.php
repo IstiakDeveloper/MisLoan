@@ -9,6 +9,7 @@ use App\Models\Branch;
 use App\Models\LoanApplication;
 use App\Models\LoanApplicationIssue;
 use App\Models\LoanCategory;
+use App\Models\RecentDeletion;
 use App\Models\Role;
 use App\Models\User;
 use App\Models\Zone;
@@ -664,8 +665,20 @@ class HeadOfficeLoanController extends Controller
 
         $orgFilters = $this->organizationFilterOptions();
 
+        $commonIssues = \Illuminate\Support\Facades\Cache::remember('common_loan_issues', 300, function () {
+            return LoanApplicationIssue::select('issue_description', DB::raw('count(*) as usage_count'))
+                ->whereNotNull('issue_description')
+                ->where('issue_description', '!=', '')
+                ->groupBy('issue_description')
+                ->orderByDesc('usage_count')
+                ->limit(60)
+                ->pluck('issue_description')
+                ->toArray();
+        });
+
         return Inertia::render('HeadOffice/ProcessLoans', [
             'loans' => $loans,
+            'common_issues' => $commonIssues,
             'filters' => [
                 'month' => $month,
                 'date' => $date,
@@ -717,9 +730,10 @@ class HeadOfficeLoanController extends Controller
         $loanApplication->visible_form_ids = $visibleFormIds;
         $loanApplication->form_saved = $formSaved;
 
-        $isSuperAdmin = auth()->user()?->isSuperAdmin() ?? false;
-        $loanApplication->superadmin_can_pin_edit = $isSuperAdmin;
-        $loanApplication->superadmin_edit_unlocked = $isSuperAdmin && $this->isLoanEditUnlocked((int) $loanApplication->id);
+        $authUser = auth()->user();
+        $canPasswordEdit = $authUser ? $authUser->canHeadOfficeDeleteOrEdit() : false;
+        $loanApplication->superadmin_can_pin_edit = $canPasswordEdit;
+        $loanApplication->superadmin_edit_unlocked = $canPasswordEdit && $this->isLoanEditUnlocked((int) $loanApplication->id);
 
         $categories = LoanCategory::with(['loanProducts' => function ($q) {
             $q->where('is_active', true)->orderBy('display_order');
@@ -1248,7 +1262,7 @@ class HeadOfficeLoanController extends Controller
     }
 
     /**
-     * Delete loan application (SuperAdmin only, PIN required; any status).
+     * Delete loan application (Head Office or SuperAdmin, user password required; any status).
      */
     public function destroy(Request $request, LoanApplication $loanApplication)
     {
@@ -1257,13 +1271,14 @@ class HeadOfficeLoanController extends Controller
         }
 
         $this->ensureCanAccessBranch($loanApplication->branch_id);
+        RecentDeletion::recordLoanDeletion($loanApplication, $request->user(), $request);
         $loanApplication->forceDelete();
 
         return back()->with('success', 'ঋণ আবেদন মুছে ফেলা হয়েছে।');
     }
 
     /**
-     * Bulk delete loan applications (SuperAdmin only, PIN required).
+     * Bulk delete loan applications (Head Office or SuperAdmin, user password required).
      */
     public function bulkDestroy(Request $request)
     {
@@ -1278,10 +1293,13 @@ class HeadOfficeLoanController extends Controller
 
         $query = LoanApplication::whereIn('id', $validated['ids']);
         $this->applyAccessibleBranchScope($query);
-        $count = $query->count();
-        $query->each(function (LoanApplication $loan) {
+        $loans = $query->get();
+        $count = $loans->count();
+
+        foreach ($loans as $loan) {
+            RecentDeletion::recordLoanDeletion($loan, $request->user(), $request);
             $loan->forceDelete();
-        });
+        }
 
         return back()->with('success', $count.' টি ঋণ আবেদন মুছে ফেলা হয়েছে।');
     }

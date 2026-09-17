@@ -6,6 +6,7 @@ use App\Models\Area;
 use App\Models\Branch;
 use App\Models\MemberAdmission;
 use App\Models\MemberAdmissionIssue;
+use App\Models\RecentDeletion;
 use App\Models\Role;
 use App\Models\User;
 use App\Models\Zone;
@@ -565,8 +566,20 @@ class HeadOfficeAdmissionController extends Controller
 
         $orgFilters = $this->organizationFilterOptions();
 
+        $commonIssues = \Illuminate\Support\Facades\Cache::remember('common_admission_issues', 300, function () {
+            return MemberAdmissionIssue::select('issue_description', DB::raw('count(*) as usage_count'))
+                ->whereNotNull('issue_description')
+                ->where('issue_description', '!=', '')
+                ->groupBy('issue_description')
+                ->orderByDesc('usage_count')
+                ->limit(60)
+                ->pluck('issue_description')
+                ->toArray();
+        });
+
         return Inertia::render('HeadOffice/ProcessAdmissions', [
             'admissions' => $admissions,
+            'common_issues' => $commonIssues,
             'filters' => [
                 'month' => $month,
                 'date' => $date,
@@ -1266,7 +1279,7 @@ class HeadOfficeAdmissionController extends Controller
     }
 
     /**
-     * Delete admission (SuperAdmin only, PIN required). Related loans are also removed.
+     * Delete admission (Head Office or SuperAdmin, user password required). Related loans are also removed.
      */
     public function destroy(Request $request, MemberAdmission $admission)
     {
@@ -1275,13 +1288,14 @@ class HeadOfficeAdmissionController extends Controller
         }
 
         $this->ensureCanAccessBranch($admission->branch_id);
+        RecentDeletion::recordAdmissionDeletion($admission, $request->user(), $request);
         $this->deleteAdmissionWithRelations($admission);
 
         return back()->with('success', 'সদস্য ভর্তি মুছে ফেলা হয়েছে।');
     }
 
     /**
-     * Bulk delete admissions (SuperAdmin only, PIN required).
+     * Bulk delete admissions (Head Office or SuperAdmin, user password required).
      */
     public function bulkDestroy(Request $request)
     {
@@ -1299,6 +1313,7 @@ class HeadOfficeAdmissionController extends Controller
         $admissions = $query->get();
 
         foreach ($admissions as $admission) {
+            RecentDeletion::recordAdmissionDeletion($admission, $request->user(), $request);
             $this->deleteAdmissionWithRelations($admission);
         }
 

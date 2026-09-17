@@ -1364,7 +1364,7 @@ export default function Show({ application, routes, categories = [] }: Props) {
                                     onClick={() => setPinModalOpen(true)}
                                 >
                                     <Lock className="w-4 h-4 mr-1.5" />
-                                    PIN দিয়ে ফর্ম এডিট
+                                    পাসওয়ার্ড দিয়ে ফর্ম এডিট
                                 </Button>
                             )}
                             {application.superadmin_can_pin_edit && application.superadmin_edit_unlocked && (
@@ -1798,7 +1798,7 @@ export default function Show({ application, routes, categories = [] }: Props) {
                                 {application.superadmin_can_pin_edit && !application.superadmin_edit_unlocked && (
                                     <div className="rounded-xl border border-indigo-200 bg-indigo-50 px-3.5 py-3 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
                                         <p className="text-xs sm:text-sm text-indigo-900">
-                                            সুপার অ্যাডমিন হিসেবে যেকোনো অবস্থায় ঋণের ফর্ম এডিট করতে <strong>SUPERADMIN_DELETE_PIN</strong> দিন।
+                                            যেকোনো অবস্থায় ঋণের ফর্ম এডিট করতে আপনার লগইন পাসওয়ার্ড দিন।
                                         </p>
                                         <Button
                                             size="sm"
@@ -1806,7 +1806,7 @@ export default function Show({ application, routes, categories = [] }: Props) {
                                             onClick={() => setPinModalOpen(true)}
                                         >
                                             <Lock className="w-3.5 h-3.5 mr-1.5" />
-                                            PIN দিন
+                                            পাসওয়ার্ড দিন
                                         </Button>
                                     </div>
                                 )}
@@ -2477,13 +2477,14 @@ export default function Show({ application, routes, categories = [] }: Props) {
             <SuperAdminDeletePinModal
                 open={pinModalOpen}
                 title="ফর্ম এডিট আনলক করুন"
-                description="যেকোনো অবস্থার ঋণ আবেদন সম্পাদনা করতে SuperAdmin PIN দিন। এই PIN .env এর SUPERADMIN_DELETE_PIN।"
+                description="যেকোনো অবস্থার ঋণ আবেদন সম্পাদনা করতে আপনার লগইন পাসওয়ার্ড দিন।"
                 processing={pinProcessing}
                 onClose={() => setPinModalOpen(false)}
                 onConfirm={confirmSuperAdminUnlock}
                 confirmLabel="এডিট আনলক"
                 processingLabel="যাচাই হচ্ছে..."
-                pinLabel="SuperAdmin PIN"
+                pinLabel="আপনার পাসওয়ার্ড (User Password)"
+                placeholder="লগইন পাসওয়ার্ড লিখুন"
                 accent="indigo"
             />
 

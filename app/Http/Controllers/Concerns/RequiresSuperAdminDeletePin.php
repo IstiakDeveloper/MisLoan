@@ -4,25 +4,93 @@ namespace App\Http\Controllers\Concerns;
 
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Hash;
 
 trait RequiresSuperAdminDeletePin
 {
-    protected function superAdminPinIsValid(Request $request): bool
-    {
-        $pin = (string) $request->input('pin', '');
-        $expected = (string) config('app.superadmin_delete_pin', '8934');
-
-        return $pin !== '' && hash_equals($expected, $pin);
-    }
-
-    protected function denyUnlessSuperAdminPin(Request $request, string $error = 'PIN সঠিক নয়।'): ?RedirectResponse
+    /**
+     * Verify whether the provided credential matches the authenticated user's password
+     * (or legacy SuperAdmin PIN for super admins).
+     */
+    protected function userPasswordIsValid(Request $request): bool
     {
         $user = $request->user();
-        if (! $user || ! $user->isSuperAdmin()) {
-            return back()->with('error', 'শুধুমাত্র সুপার অ্যাডমিন এই কাজ করতে পারবেন।');
+        if (! $user) {
+            return false;
         }
 
-        if (! $this->superAdminPinIsValid($request)) {
+        $credential = (string) ($request->input('password') ?? $request->input('pin') ?? '');
+        if ($credential === '') {
+            return false;
+        }
+
+        // 1. Verify user's own login password
+        if (Hash::check($credential, $user->password)) {
+            return true;
+        }
+
+        // 2. Backward compatibility: SuperAdmin PIN for super admins
+        if ($user->isSuperAdmin()) {
+            $expected = (string) config('app.superadmin_delete_pin', '8934');
+            if ($expected !== '' && hash_equals($expected, $credential)) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /**
+     * Backward-compatible alias for userPasswordIsValid
+     */
+    protected function superAdminPinIsValid(Request $request): bool
+    {
+        return $this->userPasswordIsValid($request);
+    }
+
+    /**
+     * Deny unless authenticated user is Head Office or Super Admin (strictly not CSO)
+     * and confirms with their valid user password.
+     */
+    protected function denyUnlessAuthorizedHeadOfficeUser(Request $request, string $actionName = 'মুছে ফেলতে'): ?RedirectResponse
+    {
+        $user = $request->user();
+        if (! $user) {
+            return back()->with('error', 'লগইন প্রয়োজন।');
+        }
+
+        // Strictly deny CSO
+        if ($user->isCso()) {
+            return back()->with('error', 'CSO ব্যবহারকারীদের এই সুবিধা ব্যবহারের অনুমতি নেই।');
+        }
+
+        if (! $user->canHeadOfficeDeleteOrEdit()) {
+            return back()->with('error', "শুধুমাত্র হেড অফিস ও সুপার অ্যাডমিন {$actionName} পারবেন।");
+        }
+
+        if (! $this->userPasswordIsValid($request)) {
+            return back()->with('error', 'আপনার পাসওয়ার্ড সঠিক নয়।');
+        }
+
+        return null;
+    }
+
+    protected function denyUnlessSuperAdminPin(Request $request, string $error = 'আপনার পাসওয়ার্ড সঠিক নয়।'): ?RedirectResponse
+    {
+        $user = $request->user();
+        if (! $user) {
+            return back()->with('error', 'লগইন প্রয়োজন।');
+        }
+
+        if ($user->isCso()) {
+            return back()->with('error', 'CSO ব্যবহারকারীদের এই সুবিধা ব্যবহারের অনুমতি নেই।');
+        }
+
+        if (! $user->canHeadOfficeDeleteOrEdit()) {
+            return back()->with('error', 'শুধুমাত্র হেড অফিস ও সুপার অ্যাডমিন এই কাজ করতে পারবেন।');
+        }
+
+        if (! $this->userPasswordIsValid($request)) {
             return back()->with('error', $error);
         }
 
@@ -31,16 +99,7 @@ trait RequiresSuperAdminDeletePin
 
     protected function denyUnlessSuperAdminDeletePin(Request $request): ?RedirectResponse
     {
-        $user = $request->user();
-        if (! $user || ! $user->isSuperAdmin()) {
-            return back()->with('error', 'শুধুমাত্র সুপার অ্যাডমিন মুছে ফেলতে পারবেন।');
-        }
-
-        if (! $this->superAdminPinIsValid($request)) {
-            return back()->with('error', 'ডিলিট PIN সঠিক নয়।');
-        }
-
-        return null;
+        return $this->denyUnlessAuthorizedHeadOfficeUser($request, 'মুছে ফেলতে');
     }
 
     protected function sessionLoanEditKey(): string

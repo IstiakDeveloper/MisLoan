@@ -204,7 +204,6 @@ export default function VerificationIndex({ items, stats, filters, permissions, 
     const [bulkHoModalOpen, setBulkHoModalOpen] = useState(false);
 
     const [rejectModalItem, setRejectModalItem] = useState<VerificationItem | null>(null);
-    const [rejectReason, setRejectReason] = useState('');
 
     const [approvalModalItem, setApprovalModalItem] = useState<VerificationItem | null>(null);
     const [selectedItemForHistory, setSelectedItemForHistory] = useState<VerificationItem | null>(null);
@@ -534,23 +533,20 @@ export default function VerificationIndex({ items, stats, filters, permissions, 
     // Reject Application
     const handleOpenRejectModal = (item: VerificationItem) => {
         setRejectModalItem(item);
-        setRejectReason('');
     };
 
-    const handleConfirmReject = (e: React.FormEvent) => {
-        e.preventDefault();
-        if (!rejectModalItem || !rejectReason.trim()) return;
+    const handleConfirmReject = (reason: string) => {
+        if (!rejectModalItem || !reason.trim()) return;
 
         setIsSubmitting(true);
         router.post('/verifications/reject-application', {
             item_type: rejectModalItem.item_type,
             raw_id: rejectModalItem.raw_id,
-            rejection_reason: rejectReason.trim(),
+            rejection_reason: reason.trim(),
         }, {
             ...keepListFilters,
             onSuccess: () => {
                 setRejectModalItem(null);
-                setRejectReason('');
             },
             onFinish: () => setIsSubmitting(false),
         });
@@ -1655,58 +1651,13 @@ export default function VerificationIndex({ items, stats, filters, permissions, 
                 </div>
             )}
 
-            {/* Reject Application Modal */}
-            {rejectModalItem && (
-                <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs">
-                    <div className="bg-white rounded-2xl max-w-md w-full p-5 shadow-2xl border border-slate-200 space-y-4 animate-in fade-in zoom-in duration-150">
-                        <div className="flex items-center gap-3">
-                            <div className="w-10 h-10 rounded-xl bg-rose-100 text-rose-600 flex items-center justify-center shrink-0">
-                                <Ban className="w-6 h-6" />
-                            </div>
-                            <div>
-                                <h3 className="font-bold text-slate-900 text-base">আবেদন বাতিল / প্রত্যাখ্যান</h3>
-                                <p className="text-xs text-slate-500">
-                                    আবেদন নং: <span className="font-mono font-bold text-indigo-700">{rejectModalItem.application_no}</span>
-                                </p>
-                            </div>
-                        </div>
-
-                        <form onSubmit={handleConfirmReject} className="space-y-3">
-                            <div>
-                                <label className="block text-xs font-bold text-slate-700 mb-1">
-                                    বাতিলের কারণ লিখুন:
-                                </label>
-                                <textarea
-                                    value={rejectReason}
-                                    onChange={(e) => setRejectReason(e.target.value)}
-                                    placeholder="আবেদন বাতিলের কারণ এখানে লিখুন..."
-                                    rows={3}
-                                    required
-                                    className="w-full text-xs p-3 border border-slate-300 rounded-xl focus:ring-2 focus:ring-rose-500/20 focus:border-rose-500"
-                                />
-                            </div>
-
-                            <div className="flex justify-end gap-2 pt-2 border-t border-slate-100">
-                                <button
-                                    type="button"
-                                    onClick={() => setRejectModalItem(null)}
-                                    disabled={isSubmitting}
-                                    className="px-4 py-2 text-xs font-semibold text-slate-600 hover:bg-slate-100 rounded-lg transition"
-                                >
-                                    ফিরে যান
-                                </button>
-                                <button
-                                    type="submit"
-                                    disabled={isSubmitting || !rejectReason.trim()}
-                                    className="px-4 py-2 text-xs font-semibold bg-rose-600 hover:bg-rose-700 text-white rounded-lg shadow-sm transition flex items-center gap-1"
-                                >
-                                    {isSubmitting ? 'বাতিল হচ্ছে...' : 'হ্যাঁ, আবেদন বাতিল করুন'}
-                                </button>
-                            </div>
-                        </form>
-                    </div>
-                </div>
-            )}
+            {/* Reject Application Modal (Isolated Component for 0-Lag Smooth Typing) */}
+            <RejectApplicationModal
+                item={rejectModalItem}
+                isSubmitting={isSubmitting}
+                onClose={() => setRejectModalItem(null)}
+                onConfirm={handleConfirmReject}
+            />
 
             {/* One-Click Approval Confirmation Modal (Head Office) */}
             {approvalModalItem && (
@@ -2057,3 +2008,89 @@ function VerificationThread({
         </div>
     );
 }
+
+/**
+ * Isolated Reject Modal Component
+ * Ensures typing & backspacing happens locally with 0ms lag,
+ * preventing expensive re-renders of the 2,000+ line parent page.
+ */
+interface RejectApplicationModalProps {
+    item: VerificationItem | null;
+    isSubmitting: boolean;
+    onClose: () => void;
+    onConfirm: (reason: string) => void;
+}
+
+function RejectApplicationModal({ item, isSubmitting, onClose, onConfirm }: RejectApplicationModalProps) {
+    const DEFAULT_REASON = 'উত্তরের প্রেক্ষিতে বাতিল করা হলো';
+    const [reason, setReason] = useState(DEFAULT_REASON);
+
+    useEffect(() => {
+        if (item) {
+            setReason(DEFAULT_REASON);
+        }
+    }, [item]);
+
+    if (!item) return null;
+
+    const handleSubmit = (e: React.FormEvent) => {
+        e.preventDefault();
+        const trimmed = reason.trim();
+        if (!trimmed) return;
+        onConfirm(trimmed);
+    };
+
+    return (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs">
+            <div className="bg-white rounded-2xl max-w-md w-full p-5 shadow-2xl border border-slate-200 space-y-4 animate-in fade-in zoom-in duration-150">
+                <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 rounded-xl bg-rose-100 text-rose-600 flex items-center justify-center shrink-0">
+                        <Ban className="w-6 h-6" />
+                    </div>
+                    <div>
+                        <h3 className="font-bold text-slate-900 text-base">আবেদন বাতিল / প্রত্যাখ্যান</h3>
+                        <p className="text-xs text-slate-500">
+                            আবেদন নং: <span className="font-mono font-bold text-indigo-700">{item.application_no}</span>
+                        </p>
+                    </div>
+                </div>
+
+                <form onSubmit={handleSubmit} className="space-y-3">
+                    <div>
+                        <label className="block text-xs font-bold text-slate-700 mb-1">
+                            বাতিলের কারণ লিখুন:
+                        </label>
+                        <textarea
+                            value={reason}
+                            onChange={(e) => setReason(e.target.value)}
+                            placeholder="উত্তরের প্রেক্ষিতে বাতিল করা হলো"
+                            rows={3}
+                            required
+                            autoFocus
+                            className="w-full text-xs p-3 border border-slate-300 rounded-xl focus:ring-2 focus:ring-rose-500/20 focus:border-rose-500"
+                        />
+                    </div>
+
+                    <div className="flex justify-end gap-2 pt-2 border-t border-slate-100">
+                        <button
+                            type="button"
+                            onClick={onClose}
+                            disabled={isSubmitting}
+                            className="px-4 py-2 text-xs font-semibold text-slate-600 hover:bg-slate-100 rounded-lg transition"
+                        >
+                            ফিরে যান
+                        </button>
+                        <button
+                            type="submit"
+                            disabled={isSubmitting || !reason.trim()}
+                            className="px-4 py-2 text-xs font-semibold bg-rose-600 hover:bg-rose-700 text-white rounded-lg shadow-sm transition flex items-center gap-1"
+                        >
+                            {isSubmitting ? 'বাতিল হচ্ছে...' : 'হ্যাঁ, আবেদন বাতিল করুন'}
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    );
+}
+

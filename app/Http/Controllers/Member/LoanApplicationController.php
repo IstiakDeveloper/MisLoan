@@ -123,8 +123,8 @@ class LoanApplicationController extends Controller
         $editableFormIds = LoanFormVisibility::editableFormIdsForUser($roleName, $status, $product, $amount, $category);
         $visibleFormIds = LoanFormVisibility::visibleFormIdsForShow($roleName, $status, $product, $amount, $category);
 
-        $isSuperAdmin = $user->isSuperAdmin();
-        $superadminEditUnlocked = $isSuperAdmin && $this->isLoanEditUnlocked((int) $application->id);
+        $canPasswordEdit = $user->canHeadOfficeDeleteOrEdit();
+        $superadminEditUnlocked = $canPasswordEdit && $this->isLoanEditUnlocked((int) $application->id);
         if ($superadminEditUnlocked) {
             $editableFormIds = $visibleFormIds;
         }
@@ -133,7 +133,7 @@ class LoanApplicationController extends Controller
         $application->member_admission_status = $memberAdmission?->status;
         $application->visible_form_ids = $visibleFormIds;
         $application->editable_form_ids = $editableFormIds;
-        $application->superadmin_can_pin_edit = $isSuperAdmin;
+        $application->superadmin_can_pin_edit = $canPasswordEdit;
         $application->superadmin_edit_unlocked = $superadminEditUnlocked;
         $application->form_saved = $formSaved;
         $application->all_forms_complete = LoanFormVisibility::allRequiredFormsSaved($submitRequired, $formSaved);
@@ -534,25 +534,30 @@ class LoanApplicationController extends Controller
 
     private function assertSuperAdminLoanEditUnlocked(Request $request, LoanApplication $application): void
     {
+        $user = $request->user();
+        if (! $user?->canHeadOfficeDeleteOrEdit()) {
+            return;
+        }
+
         if ($this->isLoanEditUnlocked((int) $application->id)) {
             return;
         }
 
-        if ($this->superAdminPinIsValid($request)) {
+        if ($this->userPasswordIsValid($request)) {
             $this->markLoanEditUnlocked((int) $application->id);
 
             return;
         }
 
         throw new HttpResponseException(
-            back()->with('error', 'সুপার অ্যাডমিন এডিট করতে PIN প্রয়োজন।')
+            back()->with('error', 'এডিট করতে আপনার পাসওয়ার্ড প্রয়োজন।')
         );
     }
 
     private function ensureSuperAdminLoanFormsUnlocked(Request $request, ?LoanApplication $application): void
     {
         $user = $request->user();
-        if (! $user?->isSuperAdmin() || ! $application) {
+        if (! $user?->canHeadOfficeDeleteOrEdit() || ! $application) {
             return;
         }
 
@@ -563,7 +568,7 @@ class LoanApplicationController extends Controller
         throw new HttpResponseException(
             redirect()
                 ->route('member.loan-applications.show', $application->id)
-                ->with('error', 'ফর্ম এডিট করতে আগে SuperAdmin PIN দিন।')
+                ->with('error', 'ফর্ম এডিট করতে আগে আপনার পাসওয়ার্ড দিন।')
         );
     }
 
@@ -571,13 +576,13 @@ class LoanApplicationController extends Controller
     {
         $application = LoanApplication::findOrFail($id);
         $user = $request->user();
-        if (! $user || ! $user->isSuperAdmin()) {
-            abort(403, 'শুধুমাত্র সুপার অ্যাডমিন এডিট আনলক করতে পারবেন।');
+        if (! $user || ! $user->canHeadOfficeDeleteOrEdit()) {
+            abort(403, 'শুধুমাত্র হেড অফিস ও সুপার অ্যাডমিন এডিট আনলক করতে পারবেন।');
         }
 
         $this->ensureApplicationAccessibleToUser($application, $user);
 
-        if ($denied = $this->denyUnlessSuperAdminPin($request, 'এডিট PIN সঠিক নয়।')) {
+        if ($denied = $this->denyUnlessSuperAdminPin($request, 'আপনার পাসওয়ার্ড সঠিক নয়।')) {
             return $denied;
         }
 
@@ -2072,7 +2077,7 @@ class LoanApplicationController extends Controller
         $application = LoanApplication::findOrFail($id);
         $this->ensureApplicationAccessibleToUser($application, $request->user());
 
-        if ($request->user()?->isSuperAdmin()) {
+        if ($request->user()?->canHeadOfficeDeleteOrEdit()) {
             $this->assertSuperAdminLoanEditUnlocked($request, $application);
         } elseif (! $this->canManageAnyStatus() && ! $application->canBeEdited()) {
             return back()->withErrors(['error' => 'This application cannot be edited']);
@@ -2263,7 +2268,7 @@ class LoanApplicationController extends Controller
         }
 
         $applicationStatuses = [LoanApplication::STATUS_DRAFT];
-        if ($user->isSuperAdmin()) {
+        if ($user->canHeadOfficeDeleteOrEdit()) {
             $applicationStatuses = $this->allLoanStatuses();
         } elseif ($this->isBranchUserRole($user)) {
             $applicationStatuses = LoanFormVisibility::preDisbursementStatuses();
@@ -2315,8 +2320,8 @@ class LoanApplicationController extends Controller
         $memberId = $request->input('member_id');
         $member = MemberAdmission::with(['samity', 'familyMembers', 'otherAssets', 'branch'])->find($memberId);
         if ($member) {
-            if ($user->isSuperAdmin()) {
-                // Super admin may open any member's forms after PIN unlock.
+            if ($user->canHeadOfficeDeleteOrEdit()) {
+                // Head Office or Super Admin may open any member's forms after password unlock.
             } elseif (
                 $this->isBranchUserRole($user)
                 || $this->isBranchManager($user)

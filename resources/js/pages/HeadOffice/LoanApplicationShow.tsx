@@ -892,7 +892,7 @@ export default function LoanApplicationShow({ loan, categories = [], flash }: Pr
                                     }}
                                 >
                                     <Lock className="w-3.5 h-3.5 mr-1.5" />
-                                    {loan.superadmin_edit_unlocked ? 'ফর্ম এডিট করুন' : 'PIN দিয়ে ফর্ম এডিট'}
+                                    {loan.superadmin_edit_unlocked ? 'ফর্ম এডিট করুন' : 'পাসওয়ার্ড দিয়ে ফর্ম এডিট'}
                                 </Button>
                             )}
                             {canModify && loan.status !== 'draft' && loan.status !== 'disbursed' && loan.status !== 'cancelled' && (
@@ -1372,13 +1372,14 @@ export default function LoanApplicationShow({ loan, categories = [], flash }: Pr
             <SuperAdminDeletePinModal
                 open={pinModalOpen}
                 title="ফর্ম এডিট আনলক করুন"
-                description="যেকোনো অবস্থার ঋণ আবেদন সম্পাদনা করতে SuperAdmin PIN দিন। এই PIN .env এর SUPERADMIN_DELETE_PIN।"
+                description="যেকোনো অবস্থার ঋণ আবেদন সম্পাদনা করতে আপনার লগইন পাসওয়ার্ড দিন।"
                 processing={pinProcessing}
                 onClose={() => setPinModalOpen(false)}
                 onConfirm={confirmSuperAdminUnlock}
                 confirmLabel="এডিট আনলক"
                 processingLabel="যাচাই হচ্ছে..."
-                pinLabel="SuperAdmin PIN"
+                pinLabel="আপনার পাসওয়ার্ড (User Password)"
+                placeholder="লগইন পাসওয়ার্ড লিখুন"
                 accent="indigo"
             />
 

@@ -10,6 +10,7 @@ use App\Models\Role;
 use App\Models\LoanApplication;
 use App\Models\LoanApplicationIssue;
 use App\Models\MemberAdmission;
+use App\Models\RecentDeletion;
 use App\Models\TeamBasedApproval;
 use App\Models\TeamBasedApprovalItem;
 use App\Models\TeamBasedApprovalReview;
@@ -886,6 +887,45 @@ class DashboardController extends Controller
             'bm_total_pending' => array_sum(array_column($bmList, 'total_pending')),
         ];
 
+        // 13. Recent 7 Days Deletions Summary for Head Office Dashboard
+        $sevenDaysAgo = Carbon::now()->subDays(7)->startOfDay();
+        $recentDeletionsCount = RecentDeletion::where('deleted_at', '>=', $sevenDaysAgo)->count();
+        $recentDeletionsAdmissions = RecentDeletion::where('deleted_at', '>=', $sevenDaysAgo)->where('deletable_type', 'member_admission')->count();
+        $recentDeletionsLoans = RecentDeletion::where('deleted_at', '>=', $sevenDaysAgo)->where('deletable_type', 'loan_application')->count();
+        $recentDeletionsUsers = RecentDeletion::where('deleted_at', '>=', $sevenDaysAgo)->distinct('deleted_by_user_id')->count('deleted_by_user_id');
+
+        $recentDeletionsList = RecentDeletion::with(['branch.area', 'deletedByUser:id,name,username,role_id'])
+            ->where('deleted_at', '>=', $sevenDaysAgo)
+            ->orderBy('deleted_at', 'desc')
+            ->take(10)
+            ->get()
+            ->map(function ($d) {
+                return [
+                    'id' => $d->id,
+                    'deletable_type' => $d->deletable_type,
+                    'application_no' => $d->application_no,
+                    'applicant_name' => $d->applicant_name,
+                    'applicant_phone' => $d->applicant_phone,
+                    'member_code' => $d->member_code,
+                    'branch_name' => $d->branch?->name ?? '—',
+                    'area_name' => $d->branch?->area?->name ?? '—',
+                    'samity_name' => $d->samity_name,
+                    'loan_amount' => $d->loan_amount,
+                    'deleted_by_name' => $d->deleted_by_name ?? $d->deletedByUser?->name,
+                    'deleted_by_role' => $d->deleted_by_role,
+                    'deleted_at' => $d->deleted_at?->format('d M, h:i A'),
+                    'deleted_at_human' => $d->deleted_at?->diffForHumans(),
+                ];
+            });
+
+        $recentDeletionsSummary = [
+            'count_7_days' => $recentDeletionsCount,
+            'admissions_7_days' => $recentDeletionsAdmissions,
+            'loans_7_days' => $recentDeletionsLoans,
+            'users_7_days' => $recentDeletionsUsers,
+            'list' => $recentDeletionsList,
+        ];
+
         return Inertia::render('Dashboard/Index', [
             'period' => $period,
             'dateFrom' => $period === 'date_to_date' ? $dateFrom : null,
@@ -894,6 +934,7 @@ class DashboardController extends Controller
             'hoStats' => $hoStats,
             'hoActionQueue' => $hoActionQueue,
             'hoManagersSummary' => $hoManagersSummary,
+            'recentDeletionsSummary' => $recentDeletionsSummary,
             'user' => [
                 'id' => $user->id,
                 'name' => $user->name,

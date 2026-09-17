@@ -1,6 +1,7 @@
 import React, { useState, useMemo } from 'react';
-import { Head, router, useForm, usePage, Link } from '@inertiajs/react';
+import { Head, router, usePage, Link } from '@inertiajs/react';
 import AdminLayout from '@/layouts/admin-layout';
+import SmartIssueTextarea from '@/components/SmartIssueTextarea';
 import { formatDate, formatDateTime, formatTime } from '@/utils/dateUtils';
 import ListPagination from '@/components/ListPagination';
 import AutoFitTableContainer from '@/components/AutoFitTableContainer';
@@ -110,19 +111,28 @@ interface Props {
     zones?: Zone[];
     areas?: Area[];
     branches?: Branch[];
+    common_issues?: string[];
 }
 
-const PRESET_ISSUES = [
+const DEFAULT_ADMISSION_ISSUES = [
+    'সদস্য ফোন রিসিভ করেনি। সদস্যের সাথে কথা না হওয়া পর্যন্ত ভর্তি ছাড়করণ করা হবেনা।',
+    'সদস্যের মোবাইল ফোন বন্ধ। সদস্যের সাথে কথা না হওয়া পর্যন্ত ভর্তি ছাড়করণ করা হবেনা।',
+    'প্রেরিত মেইলে সদস্যের মোবাইল নাম্বর সঠিক নয়। সদস্যের সাথে কথা না হওয়া পর্যন্ত ভর্তি ছাড় করণ করা হবেনা।',
+    'সদস্য ফোন রিসিভ করেনি।',
+    'সদস্য ভর্তি হবে না।',
+    'সদস্যের ফোনে ফোন যায়না। সদস্যের সাথে কথা না হওয়া পর্যন্ত ভর্তি ছাড়করণ করা হবেনা।',
+    'সদস্য ভর্তি হবেনা।',
+    'সদস্যর বাসায় ম্যানেজার যায় নি।',
+    'ভর্তি পরিদর্শণের জন্য সদস্যের বাসায় ম্যানেজার যায়নি।',
+    'সদস্যর মোবাইল নম্বর বন্ধ। সদস্যর সাথে কথা না হওয়া পর্যন্ত ভর্তি ছাড়করণ করা হবে না।',
+    'সদস্য এখন ভর্তি হবে না।',
+    'সদস্যের সাথে কথা না হওয়া পর্যন্ত ভর্তি ছাড়করণ করা হবেনা।',
     'NID নম্বর অমিল বা অস্পষ্ট',
-    'আবেদনকারীর ছবি অস্পষ্ট',
-    'মোবাইল নম্বর সঠিক নয়',
-    'ঠিকানার তথ্যে ভুল বা অসম্পূর্ণ',
-    'সমিতি নির্বাচন সঠিক নয়',
-    'স্বাক্ষর অনুপস্থিত বা অমিল',
-    'অন্যান্য তথ্য পুনরায় যাচাই প্রয়োজন',
+    'আবেদনকারীর ছবি স্পষ্ট নয়',
+    'স্বাক্ষর বা প্রয়োজনীয় পেপার্স অনুপস্থিত',
 ];
 
-export default function ProcessAdmissions({ admissions, filters, zones = [], areas = [], branches = [] }: Props) {
+export default function ProcessAdmissions({ admissions, filters, zones = [], areas = [], branches = [], common_issues = [] }: Props) {
     const { auth } = usePage().props as { auth?: { user?: { username?: string | null } } };
     const authUsername = auth?.user?.username ?? '';
     const getCurrentMonth = () => {
@@ -151,10 +161,6 @@ export default function ProcessAdmissions({ admissions, filters, zones = [], are
     const [pushToBlockList, setPushToBlockList] = useState(true);
     const [rejectError, setRejectError] = useState<string | null>(null);
     const [rejectFieldErrors, setRejectFieldErrors] = useState<string[]>([]);
-
-    const { data, setData, post, processing, reset, errors } = useForm({
-        issue_description: '',
-    });
 
     // Cascading Filter Computations
     const filteredAreas = useMemo(() => {
@@ -295,34 +301,11 @@ export default function ProcessAdmissions({ admissions, filters, zones = [], are
     const openIssueModal = (admission: Admission) => {
         setSelectedAdmission(admission);
         setShowIssueModal(true);
-        reset();
     };
 
     const closeIssueModal = () => {
         setShowIssueModal(false);
         setSelectedAdmission(null);
-        reset();
-    };
-
-    const handleSaveIssue = (e: React.FormEvent) => {
-        e.preventDefault();
-        if (!selectedAdmission) return;
-
-        post(`/head-office/admissions/${selectedAdmission.id}/issue`, {
-            preserveScroll: true,
-            preserveState: true,
-            onSuccess: () => {
-                closeIssueModal();
-            },
-        });
-    };
-
-    const addPresetIssueTag = (tagText: string) => {
-        if (data.issue_description.includes(tagText)) return;
-        const updated = data.issue_description
-            ? `${data.issue_description}\n- ${tagText}`
-            : `- ${tagText}`;
-        setData('issue_description', updated);
     };
 
     const handleApproveAll = () => {
@@ -1084,106 +1067,13 @@ export default function ProcessAdmissions({ admissions, filters, zones = [], are
                 </div>
             </div>
 
-            {/* Issue Reporting Modal (যাচাই Modal with Preset Quick Tags) */}
-            {showIssueModal && selectedAdmission && (
-                <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center z-50 p-4 animate-in fade-in duration-200">
-                    <div className="bg-white rounded-2xl max-w-xl w-full shadow-2xl overflow-hidden border border-slate-200">
-                        {/* Modal Header */}
-                        <div className="bg-slate-900 text-white p-4 flex items-center justify-between">
-                            <div>
-                                <h3 className="text-base font-bold flex items-center gap-2">
-                                    <AlertTriangle className="w-4 h-4 text-amber-400" />
-                                    যাচাই ও সমস্যা চিহ্নিতকরণ (Report Issue)
-                                </h3>
-                                <p className="text-xs text-slate-300 mt-0.5">
-                                    আবেদন নং: {selectedAdmission.application_no} | {selectedAdmission.applicant_name_en}
-                                </p>
-                            </div>
-                            <button
-                                onClick={closeIssueModal}
-                                className="text-slate-400 hover:text-white p-1 rounded-lg hover:bg-slate-800 transition"
-                            >
-                                <X className="w-5 h-5" />
-                            </button>
-                        </div>
-
-                        <form onSubmit={handleSaveIssue} className="p-5 space-y-4">
-                            {/* Preset Quick Tag Chips */}
-                            <div>
-                                <label className="block text-xs font-semibold text-slate-600 mb-2 flex items-center gap-1.5">
-                                    <Tag className="w-3.5 h-3.5 text-indigo-600" />
-                                    দ্রুত সিলেক্ট ট্যাগ (Quick Tags):
-                                </label>
-                                <div className="flex flex-wrap gap-1.5">
-                                    {PRESET_ISSUES.map((tag, idx) => (
-                                        <button
-                                            key={idx}
-                                            type="button"
-                                            onClick={() => addPresetIssueTag(tag)}
-                                            className="px-2.5 py-1 bg-slate-100 hover:bg-indigo-50 hover:text-indigo-700 hover:border-indigo-300 text-slate-700 border border-slate-200 text-xs rounded-lg transition"
-                                        >
-                                            + {tag}
-                                        </button>
-                                    ))}
-                                </div>
-                            </div>
-
-                            {/* Issue Description Textarea */}
-                            <div>
-                                <label className="block text-xs font-semibold text-slate-700 mb-1">
-                                    সমস্যার বিবরণ (Issue Description) <span className="text-red-500">*</span>
-                                </label>
-                                <textarea
-                                    value={data.issue_description}
-                                    onChange={(e) => setData('issue_description', e.target.value)}
-                                    rows={4}
-                                    className="w-full px-3 py-2 bg-slate-50 border border-slate-300 rounded-xl text-xs text-slate-800 focus:ring-1 focus:ring-indigo-500 focus:bg-white transition"
-                                    placeholder="এখানে চিহ্নিত সমস্যার বিস্তারিত বিবরণ লিখুন অথবা উপরের কুইক ট্যাগ ক্লিক করুন..."
-                                    required
-                                />
-                                {errors.issue_description && (
-                                    <p className="text-xs text-red-600 mt-1">{errors.issue_description}</p>
-                                )}
-                            </div>
-
-                            {/* Existing Issues History */}
-                            {selectedAdmission.issues.length > 0 && (
-                                <div className="border-t border-slate-100 pt-3">
-                                    <h4 className="text-xs font-semibold text-slate-700 mb-1.5">পূর্বে চিহ্নিত সমস্যাসমূহ:</h4>
-                                    <div className="space-y-1.5 max-h-32 overflow-y-auto">
-                                        {selectedAdmission.issues.map((issue) => (
-                                            <div key={issue.id} className="p-2 bg-amber-50 border border-amber-200 rounded-lg text-xs">
-                                                <p className="text-amber-900 font-medium text-xs">{issue.issue_description}</p>
-                                                <p className="text-[10px] text-amber-600 mt-0.5">
-                                                    রিপোর্টার: {issue.reporter?.name} | {formatDateTime(issue.created_at)}
-                                                </p>
-                                            </div>
-                                        ))}
-                                    </div>
-                                </div>
-                            )}
-
-                            {/* Actions */}
-                            <div className="flex justify-end gap-2.5 pt-3 border-t border-slate-100">
-                                <button
-                                    type="button"
-                                    onClick={closeIssueModal}
-                                    className="px-4 py-2 bg-slate-100 text-slate-700 hover:bg-slate-200 text-xs font-semibold rounded-xl transition"
-                                >
-                                    বাতিল
-                                </button>
-                                <button
-                                    type="submit"
-                                    disabled={processing}
-                                    className="px-4 py-2 bg-amber-600 hover:bg-amber-700 text-white text-xs font-semibold rounded-xl shadow-sm transition disabled:opacity-50"
-                                >
-                                    {processing ? 'সংরক্ষণ হচ্ছে...' : 'সমস্যা সেভ করুন'}
-                                </button>
-                            </div>
-                        </form>
-                    </div>
-                </div>
-            )}
+            {/* Issue Reporting Modal (Isolated 0-Lag Component with Tab-Autocomplete) */}
+            <AdmissionIssueModal
+                admission={selectedAdmission}
+                isOpen={showIssueModal}
+                onClose={closeIssueModal}
+                presets={common_issues && common_issues.length > 0 ? common_issues : DEFAULT_ADMISSION_ISSUES}
+            />
 
             {/* View Details Modal */}
             {showViewModal && selectedAdmission && (
@@ -1359,3 +1249,148 @@ export default function ProcessAdmissions({ admissions, filters, zones = [], are
         </AdminLayout>
     );
 }
+
+/**
+ * Isolated Admission Issue Modal Component
+ * 0ms typing lag, Smart Tab-autocomplete, Clean UI without cluttered top tags
+ */
+interface AdmissionIssueModalProps {
+    admission: Admission | null;
+    isOpen: boolean;
+    onClose: () => void;
+    presets?: string[];
+}
+
+function AdmissionIssueModal({ admission, isOpen, onClose, presets = [] }: AdmissionIssueModalProps) {
+    const [issueDescription, setIssueDescription] = useState('');
+    const [isSubmitting, setIsSubmitting] = useState(false);
+    const [error, setError] = useState<string | null>(null);
+
+    React.useEffect(() => {
+        if (isOpen) {
+            setIssueDescription('');
+            setError(null);
+            setIsSubmitting(false);
+        }
+    }, [isOpen, admission]);
+
+    if (!isOpen || !admission) return null;
+
+    const handleSubmit = (e: React.FormEvent) => {
+        e.preventDefault();
+        const trimmed = issueDescription.trim();
+        if (!trimmed) {
+            setError('সমস্যার বিবরণ আবশ্যক');
+            return;
+        }
+
+        setIsSubmitting(true);
+        setError(null);
+
+        router.post(`/head-office/admissions/${admission.id}/issue`, {
+            issue_description: trimmed,
+        }, {
+            ...keepListFilters,
+            onSuccess: () => {
+                onClose();
+            },
+            onError: (errs) => {
+                setError(errs.issue_description || 'সমস্যা সেভ করা যায়নি।');
+            },
+            onFinish: () => setIsSubmitting(false),
+        });
+    };
+
+    return (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center z-50 p-4 animate-in fade-in duration-200">
+            <div className="bg-white rounded-2xl max-w-xl w-full shadow-2xl overflow-hidden border border-slate-200 max-h-[90vh] flex flex-col">
+                {/* Modal Header */}
+                <div className="bg-slate-900 text-white p-4 flex items-center justify-between shrink-0">
+                    <div>
+                        <h3 className="text-base font-bold flex items-center gap-2">
+                            <AlertTriangle className="w-4 h-4 text-amber-400" />
+                            যাচাই ও সমস্যা চিহ্নিতকরণ (Report Issue)
+                        </h3>
+                        <p className="text-xs text-slate-300 mt-0.5">
+                            আবেদন নং: {admission.application_no} | {admission.applicant_name_en}
+                        </p>
+                    </div>
+                    <button
+                        type="button"
+                        onClick={onClose}
+                        disabled={isSubmitting}
+                        className="text-slate-400 hover:text-white p-1 rounded-lg hover:bg-slate-800 transition"
+                    >
+                        <X className="w-5 h-5" />
+                    </button>
+                </div>
+
+                <form onSubmit={handleSubmit} className="p-5 space-y-4 overflow-y-auto flex-1">
+                    {/* Smart Issue Textarea with Tab-Autocomplete */}
+                    <div>
+                        <div className="flex items-center justify-between mb-1">
+                            <label className="block text-xs font-semibold text-slate-700">
+                                সমস্যার বিবরণ (Issue Description) <span className="text-red-500">*</span>
+                            </label>
+                            <span className="text-[10px] text-indigo-700 font-bold bg-indigo-50 px-2 py-0.5 rounded-md border border-indigo-200">
+                                টাইপ করলেই সাজেশন (Tab ⇥ চাপলে অটো-ফিল)
+                            </span>
+                        </div>
+
+                        <SmartIssueTextarea
+                            value={issueDescription}
+                            onChange={(val) => {
+                                setIssueDescription(val);
+                                if (error) setError(null);
+                            }}
+                            presets={presets && presets.length > 0 ? presets : DEFAULT_ADMISSION_ISSUES}
+                            rows={4}
+                            autoFocus
+                            placeholder="এখানে সমস্যা লিখুন (যেমন: ফোন, রিসিভ, ভর্তি, কোড, nid, ছবি)..."
+                        />
+                        {error && (
+                            <p className="text-xs text-red-600 mt-1">{error}</p>
+                        )}
+                    </div>
+
+                    {/* Existing Issues History */}
+                    {admission.issues && admission.issues.length > 0 && (
+                        <div className="border-t border-slate-100 pt-3">
+                            <h4 className="text-xs font-semibold text-slate-700 mb-1.5">পূর্বে চিহ্নিত সমস্যাসমূহ:</h4>
+                            <div className="space-y-1.5 max-h-32 overflow-y-auto">
+                                {admission.issues.map((issue) => (
+                                    <div key={issue.id} className="p-2 bg-amber-50 border border-amber-200 rounded-lg text-xs">
+                                        <p className="text-amber-900 font-medium text-xs">{issue.issue_description}</p>
+                                        <p className="text-[10px] text-amber-600 mt-0.5">
+                                            রিপোর্টার: {issue.reporter?.name} | {formatDateTime(issue.created_at)}
+                                        </p>
+                                    </div>
+                                ))}
+                            </div>
+                        </div>
+                    )}
+
+                    {/* Actions */}
+                    <div className="flex justify-end gap-2.5 pt-3 border-t border-slate-100 shrink-0">
+                        <button
+                            type="button"
+                            onClick={onClose}
+                            disabled={isSubmitting}
+                            className="px-4 py-2 bg-slate-100 text-slate-700 hover:bg-slate-200 text-xs font-semibold rounded-xl transition"
+                        >
+                            বাতিল
+                        </button>
+                        <button
+                            type="submit"
+                            disabled={isSubmitting || !issueDescription.trim()}
+                            className="px-4 py-2 bg-amber-600 hover:bg-amber-700 text-white text-xs font-semibold rounded-xl shadow-sm transition disabled:opacity-50"
+                        >
+                            {isSubmitting ? 'সংরক্ষণ হচ্ছে...' : 'সমস্যা সেভ করুন'}
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    );
+}
+

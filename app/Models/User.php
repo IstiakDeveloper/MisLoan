@@ -280,6 +280,20 @@ class User extends Authenticatable
         return $this->role?->name === Role::CSO;
     }
 
+    /**
+     * Check if user is authorized for Head Office delete or edit operations.
+     * Allowed: Super Admin, Head Office.
+     * Strictly NOT allowed: CSO.
+     */
+    public function canHeadOfficeDeleteOrEdit(): bool
+    {
+        if ($this->isCso()) {
+            return false;
+        }
+
+        return $this->isSuperAdmin() || $this->isHeadOffice();
+    }
+
     public function isBranchAccount(): bool
     {
         return $this->account_type === 'branch';
