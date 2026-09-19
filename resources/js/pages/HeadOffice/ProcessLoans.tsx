@@ -1136,6 +1136,7 @@ function LoanIssueModal({
     isOpen,
     onClose,
     onEditIssue,
+    presets = [],
 }: {
     loan: Loan;
     editingIssue: Issue | null;
