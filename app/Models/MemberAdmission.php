@@ -5,6 +5,7 @@ namespace App\Models;
 use App\Services\MemberCodeService;
 use App\Support\AdmissionFormVisibility;
 use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
@@ -375,28 +376,56 @@ class MemberAdmission extends Model
     }
 
     /**
-     * One open form per member. Changing product must update that row, not insert another.
+     * Resolve whether a loan form can be created, reused, or blocked for this member.
+     *
+     * Rules:
+     * - Regular (Non-38) loans: at most 1 active regular loan per member.
+     * - Code 38 loans: multiple active 38 loans are allowed concurrently.
+     *   Active regular loans DO NOT block 38 loans, and 38 loans DO NOT block regular loans.
+     *   If an unsubmitted draft for the exact same product & category already exists, reuse it.
+     *   Otherwise allow create.
      *
      * @return array{action: 'create'}|array{action: 'reuse', loan: LoanApplication}|array{action: 'block', loan: LoanApplication}
      */
     public function resolveActiveLoanCreate(?int $loanProductId = null, ?int $loanCategoryId = null): array
     {
-        $existing = $this->existingLoanForm();
-        if ($existing === null) {
+        $isCode38 = $loanProductId !== null && LoanProduct::isCode38ProductId($loanProductId);
+
+        if ($isCode38) {
+            // Code 38 products can have multiple loans concurrently.
+            // Check if there is an unsubmitted draft for the exact same 38 product & category to reuse.
+            $sameProductDraft = $this->activeLoanFormsQuery()
+                ->where('status', LoanApplication::STATUS_DRAFT)
+                ->where('loan_product_id', $loanProductId)
+                ->when($loanCategoryId !== null, fn ($q) => $q->where('loan_category_id', $loanCategoryId))
+                ->latest('id')
+                ->first();
+
+            if ($sameProductDraft) {
+                return ['action' => 'reuse', 'loan' => $sameProductDraft];
+            }
+
             return ['action' => 'create'];
         }
 
-        $sameProductDraft = $existing->isDraft()
-            && $loanProductId !== null
-            && $loanCategoryId !== null
-            && (int) $existing->loan_product_id === $loanProductId
-            && (int) $existing->loan_category_id === $loanCategoryId;
-
-        if ($sameProductDraft) {
-            return ['action' => 'reuse', 'loan' => $existing];
+        // Regular (non-38) loan product (or unspecified product):
+        // Only 1 active regular loan is permitted. Code 38 loans do not block regular loans.
+        $activeRegular = $this->existingRegularLoanForm();
+        if ($activeRegular === null) {
+            return ['action' => 'create'];
         }
 
-        return ['action' => 'block', 'loan' => $existing];
+        $sameProductDraft = $activeRegular->isDraft()
+            && $loanProductId !== null
+            && $loanCategoryId !== null
+            && (int) $activeRegular->loan_product_id === $loanProductId
+            && (int) $activeRegular->loan_category_id === $loanCategoryId;
+
+        if ($sameProductDraft) {
+            return ['action' => 'reuse', 'loan' => $activeRegular];
+        }
+
+        return ['action' => 'block', 'loan' => $activeRegular];
     }
 
     /**
@@ -418,17 +447,54 @@ class MemberAdmission extends Model
         return LoanApplication::query()->whereIn('member_admission_id', $this->sisterAdmissionIds());
     }
 
-    public function existingLoanForm(): ?LoanApplication
+    public function activeLoanFormsQuery(): Builder
     {
         return $this->sisterLoanQuery()
-            ->whereNotIn('status', self::closedLoanFormStatuses())
+            ->whereNotIn('status', self::closedLoanFormStatuses());
+    }
+
+    public function activeLoanForms(): Collection
+    {
+        return $this->activeLoanFormsQuery()
+            ->with(['loanProduct:id,product_name,product_name_bn,product_code,main_product_code,duration_months', 'loanCategory:id,category_name,category_name_bn'])
+            ->orderBy('id')
+            ->get();
+    }
+
+    public function existingLoanForm(): ?LoanApplication
+    {
+        return $this->activeLoanFormsQuery()
             ->latest('id')
             ->first();
+    }
+
+    public function existingRegularLoanForm(): ?LoanApplication
+    {
+        $loans = $this->activeLoanForms();
+        foreach ($loans as $loan) {
+            if (! $loan->loanProduct?->isCode38()) {
+                return $loan;
+            }
+        }
+
+        return null;
     }
 
     public function hasExistingLoanForm(): bool
     {
         return $this->existingLoanForm() !== null;
+    }
+
+    public function hasExistingRegularLoanForm(): bool
+    {
+        return $this->existingRegularLoanForm() !== null;
+    }
+
+    public function active38Loans(): Collection
+    {
+        return $this->activeLoanForms()->filter(function ($loan) {
+            return (bool) $loan->loanProduct?->isCode38();
+        })->values();
     }
 
     public function hasRepaidLoanHistory(): bool
@@ -438,22 +504,28 @@ class MemberAdmission extends Model
 
     /**
      * After repayment the next loan must start from Cycle Hub, not ঋণ আবেদন create.
+     * Note: Code 38 supplementary products do not require Cycle Hub.
      */
-    public function mustUseCycleHubForNextLoan(): bool
+    public function mustUseCycleHubForNextLoan(?int $loanProductId = null): bool
     {
-        return ! $this->hasExistingLoanForm()
+        if ($loanProductId !== null && LoanProduct::isCode38ProductId($loanProductId)) {
+            return false;
+        }
+
+        return ! $this->hasExistingRegularLoanForm()
             && $this->hasRepaidLoanHistory()
             && ! $this->previous_admission_id;
     }
+
 
     public static function alreadyLoanFormMessage(?LoanApplication $loan = null): string
     {
         $no = $loan?->application_no;
         if ($no) {
-            return "Already Loan Form আছে (আবেদন নং: {$no})। একই সদস্যের নতুন ঋণ ফর্ম করা যাবে না। পরিশোধের পর সাইকেল হাব থেকে পরবর্তী দফা করা যাবে।";
+            return "অন্য কোডের ঋণ দিতে পারবেন না, ১টি নিয়মিত ঋণ আছেই (আবেদন নং: {$no})! Already Loan Form আছে। শুধুমাত্র স্মার্ট / ৩৮ কোডের ঋণ প্রোডাক্ট প্রযোজ্য।";
         }
 
-        return 'Already Loan Form আছে। একই সদস্যের নতুন ঋণ ফর্ম করা যাবে না। পরিশোধের পর সাইকেল হাব থেকে পরবর্তী দফা করা যাবে।';
+        return 'অন্য কোডের ঋণ দিতে পারবেন না, ১টি নিয়মিত ঋণ আছেই! Already Loan Form আছে। শুধুমাত্র স্মার্ট / ৩৮ কোডের ঋণ প্রোডাক্ট প্রযোজ্য।';
     }
 
     public static function nextLoanViaCycleHubMessage(): string

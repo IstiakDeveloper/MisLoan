@@ -104,4 +104,46 @@ class LoanProduct extends Model
         // Add other calculation types as needed
         return 0;
     }
+
+    /**
+     * Checks if this loan product belongs to SMART / Code 38 / Code 37 family.
+     * Both Code 37 (Agr_SMART) and Code 38 (CSL_SMART) are SMART supplementary products.
+     */
+    public function isCode38(): bool
+    {
+        $main = trim((string) ($this->main_product_code ?? ''));
+        if ($main === '38' || $main === '37') {
+            return true;
+        }
+
+        $code = trim((string) ($this->product_code ?? ''));
+        if ($code === '38' || str_starts_with($code, '38.') || $code === '37' || str_starts_with($code, '37.')) {
+            return true;
+        }
+
+        $name = strtoupper(trim((string) ($this->product_name ?? '')));
+        return str_contains($name, 'SMART');
+    }
+
+    /**
+     * Alias for isCode38() to clearly indicate it represents SMART supplementary products.
+     */
+    public function isSmartProduct(): bool
+    {
+        return $this->isCode38();
+    }
+
+    /**
+     * Determine if a given product ID is a SMART / Code 38 product.
+     */
+    public static function isCode38ProductId(?int $productId): bool
+    {
+        if (! $productId) {
+            return false;
+        }
+
+        $product = static::query()->find($productId, ['id', 'product_code', 'main_product_code', 'product_name']);
+        return $product ? $product->isCode38() : false;
+    }
 }
+

@@ -2069,18 +2069,23 @@ class MemberAdmissionController extends Controller
 
         return DB::transaction(function () use ($memberAdmission, $loanProductId, $loanCategoryId, $requestedAmount) {
             $memberAdmission->lockActiveLoansForWrite();
-            $existingForm = $memberAdmission->existingLoanForm();
-            if ($existingForm) {
+            $decision = $memberAdmission->resolveActiveLoanCreate($loanProductId ?: null, $loanCategoryId ?: null);
+            if ($decision['action'] === 'block') {
                 return redirect()
-                    ->route('member.loan-applications.show', $existingForm->id)
-                    ->with('error', MemberAdmission::alreadyLoanFormMessage($existingForm));
+                    ->route('member.loan-applications.show', $decision['loan']->id)
+                    ->with('error', MemberAdmission::alreadyLoanFormMessage($decision['loan']));
+            }
+            if ($decision['action'] === 'reuse') {
+                return redirect()
+                    ->route('member.loan-applications.show', $decision['loan']->id);
             }
 
-            if ($memberAdmission->mustUseCycleHubForNextLoan()) {
+            if ($memberAdmission->mustUseCycleHubForNextLoan($loanProductId ?: null)) {
                 return redirect()
                     ->route('member.cycle-hub.index')
                     ->with('error', MemberAdmission::nextLoanViaCycleHubMessage());
             }
+
 
             return $this->createAdmissionLoanDraftOrRedirect(
                 $memberAdmission,

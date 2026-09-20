@@ -629,13 +629,14 @@ class LoanApplicationController extends Controller
             }
         }
 
-        if ($decision['action'] === 'create' && $member->mustUseCycleHubForNextLoan()) {
+        if ($decision['action'] === 'create' && $member->mustUseCycleHubForNextLoan($loanProductId)) {
             return [
                 'ok' => false,
                 'redirect' => redirect()->route('member.cycle-hub.index')
                     ->with('error', MemberAdmission::nextLoanViaCycleHubMessage()),
             ];
         }
+
 
         return ['ok' => true];
     }
@@ -1054,23 +1055,35 @@ class LoanApplicationController extends Controller
             return null;
         }
 
-        $existingForm = $member->existingLoanForm();
-        $hasActiveLoan = $existingForm !== null;
-        $mustUseCycleHub = $member->mustUseCycleHubForNextLoan();
+        $allActiveLoans = $member->activeLoanForms();
+        $regularLoan = $member->existingRegularLoanForm();
+        $code38Loans = $member->active38Loans();
 
-        $activeLoans = [];
-        if ($existingForm) {
-            $existingForm->loadMissing(['loanProduct:id,product_name,product_name_bn,duration_months', 'loanCategory:id,category_name,category_name_bn']);
-            $activeLoans = [[
-                'id' => $existingForm->id,
-                'application_no' => $existingForm->application_no,
-                'status' => $existingForm->status,
-                'product_name' => $existingForm->loanProduct->product_name ?? '',
-                'product_name_bn' => $existingForm->loanProduct->product_name_bn ?? '',
-                'category_name' => $existingForm->loanCategory->category_name ?? '',
-                'requested_amount' => $existingForm->requested_amount,
-            ]];
-        }
+        $hasActiveRegularLoan = $regularLoan !== null;
+        $active38Count = $code38Loans->count();
+        $hasActiveLoan = $allActiveLoans->isNotEmpty();
+
+        $activeLoans = $allActiveLoans->map(function ($loan) {
+            $product = $loan->loanProduct;
+
+            return [
+                'id' => $loan->id,
+                'application_no' => $loan->application_no,
+                'status' => $loan->status,
+                'is_code_38' => $product ? $product->isCode38() : false,
+                'product_code' => $product->product_code ?? '',
+                'main_product_code' => $product->main_product_code ?? '',
+                'product_name' => $product->product_name ?? '',
+                'product_name_bn' => $product->product_name_bn ?? '',
+                'category_name' => $loan->loanCategory->category_name ?? '',
+                'requested_amount' => $loan->requested_amount,
+                'expected_end_date' => $loan->expected_end_date,
+                'created_at' => $loan->created_at,
+                'loan_term_months' => $loan->loan_term_months ?? $product->duration_months ?? null,
+            ];
+        })->all();
+
+        $latestActive = $allActiveLoans->last();
 
         return [
             'id' => $member->id,
@@ -1081,11 +1094,13 @@ class LoanApplicationController extends Controller
             'mobile_number' => $member->mobile_number,
             'status' => $member->status,
             'has_active_loan' => $hasActiveLoan,
-            'must_use_cycle_hub' => $mustUseCycleHub,
-            'existing_loan_form' => $existingForm ? [
-                'id' => $existingForm->id,
-                'application_no' => $existingForm->application_no,
-                'status' => $existingForm->status,
+            'has_active_regular_loan' => $hasActiveRegularLoan,
+            'active_38_loans_count' => $active38Count,
+            'must_use_cycle_hub' => $member->mustUseCycleHubForNextLoan(),
+            'existing_loan_form' => $latestActive ? [
+                'id' => $latestActive->id,
+                'application_no' => $latestActive->application_no,
+                'status' => $latestActive->status,
             ] : null,
             'active_loans' => $activeLoans,
             'samity' => $member->samity,
@@ -1199,44 +1214,76 @@ class LoanApplicationController extends Controller
             ->where(function ($query) use ($search) {
                 MemberCodeService::applyAdmissionSearch($query, $search);
             })
-            ->select('id', 'application_no', 'applicant_name_en', 'applicant_name_bn', 'nid_number', 'mobile_number', 'father_name_en', 'mother_name_en', 'samity_id', 'status', 'requested_loan_amount', 'is_legacy', 'loan_dofa', 'previous_admission_id')
+            ->select('id', 'application_no', 'applicant_name_en', 'applicant_name_bn', 'nid_number', 'mobile_number', 'father_name_en', 'mother_name_en', 'samity_id', 'status', 'branch_id', 'requested_loan_amount', 'is_legacy', 'loan_dofa', 'previous_admission_id')
             ->with('samity:id,samity_name,samity_name_bn')
             ->orderBy('created_at', 'desc')
             ->limit(20)
             ->get();
 
-        $members = $members->map(function ($member) {
+        $selectedProductId = $request->filled('loan_product_id')
+            ? (int) $request->input('loan_product_id')
+            : ($request->filled('product_id') ? (int) $request->input('product_id') : null);
+        $selectedCategoryId = $request->filled('loan_category_id')
+            ? (int) $request->input('loan_category_id')
+            : ($request->filled('category_id') ? (int) $request->input('category_id') : null);
+
+        $members = $members->map(function ($member) use ($selectedProductId, $selectedCategoryId) {
             $member->is_legacy = (bool) ($member->is_legacy || $member->previous_admission_id || (int) $member->loan_dofa > 1);
-            $existing = $member->existingLoanForm();
-            $member->has_active_loan = $existing !== null;
-            $member->must_use_cycle_hub = $member->mustUseCycleHubForNextLoan();
-            $member->existing_loan_form = $existing ? [
-                'id' => $existing->id,
-                'application_no' => $existing->application_no,
-                'status' => $existing->status,
+
+            $allActiveLoans = $member->activeLoanForms();
+            $regularLoan = $member->existingRegularLoanForm();
+            $code38Loans = $member->active38Loans();
+
+            $member->has_active_regular_loan = $regularLoan !== null;
+            $member->active_38_loans_count = $code38Loans->count();
+            $member->has_active_loan = $allActiveLoans->isNotEmpty();
+
+            $member->active_loans = $allActiveLoans->map(function ($loan) {
+                $product = $loan->loanProduct;
+
+                return [
+                    'id' => $loan->id,
+                    'application_no' => $loan->application_no,
+                    'status' => $loan->status,
+                    'is_code_38' => $product ? $product->isCode38() : false,
+                    'product_code' => $product->product_code ?? '',
+                    'main_product_code' => $product->main_product_code ?? '',
+                    'product_name' => $product->product_name ?? '',
+                    'product_name_bn' => $product->product_name_bn ?? '',
+                    'category_name' => $loan->loanCategory->category_name ?? '',
+                    'requested_amount' => $loan->requested_amount,
+                    'expected_end_date' => $loan->expected_end_date,
+                    'created_at' => $loan->created_at,
+                    'loan_term_months' => $loan->loan_term_months ?? $product->duration_months ?? null,
+                ];
+            })->all();
+
+            $latestActive = $allActiveLoans->last();
+            $member->existing_loan_form = $latestActive ? [
+                'id' => $latestActive->id,
+                'application_no' => $latestActive->application_no,
+                'status' => $latestActive->status,
             ] : null;
-            if ($existing) {
-                $existing->loadMissing(['loanProduct:id,product_name,product_name_bn,duration_months', 'loanCategory:id,category_name,category_name_bn']);
-                $member->active_loans = [[
-                    'id' => $existing->id,
-                    'application_no' => $existing->application_no,
-                    'status' => $existing->status,
-                    'product_name' => $existing->loanProduct->product_name ?? '',
-                    'product_name_bn' => $existing->loanProduct->product_name_bn ?? '',
-                    'category_name' => $existing->loanCategory->category_name ?? '',
-                    'requested_amount' => $existing->requested_amount,
-                    'expected_end_date' => $existing->expected_end_date,
-                    'created_at' => $existing->created_at,
-                    'loan_term_months' => $existing->loan_term_months ?? $existing->loanProduct->duration_months ?? null,
-                ]];
+
+            if ($selectedProductId !== null) {
+                $decision = $member->resolveActiveLoanCreate($selectedProductId, $selectedCategoryId);
+                $member->can_take_requested_product = ($decision['action'] !== 'block');
+                $member->blocked_by_loan = ($decision['action'] === 'block') ? [
+                    'id' => $decision['loan']->id,
+                    'application_no' => $decision['loan']->application_no,
+                ] : null;
+                $member->must_use_cycle_hub = $member->mustUseCycleHubForNextLoan($selectedProductId);
             } else {
-                $member->active_loans = [];
+                $member->can_take_requested_product = true;
+                $member->blocked_by_loan = null;
+                $member->must_use_cycle_hub = $member->mustUseCycleHubForNextLoan();
             }
 
             return $member;
         });
 
         return response()->json($members);
+
     }
 
     /**
@@ -1281,19 +1328,25 @@ class LoanApplicationController extends Controller
         $this->ensureCanCreateLoanApplication($request->user());
 
         $memberId = $request->input('member_admission_id');
+        $productId = (int) $request->input('loan_product_id');
+        $categoryId = (int) $request->input('loan_category_id');
         if ($memberId) {
             $memberForGuard = MemberAdmission::find((int) $memberId);
-            if ($memberForGuard?->hasExistingLoanForm()) {
-                return back()->withErrors([
-                    'member_admission_id' => MemberAdmission::alreadyLoanFormMessage($memberForGuard->existingLoanForm()),
-                ])->withInput();
-            }
-            if ($memberForGuard?->mustUseCycleHubForNextLoan()) {
-                return back()->withErrors([
-                    'member_admission_id' => MemberAdmission::nextLoanViaCycleHubMessage(),
-                ])->withInput();
+            if ($memberForGuard) {
+                $decision = $memberForGuard->resolveActiveLoanCreate($productId ?: null, $categoryId ?: null);
+                if ($decision['action'] === 'block') {
+                    return back()->withErrors([
+                        'member_admission_id' => MemberAdmission::alreadyLoanFormMessage($decision['loan']),
+                    ])->withInput();
+                }
+                if ($memberForGuard->mustUseCycleHubForNextLoan($productId ?: null)) {
+                    return back()->withErrors([
+                        'member_admission_id' => MemberAdmission::nextLoanViaCycleHubMessage(),
+                    ])->withInput();
+                }
             }
         }
+
 
         $validated = $request->validate([
             // Basic Info
@@ -1389,20 +1442,25 @@ class LoanApplicationController extends Controller
                 $memberForGuard = MemberAdmission::findOrFail((int) $validated['member_admission_id']);
                 $this->ensureMemberAccessibleForLoanDraft($memberForGuard, $user);
                 $memberForGuard->lockActiveLoansForWrite();
-                if ($memberForGuard->hasExistingLoanForm()) {
+                $decision = $memberForGuard->resolveActiveLoanCreate(
+                    (int) $validated['loan_product_id'],
+                    (int) $validated['loan_category_id']
+                );
+                if ($decision['action'] === 'block') {
                     DB::rollBack();
 
                     return back()->withErrors([
-                        'member_admission_id' => MemberAdmission::alreadyLoanFormMessage($memberForGuard->existingLoanForm()),
+                        'member_admission_id' => MemberAdmission::alreadyLoanFormMessage($decision['loan']),
                     ])->withInput();
                 }
-                if ($memberForGuard->mustUseCycleHubForNextLoan()) {
+                if ($memberForGuard->mustUseCycleHubForNextLoan((int) $validated['loan_product_id'])) {
                     DB::rollBack();
 
                     return back()->withErrors([
                         'member_admission_id' => MemberAdmission::nextLoanViaCycleHubMessage(),
                     ])->withInput();
                 }
+
             }
 
             $application = LoanApplication::create([
@@ -2418,9 +2476,10 @@ class LoanApplicationController extends Controller
                 return $draft;
             }
 
-            if ($member->mustUseCycleHubForNextLoan()) {
+            if ($member->mustUseCycleHubForNextLoan($loanProductId)) {
                 abort(403, MemberAdmission::nextLoanViaCycleHubMessage());
             }
+
 
             $draft = new LoanApplication;
             $draft->member_admission_id = $memberId;

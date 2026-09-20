@@ -40,11 +40,13 @@ interface LoanProduct {
     product_name: string;
     product_name_bn: string;
     product_code: string;
+    main_product_code?: string;
     interest_rate: number;
     min_amount: number;
     max_amount: number;
     duration_months: number;
 }
+
 
 interface LoanCategory {
     id: number;
@@ -222,6 +224,9 @@ interface ActiveLoan {
     expected_end_date?: string;
     created_at: string;
     loan_term_months?: number;
+    is_code_38?: boolean;
+    product_code?: string;
+    main_product_code?: string;
 }
 
 interface Member {
@@ -234,10 +239,17 @@ interface Member {
     status: string;
     requested_loan_amount?: number | string;
     has_active_loan?: boolean;
+    has_active_regular_loan?: boolean;
+    active_38_loans_count?: number;
+    can_take_requested_product?: boolean;
+    blocked_by_loan?: { id: number; application_no: string } | null;
     must_use_cycle_hub?: boolean;
+    is_legacy?: boolean;
+    loan_dofa?: number | string;
     existing_loan_form?: { id: number; application_no: string; status: string } | null;
     active_loans?: ActiveLoan[];
 }
+
 
 export default function Index({
     categories,
@@ -438,6 +450,8 @@ export default function Index({
     const [selectedMember, setSelectedMember] = useState<Member | null>(preselectedMember);
     const [requestedAmount, setRequestedAmount] = useState(preselectedMember?.requested_loan_amount ? String(preselectedMember.requested_loan_amount) : '');
     const [isSearching, setIsSearching] = useState(false);
+    const [productSelectionError, setProductSelectionError] = useState<string | null>(null);
+
 
     useEffect(() => {
         if (!preselectedMember || !canCreateLoanApplication) return;
@@ -535,17 +549,90 @@ export default function Index({
         setMemberSearchResults([]);
         setSelectedMember(null);
         setRequestedAmount('');
+        setProductSelectionError(null);
     };
+
+    const isCode38Product = (prod?: { product_code?: string; main_product_code?: string; product_name?: string } | null) => {
+        if (!prod) return false;
+        const main = String(prod.main_product_code || '').trim();
+        if (main === '38' || main === '37') return true;
+        const code = String(prod.product_code || '').trim();
+        if (code === '38' || code.startsWith('38.') || code.startsWith('38') ||
+            code === '37' || code.startsWith('37.') || code.startsWith('37')) {
+            return true;
+        }
+        const name = String(prod.product_name || '').toUpperCase();
+        return name.includes('SMART');
+    };
+
+    const selectedProductObj = products.find(p => p.id === selectedProduct);
+    const selectedProductIs38 = isCode38Product(selectedProductObj);
 
     const handleCategoryChange = (categoryId: number) => {
         setSelectedCategory(categoryId);
         setSelectedProduct(null);
+        setProductSelectionError(null);
         const category = categories.find(c => c.id === categoryId);
         setProducts(category?.loan_products || []);
     };
 
     const handleProductChange = (productId: number) => {
+        if (!productId) {
+            setSelectedProduct(null);
+            setProductSelectionError(null);
+            return;
+        }
+
+        const prod = products.find(p => p.id === productId);
+        const is38 = isCode38Product(prod);
+
         setSelectedProduct(productId);
+
+        if (selectedMember?.has_active_regular_loan && !is38) {
+            const regularLoan = selectedMember.active_loans?.find(l => !l.is_code_38);
+            const loanNo = regularLoan?.application_no || selectedMember.existing_loan_form?.application_no;
+            const errorMsg = `অন্য কোডের ঋণ দিতে পারবেন না, ১টি ঋণ আছেই${loanNo ? ` (${loanNo})` : ''}! এই সদস্যের ইতিমধ্যে ১টি নিয়মিত ঋণ চলমান আছে। শুধুমাত্র স্মার্ট / ৩৮ কোডের ঋণ প্রোডাক্ট নির্বাচন করতে পারবেন।`;
+            setProductSelectionError(errorMsg);
+            alert(errorMsg);
+            return;
+        }
+
+        setProductSelectionError(null);
+    };
+
+    const checkMemberBlocked = (member: Member): { blocked: boolean; message?: string; loanId?: number } => {
+        if (member.status === 'rejected') {
+            return { blocked: true, message: 'সদস্যটি প্রত্যাখ্যাত।' };
+        }
+
+        if (selectedProduct) {
+            if (selectedProductIs38) {
+                // Code 38 / SMART loans can be multiple and can coexist with regular loan!
+                return { blocked: false };
+            } else {
+                // Regular loan product selected:
+                if (member.has_active_regular_loan) {
+                    const regularLoan = member.active_loans?.find(l => !l.is_code_38);
+                    const loanNo = regularLoan?.application_no || member.existing_loan_form?.application_no;
+                    return {
+                        blocked: true,
+                        message: loanNo
+                            ? `অন্য কোডের ঋণ দিতে পারবেন না, ১টি ঋণ আছেই (আবেদন নং: ${loanNo})! শুধুমাত্র স্মার্ট / ৩৮ কোডের ঋণ প্রোডাক্ট দিতে পারবেন।`
+                            : 'অন্য কোডের ঋণ দিতে পারবেন না, ১টি ঋণ আছেই! শুধুমাত্র স্মার্ট / ৩৮ কোডের ঋণ প্রোডাক্ট দিতে পারবেন।',
+                        loanId: regularLoan?.id || member.existing_loan_form?.id,
+                    };
+                }
+                if (member.must_use_cycle_hub) {
+                    return {
+                        blocked: true,
+                        message: 'এই সদস্যের আগের ঋণ পরিশোধিত। পরবর্তী ঋণ সাইকেল হাব থেকে করতে হবে।',
+                    };
+                }
+                return { blocked: false };
+            }
+        }
+
+        return { blocked: false };
     };
 
     const handleMemberSearch = async (query: string) => {
@@ -557,7 +644,14 @@ export default function Index({
 
         setIsSearching(true);
         try {
-            const response = await fetch(`/member/loan-applications/search-members?query=${encodeURIComponent(query)}`);
+            const params = new URLSearchParams({ query });
+            if (selectedProduct) {
+                params.set('loan_product_id', String(selectedProduct));
+            }
+            if (selectedCategory) {
+                params.set('loan_category_id', String(selectedCategory));
+            }
+            const response = await fetch(`/member/loan-applications/search-members?${params.toString()}`);
             const data = await response.json();
             setMemberSearchResults(data);
         } catch (error) {
@@ -569,21 +663,23 @@ export default function Index({
     };
 
     const handleMemberSelect = (member: Member) => {
-        if (member.status === 'rejected') return;
-        if (member.has_active_loan) {
-            const loanNo = member.existing_loan_form?.application_no || member.active_loans?.[0]?.application_no;
-            alert(loanNo ? `Already Loan Form আছে (আবেদন নং: ${loanNo})` : 'Already Loan Form আছে');
-            if (member.existing_loan_form?.id) {
-                router.visit(`/member/loan-applications/${member.existing_loan_form.id}`);
-            }
+        if (member.status === 'rejected') {
+            alert('সদস্যটি প্রত্যাখ্যাত।');
             return;
         }
-        if (member.must_use_cycle_hub) {
-            alert('এই সদস্যের আগের ঋণ পরিশোধিত। পরবর্তী ঋণ সাইকেল হাব থেকে করতে হবে।');
-            router.visit('/member/cycle-hub');
-            return;
-        }
+
         setSelectedMember(member);
+
+        if (member.has_active_regular_loan && selectedProduct && !selectedProductIs38) {
+            const regularLoan = member.active_loans?.find(l => !l.is_code_38);
+            const loanNo = regularLoan?.application_no || member.existing_loan_form?.application_no;
+            const errorMsg = `অন্য কোডের ঋণ দিতে পারবেন না, ১টি ঋণ আছেই${loanNo ? ` (${loanNo})` : ''}! এই সদস্যের ইতিমধ্যে ১টি নিয়মিত ঋণ চলমান আছে। শুধুমাত্র স্মার্ট / ৩৮ কোডের ঋণ প্রোডাক্ট নির্বাচন করতে পারবেন।`;
+            setProductSelectionError(errorMsg);
+            alert(errorMsg);
+        } else {
+            setProductSelectionError(null);
+        }
+
         if (member.requested_loan_amount) {
             setRequestedAmount(String(member.requested_loan_amount));
         }
@@ -591,17 +687,29 @@ export default function Index({
         setMemberSearchResults([]);
     };
 
+
+
     const handleSubmit = () => {
-        if (selectedMember?.has_active_loan) {
-            const loanNo = selectedMember.existing_loan_form?.application_no || selectedMember.active_loans?.[0]?.application_no;
-            alert(loanNo ? `Already Loan Form আছে (আবেদন নং: ${loanNo})` : 'Already Loan Form আছে');
+        if (!selectedMember) {
+            alert('সদস্য নির্বাচন করুন।');
             return;
         }
-        if (selectedMember?.must_use_cycle_hub) {
-            alert('এই সদস্যের আগের ঋণ পরিশোধিত। পরবর্তী ঋণ সাইকেল হাব থেকে করতে হবে।');
-            router.visit('/member/cycle-hub');
+
+        if (selectedMember.has_active_regular_loan && !selectedProductIs38) {
+            const regularLoan = selectedMember.active_loans?.find(l => !l.is_code_38);
+            const loanNo = regularLoan?.application_no || selectedMember.existing_loan_form?.application_no;
+            const msg = `অন্য কোডের ঋণ দিতে পারবেন না, ১টি ঋণ আছেই${loanNo ? ` (${loanNo})` : ''}! শুধুমাত্র স্মার্ট / ৩৮ কোডের ঋণ প্রোডাক্ট দিতে পারবেন।`;
+            setProductSelectionError(msg);
+            alert(msg);
             return;
         }
+
+        const blockInfo = checkMemberBlocked(selectedMember);
+        if (blockInfo.blocked) {
+            alert(blockInfo.message || 'Already Loan Form আছে');
+            return;
+        }
+
         if (selectedCategory && selectedProduct && selectedMember && requestedAmount) {
             // Creates draft + opens Show hub with all forms generated
             router.visit(
@@ -609,6 +717,8 @@ export default function Index({
             );
         }
     };
+
+
 
     const handleResolveIssue = (applicationId: number, issueId: number) => {
         setSelectedIssue({ applicationId, issueId });
@@ -1790,9 +1900,13 @@ export default function Index({
                                                 {memberSearchResults.map((member) => {
                                                     const isRejected = member.status === 'rejected';
                                                     const isApproved = member.status === 'approved';
-                                                    const hasActiveLoan = !!member.has_active_loan;
-                                                    const mustUseCycleHub = !!member.must_use_cycle_hub;
-                                                    const isDisabled = isRejected || hasActiveLoan || mustUseCycleHub;
+                                                    const blockInfo = checkMemberBlocked(member);
+                                                    const isDisabled = blockInfo.blocked;
+
+                                                    const hasRegularLoan = !!member.has_active_regular_loan;
+                                                    const active38Count = Number(member.active_38_loans_count || 0);
+                                                    const regularLoan = member.active_loans?.find(l => !l.is_code_38);
+                                                    const regularLoanNo = regularLoan?.application_no || member.existing_loan_form?.application_no;
 
                                                     const statusLabels: Record<string, string> = {
                                                         draft: 'খসড়া',
@@ -1842,21 +1956,76 @@ export default function Index({
                                                                             {statusLabels[member.status] || member.status}
                                                                         </span>
                                                                     )}
-                                                                    {hasActiveLoan && (
-                                                                        <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-rose-100 text-rose-800">
-                                                                            Already Loan Form আছে
-                                                                            {member.existing_loan_form?.application_no
-                                                                                ? ` · ${member.existing_loan_form.application_no}`
-                                                                                : ''}
-                                                                        </span>
-                                                                    )}
-                                                                    {mustUseCycleHub && !hasActiveLoan && (
-                                                                        <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-amber-100 text-amber-800">
-                                                                            সাইকেল হাব থেকে করুন
-                                                                        </span>
+                                                                    {selectedProduct ? (
+                                                                        selectedProductIs38 ? (
+                                                                            <>
+                                                                                {hasRegularLoan && (
+                                                                                    <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-sky-100 text-sky-800">
+                                                                                        নিয়মিত ঋণ চলমান {regularLoanNo ? `(${regularLoanNo})` : ''}
+                                                                                    </span>
+                                                                                )}
+                                                                                {active38Count > 0 && (
+                                                                                    <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-purple-100 text-purple-800">
+                                                                                        ৩৮ ঋণ: {active38Count}টি
+                                                                                    </span>
+                                                                                )}
+                                                                                <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-emerald-100 text-emerald-800">
+                                                                                    ৩৮ ঋণ প্রদানযোগ্য
+                                                                                </span>
+                                                                            </>
+                                                                        ) : (
+                                                                            <>
+                                                                                {hasRegularLoan ? (
+                                                                                    <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-rose-100 text-rose-800">
+                                                                                        Already নিয়মিত ঋণ চলমান {regularLoanNo ? `(${regularLoanNo})` : ''}
+                                                                                    </span>
+                                                                                ) : (
+                                                                                    <>
+                                                                                        {active38Count > 0 && (
+                                                                                            <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-purple-100 text-purple-800">
+                                                                                                স্মার্ট ঋণ: {active38Count}টি
+                                                                                            </span>
+                                                                                        )}
+                                                                                        {member.must_use_cycle_hub ? (
+                                                                                            <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-amber-100 text-amber-800">
+                                                                                                সাইকেল হাব থেকে করুন
+                                                                                            </span>
+                                                                                        ) : (
+                                                                                            <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-emerald-100 text-emerald-800">
+                                                                                                নিয়মিত ঋণ প্রদানযোগ্য
+                                                                                            </span>
+                                                                                        )}
+                                                                                    </>
+                                                                                )}
+                                                                            </>
+                                                                        )
+                                                                    ) : (
+                                                                        <>
+                                                                            {hasRegularLoan && (
+                                                                                <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-sky-100 text-sky-800">
+                                                                                    নিয়মিত ঋণ চলমান
+                                                                                </span>
+                                                                            )}
+                                                                            {active38Count > 0 && (
+                                                                                <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-purple-100 text-purple-800">
+                                                                                    স্মার্ট ঋণ: {active38Count}টি
+                                                                                </span>
+                                                                            )}
+                                                                            {member.has_active_loan && !hasRegularLoan && active38Count === 0 && (
+                                                                                <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-rose-100 text-rose-800">
+                                                                                    Already Loan Form আছে
+                                                                                </span>
+                                                                            )}
+                                                                            {member.must_use_cycle_hub && !member.has_active_loan && (
+                                                                                <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-amber-100 text-amber-800">
+                                                                                    সাইকেল হাব থেকে করুন
+                                                                                </span>
+                                                                            )}
+                                                                        </>
                                                                     )}
                                                                 </div>
                                                             </div>
+
                                                         </button>
                                                     );
                                                 })}
@@ -1892,11 +2061,48 @@ export default function Index({
                                                         ভর্তি অনুমোদিত নয় — ফর্ম পূরণ করা যাবে, জমা দেওয়া যাবে না
                                                     </p>
                                                 )}
+                                                {selectedMember.has_active_regular_loan && (
+                                                    <div className="mt-2.5 p-3 bg-amber-50 border-2 border-amber-400 rounded-2xl text-xs text-amber-950 font-medium flex items-start gap-2.5">
+                                                        <AlertTriangle className="w-5 h-5 text-amber-600 shrink-0 mt-0.5" />
+                                                        <div>
+                                                            <strong className="font-extrabold text-amber-950 block text-xs md:text-sm">
+                                                                সদস্যের ১টি নিয়মিত ঋণ চলমান আছে {(() => {
+                                                                    const reg = selectedMember.active_loans?.find(l => !l.is_code_38);
+                                                                    const no = reg?.application_no || selectedMember.existing_loan_form?.application_no;
+                                                                    return no ? `(${no})` : '';
+                                                                })()}
+                                                            </strong>
+                                                            <span className="text-xs text-amber-900 mt-1 block leading-relaxed">
+                                                                অন্য কোডের ঋণ দিতে পারবেন না, ১টি ঋণ আছেই! শুধুমাত্র <strong className="text-indigo-800 font-extrabold">স্মার্ট / ৩৮ কোডের</strong> ঋণ প্রোডাক্ট নির্বাচন করতে পারবেন।
+                                                            </span>
+                                                        </div>
+                                                    </div>
+                                                )}
+                                                {((selectedMember.active_38_loans_count ?? 0) > 0 || (selectedMember.active_loans?.some(l => l.is_code_38) ?? false)) && !selectedMember.has_active_regular_loan && (
+                                                    <div className="mt-2.5 p-3 bg-blue-50 border-2 border-blue-400 rounded-2xl text-xs text-blue-950 font-medium flex items-start gap-2.5">
+                                                        <Sparkles className="w-5 h-5 text-blue-600 shrink-0 mt-0.5" />
+                                                        <div>
+                                                            <strong className="font-extrabold text-blue-950 block text-xs md:text-sm">
+                                                                সদস্যের স্মার্ট ঋণ চলমান আছে {(() => {
+                                                                    const smartLoans = selectedMember.active_loans?.filter(l => l.is_code_38);
+                                                                    const nos = smartLoans?.map(l => l.application_no).filter(Boolean).join(', ');
+                                                                    return nos ? `(${nos})` : '';
+                                                                })()}
+                                                            </strong>
+                                                            <span className="text-xs text-blue-900 mt-1 block leading-relaxed">
+                                                                এই সদস্য ১টি নিয়মিত ঋণ (যেমন: জাগরণ, বুনিয়াদ ইত্যাদি) অথবা আরও স্মার্ট ঋণ নিতে পারবেন।
+                                                            </span>
+                                                        </div>
+                                                    </div>
+                                                )}
                                             </div>
                                         </div>
                                         <button
                                             type="button"
-                                            onClick={() => setSelectedMember(null)}
+                                            onClick={() => {
+                                                setSelectedMember(null);
+                                                setProductSelectionError(null);
+                                            }}
                                             className="p-1.5 text-slate-400 hover:text-rose-600 rounded-xl transition"
                                         >
                                             <X className="w-5 h-5" />
@@ -1922,28 +2128,71 @@ export default function Index({
                                         </option>
                                     ))}
                                 </select>
+                                {selectedMember?.has_active_regular_loan && selectedCategory && products.length > 0 && !products.some(p => isCode38Product(p)) && (
+                                    <div className="mt-2.5 p-3 bg-rose-50 border-2 border-rose-400 rounded-2xl flex items-start gap-2.5 text-xs text-rose-900 font-medium animate-in fade-in">
+                                        <AlertTriangle className="w-5 h-5 text-rose-600 shrink-0 mt-0.5" />
+                                        <div>
+                                            <strong className="font-extrabold text-rose-900 block text-xs md:text-sm">অন্য কোডের ঋণ দিতে পারবেন না, ১টি ঋণ আছেই!</strong>
+                                            <span className="text-[11px] text-rose-800 mt-0.5 block leading-relaxed">
+                                                এই ক্যাটাগরিতে কোনো স্মার্ট / ৩৮ কোডের ঋণ নেই। সদস্যের ১টি নিয়মিত ঋণ চলমান আছে, তাই অন্য কোডের ঋণ দেওয়া যাবে না। অনুগ্রহ করে যে ক্যাটাগরিতে স্মার্ট / ৩৮ কোডের প্রোডাক্ট আছে (যেমন: অগ্রসর / সিএসএল) সেটি নির্বাচন করুন।
+                                            </span>
+                                        </div>
+                                    </div>
+                                )}
                             </div>
 
                             {/* Product Selection */}
                             {selectedCategory && products.length > 0 && (
                                 <div>
-                                    <label className="block text-xs font-extrabold text-slate-800 uppercase mb-1">
-                                        ৩. ঋণ পণ্য <span className="text-red-500">*</span>
-                                    </label>
+                                    <div className="flex items-center justify-between mb-1">
+                                        <label className="block text-xs font-extrabold text-slate-800 uppercase">
+                                            ৩. ঋণ পণ্য <span className="text-red-500">*</span>
+                                        </label>
+                                        {selectedMember?.has_active_regular_loan && (
+                                            <span className="text-[11px] font-bold text-amber-800 bg-amber-100 px-2.5 py-0.5 rounded-full border border-amber-300">
+                                                ⚠️ শুধু স্মার্ট / ৩৮ কোড অনুমোদিত
+                                            </span>
+                                        )}
+                                    </div>
                                     <select
                                         value={selectedProduct || ''}
                                         onChange={(e) => handleProductChange(Number(e.target.value))}
-                                        className="w-full px-3.5 py-2.5 border border-slate-300 rounded-2xl text-xs md:text-sm font-medium focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500"
+                                        className={`w-full px-3.5 py-2.5 border rounded-2xl text-xs md:text-sm font-medium transition focus:ring-2 ${
+                                            (productSelectionError || (selectedMember?.has_active_regular_loan && selectedProduct && !selectedProductIs38))
+                                                ? 'border-rose-500 bg-rose-50/60 text-rose-900 focus:ring-rose-500/20 focus:border-rose-500 font-bold'
+                                                : 'border-slate-300 focus:ring-indigo-500/20 focus:border-indigo-500'
+                                        }`}
                                     >
                                         <option value="">পণ্য নির্বাচন করুন...</option>
-                                        {products.map((prod) => (
-                                            <option key={prod.id} value={prod.id}>
-                                                {prod.product_name_bn || prod.product_name} ({prod.product_code})
-                                            </option>
-                                        ))}
+                                        {products.map((prod) => {
+                                            const is38 = isCode38Product(prod);
+                                            const isBlocked = !!selectedMember?.has_active_regular_loan && !is38;
+                                            return (
+                                                <option key={prod.id} value={prod.id}>
+                                                    {prod.product_name_bn || prod.product_name} ({prod.product_code})
+                                                    {isBlocked
+                                                        ? ' ⚠️ [অনুপলব্ধ: ১টি ঋণ আছেই, শুধু স্মার্ট/৩৮ কোড]'
+                                                        : (is38 ? ' — [স্মার্ট / ৩৮ কোড প্রযোজ্য]' : '')}
+                                                </option>
+                                            );
+                                        })}
                                     </select>
+                                    {(productSelectionError || (selectedMember?.has_active_regular_loan && selectedProduct && !selectedProductIs38)) && (
+                                        <div className="mt-2.5 p-3.5 bg-rose-50 border-2 border-rose-500 rounded-2xl flex items-start gap-3 text-rose-900 font-medium animate-in fade-in shadow-sm">
+                                            <AlertTriangle className="w-5 h-5 text-rose-600 shrink-0 mt-0.5" />
+                                            <div>
+                                                <strong className="font-extrabold text-rose-900 block text-sm">
+                                                    অন্য কোডের ঋণ দিতে পারবেন না, ১টি ঋণ আছেই!
+                                                </strong>
+                                                <span className="text-xs text-rose-800 mt-1 block leading-relaxed">
+                                                    {productSelectionError || 'এই সদস্যের ইতিমধ্যে ১টি নিয়মিত ঋণ চলমান আছে। অন্য কোডের ঋণ দেওয়া যাবে না, শুধুমাত্র স্মার্ট / ৩৮ কোডের ঋণ প্রোডাক্ট নির্বাচন করতে পারবেন।'}
+                                                </span>
+                                            </div>
+                                        </div>
+                                    )}
                                 </div>
                             )}
+
 
                             {/* Requested Amount */}
                             {selectedProduct && (
@@ -2026,11 +2275,14 @@ export default function Index({
                             </button>
                             <button
                                 onClick={handleSubmit}
-                                disabled={!selectedMember || !selectedProduct || !requestedAmount}
+                                disabled={!selectedMember || !selectedProduct || !requestedAmount || (!!selectedMember?.has_active_regular_loan && !selectedProductIs38)}
                                 className="px-6 py-2.5 text-xs font-bold bg-gradient-to-r from-blue-600 to-indigo-600 text-white rounded-xl shadow-lg shadow-blue-600/30 hover:from-blue-700 hover:to-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed transition active:scale-95"
                             >
-                                ফর্মে এগিয়ে যান
+                                {selectedMember?.has_active_regular_loan && selectedProduct && !selectedProductIs38
+                                    ? 'অন্য কোডের ঋণ দেওয়া যাবে না (১টি নিয়মিত ঋণ আছেই)'
+                                    : 'ফর্মে এগিয়ে যান'}
                             </button>
+
                         </div>
                     </div>
                 </div>

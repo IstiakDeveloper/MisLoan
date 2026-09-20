@@ -80,7 +80,6 @@ export default function Show({ admission, cycleSurveys = [] }: Props) {
     const currentUserId = pageAuth?.user?.id;
     const canApplyLoan = (() => {
         if (admission.status === 'rejected') return false;
-        if (admission.has_active_loan) return false;
         if (roleName === 'branch_user') return admission.status === 'approved';
         if (!isFieldOfficer) return false;
         const assignedId =
