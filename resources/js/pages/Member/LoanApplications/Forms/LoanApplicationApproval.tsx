@@ -9,8 +9,15 @@ import type { ApprovalFormProps } from './ApprovalForm/Types';
  * - Other monthly products → existing 4-page Approval Form
  */
 export default function LoanApplicationApproval(props: ApprovalFormProps) {
-    const savedVariant = props.savedData?.form_variant;
-    if (savedVariant === 'agrosor_profile' || isSufolonLoan(props.loanCategory, props.loanProduct)) {
+    const hasProductInfo = Boolean(props.loanCategory || props.loanProduct);
+    const isSufolon = isSufolonLoan(props.loanCategory, props.loanProduct);
+
+    // If product/category is known, strictly follow product type (never let a stale/cloned savedData.form_variant override a non-Sufolon product!)
+    const useProfile = hasProductInfo
+        ? isSufolon
+        : (props.savedData?.form_variant === 'agrosor_profile' || isSufolon);
+
+    if (useProfile) {
         return <AgrosorProfile {...props} />;
     }
     return <ApprovalForm {...props} />;

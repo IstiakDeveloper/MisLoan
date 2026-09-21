@@ -408,6 +408,9 @@ class LoanFormVisibility
                 'recommended_loan_amount' => $amount,
             ]),
             5 => array_merge($data, [
+                'form_variant' => (self::isSufolon($product, $category) && $amount > self::SUFOLON_AGREEMENT_MAX)
+                    ? 'agrosor_profile'
+                    : 'approval_form',
                 'applied_loan_amount' => (string) $amount,
                 'fund_applied_loan' => (string) $amount,
                 'capital_applied_loan' => (string) $amount,

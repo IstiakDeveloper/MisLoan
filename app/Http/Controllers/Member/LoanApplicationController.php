@@ -3104,16 +3104,23 @@ class LoanApplicationController extends Controller
             $loanProduct = LoanProduct::find($validated['loan_product_id']);
             $loanCategory = LoanCategory::find($validated['loan_category_id']);
             $numberOfInstallments = $loanProduct->number_of_installments ?? 1;
-            $isSufolonProfile = ($formData['form_variant'] ?? null) === 'agrosor_profile'
-                || LoanFormVisibility::isSufolon($loanProduct, $loanCategory);
+            $isSufolon = LoanFormVisibility::isSufolon($loanProduct, $loanCategory);
+            $isSufolonProfile = $isSufolon && ((float) $validated['requested_amount'] > LoanFormVisibility::SUFOLON_AGREEMENT_MAX);
 
             if ($isSufolonProfile) {
+                $formData['form_variant'] = 'agrosor_profile';
                 // Sufolon: one lump-sum repayment at end of term
                 $numberOfInstallments = 1;
-            } elseif ($loanProduct && $loanProduct->installment_type === 'weekly' && $loanProduct->duration_months) {
-                $numberOfInstallments = (int) ceil(($loanProduct->duration_months * 30) / 7);
-            } elseif ($loanProduct && $loanProduct->duration_months) {
-                $numberOfInstallments = (int) $loanProduct->duration_months;
+            } else {
+                if (! $isSufolon && ($formData['form_variant'] ?? null) === 'agrosor_profile') {
+                    $formData['form_variant'] = 'approval_form';
+                }
+                $duration = (int) ($loanProduct?->duration_months ?: ($loanApplication->loan_term_months ?: 12));
+                if ($loanProduct && $loanProduct->installment_type === 'weekly' && $duration) {
+                    $numberOfInstallments = (int) ($loanProduct->number_of_installments ?: ceil(($duration * 30) / 7));
+                } elseif ($loanProduct && $duration) {
+                    $numberOfInstallments = (int) ($loanProduct->number_of_installments ?: $duration);
+                }
             }
 
             $loanApplication->business_plan = $formData;
@@ -3300,13 +3307,24 @@ class LoanApplicationController extends Controller
         sort($newVisibleFormIds);
         $requiredFormsChanged = $oldVisibleFormIds !== $newVisibleFormIds;
 
-        $numberOfInstallments = isset($validated['number_of_installments']) && (int) $validated['number_of_installments'] > 0
-            ? (int) $validated['number_of_installments']
-            : (int) ($newProduct->number_of_installments ?: $application->number_of_installments ?: 1);
-
+        $isNewSufolon = LoanFormVisibility::isSufolon($newProduct, $newProduct->loanCategory);
         $loanTermMonths = isset($validated['loan_term_months']) && (int) $validated['loan_term_months'] > 0
             ? (int) $validated['loan_term_months']
             : (int) ($newProduct->duration_months ?: $application->loan_term_months ?: 12);
+
+        if ($isNewSufolon) {
+            $numberOfInstallments = 1;
+        } elseif (isset($validated['number_of_installments']) && (int) $validated['number_of_installments'] > 0) {
+            $numberOfInstallments = (int) $validated['number_of_installments'];
+        } elseif ((int) $application->loan_product_id !== (int) $validated['loan_product_id']) {
+            if (strtolower((string) ($newProduct->installment_type ?? 'monthly')) === 'weekly') {
+                $numberOfInstallments = (int) ($newProduct->number_of_installments ?: ceil(($loanTermMonths * 30) / 7));
+            } else {
+                $numberOfInstallments = (int) ($newProduct->number_of_installments ?: $loanTermMonths);
+            }
+        } else {
+            $numberOfInstallments = (int) ($newProduct->number_of_installments ?: $application->number_of_installments ?: $loanTermMonths);
+        }
 
         $repaymentFreq = ! empty($validated['repayment_frequency'])
             ? $validated['repayment_frequency']

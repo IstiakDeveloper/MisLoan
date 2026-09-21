@@ -35,6 +35,7 @@ import GuarantorCommitment from '../LoanApplications/Forms/GuarantorCommitment';
 import FieldInvestigation from '../LoanApplications/Forms/FieldInvestigation';
 import LoanApplicationApproval from '../LoanApplications/Forms/LoanApplicationApproval';
 import DeathRiskFund from '../LoanApplications/Forms/DeathRiskFund';
+import { isSufolonLoan } from '@/utils/loanInterest';
 
 interface Props {
     admission: any;
@@ -660,10 +661,16 @@ export default function CycleView({
                                 <div>
                                     <h3 className="text-sm sm:text-base font-bold text-slate-900 flex items-center gap-2">
                                         <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
-                                        জাগরণ/বুনিয়াদ/আগ্রসর ঋণ আবেদন ও অনুমোদনপত্র
+                                        {isSufolonLoan(loanApplication?.loan_category, loanApplication?.loan_product)
+                                            ? 'অগ্রসর ঋণ আবেদন ও অনুমোদনপত্র (সুফলন প্রোফাইল)'
+                                            : loanApplication?.loan_category?.category_name_bn
+                                            ? `${loanApplication.loan_category.category_name_bn} ঋণ আবেদন ও অনুমোদনপত্র`
+                                            : 'জাগরণ/বুনিয়াদ/আগ্রসর ঋণ আবেদন ও অনুমোদনপত্র'}
                                     </h3>
                                     <span className="text-xs text-slate-500 block mt-0.5">
-                                        কমিটি ও অনুমোদকগণের চূড়ান্ত অনুমোদন ও মঞ্জুরি
+                                        {isSufolonLoan(loanApplication?.loan_category, loanApplication?.loan_product)
+                                            ? 'সুফলন ক্যাটাগরির ৯৯ হাজারের উপরে — ২ পাতার অগ্রসর প্রোফাইল ফর্ম'
+                                            : 'কমিটি ও অনুমোদকগণের চূড়ান্ত অনুমোদন ও মঞ্জুরি (৪ পাতার আবেদন ও অনুমোদনপত্র)'}
                                     </span>
                                 </div>
                                 <div className="self-start sm:self-auto">

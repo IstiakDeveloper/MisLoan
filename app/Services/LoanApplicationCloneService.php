@@ -380,7 +380,10 @@ class LoanApplicationCloneService
         // 5. BUSINESS PLAN & APPROVAL (Form 5 - আবেদন ও অনুমোদনপত্র)
         // ----------------------------------------------------
         if ($shouldFillForm(5) && ! $this->hasMeaningfulData($targetLoan->business_plan)) {
-            if ($previousLoan && $this->hasMeaningfulData($previousLoan->business_plan)) {
+            $prevWasSufolon = $previousLoan && LoanFormVisibility::isSufolon($previousLoan->loanProduct, $previousLoan->loanCategory);
+            $targetIsSufolon = LoanFormVisibility::isSufolon($product, $category);
+
+            if ($previousLoan && $this->hasMeaningfulData($previousLoan->business_plan) && ($prevWasSufolon === $targetIsSufolon)) {
                 $businessData = is_array($previousLoan->business_plan) ? $previousLoan->business_plan : [];
             } else {
                 $businessData = [
@@ -411,6 +414,36 @@ class LoanApplicationCloneService
 
             $targetLoan->business_plan = $businessData;
             $dirty = true;
+        } elseif ($shouldFillForm(5) && $this->hasMeaningfulData($targetLoan->business_plan)) {
+            $targetIsSufolon = LoanFormVisibility::isSufolon($product, $category);
+            $businessData = is_array($targetLoan->business_plan) ? $targetLoan->business_plan : [];
+            $currentVariant = $businessData['form_variant'] ?? null;
+            $expectedVariant = ($targetIsSufolon && $requestedAmount > LoanFormVisibility::SUFOLON_AGREEMENT_MAX)
+                ? 'agrosor_profile'
+                : 'approval_form';
+
+            if ($currentVariant !== $expectedVariant) {
+                $businessData['form_variant'] = $expectedVariant;
+                if ($product) {
+                    $businessData = LoanFormVisibility::overlaySavedFormLoanTerms(
+                        5,
+                        $businessData,
+                        $product,
+                        $category,
+                        $requestedAmount,
+                        $installments,
+                        $termMonths,
+                        $serviceCharge,
+                        $totalWithServiceCharge,
+                        $installmentAmount,
+                        $requestedWords,
+                        $totalWithServiceWords,
+                        $targetLoan->purpose_of_loan
+                    );
+                }
+                $targetLoan->business_plan = $businessData;
+                $dirty = true;
+            }
         }
 
         // Clone other application attributes if missing

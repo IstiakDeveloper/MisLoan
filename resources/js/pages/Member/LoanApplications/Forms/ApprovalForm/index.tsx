@@ -719,6 +719,7 @@ export default function ApprovalForm({
             application_id: existingApplication?.id || undefined,
             form_data: {
                 ...data,
+                form_variant: 'approval_form',
                 member_type: isOldMemberFromAdmission || isLegacy ? 'old' : 'new',
                 years_involved: isOldMemberFromAdmission || isLegacy
                     ? (data.years_involved || loanDofaValue)

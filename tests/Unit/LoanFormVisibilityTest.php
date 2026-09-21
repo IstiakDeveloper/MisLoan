@@ -513,5 +513,82 @@ class LoanFormVisibilityTest extends TestCase
         $this->assertSame('80000', $updated['applied_loan_amount']);
         $this->assertSame('80000', $updated['capital_applied_loan']);
         $this->assertSame('আগ্রসর', $updated['category_name']);
+        $this->assertSame('approval_form', $updated['form_variant']);
+    }
+
+    public function test_overlay_switches_stale_agrosor_profile_to_approval_form_for_agrosor(): void
+    {
+        $product = (object) [
+            'installment_type' => 'monthly',
+            'product_code' => 'AGR',
+            'product_name' => 'Agrosor',
+            'product_name_bn' => 'আগ্রসর',
+            'interest_rate' => 18,
+        ];
+        $category = (object) [
+            'category_code' => 'AGR',
+            'category_name' => 'Agrosor',
+            'category_name_bn' => 'আগ্রসর',
+        ];
+
+        // Stale data that previously had agrosor_profile from sufolon
+        $updated = LoanFormVisibility::overlaySavedFormLoanTerms(
+            5,
+            [
+                'form_variant' => 'agrosor_profile',
+                'applied_loan_amount' => '200000',
+            ],
+            $product,
+            $category,
+            1000000.0,
+            24,
+            24,
+            360000.0,
+            1360000.0,
+            56667.0,
+            'দশ লক্ষ টাকা',
+            'তের লক্ষ ষাট হাজার টাকা',
+            null
+        );
+
+        $this->assertSame('approval_form', $updated['form_variant']);
+        $this->assertNotSame('agrosor_profile', $updated['form_variant']);
+        $this->assertSame('1000000', $updated['applied_loan_amount']);
+    }
+
+    public function test_overlay_sets_agrosor_profile_for_sufolon_above_ninety_nine_thousand(): void
+    {
+        $product = (object) [
+            'installment_type' => 'monthly',
+            'product_code' => 'SFL',
+            'product_name' => 'Sufolon',
+            'product_name_bn' => 'সুফলন',
+            'interest_rate' => 12,
+        ];
+        $category = (object) [
+            'category_code' => 'SFL',
+            'category_name' => 'Sufolon',
+            'category_name_bn' => 'সুফলন',
+        ];
+
+        $updated = LoanFormVisibility::overlaySavedFormLoanTerms(
+            5,
+            [
+                'applied_loan_amount' => '50000',
+            ],
+            $product,
+            $category,
+            200000.0,
+            1,
+            6,
+            12000.0,
+            212000.0,
+            212000.0,
+            'দুই লক্ষ টাকা',
+            'দুই লক্ষ বারো হাজার টাকা',
+            null
+        );
+
+        $this->assertSame('agrosor_profile', $updated['form_variant']);
     }
 }

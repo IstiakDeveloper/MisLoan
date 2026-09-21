@@ -142,6 +142,90 @@ it('reuses the saved application form when the next loan is the same agrosor pro
         ->and((string) ($draft->business_plan['applied_loan_amount'] ?? ''))->toBe('200000');
 });
 
+it('does not clone sufolon 2-page profile variant onto a new agrosor 4-page loan', function () {
+    [$member, $sufolonProduct, $sufolonCategory, $agrosorProduct, $agrosorCategory] = makeCloneServiceContext();
+
+    // Previous loan was Sufolon > 99k (200,000 tk) with 2-page profile form
+    $previous = LoanApplication::create([
+        'status' => LoanApplication::STATUS_REPAID,
+        'requested_amount' => 200000,
+        'form_type' => 'loan_application_approval',
+        'business_plan' => [
+            'form_variant' => 'agrosor_profile',
+            'business_type' => 'ধান চাষ',
+            'business_description' => 'সুফলন ফসল প্রকল্প',
+            'applied_loan_amount' => '200000',
+            'crop_info' => 'বোরো ধান',
+        ],
+    ]);
+    attachCloneServiceRelations($previous, $member, $sufolonProduct, $sufolonCategory);
+
+    // New loan is Agrosor 1,000,000 tk (24 months)
+    $draft = LoanApplication::create([
+        'status' => LoanApplication::STATUS_DRAFT,
+        'requested_amount' => 1000000,
+        'form_type' => 'loan_application_approval',
+        'loan_term_months' => 24,
+        'number_of_installments' => 24,
+        'purpose_of_loan' => 'ব্যবসা সম্প্রসারণ',
+    ]);
+    attachCloneServiceRelations($draft, $member, $agrosorProduct, $agrosorCategory);
+
+    (new LoanApplicationCloneService)->cloneAndMerge($draft, $previous);
+    $draft->refresh();
+
+    expect($draft->form_type)->toBe('loan_application_approval')
+        ->and($draft->business_plan['form_variant'] ?? null)->toBe('approval_form')
+        ->and($draft->business_plan['form_variant'] ?? null)->not->toBe('agrosor_profile')
+        ->and((string) ($draft->business_plan['applied_loan_amount'] ?? ''))->toBe('1000000');
+});
+
+it('sanitizes existing draft business plan variant when target loan is agrosor', function () {
+    [$member, , , $agrosorProduct, $agrosorCategory] = makeCloneServiceContext();
+
+    // Draft previously had agrosor_profile stored in business_plan
+    $draft = LoanApplication::create([
+        'status' => LoanApplication::STATUS_DRAFT,
+        'requested_amount' => 1000000,
+        'form_type' => 'loan_application_approval',
+        'loan_term_months' => 24,
+        'number_of_installments' => 24,
+        'purpose_of_loan' => 'ব্যবসা সম্প্রসারণ',
+        'business_plan' => [
+            'form_variant' => 'agrosor_profile',
+            'applied_loan_amount' => '200000',
+        ],
+    ]);
+    attachCloneServiceRelations($draft, $member, $agrosorProduct, $agrosorCategory);
+
+    (new LoanApplicationCloneService)->cloneAndMerge($draft);
+    $draft->refresh();
+
+    expect($draft->business_plan['form_variant'] ?? null)->toBe('approval_form')
+        ->and($draft->business_plan['form_variant'] ?? null)->not->toBe('agrosor_profile')
+        ->and((string) ($draft->business_plan['applied_loan_amount'] ?? ''))->toBe('1000000');
+});
+
+it('sets agrosor_profile variant when target loan is sufolon above 99k', function () {
+    [$member, $sufolonProduct, $sufolonCategory] = makeCloneServiceContext();
+
+    $draft = LoanApplication::create([
+        'status' => LoanApplication::STATUS_DRAFT,
+        'requested_amount' => 200000,
+        'form_type' => 'loan_application_approval',
+        'loan_term_months' => 6,
+        'number_of_installments' => 1,
+        'purpose_of_loan' => 'সুফলন ঋণ',
+    ]);
+    attachCloneServiceRelations($draft, $member, $sufolonProduct, $sufolonCategory);
+
+    (new LoanApplicationCloneService)->cloneAndMerge($draft);
+    $draft->refresh();
+
+    expect($draft->business_plan['form_variant'] ?? null)->toBe('agrosor_profile')
+        ->and((string) ($draft->business_plan['applied_loan_amount'] ?? ''))->toBe('200000');
+});
+
 function createLoanCloneServiceTables(): void
 {
     if (DB::connection()->getDriverName() === 'sqlite') {
@@ -151,6 +235,16 @@ function createLoanCloneServiceTables(): void
     }
 
     Schema::dropIfExists('loan_applications');
+    Schema::dropIfExists('member_admissions');
+
+    Schema::create('member_admissions', function (Blueprint $table) {
+        $table->id();
+        $table->string('application_no')->nullable();
+        $table->unsignedBigInteger('branch_id')->nullable();
+        $table->unsignedBigInteger('previous_admission_id')->nullable();
+        $table->string('nid_number')->nullable();
+        $table->timestamps();
+    });
 
     Schema::create('loan_applications', function (Blueprint $table) {
         $table->id();

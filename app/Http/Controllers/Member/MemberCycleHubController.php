@@ -658,6 +658,15 @@ class MemberCycleHubController extends Controller
         if ($loanApplication?->isDraft()) {
             app(LoanApplicationCloneService::class)->cloneAndMerge($loanApplication);
             $loanApplication->refresh();
+            $loanApplication->loadMissing([
+                'loanProduct.loanCategory',
+                'loanCategory',
+                'branch',
+                'samity',
+                'disbursedBy:id,name',
+                'repaidBy:id,name',
+                'submittedBy:id,name',
+            ]);
         }
 
         $matchedCycle = collect($portfolio['cycles'] ?? [])->first(
