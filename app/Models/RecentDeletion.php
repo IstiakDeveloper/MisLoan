@@ -135,6 +135,48 @@ class RecentDeletion extends Model
     }
 
     /**
+     * Record Savings Application deletion
+     */
+    public static function recordSavingsDeletion(SavingsApplication $savings, ?User $user, ?Request $request = null): self
+    {
+        $savings->loadMissing(['memberAdmission.branch', 'memberAdmission.samity', 'branch', 'samity', 'savingsProduct', 'savingsCategory']);
+
+        $member = $savings->memberAdmission;
+        $appNo = $savings->application_no ?: ($member?->application_no ?: 'N/A');
+        $name = $member?->applicant_name_bn ?: ($member?->applicant_name_en ?: 'Unnamed Applicant');
+        $phone = $member?->mobile_number;
+        $branch = $savings->branch ?: $member?->branch;
+        $samity = $savings->samity ?: $member?->samity;
+        $amount = $savings->deposit_amount;
+
+        return self::create([
+            'deletable_type' => 'savings_application',
+            'deletable_id' => $savings->id,
+            'application_no' => (string) $appNo,
+            'applicant_name' => (string) $name,
+            'applicant_phone' => $phone,
+            'branch_id' => $savings->branch_id ?: $branch?->id,
+            'branch_name' => $branch?->name,
+            'branch_code' => $branch?->branch_code,
+            'samity_name' => $samity?->name ?? $samity?->samity_name,
+            'amount' => $amount,
+            'status_at_deletion' => $savings->status,
+            'deleted_by_user_id' => $user?->id,
+            'deleted_by_name' => $user?->name ?? 'System',
+            'deleted_by_username' => $user?->username ?: $user?->pin,
+            'deleted_by_role' => $user?->role?->name ?? (string) $user?->role,
+            'ip_address' => $request?->ip(),
+            'user_agent' => $request ? substr((string) $request->userAgent(), 0, 255) : null,
+            'deleted_data' => [
+                'savings_application' => $savings->toArray(),
+                'product_name' => $savings->savingsProduct?->product_name,
+                'category_name' => $savings->savingsCategory?->category_name,
+            ],
+            'deleted_at' => now(),
+        ]);
+    }
+
+    /**
      * Scope to last 7 days by default
      */
     public function scopeLast7Days(Builder $query): Builder

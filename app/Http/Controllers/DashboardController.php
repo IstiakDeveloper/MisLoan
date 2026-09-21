@@ -892,6 +892,7 @@ class DashboardController extends Controller
         $recentDeletionsCount = RecentDeletion::where('deleted_at', '>=', $sevenDaysAgo)->count();
         $recentDeletionsAdmissions = RecentDeletion::where('deleted_at', '>=', $sevenDaysAgo)->where('deletable_type', 'member_admission')->count();
         $recentDeletionsLoans = RecentDeletion::where('deleted_at', '>=', $sevenDaysAgo)->where('deletable_type', 'loan_application')->count();
+        $recentDeletionsSavings = RecentDeletion::where('deleted_at', '>=', $sevenDaysAgo)->where('deletable_type', 'savings_application')->count();
         $recentDeletionsUsers = RecentDeletion::where('deleted_at', '>=', $sevenDaysAgo)->distinct('deleted_by_user_id')->count('deleted_by_user_id');
 
         $recentDeletionsList = RecentDeletion::with(['branch.area', 'deletedByUser:id,name,username,role_id'])
@@ -910,7 +911,8 @@ class DashboardController extends Controller
                     'branch_name' => $d->branch?->name ?? '—',
                     'area_name' => $d->branch?->area?->name ?? '—',
                     'samity_name' => $d->samity_name,
-                    'loan_amount' => $d->loan_amount,
+                    'amount' => $d->amount,
+                    'loan_amount' => $d->amount,
                     'deleted_by_name' => $d->deleted_by_name ?? $d->deletedByUser?->name,
                     'deleted_by_role' => $d->deleted_by_role,
                     'deleted_at' => $d->deleted_at?->format('d M, h:i A'),
@@ -922,6 +924,7 @@ class DashboardController extends Controller
             'count_7_days' => $recentDeletionsCount,
             'admissions_7_days' => $recentDeletionsAdmissions,
             'loans_7_days' => $recentDeletionsLoans,
+            'savings_7_days' => $recentDeletionsSavings,
             'users_7_days' => $recentDeletionsUsers,
             'list' => $recentDeletionsList,
         ];

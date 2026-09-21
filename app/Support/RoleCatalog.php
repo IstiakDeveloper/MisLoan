@@ -103,6 +103,7 @@ class RoleCatalog
                 'permissions' => [
                     'submit_loan_applications',
                     'submit_member_admissions',
+                    'submit_savings_applications',
                     'view_branch_applications',
                     'receive_notifications',
                     'edit_loan_forms',
@@ -116,6 +117,7 @@ class RoleCatalog
                 'permissions' => [
                     'submit_loan_applications',
                     'submit_member_admissions',
+                    'submit_savings_applications',
                     'view_branch_applications',
                     'receive_notifications',
                 ],

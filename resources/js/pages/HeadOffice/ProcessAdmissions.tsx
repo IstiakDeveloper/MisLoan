@@ -106,6 +106,7 @@ interface Props {
         zone_id?: number | string;
         area_id?: number | string;
         branch_id?: number | string;
+        member_type?: string;
         per_page?: number | string;
     };
     zones?: Zone[];
@@ -150,6 +151,7 @@ export default function ProcessAdmissions({ admissions, filters, zones = [], are
     const [selectedZone, setSelectedZone] = useState(filters.zone_id ? String(filters.zone_id) : '');
     const [selectedArea, setSelectedArea] = useState(filters.area_id ? String(filters.area_id) : '');
     const [selectedBranch, setSelectedBranch] = useState(filters.branch_id ? String(filters.branch_id) : '');
+    const [memberType, setMemberType] = useState(filters.member_type || '');
 
     const [activeTab, setActiveTab] = useState<'all' | 'clean' | 'flagged' | 'revised'>('all');
 
@@ -187,6 +189,7 @@ export default function ProcessAdmissions({ admissions, filters, zones = [], are
         zone_id?: string;
         area_id?: string;
         branch_id?: string;
+        member_type?: string;
         page?: number;
         per_page?: number;
     } = {}) => {
@@ -198,6 +201,7 @@ export default function ProcessAdmissions({ admissions, filters, zones = [], are
         const targetZone = overrides.zone_id !== undefined ? overrides.zone_id : selectedZone;
         const targetArea = overrides.area_id !== undefined ? overrides.area_id : selectedArea;
         const targetBranch = overrides.branch_id !== undefined ? overrides.branch_id : selectedBranch;
+        const targetMemberType = overrides.member_type !== undefined ? overrides.member_type : memberType;
 
         if (targetDateFrom || targetDateTo) {
             if (targetDateFrom) queryParams.date_from = targetDateFrom;
@@ -281,6 +285,7 @@ export default function ProcessAdmissions({ admissions, filters, zones = [], are
         setSelectedZone('');
         setSelectedArea('');
         setSelectedBranch('');
+        setMemberType('');
         setActiveTab('all');
         router.get('/head-office/process-admissions', { month: curMonth }, { preserveState: true });
     };
@@ -572,7 +577,7 @@ export default function ProcessAdmissions({ admissions, filters, zones = [], are
                 {/* Compact Filter Controls Bar */}
                 <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-3 space-y-2.5">
                     {/* Integrated Multi-column Filter Row */}
-                    <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-7 gap-2">
+                    <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-8 gap-2">
                         {/* Month Picker */}
                         <div>
                             <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">
@@ -668,6 +673,26 @@ export default function ProcessAdmissions({ admissions, filters, zones = [], are
                                         {formatBranchLabel(branch)}
                                     </option>
                                 ))}
+                            </select>
+                        </div>
+
+                        {/* Member Type Filter */}
+                        <div>
+                            <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">
+                                সদস্য ধরন (Type)
+                            </label>
+                            <select
+                                value={memberType}
+                                onChange={(e) => {
+                                    const val = e.target.value;
+                                    setMemberType(val);
+                                    applyFilters({ member_type: val });
+                                }}
+                                className="w-full px-2.5 py-1.5 bg-slate-50 border border-slate-300 rounded-lg text-xs text-slate-800 font-medium focus:ring-1 focus:ring-indigo-500 focus:bg-white cursor-pointer"
+                            >
+                                <option value="">সকল সদস্য</option>
+                                <option value="new">নতুন সদস্য</option>
+                                <option value="old">পুরাতন সদস্য</option>
                             </select>
                         </div>
 

@@ -127,4 +127,30 @@ trait RequiresSuperAdminDeletePin
 
         return false;
     }
+
+    protected function sessionSavingsEditKey(): string
+    {
+        return 'superadmin_savings_edit_ids';
+    }
+
+    protected function markSavingsEditUnlocked(int $savingsId): void
+    {
+        $ids = array_values(array_unique(array_merge(
+            session($this->sessionSavingsEditKey(), []),
+            [$savingsId]
+        )));
+
+        session()->put($this->sessionSavingsEditKey(), $ids);
+    }
+
+    protected function isSavingsEditUnlocked(int $savingsId): bool
+    {
+        foreach (session($this->sessionSavingsEditKey(), []) as $id) {
+            if ((int) $id === $savingsId) {
+                return true;
+            }
+        }
+
+        return false;
+    }
 }

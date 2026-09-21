@@ -97,6 +97,7 @@ class HeadOfficeRecentDeletionController extends Controller
             'total_last_7_days' => (clone $sevenDaysQuery)->count(),
             'admissions_last_7_days' => (clone $sevenDaysQuery)->where('deletable_type', 'member_admission')->count(),
             'loans_last_7_days' => (clone $sevenDaysQuery)->where('deletable_type', 'loan_application')->count(),
+            'savings_last_7_days' => (clone $sevenDaysQuery)->where('deletable_type', 'savings_application')->count(),
             'unique_users_last_7_days' => (clone $sevenDaysQuery)->distinct('deleted_by_user_id')->count('deleted_by_user_id'),
         ];
 

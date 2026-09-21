@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Models\Area;
 use App\Models\Branch;
+use App\Models\RecentDeletion;
 use App\Models\SavingsApplication;
 use App\Models\Zone;
 use App\Services\MemberCodeService;
@@ -14,6 +15,7 @@ use Inertia\Inertia;
 
 class HeadOfficeSavingsController extends Controller
 {
+    use Concerns\RequiresSuperAdminDeletePin;
     use Concerns\ScopesToAccessibleBranches;
 
     /**
@@ -143,17 +145,25 @@ class HeadOfficeSavingsController extends Controller
             'closed' => (clone $statsBaseQuery)->where('status', 'closed')->count(),
         ];
 
+        $user = $request->user();
+        $canDelete = $user && ($user->isSuperAdmin() || $user->isHeadOffice()) && ! $user->isCso();
+        $canModify = $user ? $user->canHeadOfficeDeleteOrEdit() : false;
+
         $branchSummaryList = [];
 
         $applications = $query->orderBy('created_at', 'desc')->paginate(20)->withQueryString();
 
-        $applications->through(function ($app) {
+        $applications->through(function ($app) use ($canModify, $canDelete) {
             $item = $app->toArray();
             $item['savingsProduct'] = $app->savingsProduct;
             $item['savings_product'] = $app->savingsProduct;
             $item['memberAdmission'] = $app->memberAdmission;
             $item['member_admission'] = $app->memberAdmission;
             $item['branch'] = $app->branch;
+            $item['superadmin_can_pin_edit'] = $canModify;
+            $item['superadmin_edit_unlocked'] = $canModify && $this->isSavingsEditUnlocked((int) $app->id);
+            $item['can_delete'] = $canDelete;
+
             return $item;
         });
 
@@ -170,11 +180,13 @@ class HeadOfficeSavingsController extends Controller
             'zones' => $orgFilters['zones'],
             'areas' => $orgFilters['areas'],
             'branches' => $orgFilters['branches'],
+            'canDelete' => $canDelete,
+            'canModify' => $canModify,
         ]);
     }
 
     /**
-     * Show single savings application (read-only for head office).
+     * Show single savings application.
      */
     public function show($id)
     {
@@ -187,9 +199,15 @@ class HeadOfficeSavingsController extends Controller
 
         $this->ensureCanAccessBranch($application->branch_id);
 
+        $user = request()->user();
+        $canPasswordEdit = $user ? $user->canHeadOfficeDeleteOrEdit() : false;
+
         $app = $application->toArray();
         $app['savings_product'] = $application->savingsProduct;
         $app['member_admission'] = $application->memberAdmission;
+        $app['superadmin_can_pin_edit'] = $canPasswordEdit;
+        $app['superadmin_edit_unlocked'] = $canPasswordEdit && $this->isSavingsEditUnlocked((int) $application->id);
+        $app['can_delete'] = $canPasswordEdit;
 
         return Inertia::render('Member/SavingsApplications/Show', [
             'application' => $app,
@@ -200,5 +218,78 @@ class HeadOfficeSavingsController extends Controller
             'fromHeadOffice' => true,
             'backUrl' => '/head-office/savings-applications',
         ]);
+    }
+
+    /**
+     * Delete savings application (Head Office or SuperAdmin, PIN/password required).
+     */
+    public function destroy(Request $request, $id)
+    {
+        if ($denied = $this->denyUnlessSuperAdminDeletePin($request)) {
+            return $denied;
+        }
+
+        $application = SavingsApplication::findOrFail($id);
+        $this->ensureCanAccessBranch($application->branch_id);
+
+        RecentDeletion::recordSavingsDeletion($application, $request->user(), $request);
+        $application->forceDelete();
+
+        if ($request->header('referer') && str_contains($request->header('referer'), "/savings-applications/{$id}")) {
+            return redirect()->route('head-office.savings-applications.index')->with('success', 'সঞ্চয় আবেদন মুছে ফেলা হয়েছে।');
+        }
+
+        return back()->with('success', 'সঞ্চয় আবেদন মুছে ফেলা হয়েছে।');
+    }
+
+    /**
+     * Bulk delete savings applications (Head Office or SuperAdmin, PIN/password required).
+     */
+    public function bulkDestroy(Request $request)
+    {
+        if ($denied = $this->denyUnlessSuperAdminDeletePin($request)) {
+            return $denied;
+        }
+
+        $validated = $request->validate([
+            'ids' => 'required|array|min:1',
+            'ids.*' => 'integer',
+        ]);
+
+        $query = SavingsApplication::whereIn('id', $validated['ids']);
+        $this->applyAccessibleBranchScope($query);
+        $applications = $query->get();
+        $count = $applications->count();
+
+        foreach ($applications as $app) {
+            RecentDeletion::recordSavingsDeletion($app, $request->user(), $request);
+            $app->forceDelete();
+        }
+
+        return back()->with('success', $count.' টি সঞ্চয় আবেদন মুছে ফেলা হয়েছে।');
+    }
+
+    /**
+     * Unlock savings application for editing (Head Office or SuperAdmin with password/PIN).
+     */
+    public function unlockEdit(Request $request, $id)
+    {
+        $application = SavingsApplication::findOrFail($id);
+        $user = $request->user();
+        if (! $user || ! $user->canHeadOfficeDeleteOrEdit()) {
+            abort(403, 'শুধুমাত্র হেড অফিস ও সুপার অ্যাডমিন এডিট আনলক করতে পারবেন।');
+        }
+
+        $this->ensureCanAccessBranch($application->branch_id);
+
+        if ($denied = $this->denyUnlessSuperAdminPin($request, 'আপনার পাসওয়ার্ড সঠিক নয়।')) {
+            return $denied;
+        }
+
+        $this->markSavingsEditUnlocked((int) $application->id);
+
+        return redirect()
+            ->route('member.savings-applications.edit', $application->id)
+            ->with('success', 'সঞ্চয় আবেদন এডিট আনলক হয়েছে। এখন ফর্ম সম্পাদনা করতে পারবেন।');
     }
 }

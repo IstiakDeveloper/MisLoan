@@ -108,11 +108,51 @@ class MemberCycleHubController extends Controller
             $initialMemberData = $this->resolveMemberCycleData((int) $initialMemberId, $user);
         }
 
+        $recentLoans = LoanApplication::whereIn('branch_id', $branchIds)
+            ->with([
+                'memberAdmission:id,application_no,applicant_name_bn,applicant_name_en,mobile_number,loan_dofa,customer_photo_path,samity_id,branch_id',
+                'memberAdmission.samity:id,samity_name,samity_name_bn,samity_code',
+                'branch:id,name,code',
+                'samity:id,samity_name,samity_name_bn,samity_code',
+                'loanProduct:id,product_name,product_name_bn,product_code',
+                'loanCategory:id,category_name,category_name_bn,category_code',
+            ])
+            ->orderByDesc('id')
+            ->limit(10)
+            ->get()
+            ->map(function ($loan) {
+                $admission = $loan->memberAdmission;
+                $snapshot = is_array($loan->legacy_member_snapshot) ? $loan->legacy_member_snapshot : [];
+
+                return [
+                    'id' => $loan->id,
+                    'loan_application_no' => $loan->application_no,
+                    'admission_id' => $admission?->id,
+                    'member_code' => $admission?->application_no ?: ($snapshot['application_no'] ?? null),
+                    'applicant_name_bn' => $admission?->applicant_name_bn ?: ($snapshot['applicant_name_bn'] ?? ''),
+                    'applicant_name_en' => $admission?->applicant_name_en ?: ($snapshot['applicant_name_en'] ?? ''),
+                    'customer_photo_path' => $admission?->customer_photo_path,
+                    'mobile_number' => $admission?->mobile_number ?: ($snapshot['mobile_number'] ?? ''),
+                    'samity_name' => $admission?->samity?->samity_name_bn ?: ($admission?->samity?->samity_name ?: ($loan->samity?->samity_name_bn ?: ($loan->samity?->samity_name ?? ''))),
+                    'branch_name' => $loan->branch?->name ?: ($admission?->branch?->name ?? ''),
+                    'loan_dofa' => (int) ($admission?->loan_dofa ?: 1),
+                    'product_name' => $loan->loanProduct?->product_name_bn ?: ($loan->loanProduct?->product_name ?? ''),
+                    'category_name' => $loan->loanCategory?->category_name_bn ?: ($loan->loanCategory?->category_name ?? ''),
+                    'requested_amount' => $loan->requested_amount,
+                    'approved_amount' => $loan->approved_amount,
+                    'disbursed_amount' => $loan->disbursed_amount,
+                    'status' => $loan->status,
+                    'created_at' => $loan->created_at ? $loan->created_at->format('d M Y, h:i A') : null,
+                    'created_at_human' => $loan->created_at ? $loan->created_at->diffForHumans() : null,
+                ];
+            });
+
         return Inertia::render('Member/CycleHub/Index', [
             'branches' => $branches,
             'samities' => $samities,
             'loanCategories' => $loanCategories,
             'loanProducts' => $loanProducts,
+            'recentLoans' => $recentLoans,
             'initialMemberData' => $initialMemberData,
             'userPermissions' => [
                 'canCreateLoan' => $this->canCreateLoan($user),

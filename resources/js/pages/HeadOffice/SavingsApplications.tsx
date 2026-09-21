@@ -23,9 +23,13 @@ import {
     Coins,
     TrendingUp,
     Layers,
+    Trash2,
+    Pencil,
+    Lock,
 } from 'lucide-react';
 import { formatDate, todayIsoDate } from '@/utils/dateUtils';
 import SavingsCalculatorModal from '@/components/SavingsCalculatorModal';
+import SuperAdminDeletePinModal from '@/components/SuperAdminDeletePinModal';
 import { formatBranchLabel, sortBranchesByCode } from '@/utils/branchLabel';
 import { PhoneCallLink } from '@/components/ui/PhoneCallLink';
 
@@ -101,6 +105,9 @@ interface SavingsApplication {
         nid_number?: string;
         mobile_number?: string;
     };
+    superadmin_can_pin_edit?: boolean;
+    superadmin_edit_unlocked?: boolean;
+    can_delete?: boolean;
 }
 
 interface Props {
@@ -142,6 +149,8 @@ interface Props {
     zones: Zone[];
     areas: Area[];
     branches: Branch[];
+    canDelete?: boolean;
+    canModify?: boolean;
 }
 
 const statusBadges: Record<string, { label: string; bg: string; text: string; dot: string; border: string }> = {
@@ -167,6 +176,8 @@ export default function SavingsApplications({
     zones = [],
     areas = [],
     branches = [],
+    canDelete = false,
+    canModify = false,
 }: Props) {
     const today = todayIsoDate();
     const [searchQuery, setSearchQuery] = useState(filters.search || '');
@@ -178,8 +189,81 @@ export default function SavingsApplications({
     const [selectedBranch, setSelectedBranch] = useState((filters.branch_id ?? '').toString());
     const [showCalculatorModal, setShowCalculatorModal] = useState(false);
 
+    // Multi-select & PIN protection state
+    const [selectedIds, setSelectedIds] = useState<number[]>([]);
+    const [deleteIntent, setDeleteIntent] = useState<{ type: 'single'; id: number; label: string } | { type: 'bulk' } | null>(null);
+    const [deleteProcessing, setDeleteProcessing] = useState(false);
+    const [editUnlockTarget, setEditUnlockTarget] = useState<SavingsApplication | null>(null);
+    const [editUnlockProcessing, setEditUnlockProcessing] = useState(false);
+
     const [filteredAreas, setFilteredAreas] = useState<Area[]>(areas);
     const [filteredBranches, setFilteredBranches] = useState<Branch[]>(branches);
+
+    const pageIds = applications.data.map((app) => app.id);
+    const allPageSelected = pageIds.length > 0 && pageIds.every((id) => selectedIds.includes(id));
+
+    const toggleSelectAllOnPage = () => {
+        if (allPageSelected) {
+            setSelectedIds((prev) => prev.filter((id) => !pageIds.includes(id)));
+        } else {
+            setSelectedIds((prev) => Array.from(new Set([...prev, ...pageIds])));
+        }
+    };
+
+    const toggleSelect = (id: number) => {
+        setSelectedIds((prev) =>
+            prev.includes(id) ? prev.filter((item) => item !== id) : [...prev, id]
+        );
+    };
+
+    const confirmDeleteWithPin = (pin: string) => {
+        if (!deleteIntent) return;
+        setDeleteProcessing(true);
+        const isBulk = deleteIntent.type === 'bulk';
+        const url = isBulk ? '/head-office/savings-applications/bulk' : `/head-office/savings-applications/${deleteIntent.id}`;
+        const data = isBulk ? { pin, ids: selectedIds } : { pin };
+
+        router.delete(url, {
+            data,
+            preserveScroll: true,
+            preserveState: true,
+            onSuccess: () => {
+                setDeleteIntent(null);
+                if (isBulk) {
+                    setSelectedIds([]);
+                } else if (deleteIntent.type === 'single') {
+                    setSelectedIds((prev) => prev.filter((id) => id !== deleteIntent.id));
+                }
+            },
+            onFinish: () => setDeleteProcessing(false),
+        });
+    };
+
+    const handleEditClick = (app: SavingsApplication) => {
+        if (app.superadmin_edit_unlocked || app.status === 'draft' || app.status === 'rejected') {
+            router.visit(`/member/savings-applications/${app.id}/edit`);
+        } else {
+            setEditUnlockTarget(app);
+        }
+    };
+
+    const confirmEditUnlockWithPin = (pin: string) => {
+        if (!editUnlockTarget) return;
+        setEditUnlockProcessing(true);
+        router.post(
+            `/head-office/savings-applications/${editUnlockTarget.id}/unlock-edit`,
+            { pin },
+            {
+                preserveScroll: true,
+                onSuccess: () => {
+                    const targetId = editUnlockTarget.id;
+                    setEditUnlockTarget(null);
+                    router.visit(`/member/savings-applications/${targetId}/edit`);
+                },
+                onFinish: () => setEditUnlockProcessing(false),
+            }
+        );
+    };
 
     useEffect(() => {
         if (selectedZone) {
@@ -741,6 +825,29 @@ export default function SavingsApplications({
                     </form>
                 </div>
 
+                {/* Bulk Actions Bar */}
+                {canDelete && selectedIds.length > 0 && (
+                    <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-rose-200 bg-rose-50 px-4 py-3">
+                        <p className="text-sm text-rose-800 font-medium">{selectedIds.length} টি সঞ্চয় আবেদন নির্বাচিত</p>
+                        <div className="flex flex-wrap gap-2">
+                            <button
+                                type="button"
+                                onClick={() => setSelectedIds([])}
+                                className="px-4 py-2 rounded-lg border border-slate-300 bg-white text-xs font-medium text-slate-700 hover:bg-slate-50"
+                            >
+                                নির্বাচন সরান
+                            </button>
+                            <button
+                                type="button"
+                                onClick={() => setDeleteIntent({ type: 'bulk' })}
+                                className="px-4 py-2 rounded-lg bg-rose-600 text-white text-xs font-semibold hover:bg-rose-700 shadow-sm"
+                            >
+                                নির্বাচিত মুছুন
+                            </button>
+                        </div>
+                    </div>
+                )}
+
                 {/* ── 5. APPLICATIONS TABLE CONTAINER ─────────────────────────────────── */}
                 <div className="bg-white rounded-2xl border border-slate-200 shadow-xs overflow-hidden p-3 md:p-4 space-y-3">
                     <div className="flex items-center justify-between pb-2 border-b border-slate-100 text-xs">
@@ -832,14 +939,64 @@ export default function SavingsApplications({
                                             </div>
                                         </div>
 
-                                        <div className="pt-1 border-t border-slate-100 flex items-center justify-end">
-                                            <Link
-                                                href={`/head-office/savings-applications/${app.id}`}
-                                                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold text-indigo-700 bg-indigo-50 hover:bg-indigo-100 transition"
-                                            >
-                                                <Eye className="w-3.5 h-3.5" />
-                                                <span>বিস্তারিত দেখুন</span>
-                                            </Link>
+                                        <div className="pt-2 border-t border-slate-100 flex items-center justify-between gap-2">
+                                            {canDelete && (
+                                                <label className="flex items-center gap-1.5 text-xs text-slate-600 cursor-pointer select-none">
+                                                    <input
+                                                        type="checkbox"
+                                                        checked={selectedIds.includes(app.id)}
+                                                        onChange={() => toggleSelect(app.id)}
+                                                        className="h-4 w-4 rounded border-slate-300 text-rose-600 focus:ring-rose-500"
+                                                    />
+                                                    <span>নির্বাচন</span>
+                                                </label>
+                                            )}
+                                            <div className="flex items-center gap-1.5 ml-auto">
+                                                {(canModify || app.superadmin_can_pin_edit) && (
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => handleEditClick(app)}
+                                                        className={`inline-flex items-center gap-1 px-2.5 py-1.5 rounded-xl text-xs font-bold transition border ${
+                                                            app.superadmin_edit_unlocked
+                                                                ? 'text-emerald-700 bg-emerald-50 hover:bg-emerald-100 border-emerald-200'
+                                                                : 'text-amber-700 bg-amber-50 hover:bg-amber-100 border-amber-200'
+                                                        }`}
+                                                        title={app.superadmin_edit_unlocked ? 'এডিট করুন' : 'পাসওয়ার্ড দিয়ে আনলক করুন'}
+                                                    >
+                                                        {app.superadmin_edit_unlocked ? (
+                                                            <Pencil className="w-3.5 h-3.5" />
+                                                        ) : (
+                                                            <Lock className="w-3.5 h-3.5" />
+                                                        )}
+                                                        <span>{app.superadmin_edit_unlocked ? 'এডিট' : 'আনলক'}</span>
+                                                    </button>
+                                                )}
+
+                                                {(canDelete || app.can_delete) && (
+                                                    <button
+                                                        type="button"
+                                                        onClick={() =>
+                                                            setDeleteIntent({
+                                                                type: 'single',
+                                                                id: app.id,
+                                                                label: app.account_no || app.application_no,
+                                                            })
+                                                        }
+                                                        className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-xl transition border border-transparent hover:border-rose-200"
+                                                        title="মুছে ফেলুন"
+                                                    >
+                                                        <Trash2 className="w-4 h-4" />
+                                                    </button>
+                                                )}
+
+                                                <Link
+                                                    href={`/head-office/savings-applications/${app.id}`}
+                                                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold text-indigo-700 bg-indigo-50 hover:bg-indigo-100 transition"
+                                                >
+                                                    <Eye className="w-3.5 h-3.5" />
+                                                    <span>বিস্তারিত</span>
+                                                </Link>
+                                            </div>
                                         </div>
                                     </div>
                                 );
@@ -852,9 +1009,19 @@ export default function SavingsApplications({
                         <table className="w-full text-left border-collapse">
                             <thead>
                                 <tr className="bg-slate-50/90 border-b border-slate-200 text-[11px] font-bold text-slate-600 uppercase tracking-wider">
+                                    {canDelete && (
+                                        <th className="py-3 px-2 text-center w-8">
+                                            <input
+                                                type="checkbox"
+                                                checked={allPageSelected}
+                                                onChange={toggleSelectAllOnPage}
+                                                className="h-3.5 w-3.5 rounded border-slate-300 text-rose-600 focus:ring-rose-500"
+                                            />
+                                        </th>
+                                    )}
                                     <th className="py-3 px-3.5">আবেদন ও হিসাব নং</th>
                                     <th className="py-3 px-3.5">সদস্যের তথ্য</th>
-                                    <th className="py-3 px-3.5">শাখা ও অঞ্চল</th>
+                                    <th className="py-3 px-3.5"> শাখা ও অঞ্চল</th>
                                     <th className="py-3 px-3.5">সঞ্চয় প্রকল্প</th>
                                     <th className="py-3 px-3.5 text-right">জমার পরিমাণ</th>
                                     <th className="py-3 px-3.5 text-right">পরিপক্ক পরিমাণ</th>
@@ -866,7 +1033,7 @@ export default function SavingsApplications({
                             <tbody className="divide-y divide-slate-100 text-xs">
                                 {applications.data.length === 0 ? (
                                     <tr>
-                                        <td colSpan={9} className="py-12 text-center text-slate-400 font-medium">
+                                        <td colSpan={canDelete ? 10 : 9} className="py-12 text-center text-slate-400 font-medium">
                                             <FileText className="w-8 h-8 mx-auto text-slate-300 mb-2" />
                                             কোনো সঞ্চয় আবেদন পাওয়া যায়নি
                                         </td>
@@ -882,6 +1049,16 @@ export default function SavingsApplications({
 
                                         return (
                                             <tr key={app.id} className="hover:bg-slate-50/70 transition-colors">
+                                                {canDelete && (
+                                                    <td className="py-3 px-2 text-center">
+                                                        <input
+                                                            type="checkbox"
+                                                            checked={selectedIds.includes(app.id)}
+                                                            onChange={() => toggleSelect(app.id)}
+                                                            className="h-3.5 w-3.5 rounded border-slate-300 text-rose-600 focus:ring-rose-500"
+                                                        />
+                                                    </td>
+                                                )}
                                                 {/* Application & Account No */}
                                                 <td className="py-3 px-3.5 font-mono">
                                                     <Link
@@ -975,15 +1152,54 @@ export default function SavingsApplications({
                                                 </td>
 
                                                 {/* Actions */}
-                                                <td className="py-3 px-3.5 text-right">
-                                                    <Link
-                                                        href={`/head-office/savings-applications/${app.id}`}
-                                                        className="inline-flex items-center gap-1.5 px-2.5 py-1 text-xs font-bold text-indigo-700 bg-indigo-50 hover:bg-indigo-100 border border-indigo-200 rounded-lg transition"
-                                                        title="বিস্তারিত পর্যালোচনা করুন"
-                                                    >
-                                                        <Eye className="w-3.5 h-3.5" />
-                                                        <span>বিবরণ</span>
-                                                    </Link>
+                                                <td className="py-3 px-3.5 text-right whitespace-nowrap">
+                                                    <div className="flex items-center justify-end gap-1.5">
+                                                        <Link
+                                                            href={`/head-office/savings-applications/${app.id}`}
+                                                            className="inline-flex items-center gap-1 px-2.5 py-1 text-xs font-bold text-indigo-700 bg-indigo-50 hover:bg-indigo-100 border border-indigo-200 rounded-lg transition"
+                                                            title="বিস্তারিত পর্যালোচনা করুন"
+                                                        >
+                                                            <Eye className="w-3.5 h-3.5" />
+                                                            <span>বিবরণ</span>
+                                                        </Link>
+
+                                                        {(canModify || app.superadmin_can_pin_edit) && (
+                                                            <button
+                                                                type="button"
+                                                                onClick={() => handleEditClick(app)}
+                                                                className={`inline-flex items-center gap-1 px-2.5 py-1 text-xs font-bold rounded-lg transition border ${
+                                                                    app.superadmin_edit_unlocked
+                                                                        ? 'text-emerald-700 bg-emerald-50 hover:bg-emerald-100 border-emerald-200'
+                                                                        : 'text-amber-700 bg-amber-50 hover:bg-amber-100 border-amber-200'
+                                                                }`}
+                                                                title={app.superadmin_edit_unlocked ? 'ফর্ম এডিট করুন (আনলক করা)' : 'পাসওয়ার্ড দিয়ে এডিট আনলক করুন'}
+                                                            >
+                                                                {app.superadmin_edit_unlocked ? (
+                                                                    <Pencil className="w-3.5 h-3.5" />
+                                                                ) : (
+                                                                    <Lock className="w-3.5 h-3.5" />
+                                                                )}
+                                                                <span>{app.superadmin_edit_unlocked ? 'এডিট' : 'আনলক'}</span>
+                                                            </button>
+                                                        )}
+
+                                                        {(canDelete || app.can_delete) && (
+                                                            <button
+                                                                type="button"
+                                                                onClick={() =>
+                                                                    setDeleteIntent({
+                                                                        type: 'single',
+                                                                        id: app.id,
+                                                                        label: app.account_no || app.application_no,
+                                                                    })
+                                                                }
+                                                                className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition border border-transparent hover:border-rose-200"
+                                                                title="মুছে ফেলুন"
+                                                            >
+                                                                <Trash2 className="w-3.5 h-3.5" />
+                                                            </button>
+                                                        )}
+                                                    </div>
                                                 </td>
                                             </tr>
                                         );
@@ -1036,6 +1252,39 @@ export default function SavingsApplications({
                 <SavingsCalculatorModal
                     open={showCalculatorModal}
                     onOpenChange={setShowCalculatorModal}
+                />
+
+                {/* PIN Protected Delete Modal */}
+                <SuperAdminDeletePinModal
+                    open={!!deleteIntent}
+                    title="সঞ্চয় আবেদন মুছে ফেলুন"
+                    description={
+                        deleteIntent?.type === 'bulk'
+                            ? `নির্বাচিত ${selectedIds.length} টি সঞ্চয় আবেদন স্থায়ীভাবে মুছে ফেলতে আপনার লগইন পাসওয়ার্ড দিন।`
+                            : `সঞ্চয় আবেদন (${deleteIntent?.type === 'single' ? deleteIntent.label : ''}) স্থায়ীভাবে মুছে ফেলতে আপনার লগইন পাসওয়ার্ড দিন।`
+                    }
+                    processing={deleteProcessing}
+                    onClose={() => setDeleteIntent(null)}
+                    onConfirm={confirmDeleteWithPin}
+                    confirmLabel="মুছে ফেলুন"
+                    processingLabel="মুছে ফেলা হচ্ছে..."
+                    pinLabel="আপনার পাসওয়ার্ড (User Password)"
+                    placeholder="লগইন পাসওয়ার্ড লিখুন"
+                />
+
+                {/* PIN Protected Edit Unlock Modal */}
+                <SuperAdminDeletePinModal
+                    open={!!editUnlockTarget}
+                    title="সঞ্চয় আবেদন এডিট আনলক"
+                    description={`আবেদন নং ${editUnlockTarget?.application_no || ''} সম্পাদনা করতে আপনার লগইন পাসওয়ার্ড দিন।`}
+                    processing={editUnlockProcessing}
+                    onClose={() => setEditUnlockTarget(null)}
+                    onConfirm={confirmEditUnlockWithPin}
+                    confirmLabel="এডিট আনলক করুন"
+                    processingLabel="যাচাই হচ্ছে..."
+                    pinLabel="আপনার পাসওয়ার্ড (User Password)"
+                    placeholder="লগইন পাসওয়ার্ড লিখুন"
+                    accent="indigo"
                 />
             </div>
         </AdminLayout>

@@ -30,10 +30,13 @@ import {
     Activity,
     Info,
     Phone,
+    Lock,
+    Pencil,
 } from 'lucide-react';
 import { SavingsApplicationPrintView } from './Forms/SavingsApplicationForm';
 import { ProfitSavingsPrintView } from './Forms/ProfitSavingsForm';
 import { PhoneCallLink } from '@/components/ui/PhoneCallLink';
+import SuperAdminDeletePinModal from '@/components/SuperAdminDeletePinModal';
 
 /** Nominee from API (nominee_info) */
 interface NomineeInfo {
@@ -111,6 +114,9 @@ interface Application {
     member_admission?: MemberRelation;
     branch?: { name: string; address?: string; area?: { name: string } };
     samity?: { samity_name: string; samity_name_bn?: string };
+    superadmin_can_pin_edit?: boolean;
+    superadmin_edit_unlocked?: boolean;
+    can_delete?: boolean;
 }
 
 interface Props {
@@ -233,11 +239,20 @@ function buildProfitPrintData(application: Application): Record<string, unknown>
 export default function Show({ application, formType, fromHeadOffice = false, backUrl = '/member/savings-applications' }: Props) {
     const [activeTab, setActiveTab] = useState<'form' | 'details'>('form');
 
+    const [pinModalOpen, setPinModalOpen] = useState(false);
+    const [pinProcessing, setPinProcessing] = useState(false);
+    const [deletePinModalOpen, setDeletePinModalOpen] = useState(false);
+    const [deletePinProcessing, setDeletePinProcessing] = useState(false);
+
+    const isHeadOfficeOrSuperAdmin = fromHeadOffice || !!application.superadmin_can_pin_edit;
+
     const statusInfo = statusConfig[application.status] || statusConfig.draft;
     const StatusIcon = statusInfo.icon || AlertCircle;
 
     const canEdit = !fromHeadOffice && (application.status === 'draft' || application.status === 'rejected');
-    const canDelete = !fromHeadOffice && (application.status === 'draft' || application.status === 'submitted');
+    const canDelete =
+        application.can_delete ??
+        (!fromHeadOffice && (application.status === 'draft' || application.status === 'submitted'));
     const canSubmit = !fromHeadOffice && (application.status === 'draft' || application.status === 'rejected');
     const canApprove = !fromHeadOffice && application.status === 'submitted';
 
@@ -259,7 +274,47 @@ export default function Show({ application, formType, fromHeadOffice = false, ba
         }
     };
 
+    const confirmSuperAdminUnlock = (pin: string) => {
+        setPinProcessing(true);
+        const url = fromHeadOffice
+            ? `/head-office/savings-applications/${application.id}/unlock-edit`
+            : `/member/savings-applications/${application.id}/unlock-edit`;
+
+        router.post(
+            url,
+            { pin },
+            {
+                preserveScroll: true,
+                onFinish: () => setPinProcessing(false),
+                onSuccess: () => {
+                    setPinModalOpen(false);
+                    router.visit(`/member/savings-applications/${application.id}/edit`);
+                },
+            },
+        );
+    };
+
+    const confirmDeleteWithPin = (pin: string) => {
+        setDeletePinProcessing(true);
+        const url = fromHeadOffice
+            ? `/head-office/savings-applications/${application.id}`
+            : `/member/savings-applications/${application.id}`;
+
+        router.delete(url, {
+            data: { pin },
+            onFinish: () => setDeletePinProcessing(false),
+            onSuccess: () => {
+                setDeletePinModalOpen(false);
+            },
+        });
+    };
+
     const handleDelete = () => {
+        if (isHeadOfficeOrSuperAdmin) {
+            setDeletePinModalOpen(true);
+            return;
+        }
+
         if (confirm('এই আবেদনটি মুছে ফেলতে চান? এটি পুনরুদ্ধার করা যাবে না।')) {
             router.delete(`/member/savings-applications/${application.id}`, {
                 preserveScroll: true,
@@ -496,7 +551,28 @@ export default function Show({ application, formType, fromHeadOffice = false, ba
                                 প্রিন্ট ফর্ম
                             </Button>
 
-                            {canEdit && product?.id && member?.id && (
+                            {application.superadmin_can_pin_edit && !application.superadmin_edit_unlocked && (
+                                <Button
+                                    className="w-full sm:w-auto bg-indigo-600 hover:bg-indigo-700 text-white shadow-xs font-semibold rounded-xl text-xs sm:text-sm h-9 sm:h-10"
+                                    onClick={() => setPinModalOpen(true)}
+                                >
+                                    <Lock className="w-4 h-4 mr-1.5" />
+                                    পাসওয়ার্ড দিয়ে ফর্ম এডিট
+                                </Button>
+                            )}
+
+                            {application.superadmin_can_pin_edit && application.superadmin_edit_unlocked && (
+                                <Link href={`/member/savings-applications/${application.id}/edit`}>
+                                    <Button
+                                        className="w-full sm:w-auto bg-emerald-600 hover:bg-emerald-700 text-white shadow-xs font-semibold rounded-xl text-xs sm:text-sm h-9 sm:h-10"
+                                    >
+                                        <Edit className="w-4 h-4 mr-1.5" />
+                                        ফর্ম এডিট করুন
+                                    </Button>
+                                </Link>
+                            )}
+
+                            {canEdit && !application.superadmin_can_pin_edit && product?.id && member?.id && (
                                 <Link href={`/member/savings-applications/create/${product.id}?member_id=${member.id}`}>
                                     <Button
                                         variant="outline"
@@ -547,7 +623,7 @@ export default function Show({ application, formType, fromHeadOffice = false, ba
                                 </>
                             )}
 
-                            {canDelete && (
+                            {(canDelete || isHeadOfficeOrSuperAdmin) && (
                                 <Button
                                     variant="outline"
                                     onClick={handleDelete}
@@ -975,7 +1051,28 @@ export default function Show({ application, formType, fromHeadOffice = false, ba
                                 <Printer className="h-3.5 w-3.5 mr-1.5" />
                                 প্রিন্ট ফর্ম
                             </Button>
-                            {canDelete && (
+                            {application.superadmin_can_pin_edit && !application.superadmin_edit_unlocked && (
+                                <Button
+                                    size="sm"
+                                    className="bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-semibold"
+                                    onClick={() => setPinModalOpen(true)}
+                                >
+                                    <Lock className="w-3.5 h-3.5 mr-1.5" />
+                                    পাসওয়ার্ড দিয়ে ফর্ম এডিট
+                                </Button>
+                            )}
+                            {application.superadmin_can_pin_edit && application.superadmin_edit_unlocked && (
+                                <Link href={`/member/savings-applications/${application.id}/edit`}>
+                                    <Button
+                                        size="sm"
+                                        className="bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-semibold"
+                                    >
+                                        <Edit className="w-3.5 h-3.5 mr-1.5" />
+                                        ফর্ম এডিট করুন
+                                    </Button>
+                                </Link>
+                            )}
+                            {(canDelete || isHeadOfficeOrSuperAdmin) && (
                                 <Button variant="destructive" size="sm" onClick={handleDelete} className="rounded-xl text-xs font-semibold">
                                     <Trash2 className="h-3.5 w-3.5 mr-1.5" />
                                     মুছুন (Delete)
@@ -986,6 +1083,35 @@ export default function Show({ application, formType, fromHeadOffice = false, ba
 
                 </div>
             </div>
+
+            {/* PIN Protected Edit Unlock Modal */}
+            <SuperAdminDeletePinModal
+                open={pinModalOpen}
+                title="ফর্ম এডিট আনলক করুন"
+                description="যেকোনো অবস্থার সঞ্চয় আবেদন সম্পাদনা করতে আপনার লগইন পাসওয়ার্ড দিন।"
+                processing={pinProcessing}
+                onClose={() => setPinModalOpen(false)}
+                onConfirm={confirmSuperAdminUnlock}
+                confirmLabel="এডিট আনলক"
+                processingLabel="যাচাই হচ্ছে..."
+                pinLabel="আপনার পাসওয়ার্ড (User Password)"
+                placeholder="লগইন পাসওয়ার্ড লিখুন"
+                accent="indigo"
+            />
+
+            {/* PIN Protected Delete Modal */}
+            <SuperAdminDeletePinModal
+                open={deletePinModalOpen}
+                title="সঞ্চয় আবেদন মুছে ফেলুন"
+                description={`আবেদন নং ${application.application_no || ''} স্থায়ীভাবে মুছে ফেলতে আপনার লগইন পাসওয়ার্ড দিন।`}
+                processing={deletePinProcessing}
+                onClose={() => setDeletePinModalOpen(false)}
+                onConfirm={confirmDeleteWithPin}
+                confirmLabel="মুছে ফেলুন"
+                processingLabel="মুছে ফেলা হচ্ছে..."
+                pinLabel="আপনার পাসওয়ার্ড (User Password)"
+                placeholder="লগইন পাসওয়ার্ড লিখুন"
+            />
         </AdminLayout>
     );
 }

@@ -264,9 +264,9 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
         { name: 'Cluster Handover', href: '/cluster-handover', icon: Users, badge: badgeCounts.pendingClusterHandovers || 0 },
     ];
 
-    // Field officer: admissions plus loan applications for their approved members + verifications + cycle hub
+    // Field officer: admissions plus loan applications for their approved members + verifications + cycle hub + savings applications
     const branchMenuItems = isFieldOfficer
-        ? branchMenuItemsFull.filter((m) => m.name === 'Dashboard' || m.name === 'Cycle Hub' || m.name === 'Member Admissions' || m.name === 'Loan Applications' || m.name === 'Verification')
+        ? branchMenuItemsFull.filter((m) => m.name === 'Dashboard' || m.name === 'Cycle Hub' || m.name === 'Member Admissions' || m.name === 'Loan Applications' || m.name === 'Verification' || m.name === 'Savings Applications')
         : roleName === 'branch_user'
         ? branchMenuItemsFull.filter((m) => m.name !== 'Pending Approvals')
         : branchMenuItemsFull;
@@ -430,7 +430,13 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
         };
 
         if (isFieldOfficer) {
-            return branchMenuItems;
+            return [
+                branchMenuItems.find(m => m.href === '/dashboard') || branchMenuItems[0],
+                branchMenuItems.find(m => m.href === '/member-admissions') || branchMenuItems[1],
+                branchMenuItems.find(m => m.href === '/member/loan-applications') || branchMenuItems[2],
+                branchMenuItems.find(m => m.href === '/member/savings-applications'),
+                branchMenuItems.find(m => m.href === '/verifications'),
+            ].filter(Boolean);
         }
 
         if (isBranchRole) {

@@ -48,6 +48,7 @@ class LoanProductEditAndTeamBasedSyncTest extends TestCase
         Schema::create('user_branches', function (Blueprint $table) {
             $table->unsignedBigInteger('user_id');
             $table->unsignedBigInteger('branch_id');
+            $table->timestamps();
         });
         Schema::create('user_areas', function (Blueprint $table) {
             $table->unsignedBigInteger('user_id');
@@ -495,6 +496,74 @@ class LoanProductEditAndTeamBasedSyncTest extends TestCase
         $freshLoan = $loan->fresh();
         $this->assertEquals(50000, (float) $freshLoan->requested_amount);
         $this->assertEquals(50000, (float) $freshLoan->approved_amount);
+    }
+
+    public function test_update_loan_product_rejects_with_clear_error_if_amount_is_below_product_min_amount(): void
+    {
+        $branch = Branch::create(['name' => 'Dhaka Branch 4B', 'branch_code' => '0104B']);
+        $buRole = Role::firstOrCreate(['name' => Role::BRANCH_USER], ['display_name' => 'Branch User']);
+        $user = User::create([
+            'name' => 'Branch User 4B',
+            'email' => 'bu4b@test.com',
+            'role_id' => $buRole->id,
+            'branch_id' => $branch->id,
+            'is_active' => true,
+        ]);
+        DB::table('user_branches')->insert(['user_id' => $user->id, 'branch_id' => $branch->id]);
+
+        $catOld = LoanCategory::create(['category_name' => 'RMTP-SME', 'category_name_bn' => 'আরএমটিপি-এসএমই']);
+        $prodOld = LoanProduct::create([
+            'loan_category_id' => $catOld->id,
+            'product_name' => 'SAHOS_DM/W',
+            'duration_months' => 6,
+            'installment_type' => 'monthly',
+            'number_of_installments' => 6,
+            'min_amount' => 1,
+            'max_amount' => 50000,
+        ]);
+
+        $catAgro = LoanCategory::create(['category_name' => 'Agrosor', 'category_name_bn' => 'অগ্রসর']);
+        $prodAgro = LoanProduct::create([
+            'loan_category_id' => $catAgro->id,
+            'product_name' => 'Agr_F/M1Yr',
+            'duration_months' => 12,
+            'installment_type' => 'monthly',
+            'number_of_installments' => 12,
+            'min_amount' => 200000, // 2 lakh min
+            'max_amount' => 6000000,
+        ]);
+
+        $loan = LoanApplication::create([
+            'application_no' => 'LN20260902290',
+            'loan_category_id' => $catOld->id,
+            'loan_product_id' => $prodOld->id,
+            'branch_id' => $branch->id,
+            'status' => LoanApplication::STATUS_PENDING_HEAD_OFFICE,
+            'requested_amount' => 20000,
+            'approved_amount' => 20000,
+            'loan_term_months' => 6,
+        ]);
+
+        $controller = app(\App\Http\Controllers\Member\LoanApplicationController::class);
+        $request = \Illuminate\Http\Request::create(
+            "/member/loan-applications/{$loan->id}/update-loan-product",
+            'PATCH',
+            [
+                'loan_category_id' => $catAgro->id,
+                'loan_product_id' => $prodAgro->id,
+                'requested_amount' => 20000,
+                'number_of_installments' => 12,
+                'loan_term_months' => 12,
+                'repayment_frequency' => 'monthly',
+            ]
+        );
+        $request->setUserResolver(fn () => $user);
+
+        $controller->updateLoanProduct($request, $loan->id);
+        $this->assertTrue(session()->has('errors'), 'Should have validation errors when amount < min_amount');
+        $errors = session('errors')->getBag('default');
+        $this->assertTrue($errors->has('requested_amount'));
+        $this->assertStringContainsString('নির্বাচিত প্রডাক্টের সর্বনিম্ন পরিমাণ ৳200,000 হতে হবে', $errors->first('requested_amount'));
     }
 
     public function test_deleting_loan_deletes_linked_team_based_item_and_sheet(): void

@@ -2,10 +2,12 @@
 
 namespace App\Http\Controllers\Member;
 
+use App\Http\Controllers\Concerns\RequiresSuperAdminDeletePin;
 use App\Http\Controllers\Controller;
 use App\Models\Area;
 use App\Models\Branch;
 use App\Models\MemberAdmission;
+use App\Models\RecentDeletion;
 use App\Models\SavingsApplication;
 use App\Models\SavingsCategory;
 use App\Models\SavingsProduct;
@@ -20,6 +22,7 @@ use Inertia\Inertia;
 
 class SavingsApplicationController extends Controller
 {
+    use RequiresSuperAdminDeletePin;
     /**
      * If value is a base64 data URL, save to storage and return the stored path (fits in VARCHAR).
      * Otherwise return the value as-is (existing path or empty).
@@ -298,7 +301,10 @@ class SavingsApplicationController extends Controller
     public function searchMembers(Request $request)
     {
         $user = $request->user();
-        if (! $user || ! $user->branch_id) {
+        $isFieldOfficer = $user?->role?->name === 'field_officer';
+        $branchId = $user?->branch_id ?: $user?->getAccessibleBranches()->first()?->id;
+
+        if (! $user || ! $branchId) {
             return response()->json(['members' => []]);
         }
 
@@ -307,9 +313,13 @@ class SavingsApplicationController extends Controller
             return response()->json(['members' => []]);
         }
 
-        $members = MemberAdmission::where('branch_id', $user->branch_id)
+        $members = MemberAdmission::where('branch_id', $branchId)
             ->masterMembers()
-            ->where('status', 'approved')
+            ->when($isFieldOfficer, function ($q) {
+                $q->where('status', '!=', 'rejected');
+            }, function ($q) {
+                $q->where('status', 'approved');
+            })
             ->where(function ($q) use ($query) {
                 MemberCodeService::applyAdmissionSearch($q, $query);
             })
@@ -334,6 +344,9 @@ class SavingsApplicationController extends Controller
     public function create(Request $request, $productId)
     {
         $user = $request->user();
+        $isFieldOfficer = $user?->role?->name === 'field_officer';
+        $branchId = $user?->branch_id ?: $user?->getAccessibleBranches()->first()?->id;
+
         $savingsProduct = SavingsProduct::query()
             ->with('savingsCategory:id,category_name,category_name_bn,category_code')
             ->findOrFail($productId);
@@ -346,13 +359,17 @@ class SavingsApplicationController extends Controller
             return redirect()->route('member.savings-applications.index')
                 ->with('error', $message);
         }
-        $branch = Branch::with('area:id,name')->where('id', $user->branch_id)->first();
+        $branch = Branch::with('area:id,name')->where('id', $branchId)->first();
 
         $memberAdmission = null;
         if ($request->filled('member_id')) {
-            $memberAdmission = MemberAdmission::where('branch_id', $user->branch_id)
+            $memberAdmission = MemberAdmission::where('branch_id', $branchId)
                 ->where('id', $request->member_id)
-                ->where('status', 'approved')
+                ->when($isFieldOfficer, function ($q) {
+                    $q->where('status', '!=', 'rejected');
+                }, function ($q) {
+                    $q->where('status', 'approved');
+                })
                 ->with([
                     'samity:id,samity_name,samity_name_bn,samity_code',
                     'familyMembers:id,member_admission_id,sl_no,member_name,relation_with_head,age_years,age_months,marital_status,education_level,occupation,monthly_income',
@@ -474,7 +491,7 @@ class SavingsApplicationController extends Controller
                 'member_admission_id' => $validated['member_admission_id'],
                 'savings_product_id' => $validated['savings_product_id'],
                 'savings_category_id' => $product->savings_category_id,
-                'branch_id' => $user->branch_id,
+                'branch_id' => $user->branch_id ?: ($member->branch_id ?: $user->getAccessibleBranches()->first()?->id),
                 'samity_id' => $validated['samity_id'] ?? $member->samity_id,
                 'deposit_amount' => $validated['deposit_amount'],
                 'monthly_installment' => $monthlyInstallment,
@@ -524,7 +541,11 @@ class SavingsApplicationController extends Controller
     public function saveForm(Request $request, $id)
     {
         $application = SavingsApplication::findOrFail($id);
-        if (! $application->canBeEdited()) {
+        $user = $request->user();
+        $isHeadOfficeUser = $user && $user->canHeadOfficeDeleteOrEdit();
+        $isUnlocked = $isHeadOfficeUser && $this->isSavingsEditUnlocked((int) $application->id);
+
+        if (! $application->canBeEdited() && ! $isUnlocked) {
             return back()->withErrors(['error' => 'এই আবেদন সম্পাদনা করা যাবে না।']);
         }
 
@@ -601,6 +622,12 @@ class SavingsApplicationController extends Controller
                 $app['nominee_info'][$i]['signature'] = $this->imagePathToUrl($n['signature'] ?? null);
             }
         }
+
+        $user = request()->user();
+        $canPasswordEdit = $user ? $user->canHeadOfficeDeleteOrEdit() : false;
+        $app['superadmin_can_pin_edit'] = $canPasswordEdit;
+        $app['superadmin_edit_unlocked'] = $canPasswordEdit && $this->isSavingsEditUnlocked((int) $application->id);
+        $app['can_delete'] = $canPasswordEdit || in_array($application->status, ['draft', 'submitted']);
 
         return Inertia::render('Member/SavingsApplications/Show', [
             'application' => $app,
@@ -735,14 +762,106 @@ class SavingsApplicationController extends Controller
         return back()->with('success', 'সঞ্চয় হিসাব উত্তোলন ও নিষ্পত্তি সম্পন্ন হয়েছে। প্রদেয় অর্থ: ৳'.number_format($validated['total_payout'], 2));
     }
 
-    public function destroy($id)
+    public function destroy(Request $request, $id)
     {
         $application = SavingsApplication::findOrFail($id);
+        $user = $request->user();
+
+        if ($user && $user->canHeadOfficeDeleteOrEdit()) {
+            if ($denied = $this->denyUnlessSuperAdminDeletePin($request)) {
+                return $denied;
+            }
+            RecentDeletion::recordSavingsDeletion($application, $user, $request);
+            $application->forceDelete();
+
+            return redirect()->route('member.savings-applications.index')->with('success', 'আবেদন মুছে ফেলা হয়েছে।');
+        }
+
         if (! in_array($application->status, ['draft', 'submitted', 'closed', 'cancelled'])) {
             return back()->withErrors(['error' => 'সক্রিয় সঞ্চয় হিসাব সরাসরি মোছা যাবে না, আগে ক্লোজ করুন।']);
         }
         $application->delete();
 
         return redirect()->route('member.savings-applications.index')->with('success', 'আবেদন মুছে ফেলা হয়েছে।');
+    }
+
+    /**
+     * Edit savings application. Accessible to branch users when draft/rejected, or Head Office/SuperAdmin when unlocked by PIN.
+     */
+    public function edit(Request $request, $id)
+    {
+        $user = $request->user();
+        $application = SavingsApplication::with([
+            'savingsProduct.savingsCategory',
+            'memberAdmission.samity',
+            'branch.area',
+            'samity',
+        ])->findOrFail($id);
+
+        $isHeadOfficeUser = $user && $user->canHeadOfficeDeleteOrEdit();
+        $isUnlocked = $isHeadOfficeUser && $this->isSavingsEditUnlocked((int) $application->id);
+
+        if (! $application->canBeEdited() && ! $isUnlocked) {
+            if ($isHeadOfficeUser) {
+                return redirect()->route('head-office.savings-applications.show', $application->id)
+                    ->with('error', 'ফর্ম এডিট করতে আগে আপনার পাসওয়ার্ড বা পিন দিন।');
+            }
+
+            return redirect()->route('member.savings-applications.show', $application->id)
+                ->with('error', 'এই আবেদন সম্পাদনা করা যাবে না।');
+        }
+
+        $savingsProduct = $application->savingsProduct;
+        $memberAdmission = $application->memberAdmission;
+        $branch = $application->branch;
+
+        $existingApplication = $application->toArray();
+        $existingApplication['applicant_photo'] = $this->imagePathToUrl($existingApplication['applicant_photo'] ?? null);
+        $existingApplication['applicant_signature'] = $this->imagePathToUrl($existingApplication['applicant_signature'] ?? null);
+        $existingApplication['officer_signature'] = $this->imagePathToUrl($existingApplication['officer_signature'] ?? null);
+        $existingApplication['accountant_signature'] = $this->imagePathToUrl($existingApplication['accountant_signature'] ?? null);
+        $existingApplication['branch_manager_signature'] = $this->imagePathToUrl($existingApplication['branch_manager_signature'] ?? null);
+        if (! empty($existingApplication['nominee_info']) && is_array($existingApplication['nominee_info'])) {
+            foreach ($existingApplication['nominee_info'] as $i => $n) {
+                $existingApplication['nominee_info'][$i]['photo'] = $this->imagePathToUrl($n['photo'] ?? null);
+                $existingApplication['nominee_info'][$i]['signature'] = $this->imagePathToUrl($n['signature'] ?? null);
+            }
+        }
+
+        return Inertia::render('Member/SavingsApplications/Create', [
+            'savingsProduct' => $savingsProduct,
+            'memberAdmission' => $memberAdmission,
+            'branch' => $branch,
+            'existingApplication' => $existingApplication,
+            'formType' => SavingsFormVisibility::formType($savingsProduct->savingsCategory, $savingsProduct),
+            'isEdit' => true,
+        ]);
+    }
+
+    /**
+     * Unlock savings application for editing using password/PIN.
+     */
+    public function unlockEdit(Request $request, $id)
+    {
+        $application = SavingsApplication::findOrFail($id);
+        $user = $request->user();
+        if (! $user || ! $user->canHeadOfficeDeleteOrEdit()) {
+            abort(403, 'শুধুমাত্র হেড অফিস ও সুপার অ্যাডমিন এডিট আনলক করতে পারবেন।');
+        }
+
+        if (! $user->has_all_access && ! $user->isSuperAdmin() && ! $user->isHeadOffice()
+            && ! $user->canAccessBranch((int) $application->branch_id)) {
+            abort(403, 'আপনার এই সঞ্চয় আবেদন দেখার অনুমতি নেই।');
+        }
+
+        if ($denied = $this->denyUnlessSuperAdminPin($request, 'আপনার পাসওয়ার্ড সঠিক নয়।')) {
+            return $denied;
+        }
+
+        $this->markSavingsEditUnlocked((int) $application->id);
+
+        return redirect()
+            ->route('member.savings-applications.edit', $application->id)
+            ->with('success', 'সঞ্চয় আবেদন এডিট আনলক হয়েছে। এখন ফর্ম সম্পাদনা করতে পারবেন।');
     }
 }

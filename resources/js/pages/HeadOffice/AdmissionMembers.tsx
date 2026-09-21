@@ -162,6 +162,7 @@ export default function AdmissionMembers({ admissions, filters, stats, zones, ar
     const [selectedBranch, setSelectedBranch] = useState(filters.branch_id?.toString() || '');
     const [hadIssues, setHadIssues] = useState(filters.had_issues || '');
     const [printedFilter, setPrintedFilter] = useState(filters.printed || '');
+    const [memberType, setMemberType] = useState(filters.member_type || '');
 
     const [filteredAreas, setFilteredAreas] = useState<Area[]>(areas);
     const [filteredBranches, setFilteredBranches] = useState<Branch[]>(branches);
@@ -170,7 +171,8 @@ export default function AdmissionMembers({ admissions, filters, stats, zones, ar
         setDateFrom(filters.date_from || '');
         setDateTo(filters.date_to || '');
         setStatusFilter(filters.status || 'all');
-    }, [filters.date_from, filters.date_to, filters.status]);
+        setMemberType(filters.member_type || '');
+    }, [filters.date_from, filters.date_to, filters.status, filters.member_type]);
 
     useEffect(() => {
         if (selectedZone) {
@@ -234,6 +236,7 @@ export default function AdmissionMembers({ admissions, filters, stats, zones, ar
         date_to: dateTo,
         had_issues: hadIssues,
         printed: printedFilter,
+        member_type: memberType,
         per_page: String(admissions.per_page || filters.per_page || 20),
         ...overrides,
     });
@@ -269,6 +272,7 @@ export default function AdmissionMembers({ admissions, filters, stats, zones, ar
         setDateTo('');
         setHadIssues('');
         setPrintedFilter('');
+        setMemberType('');
         router.get(
             '/head-office/admission-members',
             {},
@@ -393,16 +397,18 @@ export default function AdmissionMembers({ admissions, filters, stats, zones, ar
         });
     };
 
-    const hasActiveFilters =
+    const hasActiveFilters = Boolean(
         searchQuery ||
-        (statusFilter && statusFilter !== 'all' && statusFilter !== (workQueue?.default_status || '')) ||
+        (statusFilter && statusFilter !== 'all') ||
         selectedZone ||
         selectedArea ||
         selectedBranch ||
+        dateFrom ||
+        dateTo ||
         hadIssues ||
         printedFilter ||
-        dateFrom ||
-        dateTo;
+        memberType
+    );
 
     const defaultStatus = workQueue?.default_status || '';
     const isAllStatus = statusFilter === 'all' || statusFilter === '';
@@ -779,6 +785,20 @@ export default function AdmissionMembers({ admissions, filters, stats, zones, ar
                             <option value="">প্রিন্ট: সব</option>
                             <option value="yes">প্রিন্ট সম্পন্ন</option>
                             <option value="no">প্রিন্ট হয়নি</option>
+                        </select>
+
+                        <select
+                            value={memberType}
+                            onChange={(e) => {
+                                const val = e.target.value;
+                                setMemberType(val);
+                                router.get('/head-office/admission-members', filterPayload({ member_type: val }), { preserveState: true });
+                            }}
+                            className="px-2.5 py-2 text-xs border border-slate-200 rounded-xl bg-slate-50/50 font-medium cursor-pointer"
+                        >
+                            <option value="">সদস্য ধরন: সব</option>
+                            <option value="new">নতুন সদস্য</option>
+                            <option value="old">পুরাতন সদস্য</option>
                         </select>
 
                         <button

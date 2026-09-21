@@ -1,5 +1,5 @@
-import React, { useState, useEffect } from 'react';
-import { router } from '@inertiajs/react';
+import React, { useState, useEffect, useRef } from 'react';
+import { router, usePage } from '@inertiajs/react';
 import { Button } from '@/components/ui/button';
 import {
     Banknote,
@@ -12,6 +12,7 @@ import {
     Clock,
     Calculator,
     Lock,
+    AlertCircle,
 } from 'lucide-react';
 
 interface Props {
@@ -34,6 +35,9 @@ export default function EditLoanDetailsModal({
     isBranchUser = false,
 }: Props) {
     if (!open || !application) return null;
+
+    const pageProps = usePage().props as any;
+    const pageErrors = pageProps.errors || {};
 
     const isAmountApproved = Boolean(
         application.approved_amount && Number(application.approved_amount) > 0
@@ -73,34 +77,44 @@ export default function EditLoanDetailsModal({
 
     const [isSubmitting, setIsSubmitting] = useState(false);
     const [error, setError] = useState<string | null>(null);
+    const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
 
-    // Active Category & Products
+    const wasOpenRef = useRef(false);
+
+    // Active Category & Products (handling both loan_products and loanProducts)
     const activeCategory = categories.find((c) => String(c.id) === String(categoryId));
-    const categoryProducts = activeCategory?.loan_products || [];
+    const categoryProducts = activeCategory?.loan_products || activeCategory?.loanProducts || [];
     const activeProduct =
         categories
-            .flatMap((c) => c.loan_products || [])
+            .flatMap((c) => c.loan_products || c.loanProducts || [])
             .find((p) => String(p.id) === String(productId)) || null;
 
     useEffect(() => {
-        setCategoryId(initialCatId);
-        setProductId(initialProdId);
-        setRequestedAmount(String(application.requested_amount || ''));
-        setInstallmentCount(String(application.number_of_installments || ''));
-        setDurationMonths(
-            String(application.loan_term_months || application.duration_months || '12')
-        );
-        setRepaymentFrequency(
-            application.repayment_frequency === 'monthly' ? 'monthly' : 'weekly'
-        );
-        setPurposeOfLoan(application.purpose_of_loan || application.loan_purpose || '');
-        setError(null);
-    }, [open, application]);
+        if (open && !wasOpenRef.current) {
+            setCategoryId(initialCatId);
+            setProductId(initialProdId);
+            setRequestedAmount(String(application.requested_amount || ''));
+            setInstallmentCount(String(application.number_of_installments || ''));
+            setDurationMonths(
+                String(application.loan_term_months || application.duration_months || '12')
+            );
+            setRepaymentFrequency(
+                application.repayment_frequency === 'monthly' ? 'monthly' : 'weekly'
+            );
+            setPurposeOfLoan(application.purpose_of_loan || application.loan_purpose || '');
+            setError(null);
+            setFieldErrors({});
+        }
+        wasOpenRef.current = open;
+    }, [open, application?.id]);
 
     const handleCategoryChange = (newCatId: string) => {
         setCategoryId(newCatId);
+        setError(null);
+        setFieldErrors((prev) => ({ ...prev, loan_category_id: '', loan_product_id: '' }));
         const cat = categories.find((c) => String(c.id) === newCatId);
-        const firstProd = cat?.loan_products?.[0];
+        const prods = cat?.loan_products || cat?.loanProducts || [];
+        const firstProd = prods[0];
         if (firstProd) {
             setProductId(String(firstProd.id));
             if (firstProd.number_of_installments) {
@@ -121,8 +135,10 @@ export default function EditLoanDetailsModal({
 
     const handleProductChange = (newProdId: string) => {
         setProductId(newProdId);
+        setError(null);
+        setFieldErrors((prev) => ({ ...prev, loan_product_id: '' }));
         const prod = categories
-            .flatMap((c) => c.loan_products || [])
+            .flatMap((c) => c.loan_products || c.loanProducts || [])
             .find((p) => String(p.id) === newProdId);
         if (prod) {
             if (prod.number_of_installments) {
@@ -153,8 +169,15 @@ export default function EditLoanDetailsModal({
 
     const handleSubmit = (e: React.FormEvent) => {
         e.preventDefault();
-        if (!productId || !categoryId) {
-            setError('দয়া করে ক্যাটাগরি ও ঋণ প্রোডাক্ট নির্বাচন করুন।');
+        setError(null);
+        setFieldErrors({});
+
+        if (!categoryId) {
+            setError('দয়া করে ঋণ ক্যাটাগরি নির্বাচন করুন।');
+            return;
+        }
+        if (!productId) {
+            setError('দয়া করে ঋণ প্রোডাক্ট নির্বাচন করুন।');
             return;
         }
 
@@ -168,8 +191,24 @@ export default function EditLoanDetailsModal({
             return;
         }
 
+        const prodMin = activeProduct?.min_amount ? Number(activeProduct.min_amount) : 0;
+        const prodMax = activeProduct?.max_amount ? Number(activeProduct.max_amount) : 0;
+
+        if (prodMin > 0 && numAmount < prodMin) {
+            const msg = `নির্বাচিত প্রডাক্টের সর্বনিম্ন পরিমাণ ৳${prodMin.toLocaleString('bn-BD')} হতে হবে (বর্তমান পরিমাণ: ৳${numAmount.toLocaleString('bn-BD')})।`;
+            setError(msg);
+            setFieldErrors({ requested_amount: msg });
+            return;
+        }
+
+        if (prodMax > 0 && numAmount > prodMax) {
+            const msg = `নির্বাচিত প্রডাক্টের সর্বোচ্চ পরিমাণ ৳${prodMax.toLocaleString('bn-BD')} হতে পারবে (বর্তমান পরিমাণ: ৳${numAmount.toLocaleString('bn-BD')})।`;
+            setError(msg);
+            setFieldErrors({ requested_amount: msg });
+            return;
+        }
+
         setIsSubmitting(true);
-        setError(null);
 
         const url = `/member/loan-applications/${application.id}/update-loan-product`;
 
@@ -186,21 +225,30 @@ export default function EditLoanDetailsModal({
             },
             {
                 preserveScroll: true,
-                preserveState: false,
+                preserveState: true,
                 onSuccess: () => {
+                    setError(null);
+                    setFieldErrors({});
                     onClose();
                 },
                 onError: (errs) => {
-                    const firstErr =
-                        (typeof errs.error === 'string' && errs.error) ||
-                        (typeof errs.loan_product_id === 'string' && errs.loan_product_id) ||
-                        (typeof errs.requested_amount === 'string' && errs.requested_amount) ||
-                        Object.values(errs)[0];
-                    setError(
-                        typeof firstErr === 'string'
-                            ? firstErr
-                            : 'ঋণ প্রোডাক্ট আপডেট করতে সমস্যা হয়েছে।'
-                    );
+                    const parsedErrObj: Record<string, string> = {};
+                    for (const [k, v] of Object.entries(errs)) {
+                        if (typeof v === 'string') {
+                            parsedErrObj[k] = v;
+                        } else if (Array.isArray(v) && typeof v[0] === 'string') {
+                            parsedErrObj[k] = v[0];
+                        }
+                    }
+                    setFieldErrors(parsedErrObj);
+                    const firstMsg =
+                        parsedErrObj.error ||
+                        parsedErrObj.requested_amount ||
+                        parsedErrObj.loan_product_id ||
+                        parsedErrObj.loan_category_id ||
+                        Object.values(parsedErrObj)[0] ||
+                        'ঋণ প্রোডাক্ট আপডেট করতে সমস্যা হয়েছে।';
+                    setError(firstMsg);
                 },
                 onFinish: () => {
                     setIsSubmitting(false);
@@ -261,8 +309,12 @@ export default function EditLoanDetailsModal({
 
                 <form onSubmit={handleSubmit} className="p-5 sm:p-6 space-y-4 max-h-[78vh] overflow-y-auto">
                     {error && (
-                        <div className="p-3 bg-rose-50 border border-rose-200 rounded-xl text-rose-700 text-xs font-semibold">
-                            {error}
+                        <div className="p-3.5 bg-rose-50 border-2 border-rose-300 rounded-xl text-rose-800 text-xs font-semibold flex items-start gap-2.5 animate-in fade-in shadow-xs">
+                            <ShieldAlert className="w-5 h-5 text-rose-600 shrink-0 mt-0.5" />
+                            <div className="space-y-0.5">
+                                <div className="font-extrabold text-rose-900 text-xs">আপডেট করা সম্ভব হয়নি:</div>
+                                <div className="text-rose-700 leading-relaxed font-bold">{error}</div>
+                            </div>
                         </div>
                     )}
 
@@ -275,7 +327,9 @@ export default function EditLoanDetailsModal({
                             <select
                                 value={categoryId}
                                 onChange={(e) => handleCategoryChange(e.target.value)}
-                                className="w-full rounded-xl border border-slate-300 px-3 py-2 text-xs font-semibold bg-white focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
+                                className={`w-full rounded-xl border px-3 py-2 text-xs font-semibold bg-white focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 ${
+                                    fieldErrors.loan_category_id ? 'border-rose-400 bg-rose-50/30' : 'border-slate-300'
+                                }`}
                                 required
                             >
                                 <option value="">ক্যাটাগরি নির্বাচন করুন...</option>
@@ -285,6 +339,12 @@ export default function EditLoanDetailsModal({
                                     </option>
                                 ))}
                             </select>
+                            {fieldErrors.loan_category_id && (
+                                <p className="text-xs text-rose-600 font-bold mt-1 flex items-center gap-1">
+                                    <AlertCircle className="w-3.5 h-3.5 shrink-0" />
+                                    <span>{fieldErrors.loan_category_id}</span>
+                                </p>
+                            )}
                         </div>
 
                         <div>
@@ -295,7 +355,9 @@ export default function EditLoanDetailsModal({
                                 value={productId}
                                 onChange={(e) => handleProductChange(e.target.value)}
                                 disabled={!categoryId || categoryProducts.length === 0}
-                                className="w-full rounded-xl border border-slate-300 px-3 py-2 text-xs font-bold text-indigo-900 bg-white focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 disabled:bg-slate-100 disabled:text-slate-400"
+                                className={`w-full rounded-xl border px-3 py-2 text-xs font-bold text-indigo-900 bg-white focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 disabled:bg-slate-100 disabled:text-slate-400 ${
+                                    fieldErrors.loan_product_id ? 'border-rose-400 bg-rose-50/30' : 'border-slate-300'
+                                }`}
                                 required
                             >
                                 <option value="">
@@ -303,12 +365,19 @@ export default function EditLoanDetailsModal({
                                         ? 'প্রোডাক্ট নেই'
                                         : 'প্রোডাক্ট নির্বাচন করুন...'}
                                 </option>
-                                {categoryProducts.map((prod) => (
+                                {categoryProducts.map((prod: any) => (
                                     <option key={prod.id} value={prod.id}>
                                         {prod.product_name_bn || prod.product_name}
+                                        {prod.duration_months ? ` (${prod.duration_months} মাস)` : ''}
                                     </option>
                                 ))}
                             </select>
+                            {fieldErrors.loan_product_id && (
+                                <p className="text-xs text-rose-600 font-bold mt-1 flex items-center gap-1">
+                                    <AlertCircle className="w-3.5 h-3.5 shrink-0" />
+                                    <span>{fieldErrors.loan_product_id}</span>
+                                </p>
+                            )}
                         </div>
                     </div>
 
@@ -327,26 +396,49 @@ export default function EditLoanDetailsModal({
                                     min="1000"
                                     step="500"
                                     value={requestedAmount}
-                                    onChange={(e) => setRequestedAmount(e.target.value)}
+                                    onChange={(e) => {
+                                        setRequestedAmount(e.target.value);
+                                        setFieldErrors((prev) => ({ ...prev, requested_amount: '' }));
+                                    }}
                                     placeholder="50000"
                                     disabled={isAmountLocked}
                                     className={`w-full pl-7 pr-3 py-2 rounded-xl border text-xs sm:text-sm font-bold focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 ${
-                                        isAmountLocked
+                                        fieldErrors.requested_amount
+                                            ? 'border-rose-400 bg-rose-50/30 text-rose-800'
+                                            : isAmountLocked
                                             ? 'bg-slate-100 border-slate-200 text-slate-500 cursor-not-allowed'
                                             : 'border-slate-300 text-emerald-700 bg-white'
                                     }`}
                                     required
                                 />
                             </div>
+                            {fieldErrors.requested_amount && (
+                                <p className="text-xs text-rose-600 font-bold mt-1 flex items-center gap-1">
+                                    <AlertCircle className="w-3.5 h-3.5 shrink-0" />
+                                    <span>{fieldErrors.requested_amount}</span>
+                                </p>
+                            )}
+                            {activeProduct && Number(activeProduct.min_amount) > 0 && numAmount < Number(activeProduct.min_amount) && !fieldErrors.requested_amount && (
+                                <p className="text-[11px] text-amber-700 font-bold mt-1 flex items-center gap-1">
+                                    <AlertCircle className="w-3.5 h-3.5 shrink-0 text-amber-600" />
+                                    <span>এই প্রোডাক্টের সর্বনিম্ন সীমা ৳{Number(activeProduct.min_amount).toLocaleString('bn-BD')} (বর্তমান পরিমাণ: ৳{numAmount.toLocaleString('bn-BD')})</span>
+                                </p>
+                            )}
+                            {activeProduct && Number(activeProduct.max_amount) > 0 && numAmount > Number(activeProduct.max_amount) && !fieldErrors.requested_amount && (
+                                <p className="text-[11px] text-amber-700 font-bold mt-1 flex items-center gap-1">
+                                    <AlertCircle className="w-3.5 h-3.5 shrink-0 text-amber-600" />
+                                    <span>এই প্রোডাক্টের সর্বোচ্চ সীমা ৳{Number(activeProduct.max_amount).toLocaleString('bn-BD')} (বর্তমান পরিমাণ: ৳{numAmount.toLocaleString('bn-BD')})</span>
+                                </p>
+                            )}
                             {isAmountLocked ? (
                                 <p className="text-[11px] text-amber-700 mt-1 font-medium flex items-center gap-1">
                                     <Lock className="w-3 h-3 shrink-0 text-amber-600" />
-                                    <span>ঋণের পরিমাণ ইতিমধ্যে অনুমোদিত হওয়ায় শাখা থেকে পরিবর্তন করা যাবে না।</span>
+                                    <span>ঋণের পরিমাণ ইতিমধ্যে অনুমোদিত হওয়ায় শাখা থেকে পরিবর্তন করা যাবে না। কেবল প্রোডাক্ট ও শর্তাবলী পরিবর্তন করা যাবে।</span>
                                 </p>
                             ) : (
-                                activeProduct && (
+                                activeProduct && (Number(activeProduct.min_amount) > 0 || Number(activeProduct.max_amount) > 0) && (
                                     <p className="text-[11px] text-slate-500 mt-1 font-medium">
-                                        সর্বনিম্ন: ৳{(activeProduct.min_amount || 1000).toLocaleString('bn-BD')} | সর্বোচ্চ: ৳{(activeProduct.max_amount || 0).toLocaleString('bn-BD')}
+                                        প্রডাক্টের সীমা: সর্বনিম্ন ৳{Number(activeProduct.min_amount || 0).toLocaleString('bn-BD')} | সর্বোচ্চ ৳{Number(activeProduct.max_amount || 0).toLocaleString('bn-BD')}
                                     </p>
                                 )
                             )}

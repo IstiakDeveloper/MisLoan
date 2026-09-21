@@ -90,8 +90,8 @@ export default function Create({ savingsProduct, memberAdmission: initialMember,
     };
 
     const handleMemberSelect = (member: Member) => {
-        if (member.status !== 'approved') {
-            alert('শুধুমাত্র অনুমোদিত সদস্যদের জন্য সঞ্চয় আবেদন করা যাবে।');
+        if (member.status === 'rejected') {
+            alert('প্রত্যাখ্যাত সদস্যের জন্য সঞ্চয় আবেদন করা যাবে না।');
             return;
         }
         // Reload page with member_id so backend sends full member + form
@@ -271,6 +271,7 @@ export default function Create({ savingsProduct, memberAdmission: initialMember,
                             <div className="grid grid-cols-1 gap-3 max-h-[440px] overflow-y-auto pr-1">
                                 {memberSearchResults.map((member) => {
                                     const isApproved = member.status === 'approved';
+                                    const isRejected = member.status === 'rejected';
 
                                     return (
                                         <div
@@ -278,7 +279,9 @@ export default function Create({ savingsProduct, memberAdmission: initialMember,
                                             className={`p-4 rounded-2xl border transition-all flex flex-col sm:flex-row sm:items-center justify-between gap-4 ${
                                                 isApproved
                                                     ? 'border-slate-200 bg-white hover:border-purple-300 hover:bg-purple-50/30 hover:shadow-sm'
-                                                    : 'border-slate-200 bg-slate-50/60 opacity-60'
+                                                    : isRejected
+                                                    ? 'border-rose-200 bg-rose-50/40 opacity-60'
+                                                    : 'border-amber-200/80 bg-amber-50/30 hover:border-amber-300 hover:shadow-sm'
                                             }`}
                                         >
                                             <div className="flex items-start gap-3.5">
@@ -315,18 +318,25 @@ export default function Create({ savingsProduct, memberAdmission: initialMember,
                                             </div>
 
                                             <div className="shrink-0 self-end sm:self-center">
-                                                {isApproved ? (
-                                                    <Button
-                                                        type="button"
-                                                        onClick={() => handleMemberSelect(member)}
-                                                        className="bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-700 hover:to-indigo-700 text-white font-bold text-xs rounded-xl shadow-sm px-4 py-2"
-                                                    >
-                                                        <span>নির্বাচন ও আবেদন</span>
-                                                        <ArrowRight className="w-3.5 h-3.5 ml-1.5" />
-                                                    </Button>
+                                                {!isRejected ? (
+                                                    <div className="flex items-center gap-2">
+                                                        {!isApproved && (
+                                                            <span className="text-[10px] font-bold text-amber-700 bg-amber-100/70 border border-amber-200 px-2 py-1 rounded-lg">
+                                                                ভর্তি প্রক্রিয়াধীন
+                                                            </span>
+                                                        )}
+                                                        <Button
+                                                            type="button"
+                                                            onClick={() => handleMemberSelect(member)}
+                                                            className="bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-700 hover:to-indigo-700 text-white font-bold text-xs rounded-xl shadow-sm px-4 py-2"
+                                                        >
+                                                            <span>{isApproved ? 'নির্বাচন ও আবেদন' : 'খসড়া আবেদন'}</span>
+                                                            <ArrowRight className="w-3.5 h-3.5 ml-1.5" />
+                                                        </Button>
+                                                    </div>
                                                 ) : (
-                                                    <span className="text-[11px] font-bold text-amber-700 bg-amber-50 border border-amber-200 px-3 py-1.5 rounded-xl">
-                                                        অনুমোদিত নয়
+                                                    <span className="text-[11px] font-bold text-rose-700 bg-rose-50 border border-rose-200 px-3 py-1.5 rounded-xl">
+                                                        প্রত্যাখ্যাত
                                                     </span>
                                                 )}
                                             </div>

@@ -193,6 +193,27 @@ class MemberAdmissionController extends Controller
         return $request->boolean('draft') || $request->query('draft') == '1';
     }
 
+    private function applyMemberTypeFilter($query, ?string $memberType): void
+    {
+        if ($memberType === 'old') {
+            $query->where(function ($q) {
+                $q->where('is_legacy', true)
+                    ->orWhereNotNull('previous_admission_id')
+                    ->orWhere('loan_dofa', '>', 1);
+            });
+        } elseif ($memberType === 'new') {
+            $query->where(function ($q) {
+                $q->where(function ($sub) {
+                    $sub->where('is_legacy', false)->orWhereNull('is_legacy');
+                })
+                ->whereNull('previous_admission_id')
+                ->where(function ($sub) {
+                    $sub->whereNull('loan_dofa')->orWhere('loan_dofa', '<=', 1);
+                });
+            });
+        }
+    }
+
     /**
      * Duplicate member code / NID / Smart Card / mobile — same person cannot be admitted twice.
      *
@@ -436,6 +457,7 @@ class MemberAdmissionController extends Controller
             MemberCodeService::applyAdmissionSearch($statsQuery, $request->search);
         }
 
+        $this->applyMemberTypeFilter($statsQuery, $request->input('member_type'));
         $this->applyCoalesceDateRange($statsQuery, $fromDate, $toDate, 'COALESCE(reviewed_at, submitted_at, created_at)');
 
         // Calculate stats
@@ -458,6 +480,7 @@ class MemberAdmissionController extends Controller
             MemberCodeService::applyAdmissionSearch($query, $request->search);
         }
 
+        $this->applyMemberTypeFilter($query, $request->input('member_type'));
         $this->applyCoalesceDateRange($query, $fromDate, $toDate, 'COALESCE(reviewed_at, submitted_at, created_at)');
 
         $accessibleBranches = $user->getAccessibleBranches()->sortBy('code')->values();
@@ -523,7 +546,7 @@ class MemberAdmissionController extends Controller
             'areas' => $areas,
             'branches' => $branches,
             'filters' => array_merge(
-                $request->only(['branch_id', 'area_id', 'zone_id', 'search']),
+                $request->only(['branch_id', 'area_id', 'zone_id', 'search', 'member_type']),
                 [
                     'status' => $workQueue['status_param'],
                     'per_page' => $perPage,
@@ -590,6 +613,7 @@ class MemberAdmissionController extends Controller
         $fromDate = $workQueue['date_from'];
         $toDate = $workQueue['date_to'];
 
+        $this->applyMemberTypeFilter($query, $request->input('member_type'));
         $this->applyCoalesceDateRange($query, $fromDate, $toDate, 'COALESCE(reviewed_at, submitted_at, created_at)');
 
         $admissions = $query->orderByRaw('COALESCE(reviewed_at, submitted_at, created_at) desc')->get();

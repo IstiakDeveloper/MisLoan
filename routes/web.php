@@ -352,6 +352,8 @@ Route::middleware(['auth', 'verified'])->group(function () {
             Route::post('/', [SavingsApplicationController::class, 'store'])->name('store');
             Route::post('{id}/save-form', [SavingsApplicationController::class, 'saveForm'])->name('save-form');
             Route::get('{id}', [SavingsApplicationController::class, 'show'])->name('show');
+            Route::get('{id}/edit', [SavingsApplicationController::class, 'edit'])->name('edit');
+            Route::post('{id}/unlock-edit', [SavingsApplicationController::class, 'unlockEdit'])->name('unlock-edit');
             Route::delete('{id}', [SavingsApplicationController::class, 'destroy'])->name('destroy');
             Route::patch('{id}/submit', [SavingsApplicationController::class, 'submit'])->name('submit');
             Route::patch('{id}/approve', [SavingsApplicationController::class, 'approve'])->name('approve');
@@ -408,7 +410,10 @@ Route::middleware(['auth', 'verified'])->group(function () {
 
         // Head Office Savings Applications ( HO approval)
         Route::get('savings-applications', [HeadOfficeSavingsController::class, 'index'])->name('savings-applications');
+        Route::delete('savings-applications/bulk', [HeadOfficeSavingsController::class, 'bulkDestroy'])->name('savings-applications.bulk-destroy');
         Route::get('savings-applications/{id}', [HeadOfficeSavingsController::class, 'show'])->name('savings-applications.show');
+        Route::delete('savings-applications/{id}', [HeadOfficeSavingsController::class, 'destroy'])->name('savings-applications.destroy');
+        Route::post('savings-applications/{id}/unlock-edit', [HeadOfficeSavingsController::class, 'unlockEdit'])->name('savings-applications.unlock-edit');
 
         // Head Office Verification & Inquiries
         Route::get('verifications', [HeadOfficeVerificationController::class, 'index'])->name('verifications');

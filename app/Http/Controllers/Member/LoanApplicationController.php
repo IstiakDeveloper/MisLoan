@@ -3298,11 +3298,15 @@ class LoanApplicationController extends Controller
                 : (float) $application->requested_amount;
         }
 
-        if ($newProduct->min_amount && $requestedAmount < (float) $newProduct->min_amount) {
-            return back()->withErrors(['requested_amount' => 'নির্বাচিত প্রডাক্টের সর্বনিম্ন পরিমাণ ৳'.number_format((float) $newProduct->min_amount)]);
+        if ($newProduct->min_amount !== null && (float) $newProduct->min_amount > 0 && $requestedAmount < (float) $newProduct->min_amount) {
+            return back()->withErrors([
+                'requested_amount' => 'নির্বাচিত প্রডাক্টের সর্বনিম্ন পরিমাণ ৳'.number_format((float) $newProduct->min_amount, 0).' হতে হবে (বর্তমান পরিমাণ: ৳'.number_format((float) $requestedAmount, 0).')।',
+            ]);
         }
-        if ($newProduct->max_amount && $requestedAmount > (float) $newProduct->max_amount) {
-            return back()->withErrors(['requested_amount' => 'নির্বাচিত প্রডাক্টের সর্বোচ্চ পরিমাণ ৳'.number_format((float) $newProduct->max_amount)]);
+        if ($newProduct->max_amount !== null && (float) $newProduct->max_amount > 0 && $requestedAmount > (float) $newProduct->max_amount) {
+            return back()->withErrors([
+                'requested_amount' => 'নির্বাচিত প্রডাক্টের সর্বোচ্চ পরিমাণ ৳'.number_format((float) $newProduct->max_amount, 0).' হতে পারবে (বর্তমান পরিমাণ: ৳'.number_format((float) $requestedAmount, 0).')।',
+            ]);
         }
 
         $oldVisibleFormIds = LoanFormVisibility::visibleFormIdsForShow(

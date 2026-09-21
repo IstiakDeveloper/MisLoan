@@ -21,11 +21,12 @@ import {
     UserMinus,
     CheckCircle2,
     Filter,
+    PiggyBank,
 } from 'lucide-react';
 
 interface DeletionRecord {
     id: number;
-    deletable_type: 'member_admission' | 'loan_application';
+    deletable_type: 'member_admission' | 'loan_application' | 'savings_application' | string;
     deletable_id: number | null;
     application_no: string;
     applicant_name: string;
@@ -77,6 +78,7 @@ interface Props {
         total_last_7_days: number;
         admissions_last_7_days: number;
         loans_last_7_days: number;
+        savings_last_7_days?: number;
         unique_users_last_7_days: number;
     };
     filters: {
@@ -297,11 +299,18 @@ export default function RecentDeletions({ deletions, stats, filters, zones, area
                             <Banknote size={13} />
                             <span>ঋণ আবেদন তালিকা</span>
                         </Link>
+                        <Link
+                            href="/head-office/savings-applications"
+                            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-semibold transition"
+                        >
+                            <PiggyBank size={13} />
+                            <span>সঞ্চয় আবেদন তালিকা</span>
+                        </Link>
                     </div>
                 </div>
 
                 {/* ── 2. STATS CARDS (LAST 7 DAYS) ───────────────────────────────────── */}
-                <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
                     <div className="bg-white p-3.5 rounded-2xl border border-rose-200/80 shadow-2xs">
                         <div className="flex items-center justify-between">
                             <span className="text-xs font-semibold text-slate-500">৭ দিনে সর্বমোট মুছে ফেলা</span>
@@ -338,7 +347,19 @@ export default function RecentDeletions({ deletions, stats, filters, zones, area
                         </div>
                     </div>
 
-                    <div className="bg-white p-3.5 rounded-2xl border border-slate-200 shadow-2xs">
+                    <div className="bg-white p-3.5 rounded-2xl border border-purple-200/80 shadow-2xs">
+                        <div className="flex items-center justify-between">
+                            <span className="text-xs font-semibold text-slate-500">৭ দিনে সঞ্চয় আবেদন মুছে ফেলা</span>
+                            <div className="p-2 rounded-xl bg-purple-50 text-purple-600">
+                                <PiggyBank size={16} />
+                            </div>
+                        </div>
+                        <div className="mt-2 text-2xl font-bold text-purple-700">
+                            {stats.savings_last_7_days ?? 0} <span className="text-xs font-normal text-slate-500">টি</span>
+                        </div>
+                    </div>
+
+                    <div className="bg-white p-3.5 rounded-2xl border border-slate-200 shadow-2xs col-span-2 sm:col-span-1">
                         <div className="flex items-center justify-between">
                             <span className="text-xs font-semibold text-slate-500">সম্পৃক্ত ইউজার সংখ্যা</span>
                             <div className="p-2 rounded-xl bg-slate-100 text-slate-700">
@@ -391,6 +412,18 @@ export default function RecentDeletions({ deletions, stats, filters, zones, area
                             >
                                 <Banknote size={13} />
                                 <span>ঋণ আবেদন</span>
+                            </button>
+                            <button
+                                type="button"
+                                onClick={() => handleTypeChange('savings_application')}
+                                className={`px-3 py-1.5 rounded-lg text-xs font-bold transition flex items-center gap-1.5 ${
+                                    selectedType === 'savings_application'
+                                        ? 'bg-purple-600 text-white shadow-xs'
+                                        : 'text-slate-600 hover:text-purple-600'
+                                }`}
+                            >
+                                <PiggyBank size={13} />
+                                <span>সঞ্চয় আবেদন</span>
                             </button>
                         </div>
 
@@ -570,9 +603,13 @@ export default function RecentDeletions({ deletions, stats, filters, zones, area
                                                     </div>
                                                 </td>
                                                 <td className="py-2.5 px-3 whitespace-nowrap">
-                                                    {isAdmission ? (
+                                                    {record.deletable_type === 'member_admission' ? (
                                                         <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-indigo-50 text-indigo-700 border border-indigo-200">
                                                             <UserMinus size={12} /> সদস্য ভর্তি
+                                                        </span>
+                                                    ) : record.deletable_type === 'savings_application' ? (
+                                                        <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-purple-50 text-purple-700 border border-purple-200">
+                                                            <PiggyBank size={12} /> সঞ্চয় আবেদন
                                                         </span>
                                                     ) : (
                                                         <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200">
@@ -666,7 +703,11 @@ export default function RecentDeletions({ deletions, stats, filters, zones, area
                                         মুছে ফেলা রেকর্ডের বিস্তারিত স্ন্যাপশট
                                     </h3>
                                     <p className="text-xs text-slate-300 mt-0.5">
-                                        {selectedRecord.deletable_type === 'member_admission' ? 'সদস্য ভর্তি' : 'ঋণ আবেদন'} · আবেদন নং {selectedRecord.application_no}
+                                        {selectedRecord.deletable_type === 'member_admission'
+                                            ? 'সদস্য ভর্তি'
+                                            : selectedRecord.deletable_type === 'savings_application'
+                                                ? 'সঞ্চয় আবেদন'
+                                                : 'ঋণ আবেদন'} · আবেদন নং {selectedRecord.application_no}
                                     </p>
                                 </div>
                                 <button

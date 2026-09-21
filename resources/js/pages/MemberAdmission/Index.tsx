@@ -135,6 +135,7 @@ export default function Index({ admissions, zones = [], areas = [], branches = [
     const [statusFilter, setStatusFilter] = useState(filters.status || 'all');
     const [fromDate, setFromDate] = useState(filters.from_date || '');
     const [toDate, setToDate] = useState(filters.to_date || '');
+    const [memberType, setMemberType] = useState(filters.member_type || '');
 
     useEffect(() => {
         setSelectedZone(filters?.zone_id ? String(filters.zone_id) : '');
@@ -143,7 +144,8 @@ export default function Index({ admissions, zones = [], areas = [], branches = [
         setFromDate(filters.from_date || '');
         setToDate(filters.to_date || '');
         setStatusFilter(filters.status || 'all');
-    }, [filters?.zone_id, filters?.area_id, filters?.branch_id, filters.from_date, filters.to_date, filters.status]);
+        setMemberType(filters.member_type || '');
+    }, [filters?.zone_id, filters?.area_id, filters?.branch_id, filters.from_date, filters.to_date, filters.status, filters.member_type]);
 
     const filteredAreas = useMemo(() => {
         if (!selectedZone) return areas;
@@ -309,6 +311,7 @@ export default function Index({ admissions, zones = [], areas = [], branches = [
         const st = override.status !== undefined ? override.status : statusFilter;
         const fd = override.from_date !== undefined ? override.from_date : fromDate;
         const td = override.to_date !== undefined ? override.to_date : toDate;
+        const mt = override.member_type !== undefined ? override.member_type : memberType;
 
         if (z) params.zone_id = z;
         if (a) params.area_id = a;
@@ -317,6 +320,7 @@ export default function Index({ admissions, zones = [], areas = [], branches = [
         params.status = st || 'all';
         if (fd) params.from_date = fd;
         if (td) params.to_date = td;
+        if (mt) params.member_type = mt;
         params.per_page = String(admissions.per_page || filters.per_page || 20);
         return params;
     };
@@ -332,6 +336,11 @@ export default function Index({ admissions, zones = [], areas = [], branches = [
         setFromDate(today);
         setToDate(today);
         router.get('/member-admissions', { ...buildParams(), from_date: today, to_date: today }, { preserveState: true });
+    };
+
+    const handleMemberTypeChange = (val: string) => {
+        setMemberType(val);
+        router.get('/member-admissions', buildParams({ member_type: val }), { preserveState: true });
     };
 
     const handleSearch = (e: React.FormEvent) => {
@@ -745,6 +754,16 @@ export default function Index({ admissions, zones = [], areas = [], branches = [
 
                             {/* Date Range & Controls */}
                             <div className="flex flex-wrap items-center gap-2">
+                                <select
+                                    value={memberType}
+                                    onChange={(e) => handleMemberTypeChange(e.target.value)}
+                                    className="px-2.5 py-2 text-xs border border-slate-200 rounded-xl bg-slate-50/50 font-medium cursor-pointer"
+                                >
+                                    <option value="">সদস্য ধরন: সব</option>
+                                    <option value="new">নতুন সদস্য</option>
+                                    <option value="old">পুরাতন সদস্য</option>
+                                </select>
+
                                 <div className="flex items-center gap-1.5 bg-slate-50 border border-slate-200 p-1 rounded-xl">
                                     <input
                                         type="date"
@@ -770,7 +789,7 @@ export default function Index({ admissions, zones = [], areas = [], branches = [
                                     খুঁজুন
                                 </button>
 
-                                {(searchQuery || statusFilter !== 'all' || fromDate || toDate || selectedZone || selectedArea || selectedBranch) && (
+                                {(searchQuery || statusFilter !== 'all' || fromDate || toDate || selectedZone || selectedArea || selectedBranch || memberType) && (
                                     <button
                                         type="button"
                                         onClick={() => {
@@ -781,6 +800,7 @@ export default function Index({ admissions, zones = [], areas = [], branches = [
                                             setSelectedZone('');
                                             setSelectedArea('');
                                             setSelectedBranch('');
+                                            setMemberType('');
                                             router.get('/member-admissions');
                                         }}
                                         className="px-3 py-2 text-xs font-bold text-slate-600 bg-slate-100 hover:bg-slate-200 rounded-xl transition"

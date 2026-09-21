@@ -28,6 +28,7 @@ import {
     Filter,
     Trash2,
     ExternalLink,
+    PiggyBank,
 } from 'lucide-react';
 
 interface HOItem {
@@ -124,6 +125,7 @@ interface RecentDeletionItem {
     area_name?: string;
     samity_name?: string;
     loan_amount?: number;
+    amount?: number;
     deleted_by_name: string;
     deleted_by_role?: string;
     deleted_at: string;
@@ -134,6 +136,7 @@ interface RecentDeletionsSummary {
     count_7_days: number;
     admissions_7_days: number;
     loans_7_days: number;
+    savings_7_days?: number;
     users_7_days: number;
     list: RecentDeletionItem[];
 }
@@ -1327,8 +1330,8 @@ export default function HeadOfficeDashboard({
                             </Link>
                         </div>
 
-                        {/* 4 Stat Cards */}
-                        <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+                        {/* 5 Stat Cards */}
+                        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
                             <div className="p-3.5 rounded-xl bg-gradient-to-br from-rose-50 to-pink-50 border border-rose-100/80">
                                 <div className="flex items-center justify-between">
                                     <span className="text-xs font-semibold text-rose-900">মোট মুছে ফেলা</span>
@@ -1362,7 +1365,18 @@ export default function HeadOfficeDashboard({
                                 <p className="text-[10px] text-blue-600/80 mt-0.5">মুছে ফেলা ঋণ</p>
                             </div>
 
-                            <div className="p-3.5 rounded-xl bg-gradient-to-br from-purple-50 to-slate-50 border border-purple-100/80">
+                            <div className="p-3.5 rounded-xl bg-gradient-to-br from-emerald-50 to-teal-50 border border-emerald-100/80">
+                                <div className="flex items-center justify-between">
+                                    <span className="text-xs font-semibold text-emerald-900">সঞ্চয় আবেদন</span>
+                                    <PiggyBank className="w-4 h-4 text-emerald-500" />
+                                </div>
+                                <p className="text-xl sm:text-2xl font-black text-emerald-700 mt-1.5 font-mono">
+                                    {recentDeletionsSummary?.savings_7_days ?? 0}
+                                </p>
+                                <p className="text-[10px] text-emerald-600/80 mt-0.5">মুছে ফেলা সঞ্চয়</p>
+                            </div>
+
+                            <div className="p-3.5 rounded-xl bg-gradient-to-br from-purple-50 to-slate-50 border border-purple-100/80 col-span-2 sm:col-span-1">
                                 <div className="flex items-center justify-between">
                                     <span className="text-xs font-semibold text-purple-900">অ্যাকশন গ্রহণকারী</span>
                                     <UserCheck className="w-4 h-4 text-purple-500" />
@@ -1402,9 +1416,15 @@ export default function HeadOfficeDashboard({
                                                         <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-bold ${
                                                             item.deletable_type === 'member_admission'
                                                                 ? 'bg-purple-100 text-purple-700 border border-purple-200'
-                                                                : 'bg-blue-100 text-blue-700 border border-blue-200'
+                                                                : item.deletable_type === 'savings_application'
+                                                                    ? 'bg-emerald-100 text-emerald-700 border border-emerald-200'
+                                                                    : 'bg-blue-100 text-blue-700 border border-blue-200'
                                                         }`}>
-                                                            {item.deletable_type === 'member_admission' ? 'সদস্য ভর্তি' : 'ঋণ আবেদন'}
+                                                            {item.deletable_type === 'member_admission'
+                                                                ? 'সদস্য ভর্তি'
+                                                                : item.deletable_type === 'savings_application'
+                                                                    ? 'সঞ্চয় আবেদন'
+                                                                    : 'ঋণ আবেদন'}
                                                         </span>
                                                     </td>
                                                     <td className="py-2.5 px-3">

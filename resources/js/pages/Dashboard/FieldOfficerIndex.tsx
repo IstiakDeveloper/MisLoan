@@ -22,6 +22,7 @@ import {
     ChevronRight,
     Layers,
     Send,
+    PiggyBank,
 } from 'lucide-react';
 
 interface MyBranch {
@@ -446,6 +447,13 @@ export default function FieldOfficerDashboard({
                             >
                                 <FilePlus2 size={13} />
                                 <span>নতুন ঋণ</span>
+                            </Link>
+                            <Link
+                                href="/member/savings-applications"
+                                className="inline-flex items-center gap-1 px-2.5 py-1 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold transition-all shadow-2xs"
+                            >
+                                <PiggyBank size={13} />
+                                <span>নতুন সঞ্চয়</span>
                             </Link>
                         </div>
 

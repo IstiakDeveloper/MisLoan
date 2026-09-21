@@ -99,12 +99,14 @@ class HeadOfficeAdmissionController extends Controller
         }
 
         $this->applyPrintedFilter($query, $request);
+        $this->applyMemberTypeFilter($query, $request->input('member_type'));
 
         // Calculate stats based on current filters (excluding status filter for stats)
         $statsQuery = MemberAdmission::query();
         $this->applyAccessibleBranchScope($statsQuery);
         $this->applyHeadOfficeStageVisibility($statsQuery);
         $this->applySubmittedAtDateRange($statsQuery, $dateFrom, $dateTo);
+        $this->applyMemberTypeFilter($statsQuery, $request->input('member_type'));
 
         // Apply zone/area/branch filters to stats
         if ($request->has('zone_id') && $request->zone_id) {
@@ -174,7 +176,7 @@ class HeadOfficeAdmissionController extends Controller
         return Inertia::render('HeadOffice/AdmissionMembers', [
             'admissions' => $admissions,
             'filters' => array_merge(
-                $request->only(['search', 'zone_id', 'area_id', 'branch_id', 'had_issues', 'printed']),
+                $request->only(['search', 'zone_id', 'area_id', 'branch_id', 'had_issues', 'printed', 'member_type']),
                 [
                     'status' => $workQueue['status_param'],
                     'date_from' => $dateFrom,
@@ -250,6 +252,7 @@ class HeadOfficeAdmissionController extends Controller
             }
         }
 
+        $this->applyMemberTypeFilter($query, $request->input('member_type'));
         $this->applyPrintedFilter($query, $request);
 
         // Get all matching records sorted by branch code (no pagination for print)
@@ -326,6 +329,7 @@ class HeadOfficeAdmissionController extends Controller
             });
         }
 
+        $this->applyMemberTypeFilter($query, $request->input('member_type'));
         $this->applyPrintedFilter($query, $request);
 
         $admissions = $query->orderByRaw('COALESCE(submitted_at, created_at) desc')->get();
@@ -561,6 +565,8 @@ class HeadOfficeAdmissionController extends Controller
             });
         }
 
+        $this->applyMemberTypeFilter($query, $request->input('member_type'));
+
         $perPage = $this->resolvePerPage($request);
         $admissions = $query->orderBy('submitted_at', 'desc')->paginate($perPage)->withQueryString();
 
@@ -586,6 +592,7 @@ class HeadOfficeAdmissionController extends Controller
                 'date_from' => $dateFrom,
                 'date_to' => $dateTo,
                 'search' => $search,
+                'member_type' => $request->input('member_type'),
                 'zone_id' => $request->input('zone_id'),
                 'area_id' => $request->input('area_id'),
                 'branch_id' => $request->input('branch_id'),
@@ -1432,5 +1439,26 @@ class HeadOfficeAdmissionController extends Controller
             'phone_number' => $phone,
             'address' => $addressParts ? implode(', ', $addressParts) : '',
         ];
+    }
+
+    private function applyMemberTypeFilter($query, ?string $memberType): void
+    {
+        if ($memberType === 'old') {
+            $query->where(function ($q) {
+                $q->where('is_legacy', true)
+                    ->orWhereNotNull('previous_admission_id')
+                    ->orWhere('loan_dofa', '>', 1);
+            });
+        } elseif ($memberType === 'new') {
+            $query->where(function ($q) {
+                $q->where(function ($sub) {
+                    $sub->where('is_legacy', false)->orWhereNull('is_legacy');
+                })
+                ->whereNull('previous_admission_id')
+                ->where(function ($sub) {
+                    $sub->whereNull('loan_dofa')->orWhere('loan_dofa', '<=', 1);
+                });
+            });
+        }
     }
 }

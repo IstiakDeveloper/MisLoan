@@ -29,6 +29,7 @@ import {
     Trash2,
     Pencil,
     Edit,
+    History,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
@@ -170,11 +171,34 @@ interface MemberCycleData {
     cycles: CycleItem[];
 }
 
+interface RecentLoanItem {
+    id: number;
+    loan_application_no: string;
+    admission_id?: number | null;
+    member_code: string | null;
+    applicant_name_bn: string;
+    applicant_name_en?: string;
+    customer_photo_path?: string | null;
+    mobile_number?: string;
+    samity_name?: string;
+    branch_name?: string;
+    loan_dofa: number;
+    product_name?: string;
+    category_name?: string;
+    requested_amount: number | string;
+    approved_amount?: number | string | null;
+    disbursed_amount?: number | string | null;
+    status: string;
+    created_at: string | null;
+    created_at_human: string | null;
+}
+
 interface Props {
     branches: Branch[];
     samities: Samity[];
     loanCategories: LoanCategory[];
     loanProducts: LoanProduct[];
+    recentLoans?: RecentLoanItem[];
     initialMemberData?: MemberCycleData | null;
     userPermissions: {
         canCreateLoan: boolean;
@@ -189,6 +213,7 @@ export default function Index({
     samities,
     loanCategories,
     loanProducts,
+    recentLoans = [],
     initialMemberData = null,
     userPermissions,
 }: Props) {
@@ -599,6 +624,21 @@ export default function Index({
                 {!isLoadingDetails && memberData && (
                     <div className="space-y-5 sm:space-y-6 animate-in fade-in duration-300">
                         
+                        {/* Back to Recent List Button */}
+                        <div className="flex items-center justify-between">
+                            <button
+                                type="button"
+                                onClick={() => {
+                                    setMemberData(null);
+                                    window.history.pushState({}, '', '/member/cycle-hub');
+                                }}
+                                className="inline-flex items-center gap-1.5 text-xs font-semibold text-slate-500 hover:text-emerald-700 bg-white hover:bg-emerald-50 px-3 py-1.5 rounded-xl border border-slate-200 transition-colors shadow-2xs"
+                            >
+                                <ArrowRight className="w-3.5 h-3.5 rotate-180" />
+                                <span>সাম্প্রতিক তালিকা ও সদস্য অনুসন্ধানে ফিরে যান</span>
+                            </button>
+                        </div>
+
                         {/* Member Profile Master Card */}
                         <div className="bg-white rounded-2xl sm:rounded-3xl p-4 sm:p-6 lg:p-8 shadow-sm border border-slate-200/90 relative overflow-hidden">
                             <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 sm:gap-6 pb-5 sm:pb-6 border-b border-slate-100">
@@ -1050,9 +1090,229 @@ export default function Index({
                     </div>
                 )}
 
-                {/* 3. EMPTY STATE: 3 FEATURE HIGHLIGHT CARDS (When no member is selected) */}
+                {/* 3. RECENT CYCLE HUB LOANS & EMPTY STATE (When no member is selected) */}
                 {!isLoadingDetails && !memberData && (
-                    <div className="max-w-5xl mx-auto pt-2 sm:pt-4 pb-8 sm:pb-12 space-y-6">
+                    <div className="max-w-6xl mx-auto pt-2 space-y-8 pb-8 sm:pb-12">
+                        {recentLoans && recentLoans.length > 0 && (
+                            <Card className="rounded-2xl sm:rounded-3xl border border-slate-200/90 shadow-sm overflow-hidden bg-white">
+                                <CardHeader className="p-4 sm:p-6 bg-gradient-to-r from-slate-50 via-emerald-50/40 to-slate-50 border-b border-slate-200 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                                    <div>
+                                        <CardTitle className="text-base sm:text-lg font-bold text-slate-900 flex items-center gap-2">
+                                            <div className="w-8 h-8 rounded-xl bg-emerald-100 text-emerald-700 flex items-center justify-center shrink-0 shadow-2xs">
+                                                <History className="w-4 h-4" />
+                                            </div>
+                                            <span>সাম্প্রতিক সাইকেল হাব ঋণ আবেদনসমূহ</span>
+                                        </CardTitle>
+                                        <CardDescription className="text-xs sm:text-sm text-slate-500 mt-1">
+                                            সাইকেল হাবে সর্বশেষ প্রসেস হওয়া ঋণ আবেদনসমূহ — মেম্বার ফাইলে সরাসরি যাওয়ার জন্য লোড করুন
+                                        </CardDescription>
+                                    </div>
+                                    <Badge className="bg-emerald-100 text-emerald-800 border-emerald-200 text-xs font-bold px-2.5 py-1 self-start sm:self-auto shadow-2xs">
+                                        সর্বশেষ {recentLoans.length} টি আবেদন
+                                    </Badge>
+                                </CardHeader>
+
+                                {/* Desktop Table View */}
+                                <div className="hidden md:block overflow-x-auto">
+                                    <table className="w-full text-left text-xs sm:text-sm border-collapse">
+                                        <thead>
+                                            <tr className="bg-slate-50/80 border-b border-slate-200 text-slate-600 font-semibold text-xs uppercase tracking-wider">
+                                                <th className="py-3 px-4">সদস্যের তথ্য</th>
+                                                <th className="py-3 px-3 text-center">দফা (Cycle)</th>
+                                                <th className="py-3 px-3">ঋণ আবেদন ও প্রোডাক্ট</th>
+                                                <th className="py-3 px-3 text-right">ঋণের পরিমাণ</th>
+                                                <th className="py-3 px-3 text-center">বর্তমান অবস্থা</th>
+                                                <th className="py-3 px-3">তারিখ ও সময়</th>
+                                                <th className="py-3 px-4 text-center">অ্যাকশন</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody className="divide-y divide-slate-100">
+                                            {recentLoans.map((loan) => (
+                                                <tr
+                                                    key={loan.id}
+                                                    className="hover:bg-emerald-50/50 transition-colors group cursor-pointer"
+                                                    onClick={() => loan.admission_id && loadMemberDetails(loan.admission_id)}
+                                                >
+                                                    {/* Member Info */}
+                                                    <td className="py-3.5 px-4">
+                                                        <div className="flex items-center gap-3">
+                                                            <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-emerald-600 to-teal-800 text-white flex items-center justify-center font-bold text-sm shadow-xs shrink-0 overflow-hidden">
+                                                                {loan.customer_photo_path ? (
+                                                                    <img
+                                                                        src={`/storage/${loan.customer_photo_path}`}
+                                                                        alt={loan.applicant_name_bn}
+                                                                        className="w-full h-full object-cover"
+                                                                    />
+                                                                ) : (
+                                                                    loan.applicant_name_bn?.charAt(0) || <User className="w-4 h-4" />
+                                                                )}
+                                                            </div>
+                                                            <div>
+                                                                <div className="flex items-center gap-1.5">
+                                                                    <span className="font-bold text-slate-900 group-hover:text-emerald-700 text-sm">
+                                                                        {loan.applicant_name_bn}
+                                                                    </span>
+                                                                    {loan.applicant_name_en && (
+                                                                        <span className="text-slate-400 text-xs font-normal">
+                                                                            ({loan.applicant_name_en})
+                                                                        </span>
+                                                                    )}
+                                                                </div>
+                                                                <div className="flex items-center gap-2 mt-0.5 text-xs text-slate-500">
+                                                                    <span className="font-mono bg-slate-100 text-slate-800 font-bold px-1.5 py-0.5 rounded border border-slate-200 text-[11px]">
+                                                                        {loan.member_code || 'N/A'}
+                                                                    </span>
+                                                                    <span>{loan.mobile_number}</span>
+                                                                </div>
+                                                                {loan.samity_name && (
+                                                                    <div className="text-[11px] text-slate-500 mt-0.5">
+                                                                        সমিতি: <strong className="text-slate-700">{loan.samity_name}</strong>
+                                                                    </div>
+                                                                )}
+                                                            </div>
+                                                        </div>
+                                                    </td>
+
+                                                    {/* Dofa / Cycle */}
+                                                    <td className="py-3.5 px-3 text-center">
+                                                        <Badge variant="outline" className={`font-bold px-2.5 py-0.5 text-xs ${loan.loan_dofa > 1 ? 'bg-teal-50 text-teal-800 border-teal-300' : 'bg-slate-100 text-slate-700 border-slate-200'}`}>
+                                                            দফা {loan.loan_dofa}
+                                                        </Badge>
+                                                    </td>
+
+                                                    {/* Loan App & Product */}
+                                                    <td className="py-3.5 px-3">
+                                                        <div className="font-mono font-bold text-xs text-slate-900">
+                                                            {loan.loan_application_no}
+                                                        </div>
+                                                        <div className="text-xs text-slate-700 mt-0.5 font-medium">
+                                                            {loan.product_name || 'সাধারণ ঋণ'}
+                                                        </div>
+                                                        {loan.category_name && (
+                                                            <div className="text-[11px] text-slate-400">
+                                                                {loan.category_name}
+                                                            </div>
+                                                        )}
+                                                    </td>
+
+                                                    {/* Amount */}
+                                                    <td className="py-3.5 px-3 text-right">
+                                                        <div className="font-bold text-slate-900 text-sm">
+                                                            ৳ {Number(loan.disbursed_amount || loan.approved_amount || loan.requested_amount || 0).toLocaleString('en-IN')}
+                                                        </div>
+                                                        <div className="text-[11px] text-slate-400 mt-0.5">
+                                                            {loan.disbursed_amount ? 'বিতরণকৃত' : loan.approved_amount ? 'অনুমোদিত' : 'আবেদনকৃত'}
+                                                        </div>
+                                                    </td>
+
+                                                    {/* Status Badge */}
+                                                    <td className="py-3.5 px-3 text-center">
+                                                        {getStatusBadge(loan.status)}
+                                                    </td>
+
+                                                    {/* Date & Time */}
+                                                    <td className="py-3.5 px-3">
+                                                        <div className="text-xs font-semibold text-slate-700">
+                                                            {loan.created_at}
+                                                        </div>
+                                                        {loan.created_at_human && (
+                                                            <div className="text-[11px] text-slate-400 mt-0.5">
+                                                                {loan.created_at_human}
+                                                            </div>
+                                                        )}
+                                                    </td>
+
+                                                    {/* Action Button */}
+                                                    <td className="py-3.5 px-4 text-center">
+                                                        <div className="flex items-center justify-center gap-1.5" onClick={(e) => e.stopPropagation()}>
+                                                            {loan.admission_id ? (
+                                                                <Button
+                                                                    size="sm"
+                                                                    variant="outline"
+                                                                    onClick={() => loadMemberDetails(loan.admission_id!)}
+                                                                    className="h-8 text-xs font-bold text-emerald-700 border-emerald-200 hover:bg-emerald-600 hover:text-white rounded-xl transition-all shadow-xs"
+                                                                >
+                                                                    লোড করুন <ArrowRight className="w-3.5 h-3.5 ml-1" />
+                                                                </Button>
+                                                            ) : (
+                                                                <Link href={`/member/loan-applications?search=${loan.loan_application_no}`}>
+                                                                    <Button size="sm" variant="ghost" className="h-8 text-xs font-semibold rounded-xl">
+                                                                        <Eye className="w-3.5 h-3.5 mr-1" /> দেখুন
+                                                                    </Button>
+                                                                </Link>
+                                                            )}
+                                                        </div>
+                                                    </td>
+                                                </tr>
+                                            ))}
+                                        </tbody>
+                                    </table>
+                                </div>
+
+                                {/* Mobile Card List */}
+                                <div className="block md:hidden divide-y divide-slate-100 p-3 space-y-3">
+                                    {recentLoans.map((loan) => (
+                                        <div
+                                            key={loan.id}
+                                            onClick={() => loan.admission_id && loadMemberDetails(loan.admission_id)}
+                                            className="p-3.5 rounded-2xl bg-white border border-slate-200/90 hover:border-emerald-300 hover:bg-emerald-50/40 transition-all cursor-pointer space-y-2.5 shadow-2xs"
+                                        >
+                                            <div className="flex items-start justify-between gap-2">
+                                                <div className="flex items-center gap-2.5 min-w-0">
+                                                    <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-emerald-600 to-teal-800 text-white flex items-center justify-center font-bold text-sm shadow-xs shrink-0 overflow-hidden">
+                                                        {loan.customer_photo_path ? (
+                                                            <img
+                                                                src={`/storage/${loan.customer_photo_path}`}
+                                                                alt={loan.applicant_name_bn}
+                                                                className="w-full h-full object-cover"
+                                                            />
+                                                        ) : (
+                                                            loan.applicant_name_bn?.charAt(0) || <User className="w-4 h-4" />
+                                                        )}
+                                                    </div>
+                                                    <div className="min-w-0">
+                                                        <div className="font-bold text-slate-900 text-sm truncate">
+                                                            {loan.applicant_name_bn}
+                                                        </div>
+                                                        <div className="flex items-center gap-1.5 mt-0.5 text-xs text-slate-500">
+                                                            <span className="font-mono bg-slate-100 text-slate-800 font-bold px-1 rounded text-[10px]">
+                                                                {loan.member_code || 'N/A'}
+                                                            </span>
+                                                            <span className="truncate">{loan.mobile_number}</span>
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                                <Badge variant="outline" className={`font-bold px-2 py-0.5 text-[11px] shrink-0 ${loan.loan_dofa > 1 ? 'bg-teal-50 text-teal-800 border-teal-300' : 'bg-slate-100 text-slate-700 border-slate-200'}`}>
+                                                    দফা {loan.loan_dofa}
+                                                </Badge>
+                                            </div>
+
+                                            <div className="flex items-center justify-between text-xs pt-1.5 border-t border-slate-100">
+                                                <div>
+                                                    <div className="text-slate-500 font-mono text-[11px]">আবেদন: {loan.loan_application_no}</div>
+                                                    <div className="font-semibold text-slate-800">{loan.product_name}</div>
+                                                </div>
+                                                <div className="text-right">
+                                                    <div className="font-bold text-slate-900 text-sm">
+                                                        ৳ {Number(loan.disbursed_amount || loan.approved_amount || loan.requested_amount || 0).toLocaleString('en-IN')}
+                                                    </div>
+                                                    <div className="mt-0.5">{getStatusBadge(loan.status)}</div>
+                                                </div>
+                                            </div>
+
+                                            <div className="flex items-center justify-between text-[11px] text-slate-400 pt-1">
+                                                <span>{loan.created_at}</span>
+                                                <Button size="sm" variant="ghost" className="h-7 text-xs font-bold text-emerald-700 px-2 rounded-lg">
+                                                    লোড করুন <ArrowRight className="w-3 h-3 ml-1" />
+                                                </Button>
+                                            </div>
+                                        </div>
+                                    ))}
+                                </div>
+                            </Card>
+                        )}
+
+                        {/* 3 FEATURE HIGHLIGHT CARDS */}
                         <div className="grid grid-cols-1 md:grid-cols-3 gap-4 sm:gap-6">
                             
                             {/* Card 1 */}
