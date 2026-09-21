@@ -3196,6 +3196,7 @@ class LoanApplicationController extends Controller
             return back()->withErrors(['error' => 'শুধুমাত্র খসড়া (Draft) অবস্থার আবেদন মুছে ফেলা যাবে।']);
         }
 
+        app(ApprovalService::class)->deleteTeamBasedApprovalForLoan($application);
         $application->delete();
 
         return $this->redirectToListPreservingFilters('member.loan-applications.index', 'ঋণ আবেদন সফলভাবে মুছে ফেলা হয়েছে।');
@@ -3285,9 +3286,24 @@ class LoanApplicationController extends Controller
 
         $newProduct->loadMissing('loanCategory');
 
-        $requestedAmount = isset($validated['requested_amount']) && (float) $validated['requested_amount'] > 0
-            ? (float) $validated['requested_amount']
-            : (float) $application->requested_amount;
+        $isAmountApproved = $application->isAmountApproved();
+        if ($isAmountApproved && ! $isSuperAdmin) {
+            if (isset($validated['requested_amount']) && round((float) $validated['requested_amount'], 2) !== round((float) $application->requested_amount, 2)) {
+                return back()->withErrors(['requested_amount' => 'ঋণের পরিমাণ ইতিমধ্যে অনুমোদিত হওয়ায় শাখা থেকে পরিমাণ পরিবর্তন করা যাবে না। কেবল ঋণ প্রোডাক্ট ও সংশ্লিষ্ট শর্তাবলী পরিবর্তন করা যাবে।']);
+            }
+            $requestedAmount = (float) $application->requested_amount;
+        } else {
+            $requestedAmount = isset($validated['requested_amount']) && (float) $validated['requested_amount'] > 0
+                ? (float) $validated['requested_amount']
+                : (float) $application->requested_amount;
+        }
+
+        if ($newProduct->min_amount && $requestedAmount < (float) $newProduct->min_amount) {
+            return back()->withErrors(['requested_amount' => 'নির্বাচিত প্রডাক্টের সর্বনিম্ন পরিমাণ ৳'.number_format((float) $newProduct->min_amount)]);
+        }
+        if ($newProduct->max_amount && $requestedAmount > (float) $newProduct->max_amount) {
+            return back()->withErrors(['requested_amount' => 'নির্বাচিত প্রডাক্টের সর্বোচ্চ পরিমাণ ৳'.number_format((float) $newProduct->max_amount)]);
+        }
 
         $oldVisibleFormIds = LoanFormVisibility::visibleFormIdsForShow(
             $roleName,
@@ -3503,6 +3519,8 @@ class LoanApplicationController extends Controller
 
             $application->update($updateData);
         });
+
+        app(ApprovalService::class)->syncTeamBasedApprovalForLoan($application->fresh(['loanProduct', 'loanCategory', 'memberAdmission']));
 
         $successMessage = $requiredFormsChanged
             ? 'ঋণ বিবরণ ও শর্তাবলী আপডেট হয়েছে। নতুন প্রোডাক্ট অনুযায়ী প্রয়োজনীয় ফর্ম পরিবর্তন হয়েছে — নতুন ফর্মগুলো পূরণ করুন।'

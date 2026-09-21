@@ -517,4 +517,34 @@ class LoanApplication extends Model
 
         return $businessPlan;
     }
+
+    protected static function booted(): void
+    {
+        static::updated(function (LoanApplication $loan) {
+            if ($loan->wasChanged(['requested_amount', 'approved_amount', 'loan_product_id', 'loan_term_months'])) {
+                try {
+                    if (\Illuminate\Support\Facades\Schema::hasTable('team_based_approvals')) {
+                        app(\App\Services\ApprovalService::class)->syncTeamBasedApprovalForLoan($loan);
+                    }
+                } catch (\Throwable $e) {
+                    \Illuminate\Support\Facades\Log::warning('Failed to sync team-based approval for loan ' . $loan->id . ': ' . $e->getMessage());
+                }
+            }
+        });
+
+        static::deleting(function (LoanApplication $loan) {
+            try {
+                if (\Illuminate\Support\Facades\Schema::hasTable('team_based_approvals')) {
+                    app(\App\Services\ApprovalService::class)->deleteTeamBasedApprovalForLoan($loan);
+                }
+            } catch (\Throwable $e) {
+                \Illuminate\Support\Facades\Log::warning('Failed to delete team-based approval for loan ' . $loan->id . ': ' . $e->getMessage());
+            }
+        });
+    }
+
+    public function isAmountApproved(): bool
+    {
+        return $this->approved_amount !== null && (float) $this->approved_amount > 0;
+    }
 }

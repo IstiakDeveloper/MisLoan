@@ -11,6 +11,7 @@ import {
     ShieldAlert,
     Clock,
     Calculator,
+    Lock,
 } from 'lucide-react';
 
 interface Props {
@@ -33,6 +34,11 @@ export default function EditLoanDetailsModal({
     isBranchUser = false,
 }: Props) {
     if (!open || !application) return null;
+
+    const isAmountApproved = Boolean(
+        application.approved_amount && Number(application.approved_amount) > 0
+    );
+    const isAmountLocked = isAmountApproved && !isSuperAdmin;
 
     const initialCatId = String(
         application.loan_category_id ||
@@ -138,14 +144,23 @@ export default function EditLoanDetailsModal({
     const interestRate = parseFloat(activeProduct?.interest_rate || '0') || 0;
     const serviceCharge = Math.round(numAmount * (interestRate / 100));
     const totalRepayable = numAmount + serviceCharge;
-    const numInstallments = parseInt(installmentCount) || 1;
-    const installmentAmount =
-        numInstallments > 0 ? Math.round(totalRepayable / numInstallments) : 0;
+    const parsedInstallments = parseInt(installmentCount) || 1;
+    const calculatedInstallmentAmount = Math.round(
+        totalRepayable / Math.max(1, parsedInstallments)
+    );
+    const numInstallments = parsedInstallments;
+    const installmentAmount = calculatedInstallmentAmount;
 
     const handleSubmit = (e: React.FormEvent) => {
         e.preventDefault();
-        if (!categoryId || !productId) {
-            setError('ক্যাটাগরি ও প্রোডাক্ট নির্বাচন করুন।');
+        if (!productId || !categoryId) {
+            setError('দয়া করে ক্যাটাগরি ও ঋণ প্রোডাক্ট নির্বাচন করুন।');
+            return;
+        }
+
+        const parsedNumInstallments = parseInt(installmentCount);
+        if (!parsedNumInstallments || parsedNumInstallments < 1) {
+            setError('কিস্তির সংখ্যা অন্তত ১ হতে হবে।');
             return;
         }
         if (numAmount < 1000) {
@@ -164,7 +179,7 @@ export default function EditLoanDetailsModal({
                 loan_category_id: categoryId,
                 loan_product_id: productId,
                 requested_amount: numAmount,
-                number_of_installments: numInstallments,
+                number_of_installments: parsedNumInstallments,
                 loan_term_months: parseInt(durationMonths) || 12,
                 repayment_frequency: repaymentFrequency,
                 purpose_of_loan: purposeOfLoan,
@@ -179,11 +194,12 @@ export default function EditLoanDetailsModal({
                     const firstErr =
                         (typeof errs.error === 'string' && errs.error) ||
                         (typeof errs.loan_product_id === 'string' && errs.loan_product_id) ||
+                        (typeof errs.requested_amount === 'string' && errs.requested_amount) ||
                         Object.values(errs)[0];
                     setError(
                         typeof firstErr === 'string'
                             ? firstErr
-                            : 'ঋণ বিবরণ সংরক্ষণ করতে ব্যর্থ হয়েছে।'
+                            : 'ঋণ প্রোডাক্ট আপডেট করতে সমস্যা হয়েছে।'
                     );
                 },
                 onFinish: () => {
@@ -194,29 +210,27 @@ export default function EditLoanDetailsModal({
     };
 
     return (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/60 backdrop-blur-xs animate-in fade-in duration-150 print:hidden overflow-y-auto">
-            <div className="bg-white rounded-2xl max-w-xl w-full shadow-2xl border border-slate-200 overflow-hidden my-6 animate-in zoom-in-95 duration-150">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-xs p-3 sm:p-4 print:hidden animate-in fade-in duration-150">
+            <div className="w-full max-w-2xl rounded-2xl bg-white shadow-2xl overflow-hidden border border-slate-200 animate-in zoom-in-95 duration-150">
                 {/* Header */}
-                <div className="border-b px-5 py-4 bg-gradient-to-r from-indigo-700 to-indigo-800 text-white flex items-center justify-between">
+                <div className="bg-gradient-to-r from-slate-900 to-indigo-950 text-white px-5 sm:px-6 py-4 flex items-center justify-between border-b border-indigo-900/50">
                     <div className="flex items-center gap-2.5">
-                        <div className="p-2 rounded-xl bg-white/10 text-white">
-                            <Banknote className="w-5 h-5 text-emerald-300" />
+                        <div className="p-2 rounded-xl bg-indigo-500/20 border border-indigo-400/30 text-indigo-300">
+                            <Banknote className="w-5 h-5" />
                         </div>
                         <div>
-                            <h3 className="text-base font-bold flex items-center gap-2">
-                                ঋণ বিবরণ ও শর্তাবলী সম্পাদনা
+                            <h3 className="text-sm sm:text-base font-black">
+                                ঋণ প্রোডাক্ট ও শর্তাবলী সম্পাদনা
                             </h3>
-                            <p className="text-xs text-indigo-100 mt-0.5">
-                                আবেদন নং: {application.application_no || '-'}{' '}
-                                {application.member_admission?.applicant_name_bn &&
-                                    `· ${application.member_admission.applicant_name_bn}`}
+                            <p className="text-[11px] sm:text-xs text-indigo-200/80 mt-0.5">
+                                আবেদন নং: {application.application_no || `ID #${application.id}`}
                             </p>
                         </div>
                     </div>
                     <button
                         type="button"
                         onClick={onClose}
-                        className="text-white/80 hover:text-white p-1.5 rounded-lg hover:bg-white/10 transition cursor-pointer"
+                        className="text-white/70 hover:text-white p-1 rounded-lg hover:bg-white/10 transition cursor-pointer"
                     >
                         <X className="w-5 h-5" />
                     </button>
@@ -227,13 +241,8 @@ export default function EditLoanDetailsModal({
                     <div className="bg-emerald-50 border-b border-emerald-100 px-5 py-2.5 flex items-center gap-2 text-xs text-emerald-900 font-semibold">
                         <ShieldAlert className="w-4 h-4 text-emerald-600 shrink-0" />
                         <span>
-                            সুপার অ্যাডমিন ক্ষমতা: আপনি যেকোনো পর্যায়ে ঋণের বিবরণ ও শর্তাবলী সম্পাদনা করতে পারেন।
+                            হেড অফিস / সুপার অ্যাডমিন: আপনি যেকোনো পর্যায়ে ঋণের বিবরণ, অনুমোদিত পরিমাণ ও শর্তাবলী সম্পাদনা করতে পারেন।
                         </span>
-                    </div>
-                ) : isBranchUser ? (
-                    <div className="bg-blue-50 border-b border-blue-100 px-5 py-2.5 flex items-center gap-2 text-xs text-blue-900 font-semibold">
-                        <Info className="w-4 h-4 text-blue-600 shrink-0" />
-                        <span>হেড অফিসে পাঠানোর আগে পর্যন্ত প্রোডাক্ট, পরিমাণ ও শর্তাবলী পরিবর্তন করা যাবে। প্রোডাক্ট বদলালে প্রয়োজনীয় ফর্ম আপডেট হবে।</span>
                     </div>
                 ) : isFieldOfficer ? (
                     <div className="bg-blue-50 border-b border-blue-100 px-5 py-2.5 flex items-center gap-2 text-xs text-blue-900 font-semibold">
@@ -243,7 +252,10 @@ export default function EditLoanDetailsModal({
                 ) : (
                     <div className="bg-blue-50 border-b border-blue-100 px-5 py-2.5 flex items-center gap-2 text-xs text-blue-900 font-semibold">
                         <Info className="w-4 h-4 text-blue-600 shrink-0" />
-                        <span>হেড অফিসে পাঠানোর আগে পর্যন্ত ঋণ বিবরণ পরিবর্তন করা যাবে।</span>
+                        <span>
+                            বিতরণ ও বাতিল ব্যতীত যেকোনো অবস্থায় ঋণ প্রোডাক্ট পরিবর্তন করা যাবে।
+                            {isAmountApproved && ' অনুমোদিত পরিমাণের ক্ষেত্রে হেড অফিস বা সুপার এডমিন ব্যতীত পরিমাণ পরিবর্তন করা যাবে না।'}
+                        </span>
                     </div>
                 )}
 
@@ -317,10 +329,27 @@ export default function EditLoanDetailsModal({
                                     value={requestedAmount}
                                     onChange={(e) => setRequestedAmount(e.target.value)}
                                     placeholder="50000"
-                                    className="w-full pl-7 pr-3 py-2 rounded-xl border border-slate-300 text-xs sm:text-sm font-bold text-emerald-700 focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
+                                    disabled={isAmountLocked}
+                                    className={`w-full pl-7 pr-3 py-2 rounded-xl border text-xs sm:text-sm font-bold focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 ${
+                                        isAmountLocked
+                                            ? 'bg-slate-100 border-slate-200 text-slate-500 cursor-not-allowed'
+                                            : 'border-slate-300 text-emerald-700 bg-white'
+                                    }`}
                                     required
                                 />
                             </div>
+                            {isAmountLocked ? (
+                                <p className="text-[11px] text-amber-700 mt-1 font-medium flex items-center gap-1">
+                                    <Lock className="w-3 h-3 shrink-0 text-amber-600" />
+                                    <span>ঋণের পরিমাণ ইতিমধ্যে অনুমোদিত হওয়ায় শাখা থেকে পরিবর্তন করা যাবে না।</span>
+                                </p>
+                            ) : (
+                                activeProduct && (
+                                    <p className="text-[11px] text-slate-500 mt-1 font-medium">
+                                        সর্বনিম্ন: ৳{(activeProduct.min_amount || 1000).toLocaleString('bn-BD')} | সর্বোচ্চ: ৳{(activeProduct.max_amount || 0).toLocaleString('bn-BD')}
+                                    </p>
+                                )
+                            )}
                         </div>
 
                         <div>

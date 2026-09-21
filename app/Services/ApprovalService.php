@@ -15,6 +15,7 @@ use App\Models\User;
 use App\Support\LoanFormVisibility;
 use App\Support\NumberToWordsBangla;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Schema;
 
 class ApprovalService
 {
@@ -1367,6 +1368,165 @@ class ApprovalService
         return $legacy;
     }
 
+    /**
+     * Synchronize linked Team Based Approval sheet(s) when loan amount, approved amount, or product changes.
+     */
+    public function syncTeamBasedApprovalForLoan(LoanApplication $loan): void
+    {
+        if (! \Illuminate\Support\Facades\Schema::hasTable('team_based_approvals')) {
+            return;
+        }
+
+        $loan->loadMissing(['loanProduct', 'loanCategory', 'memberAdmission']);
+
+        $teamBasedList = TeamBasedApproval::with(['items', 'reviews'])
+            ->where('loan_application_id', $loan->id)
+            ->get();
+
+        if ($teamBasedList->isEmpty() && $loan->memberAdmission?->application_no) {
+            $memberCode = $loan->memberAdmission->application_no;
+            $legacy = TeamBasedApproval::query()
+                ->where('branch_id', $loan->branch_id)
+                ->whereNull('loan_application_id')
+                ->whereHas('items', function ($q) use ($memberCode) {
+                    $q->where('member_code', $memberCode);
+                })
+                ->latest('id')
+                ->first();
+
+            if ($legacy) {
+                $legacy->update(['loan_application_id' => $loan->id]);
+                $teamBasedList = collect([$legacy->fresh(['items', 'reviews'])]);
+            }
+        }
+
+        if ($teamBasedList->isEmpty()) {
+            return;
+        }
+
+        $proposedAmount = TeamBasedApprovalItem::asWholeNumber($loan->requested_amount);
+        $approvedAmountInt = $loan->approved_amount !== null && (float) $loan->approved_amount > 0
+            ? (int) round((float) $loan->approved_amount)
+            : null;
+
+        $loanType = $loan->loanProduct?->product_name_bn
+            ?: $loan->loanProduct?->product_name
+            ?: $loan->loanCategory?->category_name_bn
+            ?: $loan->loanCategory?->category_name;
+
+        $termYears = $this->mapLoanTermYears(
+            $loan->loan_term_months ?? $loan->loanProduct?->duration_months
+        );
+
+        foreach ($teamBasedList as $teamBased) {
+            $updatedItemData = [];
+            foreach ($teamBased->items as $item) {
+                $itemUpdates = [];
+                if ($proposedAmount !== null && $proposedAmount !== '') {
+                    $itemUpdates['proposed_loan_amount'] = $proposedAmount;
+                }
+                if ($loanType) {
+                    $itemUpdates['loan_type'] = $loanType;
+                }
+                if ($termYears !== null) {
+                    $itemUpdates['loan_term_years'] = $termYears;
+                }
+                if ($approvedAmountInt !== null) {
+                    $itemUpdates['approved_amount'] = $approvedAmountInt;
+                }
+
+                if (! empty($itemUpdates)) {
+                    $item->update($itemUpdates);
+                }
+
+                $updatedItemData[] = $item->fresh()->toArray();
+            }
+
+            if ($approvedAmountInt !== null) {
+                $teamBased->reviews()
+                    ->whereIn('status', ['approved', 'forwarded'])
+                    ->update(['approved_amount' => $approvedAmountInt]);
+
+                $teamBased->update([
+                    'approved_total_amount' => $approvedAmountInt,
+                    'last_items_snapshot' => $updatedItemData,
+                ]);
+            } elseif (! empty($updatedItemData)) {
+                $teamBased->update([
+                    'last_items_snapshot' => $updatedItemData,
+                ]);
+            }
+        }
+    }
+
+    /**
+     * Delete Team Based approval records/items specifically linked to a deleted loan.
+     * Preserves other loan items in the same sheet if multi-item.
+     */
+    public function deleteTeamBasedApprovalForLoan(LoanApplication $loan): void
+    {
+        if (! Schema::hasTable('team_based_approvals') || ! Schema::hasTable('team_based_approval_items')) {
+            return;
+        }
+
+        $loan->loadMissing('memberAdmission');
+        $memberCode = $loan->memberAdmission?->application_no;
+
+        // 1. Sheets directly linked by loan_application_id
+        $teamBasedList = TeamBasedApproval::with(['items', 'reviews'])
+            ->where('loan_application_id', $loan->id)
+            ->get();
+
+        // 2. Also check sheets in same branch where items match member_code
+        if ($memberCode) {
+            $matchingSheets = TeamBasedApproval::with(['items', 'reviews'])
+                ->where('branch_id', $loan->branch_id)
+                ->whereHas('items', function ($q) use ($memberCode) {
+                    $q->where('member_code', $memberCode);
+                })
+                ->get();
+            $teamBasedList = $teamBasedList->merge($matchingSheets)->unique('id');
+        }
+
+        foreach ($teamBasedList as $teamBased) {
+            // Find specifically the items belonging to this loan
+            $itemsToDelete = $teamBased->items->filter(function ($item) use ($memberCode, $teamBased, $loan) {
+                if ($memberCode && $item->member_code === $memberCode) {
+                    return true;
+                }
+                if ((int) $teamBased->loan_application_id === (int) $loan->id && $teamBased->items->count() === 1) {
+                    return true;
+                }
+                return false;
+            });
+
+            if ($itemsToDelete->isEmpty()) {
+                continue;
+            }
+
+            $itemIds = $itemsToDelete->pluck('id')->all();
+
+            DB::transaction(function () use ($teamBased, $itemIds) {
+                TeamBasedApprovalReview::whereIn('team_based_approval_item_id', $itemIds)->delete();
+                TeamBasedApprovalItem::whereIn('id', $itemIds)->delete();
+
+                $remainingItems = $teamBased->items()->get();
+
+                if ($remainingItems->isEmpty()) {
+                    TeamBasedApprovalReview::where('team_based_approval_id', $teamBased->id)->delete();
+                    $teamBased->delete();
+                } else {
+                    $newApprovedTotal = (int) $remainingItems->whereNotNull('approved_amount')->sum('approved_amount');
+                    $teamBased->update([
+                        'loan_application_id' => null,
+                        'approved_total_amount' => $newApprovedTotal > 0 ? $newApprovedTotal : null,
+                        'last_items_snapshot' => $remainingItems->toArray(),
+                    ]);
+                }
+            });
+        }
+    }
+
     public function isLoanAmountChangeApproval(?LoanApplication $loan): bool
     {
         return $loan !== null && $loan->hasPendingAmountChange();
@@ -1537,7 +1697,8 @@ class ApprovalService
             ]);
         });
 
-        $loan = $loan->fresh(['submittedBy', 'memberAdmission']);
+        $loan = $loan->fresh(['submittedBy', 'memberAdmission', 'loanProduct', 'loanCategory']);
+        $this->syncTeamBasedApprovalForLoan($loan);
         $recipients = collect([$loan->submittedBy])->filter();
         if ($recipients->isNotEmpty()) {
             app(NotificationService::class)->send(

@@ -262,7 +262,7 @@ class LoanFormVisibilityTest extends TestCase
         $this->assertEqualsCanonicalizing([1], $editable);
     }
 
-    public function test_branch_user_can_edit_loan_details_until_head_office(): void
+    public function test_branch_user_can_edit_loan_details_at_any_status_except_disbursed_and_cancelled(): void
     {
         foreach ([
             LoanApplication::STATUS_DRAFT,
@@ -270,26 +270,35 @@ class LoanFormVisibilityTest extends TestCase
             LoanApplication::STATUS_UNDER_REVIEW,
             LoanApplication::STATUS_READY_FOR_HEAD_OFFICE,
             LoanApplication::STATUS_NEEDS_CORRECTION,
+            LoanApplication::STATUS_PENDING_HEAD_OFFICE,
+            LoanApplication::STATUS_APPROVED,
+            LoanApplication::STATUS_PENDING_DISBURSEMENT,
+            LoanApplication::STATUS_PENDING_AMOUNT_APPROVAL,
         ] as $status) {
             $this->assertTrue(
                 LoanFormVisibility::canEditLoanDetails(Role::BRANCH_USER, $status),
                 "Branch user should edit loan details at {$status}"
             );
+            $this->assertTrue(
+                LoanFormVisibility::canEditLoanDetails(Role::BRANCH_MANAGER, $status),
+                "Branch manager should edit loan details at {$status}"
+            );
         }
     }
 
-    public function test_branch_user_cannot_edit_loan_details_after_sent_to_head_office(): void
+    public function test_branch_user_cannot_edit_loan_details_when_disbursed_or_cancelled(): void
     {
         foreach ([
-            LoanApplication::STATUS_PENDING_HEAD_OFFICE,
-            LoanApplication::STATUS_APPROVED,
-            LoanApplication::STATUS_PENDING_DISBURSEMENT,
             LoanApplication::STATUS_DISBURSED,
             LoanApplication::STATUS_CANCELLED,
         ] as $status) {
             $this->assertFalse(
                 LoanFormVisibility::canEditLoanDetails(Role::BRANCH_USER, $status),
                 "Branch user should not edit loan details at {$status}"
+            );
+            $this->assertFalse(
+                LoanFormVisibility::canEditLoanDetails(Role::BRANCH_MANAGER, $status),
+                "Branch manager should not edit loan details at {$status}"
             );
         }
     }
@@ -308,11 +317,15 @@ class LoanFormVisibilityTest extends TestCase
         $this->assertTrue(LoanFormVisibility::canEditLoanDetails(Role::HEAD_OFFICE, LoanApplication::STATUS_DISBURSED, true));
     }
 
-    public function test_loan_details_denied_message_explains_head_office_lock(): void
+    public function test_loan_details_denied_message_for_disbursed_and_cancelled(): void
     {
         $this->assertSame(
-            'আবেদনটি হেড অফিসে পাঠানোর পর শাখা থেকে ঋণ বিবরণ পরিবর্তন করা যাবে না।',
-            LoanFormVisibility::loanDetailsDeniedMessage(LoanApplication::STATUS_PENDING_HEAD_OFFICE)
+            'ঋণ বিতরণ সম্পন্ন হওয়ার পর ঋণ বিবরণ পরিবর্তন করা যাবে না।',
+            LoanFormVisibility::loanDetailsDeniedMessage(LoanApplication::STATUS_DISBURSED)
+        );
+        $this->assertSame(
+            'বাতিল আবেদনের ঋণ বিবরণ পরিবর্তন করা যাবে না।',
+            LoanFormVisibility::loanDetailsDeniedMessage(LoanApplication::STATUS_CANCELLED)
         );
     }
 

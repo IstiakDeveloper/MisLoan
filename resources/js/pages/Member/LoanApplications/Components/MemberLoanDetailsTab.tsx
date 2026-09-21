@@ -38,15 +38,12 @@ export default function MemberLoanDetailsTab({
     const canEditTerms =
         canEditLoanDetails ??
         Boolean(isSuperAdmin || application.status === 'draft');
-    const isAtOrPastHeadOffice = [
-        'pending_head_office',
-        'approved',
-        'pending_disbursement',
-        'pending_amount_approval',
-    ].includes(application.status);
-    const lockLabel = isAtOrPastHeadOffice
-        ? 'হেড অফিসে পাঠানো হয়েছে (লক)'
-        : 'জমা হয়েছে (লক)';
+    const lockLabel =
+        application.status === 'disbursed'
+            ? 'বিতরণ সম্পন্ন (লক)'
+            : application.status === 'cancelled'
+                ? 'বাতিলকৃত (লক)'
+                : 'সম্পাদনা বন্ধ (লক)';
     const displayName =
         memberName ||
         admission?.applicant_name_bn ||
@@ -140,7 +137,7 @@ export default function MemberLoanDetailsTab({
                                 <Edit className="w-3.5 h-3.5 mr-1" /> ঋণ প্রোডাক্ট পরিবর্তন
                             </Button>
                         ) : (
-                            <span className="text-[10px] font-semibold text-slate-500 bg-slate-100 px-2 py-1 rounded-md" title="হেড অফিসে পাঠানোর আগে শাখা ব্যবহারকারী পরিবর্তন করতে পারবেন।">
+                            <span className="text-[10px] font-semibold text-slate-500 bg-slate-100 px-2 py-1 rounded-md" title={lockLabel}>
                                 {lockLabel}
                             </span>
                         )

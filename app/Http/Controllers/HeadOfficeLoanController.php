@@ -1272,6 +1272,7 @@ class HeadOfficeLoanController extends Controller
 
         $this->ensureCanAccessBranch($loanApplication->branch_id);
         RecentDeletion::recordLoanDeletion($loanApplication, $request->user(), $request);
+        app(ApprovalService::class)->deleteTeamBasedApprovalForLoan($loanApplication);
         $loanApplication->forceDelete();
 
         return back()->with('success', 'ঋণ আবেদন মুছে ফেলা হয়েছে।');
@@ -1298,6 +1299,7 @@ class HeadOfficeLoanController extends Controller
 
         foreach ($loans as $loan) {
             RecentDeletion::recordLoanDeletion($loan, $request->user(), $request);
+            app(ApprovalService::class)->deleteTeamBasedApprovalForLoan($loan);
             $loan->forceDelete();
         }
 

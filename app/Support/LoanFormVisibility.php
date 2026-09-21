@@ -235,7 +235,8 @@ class LoanFormVisibility
 
     /**
      * Who may change loan product, amount, and terms.
-     * Branch users (accountants) may edit until the file reaches Head Office.
+     * Branch users (accountants) and branch managers may edit in all statuses except disbursed and cancelled.
+     * Privileged users (Head Office, Super Admin) may edit without branch-stage restrictions.
      * Field officers may edit only while the application is still a draft / sent back.
      */
     public static function canEditLoanDetails(?string $roleName, string $status, bool $isPrivileged = false): bool
@@ -251,7 +252,7 @@ class LoanFormVisibility
         }
 
         if (in_array($roleName, [Role::BRANCH_USER, Role::BRANCH_MANAGER], true)) {
-            return self::isBeforeHeadOffice($status);
+            return true;
         }
 
         if ($roleName === Role::FIELD_OFFICER) {
@@ -273,10 +274,6 @@ class LoanFormVisibility
 
         if ($status === LoanApplication::STATUS_CANCELLED) {
             return 'বাতিল আবেদনের ঋণ বিবরণ পরিবর্তন করা যাবে না।';
-        }
-
-        if (! self::isBeforeHeadOffice($status)) {
-            return 'আবেদনটি হেড অফিসে পাঠানোর পর শাখা থেকে ঋণ বিবরণ পরিবর্তন করা যাবে না।';
         }
 
         return 'ঋণ বিবরণ পরিবর্তনের অনুমতি নেই।';
