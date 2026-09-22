@@ -7,12 +7,12 @@ import { Save, Printer, Eye, ArrowLeft, ShieldCheck, UserCheck, CreditCard, File
 import { numberToWordsBangla } from './ApprovalForm/PrintPreview';
 import { afterLoanFormSaveUrl, continueDisburseWizardUrl, disburseWizardParamsFromContext, isDisburseWizardSearch, loanDisburseShowUrl } from '@/utils/loanFormNavigation';
 import { useAutoFitPrint } from '@/hooks/useAutoFitPrint';
-import { withLiveMemberCode } from '@/utils/memberCodeUtils';
+import { withLiveMemberCode, liveMemberIdentityNumber, liveMemberMobile } from '@/utils/memberCodeUtils';
 
 interface GuarantorCommitmentData {
     branch_name: string;
     branch_address: string;
-    
+
     // Guarantor Info
     guarantor_name: string;
     guarantor_father_or_spouse: string;
@@ -23,7 +23,7 @@ interface GuarantorCommitmentData {
     guarantor_upazila: string;
     guarantor_district: string;
     guarantor_signature_image: string | null;
-    
+
     // Member/Loan Applicant Info
     member_name: string;
     member_father_or_spouse: string;
@@ -36,12 +36,12 @@ interface GuarantorCommitmentData {
     member_code: string;
     samity_name: string;
     samity_code: string;
-    
+
     // Loan Details
     loan_date: string;
     loan_amount: number;
     loan_amount_words: string;
-    
+
     // Witness Signatures
     witness1_signature_image: string | null;
     witness2_signature_image: string | null;
@@ -226,10 +226,10 @@ export default function GuarantorCommitment({
 
     useAutoFitPrint([baseLoanAmount, member, loanProduct], '.guarantor-commitment-sheet');
 
-    const { data, setData, processing } = useForm<GuarantorCommitmentData>({
+    const { data, setData, processing } = useForm<GuarantorCommitmentData>(withLiveMemberCode({
         branch_name: branch?.name || '',
         branch_address: branch?.address || '',
-        
+
         // Guarantor Info (auto-filled from MemberAdmission)
         guarantor_name: member?.guarantor_name || '',
         guarantor_father_or_spouse: '',
@@ -240,7 +240,7 @@ export default function GuarantorCommitment({
         guarantor_upazila: member?.present_upazila || member?.permanent_upazila || '',
         guarantor_district: member?.present_district || member?.permanent_district || '',
         guarantor_signature_image: null,
-        
+
         // Member Info (auto-filled from member admission)
         member_name: member?.applicant_name_bn || member?.applicant_name_en || '',
         member_father_or_spouse: member?.father_name_bn || member?.spouse_name_bn || member?.father_name_en || '',
@@ -253,17 +253,17 @@ export default function GuarantorCommitment({
         member_code: member?.application_no || '',
         samity_name: member?.samity?.samity_name_bn || member?.samity?.samity_name || '',
         samity_code: member?.samity?.samity_code || member?.samity?.id?.toString() || '',
-        
+
         // Loan Details — loan_amount = base + service charge (auto from product)
         loan_date: todayIsoDate(),
         loan_amount: initialLoanAmount,
         loan_amount_words: initialWords,
-        
+
         // Witness Signatures
         witness1_signature_image: null,
         witness2_signature_image: null,
         witness3_signature_image: null,
-    });
+    }, member));
 
     // Auto-update loan amount with service charge when product/requested amount changes
     useEffect(() => {
@@ -939,7 +939,7 @@ export function GuarantorCommitmentPrintView({ data }: { data: any }) {
                 <p>
                     উপজেলা: <span className="border-b border-dotted border-gray-800 inline-block min-w-[120px] font-bold px-1.5">{str(d.guarantor_upazila)}</span> জেলা: <span className="border-b border-dotted border-gray-800 inline-block min-w-[120px] font-bold px-1.5">{str(d.guarantor_district)}</span> মোবাইল: <span className="border-b border-dotted border-gray-800 inline-block min-w-[130px] font-bold px-1.5">{str(d.guarantor_mobile)}</span>
                 </p>
-                
+
                 <p className="pt-1.5">
                     এই মর্মে অঙ্গীকার করছি যে, মৌসুমী সংস্থার <span className="border-b border-dotted border-gray-800 inline-block min-w-[140px] font-bold px-1.5">{str(d.branch_name)}</span> শাখা থেকে সদস্য মো./মোছা./শ্রী <span className="border-b border-dotted border-gray-800 inline-block min-w-[190px] font-bold px-1.5">{str(d.member_name)}</span>
                 </p>
@@ -958,7 +958,7 @@ export function GuarantorCommitmentPrintView({ data }: { data: any }) {
                 <p>
                     উক্ত শাখায় তার সদস্য নং: <span className="border-b border-dotted border-gray-800 inline-block min-w-[90px] font-bold px-1.5">{str(d.member_code)}</span> এবং সমিতির নাম: <span className="border-b border-dotted border-gray-800 inline-block min-w-[150px] font-bold px-1.5">{str(d.samity_name)}</span> সমিতি নং: <span className="border-b border-dotted border-gray-800 inline-block min-w-[90px] font-bold px-1.5">{str(d.samity_code)}</span>
                 </p>
-                
+
                 <p className="pt-2 text-justify">
                     ঋণ গ্রহণকারী ব্যক্তি আমার পরিচিত এবং আমি তাকে চিনি ও জানি। আমি আরও অঙ্গীকার করছি যে উক্ত ঋণের টাকা তিনি পরিশোধ করতে ব্যর্থ হলে বা অপারগতা প্রকাশ করলে ঋণের সমুদয় টাকা আমি নিম্নোক্ত শর্তে পরিশোধ করবো।
                 </p>

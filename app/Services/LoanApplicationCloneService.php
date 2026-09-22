@@ -129,6 +129,11 @@ class LoanApplicationCloneService
         return true;
     }
 
+    private function memberIdentityNumber(mixed $member): string
+    {
+        return MemberAdmission::identityNumberFrom($member);
+    }
+
     /**
      * Clone previous loan application form data and admission defaults onto the target loan.
      */
@@ -218,7 +223,7 @@ class LoanApplicationCloneService
             $guarantorData['branch_address'] = $branch?->address ?: ($guarantorData['branch_address'] ?? '');
             $guarantorData['member_name'] = $member?->applicant_name_bn ?: ($member?->applicant_name_en ?: ($guarantorData['member_name'] ?? ''));
             $guarantorData['member_father_or_spouse'] = $member?->father_name_bn ?: ($member?->spouse_name_bn ?: ($member?->father_name_en ?: ($guarantorData['member_father_or_spouse'] ?? '')));
-            $guarantorData['member_nid'] = $member?->nid_number ?: ($member?->smart_card_number ?: ($guarantorData['member_nid'] ?? ''));
+            $guarantorData['member_nid'] = $this->memberIdentityNumber($member) ?: ($guarantorData['member_nid'] ?? '');
             $guarantorData['member_mobile'] = $member?->mobile_number ?: ($guarantorData['member_mobile'] ?? '');
             $guarantorData['member_village'] = $member?->present_village_road ?: ($member?->permanent_village_road ?: ($guarantorData['member_village'] ?? ''));
             $guarantorData['member_post_office'] = $member?->present_post_code ?: ($member?->permanent_post_code ?: ($guarantorData['member_post_office'] ?? ''));
@@ -280,7 +285,7 @@ class LoanApplicationCloneService
             $nomineeData['post_office'] = $member?->present_post_code ?: ($member?->permanent_post_code ?: ($nomineeData['post_office'] ?? ''));
             $nomineeData['upazila'] = $member?->present_upazila ?: ($member?->permanent_upazila ?: ($nomineeData['upazila'] ?? ''));
             $nomineeData['district'] = $member?->present_district ?: ($member?->permanent_district ?: ($nomineeData['district'] ?? ''));
-            $nomineeData['nid_number'] = $member?->nid_number ?: ($member?->smart_card_number ?: ($nomineeData['nid_number'] ?? ''));
+            $nomineeData['nid_number'] = $this->memberIdentityNumber($member) ?: ($nomineeData['nid_number'] ?? '');
             $nomineeData['mobile_number'] = $member?->mobile_number ?: ($nomineeData['mobile_number'] ?? '');
             $nomineeData['component_name'] = $product?->product_name_bn ?: ($product?->product_name ?: ($nomineeData['component_name'] ?? ''));
             $nomineeData['loan_sanction_date'] = $today;
@@ -327,7 +332,7 @@ class LoanApplicationCloneService
             $agreementData['member_code'] = (string) ($member?->application_no ?: ($agreementData['member_code'] ?? ''));
             $agreementData['father_husband_name'] = $member?->father_name_bn ?: ($member?->spouse_name_bn ?: ($member?->father_name_en ?: ($agreementData['father_husband_name'] ?? '')));
             $agreementData['mother_name'] = $member?->mother_name_bn ?: ($member?->mother_name_en ?: ($agreementData['mother_name'] ?? ''));
-            $agreementData['nid_number'] = $member?->nid_number ?: ($member?->smart_card_number ?: ($agreementData['nid_number'] ?? ''));
+            $agreementData['nid_number'] = $this->memberIdentityNumber($member) ?: ($agreementData['nid_number'] ?? '');
             $agreementData['mobile_number'] = $member?->mobile_number ?: ($agreementData['mobile_number'] ?? '');
             $agreementData['samity_name'] = $samity?->samity_name_bn ?: ($samity?->samity_name ?: ($agreementData['samity_name'] ?? ''));
             $agreementData['samity_code'] = $samity?->samity_code ?: ((string) ($samity?->id ?? '') ?: ($agreementData['samity_code'] ?? ''));
@@ -441,9 +446,7 @@ class LoanApplicationCloneService
                 $permDistrict = $member->permanent_district ?: $member->present_district;
                 $currUpazila = $member->present_upazila ?: $member->permanent_upazila;
                 $currDistrict = $member->present_district ?: $member->permanent_district;
-                $nidValue = ($member->nid_number && $member->nid_number !== '0')
-                    ? (string) $member->nid_number
-                    : (($member->smart_card_number && $member->smart_card_number !== '0') ? (string) $member->smart_card_number : '');
+                $nidValue = $this->memberIdentityNumber($member);
 
                 $memberOverrides = array_filter([
                     'member_name_detail' => $memberName,

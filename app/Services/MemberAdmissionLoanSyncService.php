@@ -489,14 +489,7 @@ class MemberAdmissionLoanSyncService
 
     private function nid(MemberAdmission $member): string
     {
-        $nid = trim((string) $member->nid_number);
-        if ($nid !== '' && $nid !== '0') {
-            return $nid;
-        }
-
-        $smart = trim((string) $member->smart_card_number);
-
-        return ($smart !== '' && $smart !== '0') ? $smart : '';
+        return $member->identityNumber();
     }
 
     private function age(MemberAdmission $member): string

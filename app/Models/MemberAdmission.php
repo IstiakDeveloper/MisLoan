@@ -953,6 +953,57 @@ class MemberAdmission extends Model
     }
 
     /**
+     * Stored NID/Smart Card text if it has a real number (not blank or only zeros).
+     */
+    public static function usableStoredIdentity(mixed $value): string
+    {
+        $raw = trim((string) ($value ?? ''));
+        if ($raw === '') {
+            return '';
+        }
+
+        $normalized = self::normalizeIdentityNumber($raw);
+        if ($normalized === '' || preg_match('/^0+$/', $normalized) === 1) {
+            return '';
+        }
+
+        return $raw;
+    }
+
+    /**
+     * Number to print on loan forms. Smart Card wins when both are filled.
+     */
+    public function identityNumber(): string
+    {
+        return self::identityNumberFrom($this);
+    }
+
+    /**
+     * Same rule for Eloquent models, Inertia payloads, and legacy snapshots.
+     */
+    public static function identityNumberFrom(mixed $member): string
+    {
+        if ($member === null || (! is_array($member) && ! is_object($member))) {
+            return '';
+        }
+
+        $value = function (string $key) use ($member): mixed {
+            if (is_array($member)) {
+                return $member[$key] ?? null;
+            }
+
+            return $member->{$key} ?? null;
+        };
+
+        $smart = self::usableStoredIdentity($value('smart_card_number') ?? $value('smart_card_no'));
+        if ($smart !== '') {
+            return $smart;
+        }
+
+        return self::usableStoredIdentity($value('nid_number') ?? $value('nid_no') ?? $value('national_id'));
+    }
+
+    /**
      * Normalize BD mobile to 01XXXXXXXXX when possible.
      */
     public static function normalizeMobileNumber(?string $value): string

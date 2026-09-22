@@ -1122,7 +1122,7 @@ class ApprovalService
             'mother_name' => $member?->mother_name_bn ?: $member?->mother_name_en,
             'spouse_name' => $member?->spouse_name_bn ?: $member?->spouse_name_en,
             'dob' => $member?->date_of_birth,
-            'nid_number' => $member?->nid_number ?: $member?->smart_card_number,
+            'nid_number' => MemberAdmission::identityNumberFrom($member),
             'address' => $addressParts ? implode(', ', $addressParts) : null,
             'member_code' => $member?->application_no,
             'member_phone' => $member?->mobile_number,

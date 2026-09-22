@@ -96,6 +96,35 @@ export function liveMemberCode(member: any): string {
     return String(member?.application_no || member?.member_code || '').trim();
 }
 
+function usableIdentityValue(value: unknown): string {
+    const raw = String(value ?? '').trim();
+    if (!raw) {
+        return '';
+    }
+    const digits = toEnglishDigits(raw).replace(/\D/g, '');
+    if (!digits || /^0+$/.test(digits)) {
+        return '';
+    }
+    return raw;
+}
+
+/** Smart Card wins when both exist; either one is enough for loan forms. */
+export function liveMemberIdentityNumber(member: any): string {
+    return (
+        usableIdentityValue(member?.smart_card_number) ||
+        usableIdentityValue(member?.smart_card_no) ||
+        usableIdentityValue(member?.smartcard_number) ||
+        usableIdentityValue(member?.nid_number) ||
+        usableIdentityValue(member?.nid_no) ||
+        usableIdentityValue(member?.national_id) ||
+        ''
+    );
+}
+
+export function liveMemberMobile(member: any): string {
+    return usableIdentityValue(member?.mobile_number) || usableIdentityValue(member?.mobile) || '';
+}
+
 /**
  * Keep read-only member identity (code, name, NID, mobile, samity) live.
  * Do not overwrite form-editable snapshot fields such as guardian_name,
@@ -113,8 +142,8 @@ export function withLiveMemberCode<T extends Record<string, any>>(data: T, membe
         member?.father_name_bn || member?.spouse_name_bn || member?.father_name_en || '',
     ).trim();
     const mother = String(member?.mother_name_bn || member?.mother_name_en || '').trim();
-    const nid = String(member?.nid_number || member?.smart_card_number || '').trim();
-    const mobile = String(member?.mobile_number || '').trim();
+    const nid = liveMemberIdentityNumber(member);
+    const mobile = liveMemberMobile(member);
     const samityName = String(
         member?.samity?.samity_name_bn || member?.samity?.samity_name || '',
     ).trim();

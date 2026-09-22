@@ -328,8 +328,8 @@ function buildDeathRiskFundDefaults(
         upazila: member?.present_upazila || member?.permanent_upazila || '',
         district: member?.present_district || member?.permanent_district || '',
         age: calculateAge(member?.date_of_birth),
-        nid_number: member?.nid_number || '',
-        mobile_number: member?.mobile_number || '',
+        nid_number: member?.smart_card_number || member?.nid_number || '',
+        mobile_number: member?.mobile_number || member?.mobile || '',
         component_name: loanCategory?.category_name_bn || loanCategory?.category_name || '',
         loan_sanction_date: todayIsoDate(),
         loan_amount_received: amount,
@@ -476,7 +476,7 @@ export default function DeathRiskFund({
     const baseAmount = Number(requestedAmount) || 0;
     const initialWords = baseAmount > 0 ? numberToWordsBangla(baseAmount) + ' টাকা' : '';
 
-    const { data, setData, processing } = useForm<DeathRiskFundData>({
+    const { data, setData, processing } = useForm<DeathRiskFundData>(withLiveMemberCode({
         branch_name: branch?.name || '',
         date: todayIsoDate(),
 
@@ -494,8 +494,8 @@ export default function DeathRiskFund({
         upazila: member?.present_upazila || member?.permanent_upazila || '',
         district: member?.present_district || member?.permanent_district || '',
         age: memberAge,
-        nid_number: member?.nid_number || '',
-        mobile_number: member?.mobile_number || '',
+        nid_number: member?.smart_card_number || member?.nid_number || '',
+        mobile_number: member?.mobile_number || member?.mobile || '',
         component_name: loanCategory?.category_name_bn || loanCategory?.category_name || '', // External
         loan_sanction_date: todayIsoDate(), // External
         loan_amount_received: baseAmount, // External
@@ -520,7 +520,7 @@ export default function DeathRiskFund({
         officer_signature: null,
         accountant_signature: null,
         branch_manager_signature: null,
-    });
+    }, member));
 
     // Auto-calculate loan amount in words (same as ApprovalForm page 4)
     useEffect(() => {
