@@ -1175,6 +1175,10 @@ class MemberAdmissionController extends Controller
             return $cat;
         });
 
+        $user = $request->user();
+        $user->loadMissing('role');
+        $canChangeMemberType = $memberAdmission->isDraft() || $user->canHeadOfficeDeleteOrEdit();
+
         return Inertia::render('MemberAdmission/Edit', [
             'admission' => $memberAdmission,
             'branches' => $branches,
@@ -1183,6 +1187,7 @@ class MemberAdmissionController extends Controller
             'availableApprovers' => $approvers,
             'loanCategories' => $loanCategories,
             'for_submit' => $request->boolean('for_submit'),
+            'can_change_member_type' => $canChangeMemberType,
         ]);
     }
 
@@ -1342,7 +1347,11 @@ class MemberAdmissionController extends Controller
             $request->input('branch_id') ?: $memberAdmission->branch_id
         );
 
-        $canChangeMemberType = $memberAdmission->isDraft();
+        $user = $request->user();
+        $user->loadMissing('role');
+        // Super admin / Head Office can change member type at any status.
+        // Other roles can only change while the admission is still a draft.
+        $canChangeMemberType = $memberAdmission->isDraft() || $user->canHeadOfficeDeleteOrEdit();
         $isLegacy = (bool) $memberAdmission->is_legacy;
         if ($canChangeMemberType && $request->has('is_legacy')) {
             $isLegacy = $request->boolean('is_legacy');
@@ -1361,25 +1370,36 @@ class MemberAdmissionController extends Controller
             $compressionService = app(ImageCompressionService::class);
             $oldPathsToDelete = [];
 
-            $isRenewalOrOld = $isLegacy || (bool) $memberAdmission->previous_admission_id || (int) ($validated['loan_dofa'] ?? $memberAdmission->loan_dofa) > 1 || ! empty($validated['loan_dofa']) || $request->filled('loan_dofa');
-
             $updateData = $validated;
-            if ($canChangeMemberType || $isRenewalOrOld) {
-                $updateData['is_legacy'] = $isRenewalOrOld;
-            } else {
-                unset($updateData['is_legacy']);
-            }
 
-            if ($request->filled('loan_dofa') || ! empty($validated['loan_dofa'])) {
-                $updateData['loan_dofa'] = (int) ($validated['loan_dofa'] ?? $request->input('loan_dofa'));
-                $updateData['is_legacy'] = true;
-            } elseif (! empty($memberAdmission->loan_dofa)) {
-                $updateData['loan_dofa'] = $memberAdmission->loan_dofa;
-                $updateData['is_legacy'] = true;
-            } elseif ($isLegacy || $isRenewalOrOld) {
-                $updateData['loan_dofa'] = $validated['loan_dofa'] ?? $memberAdmission->loan_dofa;
+            if ($canChangeMemberType && $request->has('is_legacy')) {
+                if (! $isLegacy) {
+                    // Explicitly changed to NEW member: clear legacy flags and loan_dofa
+                    $updateData['is_legacy'] = false;
+                    $updateData['loan_dofa'] = null;
+                    $updateData['previous_admission_id'] = null;
+                    $isRenewalOrOld = false;
+                } else {
+                    // Explicitly changed to OLD / Legacy member:
+                    $updateData['is_legacy'] = true;
+                    $dofaVal = $validated['loan_dofa'] ?? $request->input('loan_dofa') ?? $memberAdmission->loan_dofa;
+                    $updateData['loan_dofa'] = ! empty($dofaVal) ? (int) $dofaVal : 1;
+                    $isRenewalOrOld = true;
+                }
             } else {
-                $updateData['loan_dofa'] = null;
+                $isRenewalOrOld = $isLegacy || (bool) $memberAdmission->previous_admission_id || (int) ($validated['loan_dofa'] ?? $memberAdmission->loan_dofa) > 1 || ! empty($validated['loan_dofa']) || $request->filled('loan_dofa');
+
+                if ($isRenewalOrOld) {
+                    $updateData['is_legacy'] = true;
+                    if ($request->filled('loan_dofa') || ! empty($validated['loan_dofa'])) {
+                        $updateData['loan_dofa'] = (int) ($validated['loan_dofa'] ?? $request->input('loan_dofa'));
+                    } elseif (! empty($memberAdmission->loan_dofa)) {
+                        $updateData['loan_dofa'] = $memberAdmission->loan_dofa;
+                    }
+                } else {
+                    $updateData['is_legacy'] = false;
+                    $updateData['loan_dofa'] = null;
+                }
             }
             unset($updateData['selected_approvers'], $updateData['family_members'], $updateData['other_assets'], $updateData['draft']);
             if (empty($updateData['application_no'])) {
@@ -1507,7 +1527,7 @@ class MemberAdmissionController extends Controller
 
             $updateData = $this->coerceNotNullCounts($updateData);
 
-            if ($memberAdmission->previous_admission_id) {
+            if ($memberAdmission->previous_admission_id && ($updateData['is_legacy'] ?? $memberAdmission->is_legacy)) {
                 $canonical = $memberAdmission->canonicalAdmission();
                 foreach (MemberAdmission::identitySyncFields() as $field) {
                     $updateData[$field] = $canonical->{$field};
@@ -1525,6 +1545,12 @@ class MemberAdmissionController extends Controller
                 $updateData['reviewed_by'] = $updateData['reviewed_by'] ?? auth()->id();
                 $updateData['reviewed_at'] = $updateData['reviewed_at'] ?? now();
                 $legacyAutoApproved = true;
+            } elseif ($canChangeMemberType && ! $isLegacy && $memberAdmission->is_legacy) {
+                // Changed from old/legacy to new member:
+                // Revert to draft status so it enters the proper new member review workflow
+                $updateData['status'] = 'draft';
+                $updateData['reviewed_by'] = null;
+                $updateData['reviewed_at'] = null;
             } elseif ($saveAsDraft && $memberAdmission->isDraft()) {
                 $updateData['status'] = 'draft';
             }
@@ -1567,6 +1593,11 @@ class MemberAdmissionController extends Controller
             if ($legacyAutoApproved) {
                 return redirect()->route('member-admissions.index')
                     ->with('success', 'পুরাতন সদস্যের ভর্তি স্বয়ংক্রিয়ভাবে অনুমোদিত হয়েছে!');
+            }
+
+            if ($canChangeMemberType && ! $isLegacy && $memberAdmission->is_legacy) {
+                return redirect()->route('member-admissions.index')
+                    ->with('success', 'সদস্যের ধরণ সফলভাবে "নতুন সদস্য" তে পরিবর্তন ও সংরক্ষিত হয়েছে!');
             }
 
             // Save filled fields then submit in one step (from edit-for-submit flow)

@@ -217,6 +217,18 @@ class LoanApplicationController extends Controller
             return;
         }
 
+        // Do NOT auto-approve if the admission is currently in any approval workflow step.
+        // Admissions in submitted / under_review / needs_revision / pending_head_office are
+        // being actively reviewed by Branch Manager or Head Office — forcing them to 'approved'
+        // here would bypass that review entirely.
+        // Only auto-approve when the admission is still in draft (never submitted) or in a
+        // terminal non-approved state (rejected), which means the FO just filled in a loan
+        // form without ever going through admission approval at all (legacy data path).
+        $blockedStatuses = ['submitted', 'under_review', 'needs_revision', 'pending_head_office'];
+        if (in_array($member->status, $blockedStatuses, true)) {
+            return;
+        }
+
         $member->update([
             'status' => 'approved',
             'submitted_by' => $member->submitted_by ?: auth()->id(),
@@ -636,7 +648,6 @@ class LoanApplicationController extends Controller
                     ->with('error', MemberAdmission::nextLoanViaCycleHubMessage()),
             ];
         }
-
 
         return ['ok' => true];
     }
@@ -1346,7 +1357,6 @@ class LoanApplicationController extends Controller
                 }
             }
         }
-
 
         $validated = $request->validate([
             // Basic Info
@@ -2479,7 +2489,6 @@ class LoanApplicationController extends Controller
             if ($member->mustUseCycleHubForNextLoan($loanProductId)) {
                 abort(403, MemberAdmission::nextLoanViaCycleHubMessage());
             }
-
 
             $draft = new LoanApplication;
             $draft->member_admission_id = $memberId;

@@ -1276,15 +1276,6 @@ export default function Create({
                             <Save className="w-4 h-4" />
                             <span>খসড়া সংরক্ষণ (Save Draft)</span>
                         </button>
-                        <button
-                            type="button"
-                            onClick={handleOpenLoanModal}
-                            disabled={processing}
-                            className="w-full sm:w-auto inline-flex items-center justify-center gap-2 px-6 py-2.5 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-700 hover:from-emerald-700 hover:to-teal-800 text-white text-xs sm:text-sm font-bold shadow-lg shadow-emerald-600/30 transition-all active:scale-95 disabled:opacity-50"
-                        >
-                            <Save className="w-4 h-4" />
-                            <span>সংরক্ষণ ও ঋণ আবেদন করুন (Save & Apply Loan)</span>
-                        </button>
                         {!isFieldOfficer && isLegacyMember && (
                             <button
                                 type="button"
@@ -1318,14 +1309,6 @@ export default function Create({
                     >
                         <Save className="w-4 h-4" />
                         <span>খসড়া</span>
-                    </button>
-                    <button
-                        type="button"
-                        onClick={handleOpenLoanModal}
-                        disabled={processing || !memberTypeChosen}
-                        className="flex-[1.5] inline-flex items-center justify-center gap-1.5 py-2.5 px-3 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-700 text-white text-xs font-bold shadow-md active:scale-95 transition disabled:opacity-50"
-                    >
-                        <span>সংরক্ষণ ও ঋণ আবেদন</span>
                     </button>
                     {!isFieldOfficer && isLegacyMember && (
                         <button

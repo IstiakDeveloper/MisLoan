@@ -27,20 +27,6 @@ interface SamityItem {
     branch?: { id: number; name: string; code?: string };
 }
 
-interface Props {
-    admission: MemberAdmission;
-    branches: Array<{ id: number; name: string }>;
-    samities: Array<SamityItem>;
-    categories: Array<{ id: number; category_name: string }>;
-    availableApprovers: Array<{
-        id: number;
-        name: string;
-        email: string;
-        role: { name: string };
-        level?: string;
-    }>;
-    for_submit?: boolean;
-}
 
 /** Samity code without branch prefix (first 4 digits). e.g. 00010071 → 0071 */
 function getSamityDisplayCode(samity: SamityItem): string {
@@ -138,12 +124,19 @@ interface LoanCategoryItem {
 
 interface Props {
     admission: any;
-    branches: Branch[];
-    samities: Samity[];
-    categories: MemberCategory[];
-    availableApprovers?: Approver[];
+    branches: Array<{ id: number; name: string; code?: string }>;
+    samities: Array<SamityItem>;
+    categories: Array<{ id: number; category_name: string }>;
+    availableApprovers?: Array<{
+        id: number;
+        name: string;
+        email: string;
+        role: { name: string };
+        level?: string;
+    }>;
     loanCategories?: LoanCategoryItem[];
     for_submit?: boolean;
+    can_change_member_type?: boolean;
 }
 
 export default function Edit({
@@ -154,6 +147,7 @@ export default function Edit({
     availableApprovers,
     loanCategories = [],
     for_submit = false,
+    can_change_member_type,
 }: Props) {
     const page = usePage<{
         auth: {
@@ -200,7 +194,7 @@ export default function Edit({
     };
 
     const { data, setData, errors } =
-        useForm<MemberAdmissionFormData>({
+        useForm<any>({
             application_no: admission.application_no || '',
             branch_id: admission.branch_id || 0,
             samity_id: admission.samity_id || 0,
@@ -341,7 +335,7 @@ export default function Edit({
             loan_dofa: admission.loan_dofa || '',
         });
 
-    const canChangeMemberType = admission.status === 'draft';
+    const canChangeMemberType = can_change_member_type ?? (admission.status === 'draft' || hasAllAccess);
     const isDraftAdmission = admission.status === 'draft';
     const saveButtonLabel = isDraftAdmission ? 'খসড়া সংরক্ষণ' : 'সংরক্ষণ';
     const saveButtonLabelEn = isDraftAdmission ? 'খসড়া সংরক্ষণ (Save Draft)' : 'সংরক্ষণ (Save)';
@@ -351,16 +345,16 @@ export default function Edit({
         if (legacy === !!data.is_legacy) return;
         if (!legacy) {
             const ok = window.confirm(
-                'নতুন সদস্যে পরিবর্তন করলে ঋণের দফা মুছে যাবে এবং জমা দিলে হেড অফিসের অনুমোদন লাগবে। চালিয়ে যাবেন?'
+                'সদস্যের ধরণ "নতুন সদস্য" তে পরিবর্তন করতে চান? ঋণের দফা মুছে যাবে এবং নতুন সদস্য হিসেবে সংরক্ষিত হবে। চালিয়ে যাবেন?'
             );
             if (!ok) return;
             setData((prev) => ({ ...prev, is_legacy: false, loan_dofa: '' }));
         } else {
             const ok = window.confirm(
-                'পুরাতন সদস্যে পরিবর্তন করলে ঋণের দফা দিতে হবে এবং জমা দিলে স্বয়ংক্রিয় অনুমোদন হবে। চালিয়ে যাবেন?'
+                'সদস্যের ধরণ "পুরাতন সদস্য" তে পরিবর্তন করতে চান? ঋণের দফা দিতে হবে। চালিয়ে যাবেন?'
             );
             if (!ok) return;
-            setData((prev) => ({ ...prev, is_legacy: true }));
+            setData((prev) => ({ ...prev, is_legacy: true, loan_dofa: prev.loan_dofa || 1 }));
         }
     };
 
@@ -623,7 +617,7 @@ export default function Edit({
             }
         });
 
-        const isCycleRenewal = new URLSearchParams(window.location.search).get('cycle_renewal') === '1' || !!admission.previous_admission_id;
+        const isCycleRenewal = !!data.is_legacy && (new URLSearchParams(window.location.search).get('cycle_renewal') === '1' || !!admission.previous_admission_id);
         if (isCycleRenewal) {
             formData.append('cycle_renewal', '1');
         }
@@ -1034,15 +1028,6 @@ export default function Edit({
                             <Save className="w-4 h-4" />
                             <span>{saveButtonLabelEn}</span>
                         </button>
-                        <button
-                            type="button"
-                            onClick={handleOpenLoanModal}
-                            disabled={saving}
-                            className="w-full sm:w-auto inline-flex items-center justify-center gap-2 px-6 py-2.5 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-700 hover:from-emerald-700 hover:to-teal-800 text-white text-xs sm:text-sm font-bold shadow-lg shadow-emerald-600/30 transition-all active:scale-95 disabled:opacity-50"
-                        >
-                            <Save className="w-4 h-4" />
-                            <span>সংরক্ষণ ও ঋণ আবেদন করুন (Save & Apply Loan)</span>
-                        </button>
                         {for_submit && (
                             <button
                                 type="button"
@@ -1067,14 +1052,6 @@ export default function Edit({
                     >
                         <Save className="w-4 h-4" />
                         <span>{isDraftAdmission ? 'খসড়া' : 'সংরক্ষণ'}</span>
-                    </button>
-                    <button
-                        type="button"
-                        onClick={handleOpenLoanModal}
-                        disabled={saving}
-                        className="flex-[1.5] inline-flex items-center justify-center gap-1.5 py-2.5 px-3 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-700 text-white text-xs font-bold shadow-md active:scale-95 transition disabled:opacity-50"
-                    >
-                        <span>সংরক্ষণ ও ঋণ আবেদন</span>
                     </button>
                     {for_submit && (
                         <button

@@ -52,7 +52,10 @@ class LoanApplicationCloneService
         }
 
         if (! empty($memberAdmission->nid_number)) {
+            // Only look up same-branch admissions by NID to avoid cross-branch data contamination
+            // (different members at different branches may legitimately share NID entries)
             $sameNidIds = MemberAdmission::where('nid_number', $memberAdmission->nid_number)
+                ->where('branch_id', $memberAdmission->branch_id)
                 ->pluck('id')
                 ->toArray();
             $admissionIds = array_unique(array_merge($admissionIds, $sameNidIds));
@@ -392,6 +395,42 @@ class LoanApplicationCloneService
                     'business_income' => (float) ($member?->estimated_annual_project_income ?? 0),
                     'business_capital' => (float) ($member?->total_asset_value ?? 0),
                 ];
+            }
+
+            // Always override member-specific identity and address fields with the CURRENT member's
+            // data, even when cloning from a previous loan. This prevents stale data from another
+            // member (e.g. different branch member whose loan was cloned) leaking into this form.
+            if ($member) {
+                $memberName = trim((string) ($member->applicant_name_bn ?: $member->applicant_name_en ?: ''));
+                $memberCode = trim((string) ($member->application_no ?? ''));
+                $permUpazila = $member->permanent_upazila ?: $member->present_upazila;
+                $permDistrict = $member->permanent_district ?: $member->present_district;
+                $currUpazila = $member->present_upazila ?: $member->permanent_upazila;
+                $currDistrict = $member->present_district ?: $member->permanent_district;
+                $nidValue = ($member->nid_number && $member->nid_number !== '0')
+                    ? (string) $member->nid_number
+                    : (($member->smart_card_number && $member->smart_card_number !== '0') ? (string) $member->smart_card_number : '');
+
+                $memberOverrides = array_filter([
+                    'member_name_detail' => $memberName,
+                    'member_code' => $memberCode,
+                    'member_mobile' => $member->mobile_number,
+                    'father_husband_name' => trim((string) ($member->father_name_bn ?: $member->spouse_name_bn ?: $member->father_name_en ?: '')),
+                    'permanent_address_line1' => $member->permanent_village_road ?: $member->present_village_road,
+                    'permanent_address_line2' => $member->permanent_post_code ?: $member->present_post_code,
+                    'permanent_address_line3' => collect([$permUpazila, $permDistrict])->filter()->implode(', '),
+                    'current_address_line1' => $member->present_village_road ?: $member->permanent_village_road,
+                    'current_address_line2' => $member->present_post_code ?: $member->permanent_post_code,
+                    'current_address_line3' => collect([$currUpazila, $currDistrict])->filter()->implode(', '),
+                    'nid_smart_card' => $nidValue,
+                    'admission_date' => $member->admission_date ? (string) $member->admission_date : null,
+                    'committee_name' => $samity?->samity_name_bn ?: $samity?->samity_name,
+                    'committee_code' => $samity?->samity_code ?: ((string) ($samity?->id ?? '')),
+                    'member_name_code' => collect([$memberName, $memberCode])->filter()->implode(' / '),
+                    'samity_name_code' => collect([$samity?->samity_name_bn ?: $samity?->samity_name, $samity?->samity_code])->filter()->implode(' / '),
+                ], fn ($v) => $v !== null && $v !== '');
+
+                $businessData = array_merge($businessData, $memberOverrides);
             }
 
             if ($product) {
