@@ -32,6 +32,13 @@ class LoanApplicationCloneService
             return null;
         }
 
+        // Fresh / New members must NEVER clone previous loans.
+        // Form generation for a new member must be clean, containing only their own admission data.
+        // Cloning is strictly reserved for cycle renewals / repeat legacy members.
+        if (! $memberAdmission->isRepeatOrLegacyMember()) {
+            return null;
+        }
+
         $admissionIds = [(int) $memberAdmission->id];
 
         // Traverse previous admission cycle chain
@@ -42,23 +49,13 @@ class LoanApplicationCloneService
             $prevId = $prevAdm?->previous_admission_id;
         }
 
-        // Also check by member code / application_no or NID if existing member
+        // Also check by member code / application_no for the exact same member in the same branch
         if (! empty($memberAdmission->application_no)) {
             $sameCodeIds = MemberAdmission::where('application_no', $memberAdmission->application_no)
                 ->where('branch_id', $memberAdmission->branch_id)
                 ->pluck('id')
                 ->toArray();
             $admissionIds = array_unique(array_merge($admissionIds, $sameCodeIds));
-        }
-
-        if (! empty($memberAdmission->nid_number)) {
-            // Only look up same-branch admissions by NID to avoid cross-branch data contamination
-            // (different members at different branches may legitimately share NID entries)
-            $sameNidIds = MemberAdmission::where('nid_number', $memberAdmission->nid_number)
-                ->where('branch_id', $memberAdmission->branch_id)
-                ->pluck('id')
-                ->toArray();
-            $admissionIds = array_unique(array_merge($admissionIds, $sameNidIds));
         }
 
         // Query loan applications matching any of these admission records
@@ -144,7 +141,11 @@ class LoanApplicationCloneService
         $category = $targetLoan->loanCategory ?? $product?->loanCategory;
         $requestedAmount = (float) ($targetLoan->requested_amount ?? ($product?->min_amount ?? 50000));
 
-        if (! $previousLoan) {
+        $isNewMember = $member && ! $member->isRepeatOrLegacyMember();
+
+        if ($isNewMember) {
+            $previousLoan = null;
+        } elseif (! $previousLoan) {
             $previousLoan = $this->findPreviousLoan($targetLoan, (int) $targetLoan->id);
         }
 
@@ -187,7 +188,13 @@ class LoanApplicationCloneService
         // ----------------------------------------------------
         // 1. GUARANTOR INFO (Form 2 - জামিনদার অঙ্গীকারনামা)
         // ----------------------------------------------------
-        if ($shouldFillForm(2) && ! $this->hasMeaningfulData($targetLoan->guarantor_info)) {
+        $guarantorNeedsReset = $isNewMember && (
+            ! $this->hasMeaningfulData($targetLoan->guarantor_info)
+            || (($targetLoan->guarantor_info['guarantor_name'] ?? '') !== ($member?->guarantor_name ?? ''))
+            || (($targetLoan->guarantor_info['member_code'] ?? '') !== (string) ($member?->application_no ?? ''))
+        );
+
+        if ($shouldFillForm(2) && (! $this->hasMeaningfulData($targetLoan->guarantor_info) || $guarantorNeedsReset)) {
             if ($previousLoan && $this->hasMeaningfulData($previousLoan->guarantor_info)) {
                 $guarantorData = is_array($previousLoan->guarantor_info) ? $previousLoan->guarantor_info : [];
             } else {
@@ -228,7 +235,12 @@ class LoanApplicationCloneService
             $dirty = true;
         }
 
-        if ($shouldFillForm(2) && ! $this->hasMeaningfulData($targetLoan->guarantors_list) && $previousLoan && $this->hasMeaningfulData($previousLoan->guarantors_list)) {
+        if ($isNewMember) {
+            if ($targetLoan->guarantors_list !== null) {
+                $targetLoan->guarantors_list = null;
+                $dirty = true;
+            }
+        } elseif ($shouldFillForm(2) && ! $this->hasMeaningfulData($targetLoan->guarantors_list) && $previousLoan && $this->hasMeaningfulData($previousLoan->guarantors_list)) {
             $targetLoan->guarantors_list = $previousLoan->guarantors_list;
             $dirty = true;
         }
@@ -370,11 +382,20 @@ class LoanApplicationCloneService
             $dirty = true;
         }
 
-        if ($shouldFillForm(4) && ! $this->hasMeaningfulData($targetLoan->asset_details) && $previousLoan && $this->hasMeaningfulData($previousLoan->asset_details)) {
+        if ($isNewMember) {
+            if ($targetLoan->asset_details !== null) {
+                $targetLoan->asset_details = null;
+                $dirty = true;
+            }
+            if ($targetLoan->liability_details !== null) {
+                $targetLoan->liability_details = null;
+                $dirty = true;
+            }
+        } elseif ($shouldFillForm(4) && ! $this->hasMeaningfulData($targetLoan->asset_details) && $previousLoan && $this->hasMeaningfulData($previousLoan->asset_details)) {
             $targetLoan->asset_details = $previousLoan->asset_details;
             $dirty = true;
         }
-        if ($shouldFillForm(4) && ! $this->hasMeaningfulData($targetLoan->liability_details) && $previousLoan && $this->hasMeaningfulData($previousLoan->liability_details)) {
+        if (! $isNewMember && $shouldFillForm(4) && ! $this->hasMeaningfulData($targetLoan->liability_details) && $previousLoan && $this->hasMeaningfulData($previousLoan->liability_details)) {
             $targetLoan->liability_details = $previousLoan->liability_details;
             $dirty = true;
         }
@@ -382,7 +403,16 @@ class LoanApplicationCloneService
         // ----------------------------------------------------
         // 5. BUSINESS PLAN & APPROVAL (Form 5 - আবেদন ও অনুমোদনপত্র)
         // ----------------------------------------------------
-        if ($shouldFillForm(5) && ! $this->hasMeaningfulData($targetLoan->business_plan)) {
+        $businessPlanNeedsReset = $isNewMember && (
+            ! $this->hasMeaningfulData($targetLoan->business_plan)
+            || (int) ($targetLoan->business_plan['loan_round'] ?? 1) > 1
+            || ! empty($targetLoan->business_plan['guarantor_1_name'])
+            || ! empty($targetLoan->business_plan['informant_1_name'])
+            || ! empty($targetLoan->business_plan['zonal_manager_comments'])
+            || ! empty($targetLoan->business_plan['officer_post_inspection_comments'])
+        );
+
+        if ($shouldFillForm(5) && (! $this->hasMeaningfulData($targetLoan->business_plan) || $businessPlanNeedsReset)) {
             $prevWasSufolon = $previousLoan && LoanFormVisibility::isSufolon($previousLoan->loanProduct, $previousLoan->loanCategory);
             $targetIsSufolon = LoanFormVisibility::isSufolon($product, $category);
 
@@ -394,6 +424,10 @@ class LoanApplicationCloneService
                     'business_description' => $member?->project_name ?? 'ব্যবসা সম্প্রসারণ',
                     'business_income' => (float) ($member?->estimated_annual_project_income ?? 0),
                     'business_capital' => (float) ($member?->total_asset_value ?? 0),
+                    'loan_round' => 1,
+                    'loan_proposal_date' => $today,
+                    'project_name' => $member?->project_name ?? 'ব্যবসা সম্প্রসারণ',
+                    'proposed_project_name' => $member?->project_name ?? 'ব্যবসা সম্প্রসারণ',
                 ];
             }
 
@@ -512,6 +546,18 @@ class LoanApplicationCloneService
                         $dirty = true;
                     }
                 }
+            }
+        }
+
+        // For new or existing members: synchronize photos directly from member admission if not set on loan
+        if ($member) {
+            if (empty($targetLoan->applicant_photo) && ! empty($member->customer_photo_path)) {
+                $targetLoan->applicant_photo = $member->customer_photo_path;
+                $dirty = true;
+            }
+            if (empty($targetLoan->guarantor_photo) && ! empty($member->guardian_photo_path)) {
+                $targetLoan->guarantor_photo = $member->guardian_photo_path;
+                $dirty = true;
             }
         }
 
