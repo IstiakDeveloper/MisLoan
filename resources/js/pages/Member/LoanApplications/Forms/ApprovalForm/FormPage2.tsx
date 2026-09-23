@@ -40,8 +40,10 @@ export default function FormPage2({ data, setData, requestedAmount }: FormPagePr
         setData('other_loan_status', rows);
     };
 
-    // সংস্থার অনুমোদনকৃত ঋণ = পেজ ১ এর আবেদনকৃত ঋণ / requested amount
+    // সংস্থার অনুমোদনকৃত ঋণ = পেজ ৪ এর চূড়ান্ত অনুমোদিত ঋণ / পেজ ১ এর আবেদনকৃত ঋণ / requested amount
+    const approvedAmountNum = Number(data.final_approved_loan_amount_digits || 0);
     const appliedLoan =
+        (approvedAmountNum > 0 ? String(approvedAmountNum) : '') ||
         data.capital_applied_loan ||
         data.approval_amount_digits ||
         (requestedAmount != null && requestedAmount !== '' ? String(requestedAmount) : '');
@@ -51,7 +53,15 @@ export default function FormPage2({ data, setData, requestedAmount }: FormPagePr
 
     useEffect(() => {
         if (appliedLoan !== '' && String(data.invest_plan_applied_amount || '') !== String(appliedLoan)) {
+            const oldApplied = Number(data.invest_plan_applied_amount || 0);
             setData('invest_plan_applied_amount', appliedLoan);
+            const newApplied = Number(appliedLoan);
+            const oldCap = Number(data.invest_use_capital || 0);
+            if (oldCap === oldApplied || oldCap === 0) {
+                setData('invest_use_capital', appliedLoan);
+            } else if (oldApplied > 0 && Math.abs(newApplied - oldApplied) > 1) {
+                setData('invest_use_capital', String(oldCap + (newApplied - oldApplied)));
+            }
         }
     }, [appliedLoan]);
 
@@ -470,7 +480,7 @@ export default function FormPage2({ data, setData, requestedAmount }: FormPagePr
                                         onChange={(e) => setData('invest_plan_applied_amount', e.target.value)}
                                         className={warningClass}
                                     />
-                                    <p className="text-[10px] text-gray-500 mt-0.5">পেজ ১ এর আবেদনকৃত ঋণ থেকে অটো</p>
+                                    <p className="text-[10px] text-gray-500 mt-0.5">অনুমোদিত / আবেদনকৃত ঋণ থেকে অটো</p>
                                 </div>
                                 <div>
                                     <label className="block text-[11px] font-medium text-gray-700 mb-1">নিজস্ব তহবিল</label>

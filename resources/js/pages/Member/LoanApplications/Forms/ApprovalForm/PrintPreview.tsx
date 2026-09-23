@@ -559,63 +559,100 @@ function renderPage2(d: any, categoryName?: string) {
                             </div>
 
                             {/* ০৩. বিনিয়োগের পরিকল্পনা */}
-                            <div className="mt-1">
-                                <div><span>০৩. বিনিয়োগের পরিকল্পনা:</span></div>
-                                <table className="w-full border-collapse border border-gray-600 text-[12px] mt-1">
-                                    <thead>
-                                        <tr className="bg-gray-50 font-semibold text-center">
-                                            <td className="border border-gray-600 px-1 py-0.5 w-[30%]">বিনিয়োগের খাত</td>
-                                            <td className="border border-gray-600 px-1 py-0.5 w-[15%]">টাকার পরিমাণ</td>
-                                            <td className="border border-gray-600 px-1 py-0.5 w-[35%]">ঋণের ব্যবহার</td>
-                                            <td className="border border-gray-600 px-1 py-0.5 w-[20%]">টাকার পরিমাণ</td>
-                                        </tr>
-                                    </thead>
-                                    <tbody>
-                                        <tr>
-                                            <td className="border border-gray-600 px-1 py-0.5">সংস্থার অনুমোদনকৃত ঋণে ব্যয়ের পরিমাণ</td>
-                                            <td className="border border-gray-600 px-1 py-0.5 text-center font-semibold">
-                                                <span className="inline-block min-w-[80px]">{noDecimal(d.invest_plan_applied_amount)}</span>
-                                            </td>
-                                            <td className="border border-gray-600 px-1 py-0.5">
-                                                <div>মূলধনী ব্যয়: (ক) যন্ত্রপাতি ক্রয় (খ) গৃহ নির্মাণ</div>
-                                            </td>
-                                            <td className="border border-gray-600 px-1 py-0.5 text-center">
-                                                <span className="inline-block min-w-[80px]">{noDecimal(d.invest_use_capital)}</span>
-                                            </td>
-                                        </tr>
-                                        <tr>
-                                            <td className="border border-gray-600 px-1 py-0.5">নিজস্ব তহবিল</td>
-                                            <td className="border border-gray-600 px-1 py-0.5 text-center font-semibold">
-                                                <span className="inline-block min-w-[80px]">{noDecimal(d.invest_plan_own_amount)}</span>
-                                            </td>
-                                            <td className="border border-gray-600 px-1 py-0.5">উদ্যোগ পরিচালনার ব্যয়</td>
-                                            <td className="border border-gray-600 px-1 py-0.5 text-center">
-                                                <span className="inline-block min-w-[80px]">{noDecimal(d.invest_use_running)}</span>
-                                            </td>
-                                        </tr>
-                                        <tr>
-                                            <td className="border border-gray-600 px-1 py-0.5">অন্যান্য উৎস (যদি থাকে)</td>
-                                            <td className="border border-gray-600 px-1 py-0.5 text-center font-semibold">
-                                                <span className="inline-block min-w-[80px]">{noDecimal(d.invest_plan_other_amount)}</span>
-                                            </td>
-                                            <td className="border border-gray-600 px-1 py-0.5">কাঁচামাল ক্রয়</td>
-                                            <td className="border border-gray-600 px-1 py-0.5 text-center">
-                                                <span className="inline-block min-w-[80px]">{noDecimal(d.invest_use_other)}</span>
-                                            </td>
-                                        </tr>
-                                        <tr className="font-bold bg-gray-50">
-                                            <td className="border border-gray-600 px-1 py-0.5 text-center">মোট</td>
-                                            <td className="border border-gray-600 px-1 py-0.5 text-center">
-                                                <span className="inline-block min-w-[80px]">{noDecimal(d.invest_plan_total)}</span>
-                                            </td>
-                                            <td className="border border-gray-600 px-1 py-0.5 text-center">মোট</td>
-                                            <td className="border border-gray-600 px-1 py-0.5 text-center">
-                                                <span className="inline-block min-w-[80px]">{noDecimal(d.invest_use_total)}</span>
-                                            </td>
-                                        </tr>
-                                    </tbody>
-                                </table>
-                            </div>
+                            {(() => {
+                                const approvedAmountNum = Number(d.final_approved_loan_amount_digits || d.approved_amount || 0);
+                                const rawInvestPlanApplied = Number(
+                                    d.invest_plan_applied_amount ||
+                                    d.capital_applied_loan ||
+                                    d.approval_amount_digits ||
+                                    0
+                                );
+                                const effectiveInvestPlanApplied = approvedAmountNum > 0 ? approvedAmountNum : rawInvestPlanApplied;
+
+                                const ownAmount = Number(d.invest_plan_own_amount) || 0;
+                                const otherAmount = Number(d.invest_plan_other_amount) || 0;
+                                const effectiveInvestPlanTotal = (effectiveInvestPlanApplied > 0 || ownAmount > 0 || otherAmount > 0)
+                                    ? (effectiveInvestPlanApplied + ownAmount + otherAmount)
+                                    : (Number(d.invest_plan_total) || 0);
+
+                                const rawInvestUseCapital = Number(d.invest_use_capital) || 0;
+                                const rawInvestUseRunning = Number(d.invest_use_running) || 0;
+                                const rawInvestUseOther = Number(d.invest_use_other) || 0;
+                                const rawInvestUseTotal = Number(d.invest_use_total) || 0;
+
+                                let effectiveInvestUseCapital = rawInvestUseCapital;
+                                if (approvedAmountNum > 0 && rawInvestPlanApplied > 0 && approvedAmountNum !== rawInvestPlanApplied) {
+                                    const diff = approvedAmountNum - rawInvestPlanApplied;
+                                    if (rawInvestUseCapital === rawInvestPlanApplied || rawInvestUseCapital === 0) {
+                                        effectiveInvestUseCapital = effectiveInvestPlanApplied;
+                                    } else {
+                                        effectiveInvestUseCapital = rawInvestUseCapital + diff;
+                                    }
+                                }
+                                const effectiveInvestUseTotal = (effectiveInvestUseCapital > 0 || rawInvestUseRunning > 0 || rawInvestUseOther > 0)
+                                    ? (effectiveInvestUseCapital + rawInvestUseRunning + rawInvestUseOther)
+                                    : rawInvestUseTotal;
+
+                                return (
+                                    <div className="mt-1">
+                                        <div><span>০৩. বিনিয়োগের পরিকল্পনা:</span></div>
+                                        <table className="w-full border-collapse border border-gray-600 text-[12px] mt-1">
+                                            <thead>
+                                                <tr className="bg-gray-50 font-semibold text-center">
+                                                    <td className="border border-gray-600 px-1 py-0.5 w-[30%]">বিনিয়োগের খাত</td>
+                                                    <td className="border border-gray-600 px-1 py-0.5 w-[15%]">টাকার পরিমাণ</td>
+                                                    <td className="border border-gray-600 px-1 py-0.5 w-[35%]">ঋণের ব্যবহার</td>
+                                                    <td className="border border-gray-600 px-1 py-0.5 w-[20%]">টাকার পরিমাণ</td>
+                                                </tr>
+                                            </thead>
+                                            <tbody>
+                                                <tr>
+                                                    <td className="border border-gray-600 px-1 py-0.5">সংস্থার অনুমোদনকৃত ঋণে ব্যয়ের পরিমাণ</td>
+                                                    <td className="border border-gray-600 px-1 py-0.5 text-center font-semibold">
+                                                        <span className="inline-block min-w-[80px]">{noDecimal(effectiveInvestPlanApplied)}</span>
+                                                    </td>
+                                                    <td className="border border-gray-600 px-1 py-0.5">
+                                                        <div>মূলধনী ব্যয়: (ক) যন্ত্রপাতি ক্রয় (খ) গৃহ নির্মাণ</div>
+                                                    </td>
+                                                    <td className="border border-gray-600 px-1 py-0.5 text-center">
+                                                        <span className="inline-block min-w-[80px]">{noDecimal(effectiveInvestUseCapital)}</span>
+                                                    </td>
+                                                </tr>
+                                                <tr>
+                                                    <td className="border border-gray-600 px-1 py-0.5">নিজস্ব তহবিল</td>
+                                                    <td className="border border-gray-600 px-1 py-0.5 text-center font-semibold">
+                                                        <span className="inline-block min-w-[80px]">{noDecimal(d.invest_plan_own_amount)}</span>
+                                                    </td>
+                                                    <td className="border border-gray-600 px-1 py-0.5">উদ্যোগ পরিচালনার ব্যয়</td>
+                                                    <td className="border border-gray-600 px-1 py-0.5 text-center">
+                                                        <span className="inline-block min-w-[80px]">{noDecimal(d.invest_use_running)}</span>
+                                                    </td>
+                                                </tr>
+                                                <tr>
+                                                    <td className="border border-gray-600 px-1 py-0.5">অন্যান্য উৎস (যদি থাকে)</td>
+                                                    <td className="border border-gray-600 px-1 py-0.5 text-center font-semibold">
+                                                        <span className="inline-block min-w-[80px]">{noDecimal(d.invest_plan_other_amount)}</span>
+                                                    </td>
+                                                    <td className="border border-gray-600 px-1 py-0.5">কাঁচামাল ক্রয়</td>
+                                                    <td className="border border-gray-600 px-1 py-0.5 text-center">
+                                                        <span className="inline-block min-w-[80px]">{noDecimal(d.invest_use_other)}</span>
+                                                    </td>
+                                                </tr>
+                                                <tr className="font-bold bg-gray-50">
+                                                    <td className="border border-gray-600 px-1 py-0.5 text-center">মোট</td>
+                                                    <td className="border border-gray-600 px-1 py-0.5 text-center">
+                                                        <span className="inline-block min-w-[80px]">{noDecimal(effectiveInvestPlanTotal)}</span>
+                                                    </td>
+                                                    <td className="border border-gray-600 px-1 py-0.5 text-center">মোট</td>
+                                                    <td className="border border-gray-600 px-1 py-0.5 text-center">
+                                                        <span className="inline-block min-w-[80px]">{noDecimal(effectiveInvestUseTotal)}</span>
+                                                    </td>
+                                                </tr>
+                                            </tbody>
+                                        </table>
+                                    </div>
+                                );
+                            })()}
                         </div>
                     </div>
                 </div>

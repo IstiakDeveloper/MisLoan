@@ -2008,6 +2008,27 @@ class ApprovalService
         $businessPlan['total_payable'] = (string) $totalAmount;
         $businessPlan['est_loan_charge'] = (string) $totalServiceCharge;
 
+        $ownAmount = (float) ($businessPlan['invest_plan_own_amount'] ?? 0);
+        $otherAmount = (float) ($businessPlan['invest_plan_other_amount'] ?? 0);
+        $oldApplied = (float) ($businessPlan['invest_plan_applied_amount'] ?? 0);
+
+        $businessPlan['invest_plan_applied_amount'] = (string) ((int) round($amount));
+        $businessPlan['invest_plan_total'] = (string) ((int) round($amount + $ownAmount + $otherAmount));
+
+        $useCap = (float) ($businessPlan['invest_use_capital'] ?? 0);
+        $useRun = (float) ($businessPlan['invest_use_running'] ?? 0);
+        $useOth = (float) ($businessPlan['invest_use_other'] ?? 0);
+
+        if ($useCap == $oldApplied || $useCap == 0) {
+            $businessPlan['invest_use_capital'] = (string) ((int) round($amount));
+            $useCap = (float) ((int) round($amount));
+        } elseif ($oldApplied > 0 && abs($amount - $oldApplied) > 1) {
+            $diff = $amount - $oldApplied;
+            $businessPlan['invest_use_capital'] = (string) ((int) round($useCap + $diff));
+            $useCap = (float) ((int) round($useCap + $diff));
+        }
+        $businessPlan['invest_use_total'] = (string) ((int) round($useCap + $useRun + $useOth));
+
         return $businessPlan;
     }
 }

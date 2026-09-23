@@ -837,9 +837,53 @@ export default function ApprovalForm({
             loanCategory,
         ],
     );
+    const liveInvestmentPlan = useMemo(() => {
+        if (!effectiveApprovedAmount) return {};
+        const oldApplied = Number(
+            data.invest_plan_applied_amount ||
+            data.capital_applied_loan ||
+            data.approval_amount_digits ||
+            requestedAmount ||
+            0
+        );
+        const ownAmount = Number(data.invest_plan_own_amount) || 0;
+        const otherAmount = Number(data.invest_plan_other_amount) || 0;
+        const planTotal = effectiveApprovedAmount + ownAmount + otherAmount;
+
+        const oldCap = Number(data.invest_use_capital) || 0;
+        const oldRun = Number(data.invest_use_running) || 0;
+        const oldOth = Number(data.invest_use_other) || 0;
+        let newCap = oldCap;
+        if (oldCap === oldApplied || oldCap === 0) {
+            newCap = effectiveApprovedAmount;
+        } else if (oldApplied > 0 && Math.abs(effectiveApprovedAmount - oldApplied) > 1) {
+            newCap = oldCap + (effectiveApprovedAmount - oldApplied);
+        }
+        const useTotal = newCap + oldRun + oldOth;
+
+        return {
+            invest_plan_applied_amount: String(effectiveApprovedAmount),
+            invest_plan_total: String(planTotal),
+            invest_use_capital: String(newCap),
+            invest_use_total: String(useTotal),
+        };
+    }, [
+        effectiveApprovedAmount,
+        data.invest_plan_applied_amount,
+        data.invest_plan_own_amount,
+        data.invest_plan_other_amount,
+        data.capital_applied_loan,
+        data.approval_amount_digits,
+        requestedAmount,
+        data.invest_use_capital,
+        data.invest_use_running,
+        data.invest_use_other,
+    ]);
+
     const previewData = withLiveMemberCode({
         ...data,
         ...liveInstallment,
+        ...liveInvestmentPlan,
         total_principal: String(effectiveApprovedAmount),
         est_loan_charge: liveInstallment.total_service_charge || data.est_loan_charge,
         member_code: member?.application_no || data.member_code,

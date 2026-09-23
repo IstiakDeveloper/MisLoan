@@ -501,6 +501,26 @@ class LoanFormVisibility
                 'total_service_charge' => (string) (int) round($serviceCharge),
                 'total_payable' => (string) (int) round($totalRepayable),
                 'est_loan_charge' => (string) (int) round($serviceCharge),
+                'invest_plan_applied_amount' => (string) (int) round($amount),
+                'invest_plan_total' => (string) (int) round($amount + (float) ($data['invest_plan_own_amount'] ?? 0) + (float) ($data['invest_plan_other_amount'] ?? 0)),
+                ...call_user_func(function () use ($data, $amount) {
+                    $oldApplied = (float) ($data['invest_plan_applied_amount'] ?? 0);
+                    $useCap = (float) ($data['invest_use_capital'] ?? 0);
+                    $useRun = (float) ($data['invest_use_running'] ?? 0);
+                    $useOth = (float) ($data['invest_use_other'] ?? 0);
+                    if ($useCap == $oldApplied || $useCap == 0) {
+                        $newCap = (float) ((int) round($amount));
+                    } elseif ($oldApplied > 0 && abs($amount - $oldApplied) > 1) {
+                        $newCap = (float) ((int) round($useCap + ($amount - $oldApplied)));
+                    } else {
+                        $newCap = $useCap;
+                    }
+
+                    return [
+                        'invest_use_capital' => (string) (int) round($newCap),
+                        'invest_use_total' => (string) (int) round($newCap + $useRun + $useOth),
+                    ];
+                }),
                 ...($purpose !== null && $purpose !== '' ? ['loan_purpose' => $purpose, 'proposed_project_name' => $purpose] : []),
             ]),
             default => $data,
