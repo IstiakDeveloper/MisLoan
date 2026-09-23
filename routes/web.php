@@ -3,6 +3,7 @@
 use App\Http\Controllers\ApprovalController;
 use App\Http\Controllers\ClusterHandoverController;
 use App\Http\Controllers\DashboardController;
+use App\Http\Controllers\HeadOffice\ApproverLoanApprovalReportController;
 use App\Http\Controllers\HeadOffice\CsoDutyRosterController;
 use App\Http\Controllers\HeadOffice\GuarantorInformantReportController;
 use App\Http\Controllers\HeadOffice\HoSendCutoffController;
@@ -453,6 +454,18 @@ Route::middleware(['auth', 'verified'])->group(function () {
         Route::get('reports/guarantor-informants', [GuarantorInformantReportController::class, 'index'])->name('reports.guarantor-informants');
         Route::get('reports/guarantor-informants/print', [GuarantorInformantReportController::class, 'print'])->name('reports.guarantor-informants.print');
         Route::get('reports/guarantor-informants/export', [GuarantorInformantReportController::class, 'exportExcel'])->name('reports.guarantor-informants.export');
+
+        // Approver Wise Loan Approval Report
+        Route::get('reports/approver-loan-approvals', [ApproverLoanApprovalReportController::class, 'index'])->name('reports.approver-loan-approvals');
+        Route::get('reports/approver-loan-approvals/print', [ApproverLoanApprovalReportController::class, 'print'])->name('reports.approver-loan-approvals.print');
+        Route::get('reports/approver-loan-approvals/export', [ApproverLoanApprovalReportController::class, 'exportExcel'])->name('reports.approver-loan-approvals.export');
+    });
+
+    // Friendly Top-Level Routes for Reports
+    Route::middleware('auth')->group(function () {
+        Route::get('reports/approver-loan-approvals', [ApproverLoanApprovalReportController::class, 'index'])->name('reports.approver-loan-approvals.direct');
+        Route::get('reports/approver-loan-approvals/print', [ApproverLoanApprovalReportController::class, 'print'])->name('reports.approver-loan-approvals.print.direct');
+        Route::get('reports/approver-loan-approvals/export', [ApproverLoanApprovalReportController::class, 'exportExcel'])->name('reports.approver-loan-approvals.export.direct');
     });
 
     // Team Based Approval Report - Head Office, SuperAdmin, ED

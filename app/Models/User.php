@@ -149,6 +149,14 @@ class User extends Authenticatable
     }
 
     /**
+     * Get all loan application approvals made by this user
+     */
+    public function loanApplicationApprovals(): HasMany
+    {
+        return $this->hasMany(LoanApplicationApproval::class, 'user_id');
+    }
+
+    /**
      * Get accessible branches based on user's access level
      */
     public function getAccessibleBranches()
