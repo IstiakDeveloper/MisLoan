@@ -273,7 +273,7 @@ class LoanApplicationController extends Controller
             );
         }
 
-        if ($this->isBranchUserRole($user)) {
+        if ($this->isBranchUserRole($user) || $this->isFieldOfficer($user)) {
             return $this->resolveApplicationForBranchUserFormSave(
                 $request,
                 $formId,
@@ -1561,7 +1561,11 @@ class LoanApplicationController extends Controller
 
         // Prefill missing forms from the previous cycle. Do not use empty
         // loan_agreement_data as a trigger — monthly / Agrosor loans use Form 5.
-        if ($application->isDraft() || empty($application->guarantor_info) || empty($application->nominee_info)) {
+        if (empty($application->business_plan) && (
+            $application->isDraft()
+            || empty($application->guarantor_info)
+            || empty($application->nominee_info)
+        )) {
             app(LoanApplicationCloneService::class)->cloneAndMerge($application);
             $application->refresh();
         }
@@ -3014,7 +3018,7 @@ class LoanApplicationController extends Controller
         if (! $request->boolean('legacy')) {
             $member = MemberAdmission::with(['samity', 'familyMembers', 'otherAssets', 'branch'])->find($member->id);
         }
-        if ($existingApplication && ($existingApplication->isDraft() || empty($existingApplication->business_plan))) {
+        if ($existingApplication && empty($existingApplication->business_plan)) {
             app(LoanApplicationCloneService::class)->cloneAndMerge($existingApplication);
             $existingApplication->refresh();
         }
