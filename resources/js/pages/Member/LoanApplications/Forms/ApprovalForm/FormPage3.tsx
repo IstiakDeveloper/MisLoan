@@ -61,12 +61,14 @@ export default function FormPage3({ data, setData, member, loanProduct, loanCate
             ? String(Math.max(0, Math.round(page1Income - otherIncome)))
             : '';
 
-    const loanAmount =
-        Number(data.invest_plan_applied_amount) ||
-        Number(data.capital_applied_loan) ||
-        Number(data.approval_amount_digits) ||
-        Number(requestedAmount) ||
-        0;
+    const approvedAmountNum = Number(data.final_approved_loan_amount_digits || 0);
+    const loanAmount = approvedAmountNum > 0
+        ? approvedAmountNum
+        : (Number(requestedAmount) ||
+            Number(data.invest_plan_applied_amount) ||
+            Number(data.capital_applied_loan) ||
+            Number(data.approval_amount_digits) ||
+            0);
 
     const liveSchedule = useMemo(
         () => calcInstallmentSchedule(loanAmount, loanProduct, durationMonths, loanCategory),

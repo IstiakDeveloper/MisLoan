@@ -239,8 +239,20 @@ export default function ApprovalForm({
         loanProduct,
         loanCategory,
     );
+    const initialApprovedAmount = Number(
+        existingApplication?.approved_amount ||
+        (savedData as any)?.final_approved_loan_amount_digits ||
+        0
+    );
+    const initialEffectiveAmount = initialApprovedAmount > 0
+        ? initialApprovedAmount
+        : (Number(requestedAmount) ||
+            Number((savedData as any)?.invest_plan_applied_amount) ||
+            Number((savedData as any)?.capital_applied_loan) ||
+            Number((savedData as any)?.approval_amount_digits) ||
+            0);
     const computedInstallment = installmentFormFields(
-        Number(requestedAmount) || 0,
+        initialEffectiveAmount,
         loanProduct,
         loanCategory,
     );
@@ -404,6 +416,12 @@ export default function ApprovalForm({
             capital_applied_loan: String(requestedAmount),
             approval_amount_digits: String(requestedAmount),
             approval_amount_words: numberToWordsBangla(Number(requestedAmount)),
+        } : {}),
+        ...(initialApprovedAmount > 0 ? {
+            final_approved_loan_amount_digits: String(initialApprovedAmount),
+            final_approved_loan_amount_words: numberToWordsBangla(initialApprovedAmount) + ' টাকা',
+            total_principal: String(initialApprovedAmount),
+            est_loan_charge: computedInstallment.total_service_charge || (savedData as any)?.est_loan_charge || '',
         } : {}),
         loan_duration_months: loanProduct?.duration_months
             ? String(loanProduct.duration_months)
@@ -783,22 +801,38 @@ export default function ApprovalForm({
         errors,
     };
 
+    const effectiveApprovedAmount = useMemo(() => {
+        const approved = Number(
+            data.final_approved_loan_amount_digits ||
+            existingApplication?.approved_amount ||
+            0
+        );
+        if (approved > 0) return approved;
+        return (
+            Number(requestedAmount) ||
+            Number(data.invest_plan_applied_amount) ||
+            Number(data.capital_applied_loan) ||
+            Number(data.approval_amount_digits) ||
+            0
+        );
+    }, [
+        data.final_approved_loan_amount_digits,
+        existingApplication?.approved_amount,
+        requestedAmount,
+        data.invest_plan_applied_amount,
+        data.capital_applied_loan,
+        data.approval_amount_digits,
+    ]);
+
     const liveInstallment = useMemo(
         () =>
             installmentFormFields(
-                Number(data.invest_plan_applied_amount) ||
-                    Number(data.capital_applied_loan) ||
-                    Number(data.approval_amount_digits) ||
-                    Number(requestedAmount) ||
-                    0,
+                effectiveApprovedAmount,
                 loanProduct,
                 loanCategory,
             ),
         [
-            data.invest_plan_applied_amount,
-            data.capital_applied_loan,
-            data.approval_amount_digits,
-            requestedAmount,
+            effectiveApprovedAmount,
             loanProduct,
             loanCategory,
         ],
@@ -806,6 +840,8 @@ export default function ApprovalForm({
     const previewData = withLiveMemberCode({
         ...data,
         ...liveInstallment,
+        total_principal: String(effectiveApprovedAmount),
+        est_loan_charge: liveInstallment.total_service_charge || data.est_loan_charge,
         member_code: member?.application_no || data.member_code,
     }, member);
 

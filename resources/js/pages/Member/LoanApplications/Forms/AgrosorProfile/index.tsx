@@ -448,9 +448,11 @@ export default function AgrosorProfile({
         );
         const months = getLoanDurationMonths(loanProduct, 6);
         const amount =
+            Number(previewData.final_approved_loan_amount_digits) ||
+            Number(existingApplication?.approved_amount) ||
+            Number(requestedAmount) ||
             Number(previewData.applied_loan_amount) ||
             Number(previewData.fund_applied_loan) ||
-            Number(requestedAmount) ||
             0;
         const schedule = calcInstallmentSchedule(
             amount,

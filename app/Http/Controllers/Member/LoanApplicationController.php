@@ -193,8 +193,9 @@ class LoanApplicationController extends Controller
             && $pendingApproval !== null
             && in_array($status, [LoanApplication::STATUS_SUBMITTED, LoanApplication::STATUS_UNDER_REVIEW]);
 
+        $bmCeiling = app(\App\Services\LoanWorkflowConfigService::class)->bmApprovalCeiling();
         $mustForward = (bool) $application->can_branch_approve
-            && $amount >= ApprovalService::BRANCH_MANAGER_LOAN_CEILING;
+            && $amount >= $bmCeiling;
         $application->must_forward_approval = $mustForward;
         $application->escalation_approvers = [];
         if ($mustForward && $withEscalationApprovers && $application->branch_id) {

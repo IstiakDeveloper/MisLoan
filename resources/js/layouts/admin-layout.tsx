@@ -38,6 +38,7 @@ import {
     CalendarDays,
     Clock,
     RotateCw,
+    SlidersHorizontal,
     Trash2,
     FileSpreadsheet,
 } from 'lucide-react';
@@ -84,7 +85,7 @@ interface AdminLayoutProps {
     children: ReactNode;
 }
 
-const SETUP_PATHS = ['/loan-categories', '/loan-products', '/savings-categories', '/savings-products', '/organizations', '/samities', '/member-categories', '/users', '/roles', '/head-office/cso-duty-roster', '/head-office/send-cutoff', '/head-office/recent-deletions'];
+const SETUP_PATHS = ['/loan-categories', '/loan-products', '/savings-categories', '/savings-products', '/organizations', '/samities', '/member-categories', '/users', '/roles', '/head-office/cso-duty-roster', '/head-office/send-cutoff', '/head-office/loan-workflow-settings', '/head-office/recent-deletions'];
 const REPORT_PATHS = [
     '/head-office/team-based-approvals/report',
     '/head-office/reports/guarantor-informants',
@@ -115,6 +116,7 @@ function getPageTitle(currentPath: string): string {
     if (currentPath.includes('/cycle-hub')) return 'Cycle Hub (সাইকেল হাব)';
     if (currentPath.includes('/cso-duty-roster')) return 'CSO Duty Roster';
     if (currentPath.includes('/send-cutoff')) return 'Send Deadline';
+    if (currentPath.includes('/loan-workflow-settings')) return 'Loan Workflow & Rules (ঋণ অনুমোদন ও ফরম)';
     if (currentPath.includes('/cluster-handover')) return 'Cluster Handover';
     if (currentPath.includes('/recent-deletions')) return 'Recent Deletions (মুছে ফেলা ডাটা)';
     if (currentPath.includes('/member-admissions') || currentPath.includes('/admission-members')) return 'Member Admissions';
@@ -325,6 +327,7 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
         { name: 'Recent Deletions (7 Days)', href: '/head-office/recent-deletions', icon: Trash2 },
         { name: 'CSO Duty Roster', href: '/head-office/cso-duty-roster', icon: CalendarDays },
         { name: 'Send Deadline', href: '/head-office/send-cutoff', icon: Clock },
+        { name: 'Loan Workflow & Rules', href: '/head-office/loan-workflow-settings', icon: SlidersHorizontal },
         { name: 'Loan Categories', href: '/loan-categories', icon: ListTree },
         { name: 'Loan Products', href: '/loan-products', icon: Coins },
         { name: 'Savings Categories', href: '/savings-categories', icon: ListTree },

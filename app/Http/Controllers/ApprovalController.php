@@ -110,6 +110,8 @@ class ApprovalController extends Controller
                 'level' => $approval->level,
                 'sequence' => $approval->sequence,
                 'block_list' => $member ? $this->blockListFieldsFromMember($member) : null,
+                'is_high_amount' => ! $loan->hasPendingAmountChange() && $approval->level === 'branch' && (float) ($loan->requested_amount ?? 0) >= app(\App\Services\LoanWorkflowConfigService::class)->bmApprovalCeiling(),
+                'bm_ceiling' => app(\App\Services\LoanWorkflowConfigService::class)->bmApprovalCeiling(),
             ];
             $forwardTargets = $this->approvalService->getForwardTargetsForLoanApproval($approval);
             $data['escalation_approvers'] = $forwardTargets
@@ -357,7 +359,7 @@ class ApprovalController extends Controller
         $loan = $loanApproval->loanApplication;
         $isBranch = $loanApproval->level === 'branch';
         $aboveCeiling = $isBranch
-            && (float) ($loan?->requested_amount ?? 0) >= ApprovalService::BRANCH_MANAGER_LOAN_CEILING;
+            && (float) ($loan?->requested_amount ?? 0) >= app(\App\Services\LoanWorkflowConfigService::class)->bmApprovalCeiling();
 
         try {
             $success = $this->approvalService->forwardLoanToApprover(

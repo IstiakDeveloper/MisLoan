@@ -72,15 +72,16 @@ export function loanDisburseShowUrl(applicationId: number): string {
 
 export const GUARANTOR_MIN_AMOUNT = 20000;
 
-export function disburseFormIds(amount: number): number[] {
-    return amount >= GUARANTOR_MIN_AMOUNT ? [2, 3] : [3];
+export function disburseFormIds(amount: number, guarantorMinAmount: number = GUARANTOR_MIN_AMOUNT): number[] {
+    return amount >= guarantorMinAmount ? [2, 3] : [3];
 }
 
 export function nextDisburseFormId(
     formSaved: Record<number, boolean | undefined>,
     amount: number,
+    guarantorMinAmount?: number,
 ): number | null {
-    for (const id of disburseFormIds(amount)) {
+    for (const id of disburseFormIds(amount, guarantorMinAmount)) {
         if (!formSaved[id]) {
             return id;
         }

@@ -656,12 +656,27 @@ class ApprovalService
             return $this->approveLoanAmountChange($approval, $comments, $approvedAmount);
         }
 
-        if ($approval->level === 'branch' && (float) ($approval->loanApplication->requested_amount ?? 0) >= self::BRANCH_MANAGER_LOAN_CEILING) {
-            throw new \Exception('ঋণের পরিমাণ ৭০,০০০ টাকা বা তার বেশি হওয়ায় সরাসরি অনুমোদন করা সম্ভব নয়। উচ্চতর অনুমোদনকারী নির্বাচন করে Forward করুন।');
+        $bmCeiling = $this->bmApprovalCeiling();
+        if ($approval->level === 'branch' && (float) ($approval->loanApplication->requested_amount ?? 0) >= $bmCeiling) {
+            $formattedCeiling = number_format($bmCeiling);
+            throw new \Exception("ঋণের পরিমাণ {$formattedCeiling} টাকা বা তার বেশি হওয়ায় সরাসরি অনুমোদন করা সম্ভব নয়। উচ্চতর অনুমোদনকারী নির্বাচন করে Forward করুন।");
         }
 
         if ($approvedAmount === null || $approvedAmount < 0) {
             throw new \Exception('চূড়ান্ত অনুমোদিত ঋণের পরিমাণ দিতে হবে।');
+        }
+
+        $approverRole = $approval->user?->role?->name;
+        $roleCeiling = null;
+        try {
+            $roleCeiling = app(\App\Services\LoanWorkflowConfigService::class)->roleCeiling($approverRole);
+        } catch (\Throwable) {
+            $roleCeiling = null;
+        }
+
+        if ($roleCeiling !== null && (float) $approvedAmount > $roleCeiling) {
+            $formattedCeiling = number_format($roleCeiling);
+            throw new \Exception("আপনার অনুমোদনের সর্বোচ্চ সীমা {$formattedCeiling} টাকা। এই ঋণের পরিমাণ সীমার চেয়ে বেশি হওয়ায় উচ্চতর কর্মকর্তার কাছে Forward করুন।");
         }
 
         $loan = $approval->loanApplication;
@@ -715,6 +730,7 @@ class ApprovalService
                 if ($comments !== null && trim($comments) !== '') {
                     $businessPlan['final_approver_comments'] = $comments;
                 }
+                $businessPlan = $this->syncScheduleIntoBusinessPlan($loan, $businessPlan, (float) $approvedAmount);
                 $businessPlan = $loan->mergeOfficialDatesIntoBusinessPlan(
                     $businessPlan,
                     now()->toDateString(),
@@ -855,6 +871,15 @@ class ApprovalService
     /** Branch manager direct-approve ceiling (BDT). Above this, BM must forward. */
     public const BRANCH_MANAGER_LOAN_CEILING = 70000;
 
+    public function bmApprovalCeiling(): float
+    {
+        try {
+            return app(\App\Services\LoanWorkflowConfigService::class)->bmApprovalCeiling();
+        } catch (\Throwable) {
+            return (float) self::BRANCH_MANAGER_LOAN_CEILING;
+        }
+    }
+
     /**
      * Forward a pending loan approval to another approver (Area / Zone / ADMF / DMF / ED).
      * Any of those roles may send to any other (including lower or same level), except themselves.
@@ -935,7 +960,7 @@ class ApprovalService
                 null,
             );
 
-            if ($isBranch && (float) ($loan->requested_amount ?? 0) >= self::BRANCH_MANAGER_LOAN_CEILING) {
+            if ($isBranch && (float) ($loan->requested_amount ?? 0) >= $this->bmApprovalCeiling()) {
                 $loan->loadMissing([
                     'memberAdmission.samity',
                     'loanProduct',
@@ -1686,6 +1711,7 @@ class ApprovalService
             $businessPlan = is_array($loan->business_plan) ? $loan->business_plan : [];
             $businessPlan['final_approved_loan_amount_digits'] = (string) $finalAmount;
             $businessPlan['final_approved_loan_amount_words'] = $words ? $words.' টাকা' : '';
+            $businessPlan = $this->syncScheduleIntoBusinessPlan($loan, $businessPlan, (float) $finalAmount);
 
             $loan->update([
                 'status' => LoanApplication::STATUS_PENDING_DISBURSEMENT,
@@ -1839,6 +1865,7 @@ class ApprovalService
             $words = NumberToWordsBangla::convert($approvedAmount);
             $businessPlan['final_approved_loan_amount_digits'] = (string) $approvedAmount;
             $businessPlan['final_approved_loan_amount_words'] = $words ? $words.' টাকা' : '';
+            $businessPlan = $this->syncScheduleIntoBusinessPlan($loan, $businessPlan, (float) $approvedAmount);
         }
 
         $loan->update(['business_plan' => $businessPlan]);
@@ -1883,5 +1910,104 @@ class ApprovalService
         }
 
         $loan->update(['business_plan' => $businessPlan]);
+    }
+
+    /**
+     * Calculate and sync repayment schedule into business_plan for a given approved amount.
+     */
+    public function syncScheduleIntoBusinessPlan(LoanApplication $loan, array $businessPlan, float $amount): array
+    {
+        $loan->loadMissing(['loanProduct', 'loanCategory']);
+        $product = $loan->loanProduct;
+        if (! $product || $amount <= 0) {
+            return $businessPlan;
+        }
+
+        $loanInstFactor = (float) ($product->loan_installment_factor ?? 0);
+        $intInstFactor = (float) ($product->interest_installment_factor ?? 0);
+        $instPerThousand = (float) ($product->installment_amount_per_thousand ?? 0);
+        $lastInstPerThousand = (float) ($product->last_installment_per_thousand ?? 0);
+        $installments = (int) ($product->number_of_installments ?? 0);
+        $durationMonths = (int) ($product->duration_months ?? 12);
+        if ($installments <= 0) {
+            $installments = $durationMonths ?: 12;
+        }
+
+        $installmentType = strtolower((string) ($product->installment_type ?? 'monthly'));
+        $isLump = $installmentType === 'lump_sum' || str_contains($installmentType, 'lump');
+
+        $scPerThousand = (float) ($product->service_charge_per_thousand ?? 0);
+        if ($scPerThousand > 0) {
+            $totalServiceCharge = (int) round(($amount / 1000) * $scPerThousand);
+        } elseif ((float) ($product->interest_rate ?? $product->service_charge ?? 0) > 0) {
+            $rate = (float) ($product->interest_rate ?? $product->service_charge ?? 0);
+            if ($isLump) {
+                $years = ($durationMonths > 0 ? $durationMonths : 12) / 12;
+                $totalServiceCharge = (int) round($amount * ($rate / 100) * $years);
+            } else {
+                $totalServiceCharge = (int) round($amount * ($rate / 100));
+            }
+        } elseif ($intInstFactor > 0 && $installments > 0) {
+            $totalServiceCharge = (int) round($amount * $intInstFactor * $installments);
+        } else {
+            $totalServiceCharge = 0;
+        }
+
+        $totalAmount = (int) round($amount + $totalServiceCharge);
+
+        if ($isLump || $installments <= 1) {
+            $installmentAmount = $totalAmount;
+            $lastInstallmentAmount = $totalAmount;
+            $principal = (int) round($amount);
+            $serviceCharge = $totalServiceCharge;
+            $lastPrincipal = (int) round($amount);
+            $lastServiceCharge = $totalServiceCharge;
+            $typeLabel = 'এককালীন';
+        } else {
+            $typeLabel = $installmentType === 'weekly' ? 'সাপ্তাহিক কিস্তি' : 'মাসিক কিস্তি';
+            if ($instPerThousand > 0) {
+                $installmentAmount = (int) round(($amount / 1000) * $instPerThousand);
+            } elseif ($loanInstFactor > 0 || $intInstFactor > 0) {
+                $pInst = $loanInstFactor > 0 ? ($amount * $loanInstFactor) : ($amount / $installments);
+                $iInst = $intInstFactor > 0 ? ($amount * $intInstFactor) : ($totalServiceCharge / $installments);
+                $installmentAmount = (int) round($pInst + $iInst);
+            } else {
+                $installmentAmount = (int) ceil($totalAmount / $installments);
+            }
+
+            if ($lastInstPerThousand > 0) {
+                $lastInstallmentAmount = (int) round(($amount / 1000) * $lastInstPerThousand);
+            } else {
+                $lastInstallmentAmount = $totalAmount - ($installmentAmount * ($installments - 1));
+                if ($lastInstallmentAmount <= 0) {
+                    $lastInstallmentAmount = $installmentAmount;
+                }
+            }
+
+            $principal = $loanInstFactor > 0
+                ? (int) round($amount * $loanInstFactor)
+                : (int) round($amount / $installments);
+            $serviceCharge = $intInstFactor > 0
+                ? (int) round($amount * $intInstFactor)
+                : (int) round($installmentAmount - $principal);
+
+            $lastPrincipal = (int) round($amount - $principal * ($installments - 1));
+            $lastServiceCharge = (int) round($lastInstallmentAmount - $lastPrincipal);
+        }
+
+        $businessPlan['installment_type'] = $typeLabel;
+        $businessPlan['installment_principal'] = (string) $principal;
+        $businessPlan['installment_service_charge'] = (string) $serviceCharge;
+        $businessPlan['installment_total'] = (string) $installmentAmount;
+        $businessPlan['number_of_installments'] = (string) $installments;
+        $businessPlan['last_installment_amount'] = (string) $lastInstallmentAmount;
+        $businessPlan['last_installment_principal'] = (string) $lastPrincipal;
+        $businessPlan['last_installment_service_charge'] = (string) $lastServiceCharge;
+        $businessPlan['total_principal'] = (string) ((int) round($amount));
+        $businessPlan['total_service_charge'] = (string) $totalServiceCharge;
+        $businessPlan['total_payable'] = (string) $totalAmount;
+        $businessPlan['est_loan_charge'] = (string) $totalServiceCharge;
+
+        return $businessPlan;
     }
 }

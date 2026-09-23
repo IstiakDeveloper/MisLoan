@@ -61,14 +61,63 @@ class LoanFormVisibility
             || str_contains($pName, 'শুফলন');
     }
 
-    /** Field Officer submit: weekly = Form 1, monthly = Form 5; Sufolon ≤99k = Form 1, >99k = Form 5 */
+    public static function sufolonAgreementMax(): float
+    {
+        try {
+            return app(\App\Services\LoanWorkflowConfigService::class)->sufolonAgreementMax();
+        } catch (\Throwable) {
+            return self::SUFOLON_AGREEMENT_MAX;
+        }
+    }
+
+    public static function guarantorMinAmount(): float
+    {
+        try {
+            return app(\App\Services\LoanWorkflowConfigService::class)->guarantorMinAmount();
+        } catch (\Throwable) {
+            return self::GUARANTOR_MIN_AMOUNT;
+        }
+    }
+
+    public static function bmCeiling(): float
+    {
+        try {
+            return app(\App\Services\LoanWorkflowConfigService::class)->bmApprovalCeiling();
+        } catch (\Throwable) {
+            return self::BM_CEILING;
+        }
+    }
+
+    public static function oneLakh(): float
+    {
+        try {
+            return app(\App\Services\LoanWorkflowConfigService::class)->monthlyInvestigationMax();
+        } catch (\Throwable) {
+            return self::ONE_LAKH;
+        }
+    }
+
+    /** Field Officer submit: weekly = Form 1, monthly = Form 5; Sufolon ≤ max = Form 1, > max = Form 5 */
     public static function foSubmitFormIds(?object $product, float $amount, ?object $category = null): array
     {
         if (self::isSufolon($product, $category)) {
-            return $amount <= self::SUFOLON_AGREEMENT_MAX ? [1] : [5];
+            return $amount <= self::sufolonAgreementMax() ? [1] : [5];
         }
 
-        return self::isWeekly($product) ? [1] : [5];
+        if (self::isWeekly($product)) {
+            try {
+                $weeklyMin = app(\App\Services\LoanWorkflowConfigService::class)->weeklyApprovalFormMinAmount();
+                if ($weeklyMin !== null && $weeklyMin > 0 && $amount >= $weeklyMin) {
+                    return [5];
+                }
+            } catch (\Throwable) {
+                // fall back to default
+            }
+
+            return [1];
+        }
+
+        return [5];
     }
 
     /** Guarantor Commitment (Form 2) is required only from this amount upward */
@@ -81,32 +130,32 @@ class LoanFormVisibility
     /** Branch Manager before approve/forward: Form 4 is required only when loan amount is within BM ceiling (< 70,000 TK) */
     public static function bmRequiredFormIds(?object $product, float $amount, ?object $category = null): array
     {
-        if ($amount >= self::BM_CEILING) {
+        if ($amount >= self::bmCeiling()) {
             return [];
         }
 
         if (self::isSufolon($product, $category)) {
-            if ($amount <= self::SUFOLON_AGREEMENT_MAX) {
+            if ($amount <= self::sufolonAgreementMax()) {
                 return [4];
             }
 
-            return $amount < self::ONE_LAKH ? [4] : [];
+            return $amount < self::oneLakh() ? [4] : [];
         }
 
         if (self::isWeekly($product)) {
             return [4];
         }
 
-        return $amount < self::ONE_LAKH ? [4] : [];
+        return $amount < self::oneLakh() ? [4] : [];
     }
 
     public static function requiresGuarantorForm(float $amount): bool
     {
-        return $amount >= self::GUARANTOR_MIN_AMOUNT;
+        return $amount >= self::guarantorMinAmount();
     }
 
     /**
-     * Branch User before disburse. Form 2 (জামিনদার অঙ্গীকার) only at 20,000 TK or more.
+     * Branch User before disburse. Form 2 (জামিনদার অঙ্গীকার) only at configured guarantor min amount or more.
      *
      * @return int[]
      */
@@ -375,6 +424,29 @@ class LoanFormVisibility
         $amountWords = $wordsAmount !== '' ? $wordsAmount : '';
         $totalWords = $wordsTotal !== '' ? $wordsTotal : '';
 
+        $loanInstFactor = (float) ($product->loan_installment_factor ?? 0);
+        $intInstFactor = (float) ($product->interest_installment_factor ?? 0);
+        $installmentTypeStr = strtolower((string) ($product->installment_type ?? 'monthly'));
+        $isLumpProduct = $installmentTypeStr === 'lump_sum' || str_contains($installmentTypeStr, 'lump');
+        $formTypeLabel = $isLumpProduct || $installments <= 1 ? 'এককালীন' : ($installmentTypeStr === 'weekly' ? 'সাপ্তাহিক কিস্তি' : 'মাসিক কিস্তি');
+
+        if ($isLumpProduct || $installments <= 1) {
+            $fPrin = (int) round($amount);
+            $fSc = (int) round($serviceCharge);
+            $fLastPrin = $fPrin;
+            $fLastInst = (int) round($totalRepayable);
+            $fLastSc = $fSc;
+        } else {
+            $fPrin = $loanInstFactor > 0 ? (int) round($amount * $loanInstFactor) : (int) round($amount / max(1, $installments));
+            $fSc = $intInstFactor > 0 ? (int) round($amount * $intInstFactor) : (int) round($installmentAmount - $fPrin);
+            $fLastPrin = (int) round($amount - $fPrin * ($installments - 1));
+            $fLastInst = (int) round($totalRepayable - (int) round($installmentAmount) * ($installments - 1));
+            if ($fLastInst <= 0) {
+                $fLastInst = (int) round($installmentAmount);
+            }
+            $fLastSc = (int) round($fLastInst - $fLastPrin);
+        }
+
         return match ($formId) {
             1 => array_merge($data, [
                 'loan_amount' => $amount,
@@ -405,7 +477,7 @@ class LoanFormVisibility
                 'recommended_loan_amount' => $amount,
             ]),
             5 => array_merge($data, [
-                'form_variant' => (self::isSufolon($product, $category) && $amount > self::SUFOLON_AGREEMENT_MAX)
+                'form_variant' => (self::isSufolon($product, $category) && $amount > self::sufolonAgreementMax())
                     ? 'agrosor_profile'
                     : 'approval_form',
                 'applied_loan_amount' => (string) $amount,
@@ -417,6 +489,18 @@ class LoanFormVisibility
                 'loan_duration_months' => (string) $termMonths,
                 'loan_duration_label' => $termMonths.' মাস',
                 'service_charge_rate' => $interestRate > 0 ? (string) $interestRate : ($data['service_charge_rate'] ?? ''),
+                'installment_type' => $formTypeLabel,
+                'installment_principal' => (string) $fPrin,
+                'installment_service_charge' => (string) $fSc,
+                'installment_total' => (string) (int) round($installmentAmount),
+                'number_of_installments' => (string) $installments,
+                'last_installment_amount' => (string) $fLastInst,
+                'last_installment_principal' => (string) $fLastPrin,
+                'last_installment_service_charge' => (string) $fLastSc,
+                'total_principal' => (string) (int) round($amount),
+                'total_service_charge' => (string) (int) round($serviceCharge),
+                'total_payable' => (string) (int) round($totalRepayable),
+                'est_loan_charge' => (string) (int) round($serviceCharge),
                 ...($purpose !== null && $purpose !== '' ? ['loan_purpose' => $purpose, 'proposed_project_name' => $purpose] : []),
             ]),
             default => $data,

@@ -79,6 +79,8 @@ interface LoanApproval {
     escalation_approvers?: EscalationApprover[];
     can_forward?: boolean;
     block_list?: BlockListFields;
+    is_high_amount?: boolean;
+    bm_ceiling?: number;
 }
 
 interface BlockListFields {
@@ -187,9 +189,13 @@ function loanMemberCode(la: LoanApproval): string {
 }
 
 function loanIsHighAmount(la: LoanApproval): boolean {
+    if (typeof la.is_high_amount === 'boolean') {
+        return la.is_high_amount;
+    }
+    const ceiling = la.bm_ceiling ?? 70000;
     return !la.is_amount_change_approval
         && la.level === 'branch'
-        && Number(la.requested_amount || 0) >= 70000;
+        && Number(la.requested_amount || 0) >= ceiling;
 }
 
 function loanCanForwardFurther(la: LoanApproval): boolean {
@@ -936,8 +942,10 @@ export default function Index({
     const handleLoanAction = (loanApproval: LoanApproval, actionType: 'approve' | 'reject' | 'forward') => {
         const isBranch = loanApproval.level === 'branch';
         const amount = Number(loanApproval.requested_amount || 0);
+        const ceiling = loanApproval.bm_ceiling ?? 70000;
+        const isHigh = loanApproval.is_high_amount ?? (amount >= ceiling);
 
-        if (actionType === 'approve' && isBranch && amount >= 70000 && !loanApproval.is_amount_change_approval) {
+        if (actionType === 'approve' && isBranch && isHigh && !loanApproval.is_amount_change_approval) {
             setSelectedLoanApproval(loanApproval);
             setLoanAction('forward');
             setLoanComments('');

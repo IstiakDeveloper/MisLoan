@@ -399,6 +399,9 @@ class HandleInertiaRequests extends Middleware
             'hoSendCutoff' => $request->user()
                 ? app(HoSendCutoffService::class)->toSharedArray()
                 : null,
+            'loanWorkflowConfig' => $request->user()
+                ? app(\App\Services\LoanWorkflowConfigService::class)->toSharedArray()
+                : null,
         ]);
     }
 }

@@ -637,12 +637,33 @@ function renderPage3(d: any) {
         : '১/১.৫/২';
     const yearsLabel = years > 0 ? bn(yearsEng) : yearsEng;
 
+    const approvedAmountNum = Number(d.final_approved_loan_amount_digits || d.approved_amount || 0);
+    const rawTotalPrincipal = Number(d.total_principal)
+        || Number(d.invest_plan_applied_amount)
+        || Number(d.capital_applied_loan)
+        || Number(d.approval_amount_digits)
+        || 0;
+
+    const scaleFactor = (approvedAmountNum > 0 && rawTotalPrincipal > 0 && Math.abs(approvedAmountNum - rawTotalPrincipal) > 1)
+        ? (approvedAmountNum / rawTotalPrincipal)
+        : 1;
+
+    const total_principal = approvedAmountNum > 0 ? approvedAmountNum : rawTotalPrincipal;
+    const inst_prin = Math.round((Number(d.installment_principal) || 0) * (scaleFactor !== 1 ? scaleFactor : 1));
+    const inst_sc = Math.round((Number(d.installment_service_charge) || 0) * (scaleFactor !== 1 ? scaleFactor : 1));
+    const inst_total = Math.round((Number(d.installment_total) || (Number(d.installment_principal) || 0) + (Number(d.installment_service_charge) || 0)) * (scaleFactor !== 1 ? scaleFactor : 1));
+    const loan_dur = Number(d.loan_duration_months) || 0;
+    const installment_count = Number(d.number_of_installments) || loan_dur;
+    const last_inst = Math.round((Number(d.last_installment_amount) || inst_total) * (scaleFactor !== 1 ? scaleFactor : 1));
+    const total_sc = Math.round((Number(d.total_service_charge) || Math.max(0, (Number(d.total_payable) || 0) - rawTotalPrincipal) || ((Number(d.installment_service_charge) || 0) * installment_count)) * (scaleFactor !== 1 ? scaleFactor : 1));
+    const total_payable = total_principal + total_sc;
+
     // Calculations for Income/Expense
     const exp_emp = Number(d.est_emp_salary) || 0;
     const exp_trans = Number(d.est_transport) || 0;
     const exp_bills = Number(d.est_bills) || 0;
     const exp_rent = Number(d.est_rent) || 0;
-    const exp_loan = Number(d.est_loan_charge) || 0;
+    const exp_loan = total_sc || Math.round((Number(d.est_loan_charge) || 0) * (scaleFactor !== 1 ? scaleFactor : 1));
     const exp_o1 = Number(d.est_other_exp_1_amount) || 0;
     const exp_o2 = Number(d.est_other_exp_2_amount) || 0;
     const exp_o3 = Number(d.est_other_exp_3_amount) || 0;
@@ -655,26 +676,6 @@ function renderPage3(d: any) {
     const net_profit = total_inc - total_exp;
     const exp_percent = total_inc > 0 ? ((total_exp / total_inc) * 100).toFixed(2) : '0.00';
     const profit_percent = total_inc > 0 ? ((net_profit / total_inc) * 100).toFixed(2) : '0.00';
-
-    const inst_prin = Number(d.installment_principal) || 0;
-    const inst_sc = Number(d.installment_service_charge) || 0;
-    const inst_total = Number(d.installment_total) || (inst_prin + inst_sc);
-    const loan_dur = Number(d.loan_duration_months) || 0;
-    const installment_count = Number(d.number_of_installments) || loan_dur;
-    const last_inst = Number(d.last_installment_amount) || inst_total;
-    const total_principal = Number(d.total_principal)
-        || Number(d.invest_plan_applied_amount)
-        || Number(d.capital_applied_loan)
-        || Number(d.approval_amount_digits)
-        || 0;
-    const total_sc = Number(d.total_service_charge)
-        || Math.max(0, (Number(d.total_payable) || 0) - total_principal)
-        || (inst_sc * installment_count);
-    const total_payable = Number(d.total_payable)
-        || (total_principal + total_sc)
-        || (installment_count > 1
-            ? inst_total * (installment_count - 1) + last_inst
-            : inst_total);
 
     return (
         <div
@@ -716,7 +717,7 @@ function renderPage3(d: any) {
                                         {bn(d.est_transport)}<br />
                                         {bn(d.est_bills)}<br />
                                         {bn(d.est_rent)}<br />
-                                        {bn(d.est_loan_charge)}<br />
+                                        {bn(exp_loan)}<br />
                                         {bn(d.est_other_exp_1_amount)}<br />
                                         {bn(d.est_other_exp_2_amount)}<br />
                                         {bn(d.est_other_exp_3_amount)}

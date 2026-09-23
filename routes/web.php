@@ -7,6 +7,7 @@ use App\Http\Controllers\HeadOffice\ApproverLoanApprovalReportController;
 use App\Http\Controllers\HeadOffice\CsoDutyRosterController;
 use App\Http\Controllers\HeadOffice\GuarantorInformantReportController;
 use App\Http\Controllers\HeadOffice\HoSendCutoffController;
+use App\Http\Controllers\HeadOffice\LoanWorkflowConfigController;
 use App\Http\Controllers\HeadOfficeAdmissionController;
 use App\Http\Controllers\HeadOfficeLoanController;
 use App\Http\Controllers\HeadOfficeRecentDeletionController;
@@ -449,6 +450,11 @@ Route::middleware(['auth', 'verified'])->group(function () {
         // Branch send-to-HO daily cutoff (default 5:00 PM, configurable)
         Route::get('send-cutoff', [HoSendCutoffController::class, 'index'])->name('send-cutoff');
         Route::put('send-cutoff', [HoSendCutoffController::class, 'update'])->name('send-cutoff.update');
+
+        // Dynamic loan approval ceilings and form rules configuration
+        Route::get('loan-workflow-settings', [LoanWorkflowConfigController::class, 'index'])->name('loan-workflow-settings');
+        Route::put('loan-workflow-settings', [LoanWorkflowConfigController::class, 'update'])->name('loan-workflow-settings.update');
+        Route::post('loan-workflow-settings/reset', [LoanWorkflowConfigController::class, 'reset'])->name('loan-workflow-settings.reset');
 
         // 3 Lakh+ Loan Guarantor & Informant Report
         Route::get('reports/guarantor-informants', [GuarantorInformantReportController::class, 'index'])->name('reports.guarantor-informants');
