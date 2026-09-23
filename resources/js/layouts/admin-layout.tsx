@@ -238,7 +238,7 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
     const showPendingApprovalsNav = !isHeadOfficeRole && !isSuperAdmin && !isCsoRole;
     const canViewTeamBasedReport = auth.user.has_all_access || isSuperAdmin || isHeadOfficeRole || isEdRole;
     const canViewGuarantorReport = auth.user.has_all_access || isSuperAdmin || isHeadOfficeRole || isCsoRole || isEdRole;
-    const canViewApproverLoanReport = auth.user.has_all_access || isSuperAdmin || isHeadOfficeRole || isCsoRole || isEdRole || isApproverRole || isBranchRole;
+    const canViewApproverLoanReport = auth.user.has_all_access || isSuperAdmin || isHeadOfficeRole || isCsoRole || isEdRole || isTeamApproverRole || isBranchRole;
     const showConfigurationSection = (!isBranchRole && !isTeamApproverRole && !isCsoRole) || isEdRole;
     const { canInstall, promptInstall, isInstalled, isStandalone, platform } = usePwaInstallPrompt();
 
