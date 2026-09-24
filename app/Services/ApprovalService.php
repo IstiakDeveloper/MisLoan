@@ -1250,6 +1250,29 @@ class ApprovalService
             'status' => 'approved',
             'approved_total_amount' => $approvedAmount,
         ]);
+
+        // If there are other pending sheets for the same loan (e.g. earlier forward attempts), close them too
+        $otherSheets = TeamBasedApproval::where('loan_application_id', $loan->id)
+            ->where('id', '!=', $teamBased->id)
+            ->where('status', 'pending')
+            ->get();
+
+        foreach ($otherSheets as $other) {
+            $other->reviews()
+                ->whereIn('status', ['pending', 'waiting', 'forwarded'])
+                ->update([
+                    'status' => 'approved',
+                    'comments' => DB::raw("COALESCE(comments, 'উচ্চতর কর্মকর্তা কর্তৃক ঋণ অনুমোদিত হওয়ায় স্বয়ংক্রিয়ভাবে অনুমোদিত')"),
+                    'approved_amount' => $approvedAmount,
+                    'decided_at' => $now,
+                ]);
+
+            $other->items()->update(['approved_amount' => $approvedAmount]);
+            $other->update([
+                'status' => 'approved',
+                'approved_total_amount' => $approvedAmount,
+            ]);
+        }
     }
 
     /**
@@ -1359,7 +1382,21 @@ class ApprovalService
      */
     private function findTeamBasedApprovalForLoan(LoanApplication $loan, User $approver): ?TeamBasedApproval
     {
-        $byLoanId = TeamBasedApproval::where('loan_application_id', $loan->id)->first();
+        // 1. Prefer a sheet linked to this loan that actually has a review for this approver
+        $matching = TeamBasedApproval::where('loan_application_id', $loan->id)
+            ->whereHas('reviews', fn ($q) => $q->where('user_id', $approver->id))
+            ->latest('id')
+            ->first();
+
+        if ($matching) {
+            return $matching;
+        }
+
+        // 2. Otherwise latest sheet for this loan
+        $byLoanId = TeamBasedApproval::where('loan_application_id', $loan->id)
+            ->latest('id')
+            ->first();
+
         if ($byLoanId) {
             return $byLoanId;
         }
@@ -1371,6 +1408,27 @@ class ApprovalService
         }
 
         $proposedAmount = TeamBasedApprovalItem::asWholeNumber($loan->requested_amount);
+
+        // 3. Prefer matching review in legacy unlinked sheets
+        $legacyMatching = TeamBasedApproval::query()
+            ->where('branch_id', $loan->branch_id)
+            ->whereNull('loan_application_id')
+            ->where('status', 'pending')
+            ->whereHas('items', function ($q) use ($memberCode, $proposedAmount) {
+                $q->where('member_code', $memberCode)
+                    ->where('proposed_loan_amount', $proposedAmount);
+            })
+            ->whereHas('reviews', function ($q) use ($approver) {
+                $q->where('user_id', $approver->id)->whereIn('status', ['pending', 'waiting']);
+            })
+            ->latest('id')
+            ->first();
+
+        if ($legacyMatching) {
+            $legacyMatching->update(['loan_application_id' => $loan->id]);
+
+            return $legacyMatching;
+        }
 
         $legacy = TeamBasedApproval::query()
             ->where('branch_id', $loan->branch_id)
