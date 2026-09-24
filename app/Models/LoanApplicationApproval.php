@@ -38,7 +38,12 @@ class LoanApplicationApproval extends Model
             ->where('sequence', '<', $this->sequence)
             ->get();
 
-        if ($previousApprovals->count() > 0 && $previousApprovals->where('status', 'approved')->count() !== $previousApprovals->count()) {
+        // Treat both 'approved' and 'rejected' as a completed (decided) step.
+        // This handles the case where an amount-change was rejected and a new one was re-requested —
+        // the rejected row sits before the new pending row and must not block it.
+        $decidedCount = $previousApprovals->whereIn('status', ['approved', 'rejected'])->count();
+
+        if ($previousApprovals->count() > 0 && $decidedCount !== $previousApprovals->count()) {
             return false;
         }
 
