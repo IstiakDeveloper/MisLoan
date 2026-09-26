@@ -1,6 +1,6 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import FormSection from '@/components/MemberAdmission/FormSection';
-import { Briefcase } from 'lucide-react';
+import { Briefcase, Lock } from 'lucide-react';
 
 const HOUSE_TYPE_OPTIONS = [
     'ছনের ঘর/মাটির ঘর',
@@ -30,6 +30,23 @@ export default function EconomicPropertySection({
         Number(data.cultivable_land_amount || 0) + Number(data.non_cultivable_land_amount || 0)
     ).toFixed(2);
 
+    const totalLandValue =
+        (Number(data.cultivable_land_value) || 0) +
+        (Number(data.non_cultivable_land_value) || 0);
+
+    const totalOtherAssetsValue = (data.other_assets || []).reduce(
+        (sum: number, asset: any) => sum + (Number(asset?.estimated_value) || 0),
+        0
+    );
+
+    const computedTotalAssetValue = totalLandValue + totalOtherAssetsValue;
+
+    useEffect(() => {
+        if (Number(data.total_asset_value) !== computedTotalAssetValue) {
+            setData('total_asset_value', computedTotalAssetValue);
+        }
+    }, [computedTotalAssetValue, data.total_asset_value, setData]);
+
     const houseType = data.house_type || '';
     const isCustomHouseType =
         houseType !== '' && !(HOUSE_TYPE_OPTIONS as readonly string[]).includes(houseType);
@@ -45,16 +62,22 @@ export default function EconomicPropertySection({
             <div className="space-y-4">
                 <div className="grid grid-cols-1 gap-2 sm:gap-3 md:grid-cols-2">
                     <div>
-                        <label className="mb-0.5 block text-xs font-semibold text-gray-700">
-                            ১৭. মোট সম্পদের পরিমাণ (Total Asset Value)
+                        <label className="mb-0.5 block text-xs font-semibold text-gray-700 flex items-center justify-between">
+                            <span>১৭. মোট সম্পদের পরিমাণ (Total Asset Value)</span>
+                            <span className="flex items-center gap-1 text-[11px] text-gray-500 font-normal">
+                                <Lock className="w-3 h-3 text-gray-400" /> স্বয়ংক্রিয় (লক করা)
+                            </span>
                         </label>
                         <input
                             type="number"
                             placeholder="0"
-                            value={toNumVal(data.total_asset_value)}
-                            onChange={(e) => setData('total_asset_value', toNumChange(e.target.value))}
-                            className={inputClass}
+                            value={toNumVal(computedTotalAssetValue)}
+                            readOnly
+                            className="w-full rounded-xl border border-gray-300 bg-gray-100 px-3 py-2 text-xs md:text-sm text-gray-700 font-bold cursor-not-allowed"
                         />
+                        <span className="text-[10px] text-gray-500 mt-1 block">
+                            ১৯ এর মোট জমির মূল্য ({totalLandValue}) + অস্থায়ী সম্পদের মোট মূল্য ({totalOtherAssetsValue})
+                        </span>
                     </div>
 
                     <div>

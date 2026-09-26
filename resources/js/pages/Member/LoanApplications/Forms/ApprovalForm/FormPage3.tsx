@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo } from 'react';
+import React, { useEffect, useMemo, useRef } from 'react';
 import { FormPageProps } from './Types';
 import { Calculator, Calendar, ShieldCheck, UserCheck, DollarSign } from 'lucide-react';
 import { calcInstallmentSchedule, getAnnualServiceChargeRate, getReducingServiceChargeRate } from '@/utils/loanInterest';
@@ -104,38 +104,88 @@ export default function FormPage3({ data, setData, member, loanProduct, loanCate
         : (data.total_service_charge || '');
     const totalPayable = liveSchedule ? String(liveSchedule.totalAmount) : (data.total_payable || '');
 
+    const liveServiceChargeRate = useMemo(() => {
+        return (
+            getReducingServiceChargeRate(
+                null,
+                data.applied_service_charge_rate || loanProduct?.service_charge || loanProduct?.interest_rate,
+                durationMonths || data.loan_duration_months,
+            ) ||
+            getReducingServiceChargeRate(
+                loanProduct,
+                data.applied_service_charge_rate,
+                durationMonths || data.loan_duration_months,
+            ) ||
+            data.applied_service_charge_rate ||
+            ''
+        );
+    }, [
+        loanProduct,
+        data.applied_service_charge_rate,
+        durationMonths,
+        data.loan_duration_months,
+    ]);
+
     const page3ExpenseTotal =
         (Number(data.est_emp_salary) || 0) +
         (Number(data.est_transport) || 0) +
         (Number(data.est_bills) || 0) +
         (Number(data.est_rent) || 0) +
         (Number(data.est_loan_charge) || 0) +
-        (Number(data.est_other_exp_1_amount) || 0) +
-        (Number(data.est_other_exp_2_amount) || 0) +
-        (Number(data.est_other_exp_3_amount) || 0);
+        (Number(data.est_other_exp_1_amount ?? data.est_other_exp_1_cost) || 0) +
+        (Number(data.est_other_exp_2_amount ?? data.est_other_exp_2_cost) || 0) +
+        (Number(data.est_other_exp_3_amount ?? data.est_other_exp_3_cost) || 0);
     const page3IncomeTotal =
-        (Number(computedMainIncome || data.est_main_income_amount) || 0) + otherIncome;
+        (Number(data.est_main_income_amount ?? computedMainIncome) || 0) + otherIncome;
     const page3Net = page3IncomeTotal - page3ExpenseTotal;
-    const missingPage1Income = !hasPage1Income;
-    const missingPage1Expense = !hasPage1Expense;
-    const incomeMismatch = hasPage1Income && page3IncomeTotal !== page1Income;
-    const expenseMismatch = hasPage1Expense && page3ExpenseTotal !== page1Expense;
-    const netMismatch = hasPage1Income && hasPage1Expense && page1Net > 0 && page3Net !== page1Net;
+    const missingPage1Income = !hasPage1Income && page3IncomeTotal <= 0;
 
-    // প্রধান আয়ের খাত = প্রকল্পের নাম
+    // প্রধান আয়ের খাত = প্রকল্পের নাম (যদি আগে থেকে পূরণ না থাকে)
     useEffect(() => {
-        if (projectName && String(data.est_main_income_desc || '') !== String(projectName)) {
+        if (projectName && !data.est_main_income_desc && !data.est_main_income_source) {
             setData('est_main_income_desc', projectName);
             setData('est_main_income_source', projectName);
         }
-    }, [projectName]);
+    }, [projectName, data.est_main_income_desc, data.est_main_income_source]);
 
-    // সম্ভাব্য আয় = পৃষ্ঠা ১-এর সম্ভাব্য আয় (অন্যান্য আয় বাদ)
+    // সম্ভাব্য আয় = পৃষ্ঠা ১-এর সম্ভাব্য আয় (শুধুমাত্র প্রথম লোডে যদি প্রধান আয় পূর্বে নির্ধারণ করা না থাকে)
+    const initializedIncomeRef = useRef(false);
     useEffect(() => {
-        if (computedMainIncome !== '' && String(data.est_main_income_amount || '') !== computedMainIncome) {
-            setData('est_main_income_amount', computedMainIncome);
+        if (!initializedIncomeRef.current) {
+            if ((data.est_main_income_amount === '' || data.est_main_income_amount == null) && computedMainIncome !== '') {
+                initializedIncomeRef.current = true;
+                setData('est_main_income_amount', computedMainIncome);
+            } else if (data.est_main_income_amount !== '' && data.est_main_income_amount != null) {
+                initializedIncomeRef.current = true;
+            }
         }
-    }, [computedMainIncome]);
+    }, [computedMainIncome, data.est_main_income_amount]);
+
+    // যদি পৃষ্ঠা ৩-এ প্রধান আয় বা অন্যান্য আয় এডিট করা হয়, তাহলে পৃষ্ঠা ১-এর সম্ভাব্য আয় স্বয়ংক্রিয়ভাবে আপডেট হবে
+    useEffect(() => {
+        if (data.est_main_income_amount !== '' && data.est_main_income_amount != null) {
+            const totalInc = (Number(data.est_main_income_amount) || 0) + otherIncome;
+            if (totalInc > 0 && String(data.project_income_1_2_yr || '') !== String(totalInc)) {
+                setData('project_income_1_2_yr', String(totalInc));
+            }
+        }
+    }, [data.est_main_income_amount, otherIncome, data.project_income_1_2_yr]);
+
+    // পৃষ্ঠা ১-এর সম্ভাব্য ব্যয় এবং নিট লাভ স্বয়ংক্রিয়ভাবে আপডেট
+    useEffect(() => {
+        const expStr = String(page3ExpenseTotal);
+        if (String(data.project_expense_1_2_yr || '') !== expStr) {
+            setData('project_expense_1_2_yr', expStr);
+        }
+    }, [page3ExpenseTotal, data.project_expense_1_2_yr]);
+
+    useEffect(() => {
+        const inc = Number(data.project_income_1_2_yr) || 0;
+        const netStr = String(inc - page3ExpenseTotal);
+        if (String(data.annual_net_profit || '') !== netStr) {
+            setData('annual_net_profit', netStr);
+        }
+    }, [data.project_income_1_2_yr, page3ExpenseTotal, data.annual_net_profit]);
 
     // মেয়াদ + সার্ভিস চার্জ হার + কিস্তি তফসিল (আসল / সার্ভিস চার্জ / মোট)
     useEffect(() => {
@@ -143,13 +193,9 @@ export default function FormPage3({ data, setData, member, loanProduct, loanCate
         if (months && String(data.loan_duration_months || '') !== String(months)) {
             setData('loan_duration_months', String(months));
         }
-        const rate = getReducingServiceChargeRate(
-            loanProduct,
-            data.applied_service_charge_rate,
-            months || data.loan_duration_months,
-        );
-        if (rate && String(data.applied_service_charge_rate || '') !== rate) {
-            setData('applied_service_charge_rate', rate);
+        const rate = liveServiceChargeRate;
+        if (rate && String(data.applied_service_charge_rate || '') !== String(rate)) {
+            setData('applied_service_charge_rate', String(rate));
         }
 
         if (!liveSchedule) return;
@@ -256,25 +302,82 @@ export default function FormPage3({ data, setData, member, loanProduct, loanCate
                                 <input type="number" placeholder="টাকা" value={data.est_loan_charge || ''} className={readOnlyClass} readOnly />
                             </div>
                             <div className="flex justify-between items-center gap-2">
-                                <input type="text" placeholder="অন্যান্য খাত ১" value={data.est_other_exp_1_desc || ''} onChange={(e) => setData('est_other_exp_1_desc', e.target.value)} className={inputClass} />
-                                <input type="number" placeholder="টাকা" value={data.est_other_exp_1_amount || ''} onChange={(e) => setData('est_other_exp_1_amount', e.target.value)} className={inputClass} />
+                                <input
+                                    type="text"
+                                    placeholder="অন্যান্য খাত ১"
+                                    value={data.est_other_exp_1_desc || data.est_other_exp_1_name || ''}
+                                    onChange={(e) => {
+                                        setData('est_other_exp_1_desc', e.target.value);
+                                        setData('est_other_exp_1_name', e.target.value);
+                                    }}
+                                    className={inputClass}
+                                />
+                                <input
+                                    type="number"
+                                    placeholder="টাকা"
+                                    value={data.est_other_exp_1_amount ?? data.est_other_exp_1_cost ?? ''}
+                                    onChange={(e) => {
+                                        const v = e.target.value;
+                                        setData('est_other_exp_1_amount', v);
+                                        setData('est_other_exp_1_cost', v);
+                                    }}
+                                    className={inputClass}
+                                />
                             </div>
                             <div className="flex justify-between items-center gap-2">
-                                <input type="text" placeholder="অন্যান্য খাত ২" value={data.est_other_exp_2_desc || ''} onChange={(e) => setData('est_other_exp_2_desc', e.target.value)} className={inputClass} />
-                                <input type="number" placeholder="টাকা" value={data.est_other_exp_2_amount || ''} onChange={(e) => setData('est_other_exp_2_amount', e.target.value)} className={inputClass} />
+                                <input
+                                    type="text"
+                                    placeholder="অন্যান্য খাত ২"
+                                    value={data.est_other_exp_2_desc || data.est_other_exp_2_name || ''}
+                                    onChange={(e) => {
+                                        setData('est_other_exp_2_desc', e.target.value);
+                                        setData('est_other_exp_2_name', e.target.value);
+                                    }}
+                                    className={inputClass}
+                                />
+                                <input
+                                    type="number"
+                                    placeholder="টাকা"
+                                    value={data.est_other_exp_2_amount ?? data.est_other_exp_2_cost ?? ''}
+                                    onChange={(e) => {
+                                        const v = e.target.value;
+                                        setData('est_other_exp_2_amount', v);
+                                        setData('est_other_exp_2_cost', v);
+                                    }}
+                                    className={inputClass}
+                                />
                             </div>
                             <div className="flex justify-between items-center gap-2">
-                                <input type="text" placeholder="অন্যান্য খাত ৩" value={data.est_other_exp_3_desc || ''} onChange={(e) => setData('est_other_exp_3_desc', e.target.value)} className={inputClass} />
-                                <input type="number" placeholder="টাকা" value={data.est_other_exp_3_amount || ''} onChange={(e) => setData('est_other_exp_3_amount', e.target.value)} className={inputClass} />
+                                <input
+                                    type="text"
+                                    placeholder="অন্যান্য খাত ৩"
+                                    value={data.est_other_exp_3_desc || data.est_other_exp_3_name || ''}
+                                    onChange={(e) => {
+                                        setData('est_other_exp_3_desc', e.target.value);
+                                        setData('est_other_exp_3_name', e.target.value);
+                                    }}
+                                    className={inputClass}
+                                />
+                                <input
+                                    type="number"
+                                    placeholder="টাকা"
+                                    value={data.est_other_exp_3_amount ?? data.est_other_exp_3_cost ?? ''}
+                                    onChange={(e) => {
+                                        const v = e.target.value;
+                                        setData('est_other_exp_3_amount', v);
+                                        setData('est_other_exp_3_cost', v);
+                                    }}
+                                    className={inputClass}
+                                />
                             </div>
                             <div className="flex justify-between items-center gap-2 pt-1 border-t border-rose-200">
                                 <span className="text-xs font-bold text-rose-900">মোট ব্যয়</span>
-                                <span className={`text-xs font-bold ${expenseMismatch || missingPage1Expense ? 'text-red-700' : 'text-rose-900'}`}>
+                                <span className="text-xs font-bold text-rose-900">
                                     {page3ExpenseTotal || 0}
                                 </span>
                             </div>
                             <div className="text-[10px] text-rose-800">
-                                পৃষ্ঠা ১-এর সম্ভাব্য ব্যয়: <strong>{hasPage1Expense ? page1Expense : '—'}</strong>
+                                (পৃষ্ঠা ১-এর সম্ভাব্য ব্যয়ে স্বয়ংক্রিয়ভাবে সংরক্ষিত হবে)
                             </div>
                         </div>
                     </div>
@@ -287,25 +390,53 @@ export default function FormPage3({ data, setData, member, loanProduct, loanCate
                                 <input
                                     type="text"
                                     placeholder="প্রধান আয়ের খাত"
-                                    value={data.est_main_income_desc || ''}
-                                    onChange={(e) => setData('est_main_income_desc', e.target.value)}
-                                    className={warningClass}
+                                    value={data.est_main_income_desc || data.est_main_income_source || ''}
+                                    onChange={(e) => {
+                                        setData('est_main_income_desc', e.target.value);
+                                        setData('est_main_income_source', e.target.value);
+                                    }}
+                                    className={inputClass}
                                 />
                                 <input
                                     type="number"
                                     placeholder="টাকা"
-                                    value={computedMainIncome || data.est_main_income_amount || ''}
-                                    className={readOnlyClass}
-                                    readOnly
+                                    value={data.est_main_income_amount ?? ''}
+                                    onChange={(e) => {
+                                        const val = e.target.value;
+                                        setData('est_main_income_amount', val);
+                                        const inc = (Number(val) || 0) + otherIncome;
+                                        setData('project_income_1_2_yr', inc > 0 ? String(inc) : '');
+                                    }}
+                                    className={inputClass}
                                 />
                             </div>
                             <div className="flex justify-between items-center gap-2">
-                                <input type="text" placeholder="অন্যান্য আয়ের খাত" value={data.est_other_income_desc || ''} onChange={(e) => setData('est_other_income_desc', e.target.value)} className={inputClass} />
-                                <input type="number" placeholder="টাকা" value={data.est_other_income_amount || ''} onChange={(e) => setData('est_other_income_amount', e.target.value)} className={inputClass} />
+                                <input
+                                    type="text"
+                                    placeholder="অন্যান্য আয়ের খাত"
+                                    value={data.est_other_income_desc || data.est_other_income_source || ''}
+                                    onChange={(e) => {
+                                        setData('est_other_income_desc', e.target.value);
+                                        setData('est_other_income_source', e.target.value);
+                                    }}
+                                    className={inputClass}
+                                />
+                                <input
+                                    type="number"
+                                    placeholder="টাকা"
+                                    value={data.est_other_income_amount ?? ''}
+                                    onChange={(e) => {
+                                        const val = e.target.value;
+                                        setData('est_other_income_amount', val);
+                                        const inc = (Number(data.est_main_income_amount) || 0) + (Number(val) || 0);
+                                        setData('project_income_1_2_yr', inc > 0 ? String(inc) : '');
+                                    }}
+                                    className={inputClass}
+                                />
                             </div>
                             <div className="flex justify-between items-center gap-2 pt-1 border-t border-emerald-200">
                                 <span className="text-xs font-bold text-emerald-900">মোট আয়</span>
-                                <span className={`text-xs font-bold ${incomeMismatch || missingPage1Income ? 'text-red-700' : 'text-emerald-900'}`}>
+                                <span className="text-xs font-bold text-emerald-900">
                                     {page3IncomeTotal || 0}
                                 </span>
                             </div>
@@ -316,19 +447,9 @@ export default function FormPage3({ data, setData, member, loanProduct, loanCate
                     </div>
                 </div>
 
-                {(missingPage1Income || missingPage1Expense || incomeMismatch || expenseMismatch || netMismatch) && (
-                    <div className="p-3 bg-red-50 border border-red-200 rounded-lg text-xs text-red-700 font-medium space-y-1">
-                        {missingPage1Income && <p>পৃষ্ঠা ১-এ সম্ভাব্য আয় লিখুন। এই হিসাবের আয় সেখান থেকে আসবে।</p>}
-                        {missingPage1Expense && <p>পৃষ্ঠা ১-এ সম্ভাব্য ব্যয় লিখুন। এই হিসাবের মোট ব্যয় তার সমান হতে হবে।</p>}
-                        {incomeMismatch && (
-                            <p>মোট আয় ({page3IncomeTotal}) পৃষ্ঠা ১-এর সম্ভাব্য আয় ({page1Income})-এর সমান নয়।</p>
-                        )}
-                        {expenseMismatch && (
-                            <p>মোট ব্যয় ({page3ExpenseTotal}) পৃষ্ঠা ১-এর সম্ভাব্য ব্যয় ({page1Expense})-এর সমান হতে হবে। খাতগুলো ঠিক করুন।</p>
-                        )}
-                        {!expenseMismatch && !incomeMismatch && netMismatch && (
-                            <p>নিট লাভ ({page3Net}) পৃষ্ঠা ১-এর নিট লাভ ({page1Net})-এর সমান নয়।</p>
-                        )}
+                {missingPage1Income && (
+                    <div className="p-3 bg-amber-50 border border-amber-200 rounded-lg text-xs text-amber-800 font-medium">
+                        💡 পৃষ্ঠা ১-এ সম্ভাব্য আয় নির্ধারণ করুন (ভর্তি ফরম বা ম্যানুয়ালি)।
                     </div>
                 )}
             </div>
@@ -348,8 +469,8 @@ export default function FormPage3({ data, setData, member, loanProduct, loanCate
                     <div>
                         <label className="block text-xs font-semibold text-gray-700 mb-1">(খ) সার্ভিস চার্জের হার (%)</label>
                         <input
-                            type="number"
-                            value={data.applied_service_charge_rate || ''}
+                            type="text"
+                            value={liveServiceChargeRate || data.applied_service_charge_rate || ''}
                             onChange={(e) => setData('applied_service_charge_rate', e.target.value)}
                             className={readOnlyClass}
                             readOnly

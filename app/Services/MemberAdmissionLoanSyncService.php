@@ -71,7 +71,7 @@ class MemberAdmissionLoanSyncService
             $this->investigationFields($member),
             $dirty,
         );
-        $approvalFields = $this->approvalFields($member);
+        $approvalFields = $this->approvalFields($member, $loan);
         $familyAssets = $approvalFields['family_assets'] ?? null;
         unset($approvalFields['family_assets']);
 
@@ -287,13 +287,18 @@ class MemberAdmissionLoanSyncService
     /**
      * @return array<string, mixed>
      */
-    private function approvalFields(MemberAdmission $member): array
+    private function approvalFields(MemberAdmission $member, ?LoanApplication $loan = null): array
     {
         $code = $this->memberCode($member);
         $name = $this->memberName($member);
         $samity = $member->samity;
         $self = $this->selfOccupationAndEducation($member);
         $project = (string) ($member->project_name ?: '');
+
+        $durationMonths = (int) ($loan?->loan_term_months ?: $loan?->loanProduct?->duration_months ?: 12);
+        $years = $durationMonths > 0 ? $durationMonths / 12 : 1;
+        $annualIncome = (float) ($member->estimated_annual_project_income ?? 0);
+        $durationIncome = $annualIncome > 0 ? (string) round($annualIncome * $years) : null;
 
         $fields = [
             'committee_name' => $samity?->samity_name_bn ?: $samity?->samity_name,
@@ -324,7 +329,7 @@ class MemberAdmissionLoanSyncService
             'loan_program_name' => $project,
             'occupation' => $self['occupation'],
             'educational_qualification' => $self['education'],
-            'annual_net_profit' => $this->positiveString($member->estimated_annual_project_income),
+            'project_income_1_2_yr' => $durationIncome,
             'member_name_code' => collect([$name, $code])->filter()->implode(' / '),
             'samity_name_code' => collect([
                 $samity?->samity_name_bn ?: $samity?->samity_name,

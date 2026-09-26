@@ -634,6 +634,14 @@ export default function Edit({
             ) {
                 return;
             }
+            if (key === 'total_asset_value') {
+                const landVal = (Number(data.cultivable_land_value) || 0) + (Number(data.non_cultivable_land_value) || 0);
+                const otherAssetsVal = Array.isArray(data.other_assets)
+                    ? data.other_assets.reduce((sum: number, a: any) => sum + (Number(a?.estimated_value) || 0), 0)
+                    : 0;
+                formData.append('total_asset_value', String(landVal + otherAssetsVal));
+                return;
+            }
             if (key === 'family_members' || key === 'other_assets' || key === 'selected_approvers') {
                 formData.append(key, JSON.stringify(val));
             } else if (val instanceof File) {

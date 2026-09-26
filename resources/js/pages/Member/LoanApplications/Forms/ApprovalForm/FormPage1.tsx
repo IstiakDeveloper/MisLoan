@@ -44,17 +44,6 @@ export default function FormPage1({
     const editableClass = 'w-full border border-gray-300 rounded-lg px-3 py-2 text-xs md:text-sm bg-white focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition-all';
     const warningClass = 'w-full border border-amber-300 rounded-lg px-3 py-2 text-xs md:text-sm bg-amber-50/40 focus:bg-white focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition-all';
 
-    const income = Number(data.project_income_1_2_yr) || 0;
-    const expense = Number(data.project_expense_1_2_yr) || 0;
-    const netProfit = Number(data.annual_net_profit) || 0;
-    const hasIncomeExpense =
-        data.project_income_1_2_yr !== '' &&
-        data.project_income_1_2_yr != null &&
-        data.project_expense_1_2_yr !== '' &&
-        data.project_expense_1_2_yr != null;
-    const hasNet = data.annual_net_profit !== '' && data.annual_net_profit != null;
-    const incomeExpenseMismatch = hasIncomeExpense && hasNet && income - expense !== netProfit;
-
     const durationMonths =
         data.loan_duration_months ||
         loanProduct?.duration_months ||
@@ -63,8 +52,8 @@ export default function FormPage1({
     const yearsLabel = formatLoanYearsLabel(durationMonths);
     const loanYears = getLoanYears(durationMonths);
     const durationLabel = `${yearsLabel} বছর`;
-    const annualNetFromAdmission = Number(member?.estimated_annual_project_income) || 0;
-    const durationNetFromAdmission = scaleAnnualToLoanYears(
+    const annualIncomeFromAdmission = Number(member?.estimated_annual_project_income) || 0;
+    const durationIncomeFromAdmission = scaleAnnualToLoanYears(
         member?.estimated_annual_project_income,
         durationMonths,
     );
@@ -76,32 +65,23 @@ export default function FormPage1({
     }, [data.recipient_to]);
 
     useEffect(() => {
-        if (durationNetFromAdmission && String(data.annual_net_profit || '') !== durationNetFromAdmission) {
-            setData('annual_net_profit', durationNetFromAdmission);
+        if (durationIncomeFromAdmission && String(data.project_income_1_2_yr || '') !== durationIncomeFromAdmission) {
+            setData('project_income_1_2_yr', durationIncomeFromAdmission);
         }
+    }, [durationIncomeFromAdmission, data.project_income_1_2_yr]);
 
-        if (annualNetFromAdmission <= 0 || loanYears === 1) return;
-
-        const currentIncome = Number(data.project_income_1_2_yr) || 0;
-        const currentExpense = Number(data.project_expense_1_2_yr) || 0;
-        // পুরনো বার্ষিক মান থাকলে মেয়াদ অনুযায়ী গুণ করুন (আয় − ব্যয় = বার্ষিক নিট)
-        if (
-            currentIncome > 0 &&
-            Math.round(currentIncome - currentExpense) === Math.round(annualNetFromAdmission)
-        ) {
-            setData('project_income_1_2_yr', String(Math.round(currentIncome * loanYears)));
-            if (data.project_expense_1_2_yr !== '' && data.project_expense_1_2_yr != null) {
-                setData('project_expense_1_2_yr', String(Math.round(currentExpense * loanYears)));
+    useEffect(() => {
+        const inc = Number(data.project_income_1_2_yr) || 0;
+        const exp = Number(data.project_expense_1_2_yr) || 0;
+        const hasInc = data.project_income_1_2_yr !== '' && data.project_income_1_2_yr != null;
+        const hasExp = data.project_expense_1_2_yr !== '' && data.project_expense_1_2_yr != null;
+        if (hasInc || hasExp) {
+            const net = String(inc - exp);
+            if (String(data.annual_net_profit || '') !== net) {
+                setData('annual_net_profit', net);
             }
         }
-    }, [
-        durationNetFromAdmission,
-        annualNetFromAdmission,
-        loanYears,
-        data.annual_net_profit,
-        data.project_income_1_2_yr,
-        data.project_expense_1_2_yr,
-    ]);
+    }, [data.project_income_1_2_yr, data.project_expense_1_2_yr, data.annual_net_profit]);
 
     const appAmount = Number(data.approval_amount_digits || data.capital_applied_loan || requestedAmount) || 0;
     useEffect(() => {
@@ -449,36 +429,61 @@ export default function FormPage1({
 
                 <div className="grid grid-cols-1 sm:grid-cols-3 gap-3.5">
                     <div>
-                        <label className="block text-xs font-semibold text-gray-700 mb-1">১৭. সম্ভাব্য আয় ({durationLabel})</label>
-                        <input type="number" value={data.project_income_1_2_yr || ''} onChange={(e) => setData('project_income_1_2_yr', e.target.value)} className={warningClass} placeholder="টাকা" />
-                    </div>
-                    <div>
-                        <label className="block text-xs font-semibold text-gray-700 mb-1">১৮. সম্ভাব্য ব্যয় ({durationLabel})</label>
-                        <input type="number" value={data.project_expense_1_2_yr || ''} onChange={(e) => setData('project_expense_1_2_yr', e.target.value)} className={warningClass} placeholder="টাকা" />
-                    </div>
-                    <div>
-                        <label className="block text-xs font-semibold text-gray-700 mb-1">১৯. নিট লাভ ({durationLabel})</label>
+                        <label className="block text-xs font-semibold text-gray-700 mb-1 flex items-center justify-between">
+                            <span>১৭. সম্ভাব্য আয় ({durationLabel})</span>
+                            {fromAdmission && member?.estimated_annual_project_income != null && member?.estimated_annual_project_income !== '' && (
+                                <span className="flex items-center gap-1 text-[11px] text-gray-500 font-normal">
+                                    <Lock className="w-3 h-3 text-gray-400" /> ভর্তি থেকে
+                                </span>
+                            )}
+                        </label>
                         <input
                             type="number"
-                            value={data.annual_net_profit || ''}
-                            onChange={(e) => setData('annual_net_profit', e.target.value)}
+                            value={data.project_income_1_2_yr || ''}
+                            onChange={(e) => setData('project_income_1_2_yr', e.target.value)}
                             readOnly={fromAdmission && (member?.estimated_annual_project_income != null && member?.estimated_annual_project_income !== '')}
                             className={fromAdmission && (member?.estimated_annual_project_income != null && member?.estimated_annual_project_income !== '') ? inputClass : warningClass}
                             placeholder="টাকা"
                         />
+                        {fromAdmission && member?.estimated_annual_project_income != null && member?.estimated_annual_project_income !== '' && (
+                            <span className="text-[10px] text-gray-500 mt-1 block">
+                                বাৎসরিক আয়: {member.estimated_annual_project_income} × {yearsLabel} বছর
+                            </span>
+                        )}
+                    </div>
+                    <div>
+                        <label className="block text-xs font-semibold text-gray-700 mb-1 flex items-center justify-between">
+                            <span>১৮. সম্ভাব্য ব্যয় ({durationLabel})</span>
+                            <span className="text-[10px] text-indigo-600 font-normal">পৃষ্ঠা ৩ হতে স্বয়ংক্রিয়</span>
+                        </label>
+                        <input
+                            type="number"
+                            value={data.project_expense_1_2_yr || ''}
+                            readOnly
+                            className={inputClass}
+                            placeholder="পৃষ্ঠা ৩-এর ব্যয়ের যোগফল"
+                        />
+                        <span className="text-[10px] text-gray-500 mt-1 block">
+                            পৃষ্ঠা ৩-এর ব্যয়ের খাতসমূহের মোট
+                        </span>
+                    </div>
+                    <div>
+                        <label className="block text-xs font-semibold text-gray-700 mb-1 flex items-center justify-between">
+                            <span>১৯. নিট লাভ ({durationLabel})</span>
+                            <span className="text-[10px] text-emerald-600 font-normal">আয় − ব্যয় (স্বয়ংক্রিয়)</span>
+                        </label>
+                        <input
+                            type="number"
+                            value={data.annual_net_profit || ''}
+                            readOnly
+                            className={inputClass}
+                            placeholder="আয় − ব্যয়"
+                        />
+                        <span className="text-[10px] text-gray-500 mt-1 block">
+                            নিট লাভ = সম্ভাব্য আয় − সম্ভাব্য ব্যয়
+                        </span>
                     </div>
                 </div>
-
-                {incomeExpenseMismatch && (
-                    <div className="p-3 bg-red-50 border border-red-200 rounded-lg text-xs text-red-700 font-medium">
-                        ⚠️ আয় − ব্যয় = নিট লাভ ({durationLabel}) হতে হবে। (এখন: {income} − {expense} = {income - expense}, দেওয়া নিট লাভ: {netProfit})
-                    </div>
-                )}
-                {hasNet && !hasIncomeExpense && (
-                    <div className="p-3 bg-amber-50 border border-amber-200 rounded-lg text-xs text-amber-800">
-                        💡 আয় ও ব্যয় এমনভাবে পূরণ করুন যাতে (আয় − ব্যয়) = নিট লাভ ({durationLabel}) ({netProfit}) হয়।
-                    </div>
-                )}
 
                 <div className="grid grid-cols-1 sm:grid-cols-3 gap-3.5 pt-2">
                     <div>

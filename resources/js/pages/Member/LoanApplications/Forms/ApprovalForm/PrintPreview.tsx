@@ -701,9 +701,9 @@ function renderPage3(d: any) {
     const exp_bills = Number(d.est_bills) || 0;
     const exp_rent = Number(d.est_rent) || 0;
     const exp_loan = total_sc || Math.round((Number(d.est_loan_charge) || 0) * (scaleFactor !== 1 ? scaleFactor : 1));
-    const exp_o1 = Number(d.est_other_exp_1_amount) || 0;
-    const exp_o2 = Number(d.est_other_exp_2_amount) || 0;
-    const exp_o3 = Number(d.est_other_exp_3_amount) || 0;
+    const exp_o1 = Number(d.est_other_exp_1_amount ?? d.est_other_exp_1_cost ?? d.est_other_exp_1_taka) || 0;
+    const exp_o2 = Number(d.est_other_exp_2_amount ?? d.est_other_exp_2_cost ?? d.est_other_exp_2_taka) || 0;
+    const exp_o3 = Number(d.est_other_exp_3_amount ?? d.est_other_exp_3_cost ?? d.est_other_exp_3_taka) || 0;
     const total_exp = exp_emp + exp_trans + exp_bills + exp_rent + exp_loan + exp_o1 + exp_o2 + exp_o3;
 
     const inc_main = Number(d.est_main_income_amount) || 0;
@@ -738,58 +738,93 @@ function renderPage3(d: any) {
                             </thead>
                             <tbody>
                                 <tr>
-                                    <td className="border border-gray-600 p-2 text-left leading-normal">
-                                        উদ্যোগ পরিচালনা ব্যয়:<br />
-                                        (ক) কর্মচারীর বেতন ভাতা বাবদ<br />
-                                        (খ) পরিবহন বাবদ<br />
-                                        (গ) বিভিন্ন বিল বাবদ<br />
-                                        (ঘ) ঘর/স্থাপনা ভাড়া বাবদ<br />
-                                        (ঙ) ঋণের সার্ভিস চার্জ বাবদ<br />
-                                        (চ) {d.est_other_exp_1_name || '.............................................'}<br />
-                                        (ছ) {d.est_other_exp_2_name || '.............................................'}<br />
-                                        (জ) {d.est_other_exp_3_name || '.............................................'}
+                                    <td colSpan={2} className="border border-gray-600 p-0 align-top">
+                                        <table className="w-full border-collapse text-[12px]">
+                                            <tbody>
+                                                <tr>
+                                                    <td colSpan={2} className="border-b border-gray-400 p-1 font-semibold text-left">
+                                                        উদ্যোগ পরিচালনা ব্যয়:
+                                                    </td>
+                                                </tr>
+                                                <tr className="border-b border-gray-300">
+                                                    <td className="p-1 text-left w-[70%]">(ক) কর্মচারীর বেতন ভাতা বাবদ</td>
+                                                    <td className="p-1 text-center w-[30%] border-l border-gray-600">{bn(d.est_emp_salary)}</td>
+                                                </tr>
+                                                <tr className="border-b border-gray-300">
+                                                    <td className="p-1 text-left w-[70%]">(খ) পরিবহন বাবদ</td>
+                                                    <td className="p-1 text-center w-[30%] border-l border-gray-600">{bn(d.est_transport)}</td>
+                                                </tr>
+                                                <tr className="border-b border-gray-300">
+                                                    <td className="p-1 text-left w-[70%]">(গ) বিভিন্ন বিল বাবদ</td>
+                                                    <td className="p-1 text-center w-[30%] border-l border-gray-600">{bn(d.est_bills)}</td>
+                                                </tr>
+                                                <tr className="border-b border-gray-300">
+                                                    <td className="p-1 text-left w-[70%]">(ঘ) ঘর/স্থাপনা ভাড়া বাবদ</td>
+                                                    <td className="p-1 text-center w-[30%] border-l border-gray-600">{bn(d.est_rent)}</td>
+                                                </tr>
+                                                <tr className="border-b border-gray-300">
+                                                    <td className="p-1 text-left w-[70%]">(ঙ) ঋণের সার্ভিস চার্জ বাবদ</td>
+                                                    <td className="p-1 text-center w-[30%] border-l border-gray-600">{bn(exp_loan)}</td>
+                                                </tr>
+                                                <tr className="border-b border-gray-300">
+                                                    <td className="p-1 text-left w-[70%]">(চ) {d.est_other_exp_1_desc || d.est_other_exp_1_name || '.............................................'}</td>
+                                                    <td className="p-1 text-center w-[30%] border-l border-gray-600 font-medium">{bn(d.est_other_exp_1_amount ?? d.est_other_exp_1_cost ?? (exp_o1 > 0 ? exp_o1 : ''))}</td>
+                                                </tr>
+                                                <tr className="border-b border-gray-300">
+                                                    <td className="p-1 text-left w-[70%]">(ছ) {d.est_other_exp_2_desc || d.est_other_exp_2_name || '.............................................'}</td>
+                                                    <td className="p-1 text-center w-[30%] border-l border-gray-600 font-medium">{bn(d.est_other_exp_2_amount ?? d.est_other_exp_2_cost ?? (exp_o2 > 0 ? exp_o2 : ''))}</td>
+                                                </tr>
+                                                <tr>
+                                                    <td className="p-1 text-left w-[70%]">(জ) {d.est_other_exp_3_desc || d.est_other_exp_3_name || '.............................................'}</td>
+                                                    <td className="p-1 text-center w-[30%] border-l border-gray-600 font-medium">{bn(d.est_other_exp_3_amount ?? d.est_other_exp_3_cost ?? (exp_o3 > 0 ? exp_o3 : ''))}</td>
+                                                </tr>
+                                            </tbody>
+                                        </table>
                                     </td>
-                                    <td className="border border-gray-600 p-2 align-top pt-4 leading-normal">
-                                        {bn(d.est_emp_salary)}<br />
-                                        {bn(d.est_transport)}<br />
-                                        {bn(d.est_bills)}<br />
-                                        {bn(d.est_rent)}<br />
-                                        {bn(exp_loan)}<br />
-                                        {bn(d.est_other_exp_1_amount)}<br />
-                                        {bn(d.est_other_exp_2_amount)}<br />
-                                        {bn(d.est_other_exp_3_amount)}
-                                    </td>
-                                    <td className="border border-gray-600 p-2 text-left align-top leading-normal">
-                                        উদ্যোগের মূল আয়<br />
-                                        (মূল আয়ের খাত উল্লেখ করতে হবে)<br />
-                                        <div className="mt-1 text-center font-semibold underline break-words">{d.est_main_income_desc || d.est_main_income_source || ''}</div>
-                                        <div className="mt-5 border-t border-gray-400 pt-1">
-                                            অন্যান্য আয় (খাত উল্লেখ করতে হবে)<br />
-                                            <div className="mt-1 text-center font-semibold underline break-words">{d.est_other_income_source || ''}</div>
-                                        </div>
-                                    </td>
-                                    <td className="border border-gray-600 p-2 align-top pt-7 leading-normal">
-                                        {bn(d.est_main_income_amount)}
-                                        <div className="mt-10">{bn(d.est_other_income_amount)}</div>
+                                    <td colSpan={2} className="border border-gray-600 p-0 align-top">
+                                        <table className="w-full h-full border-collapse text-[12px]">
+                                            <tbody>
+                                                <tr className="border-b border-gray-400">
+                                                    <td className="p-1.5 text-left w-[70%] align-top">
+                                                        উদ্যোগের মূল আয়<br />
+                                                        <span className="text-[11px] text-gray-700">(মূল আয়ের খাত উল্লেখ করতে হবে)</span>
+                                                        <div className="mt-1 text-center font-semibold underline break-words">{d.est_main_income_desc || d.est_main_income_source || ''}</div>
+                                                    </td>
+                                                    <td className="p-1.5 text-center w-[30%] align-middle border-l border-gray-600 font-medium">
+                                                        {bn(d.est_main_income_amount)}
+                                                    </td>
+                                                </tr>
+                                                <tr>
+                                                    <td className="p-1.5 text-left w-[70%] align-top">
+                                                        অন্যান্য আয়<br />
+                                                        <span className="text-[11px] text-gray-700">(খাত উল্লেখ করতে হবে)</span>
+                                                        <div className="mt-1 text-center font-semibold underline break-words">{d.est_other_income_desc || d.est_other_income_source || ''}</div>
+                                                    </td>
+                                                    <td className="p-1.5 text-center w-[30%] align-middle border-l border-gray-600 font-medium">
+                                                        {bn(d.est_other_income_amount)}
+                                                    </td>
+                                                </tr>
+                                            </tbody>
+                                        </table>
                                     </td>
                                 </tr>
                                 <tr>
                                     <td className="border border-gray-600 p-1.5 text-left font-semibold">মোট ব্যয়:</td>
                                     <td className="border border-gray-600 p-1.5 font-bold">{bn(total_exp || '')}</td>
-                                    <td className="border border-gray-600 p-1.5 border-b-0 bg-gray-50"></td>
-                                    <td className="border border-gray-600 p-1.5 border-b-0 bg-gray-50"></td>
+                                    <td className="border border-gray-600 p-1.5 bg-gray-50/50"></td>
+                                    <td className="border border-gray-600 p-1.5 bg-gray-50/50"></td>
                                 </tr>
                                 <tr>
                                     <td className="border border-gray-600 p-1.5 text-left font-semibold">নিট লাভ/উদ্বৃত্ত</td>
                                     <td className="border border-gray-600 p-1.5 font-bold">{bn(net_profit || '')}</td>
-                                    <td className="border border-gray-600 p-1.5 text-center font-bold">মোট আয়</td>
-                                    <td className="border border-gray-600 p-1.5 font-bold">{bn(total_inc || '')}</td>
+                                    <td className="border border-gray-600 p-1.5 bg-gray-50/50"></td>
+                                    <td className="border border-gray-600 p-1.5 bg-gray-50/50"></td>
                                 </tr>
                                 <tr className="bg-gray-50 font-bold">
-                                    <td className="border border-gray-600 p-1.5 text-center">মোট (ব্যয় + লাভ)</td>
-                                    <td className="border border-gray-600 p-1.5">{bn(total_exp + net_profit || '')}</td>
-                                    <td className="border border-gray-600 p-1.5"></td>
-                                    <td className="border border-gray-600 p-1.5"></td>
+                                    <td className="border border-gray-600 p-1.5 text-center font-bold">মোট (ব্যয় + লাভ)</td>
+                                    <td className="border border-gray-600 p-1.5 font-bold">{bn(total_exp + net_profit || '')}</td>
+                                    <td className="border border-gray-600 p-1.5 text-center font-bold">মোট আয়</td>
+                                    <td className="border border-gray-600 p-1.5 font-bold">{bn(total_inc || '')}</td>
                                 </tr>
                             </tbody>
                         </table>

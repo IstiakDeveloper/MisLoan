@@ -743,6 +743,11 @@ export default function Create({
                     next[key] = 0;
                 }
             }
+            const landVal = (Number(next.cultivable_land_value) || 0) + (Number(next.non_cultivable_land_value) || 0);
+            const otherAssetsVal = Array.isArray(next.other_assets)
+                ? next.other_assets.reduce((sum: number, a: any) => sum + (Number(a?.estimated_value) || 0), 0)
+                : 0;
+            next.total_asset_value = landVal + otherAssetsVal;
             if (options?.nextAction) {
                 next.next_action = options.nextAction;
             }

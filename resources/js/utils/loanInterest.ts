@@ -380,15 +380,16 @@ export function getReducingServiceChargeRate(
     fallbackRate?: number | string | null,
     durationMonths?: number | string | null,
 ): string {
-    const directRate = Number(loanProduct?.interest_rate);
-    if (directRate > 0) {
-        return String(Number(directRate.toFixed(2)));
-    }
-    const r = Number(fallbackRate ?? loanProduct?.service_charge ?? loanProduct?.service_charge_rate);
-    if (r > 0) {
-        const m = Number(durationMonths ?? loanProduct?.duration_months ?? 12) || 12;
+    const rawRate = Number(
+        (loanProduct && Number(loanProduct.interest_rate) > 0)
+            ? loanProduct.interest_rate
+            : (fallbackRate ?? loanProduct?.service_charge ?? loanProduct?.service_charge_rate)
+    );
+
+    if (rawRate > 0) {
+        const m = Number(durationMonths ?? loanProduct?.duration_months ?? loanProduct?.loan_duration_months ?? 12) || 12;
         const years = m / 12;
-        const annual = years > 1 ? r / years : r;
+        const annual = years > 1 ? rawRate / years : rawRate;
         // If it's already a reducing method rate (~15% - 26%)
         if (annual >= 15) {
             return String(Number(annual.toFixed(2)));

@@ -224,11 +224,11 @@ export default function ApprovalForm({
         ? String(member.loan_dofa)
         : '';
     const projectNameFromAdmission = member?.project_name || '';
-    const annualNetFromAdmission = member?.estimated_annual_project_income != null && member?.estimated_annual_project_income !== ''
+    const annualIncomeFromAdmission = member?.estimated_annual_project_income != null && member?.estimated_annual_project_income !== ''
         ? fmtValue(member.estimated_annual_project_income)
         : '';
     const loanDurationMonths = loanProduct?.duration_months || loanProduct?.loan_duration_months || '';
-    const durationNetFromAdmission = scaleAnnualToLoanYears(
+    const durationIncomeFromAdmission = scaleAnnualToLoanYears(
         member?.estimated_annual_project_income,
         loanDurationMonths,
     );
@@ -357,12 +357,7 @@ export default function ApprovalForm({
         est_other_exp_2_desc: '', est_other_exp_2_amount: '',
         est_other_exp_3_desc: '', est_other_exp_3_amount: '',
         est_main_income_desc: projectNameFromAdmission,
-        est_main_income_amount: (() => {
-            const months = Number(loanProduct?.duration_months || loanProduct?.loan_duration_months || 0);
-            const years = months > 0 ? months / 12 : 1;
-            const annual = Number(annualNetFromAdmission) || 0;
-            return annual > 0 ? String(Math.round(annual * years)) : '';
-        })(),
+        est_main_income_amount: durationIncomeFromAdmission || '',
         est_other_income_desc: '', est_other_income_amount: '',
         installment_type: computedInstallment.installment_type,
         installment_principal: computedInstallment.installment_principal,
@@ -431,37 +426,41 @@ export default function ApprovalForm({
             loanProduct?.interest_rate ?? loanProduct?.service_charge,
             loanProduct?.duration_months ?? loanProduct?.loan_duration_months ?? 12,
         ),
-        annual_net_profit:
-            durationNetFromAdmission ||
-            String((savedData as any)?.annual_net_profit || '') ||
-            annualNetFromAdmission,
         ...(() => {
-            const years = getLoanYears(loanDurationMonths);
-            const annual = Number(annualNetFromAdmission) || 0;
             const src = savedData || {};
-            let income = Number(src.project_income_1_2_yr) || 0;
-            let expense = Number(src.project_expense_1_2_yr) || 0;
-            if (
-                annual > 0 &&
-                years !== 1 &&
-                income > 0 &&
-                Math.round(income - expense) === Math.round(annual)
-            ) {
-                income = Math.round(income * years);
-                expense = Math.round(expense * years);
-            }
+            const initialIncome = durationIncomeFromAdmission || String(src.project_income_1_2_yr || '');
+            const initialExpCharge = computedInstallment.total_service_charge || (src as any)?.est_loan_charge || '';
+            const calcExpense = (
+                (Number(src.est_emp_salary) || 0) +
+                (Number(src.est_transport) || 0) +
+                (Number(src.est_bills) || 0) +
+                (Number(src.est_rent) || 0) +
+                (Number(initialExpCharge) || 0) +
+                (Number(src.est_other_exp_1_amount) || 0) +
+                (Number(src.est_other_exp_2_amount) || 0) +
+                (Number(src.est_other_exp_3_amount) || 0)
+            );
+            const initialExpense = calcExpense > 0
+                ? String(calcExpense)
+                : (src.project_expense_1_2_yr !== '' && src.project_expense_1_2_yr != null ? String(src.project_expense_1_2_yr) : '');
+
+            const numIncome = Number(initialIncome) || 0;
+            const numExpense = Number(initialExpense) || 0;
+            const initialNet = (initialIncome !== '' || initialExpense !== '')
+                ? String(numIncome - numExpense)
+                : String(src.annual_net_profit || '');
+
             const other = Number(src.est_other_income_amount) || 0;
-            const result: Record<string, string> = {};
-            if (Number(src.project_income_1_2_yr) > 0) {
-                result.project_income_1_2_yr = String(income);
-            }
-            if (src.project_expense_1_2_yr !== '' && src.project_expense_1_2_yr != null) {
-                result.project_expense_1_2_yr = String(expense);
-            }
-            if (income > 0) {
-                result.est_main_income_amount = String(Math.max(0, income - other));
-            }
-            return result;
+            const mainIncome = (src.est_main_income_amount !== '' && src.est_main_income_amount != null)
+                ? String(src.est_main_income_amount)
+                : (numIncome > 0 ? String(Math.max(0, numIncome - other)) : '');
+
+            return {
+                project_income_1_2_yr: initialIncome,
+                project_expense_1_2_yr: initialExpense,
+                annual_net_profit: initialNet,
+                est_main_income_amount: mainIncome,
+            };
         })(),
         ...(Number(requestedAmount) > 0 ? {
             final_approved_loan_amount_digits: String(requestedAmount),
@@ -533,27 +532,37 @@ export default function ApprovalForm({
                         loanProduct,
                         loanCategory,
                     ),
-                    annual_net_profit: durationNetFromAdmission || merged.annual_net_profit,
                     ...(() => {
-                        const years = getLoanYears(loanDurationMonths);
-                        const annual = Number(annualNetFromAdmission) || 0;
-                        const income = Number(merged.project_income_1_2_yr) || 0;
-                        const expense = Number(merged.project_expense_1_2_yr) || 0;
-                        if (
-                            annual > 0 &&
-                            years !== 1 &&
-                            income > 0 &&
-                            Math.round(income - expense) === Math.round(annual)
-                        ) {
-                            return {
-                                project_income_1_2_yr: String(Math.round(income * years)),
-                                project_expense_1_2_yr: String(Math.round(expense * years)),
-                            };
-                        }
-                        return {};
+                        const mergedIncome = durationIncomeFromAdmission || String(merged.project_income_1_2_yr || '');
+                        const calcExpense = (
+                            (Number(merged.est_emp_salary) || 0) +
+                            (Number(merged.est_transport) || 0) +
+                            (Number(merged.est_bills) || 0) +
+                            (Number(merged.est_rent) || 0) +
+                            (Number(merged.est_loan_charge) || 0) +
+                            (Number(merged.est_other_exp_1_amount) || 0) +
+                            (Number(merged.est_other_exp_2_amount) || 0) +
+                            (Number(merged.est_other_exp_3_amount) || 0)
+                        );
+                        const mergedExpense = calcExpense > 0
+                            ? String(calcExpense)
+                            : (merged.project_expense_1_2_yr !== '' && merged.project_expense_1_2_yr != null ? String(merged.project_expense_1_2_yr) : '');
+                        const numIncome = Number(mergedIncome) || 0;
+                        const numExpense = Number(mergedExpense) || 0;
+                        const mergedNet = (mergedIncome !== '' || mergedExpense !== '')
+                            ? String(numIncome - numExpense)
+                            : String(merged.annual_net_profit || '');
+                        const other = Number(merged.est_other_income_amount) || 0;
+                        const mainIncome = (merged.est_main_income_amount !== '' && merged.est_main_income_amount != null)
+                            ? String(merged.est_main_income_amount)
+                            : (numIncome > 0 ? String(Math.max(0, numIncome - other)) : '');
+                        return {
+                            project_income_1_2_yr: mergedIncome,
+                            project_expense_1_2_yr: mergedExpense,
+                            annual_net_profit: mergedNet,
+                            est_main_income_amount: mainIncome,
+                        };
                     })(),
-                    est_main_income_amount:
-                        durationNetFromAdmission || merged.est_main_income_amount,
                     member_code: member?.application_no || merged.member_code || prev.member_code,
                     family_assets: mergeFamilyAssets(
                         getFamilyAssetsFromMember(member),
@@ -575,6 +584,56 @@ export default function ApprovalForm({
         const t = setTimeout(() => saveLoanDraftLocal(draftKey, data), 700);
         return () => clearTimeout(t);
     }, [data, draftKey]);
+
+    useEffect(() => {
+        const expTotal = (
+            (Number(data.est_emp_salary) || 0) +
+            (Number(data.est_transport) || 0) +
+            (Number(data.est_bills) || 0) +
+            (Number(data.est_rent) || 0) +
+            (Number(data.est_loan_charge) || 0) +
+            (Number(data.est_other_exp_1_amount ?? data.est_other_exp_1_cost) || 0) +
+            (Number(data.est_other_exp_2_amount ?? data.est_other_exp_2_cost) || 0) +
+            (Number(data.est_other_exp_3_amount ?? data.est_other_exp_3_cost) || 0)
+        );
+
+        const expStr = expTotal > 0 ? String(expTotal) : (data.project_expense_1_2_yr || '');
+        const incStr = data.project_income_1_2_yr || durationIncomeFromAdmission || '';
+        const numInc = Number(incStr) || 0;
+        const numExp = Number(expStr) || 0;
+        const netStr = (incStr !== '' || expStr !== '') ? String(numInc - numExp) : '';
+
+        const updates: Partial<LoanApplicationApprovalData> = {};
+        if (!data.project_income_1_2_yr && durationIncomeFromAdmission) {
+            updates.project_income_1_2_yr = durationIncomeFromAdmission;
+        }
+        if (expTotal > 0 && data.project_expense_1_2_yr !== String(expTotal)) {
+            updates.project_expense_1_2_yr = String(expTotal);
+        }
+        if (netStr !== '' && data.annual_net_profit !== netStr) {
+            updates.annual_net_profit = netStr;
+        }
+
+        if (Object.keys(updates).length > 0) {
+            setData((prev) => ({ ...prev, ...updates }));
+        }
+    }, [
+        durationIncomeFromAdmission,
+        data.est_emp_salary,
+        data.est_transport,
+        data.est_bills,
+        data.est_rent,
+        data.est_loan_charge,
+        data.est_other_exp_1_amount,
+        data.est_other_exp_1_cost,
+        data.est_other_exp_2_amount,
+        data.est_other_exp_2_cost,
+        data.est_other_exp_3_amount,
+        data.est_other_exp_3_cost,
+        data.project_income_1_2_yr,
+        data.project_expense_1_2_yr,
+        data.annual_net_profit,
+    ]);
 
     useEffect(() => {
         if (flashError) setSaveError(flashError);
@@ -666,55 +725,33 @@ export default function ApprovalForm({
             setErrors({});
         }
 
-        // Soft draft: consistency mismatches only warn — still allow save
-        const income = Number(data.project_income_1_2_yr) || 0;
-        const expense = Number(data.project_expense_1_2_yr) || 0;
-        const net = Number(data.annual_net_profit) || 0;
-        const hasIncomeExpense =
-            data.project_income_1_2_yr !== '' &&
-            data.project_income_1_2_yr != null &&
-            data.project_expense_1_2_yr !== '' &&
-            data.project_expense_1_2_yr != null;
-        const hasNet = data.annual_net_profit !== '' && data.annual_net_profit != null;
-        if (hasIncomeExpense && hasNet && income - expense !== net) {
-            const ok = confirm(
-                `আয় − ব্যয় = নিট লাভ মিলছে না (${income} − ${expense} ≠ ${net}).\nতবুও খসড়া সেভ করবেন? পরে সংশোধন করতে পারবেন।`
-            );
-            if (!ok) return;
-        }
-
-        const page3Income =
-            (Number(data.est_main_income_amount) || 0) + (Number(data.est_other_income_amount) || 0);
+        // Auto-align page 3 expense and net profit before saving
         const page3Expense =
             (Number(data.est_emp_salary) || 0) +
             (Number(data.est_transport) || 0) +
             (Number(data.est_bills) || 0) +
             (Number(data.est_rent) || 0) +
             (Number(data.est_loan_charge) || 0) +
-            (Number(data.est_other_exp_1_amount) || 0) +
-            (Number(data.est_other_exp_2_amount) || 0) +
-            (Number(data.est_other_exp_3_amount) || 0);
-        if (!hasIncomeExpense) {
-            const msg = 'পৃষ্ঠা ১-এ সম্ভাব্য আয় ও সম্ভাব্য ব্যয় লিখুন। পৃষ্ঠা ৩-এর হিসাব সেখান থেকে মিলতে হবে।';
+            (Number(data.est_other_exp_1_amount ?? data.est_other_exp_1_cost) || 0) +
+            (Number(data.est_other_exp_2_amount ?? data.est_other_exp_2_cost) || 0) +
+            (Number(data.est_other_exp_3_amount ?? data.est_other_exp_3_cost) || 0);
+
+        if (page3Expense > 0 || data.project_expense_1_2_yr === '' || data.project_expense_1_2_yr == null) {
+            data.project_expense_1_2_yr = String(page3Expense);
+        }
+        const income = Number(data.project_income_1_2_yr) || 0;
+        const expense = Number(data.project_expense_1_2_yr) || 0;
+        data.annual_net_profit = String(income - expense);
+        if (data.est_main_income_amount === '' || data.est_main_income_amount == null) {
+            data.est_main_income_amount = String(Math.max(0, income - (Number(data.est_other_income_amount) || 0)));
+        }
+
+        if (!data.project_income_1_2_yr && data.project_income_1_2_yr !== '0') {
+            const msg = 'পৃষ্ঠা ১-এ সম্ভাব্য আয় নির্ধারণ করুন (ভর্তি ফরম বা ম্যানুয়ালি)।';
             setErrors({ project_income_1_2_yr: msg });
             const ok = confirm(`${msg}\nতবুও খসড়া সেভ করবেন?`);
             if (!ok) return;
             setErrors({});
-        } else {
-            if (page3Income !== income) {
-                const msg = `পৃষ্ঠা ৩-এর মোট আয় (${page3Income}) পৃষ্ঠা ১-এর সম্ভাব্য আয় (${income})-এর সমান হতে হবে।`;
-                setErrors({ est_main_income_amount: msg });
-                const ok = confirm(`${msg}\nতবুও খসড়া সেভ করবেন?`);
-                if (!ok) return;
-                setErrors({});
-            }
-            if (page3Expense !== expense) {
-                const msg = `পৃষ্ঠা ৩-এর মোট ব্যয় (${page3Expense}) পৃষ্ঠা ১-এর সম্ভাব্য ব্যয় (${expense})-এর সমান হতে হবে।`;
-                setErrors({ est_emp_salary: msg });
-                const ok = confirm(`${msg}\nতবুও খসড়া সেভ করবেন?`);
-                if (!ok) return;
-                setErrors({});
-            }
         }
 
         const planTotal = Number(data.invest_plan_total) || 0;
@@ -880,6 +917,22 @@ export default function ApprovalForm({
         data.invest_use_other,
     ]);
 
+    const previewExpenseTotal = (
+        (Number(data.est_emp_salary) || 0) +
+        (Number(data.est_transport) || 0) +
+        (Number(data.est_bills) || 0) +
+        (Number(data.est_rent) || 0) +
+        (Number(liveInstallment.total_service_charge || data.est_loan_charge) || 0) +
+        (Number(data.est_other_exp_1_amount ?? data.est_other_exp_1_cost) || 0) +
+        (Number(data.est_other_exp_2_amount ?? data.est_other_exp_2_cost) || 0) +
+        (Number(data.est_other_exp_3_amount ?? data.est_other_exp_3_cost) || 0)
+    );
+    const previewIncome = data.project_income_1_2_yr || durationIncomeFromAdmission || '';
+    const previewExpense = previewExpenseTotal > 0 ? String(previewExpenseTotal) : (data.project_expense_1_2_yr || '');
+    const previewNet = (previewIncome !== '' || previewExpense !== '')
+        ? String((Number(previewIncome) || 0) - (Number(previewExpense) || 0))
+        : (data.annual_net_profit || '');
+
     const previewData = withLiveMemberCode({
         ...data,
         ...liveInstallment,
@@ -887,6 +940,35 @@ export default function ApprovalForm({
         total_principal: String(effectiveApprovedAmount),
         est_loan_charge: liveInstallment.total_service_charge || data.est_loan_charge,
         member_code: member?.application_no || data.member_code,
+        project_income_1_2_yr: previewIncome,
+        project_expense_1_2_yr: previewExpense,
+        annual_net_profit: previewNet,
+        est_other_exp_1_desc: data.est_other_exp_1_desc || data.est_other_exp_1_name || '',
+        est_other_exp_1_name: data.est_other_exp_1_desc || data.est_other_exp_1_name || '',
+        est_other_exp_1_amount: data.est_other_exp_1_amount ?? data.est_other_exp_1_cost ?? '',
+        est_other_exp_1_cost: data.est_other_exp_1_amount ?? data.est_other_exp_1_cost ?? '',
+        est_other_exp_2_desc: data.est_other_exp_2_desc || data.est_other_exp_2_name || '',
+        est_other_exp_2_name: data.est_other_exp_2_desc || data.est_other_exp_2_name || '',
+        est_other_exp_2_amount: data.est_other_exp_2_amount ?? data.est_other_exp_2_cost ?? '',
+        est_other_exp_2_cost: data.est_other_exp_2_amount ?? data.est_other_exp_2_cost ?? '',
+        est_other_exp_3_desc: data.est_other_exp_3_desc || data.est_other_exp_3_name || '',
+        est_other_exp_3_name: data.est_other_exp_3_desc || data.est_other_exp_3_name || '',
+        est_other_exp_3_amount: data.est_other_exp_3_amount ?? data.est_other_exp_3_cost ?? '',
+        est_other_exp_3_cost: data.est_other_exp_3_amount ?? data.est_other_exp_3_cost ?? '',
+        est_other_income_desc: data.est_other_income_desc || data.est_other_income_source || '',
+        est_other_income_source: data.est_other_income_desc || data.est_other_income_source || '',
+        est_other_income_amount: data.est_other_income_amount ?? '',
+        est_main_income_desc: data.est_main_income_desc || data.est_main_income_source || '',
+        est_main_income_source: data.est_main_income_desc || data.est_main_income_source || '',
+        est_main_income_amount: data.est_main_income_amount ?? '',
+        applied_service_charge_rate:
+            getReducingServiceChargeRate(
+                loanProduct,
+                data.applied_service_charge_rate,
+                data.loan_duration_months || loanProduct?.duration_months || 12,
+            ) ||
+            data.applied_service_charge_rate ||
+            '',
     }, member);
 
     if (onlyPreview) {
