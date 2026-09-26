@@ -3,6 +3,7 @@ import FormSection from '@/components/MemberAdmission/FormSection';
 import { SmartDateInput } from '@/components/ui/SmartDateInput';
 import { FileText } from 'lucide-react';
 import { checkAdmissionUnique } from '@/utils/checkAdmissionUnique';
+import { toEnglishDigits } from '@/utils/memberCodeUtils';
 
 interface IdentitySectionProps {
     data: any;
@@ -20,7 +21,8 @@ export default function IdentitySection({
     lockIdentity = false,
 }: IdentitySectionProps) {
     const [uniqueErrors, setUniqueErrors] = useState<Record<string, string>>({});
-    const shown = { ...uniqueErrors, ...errors };
+    const [formatErrors, setFormatErrors] = useState<Record<string, string>>({});
+    const shown = { ...uniqueErrors, ...formatErrors, ...errors };
 
     const inputClass = (hasErr?: boolean) =>
         `w-full rounded-xl border ${hasErr ? 'border-red-500 bg-red-50/50 ring-2 ring-red-200' : lockIdentity ? 'border-slate-200 bg-slate-50 text-slate-700' : 'border-gray-300 bg-white'} px-3 py-2 text-xs md:text-sm focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 font-medium transition-all ${lockIdentity ? 'cursor-not-allowed' : ''}`;
@@ -82,10 +84,28 @@ export default function IdentitySection({
                         </label>
                         <input
                             type="text"
-                            placeholder="এনআইডি নম্বর"
+                            inputMode="numeric"
+                            placeholder="১০, ১৩ অথবা ১৭ ডিজিট"
                             value={data.nid_number}
-                            onChange={(e) => setField('nid_number', e.target.value)}
-                            onBlur={(e) => void checkField('nid_number', e.target.value)}
+                            maxLength={17}
+                            onChange={(e) => {
+                                const val = toEnglishDigits(e.target.value).replace(/\D/g, '').slice(0, 17);
+                                setField('nid_number', val);
+                                if (val.length > 0 && ![10, 13, 17].includes(val.length)) {
+                                    setFormatErrors((prev) => ({ ...prev, nid_number: 'জাতীয় পরিচয়পত্র নম্বর অবশ্যই ১০, ১৩ অথবা ১৭ ডিজিট হতে হবে' }));
+                                } else {
+                                    setFormatErrors((prev) => { const n = { ...prev }; delete n.nid_number; return n; });
+                                }
+                            }}
+                            onBlur={(e) => {
+                                const val = toEnglishDigits(e.target.value).replace(/\D/g, '').slice(0, 17);
+                                if (val.length > 0 && ![10, 13, 17].includes(val.length)) {
+                                    setFormatErrors((prev) => ({ ...prev, nid_number: 'জাতীয় পরিচয়পত্র নম্বর অবশ্যই ১০, ১৩ অথবা ১৭ ডিজিট হতে হবে' }));
+                                    return;
+                                }
+                                setFormatErrors((prev) => { const n = { ...prev }; delete n.nid_number; return n; });
+                                void checkField('nid_number', val);
+                            }}
                             disabled={lockIdentity}
                             readOnly={lockIdentity}
                             className={inputClass(Boolean(shown.nid_number))}
@@ -96,12 +116,31 @@ export default function IdentitySection({
                     </div>
 
                     <div>
-                        <label className="mb-0.5 block text-xs font-semibold text-gray-700">Smart Card No.</label>
+                        <label className="mb-0.5 block text-xs font-semibold text-gray-700">Smart Card No. (১০ ডিজিট)</label>
                         <input
                             type="text"
+                            inputMode="numeric"
+                            placeholder="১০ ডিজিট"
                             value={data.smart_card_number}
-                            onChange={(e) => setField('smart_card_number', e.target.value)}
-                            onBlur={(e) => void checkField('smart_card_number', e.target.value)}
+                            maxLength={10}
+                            onChange={(e) => {
+                                const val = toEnglishDigits(e.target.value).replace(/\D/g, '').slice(0, 10);
+                                setField('smart_card_number', val);
+                                if (val.length > 0 && val.length !== 10) {
+                                    setFormatErrors((prev) => ({ ...prev, smart_card_number: 'স্মার্ট কার্ড নম্বর অবশ্যই ১০ ডিজিট হতে হবে' }));
+                                } else {
+                                    setFormatErrors((prev) => { const n = { ...prev }; delete n.smart_card_number; return n; });
+                                }
+                            }}
+                            onBlur={(e) => {
+                                const val = toEnglishDigits(e.target.value).replace(/\D/g, '').slice(0, 10);
+                                if (val.length > 0 && val.length !== 10) {
+                                    setFormatErrors((prev) => ({ ...prev, smart_card_number: 'স্মার্ট কার্ড নম্বর অবশ্যই ১০ ডিজিট হতে হবে' }));
+                                    return;
+                                }
+                                setFormatErrors((prev) => { const n = { ...prev }; delete n.smart_card_number; return n; });
+                                void checkField('smart_card_number', val);
+                            }}
                             disabled={lockIdentity}
                             readOnly={lockIdentity}
                             className={inputClass(Boolean(shown.smart_card_number))}
@@ -118,16 +157,38 @@ export default function IdentitySection({
                 <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 sm:gap-3 md:grid-cols-4">
                     <div>
                         <label className="mb-0.5 block text-xs font-semibold text-gray-700">
-                            জন্ম সনদ নং (প্রযোজ্য ক্ষেত্রে)
+                            জন্ম সনদ নং (প্রযোজ্য ক্ষেত্রে - ১৭ ডিজিট)
                         </label>
                         <input
                             type="text"
+                            inputMode="numeric"
+                            placeholder="১৭ ডিজিট"
                             value={data.birth_certificate_number}
-                            onChange={(e) => setData('birth_certificate_number', e.target.value)}
+                            maxLength={17}
+                            onChange={(e) => {
+                                const val = toEnglishDigits(e.target.value).replace(/\D/g, '').slice(0, 17);
+                                setData('birth_certificate_number', val);
+                                if (val.length > 0 && val.length !== 17) {
+                                    setFormatErrors((prev) => ({ ...prev, birth_certificate_number: 'জন্ম সনদ নম্বর অবশ্যই ১৭ ডিজিট হতে হবে' }));
+                                } else {
+                                    setFormatErrors((prev) => { const n = { ...prev }; delete n.birth_certificate_number; return n; });
+                                }
+                            }}
+                            onBlur={(e) => {
+                                const val = toEnglishDigits(e.target.value).replace(/\D/g, '').slice(0, 17);
+                                if (val.length > 0 && val.length !== 17) {
+                                    setFormatErrors((prev) => ({ ...prev, birth_certificate_number: 'জন্ম সনদ নম্বর অবশ্যই ১৭ ডিজিট হতে হবে' }));
+                                } else {
+                                    setFormatErrors((prev) => { const n = { ...prev }; delete n.birth_certificate_number; return n; });
+                                }
+                            }}
                             disabled={lockIdentity}
                             readOnly={lockIdentity}
-                            className={inputClass()}
+                            className={inputClass(Boolean(shown.birth_certificate_number))}
                         />
+                        {shown.birth_certificate_number && (
+                            <p className="mt-1 text-xs text-red-600 font-medium">{shown.birth_certificate_number}</p>
+                        )}
                     </div>
 
                     <div>
@@ -162,16 +223,38 @@ export default function IdentitySection({
 
                     <div>
                         <label className="mb-0.5 block text-xs font-semibold text-gray-700">
-                            Family Member Mobile (পরিবারের সদস্যের মোবাইল)
+                            Family Member Mobile (১১ ডিজিট)
                         </label>
                         <input
                             type="text"
+                            inputMode="numeric"
+                            placeholder="01xxxxxxxxx"
+                            maxLength={11}
                             value={data.family_member_mobile}
-                            onChange={(e) => setData('family_member_mobile', e.target.value)}
+                            onChange={(e) => {
+                                const val = toEnglishDigits(e.target.value).replace(/\D/g, '').slice(0, 11);
+                                setData('family_member_mobile', val);
+                                if (val.length > 0 && val.length !== 11) {
+                                    setFormatErrors((prev) => ({ ...prev, family_member_mobile: 'মোবাইল নম্বর অবশ্যই ১১ ডিজিট হতে হবে' }));
+                                } else {
+                                    setFormatErrors((prev) => { const n = { ...prev }; delete n.family_member_mobile; return n; });
+                                }
+                            }}
+                            onBlur={(e) => {
+                                const val = toEnglishDigits(e.target.value).replace(/\D/g, '').slice(0, 11);
+                                if (val.length > 0 && val.length !== 11) {
+                                    setFormatErrors((prev) => ({ ...prev, family_member_mobile: 'মোবাইল নম্বর অবশ্যই ১১ ডিজিট হতে হবে' }));
+                                } else {
+                                    setFormatErrors((prev) => { const n = { ...prev }; delete n.family_member_mobile; return n; });
+                                }
+                            }}
                             disabled={lockIdentity}
                             readOnly={lockIdentity}
-                            className={inputClass()}
+                            className={inputClass(Boolean(shown.family_member_mobile))}
                         />
+                        {shown.family_member_mobile && (
+                            <p className="mt-1 text-xs text-red-600 font-medium">{shown.family_member_mobile}</p>
+                        )}
                     </div>
                 </div>
 
@@ -193,14 +276,36 @@ export default function IdentitySection({
 
                     <div>
                         <label className="mb-0.5 block text-xs font-semibold text-gray-700">
-                            ১৫. জামিনদারের মোবাইল (Guarantor Mobile)
+                            ১৫. জামিনদারের মোবাইল (১১ ডিজিট)
                         </label>
                         <input
                             type="text"
+                            inputMode="numeric"
+                            placeholder="01xxxxxxxxx"
+                            maxLength={11}
                             value={data.guarantor_mobile}
-                            onChange={(e) => setData('guarantor_mobile', e.target.value)}
-                            className={inputClass()}
+                            onChange={(e) => {
+                                const val = toEnglishDigits(e.target.value).replace(/\D/g, '').slice(0, 11);
+                                setData('guarantor_mobile', val);
+                                if (val.length > 0 && val.length !== 11) {
+                                    setFormatErrors((prev) => ({ ...prev, guarantor_mobile: 'মোবাইল নম্বর অবশ্যই ১১ ডিজিট হতে হবে' }));
+                                } else {
+                                    setFormatErrors((prev) => { const n = { ...prev }; delete n.guarantor_mobile; return n; });
+                                }
+                            }}
+                            onBlur={(e) => {
+                                const val = toEnglishDigits(e.target.value).replace(/\D/g, '').slice(0, 11);
+                                if (val.length > 0 && val.length !== 11) {
+                                    setFormatErrors((prev) => ({ ...prev, guarantor_mobile: 'মোবাইল নম্বর অবশ্যই ১১ ডিজিট হতে হবে' }));
+                                } else {
+                                    setFormatErrors((prev) => { const n = { ...prev }; delete n.guarantor_mobile; return n; });
+                                }
+                            }}
+                            className={inputClass(Boolean(shown.guarantor_mobile))}
                         />
+                        {shown.guarantor_mobile && (
+                            <p className="mt-1 text-xs text-red-600 font-medium">{shown.guarantor_mobile}</p>
+                        )}
                     </div>
 
                     <div>
@@ -209,8 +314,9 @@ export default function IdentitySection({
                         </label>
                         <input
                             type="text"
+                            inputMode="numeric"
                             value={data.tin_number}
-                            onChange={(e) => setData('tin_number', e.target.value)}
+                            onChange={(e) => setData('tin_number', toEnglishDigits(e.target.value).replace(/\D/g, ''))}
                             className={inputClass()}
                         />
                     </div>

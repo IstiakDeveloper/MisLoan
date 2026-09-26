@@ -2,6 +2,7 @@ import React from 'react';
 import FormSection from '@/components/MemberAdmission/FormSection';
 import bangladeshData from '@/data/bangladeshAddresses.json';
 import { Home } from 'lucide-react';
+import { toEnglishDigits } from '@/utils/memberCodeUtils';
 
 interface AddressSectionProps {
     data: any;
@@ -134,8 +135,9 @@ export default function AddressSection({
                             <label className="mb-0.5 block text-xs font-semibold text-gray-700">Post Code (পোস্ট কোড)</label>
                             <input
                                 type="text"
+                                inputMode="numeric"
                                 value={data.present_post_code}
-                                onChange={(e) => setData('present_post_code', e.target.value)}
+                                onChange={(e) => setData('present_post_code', toEnglishDigits(e.target.value).replace(/\D/g, ''))}
                                 className={inputClass()}
                             />
                         </div>
@@ -233,8 +235,9 @@ export default function AddressSection({
                                 <label className="mb-0.5 block text-xs font-semibold text-gray-700">Post Code (পোস্ট কোড)</label>
                                 <input
                                     type="text"
+                                    inputMode="numeric"
                                     value={data.permanent_post_code}
-                                    onChange={(e) => setData('permanent_post_code', e.target.value)}
+                                    onChange={(e) => setData('permanent_post_code', toEnglishDigits(e.target.value).replace(/\D/g, ''))}
                                     className={inputClass()}
                                 />
                             </div>

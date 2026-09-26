@@ -14,6 +14,18 @@ const NUMERIC_PLACEHOLDER_HINTS = [
     'আয়',
     'সঞ্চয়',
     'সঞ্চয়',
+    'nid',
+    'phone',
+    'mobile',
+    'card',
+    'pin',
+    'code',
+    'post',
+    'tin',
+    'টিন',
+    'পোস্ট',
+    'নম্বর',
+    'সনদ',
 ];
 
 export function hasBanglaDigits(value: string): boolean {
@@ -38,8 +50,8 @@ export function isNumericFormInput(el: EventTarget | null): el is HTMLInputEleme
         return true;
     }
 
-    const placeholder = el.placeholder || '';
-    return NUMERIC_PLACEHOLDER_HINTS.some((hint) => placeholder.includes(hint));
+    const textToCheck = `${el.name || ''} ${el.id || ''} ${el.placeholder || ''} ${el.getAttribute('aria-label') || ''}`.toLowerCase();
+    return NUMERIC_PLACEHOLDER_HINTS.some((hint) => textToCheck.includes(hint.toLowerCase()));
 }
 
 function setNativeInputValue(input: HTMLInputElement, value: string): void {

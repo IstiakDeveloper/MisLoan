@@ -1,6 +1,6 @@
 import React from 'react';
 import { MemberAdmission } from '@/types/memberAdmission';
-import { formatDate } from '@/utils/dateUtils';
+import { formatDateBangla, toBanglaDigits } from '@/utils/dateUtils';
 import { useAutoFitPrint } from '@/hooks/useAutoFitPrint';
 
 interface Props {
@@ -32,18 +32,19 @@ interface Props {
     printMode?: boolean;
 }
 
+/** Show/Print-এ সব সংখ্যা বাংলায় */
 function num(v: number | null | undefined): string {
     if (v == null || v === undefined) return '';
-    return String(v);
+    return toBanglaDigits(String(v));
 }
 
-/** Amount: .00 দেখাবে না, শুধু অশূন্য দশমিক থাকলে (যেমন .25) দেখাবে */
+/** Amount: .00 দেখাবে না — বাংলা digits-এ */
 function formatAmount(v: number | string | null | undefined): string {
     if (v == null || v === undefined) return '';
     const n = typeof v === 'string' ? parseFloat(v) : Number(v);
     if (Number.isNaN(n)) return '';
-    if (Number.isInteger(n)) return String(n);
-    return String(n).replace(/\.?0+$/, '');
+    const en = Number.isInteger(n) ? String(n) : String(n).replace(/\.?0+$/, '');
+    return toBanglaDigits(en);
 }
 
 function str(v: string | number | null | undefined): string {
@@ -171,20 +172,20 @@ export default function MemberAdmissionFormView({ admission, printMode }: Props)
                                         <div className="flex items-baseline gap-1.5 flex-wrap">
                                             <span className="text-[13px] print:text-[12.5px] font-bold text-gray-900 shrink-0">জরিপের তারিখ:</span>
                                             <span className="border-b border-dotted border-gray-700 min-w-[80px] text-[13px] print:text-[12.5px] text-gray-900 font-bold">
-                                                {formatDate(admission.survey_date)}
+                                                {formatDateBangla(admission.survey_date)}
                                             </span>
                                         </div>
                                         <div className="flex items-baseline gap-1.5 flex-wrap">
                                             <span className="text-[13px] print:text-[12.5px] font-bold text-gray-900 shrink-0">ভর্তির তারিখ:</span>
                                             <span className="border-b border-dotted border-gray-700 min-w-[80px] text-[13px] print:text-[12.5px] text-gray-900 font-bold">
-                                                {formatDate(admission.admission_date)}
+                                                {formatDateBangla(admission.admission_date)}
                                             </span>
                                         </div>
                                         {admission.is_legacy && (
                                             <div className="flex items-baseline gap-1.5 flex-wrap">
                                                 <span className="text-[12.5px] print:text-[12px] font-bold text-amber-800 shrink-0">সদস্য ধরন:</span>
                                                 <span className="text-[12.5px] print:text-[12px] font-bold text-amber-800">
-                                                    পুরাতন{admission.loan_dofa ? ` (দফা ${admission.loan_dofa})` : ''}
+                                                    পুরাতন{admission.loan_dofa ? ` (দফা ${toBanglaDigits(String(admission.loan_dofa))})` : ''}
                                                 </span>
                                             </div>
                                         )}
@@ -199,7 +200,7 @@ export default function MemberAdmissionFormView({ admission, printMode }: Props)
                                         <h2 className="font-bold text-[13.5px] print:text-[13px] m-0 leading-none">জরিপ ও সদস্য ভর্তির আবেদন পত্র</h2>
                                     </div>
                                     <span className="text-[14.5px] print:text-[14px] text-gray-900 font-black mt-1.5">
-                                        সদস্য নং: {admission.application_no}
+                                        সদস্য নং: {toBanglaDigits(admission.application_no)}
                                     </span>
                                 </div>
 
@@ -250,8 +251,8 @@ export default function MemberAdmissionFormView({ admission, printMode }: Props)
                             </div>
                             <div className="grid grid-cols-1 sm:grid-cols-3 print:grid-cols-3 gap-x-5 gap-y-2 sm:gap-y-3 pt-1">
                                 <FormRow label="৭. বৈবাহিক অবস্থা :" value={maritalLabels[admission.marital_status] || admission.marital_status} />
-                                <FormRow label="৮. মোবাইল নং :" value={admission.mobile_number} />
-                                <FormRow label="৯. বিকল্প মোবাইল নং :" value={str(admission.alternative_mobile)} />
+                                <FormRow label="৮. মোবাইল নং :" value={toBanglaDigits(str(admission.mobile_number))} />
+                                <FormRow label="৯. বিকল্প মোবাইল নং :" value={toBanglaDigits(str(admission.alternative_mobile))} />
                             </div>
                         </div>
 
@@ -264,7 +265,7 @@ export default function MemberAdmissionFormView({ admission, printMode }: Props)
                                 <FormRow label="উপজেলা:" value={admission.present_upazila} />
                                 <FormRow label="ইউনিয়ন:" value={str(admission.present_union)} />
                                 <FormRow label="গ্রাম/রাস্তা:" value={str(admission.present_village_road)} />
-                                <FormRow label="পোস্ট কোড:" value={str(admission.present_post_code)} />
+                                <FormRow label="পোস্ট কোড:" value={toBanglaDigits(str(admission.present_post_code))} />
                             </div>
                         </div>
 
@@ -278,7 +279,7 @@ export default function MemberAdmissionFormView({ admission, printMode }: Props)
                                     <FormRow label="উপজেলা:" value={admission.present_upazila} />
                                     <FormRow label="ইউনিয়ন:" value={str(admission.present_union)} />
                                     <FormRow label="গ্রাম/রাস্তা:" value={str(admission.present_village_road)} />
-                                    <FormRow label="পোস্ট কোড:" value={str(admission.present_post_code)} />
+                                    <FormRow label="পোস্ট কোড:" value={toBanglaDigits(str(admission.present_post_code))} />
                                 </div>
                             ) : (
                                 <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 print:grid-cols-3 gap-x-4 gap-y-2 sm:gap-y-3">
@@ -287,7 +288,7 @@ export default function MemberAdmissionFormView({ admission, printMode }: Props)
                                     <FormRow label="উপজেলা:" value={str(admission.permanent_upazila)} />
                                     <FormRow label="ইউনিয়ন:" value={str(admission.permanent_union)} />
                                     <FormRow label="গ্রাম/রাস্তা:" value={str(admission.permanent_village_road)} />
-                                    <FormRow label="পোস্ট কোড:" value={str(admission.permanent_post_code)} />
+                                    <FormRow label="পোস্ট কোড:" value={toBanglaDigits(str(admission.permanent_post_code))} />
                                 </div>
                             )}
                         </div>
@@ -296,21 +297,21 @@ export default function MemberAdmissionFormView({ admission, printMode }: Props)
                         <div className="mb-4 space-y-3">
                             <p className="font-bold text-[14px] text-gray-900">12. Identity Information:</p>
                             <div className="grid grid-cols-1 md:grid-cols-2 print:grid-cols-2 gap-x-8 gap-y-2 sm:gap-y-3">
-                                <FormRow label="National ID No. :" value={str(admission.nid_number)} />
-                                <FormRow label="Smart Card No. :" value={str(admission.smart_card_number)} />
+                                <FormRow label="National ID No. :" value={toBanglaDigits(str(admission.nid_number))} />
+                                <FormRow label="Smart Card No. :" value={toBanglaDigits(str(admission.smart_card_number))} />
                             </div>
-                            <FormRow label="13. Other Identity: জন্ম সনদ নং (প্রযোজ্য ক্ষেত্রে):" value={str(admission.birth_certificate_number)} />
+                            <FormRow label="13. Other Identity: জন্ম সনদ নং (প্রযোজ্য ক্ষেত্রে):" value={toBanglaDigits(str(admission.birth_certificate_number))} />
                             <div className="grid grid-cols-1 sm:grid-cols-3 print:grid-cols-3 gap-x-5 gap-y-2 sm:gap-y-3">
-                                <FormRow label="Date of Birth :" value={formatDate(admission.date_of_birth)} />
+                                <FormRow label="Date of Birth :" value={formatDateBangla(admission.date_of_birth)} />
                                 <FormRow label="Gender :" value={genderLabels[admission.gender] || admission.gender} />
-                                <FormRow label="Family Mobile:" value={str(admission.family_member_mobile)} />
+                                <FormRow label="Family Mobile:" value={toBanglaDigits(str(admission.family_member_mobile))} />
                             </div>
                             <div className="grid grid-cols-1 md:grid-cols-2 print:grid-cols-2 gap-x-8 gap-y-2 sm:gap-y-3">
                                 <FormRow label="14. Co-Applicant/Guarantor :" value={str(admission.guarantor_name)} />
-                                <FormRow label="Guarantor Mobile:" value={str(admission.guarantor_mobile)} />
+                                <FormRow label="Guarantor Mobile:" value={toBanglaDigits(str(admission.guarantor_mobile))} />
                             </div>
                             <div className="grid grid-cols-1 md:grid-cols-2 print:grid-cols-2 gap-x-8 gap-y-2 sm:gap-y-3 items-baseline">
-                                <FormRow label="15. TIN (ট্যাক্স সার্টিফিকেট নং):" value={str(admission.tin_number)} />
+                                <FormRow label="15. TIN (ট্যাক্স সার্টিফিকেট নং):" value={toBanglaDigits(str(admission.tin_number))} />
                                 <div className="flex items-center gap-2 py-1 flex-wrap">
                                     <span className="text-[14px] print:text-[13.5px] font-bold text-gray-900">সদস্য কি এসএমএস সেবা নিতে চান?</span>
                                     <span className="border-b border-dotted border-gray-700 min-w-[45px] text-center font-bold">
@@ -348,12 +349,12 @@ export default function MemberAdmissionFormView({ admission, printMode }: Props)
                                             const cellClass = 'border border-gray-700 px-2 py-1.5 text-center align-middle h-8 print:h-[28px]';
                                             return (
                                                 <tr key={i}>
-                                                    <td className={cellClass}>{i + 1}</td>
+                                                    <td className={cellClass}>{toBanglaDigits(String(i + 1))}</td>
                                                     <td className={`${cellClass} text-left px-2.5 font-medium`}>{m?.member_name ?? ''}</td>
                                                     <td className={cellClass}>{m?.relation_with_head ?? ''}</td>
                                                     <td className={cellClass}>{m ? (genderLabels[m.gender] || m.gender) : ''}</td>
-                                                    <td className={cellClass}>{m?.age_years ?? ''}</td>
-                                                    <td className={cellClass}>{m?.age_months ?? ''}</td>
+                                                    <td className={cellClass}>{m?.age_years != null ? toBanglaDigits(String(m.age_years)) : ''}</td>
+                                                    <td className={cellClass}>{m?.age_months != null ? toBanglaDigits(String(m.age_months)) : ''}</td>
                                                     <td className={cellClass}>{m?.marital_status ? (maritalLabels[m.marital_status] || m.marital_status) : ''}</td>
                                                     <td className={cellClass}>{m?.education_level ?? ''}</td>
                                                     <td className={cellClass}>{m?.occupation ?? ''}</td>
@@ -404,7 +405,7 @@ export default function MemberAdmissionFormView({ admission, printMode }: Props)
                             <div className="flex items-center gap-4 flex-wrap py-1">
                                 <span className="text-[14px] font-bold text-gray-900">(i) মোট ঘর:</span>
                                 <span className="border-2 border-gray-700 rounded px-3.5 py-1 text-center min-w-[42px] font-bold bg-white leading-none text-[14.5px]">
-                                    {(admission.mud_house_count || 0) + (admission.tin_house_count || 0) + (admission.brick_house_count || 0) + (admission.semi_brick_house_count || 0) || ''}
+                                    {toBanglaDigits(String((admission.mud_house_count || 0) + (admission.tin_house_count || 0) + (admission.brick_house_count || 0) + (admission.semi_brick_house_count || 0) || ''))}
                                 </span>
                                 <span className="text-[14px] text-gray-800 ml-2 font-medium">ক) মাটির:</span>
                                 <span className="border border-gray-700 rounded px-3 py-1 text-center min-w-[34px] bg-white leading-none font-bold">{num(admission.mud_house_count)}</span>
@@ -470,9 +471,9 @@ export default function MemberAdmissionFormView({ admission, printMode }: Props)
                                                 const cellClass = 'border border-gray-700 px-3 py-2 text-center align-middle h-8.5 print:h-[30px]';
                                                 return (
                                                     <tr key={i}>
-                                                        <td className={cellClass}>{i + 1}</td>
+                                                        <td className={cellClass}>{toBanglaDigits(String(i + 1))}</td>
                                                         <td className={`${cellClass} text-left px-3.5 font-medium`}>{a?.asset_description ?? ''}</td>
-                                                        <td className={cellClass}>{a?.quantity_amount ?? ''}</td>
+                                                        <td className={cellClass}>{a?.quantity_amount != null ? toBanglaDigits(String(a.quantity_amount)) : ''}</td>
                                                         <td className={cellClass}>{formatAmount(a?.estimated_value)}</td>
                                                     </tr>
                                                 );
@@ -501,7 +502,7 @@ export default function MemberAdmissionFormView({ admission, printMode }: Props)
                             </div>
                             <div className="grid grid-cols-1 sm:grid-cols-2 print:grid-cols-2 gap-y-3.5 gap-x-10">
                                 <FormRow label="২১. কর্মকর্তার নাম:" value={str(admission.interviewer_name)} />
-                                <FormRow label="পিন নং:" value={str(admission.employee_name || (admission as any).surveyor_pin)} />
+                                <FormRow label="পিন নং:" value={toBanglaDigits(str(admission.employee_name || (admission as any).surveyor_pin))} />
                             </div>
                             <FormRow label="২২. অন্যান্য সংস্থা হতে ঋণ গ্রহণের তথ্য:" value={str(admission.other_loan_info)} />
                             <div className="pt-1">
@@ -529,7 +530,7 @@ export default function MemberAdmissionFormView({ admission, printMode }: Props)
                                 </div>
                                 <div className="flex items-baseline gap-2 py-1">
                                     <span className="text-[14px] font-bold shrink-0">সদস্য নং:</span>
-                                    <span className="border-b border-dotted border-gray-700 flex-1 text-center font-bold text-[14.5px]">{admission.application_no}</span>
+                                    <span className="border-b border-dotted border-gray-700 flex-1 text-center font-bold text-[14.5px]">{toBanglaDigits(admission.application_no)}</span>
                                 </div>
                             </div>
 
@@ -540,7 +541,7 @@ export default function MemberAdmissionFormView({ admission, printMode }: Props)
                                 </div>
                                 <div className="flex items-baseline gap-2 py-1">
                                     <span className="text-[14px] font-bold shrink-0">সমিতির কোড নং:</span>
-                                    <span className="border-b border-dotted border-gray-700 flex-1 text-center font-bold text-[14.5px]">{admission.samity?.samity_code ?? admission.samity?.id ?? ''}</span>
+                                    <span className="border-b border-dotted border-gray-700 flex-1 text-center font-bold text-[14.5px]">{toBanglaDigits(String(admission.samity?.samity_code ?? admission.samity?.id ?? ''))}</span>
                                 </div>
                             </div>
 
@@ -566,18 +567,18 @@ export default function MemberAdmissionFormView({ admission, printMode }: Props)
                                         ) : null}
                                     </div>
                                     <p className="text-[14px] font-bold text-gray-900">অফিসারের স্বাক্ষর ও তারিখ</p>
-                                    <p className="text-[12.5px] text-gray-600 font-semibold mt-0.5">পিন: {(admission as any).surveyor_pin ?? '—'}</p>
+                                    <p className="text-[12.5px] text-gray-600 font-semibold mt-0.5">পিন: {toBanglaDigits(str((admission as any).surveyor_pin ?? '—'))}</p>
                                 </div>
 
                                 {/* Branch Manager Signature */}
                                 <div className="text-center">
                                     <div className="border-b-2 border-dotted border-gray-700 flex items-end justify-center mb-1.5" style={{ height: '82px' }}>
                                         {(admission as any).submitted_by_signature_path ? (
-                                            <img src={`/storage/${(admission as any).submitted_by_signature_path}`} alt="" className="max-h-14 w-auto object-contain" />
+                                             <img src={`/storage/${(admission as any).submitted_by_signature_path}`} alt="" className="max-h-14 w-auto object-contain" />
                                         ) : null}
                                     </div>
                                     <p className="text-[14px] font-bold text-gray-900">শাখা ব্যবস্থাপকের স্বাক্ষর ও তারিখ</p>
-                                    <p className="text-[12.5px] text-gray-600 font-semibold mt-0.5">পিন: {(admission as any).submitted_by_pin ?? '—'}</p>
+                                    <p className="text-[12.5px] text-gray-600 font-semibold mt-0.5">পিন: {toBanglaDigits(str((admission as any).submitted_by_pin ?? '—'))}</p>
                                 </div>
 
                                 {/* Accountant Signature */}
@@ -588,7 +589,7 @@ export default function MemberAdmissionFormView({ admission, printMode }: Props)
                                         ) : null}
                                     </div>
                                     <p className="text-[14px] font-bold text-gray-900">হিসাবরক্ষকের স্বাক্ষর ও তারিখ</p>
-                                    <p className="text-[12.5px] text-gray-600 font-semibold mt-0.5">পিন: {(admission.approvals?.filter((a: any) => a.status === 'approved')[0] as any)?.approver_pin ?? '—'}</p>
+                                    <p className="text-[12.5px] text-gray-600 font-semibold mt-0.5">পিন: {toBanglaDigits(str((admission.approvals?.filter((a: any) => a.status === 'approved')[0] as any)?.approver_pin ?? '—'))}</p>
                                 </div>
                             </div>
                         </div>

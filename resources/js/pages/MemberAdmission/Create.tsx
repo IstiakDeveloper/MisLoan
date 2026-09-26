@@ -6,6 +6,12 @@ import {
     OtherAsset,
 } from '@/types/memberAdmission';
 import { formatTime } from '@/utils/dateUtils';
+import { toEnglishDigits } from '@/utils/memberCodeUtils';
+import {
+    handleNumericBeforeInput,
+    handleNumericCompositionEnd,
+    handleNumericPaste,
+} from '@/utils/numericInput';
 import {
     clearMemberAdmissionDraftLocal,
     hasMeaningfulDraftData,
@@ -95,7 +101,8 @@ function toNumVal(val: number | string | undefined | null): string | number {
 
 function toNumChange(val: string): number | string {
     if (val === '') return '';
-    const num = Number(val);
+    const en = toEnglishDigits(String(val));
+    const num = Number(en);
     return isNaN(num) ? '' : num;
 }
 
@@ -697,6 +704,28 @@ export default function Create({
             }
         }
 
+        // Validation for Mobile & NID
+        if (data.mobile_number && data.mobile_number.length !== 11) {
+            alert('মোবাইল নম্বর অবশ্যই ১১ ডিজিট হতে হবে।');
+            return;
+        }
+        if (data.alternative_mobile && data.alternative_mobile.length !== 11) {
+            alert('বিকল্প মোবাইল নম্বর অবশ্যই ১১ ডিজিট হতে হবে।');
+            return;
+        }
+        if (data.nid_number && ![10, 13, 17].includes(data.nid_number.length)) {
+            alert('জাতীয় পরিচয়পত্র নম্বর অবশ্যই ১০, ১৩ অথবা ১৭ ডিজিট হতে হবে।');
+            return;
+        }
+        if (data.smart_card_number && data.smart_card_number.length !== 10) {
+            alert('স্মার্ট কার্ড নম্বর অবশ্যই ১০ ডিজিট হতে হবে।');
+            return;
+        }
+        if (data.birth_certificate_number && data.birth_certificate_number.length !== 17) {
+            alert('জন্ম সনদ নম্বর অবশ্যই ১৭ ডিজিট হতে হবে।');
+            return;
+        }
+
         // Soft draft: save whatever is filled. Final submit (required) is from the list.
         const asDraft = saveAsDraft || !isLegacyMember;
         transform((form) => {
@@ -1160,8 +1189,13 @@ export default function Create({
                     </div>
                 )}
 
-                {/* MODULAR FORM SECTIONS */}
-                <div className="space-y-5">
+                {/* MODULAR FORM SECTIONS — global Bangla digit handler */}
+                <div
+                    className="space-y-5"
+                    onBeforeInput={handleNumericBeforeInput}
+                    onPaste={handleNumericPaste}
+                    onCompositionEnd={handleNumericCompositionEnd}
+                >
                     <OrganizationSection
                         data={data}
                         setData={setData}

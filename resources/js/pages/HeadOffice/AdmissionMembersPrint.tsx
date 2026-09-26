@@ -1,6 +1,6 @@
 import { Head } from '@inertiajs/react';
 import { useEffect } from 'react';
-import { formatDate } from '@/utils/dateUtils';
+import { formatDateBangla, toBanglaDigits } from '@/utils/dateUtils';
 
 interface Zone {
     id: number | string;
@@ -106,7 +106,7 @@ interface Props {
 
 function num(n: number | null | undefined): string {
     if (n == null || n === undefined) return '—';
-    return String(n);
+    return toBanglaDigits(String(n));
 }
 
 function str(s: string | null | undefined): string {
@@ -141,12 +141,12 @@ export default function AdmissionMembersPrint({ admissions, filters, zones, area
     const branchName = selectedBranch ? selectedBranch.name : 'সকল শাখা';
     const areaName = selectedArea ? selectedArea.name : 'সকল অঞ্চল';
     const zoneName = selectedZone ? selectedZone.name : 'সকল জোন';
-    const fromDateStr = filters.date_from ? formatDate(filters.date_from) : '';
-    const toDateStr = filters.date_to ? formatDate(filters.date_to) : '';
+    const fromDateStr = filters.date_from ? formatDateBangla(filters.date_from) : '';
+    const toDateStr = filters.date_to ? formatDateBangla(filters.date_to) : '';
     const reportDate =
         fromDateStr && toDateStr
             ? (fromDateStr === toDateStr ? fromDateStr : `${fromDateStr} - ${toDateStr}`)
-            : toDateStr || fromDateStr || formatDate(new Date());
+            : toDateStr || fromDateStr || formatDateBangla(new Date());
 
     const statusLabels: Record<string, string> = {
         draft: 'খসড়া',
@@ -165,9 +165,9 @@ export default function AdmissionMembersPrint({ admissions, filters, zones, area
         const fullCode = String(samity.samity_code || samity.code || '').trim();
         const shortCode = fullCode.length > 4 ? fullCode.slice(-4) : fullCode;
         if (name && shortCode) {
-            return `${name} (${shortCode})`;
+            return `${name} (${toBanglaDigits(shortCode)})`;
         }
-        return name || shortCode || '—';
+        return name || toBanglaDigits(shortCode) || '—';
     };
 
     const officerName = (a: MemberAdmissionPrint) =>
@@ -182,12 +182,12 @@ export default function AdmissionMembersPrint({ admissions, filters, zones, area
         const b = a.brick_house_count ?? 0;
         const s = a.semi_brick_house_count ?? 0;
         const total = m + t + b + s;
-        return total === 0 ? '—' : String(total);
+        return total === 0 ? '—' : toBanglaDigits(String(total));
     };
     const cultivable = (a: MemberAdmissionPrint) =>
-        a.cultivable_land_amount != null ? String(a.cultivable_land_amount) : '—';
+        a.cultivable_land_amount != null ? toBanglaDigits(String(a.cultivable_land_amount)) : '—';
     const totalAsset = (a: MemberAdmissionPrint) =>
-        a.total_asset_value != null ? String(a.total_asset_value) : '—';
+        a.total_asset_value != null ? toBanglaDigits(String(a.total_asset_value)) : '—';
     const occupation = (a: MemberAdmissionPrint) => {
         const family = (a as any).family_members || (a as any).familyMembers || [];
         if (Array.isArray(family) && family.length > 0) {
@@ -387,7 +387,7 @@ export default function AdmissionMembersPrint({ admissions, filters, zones, area
                         ) : (
                             admissions.map((admission, index) => (
                                 <tr key={admission.id}>
-                                    <td className="col-sl">{index + 1}</td>
+                                    <td className="col-sl">{toBanglaDigits(String(index + 1))}</td>
                                     <td className="col-branch">{admission.branch?.name ?? '—'}</td>
                                     <td className="col-officer">{officerName(admission)}</td>
                                     <td className="col-samity">{formatSamityNameWithCode(admission.samity)}</td>
@@ -397,7 +397,7 @@ export default function AdmissionMembersPrint({ admissions, filters, zones, area
                                             <span>{memberName(admission)}</span>
                                             {admission.is_legacy ? (
                                                 <span style={{ fontSize: '7.5px', color: '#b45309', marginLeft: '4px', fontWeight: 'bold' }}>
-                                                    (দফা: {admission.loan_dofa ?? 1})
+                                                    (দফা: {toBanglaDigits(String(admission.loan_dofa ?? 1))})
                                                 </span>
                                             ) : (
                                                 <span style={{ fontSize: '7.5px', color: '#047857', marginLeft: '4px', fontWeight: 'bold' }}>
@@ -406,7 +406,7 @@ export default function AdmissionMembersPrint({ admissions, filters, zones, area
                                             )}
                                         </div>
                                     </td>
-                                    <td className="col-mobile">{str(admission.mobile_number)}</td>
+                                    <td className="col-mobile">{toBanglaDigits(str(admission.mobile_number))}</td>
                                     <td className="col-num">{houseCount(admission)}</td>
                                     <td className="col-num">{cultivable(admission)}</td>
                                     <td className="col-num">{totalAsset(admission)}</td>
@@ -417,7 +417,7 @@ export default function AdmissionMembersPrint({ admissions, filters, zones, area
                                     <td className="col-occupation">{occupation(admission)}</td>
                                     <td className="col-income">{num(admission.monthly_income)}</td>
                                     <td className="col-guarantor">{str(admission.guarantor_name)}</td>
-                                    <td className="col-loan">{str(admission.other_loan_info)}</td>
+                                    <td className="col-loan">{toBanglaDigits(str(admission.other_loan_info))}</td>
                                     <td className="col-remarks"></td>
                                 </tr>
                             ))

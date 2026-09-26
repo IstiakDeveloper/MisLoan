@@ -30,7 +30,7 @@ import HeadOfficeModificationModal, { canHeadOfficeModify } from '@/components/H
 import { toEnglishDigits, formatBranchCode, parseMemberCode } from '@/utils/memberCodeUtils';
 import SendAdmissionToHoModal from '@/components/MemberAdmission/SendAdmissionToHoModal';
 import { useHoSendCutoff } from '@/hooks/use-ho-send-cutoff';
-import { formatDate, formatDateTime } from '@/utils/dateUtils';
+import { formatDate, formatDateBangla, formatDateTime, toBanglaDigits } from '@/utils/dateUtils';
 
 interface CycleSurveyItem {
     id: number;
@@ -390,12 +390,12 @@ export default function Show({ admission, cycleSurveys = [] }: Props) {
                                     {getStatusBadge(admission.status)}
                                     {admission.is_legacy && (
                                         <span className="inline-flex items-center rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-semibold text-amber-800">
-                                            পুরাতন{admission.loan_dofa ? ` · দফা ${admission.loan_dofa}` : ''}
+                                            পুরাতন{admission.loan_dofa ? ` · দফা ${toBanglaDigits(String(admission.loan_dofa))}` : ''}
                                         </span>
                                     )}
                                 </div>
                                 <p className="text-[11px] sm:text-xs text-slate-500 mt-1 font-medium break-words flex items-center gap-1.5 flex-wrap">
-                                    <span>আবেদন নং / মেম্বার কোড: <span className="font-mono font-bold text-blue-700">{admission.application_no}</span></span>
+                                    <span>আবেদন নং / মেম্বার কোড: <span className="font-mono font-bold text-blue-700">{toBanglaDigits(admission.application_no)}</span></span>
                                     {admission.status !== 'disbursed' && !hasDisbursedLoan && (
                                         <button
                                             type="button"
@@ -433,7 +433,7 @@ export default function Show({ admission, cycleSurveys = [] }: Props) {
                                 className="inline-flex items-center justify-center gap-1.5 px-3 py-2.5 min-h-11 sm:min-h-9 sm:h-9 bg-slate-800 text-white rounded-xl text-xs font-bold hover:bg-slate-900 shadow-xs transition touch-manipulation"
                             >
                                 <Printer className="w-4 h-4 shrink-0" />
-                                <span>{hasMultipleSurveys ? `দফা ${Number(admission.loan_dofa) || 1} প্রিন্ট` : 'প্রিন্ট'}</span>
+                                <span>{hasMultipleSurveys ? `দফা ${toBanglaDigits(String(Number(admission.loan_dofa) || 1))} প্রিন্ট` : 'প্রিন্ট'}</span>
                             </button>
                             {hasMultipleSurveys && (
                                 <button
@@ -442,7 +442,7 @@ export default function Show({ admission, cycleSurveys = [] }: Props) {
                                     className="inline-flex items-center justify-center gap-1.5 px-3 py-2.5 min-h-11 sm:min-h-9 sm:h-9 bg-emerald-800 text-white rounded-xl text-xs font-bold hover:bg-emerald-900 shadow-xs transition touch-manipulation"
                                 >
                                     <Printer className="w-4 h-4 shrink-0" />
-                                    <span>সব জরিপ প্রিন্ট ({surveys.length})</span>
+                                    <span>সব জরিপ প্রিন্ট ({toBanglaDigits(String(surveys.length))})</span>
                                 </button>
                             )}
                             {isEditable && (
@@ -505,21 +505,21 @@ export default function Show({ admission, cycleSurveys = [] }: Props) {
                                     <div key={survey.id} className="flex items-center gap-1.5">
                                         {isCurrent ? (
                                             <span className="inline-flex items-center px-3 py-1.5 rounded-xl text-xs font-bold bg-emerald-700 text-white shadow-xs">
-                                                দফা {survey.dofa} জরিপ
+                                                দফা {toBanglaDigits(String(survey.dofa))} জরিপ
                                             </span>
                                         ) : (
                                             <Link
                                                 href={isHeadOffice ? `/head-office/admissions/${survey.id}` : `/member-admissions/${survey.id}`}
                                                 className="inline-flex items-center px-3 py-1.5 rounded-xl text-xs font-bold bg-white text-emerald-800 border border-emerald-200 hover:bg-emerald-100"
                                             >
-                                                দফা {survey.dofa} জরিপ
+                                                দফা {toBanglaDigits(String(survey.dofa))} জরিপ
                                             </Link>
                                         )}
                                         <button
                                             type="button"
                                             onClick={() => handlePrint(survey.id)}
                                             className="inline-flex items-center justify-center h-8 w-8 rounded-xl bg-white border border-emerald-200 text-emerald-800 hover:bg-emerald-100 cursor-pointer"
-                                            title={`দফা ${survey.dofa} জরিপ প্রিন্ট`}
+                                            title={`দফা ${toBanglaDigits(String(survey.dofa))} জরিপ প্রিন্ট`}
                                         >
                                             <Printer className="w-3.5 h-3.5" />
                                         </button>
@@ -560,7 +560,7 @@ export default function Show({ admission, cycleSurveys = [] }: Props) {
                                 <span className={`absolute -top-1.5 -right-2.5 min-w-[16px] h-4 px-1 rounded-full text-[9px] font-extrabold flex items-center justify-center ${
                                     activeTab === 'attachments' ? 'bg-white text-blue-700' : 'bg-blue-100 text-blue-800'
                                 }`}>
-                                    {attachments.length}
+                                    {toBanglaDigits(String(attachments.length))}
                                 </span>
                             </span>
                             <span className="text-center leading-tight">সংযুক্তি</span>
@@ -581,7 +581,7 @@ export default function Show({ admission, cycleSurveys = [] }: Props) {
                                     <span className={`absolute -top-1.5 -right-2.5 min-w-[16px] h-4 px-1 rounded-full text-[9px] font-extrabold flex items-center justify-center ${
                                         activeTab === 'approvals' ? 'bg-white text-blue-700' : 'bg-amber-100 text-amber-900'
                                     }`}>
-                                        {commentsCount}
+                                        {toBanglaDigits(String(commentsCount))}
                                     </span>
                                 )}
                             </span>
@@ -741,13 +741,13 @@ export default function Show({ admission, cycleSurveys = [] }: Props) {
                                                         </span>
                                                         {app.approver_pin && (
                                                             <span className="text-[10px] font-mono text-slate-600 bg-slate-200/80 px-2 py-0.5 rounded font-bold">
-                                                                PIN: {app.approver_pin}
+                                                                PIN: {toBanglaDigits(String(app.approver_pin))}
                                                             </span>
                                                         )}
                                                     </div>
 
                                                     <div className="flex flex-wrap items-center gap-2 text-xs text-slate-500">
-                                                        <span>{formatDate(app.approved_at || app.updated_at)}</span>
+                                                        <span>{formatDateBangla(app.approved_at || app.updated_at)}</span>
                                                         <Badge className={
                                                             isApproved ? 'bg-emerald-600' :
                                                             isReturned ? 'bg-amber-600' :
