@@ -1886,7 +1886,7 @@ class LoanApplicationController extends Controller
     /**
      * Helper to calculate total service charge for a loan amount and product.
      */
-    protected function calculateTotalServiceCharge(float $amount, ?LoanProduct $loanProduct): float
+    protected function calculateTotalServiceCharge(float $amount, ?LoanProduct $loanProduct, ?int $customMonths = null): float
     {
         if ($amount <= 0 || ! $loanProduct) {
             return 0;
@@ -1910,7 +1910,9 @@ class LoanApplicationController extends Controller
         // Sufolon/lump-sum rates are annual and must be scaled by months/12.
         if ($rate > 0) {
             if ($isLump) {
-                $months = (int) ($loanProduct->duration_months ?? 12);
+                $months = $customMonths && $customMonths > 0
+                    ? $customMonths
+                    : (int) ($loanProduct->duration_months ?? 12);
                 if ($months <= 0) {
                     $months = 12;
                 }
@@ -3376,7 +3378,7 @@ class LoanApplicationController extends Controller
 
         $effectiveAmount = $requestedAmount;
         $formType = LoanFormVisibility::primaryFormType($newProduct, $effectiveAmount, $newProduct->loanCategory);
-        $totServiceCharge = $this->calculateTotalServiceCharge($effectiveAmount, $newProduct);
+        $totServiceCharge = $this->calculateTotalServiceCharge($effectiveAmount, $newProduct, $loanTermMonths);
         $totalRepayable = $effectiveAmount + $totServiceCharge;
         $newInstallmentAmount = round($totalRepayable / max(1, $numberOfInstallments), 2);
 
@@ -3427,23 +3429,21 @@ class LoanApplicationController extends Controller
 
             if (in_array(1, $newVisibleFormIds, true)) {
                 $agreementData = is_array($application->loan_agreement_data) ? $application->loan_agreement_data : [];
-                if ($agreementData !== []) {
-                    $updateData['loan_agreement_data'] = LoanFormVisibility::overlaySavedFormLoanTerms(
-                        1,
-                        $agreementData,
-                        $newProduct,
-                        $newProduct->loanCategory,
-                        $effectiveAmount,
-                        $numberOfInstallments,
-                        $loanTermMonths,
-                        $totServiceCharge,
-                        $totalRepayable,
-                        $newInstallmentAmount,
-                        $wordsAmount ? $wordsAmount.' টাকা' : '',
-                        $wordsTotal ? $wordsTotal.' টাকা' : '',
-                        $purposeOfLoan
-                    );
-                }
+                $updateData['loan_agreement_data'] = LoanFormVisibility::overlaySavedFormLoanTerms(
+                    1,
+                    $agreementData,
+                    $newProduct,
+                    $newProduct->loanCategory,
+                    $effectiveAmount,
+                    $numberOfInstallments,
+                    $loanTermMonths,
+                    $totServiceCharge,
+                    $totalRepayable,
+                    $newInstallmentAmount,
+                    $wordsAmount ? $wordsAmount.' টাকা' : '',
+                    $wordsTotal ? $wordsTotal.' টাকা' : '',
+                    $purposeOfLoan
+                );
             }
 
             if (in_array(2, $newVisibleFormIds, true)) {
@@ -3511,28 +3511,26 @@ class LoanApplicationController extends Controller
 
             if (in_array(5, $newVisibleFormIds, true)) {
                 $businessPlan = is_array($application->business_plan) ? $application->business_plan : [];
-                if ($businessPlan !== []) {
-                    $overlaid = LoanFormVisibility::overlaySavedFormLoanTerms(
-                        5,
-                        $businessPlan,
-                        $newProduct,
-                        $newProduct->loanCategory,
-                        $effectiveAmount,
-                        $numberOfInstallments,
-                        $loanTermMonths,
-                        $totServiceCharge,
-                        $totalRepayable,
-                        $newInstallmentAmount,
-                        $wordsAmount ? $wordsAmount.' টাকা' : '',
-                        $wordsTotal ? $wordsTotal.' টাকা' : '',
-                        $purposeOfLoan
-                    );
-                    if ($application->status === 'approved' || $application->status === 'pending_disbursement') {
-                        $overlaid['final_approved_loan_amount_digits'] = (string) $effectiveAmount;
-                        $overlaid['final_approved_loan_amount_words'] = $wordsAmount ? $wordsAmount.' টাকা' : '';
-                    }
-                    $updateData['business_plan'] = $overlaid;
+                $overlaid = LoanFormVisibility::overlaySavedFormLoanTerms(
+                    5,
+                    $businessPlan,
+                    $newProduct,
+                    $newProduct->loanCategory,
+                    $effectiveAmount,
+                    $numberOfInstallments,
+                    $loanTermMonths,
+                    $totServiceCharge,
+                    $totalRepayable,
+                    $newInstallmentAmount,
+                    $wordsAmount ? $wordsAmount.' টাকা' : '',
+                    $wordsTotal ? $wordsTotal.' টাকা' : '',
+                    $purposeOfLoan
+                );
+                if ($application->status === 'approved' || $application->status === 'pending_disbursement') {
+                    $overlaid['final_approved_loan_amount_digits'] = (string) $effectiveAmount;
+                    $overlaid['final_approved_loan_amount_words'] = $wordsAmount ? $wordsAmount.' টাকা' : '';
                 }
+                $updateData['business_plan'] = $overlaid;
             }
 
             $application->update($updateData);

@@ -229,13 +229,25 @@ export default function MemberLoanDetailsTab({
                             </span>
                         </div>
                     )}
-                    {(application.duration_months || application.installment_count) && (
+                    {(application.loan_term_months || application.duration_months || application.number_of_installments || application.installment_count) && (
                         <div className="flex justify-between py-1.5 border-b border-slate-100">
                             <span className="text-slate-500">মেয়াদ / কিস্তির সংখ্যা:</span>
                             <span className="font-semibold text-slate-900">
-                                {application.duration_months
-                                    ? `${application.duration_months} মাস`
-                                    : `${application.installment_count || '-'} টি কিস্তি`}
+                                {application.loan_term_months || application.duration_months
+                                    ? `${application.loan_term_months || application.duration_months} মাস`
+                                    : ''}
+                                {(application.loan_term_months || application.duration_months) && (application.number_of_installments || application.installment_count) ? ' / ' : ''}
+                                {application.number_of_installments || application.installment_count
+                                    ? `${application.number_of_installments || application.installment_count} টি কিস্তি`
+                                    : ''}
+                            </span>
+                        </div>
+                    )}
+                    {application.installment_amount != null && Number(application.installment_amount) > 0 && (
+                        <div className="flex justify-between py-1.5 border-b border-slate-100">
+                            <span className="text-slate-500">কিস্তির পরিমাণ:</span>
+                            <span className="font-bold text-slate-900">
+                                ৳{Number(application.installment_amount).toLocaleString('bn-BD')}
                             </span>
                         </div>
                     )}

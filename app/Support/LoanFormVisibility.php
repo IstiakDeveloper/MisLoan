@@ -480,12 +480,15 @@ class LoanFormVisibility
                 'form_variant' => (self::isSufolon($product, $category) && $amount > self::sufolonAgreementMax())
                     ? 'agrosor_profile'
                     : 'approval_form',
+                'category_name' => $categoryName,
+                'loan_category_name' => $categoryName,
+                'loan_product_name' => $productName,
+                'product_name' => $productName,
                 'applied_loan_amount' => (string) $amount,
                 'fund_applied_loan' => (string) $amount,
                 'capital_applied_loan' => (string) $amount,
                 'approval_amount_digits' => (string) $amount,
                 'approval_amount_words' => $amountWords,
-                'category_name' => $categoryName,
                 'loan_duration_months' => (string) $termMonths,
                 'loan_duration_label' => $termMonths.' মাস',
                 'service_charge_rate' => $interestRate > 0 ? (string) $interestRate : ($data['service_charge_rate'] ?? ''),

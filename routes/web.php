@@ -19,6 +19,7 @@ use App\Http\Controllers\LoanApplicationController;
 use App\Http\Controllers\LoanCategoryController;
 use App\Http\Controllers\LoanProductController;
 use App\Http\Controllers\MaintenanceController;
+use App\Http\Controllers\Member\CycleOverrideController;
 use App\Http\Controllers\Member\MemberCycleHubController;
 use App\Http\Controllers\Member\SavingsApplicationController;
 use App\Http\Controllers\MemberAdmissionController;
@@ -297,6 +298,11 @@ Route::middleware(['auth', 'verified'])->group(function () {
             Route::post('admissions/{memberAdmission}/start-next-cycle', [MemberCycleHubController::class, 'startNextCycle'])->name('admissions.start-next-cycle');
             Route::delete('loans/{loan}/draft', [MemberCycleHubController::class, 'deleteDraftLoan'])->name('loans.delete-draft');
             Route::delete('admissions/{memberAdmission}/draft', [MemberCycleHubController::class, 'deleteDraftAdmission'])->name('admissions.delete-draft');
+
+            // Super Admin & Head Office Override & Sync Routes
+            Route::post('override/{admissionId}/unlock', [CycleOverrideController::class, 'unlock'])->name('override.unlock');
+            Route::get('override/{admissionId}/metadata', [CycleOverrideController::class, 'getMetadata'])->name('override.metadata');
+            Route::post('override/{admissionId}', [CycleOverrideController::class, 'update'])->name('override.update');
         });
 
         // Loan Applications

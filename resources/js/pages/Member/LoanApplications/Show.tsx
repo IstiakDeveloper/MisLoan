@@ -1159,19 +1159,20 @@ export default function Show({ application, routes, categories = [] }: Props) {
             requestedAmount: previewAmount,
             branch: application.branch,
         };
+        const formKey = `preview-form-${formId}-${application.loan_product_id}-${application.loan_term_months}-${previewAmount}-${application.updated_at || ''}`;
         switch (formId) {
             case 1:
-                return <LoanAgreement {...common} />;
+                return <LoanAgreement key={formKey} {...common} />;
             case 2:
-                return <GuarantorCommitment {...common} />;
+                return <GuarantorCommitment key={formKey} {...common} />;
             case 3:
-                return <DeathRiskFund {...common} />;
+                return <DeathRiskFund key={formKey} {...common} />;
             case 4:
-                return <FieldInvestigation {...common} />;
+                return <FieldInvestigation key={formKey} {...common} />;
             case 5:
                 return (
                     <LoanApplicationApproval
-                        key={`form-5-${saved?.branch_manager_post_inspection_comments || ''}-${saved?.regional_manager_comments || ''}-${saved?.zonal_manager_comments || ''}-${saved?.final_approver_comments || ''}-${application.updated_at || ''}`}
+                        key={formKey}
                         {...common}
                     />
                 );

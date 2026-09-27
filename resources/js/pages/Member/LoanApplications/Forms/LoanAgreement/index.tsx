@@ -40,10 +40,11 @@ export function buildLoanAgreementDefaults(
     loanCategory: any,
     requestedAmount: number,
     branch?: any,
+    customDurationMonths?: number | string | null,
 ): LoanAgreementData {
     const landInfo = getAcresAndDecimals(member?.total_land_amount || member?.cultivable_land_amount);
     const loanAmt = Number(requestedAmount) || 0;
-    const schedule = calculateLoanSchedule(loanAmt, loanProduct, loanCategory);
+    const schedule = calculateLoanSchedule(loanAmt, loanProduct, loanCategory, undefined, customDurationMonths);
     const interestRate = Number(loanProduct?.interest_rate != null ? loanProduct.interest_rate : (loanCategory?.interest_rate != null ? loanCategory.interest_rate : 0));
 
     return {
@@ -163,8 +164,12 @@ export default function LoanAgreement({
     isLegacy = false,
 }: LoanAgreementProps) {
     if (onlyPreview) {
+        const termMonths =
+            existingApplication?.loan_term_months ||
+            savedData?.loan_duration_months ||
+            loanProduct?.duration_months;
         const previewData = mergeFormData(
-            buildLoanAgreementDefaults(member, loanProduct, loanCategory, requestedAmount, branch),
+            buildLoanAgreementDefaults(member, loanProduct, loanCategory, requestedAmount, branch, termMonths),
             savedData,
             Number(requestedAmount) || 0,
             member,

@@ -227,7 +227,12 @@ export default function ApprovalForm({
     const annualIncomeFromAdmission = member?.estimated_annual_project_income != null && member?.estimated_annual_project_income !== ''
         ? fmtValue(member.estimated_annual_project_income)
         : '';
-    const loanDurationMonths = loanProduct?.duration_months || loanProduct?.loan_duration_months || '';
+    const loanDurationMonths =
+        existingApplication?.loan_term_months ||
+        (savedData as any)?.loan_duration_months ||
+        loanProduct?.duration_months ||
+        loanProduct?.loan_duration_months ||
+        '';
     const durationIncomeFromAdmission = scaleAnnualToLoanYears(
         member?.estimated_annual_project_income,
         loanDurationMonths,
@@ -418,13 +423,17 @@ export default function ApprovalForm({
             total_principal: String(initialApprovedAmount),
             est_loan_charge: computedInstallment.total_service_charge || (savedData as any)?.est_loan_charge || '',
         } : {}),
-        loan_duration_months: loanProduct?.duration_months
-            ? String(loanProduct.duration_months)
-            : (loanProduct?.loan_duration_months ? String(loanProduct.loan_duration_months) : ''),
+        loan_duration_months: String(
+            existingApplication?.loan_term_months ||
+            (savedData as any)?.loan_duration_months ||
+            loanProduct?.duration_months ||
+            loanProduct?.loan_duration_months ||
+            '12'
+        ),
         applied_service_charge_rate: getReducingServiceChargeRate(
             loanProduct,
             loanProduct?.interest_rate ?? loanProduct?.service_charge,
-            loanProduct?.duration_months ?? loanProduct?.loan_duration_months ?? 12,
+            Number(existingApplication?.loan_term_months || (savedData as any)?.loan_duration_months || loanProduct?.duration_months || loanProduct?.loan_duration_months || 12),
         ),
         ...(() => {
             const src = savedData || {};
@@ -961,11 +970,20 @@ export default function ApprovalForm({
         est_main_income_desc: data.est_main_income_desc || data.est_main_income_source || '',
         est_main_income_source: data.est_main_income_desc || data.est_main_income_source || '',
         est_main_income_amount: data.est_main_income_amount ?? '',
+        loan_product_name: loanProduct?.product_name_bn || loanProduct?.product_name || (data as any).loan_product_name || '',
+        product_name: loanProduct?.product_name_bn || loanProduct?.product_name || (data as any).product_name || '',
+        category_name: loanCategory?.category_name_bn || loanCategory?.category_name || categoryName || data.category_name,
+        loan_duration_months: String(
+            existingApplication?.loan_term_months ||
+            data.loan_duration_months ||
+            loanProduct?.duration_months ||
+            '12'
+        ),
         applied_service_charge_rate:
             getReducingServiceChargeRate(
                 loanProduct,
                 data.applied_service_charge_rate,
-                data.loan_duration_months || loanProduct?.duration_months || 12,
+                Number(existingApplication?.loan_term_months || data.loan_duration_months || loanProduct?.duration_months || 12),
             ) ||
             data.applied_service_charge_rate ||
             '',

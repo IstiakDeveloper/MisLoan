@@ -36,6 +36,7 @@ import FieldInvestigation from '../LoanApplications/Forms/FieldInvestigation';
 import LoanApplicationApproval from '../LoanApplications/Forms/LoanApplicationApproval';
 import DeathRiskFund from '../LoanApplications/Forms/DeathRiskFund';
 import { isSufolonLoan } from '@/utils/loanInterest';
+import CycleOverrideModal from './CycleOverrideModal';
 
 interface Props {
     admission: any;
@@ -52,11 +53,16 @@ interface Props {
     }>;
     currentDofa: number;
     canDeleteAdmission?: boolean;
+    isOverrideUnlocked?: boolean;
+    memberCategories?: any[];
+    loanCategories?: any[];
+    samities?: any[];
     userPermissions: {
         canCreateLoan: boolean;
         canRepayLoan: boolean;
         isFieldOfficer: boolean;
         isBranchUser: boolean;
+        canSuperAdminEdit?: boolean;
     };
 }
 
@@ -68,10 +74,15 @@ export default function CycleView({
     otherCycles,
     currentDofa,
     canDeleteAdmission = false,
+    isOverrideUnlocked = false,
+    memberCategories = [],
+    loanCategories = [],
+    samities = [],
     userPermissions,
 }: Props) {
     const [viewMode, setViewMode] = useState<'single' | 'tabs'>('single');
     const [activeTab, setActiveTab] = useState<string>('admission');
+    const [overrideModalOpen, setOverrideModalOpen] = useState(false);
 
     const hasLoan = !!loanApplication;
     const previewAmount = Number(loanApplication?.approved_amount || loanApplication?.requested_amount || 0);
@@ -364,6 +375,19 @@ export default function CycleView({
                             </Button>
                         )}
 
+                        {/* Super Admin / Head Office Override Button (ANY status) */}
+                        {userPermissions.canSuperAdminEdit && (
+                            <Button
+                                size="sm"
+                                onClick={() => setOverrideModalOpen(true)}
+                                className="h-8 text-xs font-bold bg-amber-600 hover:bg-amber-700 text-white rounded-xl shadow-xs flex items-center gap-1.5 cursor-pointer"
+                                title="সুপার অ্যাডমিন / হেড অফিস ডাটা সম্পাদন ও সিঙ্ক (PIN দিয়ে যেকোনো অবস্থায়)"
+                            >
+                                <Shield className="w-3.5 h-3.5 text-amber-200" />
+                                <span>অ্যাডমিন / HO সম্পাদন</span>
+                            </Button>
+                        )}
+
                         <div className="flex items-center gap-1.5 flex-wrap">
                             <a
                                 href={`/member-admissions/${admission.id}/print`}
@@ -453,6 +477,18 @@ export default function CycleView({
                                     </span>
                                 </div>
                                 <div className="flex items-center gap-2 self-start sm:self-auto">
+                                    {userPermissions.canSuperAdminEdit && (
+                                        <Button
+                                            size="sm"
+                                            variant="outline"
+                                            onClick={() => setOverrideModalOpen(true)}
+                                            className="h-8 text-xs font-bold text-amber-700 border-amber-300 rounded-lg hover:bg-amber-50 cursor-pointer flex items-center gap-1 shadow-2xs"
+                                            title="ভর্তির ক্যাটাগরি ও তথ্য সম্পাদন"
+                                        >
+                                            <Pencil className="w-3.5 h-3.5 text-amber-600" />
+                                            ভর্তি সম্পাদন (HO)
+                                        </Button>
+                                    )}
                                     <a
                                         href={`/member-admissions/${admission.id}/print`}
                                         target="_blank"
@@ -673,7 +709,19 @@ export default function CycleView({
                                             : 'কমিটি ও অনুমোদকগণের চূড়ান্ত অনুমোদন ও মঞ্জুরি (৪ পাতার আবেদন ও অনুমোদনপত্র)'}
                                     </span>
                                 </div>
-                                <div className="self-start sm:self-auto">
+                                <div className="flex items-center gap-2 self-start sm:self-auto">
+                                    {userPermissions.canSuperAdminEdit && (
+                                        <Button
+                                            size="sm"
+                                            variant="outline"
+                                            onClick={() => setOverrideModalOpen(true)}
+                                            className="h-8 text-xs font-bold text-amber-700 border-amber-300 rounded-lg hover:bg-amber-50 cursor-pointer flex items-center gap-1 shadow-2xs"
+                                            title="ঋণের প্রোডাক্ট, ক্যাটাগরি ও তথ্য সম্পাদন"
+                                        >
+                                            <Pencil className="w-3.5 h-3.5 text-amber-600" />
+                                            ঋণ সম্পাদন (HO)
+                                        </Button>
+                                    )}
                                     <a
                                         href={`/member/loan-applications/${loanApplication.id}/print?form=5`}
                                         target="_blank"
@@ -716,6 +764,21 @@ export default function CycleView({
                     )}
                 </div>
             </div>
+
+            {/* Super Admin / Head Office Override & Sync Modal */}
+            {userPermissions.canSuperAdminEdit && (
+                <CycleOverrideModal
+                    open={overrideModalOpen}
+                    onClose={() => setOverrideModalOpen(false)}
+                    admission={admission}
+                    loanApplication={loanApplication}
+                    currentDofa={currentDofa}
+                    isUnlocked={isOverrideUnlocked}
+                    memberCategories={memberCategories}
+                    loanCategories={loanCategories}
+                    samities={samities}
+                />
+            )}
         </AdminLayout>
     );
 }

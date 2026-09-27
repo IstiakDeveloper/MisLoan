@@ -18,17 +18,21 @@ class MemberAdmissionLoanSyncService
      *
      * @return int Number of loan applications whose stored snapshots changed
      */
-    public function syncBoundLoans(MemberAdmission $member): int
+    public function syncBoundLoans(MemberAdmission $member, bool $includeDisbursedAndAll = false): int
     {
         $member->loadMissing(['samity', 'familyMembers', 'otherAssets']);
 
-        $loans = LoanApplication::query()
-            ->where('member_admission_id', $member->id)
-            ->whereNotIn('status', [
+        $query = LoanApplication::query()
+            ->where('member_admission_id', $member->id);
+
+        if (! $includeDisbursedAndAll) {
+            $query->whereNotIn('status', [
                 LoanApplication::STATUS_DISBURSED,
                 LoanApplication::STATUS_CANCELLED,
-            ])
-            ->get();
+            ]);
+        }
+
+        $loans = $query->get();
 
         $updated = 0;
 

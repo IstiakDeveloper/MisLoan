@@ -372,7 +372,7 @@ export function LoanAgreementPrintView({ data }: { data: LoanAgreementData }) {
                         </thead>
                         <tbody>
                             <tr className="text-center font-medium h-8">
-                                <td className="border border-black px-1.5 py-1 text-left font-semibold">{str(d.loan_category_name) || str(d.loan_product_name)}</td>
+                                <td className="border border-black px-1.5 py-1 text-left font-semibold">{str(d.loan_product_name) || str(d.loan_category_name)}</td>
                                 <td className="border border-black px-1 py-1">{bn(selfFullFemale) || ''}</td>
                                 <td className="border border-black px-1 py-1">{bn(selfFullMale) || ''}</td>
                                 <td className="border border-black px-1 py-1">{bn(selfPartFemale) || ''}</td>

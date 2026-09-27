@@ -693,19 +693,20 @@ export default function LoanApplicationShow({ loan, categories = [], flash }: Pr
             branch: loan.branch,
         };
 
+        const formKey = `ho-preview-form-${formId}-${loan.loan_product_id}-${loan.loan_term_months}-${previewAmount}-${loan.updated_at || ''}`;
         switch (formId) {
             case 1:
-                return <LoanAgreement {...common} />;
+                return <LoanAgreement key={formKey} {...common} />;
             case 2:
-                return <GuarantorCommitment {...common} />;
+                return <GuarantorCommitment key={formKey} {...common} />;
             case 3:
-                return <DeathRiskFund {...common} />;
+                return <DeathRiskFund key={formKey} {...common} />;
             case 4:
-                return <FieldInvestigation {...common} />;
+                return <FieldInvestigation key={formKey} {...common} />;
             case 5:
                 return (
                     <LoanApplicationApproval
-                        key={`ho-form-5-${data?.branch_manager_post_inspection_comments || ''}-${data?.regional_manager_comments || ''}-${data?.zonal_manager_comments || ''}-${data?.final_approver_comments || ''}-${loan.updated_at || ''}`}
+                        key={formKey}
                         {...common}
                     />
                 );

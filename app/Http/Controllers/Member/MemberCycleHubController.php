@@ -8,6 +8,7 @@ use App\Models\LoanApplication;
 use App\Models\LoanCategory;
 use App\Models\LoanProduct;
 use App\Models\MemberAdmission;
+use App\Models\MemberCategory;
 use App\Models\MemberFamilyMember;
 use App\Models\MemberOtherAsset;
 use App\Models\Role;
@@ -727,6 +728,28 @@ class MemberCycleHubController extends Controller
             );
         }
 
+        $canSuperAdminEdit = (bool) ($user && method_exists($user, 'canHeadOfficeDeleteOrEdit') ? $user->canHeadOfficeDeleteOrEdit() : ($user?->has_all_access || $user?->isSuperAdmin() || $user?->isHeadOffice()));
+
+        $memberCategories = $canSuperAdminEdit
+            ? MemberCategory::where('is_active', true)->select('id', 'category_name', 'category_name_bn')->orderBy('id')->get()
+            : [];
+
+        $loanCategories = $canSuperAdminEdit
+            ? LoanCategory::where('is_active', true)
+                ->with(['loanProducts' => function ($q) {
+                    $q->where('is_active', true)->select('id', 'loan_category_id', 'product_name', 'product_name_bn', 'product_code', 'duration_months', 'min_amount', 'max_amount', 'installment_type');
+                }])
+                ->select('id', 'category_name', 'category_name_bn', 'category_code')
+                ->orderBy('id')
+                ->get()
+            : [];
+
+        $samities = $canSuperAdminEdit
+            ? Samity::where('branch_id', $admission->branch_id)->select('id', 'samity_name', 'samity_name_bn', 'samity_code', 'branch_id')->orderBy('samity_name')->get()
+            : [];
+
+        $isOverrideUnlocked = (bool) $request->session()->get("cycle_override_unlocked_{$admission->id}", false);
+
         return Inertia::render('Member/CycleHub/CycleView', [
             'admission' => $admission,
             'loanApplication' => $loanApplication,
@@ -735,11 +758,16 @@ class MemberCycleHubController extends Controller
             'otherCycles' => $otherCycles,
             'currentDofa' => (int) ($matchedCycle['dofa'] ?? ($admission->loan_dofa ?: 1)),
             'canDeleteAdmission' => (bool) $admission->previous_admission_id,
+            'isOverrideUnlocked' => $isOverrideUnlocked,
+            'memberCategories' => $memberCategories,
+            'loanCategories' => $loanCategories,
+            'samities' => $samities,
             'userPermissions' => [
                 'canCreateLoan' => $this->canCreateLoan($user),
                 'canRepayLoan' => $this->canRepayLoan($user),
                 'isFieldOfficer' => $this->isFieldOfficer($user),
                 'isBranchUser' => $this->isBranchUserRole($user),
+                'canSuperAdminEdit' => $canSuperAdminEdit,
             ],
         ]);
     }

@@ -113,11 +113,14 @@ export function calculateLoanSchedule(
     loanProduct: any,
     loanCategory?: any,
     customDisbursementDate?: string | null,
+    customDurationMonths?: number | string | null,
 ) {
     const amount = Number(loanAmount) || 0;
     const rawType = String(loanProduct?.installment_type || '').toLowerCase();
     const isLumpSum = isLumpSumProduct(loanProduct, loanCategory);
-    const durationMonths = getLoanDurationMonths(loanProduct, 12);
+    const durationMonths = Number(customDurationMonths) > 0
+        ? Number(customDurationMonths)
+        : getLoanDurationMonths(loanProduct, 12);
     const numberOfInstallments = getInstallmentCount(loanProduct, durationMonths, loanCategory);
     const serviceCharge = calculateTotalServiceCharge(amount, loanProduct, durationMonths, loanCategory);
     const totalAmount = amount + serviceCharge;

@@ -225,7 +225,7 @@ export default function EditLoanDetailsModal({
             },
             {
                 preserveScroll: true,
-                preserveState: true,
+                preserveState: false,
                 onSuccess: () => {
                     setError(null);
                     setFieldErrors({});

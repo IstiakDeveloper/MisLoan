@@ -190,7 +190,7 @@ export default function FormPage3({ data, setData, member, loanProduct, loanCate
     // মেয়াদ + সার্ভিস চার্জ হার + কিস্তি তফসিল (আসল / সার্ভিস চার্জ / মোট)
     useEffect(() => {
         const months = loanProduct?.duration_months ?? loanProduct?.loan_duration_months;
-        if (months && String(data.loan_duration_months || '') !== String(months)) {
+        if (!data.loan_duration_months && months) {
             setData('loan_duration_months', String(months));
         }
         const rate = liveServiceChargeRate;
