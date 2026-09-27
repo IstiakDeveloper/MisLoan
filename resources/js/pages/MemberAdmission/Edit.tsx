@@ -144,6 +144,9 @@ interface Props {
     loanCategories?: LoanCategoryItem[];
     for_submit?: boolean;
     can_change_member_type?: boolean;
+    is_cycle_renewal?: boolean;
+    has_active_loan?: boolean;
+    existing_loan_form?: { id: number; application_no: string; status: string } | null;
 }
 
 export default function Edit({
@@ -155,6 +158,9 @@ export default function Edit({
     loanCategories = [],
     for_submit = false,
     can_change_member_type,
+    is_cycle_renewal = false,
+    has_active_loan = false,
+    existing_loan_form = null,
 }: Props) {
     const page = usePage<{
         auth: {
@@ -346,6 +352,14 @@ export default function Edit({
     const isDraftAdmission = admission.status === 'draft';
     const saveButtonLabel = isDraftAdmission ? 'খসড়া সংরক্ষণ' : 'সংরক্ষণ';
     const saveButtonLabelEn = isDraftAdmission ? 'খসড়া সংরক্ষণ (Save Draft)' : 'সংরক্ষণ (Save)';
+
+    const isCycleRenewal =
+        Boolean(is_cycle_renewal) ||
+        Boolean(typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('cycle_renewal') === '1') ||
+        Boolean(admission.previous_admission_id) ||
+        (Boolean(data.is_legacy) && Number(data.loan_dofa) > 1);
+
+    const hasActiveLoan = Boolean(has_active_loan || admission.has_active_loan);
 
     const handleMemberTypeChange = (legacy: boolean) => {
         if (!canChangeMemberType) return;
@@ -653,7 +667,6 @@ export default function Edit({
             }
         });
 
-        const isCycleRenewal = !!data.is_legacy && (new URLSearchParams(window.location.search).get('cycle_renewal') === '1' || !!admission.previous_admission_id);
         if (isCycleRenewal) {
             formData.append('cycle_renewal', '1');
         }
@@ -868,13 +881,42 @@ export default function Edit({
                         <div className="hidden md:flex items-center gap-3 shrink-0">
                             <button
                                 type="button"
-                                onClick={() => handleSubmit()}
-                                disabled={saving}
-                                className="inline-flex items-center justify-center gap-2 px-5 py-3 rounded-2xl bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 text-xs sm:text-sm font-bold transition-all active:scale-95 shadow-sm disabled:opacity-50"
+                                onClick={() => router.visit(isCycleRenewal ? '/member/cycle-hub' : '/member-admissions')}
+                                className="inline-flex items-center justify-center gap-2 px-4 py-3 rounded-2xl bg-white/10 hover:bg-white/15 text-white text-xs sm:text-sm font-bold transition-all active:scale-95"
                             >
-                                <Save className="w-4 h-4 text-amber-400" />
-                                <span>{saveButtonLabel}</span>
+                                <X className="w-4 h-4" />
+                                <span>বাতিল</span>
                             </button>
+                            {!isCycleRenewal && (
+                                <button
+                                    type="button"
+                                    onClick={() => handleSubmit()}
+                                    disabled={saving}
+                                    className="inline-flex items-center justify-center gap-2 px-5 py-3 rounded-2xl bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 text-xs sm:text-sm font-bold transition-all active:scale-95 shadow-sm disabled:opacity-50"
+                                >
+                                    <Save className="w-4 h-4 text-amber-400" />
+                                    <span>{saveButtonLabel}</span>
+                                </button>
+                            )}
+                            {isCycleRenewal && !hasActiveLoan && (
+                                <button
+                                    type="button"
+                                    onClick={handleOpenLoanModal}
+                                    disabled={saving}
+                                    className="inline-flex items-center justify-center gap-2 px-6 py-3 rounded-2xl bg-gradient-to-r from-emerald-600 via-teal-600 to-emerald-700 hover:from-emerald-500 hover:to-teal-600 text-white text-xs sm:text-sm font-extrabold shadow-lg shadow-emerald-700/40 transition-all active:scale-95 disabled:opacity-50"
+                                >
+                                    <Sparkles className="w-4 h-4 text-emerald-200 animate-pulse" />
+                                    <span>সংরক্ষণ ও ঋণ আবেদন</span>
+                                </button>
+                            )}
+                            {hasActiveLoan && existing_loan_form && (
+                                <Link
+                                    href={`/member/loan-applications/${existing_loan_form.id}`}
+                                    className="inline-flex items-center justify-center gap-2 px-5 py-3 rounded-2xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs sm:text-sm font-bold shadow-md transition-all active:scale-95"
+                                >
+                                    <span>বিদ্যমান ঋণ আবেদন ({existing_loan_form.application_no})</span>
+                                </Link>
+                            )}
                             {for_submit && (
                                 <button
                                     type="button"
@@ -941,13 +983,26 @@ export default function Edit({
                 )}
 
                 {/* Cycle Renewal Banner */}
-                {(!!admission.previous_admission_id || (data.loan_dofa && Number(data.loan_dofa) > 1)) && (
-                    <div className="flex items-center gap-3 p-4 bg-emerald-50 border border-emerald-200 rounded-2xl text-emerald-900 text-xs sm:text-sm font-medium shadow-xs">
-                        <span className="w-2.5 h-2.5 rounded-full bg-emerald-600 shrink-0" />
-                        <div className="flex-1">
-                            <span className="font-bold text-emerald-950 block">সাইকেল রিনিউয়াল (দফা {data.loan_dofa}):</span>
-                            <span>একই সদস্য — Member Code, NID ও ব্যক্তিগত তথ্য আগের মতো লক। আয়-ব্যয়, সম্পদ ও পরিবার এই দফার জন্য আলাদা করতে পারবেন। শেষে <strong>«সংরক্ষণ ও ঋণ আবেদন করুন»</strong> চাপুন।</span>
+                {isCycleRenewal && (
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-4 bg-emerald-50 border border-emerald-200 rounded-2xl text-emerald-900 text-xs sm:text-sm font-medium shadow-xs">
+                        <div className="flex items-start sm:items-center gap-3">
+                            <span className="w-2.5 h-2.5 rounded-full bg-emerald-600 shrink-0 mt-1 sm:mt-0" />
+                            <div>
+                                <span className="font-bold text-emerald-950 block">সাইকেল রিনিউয়াল (দফা {data.loan_dofa || admission.loan_dofa || 2}):</span>
+                                <span>একই সদস্য — Member Code, NID ও ব্যক্তিগত তথ্য আগের মতো লক। আয়-ব্যয়, সম্পদ ও পরিবার এই দফার জন্য হালনাগাদ করে শেষে <strong>«সংরক্ষণ ও ঋণ আবেদন»</strong> চাপুন।</span>
+                            </div>
                         </div>
+                        {!hasActiveLoan && (
+                            <button
+                                type="button"
+                                onClick={handleOpenLoanModal}
+                                disabled={saving}
+                                className="self-end sm:self-center shrink-0 inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold shadow-sm transition active:scale-95 disabled:opacity-50"
+                            >
+                                <Sparkles className="w-3.5 h-3.5 text-emerald-200" />
+                                <span>ঋণ আবেদন শুরু করুন</span>
+                            </button>
+                        )}
                     </div>
                 )}
 
@@ -1054,21 +1109,42 @@ export default function Edit({
                     <div className="mt-6 flex flex-col-reverse sm:flex-row items-center justify-end gap-3 bg-white p-4 rounded-2xl border border-gray-200 shadow-sm">
                         <button
                             type="button"
-                            onClick={() => router.visit('/member-admissions')}
+                            onClick={() => router.visit(isCycleRenewal ? '/member/cycle-hub' : '/member-admissions')}
                             className="w-full sm:w-auto inline-flex items-center justify-center gap-2 px-5 py-2.5 rounded-xl bg-gray-100 hover:bg-gray-200 text-gray-700 text-xs sm:text-sm font-bold transition-all active:scale-95"
                         >
                             <X className="w-4 h-4" />
                             <span>বাতিল (Cancel)</span>
                         </button>
-                        <button
-                            type="button"
-                            onClick={() => handleSubmit()}
-                            disabled={saving}
-                            className="w-full sm:w-auto inline-flex items-center justify-center gap-2 px-5 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-900 text-amber-400 text-xs sm:text-sm font-bold shadow-md transition-all active:scale-95 disabled:opacity-50"
-                        >
-                            <Save className="w-4 h-4" />
-                            <span>{saveButtonLabelEn}</span>
-                        </button>
+                        {!isCycleRenewal && (
+                            <button
+                                type="button"
+                                onClick={() => handleSubmit()}
+                                disabled={saving}
+                                className="w-full sm:w-auto inline-flex items-center justify-center gap-2 px-5 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-900 text-amber-400 text-xs sm:text-sm font-bold shadow-md transition-all active:scale-95 disabled:opacity-50"
+                            >
+                                <Save className="w-4 h-4" />
+                                <span>{saveButtonLabelEn}</span>
+                            </button>
+                        )}
+                        {isCycleRenewal && !hasActiveLoan && (
+                            <button
+                                type="button"
+                                onClick={handleOpenLoanModal}
+                                disabled={saving}
+                                className="w-full sm:w-auto inline-flex items-center justify-center gap-2 px-6 py-2.5 rounded-xl bg-gradient-to-r from-emerald-600 via-teal-600 to-emerald-700 hover:from-emerald-700 hover:to-teal-800 text-white text-xs sm:text-sm font-extrabold shadow-lg shadow-emerald-600/30 transition-all active:scale-95 disabled:opacity-50"
+                            >
+                                <Sparkles className="w-4 h-4 text-emerald-200 animate-pulse" />
+                                <span>সংরক্ষণ ও ঋণ আবেদন (Save & Loan Application)</span>
+                            </button>
+                        )}
+                        {hasActiveLoan && existing_loan_form && (
+                            <Link
+                                href={`/member/loan-applications/${existing_loan_form.id}`}
+                                className="w-full sm:w-auto inline-flex items-center justify-center gap-2 px-5 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs sm:text-sm font-bold shadow-md transition-all active:scale-95"
+                            >
+                                <span>বিদ্যমান ঋণ আবেদন ({existing_loan_form.application_no})</span>
+                            </Link>
+                        )}
                         {for_submit && (
                             <button
                                 type="button"
@@ -1087,13 +1163,34 @@ export default function Edit({
                 <div className="md:hidden fixed bottom-0 left-0 right-0 p-3 bg-white/95 backdrop-blur-md border-t border-slate-200 z-50 flex items-center justify-between gap-2 shadow-2xl">
                     <button
                         type="button"
-                        onClick={() => handleSubmit()}
-                        disabled={saving}
-                        className="flex-1 inline-flex items-center justify-center gap-1.5 py-2.5 px-3 rounded-xl bg-slate-800 text-amber-400 text-xs font-bold shadow-sm active:scale-95 transition disabled:opacity-50"
+                        onClick={() => router.visit(isCycleRenewal ? '/member/cycle-hub' : '/member-admissions')}
+                        className="px-3 py-2.5 rounded-xl bg-gray-100 text-gray-700 text-xs font-bold shadow-sm active:scale-95 transition"
+                        title="বাতিল"
                     >
-                        <Save className="w-4 h-4" />
-                        <span>{isDraftAdmission ? 'খসড়া' : 'সংরক্ষণ'}</span>
+                        <X className="w-4 h-4" />
                     </button>
+                    {!isCycleRenewal && (
+                        <button
+                            type="button"
+                            onClick={() => handleSubmit()}
+                            disabled={saving}
+                            className="flex-1 inline-flex items-center justify-center gap-1.5 py-2.5 px-3 rounded-xl bg-slate-800 text-amber-400 text-xs font-bold shadow-sm active:scale-95 transition disabled:opacity-50"
+                        >
+                            <Save className="w-4 h-4" />
+                            <span>{isDraftAdmission ? 'খসড়া' : 'সংরক্ষণ'}</span>
+                        </button>
+                    )}
+                    {isCycleRenewal && !hasActiveLoan && (
+                        <button
+                            type="button"
+                            onClick={handleOpenLoanModal}
+                            disabled={saving}
+                            className="flex-1 inline-flex items-center justify-center gap-1.5 py-2.5 px-3 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-700 text-white text-xs font-bold shadow-md active:scale-95 transition disabled:opacity-50"
+                        >
+                            <Sparkles className="w-4 h-4 text-emerald-200" />
+                            <span>সংরক্ষণ ও ঋণ আবেদন</span>
+                        </button>
+                    )}
                     {for_submit && (
                         <button
                             type="button"

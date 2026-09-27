@@ -1179,6 +1179,9 @@ class MemberAdmissionController extends Controller
         $user->loadMissing('role');
         $canChangeMemberType = $memberAdmission->isDraft() || $user->canHeadOfficeDeleteOrEdit();
 
+        $existingLoan = $memberAdmission->existingLoanForm();
+        $hasActiveLoan = $existingLoan !== null;
+
         return Inertia::render('MemberAdmission/Edit', [
             'admission' => $memberAdmission,
             'branches' => $branches,
@@ -1188,6 +1191,13 @@ class MemberAdmissionController extends Controller
             'loanCategories' => $loanCategories,
             'for_submit' => $request->boolean('for_submit'),
             'can_change_member_type' => $canChangeMemberType,
+            'is_cycle_renewal' => $request->boolean('cycle_renewal') || (bool) $memberAdmission->previous_admission_id || ((int) ($memberAdmission->loan_dofa ?? 0) > 1),
+            'has_active_loan' => $hasActiveLoan,
+            'existing_loan_form' => $existingLoan ? [
+                'id' => $existingLoan->id,
+                'application_no' => $existingLoan->application_no,
+                'status' => $existingLoan->status,
+            ] : null,
         ]);
     }
 
@@ -1536,7 +1546,8 @@ class MemberAdmissionController extends Controller
 
             // Legacy / renewal draft auto-approves. New members keep the admission workflow
             // even when the officer proceeds to fill a loan form.
-            $isProceedingToLoan = $request->input('next_action') === 'loan_application' || $request->boolean('redirect_to_loan') || $request->boolean('cycle_renewal');
+            $isProceedingToLoan = $request->input('next_action') === 'loan_application' || $request->boolean('redirect_to_loan');
+            $isCycleRenewal = $request->boolean('cycle_renewal') || (bool) $memberAdmission->previous_admission_id || ((int) ($memberAdmission->loan_dofa ?? 0) > 1);
             $legacyAutoApproved = false;
             if (($isLegacy || $isRenewalOrOld) && ($memberAdmission->isDraft() || ! $saveAsDraft || $isProceedingToLoan)) {
                 $updateData['status'] = 'approved';
@@ -1591,6 +1602,11 @@ class MemberAdmissionController extends Controller
             }
 
             if ($legacyAutoApproved) {
+                if ($isCycleRenewal) {
+                    return redirect()->route('member.cycle-hub.index', ['member_id' => $memberAdmission->id])
+                        ->with('success', "দফা {$memberAdmission->loan_dofa} এর জরিপ তথ্য সফলভাবে সংরক্ষণ করা হয়েছে।");
+                }
+
                 return redirect()->route('member-admissions.index')
                     ->with('success', 'পুরাতন সদস্যের ভর্তি স্বয়ংক্রিয়ভাবে অনুমোদিত হয়েছে!');
             }
@@ -2135,7 +2151,7 @@ class MemberAdmissionController extends Controller
                     ->route('member.loan-applications.show', $decision['loan']->id);
             }
 
-            if ($memberAdmission->mustUseCycleHubForNextLoan($loanProductId ?: null)) {
+            if ($memberAdmission->mustUseCycleHubForNextLoan($loanProductId ?: null) && ! $request->boolean('cycle_renewal') && ! $memberAdmission->previous_admission_id && ((int) ($memberAdmission->loan_dofa ?? 0) <= 1)) {
                 return redirect()
                     ->route('member.cycle-hub.index')
                     ->with('error', MemberAdmission::nextLoanViaCycleHubMessage());
