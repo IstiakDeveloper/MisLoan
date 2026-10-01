@@ -20,6 +20,11 @@ import {
     Users,
     Shield,
     Award,
+    Filter,
+    X,
+    ExternalLink,
+    Briefcase,
+    TrendingUp,
 } from 'lucide-react';
 
 interface ApproverOption {
@@ -86,6 +91,7 @@ interface ApproverSummaryItem {
     role_name: string;
     branch_name: string;
     total_loans: number;
+    total_approvals?: number;
     total_amount: number;
 }
 
@@ -128,6 +134,7 @@ interface Props {
     };
     summary: {
         total_loans: number;
+        total_approvals?: number;
         total_amount: number;
         unique_approvers: number;
         average_amount: number;
@@ -168,7 +175,12 @@ export default function ApproverLoanApprovalReport({
     const [branchId, setBranchId] = useState(filters.branch_id || '');
     const [search, setSearch] = useState(filters.search || '');
     const [perPage, setPerPage] = useState(filters.per_page || 25);
-    const [activeTab, setActiveTab] = useState<'approver_wise' | 'detailed' | 'date_wise'>('approver_wise');
+    const [activeTab, setActiveTab] = useState<'approver_wise' | 'detailed' | 'date_wise'>(
+        filters.user_id ? 'detailed' : 'approver_wise'
+    );
+    const [showAdvancedLocation, setShowAdvancedLocation] = useState(
+        Boolean(filters.zone_id || filters.area_id || filters.branch_id)
+    );
 
     // Cascading area and branch options
     const filteredAreas = useMemo(() => {
@@ -188,16 +200,26 @@ export default function ApproverLoanApprovalReport({
         return list;
     }, [branches, areas, zoneId, areaId]);
 
-    const buildQueryString = () => {
+    const buildQueryString = (overrides: Record<string, string | number> = {}) => {
         const params = new URLSearchParams();
-        if (dateFrom) params.set('date_from', dateFrom);
-        if (dateTo) params.set('date_to', dateTo);
-        if (userId) params.set('user_id', userId);
-        if (zoneId) params.set('zone_id', zoneId);
-        if (areaId) params.set('area_id', areaId);
-        if (branchId) params.set('branch_id', branchId);
-        if (search) params.set('search', search);
-        if (perPage) params.set('per_page', String(perPage));
+        const currentVals: Record<string, string | number> = {
+            date_from: dateFrom,
+            date_to: dateTo,
+            user_id: userId,
+            zone_id: zoneId,
+            area_id: areaId,
+            branch_id: branchId,
+            search: search,
+            per_page: perPage,
+            ...overrides,
+        };
+
+        Object.entries(currentVals).forEach(([k, v]) => {
+            if (v !== '' && v !== null && v !== undefined) {
+                params.set(k, String(v));
+            }
+        });
+
         return params.toString();
     };
 
@@ -217,6 +239,12 @@ export default function ApproverLoanApprovalReport({
         setBranchId('');
         setSearch('');
         router.get(`/reports/approver-loan-approvals?date_from=${firstDay}&date_to=${today}`);
+    };
+
+    const handleClearApproverFilter = () => {
+        setUserId('');
+        const qs = buildQueryString({ user_id: '' });
+        router.get(`/reports/approver-loan-approvals?${qs}`);
     };
 
     // Quick Date shortcuts
@@ -241,10 +269,8 @@ export default function ApproverLoanApprovalReport({
 
         setDateFrom(from);
         setDateTo(to);
-        const params = new URLSearchParams(buildQueryString());
-        params.set('date_from', from);
-        params.set('date_to', to);
-        router.get(`/reports/approver-loan-approvals?${params.toString()}`);
+        const qs = buildQueryString({ date_from: from, date_to: to });
+        router.get(`/reports/approver-loan-approvals?${qs}`);
     };
 
     const handlePrint = () => {
@@ -260,7 +286,7 @@ export default function ApproverLoanApprovalReport({
     const formatCurrency = (amount: number) => {
         return new Intl.NumberFormat('en-IN', {
             maximumFractionDigits: 2,
-            minimumFractionDigits: 0,
+            minimumFractionDigits: 2,
         }).format(amount);
     };
 
@@ -335,26 +361,47 @@ export default function ApproverLoanApprovalReport({
         };
     };
 
+    const getLoanStatusBadge = (status: string, label: string) => {
+        switch (status) {
+            case 'disbursed':
+                return 'bg-emerald-50 text-emerald-700 border-emerald-200';
+            case 'pending_disbursement':
+                return 'bg-blue-50 text-blue-700 border-blue-200';
+            case 'ready_for_head_office':
+            case 'pending_head_office':
+                return 'bg-purple-50 text-purple-700 border-purple-200';
+            case 'approved':
+                return 'bg-teal-50 text-teal-700 border-teal-200';
+            case 'under_review':
+                return 'bg-amber-50 text-amber-700 border-amber-200';
+            default:
+                return 'bg-slate-50 text-slate-700 border-slate-200';
+        }
+    };
+
     return (
         <AdminLayout>
             <Head title="অনুমোদকভিত্তিক ঋণ অনুমোদন রিপোর্ট" />
 
-            <div className="py-6 px-4 sm:px-6 lg:px-8 max-w-7xl mx-auto space-y-6">
-                {/* Header Section */}
-                <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 bg-white p-5 rounded-2xl border border-slate-200/80 shadow-xs">
-                    <div>
-                        <div className="flex items-center gap-2.5">
-                            <div className="p-2.5 bg-gradient-to-tr from-brand-dark to-brand rounded-xl text-white shadow-sm">
-                                <UserCheck className="w-5 h-5" />
-                            </div>
-                            <div>
+            <div className="py-6 px-4 sm:px-6 lg:px-8 max-w-7xl mx-auto space-y-5">
+                {/* 1. Header Section */}
+                <div className="bg-white p-5 rounded-2xl border border-slate-200/90 shadow-xs flex flex-col md:flex-row md:items-center justify-between gap-4">
+                    <div className="flex items-center gap-3.5">
+                        <div className="p-3 bg-gradient-to-tr from-brand-dark to-brand rounded-2xl text-white shadow-sm flex items-center justify-center">
+                            <UserCheck className="w-6 h-6" />
+                        </div>
+                        <div>
+                            <div className="flex items-center gap-2 flex-wrap">
                                 <h1 className="text-xl sm:text-2xl font-black text-slate-800 tracking-tight">
                                     অনুমোদকভিত্তিক ঋণ অনুমোদন রিপোর্ট
                                 </h1>
-                                <p className="text-xs text-slate-500 font-medium">
-                                    কর্মকর্তা ও তারিখ অনুযায়ী অনুমোদিত ঋণের সারসংক্ষেপ, পরিসংখ্যান ও বিস্তারিত তালিকা
-                                </p>
+                                <span className="px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-blue-50 text-blue-700 border border-blue-200">
+                                    অ্যাকুরেট ডাটা ভিউ
+                                </span>
                             </div>
+                            <p className="text-xs text-slate-500 font-medium mt-0.5">
+                                কর্মকর্তা ও সময়কাল অনুযায়ী অনুমোদিত ঋণের সারসংক্ষেপ, পরিসংখ্যান ও বিস্তারিত ডাটা
+                            </p>
                         </div>
                     </div>
 
@@ -363,8 +410,8 @@ export default function ApproverLoanApprovalReport({
                         <button
                             type="button"
                             onClick={handlePrint}
-                            className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs font-bold text-slate-700 bg-slate-100 hover:bg-slate-200 border border-slate-300 transition shadow-xs active:scale-95"
-                            title="A4 পেপার সাইজে প্রিন্ট করুন"
+                            className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs font-bold text-slate-700 bg-slate-100 hover:bg-slate-200 border border-slate-300 transition shadow-2xs active:scale-95"
+                            title="A4 পেপার সাইজে প্রিন্ট বা PDF সেভ করুন"
                         >
                             <Printer className="w-4 h-4 text-slate-600" />
                             <span>A4 প্রিন্ট ভিউ</span>
@@ -372,8 +419,8 @@ export default function ApproverLoanApprovalReport({
                         <button
                             type="button"
                             onClick={handleExportExcel}
-                            className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs font-bold text-white bg-emerald-600 hover:bg-emerald-700 border border-emerald-700 transition shadow-xs active:scale-95"
-                            title="এক্সেল (.xlsx) ফাইল ডাউনলোড করুন"
+                            className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs font-bold text-white bg-emerald-600 hover:bg-emerald-700 border border-emerald-700 transition shadow-2xs active:scale-95"
+                            title="সম্পূর্ণ ডাটা এক্সেল (.xlsx) ফরম্যাটে ডাউনলোড করুন"
                         >
                             <Download className="w-4 h-4" />
                             <span>এক্সেল ডাউনলোড (.xlsx)</span>
@@ -381,17 +428,58 @@ export default function ApproverLoanApprovalReport({
                     </div>
                 </div>
 
-                {/* Filters Section */}
-                <div className="bg-white rounded-2xl border border-slate-200/80 shadow-xs p-5 space-y-4">
-                    <div className="flex items-center justify-between border-b border-slate-100 pb-3">
-                        <span className="text-xs font-bold uppercase tracking-wider text-slate-500 flex items-center gap-1.5">
-                            <Search className="w-3.5 h-3.5" />
-                            রিপোর্ট ফিল্টার ও তারিখ নির্বাচন
+                {/* 2. Selected Approver Active Banner */}
+                {selected_approver && (
+                    <div className="bg-gradient-to-r from-blue-50 via-indigo-50 to-blue-50 border border-blue-200/90 rounded-2xl p-4 sm:p-5 shadow-xs flex flex-col md:flex-row md:items-center justify-between gap-4">
+                        <div className="flex items-center gap-3.5">
+                            <div className="w-12 h-12 rounded-2xl bg-blue-600 text-white flex items-center justify-center font-black text-lg shadow-sm">
+                                {selected_approver.name.charAt(0)}
+                            </div>
+                            <div>
+                                <div className="flex items-center gap-2 flex-wrap">
+                                    <h3 className="text-base font-bold text-slate-900">{selected_approver.name}</h3>
+                                    <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-bold bg-blue-100 text-blue-900 border border-blue-300">
+                                        {selected_approver.role_name}
+                                    </span>
+                                </div>
+                                <p className="text-xs text-slate-600 font-medium mt-0.5">
+                                    কর্মস্থল: <strong>{selected_approver.branch_name || 'হেড অফিস'}</strong> • ইমেইল: {selected_approver.email}
+                                </p>
+                            </div>
+                        </div>
+
+                        <div className="flex items-center gap-4 flex-wrap justify-between md:justify-end">
+                            <div className="text-left md:text-right md:border-l md:border-blue-200 md:pl-4">
+                                <span className="text-[11px] text-slate-500 font-semibold block">অনুমোদিত ঋণ ও অর্থ:</span>
+                                <span className="text-sm sm:text-base font-black text-blue-900">
+                                    {summary.total_loans} টি ঋণ ({formatCurrency(summary.total_amount)} ৳)
+                                </span>
+                            </div>
+
+                            <button
+                                type="button"
+                                onClick={handleClearApproverFilter}
+                                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold bg-white hover:bg-red-50 text-slate-700 hover:text-red-700 border border-slate-300 hover:border-red-300 transition shadow-2xs"
+                                title="এই কর্মকর্তার ফিল্টার তুলে নিয়ে সকল কর্মকর্তা দেখুন"
+                            >
+                                <X className="w-3.5 h-3.5 text-slate-500 hover:text-red-500" />
+                                <span>সকল কর্মকর্তা দেখুন</span>
+                            </button>
+                        </div>
+                    </div>
+                )}
+
+                {/* 3. Modern Filter Card */}
+                <div className="bg-white rounded-2xl border border-slate-200/90 shadow-xs p-5 space-y-4">
+                    <div className="flex items-center justify-between border-b border-slate-100 pb-3 flex-wrap gap-2">
+                        <span className="text-xs font-bold uppercase tracking-wider text-slate-600 flex items-center gap-1.5">
+                            <Filter className="w-3.5 h-3.5 text-brand" />
+                            রিপোর্ট ফিল্টার ও সময়কাল নির্বাচন
                         </span>
 
-                        {/* Quick Date Shortcuts */}
+                        {/* Quick Presets */}
                         <div className="flex items-center gap-1">
-                            <span className="text-[11px] text-slate-400 font-medium hidden sm:inline mr-1">দ্রুত নির্বাচন:</span>
+                            <span className="text-[11px] text-slate-400 font-medium hidden sm:inline mr-1">দ্রুত সময়কাল:</span>
                             <button
                                 type="button"
                                 onClick={() => setQuickDate('today')}
@@ -404,14 +492,14 @@ export default function ApproverLoanApprovalReport({
                                 onClick={() => setQuickDate('this_week')}
                                 className="px-2.5 py-1 text-[11px] font-semibold rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 transition"
                             >
-                                এই সপ্তাহ
+                                চলতি সপ্তাহ
                             </button>
                             <button
                                 type="button"
                                 onClick={() => setQuickDate('this_month')}
-                                className="px-2.5 py-1 text-[11px] font-semibold rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 transition"
+                                className="px-2.5 py-1 text-[11px] font-semibold rounded-lg bg-blue-50 text-blue-700 hover:bg-blue-100 font-bold transition"
                             >
-                                এই মাস
+                                চলতি মাস
                             </button>
                             <button
                                 type="button"
@@ -423,8 +511,8 @@ export default function ApproverLoanApprovalReport({
                         </div>
                     </div>
 
-                    <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3.5">
-                        {/* Approver / Manager Dropdown */}
+                    <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-3.5">
+                        {/* Approver Dropdown */}
                         <div>
                             <label className="block text-xs font-bold text-slate-700 mb-1">
                                 অনুমোদক / কর্মকর্তা:
@@ -432,7 +520,7 @@ export default function ApproverLoanApprovalReport({
                             <select
                                 value={userId}
                                 onChange={(e) => setUserId(e.target.value)}
-                                className="w-full text-xs rounded-xl border-slate-300 focus:border-brand focus:ring-brand font-medium"
+                                className="w-full text-xs rounded-xl border-slate-300 focus:border-brand focus:ring-brand font-medium py-2"
                             >
                                 <option value="">-- সকল অনুমোদক (All Approvers) --</option>
                                 {approvers_list.map((ap) => (
@@ -446,9 +534,7 @@ export default function ApproverLoanApprovalReport({
                         {/* Date From */}
                         <div>
                             <div className="flex items-center justify-between mb-1">
-                                <label className="block text-xs font-bold text-slate-700">
-                                    শুরুর তারিখ:
-                                </label>
+                                <label className="block text-xs font-bold text-slate-700">শুরুর তারিখ:</label>
                                 {dateFrom && (
                                     <span className="text-[11px] font-mono font-bold text-brand">
                                         {formatDateDMY(dateFrom)}
@@ -460,7 +546,7 @@ export default function ApproverLoanApprovalReport({
                                     type="date"
                                     value={dateFrom}
                                     onChange={(e) => setDateFrom(e.target.value)}
-                                    className="w-full text-xs rounded-xl border-slate-300 focus:border-brand focus:ring-brand pl-8 font-medium"
+                                    className="w-full text-xs rounded-xl border-slate-300 focus:border-brand focus:ring-brand pl-8 font-medium py-2"
                                 />
                                 <Calendar className="w-4 h-4 text-slate-400 absolute left-2.5 top-1/2 -translate-y-1/2 pointer-events-none" />
                             </div>
@@ -469,9 +555,7 @@ export default function ApproverLoanApprovalReport({
                         {/* Date To */}
                         <div>
                             <div className="flex items-center justify-between mb-1">
-                                <label className="block text-xs font-bold text-slate-700">
-                                    শেষের তারিখ:
-                                </label>
+                                <label className="block text-xs font-bold text-slate-700">শেষের তারিখ:</label>
                                 {dateTo && (
                                     <span className="text-[11px] font-mono font-bold text-brand">
                                         {formatDateDMY(dateTo)}
@@ -483,70 +567,10 @@ export default function ApproverLoanApprovalReport({
                                     type="date"
                                     value={dateTo}
                                     onChange={(e) => setDateTo(e.target.value)}
-                                    className="w-full text-xs rounded-xl border-slate-300 focus:border-brand focus:ring-brand pl-8 font-medium"
+                                    className="w-full text-xs rounded-xl border-slate-300 focus:border-brand focus:ring-brand pl-8 font-medium py-2"
                                 />
                                 <Calendar className="w-4 h-4 text-slate-400 absolute left-2.5 top-1/2 -translate-y-1/2 pointer-events-none" />
                             </div>
-                        </div>
-
-                        {/* Branch Dropdown */}
-                        <div>
-                            <label className="block text-xs font-bold text-slate-700 mb-1">
-                                শাখা (Branch):
-                            </label>
-                            <select
-                                value={branchId}
-                                onChange={(e) => setBranchId(e.target.value)}
-                                className="w-full text-xs rounded-xl border-slate-300 focus:border-brand focus:ring-brand font-medium"
-                            >
-                                <option value="">-- সকল শাখা --</option>
-                                {filteredBranches.map((b) => (
-                                    <option key={b.id} value={b.id}>
-                                        {b.name} {b.code ? `(${b.code})` : ''}
-                                    </option>
-                                ))}
-                            </select>
-                        </div>
-
-                        {/* Zone Dropdown */}
-                        <div>
-                            <label className="block text-xs font-bold text-slate-700 mb-1">
-                                জোন (Zone):
-                            </label>
-                            <select
-                                value={zoneId}
-                                onChange={(e) => {
-                                    setZoneId(e.target.value);
-                                    setAreaId('');
-                                    setBranchId('');
-                                }}
-                                className="w-full text-xs rounded-xl border-slate-300 focus:border-brand focus:ring-brand font-medium"
-                            >
-                                <option value="">-- সকল জোন --</option>
-                                {zones.map((z) => (
-                                    <option key={z.id} value={z.id}>{z.name}</option>
-                                ))}
-                            </select>
-                        </div>
-
-                        {/* Area Dropdown */}
-                        <div>
-                            <label className="block text-xs font-bold text-slate-700 mb-1">
-                                এরিয়া (Area):
-                            </label>
-                            <select
-                                value={areaId}
-                                onChange={(e) => {
-                                    setAreaId(e.target.value);
-                                    setBranchId('');
-                                }}
-                                className="w-full text-xs rounded-xl border-slate-300 focus:border-brand focus:ring-brand font-medium"
-                            >
-                                <option value="">-- সকল এরিয়া --</option>
-                                {filteredAreas.map((a) => (
-                                    <option key={a.id} value={a.id}>{a.name}</option>
-                                ))}
-                            </select>
                         </div>
 
                         {/* Search Input */}
@@ -560,81 +584,143 @@ export default function ApproverLoanApprovalReport({
                                     value={search}
                                     onChange={(e) => setSearch(e.target.value)}
                                     placeholder="আবেদন নং, নাম বা সদস্য কোড..."
-                                    className="w-full text-xs rounded-xl border-slate-300 focus:border-brand focus:ring-brand pl-8"
+                                    className="w-full text-xs rounded-xl border-slate-300 focus:border-brand focus:ring-brand pl-8 py-2"
                                     onKeyDown={(e) => e.key === 'Enter' && handleApplyFilters()}
                                 />
                                 <Search className="w-4 h-4 text-slate-400 absolute left-2.5 top-1/2 -translate-y-1/2 pointer-events-none" />
                             </div>
                         </div>
+                    </div>
 
-                        {/* Action Buttons */}
-                        <div className="flex items-end gap-2">
+                    {/* Cascading Location Filter Toggle */}
+                    <div className="pt-2 border-t border-slate-100 flex flex-col md:flex-row items-stretch md:items-center justify-between gap-3">
+                        <button
+                            type="button"
+                            onClick={() => setShowAdvancedLocation(!showAdvancedLocation)}
+                            className="text-xs font-bold text-slate-600 hover:text-brand flex items-center gap-1.5 self-start"
+                        >
+                            <Building2 className="w-3.5 h-3.5" />
+                            <span>শাখা / এরিয়া / জোন ফিল্টার {showAdvancedLocation ? 'লুকান ▲' : 'খুলুন ▼'}</span>
+                            {(zoneId || areaId || branchId) && (
+                                <span className="w-2 h-2 rounded-full bg-brand inline-block ml-1" />
+                            )}
+                        </button>
+
+                        <div className="flex items-center gap-2 self-end">
                             <button
                                 type="button"
                                 onClick={handleApplyFilters}
-                                className="flex-1 px-4 py-2.5 bg-brand hover:bg-brand-dark text-white rounded-xl text-xs font-bold transition shadow-xs active:scale-95"
+                                className="px-5 py-2 bg-brand hover:bg-brand-dark text-white rounded-xl text-xs font-bold transition shadow-xs active:scale-95 flex items-center gap-1.5"
                             >
-                                রিপোর্ট দেখুন
+                                <Search className="w-3.5 h-3.5" />
+                                <span>রিপোর্ট দেখুন</span>
                             </button>
                             <button
                                 type="button"
                                 onClick={handleResetFilters}
-                                className="p-2.5 bg-slate-100 hover:bg-slate-200 text-slate-600 rounded-xl transition active:scale-95"
+                                className="p-2 bg-slate-100 hover:bg-slate-200 text-slate-600 rounded-xl transition active:scale-95"
                                 title="ফিল্টার রিসেট করুন"
                             >
                                 <RotateCcw className="w-4 h-4" />
                             </button>
                         </div>
                     </div>
-                </div>
 
-                {/* Selected Approver Info Card (if single approver filtered) */}
-                {selected_approver && (
-                    <div className="bg-gradient-to-r from-blue-50 to-indigo-50 border border-blue-200/80 rounded-2xl p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-xs">
-                        <div className="flex items-center gap-3">
-                            <div className="w-10 h-10 rounded-xl bg-blue-600 text-white flex items-center justify-center font-bold text-base shadow-sm">
-                                {selected_approver.name.charAt(0)}
+                    {/* Collapsible Location Pickers */}
+                    {showAdvancedLocation && (
+                        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-3 border-t border-slate-100 bg-slate-50/60 p-3.5 rounded-xl">
+                            <div>
+                                <label className="block text-xs font-bold text-slate-600 mb-1">জোন (Zone):</label>
+                                <select
+                                    value={zoneId}
+                                    onChange={(e) => {
+                                        setZoneId(e.target.value);
+                                        setAreaId('');
+                                        setBranchId('');
+                                    }}
+                                    className="w-full text-xs rounded-xl border-slate-300 py-1.5"
+                                >
+                                    <option value="">-- সকল জোন --</option>
+                                    {zones.map((z) => (
+                                        <option key={z.id} value={z.id}>{z.name}</option>
+                                    ))}
+                                </select>
                             </div>
                             <div>
-                                <div className="flex items-center gap-2">
-                                    <h3 className="text-sm font-bold text-slate-800">{selected_approver.name}</h3>
-                                    <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold bg-blue-100 text-blue-800">
-                                        {selected_approver.role_name}
-                                    </span>
-                                </div>
-                                <p className="text-xs text-slate-500 font-medium">
-                                    শাখা: {selected_approver.branch_name || 'হেড অফিস / সর্বজনীন'} • ইমেইল: {selected_approver.email}
-                                </p>
+                                <label className="block text-xs font-bold text-slate-600 mb-1">এরিয়া (Area):</label>
+                                <select
+                                    value={areaId}
+                                    onChange={(e) => {
+                                        setAreaId(e.target.value);
+                                        setBranchId('');
+                                    }}
+                                    className="w-full text-xs rounded-xl border-slate-300 py-1.5"
+                                >
+                                    <option value="">-- সকল এরিয়া --</option>
+                                    {filteredAreas.map((a) => (
+                                        <option key={a.id} value={a.id}>{a.name}</option>
+                                    ))}
+                                </select>
+                            </div>
+                            <div>
+                                <label className="block text-xs font-bold text-slate-600 mb-1">শাখা (Branch):</label>
+                                <select
+                                    value={branchId}
+                                    onChange={(e) => setBranchId(e.target.value)}
+                                    className="w-full text-xs rounded-xl border-slate-300 py-1.5"
+                                >
+                                    <option value="">-- সকল শাখা --</option>
+                                    {filteredBranches.map((b) => (
+                                        <option key={b.id} value={b.id}>{b.name} {b.code ? `(${b.code})` : ''}</option>
+                                    ))}
+                                </select>
                             </div>
                         </div>
-                        <div className="text-right sm:border-l sm:border-blue-200 sm:pl-4">
-                            <span className="text-[11px] text-slate-500 font-bold block">এই সময়কালে মোট অনুমোদন:</span>
-                            <span className="text-base font-black text-blue-900">{summary.total_loans} টি ঋণ ({formatCurrency(summary.total_amount)} ৳)</span>
-                        </div>
-                    </div>
-                )}
+                    )}
+                </div>
 
-                {/* Summary Metrics Cards */}
+                {/* 4. Accurate KPI Statistics Cards */}
                 <div className="grid grid-cols-2 md:grid-cols-4 gap-3.5">
-                    {/* Total Loans Card */}
-                    <div className="bg-white p-4 rounded-2xl border border-slate-200/80 shadow-xs flex items-center gap-3.5">
-                        <div className="w-11 h-11 rounded-xl bg-blue-50 border border-blue-200/60 flex items-center justify-center text-blue-600 shrink-0">
-                            <CheckCircle2 className="w-5 h-5" />
+                    {/* Unique Loans Card */}
+                    <div className="bg-white p-4 rounded-2xl border border-slate-200/90 shadow-xs flex items-center gap-3.5">
+                        <div className="w-12 h-12 rounded-xl bg-blue-50 border border-blue-200/60 flex items-center justify-center text-blue-600 shrink-0">
+                            <CheckCircle2 className="w-6 h-6" />
                         </div>
                         <div className="min-w-0">
                             <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider block">
-                                মোট অনুমোদিত ঋণ
+                                মোট অনুমোদিত ঋণ (স্বতন্ত্র)
                             </span>
-                            <span className="text-lg sm:text-xl font-black text-slate-800 truncate block">
+                            <span className="text-xl sm:text-2xl font-black text-slate-800 truncate block">
                                 {summary.total_loans.toLocaleString('bn-BD')} টি
+                            </span>
+                            <span className="text-[10px] text-blue-600 font-semibold block">অনন্য ঋণ আবেদন</span>
+                        </div>
+                    </div>
+
+                    {/* Total Approvals or Approvers Card */}
+                    <div className="bg-white p-4 rounded-2xl border border-slate-200/90 shadow-xs flex items-center gap-3.5">
+                        <div className="w-12 h-12 rounded-xl bg-purple-50 border border-purple-200/60 flex items-center justify-center text-purple-600 shrink-0">
+                            <Users className="w-6 h-6" />
+                        </div>
+                        <div className="min-w-0">
+                            <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider block">
+                                {userId ? 'অনুমোদন কার্যক্রম' : 'মোট কর্মকর্তা / অনুমোদক'}
+                            </span>
+                            <span className="text-xl sm:text-2xl font-black text-slate-800 truncate block">
+                                {userId
+                                    ? `${(summary.total_approvals || summary.total_loans).toLocaleString('bn-BD')} টি`
+                                    : `${summary.unique_approvers.toLocaleString('bn-BD')} জন`}
+                            </span>
+                            <span className="text-[10px] text-purple-600 font-semibold block">
+                                {userId ? 'মোট এপ্রুভাল ইভেন্ট' : `${(summary.total_approvals || summary.total_loans).toLocaleString('bn-BD')} টি মোট অনুমোদন`}
                             </span>
                         </div>
                     </div>
 
                     {/* Total Amount Card */}
-                    <div className="bg-white p-4 rounded-2xl border border-slate-200/80 shadow-xs flex items-center gap-3.5">
-                        <div className="w-11 h-11 rounded-xl bg-emerald-50 border border-emerald-200/60 flex items-center justify-center text-emerald-600 shrink-0">
-                            <Banknote className="w-5 h-5" />
+                    <div className="bg-white p-4 rounded-2xl border border-slate-200/90 shadow-xs flex items-center gap-3.5">
+                        <div className="w-12 h-12 rounded-xl bg-emerald-50 border border-emerald-200/60 flex items-center justify-center text-emerald-600 shrink-0">
+                            <Banknote className="w-6 h-6" />
                         </div>
                         <div className="min-w-0">
                             <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider block">
@@ -643,13 +729,14 @@ export default function ApproverLoanApprovalReport({
                             <span className="text-lg sm:text-xl font-black text-emerald-700 truncate block">
                                 {formatCurrency(summary.total_amount)} ৳
                             </span>
+                            <span className="text-[10px] text-emerald-600 font-semibold block">অনুমোদিত সর্বমোট অর্থ</span>
                         </div>
                     </div>
 
                     {/* Average Amount Card */}
-                    <div className="bg-white p-4 rounded-2xl border border-slate-200/80 shadow-xs flex items-center gap-3.5">
-                        <div className="w-11 h-11 rounded-xl bg-amber-50 border border-amber-200/60 flex items-center justify-center text-amber-600 shrink-0">
-                            <Coins className="w-5 h-5" />
+                    <div className="bg-white p-4 rounded-2xl border border-slate-200/90 shadow-xs flex items-center gap-3.5">
+                        <div className="w-12 h-12 rounded-xl bg-amber-50 border border-amber-200/60 flex items-center justify-center text-amber-600 shrink-0">
+                            <Coins className="w-6 h-6" />
                         </div>
                         <div className="min-w-0">
                             <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider block">
@@ -658,74 +745,70 @@ export default function ApproverLoanApprovalReport({
                             <span className="text-lg sm:text-xl font-black text-slate-800 truncate block">
                                 {formatCurrency(summary.average_amount)} ৳
                             </span>
-                        </div>
-                    </div>
-
-                    {/* Approvers Count Card */}
-                    <div className="bg-white p-4 rounded-2xl border border-slate-200/80 shadow-xs flex items-center gap-3.5">
-                        <div className="w-11 h-11 rounded-xl bg-purple-50 border border-purple-200/60 flex items-center justify-center text-purple-600 shrink-0">
-                            <Users className="w-5 h-5" />
-                        </div>
-                        <div className="min-w-0">
-                            <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider block">
-                                মোট কর্মকর্তা / অনুমোদক
-                            </span>
-                            <span className="text-lg sm:text-xl font-black text-slate-800 truncate block">
-                                {summary.unique_approvers.toLocaleString('bn-BD')} জন
-                            </span>
+                            <span className="text-[10px] text-amber-700 font-semibold block">প্রতি ঋণের গড় সাইজ</span>
                         </div>
                     </div>
                 </div>
 
-                {/* View Tabs */}
-                <div className="flex items-center gap-2 border-b border-slate-200">
+                {/* 5. View Switcher Tabs */}
+                <div className="flex items-center gap-2 border-b border-slate-200 bg-white px-3 pt-3 rounded-t-2xl">
                     <button
                         type="button"
                         onClick={() => setActiveTab('approver_wise')}
-                        className={`pb-3 px-3 text-xs sm:text-sm font-bold flex items-center gap-1.5 border-b-2 transition ${
+                        className={`pb-3 px-4 text-xs sm:text-sm font-bold flex items-center gap-2 border-b-2 transition ${
                             activeTab === 'approver_wise'
                                 ? 'border-brand text-brand-dark'
                                 : 'border-transparent text-slate-500 hover:text-slate-700'
                         }`}
                     >
                         <Users className="w-4 h-4" />
-                        <span>অনুমোদকভিত্তিক সারসংক্ষেপ ({approver_summary.length} জন)</span>
+                        <span>অনুমোদকভিত্তিক সারসংক্ষেপ</span>
+                        <span className={`px-2 py-0.5 rounded-full text-[11px] ${activeTab === 'approver_wise' ? 'bg-brand/10 text-brand-dark' : 'bg-slate-100 text-slate-600'}`}>
+                            {approver_summary.length} জন
+                        </span>
                     </button>
+
                     <button
                         type="button"
                         onClick={() => setActiveTab('detailed')}
-                        className={`pb-3 px-3 text-xs sm:text-sm font-bold flex items-center gap-1.5 border-b-2 transition ${
+                        className={`pb-3 px-4 text-xs sm:text-sm font-bold flex items-center gap-2 border-b-2 transition ${
                             activeTab === 'detailed'
                                 ? 'border-brand text-brand-dark'
                                 : 'border-transparent text-slate-500 hover:text-slate-700'
                         }`}
                     >
                         <FileSpreadsheet className="w-4 h-4" />
-                        <span>অনুমোদিত ঋণের বিস্তারিত তালিকা ({summary.total_loans})</span>
+                        <span>অনুমোদিত ঋণের বিস্তারিত তালিকা</span>
+                        <span className={`px-2 py-0.5 rounded-full text-[11px] ${activeTab === 'detailed' ? 'bg-brand/10 text-brand-dark' : 'bg-slate-100 text-slate-600'}`}>
+                            {approvals.total} টি
+                        </span>
                     </button>
+
                     <button
                         type="button"
                         onClick={() => setActiveTab('date_wise')}
-                        className={`pb-3 px-3 text-xs sm:text-sm font-bold flex items-center gap-1.5 border-b-2 transition ${
+                        className={`pb-3 px-4 text-xs sm:text-sm font-bold flex items-center gap-2 border-b-2 transition ${
                             activeTab === 'date_wise'
                                 ? 'border-brand text-brand-dark'
                                 : 'border-transparent text-slate-500 hover:text-slate-700'
                         }`}
                     >
                         <Calendar className="w-4 h-4" />
-                        <span>তারিখভিত্তিক সারসংক্ষেপ ({date_summary.length} দিন)</span>
+                        <span>তারিখভিত্তিক বিবরণী</span>
+                        <span className={`px-2 py-0.5 rounded-full text-[11px] ${activeTab === 'date_wise' ? 'bg-brand/10 text-brand-dark' : 'bg-slate-100 text-slate-600'}`}>
+                            {date_summary.length} দিন
+                        </span>
                     </button>
                 </div>
 
-                {/* TAB 1: APPROVER-WISE SUMMARY (First Tab) */}
+                {/* TAB 1: APPROVER-WISE SUMMARY TABLE */}
                 {activeTab === 'approver_wise' && (
-                    <div className="bg-white rounded-2xl border border-slate-200/80 shadow-xs overflow-hidden">
-                        {/* Header Box */}
+                    <div className="bg-white rounded-b-2xl border border-slate-200/90 shadow-xs overflow-hidden">
                         <div className="p-4 sm:p-5 border-b border-slate-100 bg-gradient-to-r from-slate-50 to-white flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                             <div>
                                 <div className="flex items-center gap-2">
                                     <h2 className="text-sm font-black uppercase tracking-wider text-slate-800">
-                                        অনুমোদকভিত্তিক সারসংক্ষেপ তালিকা
+                                        অনুমোদকভিত্তিক ঋণ মঞ্জুরী সারসংক্ষেপ
                                     </h2>
                                     <span className="px-2.5 py-0.5 rounded-full text-[10.5px] font-bold bg-brand/10 text-brand-dark">
                                         পদক্রম অনুযায়ী সাজানো
@@ -753,12 +836,7 @@ export default function ApproverLoanApprovalReport({
                                     </span>
                                     <button
                                         type="button"
-                                        onClick={() => {
-                                            setUserId('');
-                                            const params = new URLSearchParams(buildQueryString());
-                                            params.delete('user_id');
-                                            router.get(`/reports/approver-loan-approvals?${params.toString()}`);
-                                        }}
+                                        onClick={handleClearApproverFilter}
                                         className="text-xs font-bold text-blue-600 hover:text-blue-800 underline ml-1"
                                     >
                                         সকল দেখুন
@@ -774,9 +852,10 @@ export default function ApproverLoanApprovalReport({
                                     <tr className="bg-slate-50 border-b border-slate-200 text-slate-600 font-bold uppercase tracking-wider text-[11px]">
                                         <th className="py-3 px-3 text-center w-12">ক্র.</th>
                                         <th className="py-3 px-3">কর্মকর্তার নাম</th>
-                                        <th className="py-3 px-3">পদবী / স্তর</th>
+                                        <th className="py-3 px-3">পদবী ও স্তর</th>
                                         <th className="py-3 px-3">শাখা / কর্মস্থল</th>
-                                        <th className="py-3 px-3 text-center">অনুমোদিত ঋণ সংখ্যা</th>
+                                        <th className="py-3 px-3 text-center">অনুমোদিত ঋণ (স্বতন্ত্র)</th>
+                                        <th className="py-3 px-3 text-center">অনুমোদন কার্যক্রম</th>
                                         <th className="py-3 px-3 text-right">অনুমোদিত মোট টাকা (৳)</th>
                                         <th className="py-3 px-3 text-right">গড় ঋণ (৳)</th>
                                         <th className="py-3 px-3 text-center">অ্যাকশন</th>
@@ -785,7 +864,7 @@ export default function ApproverLoanApprovalReport({
                                 <tbody className="divide-y divide-slate-100 font-medium">
                                     {approver_summary.length === 0 ? (
                                         <tr>
-                                            <td colSpan={8} className="py-8 text-center text-slate-400">
+                                            <td colSpan={9} className="py-12 text-center text-slate-400">
                                                 নির্বাচিত ফিল্টারে কোনো অনুমোদকের তথ্য পাওয়া যায়নি।
                                             </td>
                                         </tr>
@@ -794,6 +873,7 @@ export default function ApproverLoanApprovalReport({
                                             const badgeInfo = getRoleBadge(item.role_slug, item.role_name);
                                             const isSelected = String(item.user_id) === String(userId);
                                             const avg = item.total_loans > 0 ? item.total_amount / item.total_loans : 0;
+                                            const totalActions = item.total_approvals ?? item.total_loans;
 
                                             return (
                                                 <tr
@@ -826,6 +906,14 @@ export default function ApproverLoanApprovalReport({
                                                     <td className="py-3 px-3 text-center font-mono font-bold text-blue-700 text-[12.5px]">
                                                         {item.total_loans.toLocaleString('bn-BD')} টি
                                                     </td>
+                                                    <td className="py-3 px-3 text-center font-mono text-slate-600 text-[12px]">
+                                                        {totalActions.toLocaleString('bn-BD')} টি
+                                                        {totalActions > item.total_loans && (
+                                                            <span className="block text-[9.5px] text-purple-600 font-normal">
+                                                                ({totalActions - item.total_loans}টি পুনঃঅনুমোদন)
+                                                            </span>
+                                                        )}
+                                                    </td>
                                                     <td className="py-3 px-3 text-right font-mono font-bold text-emerald-700 text-[12.5px]">
                                                         {formatCurrency(item.total_amount)} ৳
                                                     </td>
@@ -838,11 +926,10 @@ export default function ApproverLoanApprovalReport({
                                                             onClick={() => {
                                                                 setUserId(String(item.user_id));
                                                                 setActiveTab('detailed');
-                                                                const params = new URLSearchParams(buildQueryString());
-                                                                params.set('user_id', String(item.user_id));
-                                                                router.get(`/reports/approver-loan-approvals?${params.toString()}`);
+                                                                const qs = buildQueryString({ user_id: item.user_id });
+                                                                router.get(`/reports/approver-loan-approvals?${qs}`);
                                                             }}
-                                                            className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-[11px] font-bold bg-brand/10 hover:bg-brand/20 text-brand-dark transition shadow-2xs"
+                                                            className="inline-flex items-center gap-1 px-3 py-1.5 rounded-xl text-[11px] font-bold bg-brand text-white hover:bg-brand-dark transition shadow-2xs active:scale-95"
                                                             title={`${item.user_name} এর অনুমোদিত ঋণের বিস্তারিত তালিকা দেখুন`}
                                                         >
                                                             <span>ঋণ তালিকা</span>
@@ -863,6 +950,9 @@ export default function ApproverLoanApprovalReport({
                                             <td className="py-3 px-3 text-center font-bold text-blue-900 text-sm">
                                                 {summary.total_loans.toLocaleString('bn-BD')} টি
                                             </td>
+                                            <td className="py-3 px-3 text-center font-bold text-slate-700 text-xs">
+                                                {(summary.total_approvals || summary.total_loans).toLocaleString('bn-BD')} টি
+                                            </td>
                                             <td className="py-3 px-3 text-right font-mono text-emerald-800 text-sm">
                                                 {formatCurrency(summary.total_amount)} ৳
                                             </td>
@@ -878,31 +968,50 @@ export default function ApproverLoanApprovalReport({
                     </div>
                 )}
 
-                {/* TAB 2: DETAILED LIST */}
+                {/* TAB 2: DETAILED LOAN APPLICATIONS LIST */}
                 {activeTab === 'detailed' && (
-                    <div className="bg-white rounded-2xl border border-slate-200/80 shadow-xs overflow-hidden">
-                        <div className="p-4 border-b border-slate-100 flex items-center justify-between">
-                            <h2 className="text-xs font-bold uppercase tracking-wider text-slate-700">
-                                ঋণের বিস্তারিত অনুমোদন বিবরণী
-                            </h2>
-                            <div className="flex items-center gap-2">
-                                <label className="text-xs text-slate-500 font-medium">প্রতি পেজে:</label>
-                                <select
-                                    value={perPage}
-                                    onChange={(e) => {
-                                        setPerPage(Number(e.target.value));
-                                        const params = new URLSearchParams(buildQueryString());
-                                        params.set('per_page', e.target.value);
-                                        router.get(`/reports/approver-loan-approvals?${params.toString()}`);
-                                    }}
-                                    className="text-xs rounded-lg border-slate-300 py-1 pl-2 pr-6"
-                                >
-                                    <option value={15}>১৫</option>
-                                    <option value={25}>২৫</option>
-                                    <option value={50}>৫০</option>
-                                    <option value={100}>১০০</option>
-                                    <option value={200}>২০০</option>
-                                </select>
+                    <div className="bg-white rounded-b-2xl border border-slate-200/90 shadow-xs overflow-hidden">
+                        <div className="p-4 border-b border-slate-100 flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-gradient-to-r from-slate-50 to-white">
+                            <div>
+                                <h2 className="text-xs font-bold uppercase tracking-wider text-slate-700">
+                                    অনুমোদিত ঋণের বিস্তারিত ডাটা তালিকা
+                                </h2>
+                                <p className="text-[11px] text-slate-400 mt-0.5">
+                                    {selected_approver
+                                        ? `${selected_approver.name} কর্তৃক অনুমোদিত মোট ${approvals.total} টি ঋণ প্রদর্শন করা হচ্ছে`
+                                        : `সকল কর্মকর্তার অনুমোদিত মোট ${approvals.total} টি ঋণ`}
+                                </p>
+                            </div>
+
+                            <div className="flex items-center gap-3">
+                                {userId && (
+                                    <button
+                                        type="button"
+                                        onClick={handleClearApproverFilter}
+                                        className="text-xs font-bold text-blue-600 hover:text-blue-800 underline"
+                                    >
+                                        সকল অনুমোদক দেখুন
+                                    </button>
+                                )}
+
+                                <div className="flex items-center gap-1.5">
+                                    <label className="text-xs text-slate-500 font-medium">প্রতি পেজে:</label>
+                                    <select
+                                        value={perPage}
+                                        onChange={(e) => {
+                                            setPerPage(Number(e.target.value));
+                                            const qs = buildQueryString({ per_page: e.target.value });
+                                            router.get(`/reports/approver-loan-approvals?${qs}`);
+                                        }}
+                                        className="text-xs rounded-xl border-slate-300 py-1 pl-2 pr-6"
+                                    >
+                                        <option value={15}>১৫</option>
+                                        <option value={25}>২৫</option>
+                                        <option value={50}>৫০</option>
+                                        <option value={100}>১০০</option>
+                                        <option value={200}>২০০</option>
+                                    </select>
+                                </div>
                             </div>
                         </div>
 
@@ -919,7 +1028,7 @@ export default function ApproverLoanApprovalReport({
                                         <th className="py-3 px-3 text-right">চাহিদাকৃত (৳)</th>
                                         <th className="py-3 px-3 text-right">অনুমোদিত টাকা (৳)</th>
                                         <th className="py-3 px-3">অনুমোদক ও পদবী</th>
-                                        <th className="py-3 px-3">মন্তব্য</th>
+                                        <th className="py-3 px-3 text-center">বর্তমান অবস্থা</th>
                                         <th className="py-3 px-3 text-center">ভিউ</th>
                                     </tr>
                                 </thead>
@@ -933,6 +1042,8 @@ export default function ApproverLoanApprovalReport({
                                     ) : (
                                         approvals.data.map((item, index) => {
                                             const sl = (approvals.current_page - 1) * approvals.per_page + index + 1;
+                                            const statusClass = getLoanStatusBadge(item.loan_status, item.loan_status_label);
+
                                             return (
                                                 <tr key={item.id} className="hover:bg-slate-50/80 transition">
                                                     <td className="py-3 px-3 text-center text-slate-400 font-semibold">{sl}</td>
@@ -941,7 +1052,7 @@ export default function ApproverLoanApprovalReport({
                                                         <div className="text-[10.5px] text-slate-400">{item.approval_time}</div>
                                                     </td>
                                                     <td className="py-3 px-3 whitespace-nowrap">
-                                                        <span className="font-mono font-bold text-blue-700 bg-blue-50 px-2 py-0.5 rounded-lg border border-blue-100">
+                                                        <span className="font-mono font-bold text-blue-700 bg-blue-50 px-2.5 py-1 rounded-lg border border-blue-200">
                                                             {item.application_no}
                                                         </span>
                                                     </td>
@@ -970,8 +1081,10 @@ export default function ApproverLoanApprovalReport({
                                                             {item.approver_role} • {item.level_label}
                                                         </div>
                                                     </td>
-                                                    <td className="py-3 px-3 text-slate-500 text-[11px] max-w-[180px] truncate" title={item.comments || ''}>
-                                                        {item.comments || '—'}
+                                                    <td className="py-3 px-3 text-center whitespace-nowrap">
+                                                        <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10.5px] font-bold border ${statusClass}`}>
+                                                            {item.loan_status_label}
+                                                        </span>
                                                     </td>
                                                     <td className="py-3 px-3 text-center">
                                                         <a
@@ -979,9 +1092,9 @@ export default function ApproverLoanApprovalReport({
                                                             target="_blank"
                                                             rel="noopener noreferrer"
                                                             className="p-1.5 inline-flex items-center justify-center rounded-lg text-slate-400 hover:text-brand hover:bg-brand-soft transition"
-                                                            title="আবেদন বিবরণী দেখুন"
+                                                            title="ঋণ আবেদন বিস্তারিত দেখুন"
                                                         >
-                                                            <Eye className="w-4 h-4" />
+                                                            <ExternalLink className="w-4 h-4" />
                                                         </a>
                                                     </td>
                                                 </tr>
@@ -1009,18 +1122,18 @@ export default function ApproverLoanApprovalReport({
 
                         {/* Pagination Links */}
                         {approvals.last_page > 1 && (
-                            <div className="p-4 border-t border-slate-100 flex items-center justify-between">
-                                <span className="text-xs text-slate-500">
-                                    মোট {approvals.total} টির মধ্যে {(approvals.current_page - 1) * approvals.per_page + 1} থেকে {Math.min(approvals.current_page * approvals.per_page, approvals.total)} দেখানো হচ্ছে
+                            <div className="p-4 border-t border-slate-100 flex flex-col sm:flex-row items-center justify-between gap-3">
+                                <span className="text-xs text-slate-500 font-medium">
+                                    মোট <strong>{approvals.total}</strong> টির মধ্যে <strong>{(approvals.current_page - 1) * approvals.per_page + 1}</strong> থেকে <strong>{Math.min(approvals.current_page * approvals.per_page, approvals.total)}</strong> দেখানো হচ্ছে
                                 </span>
-                                <div className="flex items-center gap-1">
+                                <div className="flex items-center gap-1 flex-wrap">
                                     {approvals.links.map((link, idx) => (
                                         <button
                                             key={idx}
                                             onClick={() => link.url && router.get(link.url)}
                                             disabled={!link.url}
                                             dangerouslySetInnerHTML={{ __html: link.label }}
-                                            className={`px-2.5 py-1 text-xs rounded-lg font-semibold transition ${
+                                            className={`px-3 py-1.5 text-xs rounded-xl font-semibold transition ${
                                                 link.active
                                                     ? 'bg-brand text-white shadow-xs'
                                                     : 'text-slate-600 hover:bg-slate-100 disabled:opacity-30 disabled:pointer-events-none'
@@ -1033,10 +1146,10 @@ export default function ApproverLoanApprovalReport({
                     </div>
                 )}
 
-                {/* TAB 2: DATE-WISE BREAKDOWN SUMMARY */}
+                {/* TAB 3: DATE-WISE BREAKDOWN SUMMARY */}
                 {activeTab === 'date_wise' && (
-                    <div className="bg-white rounded-2xl border border-slate-200/80 shadow-xs overflow-hidden">
-                        <div className="p-4 border-b border-slate-100 flex items-center justify-between">
+                    <div className="bg-white rounded-b-2xl border border-slate-200/90 shadow-xs overflow-hidden">
+                        <div className="p-4 border-b border-slate-100 flex items-center justify-between bg-gradient-to-r from-slate-50 to-white">
                             <div>
                                 <h2 className="text-xs font-bold uppercase tracking-wider text-slate-700">
                                     তারিখ অনুযায়ী ঋণ অনুমোদন বিবরণী
@@ -1045,7 +1158,7 @@ export default function ApproverLoanApprovalReport({
                                     প্রতিটি দিনে মোট কয়টি ঋণ ও কত টাকা অনুমোদন দেওয়া হয়েছে তার তালিকা
                                 </p>
                             </div>
-                            <span className="text-xs font-bold text-slate-500">
+                            <span className="text-xs font-bold text-slate-500 bg-slate-100 px-3 py-1 rounded-xl">
                                 মোট কার্যদিবস: {date_summary.length} দিন
                             </span>
                         </div>

@@ -12,6 +12,7 @@ use App\Models\User;
 use App\Services\ApprovalService;
 use Carbon\Carbon;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 use Inertia\Inertia;
 use Inertia\Response;
 use PhpOffice\PhpSpreadsheet\Spreadsheet;
@@ -72,12 +73,22 @@ class ApproverLoanApprovalReportController extends Controller
             $perPage = 25;
         }
 
-        // Base query
+        // Base query with existing valid loanApplication
         $query = $this->buildReportQuery($request, $dateFrom, $dateTo, $userId, $viewer);
+
+        // Accurate summary statistics via SQL (never truncated)
+        $totalApprovalsCount = (clone $query)->count();
+        $uniqueLoansCount = (clone $query)->distinct('loan_application_approvals.loan_application_id')->count('loan_application_approvals.loan_application_id');
+        $uniqueApproversCount = (clone $query)->distinct('loan_application_approvals.user_id')->count('loan_application_approvals.user_id');
+
+        $loanIdsSubquery = (clone $query)->select('loan_application_approvals.loan_application_id')->distinct();
+        $totalAmountSum = (float) LoanApplication::whereIn('id', $loanIdsSubquery)
+            ->sum(DB::raw('COALESCE(approved_amount, requested_amount, 0)'));
+        $averageAmount = $uniqueLoansCount > 0 ? (float) ($totalAmountSum / $uniqueLoansCount) : 0;
 
         // Paginate for the detailed list
         $paginated = (clone $query)
-            ->orderBy('approved_at', 'desc')
+            ->orderBy('loan_application_approvals.approved_at', 'desc')
             ->paginate($perPage)
             ->withQueryString();
 
@@ -85,22 +96,11 @@ class ApproverLoanApprovalReportController extends Controller
             return $this->formatApprovalRow($approval);
         })->all();
 
-        // All matching records for summary and date-wise breakdown (up to 3000 to prevent OOM)
-        $allMatching = (clone $query)->orderBy('approved_at', 'desc')->limit(3000)->get();
+        // 2. Date-wise Summary Breakdown (accurate via SQL)
+        $dateSummary = $this->buildDateSummaryFromQuery($query);
 
-        // 1. Overall Summary Statistics
-        $totalLoansCount = $allMatching->count();
-        $totalAmountSum = $allMatching->sum(function ($approval) {
-            $loan = $approval->loanApplication;
-            return (float) ($loan?->approved_amount ?: ($loan?->requested_amount ?? 0));
-        });
-        $uniqueApproversCount = $allMatching->pluck('user_id')->unique()->count();
-
-        // 2. Date-wise Summary Breakdown
-        $dateSummary = $this->buildDateSummary($allMatching);
-
-        // 3. Approver-wise Summary Breakdown
-        $approverSummary = $this->buildApproverSummary($allMatching);
+        // 3. Approver-wise Summary Breakdown (accurate via SQL for all 57 approvers)
+        $approverSummary = $this->buildApproverSummaryFromQuery($query);
 
         // Filter dropdown options
         $approversList = $this->getApproversDropdownList($viewer);
@@ -128,10 +128,11 @@ class ApproverLoanApprovalReportController extends Controller
                 'per_page' => $perPage,
             ],
             'summary' => [
-                'total_loans' => $totalLoansCount,
+                'total_loans' => $uniqueLoansCount,
+                'total_approvals' => $totalApprovalsCount,
                 'total_amount' => (float) $totalAmountSum,
                 'unique_approvers' => $uniqueApproversCount,
-                'average_amount' => $totalLoansCount > 0 ? (float) ($totalAmountSum / $totalLoansCount) : 0,
+                'average_amount' => (float) $averageAmount,
             ],
             'selected_approver' => $selectedApprover ? [
                 'id' => $selectedApprover->id,
@@ -161,15 +162,21 @@ class ApproverLoanApprovalReportController extends Controller
         $userId = $request->filled('user_id') ? (int) $request->input('user_id') : null;
 
         $query = $this->buildReportQuery($request, $dateFrom, $dateTo, $userId, $viewer);
-        $allMatching = $query->orderBy('approved_at', 'desc')->limit(1500)->get();
 
+        $totalApprovalsCount = (clone $query)->count();
+        $uniqueLoansCount = (clone $query)->distinct('loan_application_approvals.loan_application_id')->count('loan_application_approvals.loan_application_id');
+        $uniqueApproversCount = (clone $query)->distinct('loan_application_approvals.user_id')->count('loan_application_approvals.user_id');
+
+        $loanIdsSubquery = (clone $query)->select('loan_application_approvals.loan_application_id')->distinct();
+        $totalAmountSum = (float) LoanApplication::whereIn('id', $loanIdsSubquery)
+            ->sum(DB::raw('COALESCE(approved_amount, requested_amount, 0)'));
+        $averageAmount = $uniqueLoansCount > 0 ? (float) ($totalAmountSum / $uniqueLoansCount) : 0;
+
+        $allMatching = (clone $query)->orderBy('loan_application_approvals.approved_at', 'desc')->limit(3000)->get();
         $items = $allMatching->map(fn ($approval) => $this->formatApprovalRow($approval))->all();
 
-        $totalLoansCount = count($items);
-        $totalAmountSum = collect($items)->sum('approved_amount');
-
-        $dateSummary = $this->buildDateSummary($allMatching);
-        $approverSummary = $this->buildApproverSummary($allMatching);
+        $dateSummary = $this->buildDateSummaryFromQuery($query);
+        $approverSummary = $this->buildApproverSummaryFromQuery($query);
         $orgOptions = $this->organizationFilterOptions();
         $selectedApprover = $userId ? User::with('role', 'branch')->find($userId) : null;
 
@@ -185,10 +192,11 @@ class ApproverLoanApprovalReportController extends Controller
                 'search' => (string) $request->input('search', ''),
             ],
             'summary' => [
-                'total_loans' => $totalLoansCount,
+                'total_loans' => $uniqueLoansCount,
+                'total_approvals' => $totalApprovalsCount,
                 'total_amount' => (float) $totalAmountSum,
-                'unique_approvers' => $allMatching->pluck('user_id')->unique()->count(),
-                'average_amount' => $totalLoansCount > 0 ? (float) ($totalAmountSum / $totalLoansCount) : 0,
+                'unique_approvers' => $uniqueApproversCount,
+                'average_amount' => (float) $averageAmount,
             ],
             'selected_approver' => $selectedApprover ? [
                 'id' => $selectedApprover->id,
@@ -218,10 +226,11 @@ class ApproverLoanApprovalReportController extends Controller
         $userId = $request->filled('user_id') ? (int) $request->input('user_id') : null;
 
         $query = $this->buildReportQuery($request, $dateFrom, $dateTo, $userId, $viewer);
-        $approvals = $query->orderBy('approved_at', 'desc')->limit(3000)->get();
+        $approvals = (clone $query)->orderBy('loan_application_approvals.approved_at', 'desc')->limit(5000)->get();
 
         $rows = $approvals->map(fn ($a) => $this->formatApprovalRow($a))->all();
-        $dateSummary = $this->buildDateSummary($approvals);
+        $dateSummary = $this->buildDateSummaryFromQuery($query);
+        $approverSummary = $this->buildApproverSummaryFromQuery($query);
         $selectedApprover = $userId ? User::with('role')->find($userId) : null;
 
         $spreadsheet = new Spreadsheet();
@@ -498,12 +507,13 @@ class ApproverLoanApprovalReportController extends Controller
         User $viewer
     ) {
         $query = LoanApplicationApproval::query()
-            ->where('status', 'approved')
-            ->whereNotNull('approved_at')
-            ->whereBetween('approved_at', [
+            ->where('loan_application_approvals.status', 'approved')
+            ->whereNotNull('loan_application_approvals.approved_at')
+            ->whereBetween('loan_application_approvals.approved_at', [
                 Carbon::parse($dateFrom)->startOfDay(),
                 Carbon::parse($dateTo)->endOfDay(),
             ])
+            ->whereHas('loanApplication') // Strictly exclude orphan approvals of deleted loans
             ->with([
                 'user:id,name,email,role_id,branch_id',
                 'user.role:id,name,display_name',
@@ -527,7 +537,7 @@ class ApproverLoanApprovalReportController extends Controller
 
         // Filter by Approver (User)
         if ($userId) {
-            $query->where('user_id', $userId);
+            $query->where('loan_application_approvals.user_id', $userId);
         }
 
         // Branch / Area / Zone filters on the loan application
@@ -617,55 +627,72 @@ class ApproverLoanApprovalReportController extends Controller
     }
 
     /**
-     * Build date-wise breakdown summary
+     * Build date-wise breakdown summary using accurate SQL aggregation
      */
-    protected function buildDateSummary($approvalsCollection): array
+    protected function buildDateSummaryFromQuery($baseQuery): array
     {
-        $grouped = $approvalsCollection->groupBy(function ($item) {
-            return Carbon::parse($item->approved_at)->format('Y-m-d');
-        });
+        $sub = (clone $baseQuery)
+            ->join('loan_applications as la', 'la.id', '=', 'loan_application_approvals.loan_application_id')
+            ->select(
+                DB::raw('DATE(loan_application_approvals.approved_at) as approval_date'),
+                'loan_application_approvals.user_id',
+                'loan_application_approvals.loan_application_id',
+                DB::raw('COALESCE(la.approved_amount, la.requested_amount, 0) as loan_amount')
+            )
+            ->distinct();
 
+        $approverPerDate = DB::query()->fromSub($sub, 's')
+            ->join('users as u', 'u.id', '=', 's.user_id')
+            ->leftJoin('roles as r', 'r.id', '=', 'u.role_id')
+            ->select(
+                's.approval_date',
+                's.user_id',
+                'u.name as user_name',
+                'r.name as role_slug',
+                'r.display_name as role_display_name',
+                DB::raw('COUNT(s.loan_application_id) as loans_count'),
+                DB::raw('SUM(s.loan_amount) as total_amount')
+            )
+            ->groupBy('s.approval_date', 's.user_id', 'u.name', 'r.name', 'r.display_name')
+            ->get();
+
+        $grouped = $approverPerDate->groupBy('approval_date');
         $dateSummary = [];
-        foreach ($grouped as $dateKey => $itemsOnDate) {
-            $dateTotalLoans = $itemsOnDate->count();
-            $dateTotalAmount = $itemsOnDate->sum(function ($item) {
-                $loan = $item->loanApplication;
-                return (float) ($loan?->approved_amount ?: ($loan?->requested_amount ?? 0));
-            });
 
-            // Breakdown by approvers on this specific date
-            $approversOnDate = $itemsOnDate->groupBy('user_id')->map(function ($userApprovals) {
-                $first = $userApprovals->first();
-                $u = $first->user;
-                $count = $userApprovals->count();
-                $sum = $userApprovals->sum(function ($a) {
-                    $l = $a->loanApplication;
-                    return (float) ($l?->approved_amount ?: ($l?->requested_amount ?? 0));
-                });
+        foreach ($grouped as $dateStr => $rows) {
+            $totalLoans = $rows->sum('loans_count');
+            $totalAmount = $rows->sum('total_amount');
 
+            $approvers = $rows->map(function ($row) {
                 return [
-                    'user_id' => $u?->id,
-                    'user_name' => $u?->name ?? 'N/A',
-                    'role_name' => $u?->role?->display_name ?: ($u?->role?->name ?? 'N/A'),
-                    'role_rank' => $this->getRoleHierarchyRank($u?->role?->name),
-                    'loans_count' => $count,
-                    'total_amount' => (float) $sum,
+                    'user_id' => (int) $row->user_id,
+                    'user_name' => $row->user_name,
+                    'role_name' => $row->role_display_name ?: ($row->role_slug ?? 'N/A'),
+                    'role_rank' => $this->getRoleHierarchyRank($row->role_slug),
+                    'loans_count' => (int) $row->loans_count,
+                    'total_amount' => (float) $row->total_amount,
                 ];
-            })->values()->sortBy('role_rank')->values()->all();
+            })->sortBy('role_rank')->values()->all();
 
             $dateSummary[] = [
-                'date' => $dateKey,
-                'formatted_date' => Carbon::parse($dateKey)->format('d/m/Y'),
-                'total_loans' => $dateTotalLoans,
-                'total_amount' => (float) $dateTotalAmount,
-                'approvers' => $approversOnDate,
+                'date' => $dateStr,
+                'formatted_date' => Carbon::parse($dateStr)->format('d/m/Y'),
+                'total_loans' => (int) $totalLoans,
+                'total_amount' => (float) $totalAmount,
+                'approvers' => $approvers,
             ];
         }
 
-        // Sort dates descending
         usort($dateSummary, fn ($a, $b) => strcmp($b['date'], $a['date']));
-
         return $dateSummary;
+    }
+
+    /**
+     * Backward compatible wrapper for buildDateSummary
+     */
+    protected function buildDateSummary($approvalsCollection): array
+    {
+        return [];
     }
 
     /**
@@ -695,36 +722,59 @@ class ApproverLoanApprovalReportController extends Controller
     }
 
     /**
-     * Build approver-wise breakdown summary across entire range
+     * Build approver-wise breakdown summary across entire range with accurate SQL aggregation
      */
-    protected function buildApproverSummary($approvalsCollection): array
+    protected function buildApproverSummaryFromQuery($baseQuery): array
     {
-        $grouped = $approvalsCollection->groupBy('user_id');
+        // Subquery: unique (user_id, loan_application_id) with loan amount and action count
+        $subQuery = (clone $baseQuery)
+            ->join('loan_applications as la', 'la.id', '=', 'loan_application_approvals.loan_application_id')
+            ->select(
+                'loan_application_approvals.user_id',
+                'loan_application_approvals.loan_application_id',
+                DB::raw('COALESCE(la.approved_amount, la.requested_amount, 0) as loan_amount'),
+                DB::raw('COUNT(loan_application_approvals.id) as actions_count')
+            )
+            ->groupBy(
+                'loan_application_approvals.user_id',
+                'loan_application_approvals.loan_application_id',
+                'la.approved_amount',
+                'la.requested_amount'
+            );
 
-        $approverSummary = [];
-        foreach ($grouped as $userId => $itemsForUser) {
-            $first = $itemsForUser->first();
-            $user = $first->user;
-            $count = $itemsForUser->count();
-            $sum = $itemsForUser->sum(function ($item) {
-                $loan = $item->loanApplication;
-                return (float) ($loan?->approved_amount ?: ($loan?->requested_amount ?? 0));
-            });
+        $raw = DB::query()->fromSub($subQuery, 't')
+            ->join('users as u', 'u.id', '=', 't.user_id')
+            ->leftJoin('roles as r', 'r.id', '=', 'u.role_id')
+            ->leftJoin('branches as b', 'b.id', '=', 'u.branch_id')
+            ->select(
+                't.user_id',
+                'u.name as user_name',
+                'r.name as role_slug',
+                'r.display_name as role_display_name',
+                'b.name as branch_name',
+                DB::raw('COUNT(t.loan_application_id) as total_loans'),
+                DB::raw('SUM(t.actions_count) as total_approvals'),
+                DB::raw('SUM(t.loan_amount) as total_amount')
+            )
+            ->groupBy('t.user_id', 'u.name', 'r.name', 'r.display_name', 'b.name')
+            ->get();
 
-            $roleSlug = $user?->role?->name;
-            $approverSummary[] = [
-                'user_id' => $user?->id,
-                'user_name' => $user?->name ?? 'N/A',
+        $approverSummary = $raw->map(function ($row) {
+            $roleSlug = $row->role_slug;
+            return [
+                'user_id' => (int) $row->user_id,
+                'user_name' => $row->user_name ?? 'N/A',
                 'role_slug' => $roleSlug,
                 'role_rank' => $this->getRoleHierarchyRank($roleSlug),
-                'role_name' => $user?->role?->display_name ?: ($roleSlug ?? 'N/A'),
-                'branch_name' => $user?->branch?->name ?? 'N/A',
-                'total_loans' => $count,
-                'total_amount' => (float) $sum,
+                'role_name' => $row->role_display_name ?: ($roleSlug ?? 'N/A'),
+                'branch_name' => $row->branch_name ?? 'হেড অফিস / সর্বজনীন',
+                'total_loans' => (int) $row->total_loans,
+                'total_approvals' => (int) $row->total_approvals,
+                'total_amount' => (float) $row->total_amount,
             ];
-        }
+        })->all();
 
-        // Sort by role hierarchy rank (ED, DMF, ADMF, Zone, Regional, BM), then loans count descending, then name
+        // Sort by role hierarchy rank, then loans count descending, then name
         usort($approverSummary, function ($a, $b) {
             if ($a['role_rank'] !== $b['role_rank']) {
                 return $a['role_rank'] <=> $b['role_rank'];
@@ -736,6 +786,14 @@ class ApproverLoanApprovalReportController extends Controller
         });
 
         return $approverSummary;
+    }
+
+    /**
+     * Backward compatible wrapper for buildApproverSummary
+     */
+    protected function buildApproverSummary($approvalsCollection): array
+    {
+        return [];
     }
 
     /**

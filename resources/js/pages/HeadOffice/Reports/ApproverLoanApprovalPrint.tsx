@@ -53,6 +53,7 @@ interface ApproverSummaryItem {
     role_name: string;
     branch_name: string;
     total_loans: number;
+    total_approvals?: number;
     total_amount: number;
 }
 
@@ -87,6 +88,7 @@ interface Props {
     };
     summary: {
         total_loans: number;
+        total_approvals?: number;
         total_amount: number;
         unique_approvers: number;
         average_amount: number;
