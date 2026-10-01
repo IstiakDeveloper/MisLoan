@@ -60,6 +60,9 @@ class ApproverLoanApprovalReportController extends Controller
     /**
      * Display the Approver Wise Loan Approval Report
      */
+    /**
+     * Display the Approver Wise Loan Approval Report
+     */
     public function index(Request $request): Response
     {
         $viewer = $this->ensureCanViewReport($request);
@@ -67,24 +70,40 @@ class ApproverLoanApprovalReportController extends Controller
         $dateFrom = $request->input('date_from', Carbon::today()->startOfMonth()->toDateString());
         $dateTo = $request->input('date_to', Carbon::today()->toDateString());
         $userId = $request->filled('user_id') ? (int) $request->input('user_id') : null;
+        $decisionStatus = $request->input('decision_status', 'all');
+        if (! in_array($decisionStatus, ['all', 'approved', 'rejected'], true)) {
+            $decisionStatus = 'all';
+        }
         $search = $request->input('search', '');
         $perPage = (int) $request->input('per_page', 25);
         if (! in_array($perPage, [15, 25, 50, 100, 200], true)) {
             $perPage = 25;
         }
 
-        // Base query with existing valid loanApplication
-        $query = $this->buildReportQuery($request, $dateFrom, $dateTo, $userId, $viewer);
+        // Base query with existing valid loanApplication & decision status filter
+        $query = $this->buildReportQuery($request, $dateFrom, $dateTo, $userId, $viewer, $decisionStatus);
 
         // Accurate summary statistics via SQL (never truncated)
-        $totalApprovalsCount = (clone $query)->count();
+        $totalDecisionsCount = (clone $query)->count();
         $uniqueLoansCount = (clone $query)->distinct('loan_application_approvals.loan_application_id')->count('loan_application_approvals.loan_application_id');
         $uniqueApproversCount = (clone $query)->distinct('loan_application_approvals.user_id')->count('loan_application_approvals.user_id');
 
-        $loanIdsSubquery = (clone $query)->select('loan_application_approvals.loan_application_id')->distinct();
-        $totalAmountSum = (float) LoanApplication::whereIn('id', $loanIdsSubquery)
+        // Approved breakdown
+        $approvedActionsCount = (clone $query)->where('loan_application_approvals.status', 'approved')->count();
+        $approvedLoansCount = (clone $query)->where('loan_application_approvals.status', 'approved')->distinct('loan_application_approvals.loan_application_id')->count('loan_application_approvals.loan_application_id');
+        $approvedLoanIds = (clone $query)->where('loan_application_approvals.status', 'approved')->select('loan_application_approvals.loan_application_id')->distinct();
+        $approvedAmountSum = (float) LoanApplication::whereIn('id', $approvedLoanIds)
             ->sum(DB::raw('COALESCE(approved_amount, requested_amount, 0)'));
-        $averageAmount = $uniqueLoansCount > 0 ? (float) ($totalAmountSum / $uniqueLoansCount) : 0;
+
+        // Rejected breakdown
+        $rejectedActionsCount = (clone $query)->where('loan_application_approvals.status', 'rejected')->count();
+        $rejectedLoansCount = (clone $query)->where('loan_application_approvals.status', 'rejected')->distinct('loan_application_approvals.loan_application_id')->count('loan_application_approvals.loan_application_id');
+        $rejectedLoanIds = (clone $query)->where('loan_application_approvals.status', 'rejected')->select('loan_application_approvals.loan_application_id')->distinct();
+        $rejectedAmountSum = (float) LoanApplication::whereIn('id', $rejectedLoanIds)
+            ->sum(DB::raw('COALESCE(approved_amount, requested_amount, 0)'));
+
+        $totalAmountSum = $approvedAmountSum + $rejectedAmountSum;
+        $averageAmount = $approvedLoansCount > 0 ? (float) ($approvedAmountSum / $approvedLoansCount) : 0;
 
         // Paginate for the detailed list
         $paginated = (clone $query)
@@ -99,7 +118,7 @@ class ApproverLoanApprovalReportController extends Controller
         // 2. Date-wise Summary Breakdown (accurate via SQL)
         $dateSummary = $this->buildDateSummaryFromQuery($query);
 
-        // 3. Approver-wise Summary Breakdown (accurate via SQL for all 57 approvers)
+        // 3. Approver-wise Summary Breakdown (accurate via SQL for all approvers)
         $approverSummary = $this->buildApproverSummaryFromQuery($query);
 
         // Filter dropdown options
@@ -121,6 +140,7 @@ class ApproverLoanApprovalReportController extends Controller
                 'date_from' => (string) $dateFrom,
                 'date_to' => (string) $dateTo,
                 'user_id' => $userId ? (string) $userId : '',
+                'decision_status' => (string) $decisionStatus,
                 'zone_id' => (string) $request->input('zone_id', ''),
                 'area_id' => (string) $request->input('area_id', ''),
                 'branch_id' => (string) $request->input('branch_id', ''),
@@ -128,8 +148,15 @@ class ApproverLoanApprovalReportController extends Controller
                 'per_page' => $perPage,
             ],
             'summary' => [
+                'total_decisions' => $totalDecisionsCount,
                 'total_loans' => $uniqueLoansCount,
-                'total_approvals' => $totalApprovalsCount,
+                'total_approvals' => $approvedActionsCount,
+                'approved_loans' => $approvedLoansCount,
+                'approved_actions' => $approvedActionsCount,
+                'approved_amount' => (float) $approvedAmountSum,
+                'rejected_loans' => $rejectedLoansCount,
+                'rejected_actions' => $rejectedActionsCount,
+                'rejected_amount' => (float) $rejectedAmountSum,
                 'total_amount' => (float) $totalAmountSum,
                 'unique_approvers' => $uniqueApproversCount,
                 'average_amount' => (float) $averageAmount,
@@ -160,17 +187,31 @@ class ApproverLoanApprovalReportController extends Controller
         $dateFrom = $request->input('date_from', Carbon::today()->startOfMonth()->toDateString());
         $dateTo = $request->input('date_to', Carbon::today()->toDateString());
         $userId = $request->filled('user_id') ? (int) $request->input('user_id') : null;
+        $decisionStatus = $request->input('decision_status', 'all');
+        if (! in_array($decisionStatus, ['all', 'approved', 'rejected'], true)) {
+            $decisionStatus = 'all';
+        }
 
-        $query = $this->buildReportQuery($request, $dateFrom, $dateTo, $userId, $viewer);
+        $query = $this->buildReportQuery($request, $dateFrom, $dateTo, $userId, $viewer, $decisionStatus);
 
-        $totalApprovalsCount = (clone $query)->count();
+        $totalDecisionsCount = (clone $query)->count();
         $uniqueLoansCount = (clone $query)->distinct('loan_application_approvals.loan_application_id')->count('loan_application_approvals.loan_application_id');
         $uniqueApproversCount = (clone $query)->distinct('loan_application_approvals.user_id')->count('loan_application_approvals.user_id');
 
-        $loanIdsSubquery = (clone $query)->select('loan_application_approvals.loan_application_id')->distinct();
-        $totalAmountSum = (float) LoanApplication::whereIn('id', $loanIdsSubquery)
+        $approvedActionsCount = (clone $query)->where('loan_application_approvals.status', 'approved')->count();
+        $approvedLoansCount = (clone $query)->where('loan_application_approvals.status', 'approved')->distinct('loan_application_approvals.loan_application_id')->count('loan_application_approvals.loan_application_id');
+        $approvedLoanIds = (clone $query)->where('loan_application_approvals.status', 'approved')->select('loan_application_approvals.loan_application_id')->distinct();
+        $approvedAmountSum = (float) LoanApplication::whereIn('id', $approvedLoanIds)
             ->sum(DB::raw('COALESCE(approved_amount, requested_amount, 0)'));
-        $averageAmount = $uniqueLoansCount > 0 ? (float) ($totalAmountSum / $uniqueLoansCount) : 0;
+
+        $rejectedActionsCount = (clone $query)->where('loan_application_approvals.status', 'rejected')->count();
+        $rejectedLoansCount = (clone $query)->where('loan_application_approvals.status', 'rejected')->distinct('loan_application_approvals.loan_application_id')->count('loan_application_approvals.loan_application_id');
+        $rejectedLoanIds = (clone $query)->where('loan_application_approvals.status', 'rejected')->select('loan_application_approvals.loan_application_id')->distinct();
+        $rejectedAmountSum = (float) LoanApplication::whereIn('id', $rejectedLoanIds)
+            ->sum(DB::raw('COALESCE(approved_amount, requested_amount, 0)'));
+
+        $totalAmountSum = $approvedAmountSum + $rejectedAmountSum;
+        $averageAmount = $approvedLoansCount > 0 ? (float) ($approvedAmountSum / $approvedLoansCount) : 0;
 
         $allMatching = (clone $query)->orderBy('loan_application_approvals.approved_at', 'desc')->limit(3000)->get();
         $items = $allMatching->map(fn ($approval) => $this->formatApprovalRow($approval))->all();
@@ -179,6 +220,10 @@ class ApproverLoanApprovalReportController extends Controller
         $approverSummary = $this->buildApproverSummaryFromQuery($query);
         $orgOptions = $this->organizationFilterOptions();
         $selectedApprover = $userId ? User::with('role', 'branch')->find($userId) : null;
+        $reportType = $request->input('report_type', 'approver_wise');
+        if (! in_array($reportType, ['approver_wise', 'detailed', 'date_wise', 'all'], true)) {
+            $reportType = 'approver_wise';
+        }
 
         return Inertia::render('HeadOffice/Reports/ApproverLoanApprovalPrint', $this->cleanUtf8([
             'approvals' => $items,
@@ -186,14 +231,23 @@ class ApproverLoanApprovalReportController extends Controller
                 'date_from' => (string) $dateFrom,
                 'date_to' => (string) $dateTo,
                 'user_id' => $userId ? (string) $userId : '',
+                'decision_status' => (string) $decisionStatus,
+                'report_type' => (string) $reportType,
                 'zone_id' => (string) $request->input('zone_id', ''),
                 'area_id' => (string) $request->input('area_id', ''),
                 'branch_id' => (string) $request->input('branch_id', ''),
                 'search' => (string) $request->input('search', ''),
             ],
             'summary' => [
+                'total_decisions' => $totalDecisionsCount,
                 'total_loans' => $uniqueLoansCount,
-                'total_approvals' => $totalApprovalsCount,
+                'total_approvals' => $approvedActionsCount,
+                'approved_loans' => $approvedLoansCount,
+                'approved_actions' => $approvedActionsCount,
+                'approved_amount' => (float) $approvedAmountSum,
+                'rejected_loans' => $rejectedLoansCount,
+                'rejected_actions' => $rejectedActionsCount,
+                'rejected_amount' => (float) $rejectedAmountSum,
                 'total_amount' => (float) $totalAmountSum,
                 'unique_approvers' => $uniqueApproversCount,
                 'average_amount' => (float) $averageAmount,
@@ -215,7 +269,7 @@ class ApproverLoanApprovalReportController extends Controller
     }
 
     /**
-     * Export report to Excel (.xlsx)
+     * Export report to Excel (.xlsx) with dedicated Approver-wise Summary sheet, Detailed List, and Date-wise Summary
      */
     public function exportExcel(Request $request): StreamedResponse
     {
@@ -224,8 +278,17 @@ class ApproverLoanApprovalReportController extends Controller
         $dateFrom = $request->input('date_from', Carbon::today()->startOfMonth()->toDateString());
         $dateTo = $request->input('date_to', Carbon::today()->toDateString());
         $userId = $request->filled('user_id') ? (int) $request->input('user_id') : null;
+        $decisionStatus = $request->input('decision_status', 'all');
+        if (! in_array($decisionStatus, ['all', 'approved', 'rejected'], true)) {
+            $decisionStatus = 'all';
+        }
 
-        $query = $this->buildReportQuery($request, $dateFrom, $dateTo, $userId, $viewer);
+        $reportType = $request->input('report_type', 'approver_wise');
+        if (! in_array($reportType, ['approver_wise', 'detailed', 'date_wise', 'all'], true)) {
+            $reportType = 'approver_wise';
+        }
+
+        $query = $this->buildReportQuery($request, $dateFrom, $dateTo, $userId, $viewer, $decisionStatus);
         $approvals = (clone $query)->orderBy('loan_application_approvals.approved_at', 'desc')->limit(5000)->get();
 
         $rows = $approvals->map(fn ($a) => $this->formatApprovalRow($a))->all();
@@ -235,53 +298,230 @@ class ApproverLoanApprovalReportController extends Controller
 
         $spreadsheet = new Spreadsheet();
 
-        // ----------------- SHEET 1: বিস্তারিত ঋণের তালিকা (Detailed Loans) -----------------
-        $sheet = $spreadsheet->getActiveSheet();
-        $sheet->setTitle('অনুমোদিত ঋণ তালিকা');
+        $approverNameText = $selectedApprover
+            ? "{$selectedApprover->name} (" . ($selectedApprover->role?->display_name ?: $selectedApprover->role?->name) . ")"
+            : 'সকল কর্মকর্তা (All Approvers)';
+
+        $decisionFilterLabel = match ($decisionStatus) {
+            'approved' => 'শুধুমাত্র অনুমোদিত (Approved Only)',
+            'rejected' => 'শুধুমাত্র বাতিল / প্রত্যাখ্যাত (Rejected Only)',
+            default => 'সকল সিদ্ধান্ত (অনুমোদিত ও বাতিল)',
+        };
+
+        // ----------------- SHEET 1: কর্মকর্তাভিত্তিক ঋণ মঞ্জুরী সারসংক্ষেপ (Approver-wise Summary) -----------------
+        $sheet1 = $spreadsheet->getActiveSheet();
+        $sheet1->setTitle('কর্মকর্তাভিত্তিক সারসংক্ষেপ');
+
+        $sheet1->setCellValue('A1', 'মৌসুমী');
+        $sheet1->setCellValue('A2', 'উকিলপাড়া, নওগাঁ।');
+        $sheet1->setCellValue('A3', 'কর্মকর্তাভিত্তিক ঋণ সিদ্ধান্ত ও অনুমোদন সারসংক্ষেপ (Approver-wise Loan Decision Summary)');
+        $sheet1->mergeCells('A1:K1');
+        $sheet1->mergeCells('A2:K2');
+        $sheet1->mergeCells('A3:K3');
+
+        $sheet1->getStyle('A1:A3')->getAlignment()->setHorizontal(Alignment::HORIZONTAL_CENTER);
+        $sheet1->getStyle('A1')->getFont()->setBold(true)->setSize(16)->setColor(new \PhpOffice\PhpSpreadsheet\Style\Color('FF1E3A8A'));
+        $sheet1->getStyle('A2')->getFont()->setSize(10)->setColor(new \PhpOffice\PhpSpreadsheet\Style\Color('FF64748B'));
+        $sheet1->getStyle('A3')->getFont()->setBold(true)->setSize(12)->setColor(new \PhpOffice\PhpSpreadsheet\Style\Color('FF0F172A'));
+
+        $sheet1->setCellValue('A5', 'তারিখ পরিসীমা:');
+        $sheet1->setCellValue('B5', Carbon::parse($dateFrom)->format('d/m/Y') . ' হতে ' . Carbon::parse($dateTo)->format('d/m/Y'));
+        $sheet1->setCellValue('D5', 'অনুমোদক / কর্মকর্তা:');
+        $sheet1->setCellValue('E5', $approverNameText);
+        $sheet1->setCellValue('G5', 'সিদ্ধান্ত ফিল্টার:');
+        $sheet1->setCellValue('H5', $decisionFilterLabel);
+        $sheet1->setCellValue('J5', 'রিপোর্ট জেনারেট:');
+        $sheet1->setCellValue('K5', Carbon::now()->format('d/m/Y h:i A'));
+
+        $sheet1->getStyle('A5')->getFont()->setBold(true);
+        $sheet1->getStyle('D5')->getFont()->setBold(true);
+        $sheet1->getStyle('G5')->getFont()->setBold(true);
+        $sheet1->getStyle('J5')->getFont()->setBold(true);
+
+        $totAppLoans = collect($approverSummary)->sum('approved_loans');
+        $totRejLoans = collect($approverSummary)->sum('rejected_loans');
+        $totAppAmount = collect($approverSummary)->sum('approved_amount');
+
+        $sheet1->setCellValue('A6', 'মোট অনুমোদিত ঋণ:');
+        $sheet1->setCellValue('B6', $totAppLoans . ' টি (' . number_format($totAppAmount, 2) . ' ৳)');
+        $sheet1->setCellValue('D6', 'মোট বাতিলকৃত:');
+        $sheet1->setCellValue('E6', $totRejLoans . ' টি');
+        $sheet1->setCellValue('G6', 'মোট কর্মকর্তা:');
+        $sheet1->setCellValue('H6', count($approverSummary) . ' জন');
+
+        $sheet1->getStyle('A6')->getFont()->setBold(true);
+        $sheet1->getStyle('B6')->getFont()->setBold(true)->setColor(new \PhpOffice\PhpSpreadsheet\Style\Color('FF059669'));
+        $sheet1->getStyle('D6')->getFont()->setBold(true);
+        $sheet1->getStyle('E6')->getFont()->setBold(true)->setColor(new \PhpOffice\PhpSpreadsheet\Style\Color('FFE11D48'));
+        $sheet1->getStyle('G6')->getFont()->setBold(true);
+
+        $approverHeaders = [
+            'ক্রমিক',
+            'কর্মকর্তার নাম',
+            'আইডি',
+            'পদবী ও স্তর',
+            'কর্মস্থল / শাখা',
+            'অনুমোদিত ঋণ (টি)',
+            'পুনঃঅনুমোদন (টি)',
+            'বাতিলকৃত ঋণ (টি)',
+            'মোট সিদ্ধান্ত (টি)',
+            'অনুমোদিত টাকা (৳)',
+            'গড় ঋণ (৳)',
+        ];
+
+        $apRow = 8;
+        $apCol = 'A';
+        foreach ($approverHeaders as $hText) {
+            $sheet1->setCellValue($apCol . $apRow, $hText);
+            $apCol++;
+        }
+        $lastApCol = chr(ord('A') + count($approverHeaders) - 1);
+
+        $sheet1->getStyle("A{$apRow}:{$lastApCol}{$apRow}")->applyFromArray([
+            'font' => ['bold' => true, 'color' => ['rgb' => 'FFFFFF'], 'size' => 10],
+            'fill' => ['fillType' => Fill::FILL_SOLID, 'startColor' => ['rgb' => '1E293B']],
+            'alignment' => ['horizontal' => Alignment::HORIZONTAL_CENTER, 'vertical' => Alignment::VERTICAL_CENTER],
+        ]);
+        $sheet1->getRowDimension($apRow)->setRowHeight(26);
+
+        $curApRow = $apRow + 1;
+        foreach ($approverSummary as $index => $ap) {
+            $approvedL = $ap['approved_loans'] ?? $ap['total_loans'];
+            $reapp = $ap['reapprovals_count'] ?? 0;
+            $rejL = $ap['rejected_loans'] ?? 0;
+            $totAct = $ap['total_actions'] ?? ($approvedL + $rejL);
+            $appAmt = $ap['approved_amount'] ?? $ap['total_amount'];
+            $avgAmt = $approvedL > 0 ? $appAmt / $approvedL : 0;
+
+            $sheet1->setCellValue('A' . $curApRow, $index + 1);
+            $sheet1->setCellValue('B' . $curApRow, $ap['user_name']);
+            $sheet1->setCellValue('C' . $curApRow, '#' . $ap['user_id']);
+            $sheet1->setCellValue('D' . $curApRow, $ap['role_name']);
+            $sheet1->setCellValue('E' . $curApRow, $ap['branch_name']);
+            $sheet1->setCellValue('F' . $curApRow, $approvedL);
+            $sheet1->setCellValue('G' . $curApRow, $reapp);
+            $sheet1->setCellValue('H' . $curApRow, $rejL);
+            $sheet1->setCellValue('I' . $curApRow, $totAct);
+            $sheet1->setCellValue('J' . $curApRow, $appAmt);
+            $sheet1->setCellValue('K' . $curApRow, $avgAmt);
+
+            $sheet1->getStyle('A' . $curApRow)->getAlignment()->setHorizontal(Alignment::HORIZONTAL_CENTER);
+            $sheet1->getStyle('C' . $curApRow)->getAlignment()->setHorizontal(Alignment::HORIZONTAL_CENTER);
+            $sheet1->getStyle('F' . $curApRow)->getAlignment()->setHorizontal(Alignment::HORIZONTAL_CENTER);
+            $sheet1->getStyle('G' . $curApRow)->getAlignment()->setHorizontal(Alignment::HORIZONTAL_CENTER);
+            $sheet1->getStyle('H' . $curApRow)->getAlignment()->setHorizontal(Alignment::HORIZONTAL_CENTER);
+            $sheet1->getStyle('I' . $curApRow)->getAlignment()->setHorizontal(Alignment::HORIZONTAL_CENTER);
+            $sheet1->getStyle('J' . $curApRow)->getNumberFormat()->setFormatCode('#,##0.00');
+            $sheet1->getStyle('K' . $curApRow)->getNumberFormat()->setFormatCode('#,##0.00');
+            $sheet1->getStyle('J' . $curApRow)->getAlignment()->setHorizontal(Alignment::HORIZONTAL_RIGHT);
+            $sheet1->getStyle('K' . $curApRow)->getAlignment()->setHorizontal(Alignment::HORIZONTAL_RIGHT);
+
+            if ($rejL > 0) {
+                $sheet1->getStyle('H' . $curApRow)->getFont()->setBold(true)->setColor(new \PhpOffice\PhpSpreadsheet\Style\Color('FFE11D48'));
+            }
+
+            if ($index % 2 === 1) {
+                $sheet1->getStyle("A{$curApRow}:{$lastApCol}{$curApRow}")->getFill()->applyFromArray([
+                    'fillType' => Fill::FILL_SOLID,
+                    'startColor' => ['rgb' => 'F8FAFC'],
+                ]);
+            }
+
+            $curApRow++;
+        }
+
+        // Totals Row for Sheet 1
+        $sheet1->setCellValue('A' . $curApRow, 'সর্বমোট:');
+        $sheet1->mergeCells("A{$curApRow}:E{$curApRow}");
+        $sheet1->setCellValue('F' . $curApRow, "=SUM(F" . ($apRow + 1) . ":F" . ($curApRow - 1) . ")");
+        $sheet1->setCellValue('G' . $curApRow, "=SUM(G" . ($apRow + 1) . ":G" . ($curApRow - 1) . ")");
+        $sheet1->setCellValue('H' . $curApRow, "=SUM(H" . ($apRow + 1) . ":H" . ($curApRow - 1) . ")");
+        $sheet1->setCellValue('I' . $curApRow, "=SUM(I" . ($apRow + 1) . ":I" . ($curApRow - 1) . ")");
+        $sheet1->setCellValue('J' . $curApRow, "=SUM(J" . ($apRow + 1) . ":J" . ($curApRow - 1) . ")");
+        $sheet1->setCellValue('K' . $curApRow, "=AVERAGE(K" . ($apRow + 1) . ":K" . ($curApRow - 1) . ")");
+
+        $sheet1->getStyle("A{$curApRow}:{$lastApCol}{$curApRow}")->applyFromArray([
+            'font' => ['bold' => true, 'color' => ['rgb' => '0F172A'], 'size' => 10],
+            'fill' => ['fillType' => Fill::FILL_SOLID, 'startColor' => ['rgb' => 'E2E8F0']],
+        ]);
+        $sheet1->getStyle('A' . $curApRow)->getAlignment()->setHorizontal(Alignment::HORIZONTAL_RIGHT);
+        $sheet1->getStyle('F' . $curApRow)->getAlignment()->setHorizontal(Alignment::HORIZONTAL_CENTER);
+        $sheet1->getStyle('G' . $curApRow)->getAlignment()->setHorizontal(Alignment::HORIZONTAL_CENTER);
+        $sheet1->getStyle('H' . $curApRow)->getAlignment()->setHorizontal(Alignment::HORIZONTAL_CENTER);
+        $sheet1->getStyle('I' . $curApRow)->getAlignment()->setHorizontal(Alignment::HORIZONTAL_CENTER);
+        $sheet1->getStyle('J' . $curApRow)->getNumberFormat()->setFormatCode('#,##0.00');
+        $sheet1->getStyle('K' . $curApRow)->getNumberFormat()->setFormatCode('#,##0.00');
+        $sheet1->getStyle('J' . $curApRow)->getAlignment()->setHorizontal(Alignment::HORIZONTAL_RIGHT);
+        $sheet1->getStyle('K' . $curApRow)->getAlignment()->setHorizontal(Alignment::HORIZONTAL_RIGHT);
+
+        $sheet1->getStyle("A{$apRow}:{$lastApCol}{$curApRow}")->applyFromArray([
+            'borders' => [
+                'allBorders' => [
+                    'borderStyle' => Border::BORDER_THIN,
+                    'color' => ['rgb' => 'CBD5E1'],
+                ],
+            ],
+        ]);
+
+        foreach (range('A', $lastApCol) as $colID) {
+            $sheet1->getColumnDimension($colID)->setAutoSize(true);
+        }
+
+        // ----------------- SHEET 2: বিস্তারিত ঋণ সিদ্ধান্তের তালিকা (Detailed Loans) -----------------
+        $sheet = $spreadsheet->createSheet();
+        $sheet->setTitle('বিস্তারিত ঋণ তালিকা');
 
         // Title Block
         $sheet->setCellValue('A1', 'মৌসুমী');
         $sheet->setCellValue('A2', 'উকিলপাড়া, নওগাঁ।');
-        $sheet->setCellValue('A3', 'অনুমোদকভিত্তিক ঋণ অনুমোদন রিপোর্ট (Approver Wise Loan Approval Report)');
-        $sheet->mergeCells('A1:L1');
-        $sheet->mergeCells('A2:L2');
-        $sheet->mergeCells('A3:L3');
+        $sheet->setCellValue('A3', 'অনুমোদকভিত্তিক ঋণ সিদ্ধান্ত রিপোর্ট (Approver Loan Approval & Rejection Report)');
+        $sheet->mergeCells('A1:O1');
+        $sheet->mergeCells('A2:O2');
+        $sheet->mergeCells('A3:O3');
 
         $sheet->getStyle('A1:A3')->getAlignment()->setHorizontal(Alignment::HORIZONTAL_CENTER);
         $sheet->getStyle('A1')->getFont()->setBold(true)->setSize(16)->setColor(new \PhpOffice\PhpSpreadsheet\Style\Color('FF1E3A8A'));
         $sheet->getStyle('A2')->getFont()->setSize(10)->setColor(new \PhpOffice\PhpSpreadsheet\Style\Color('FF64748B'));
         $sheet->getStyle('A3')->getFont()->setBold(true)->setSize(12)->setColor(new \PhpOffice\PhpSpreadsheet\Style\Color('FF0F172A'));
 
-        // Meta Info Block
-        $approverNameText = $selectedApprover
-            ? "{$selectedApprover->name} (" . ($selectedApprover->role?->display_name ?: $selectedApprover->role?->name) . ")"
-            : 'সকল অনুমোদক (All Approvers)';
-
         $sheet->setCellValue('A5', 'তারিখ পরিসীমা:');
         $sheet->setCellValue('B5', Carbon::parse($dateFrom)->format('d/m/Y') . ' হতে ' . Carbon::parse($dateTo)->format('d/m/Y'));
         $sheet->setCellValue('D5', 'অনুমোদক / কর্মকর্তা:');
         $sheet->setCellValue('E5', $approverNameText);
-        $sheet->setCellValue('H5', 'রিপোর্ট জেনারেট:');
-        $sheet->setCellValue('I5', Carbon::now()->format('d/m/Y h:i A'));
+        $sheet->setCellValue('H5', 'সিদ্ধান্ত ফিল্টার:');
+        $sheet->setCellValue('I5', $decisionFilterLabel);
+        $sheet->setCellValue('L5', 'রিপোর্ট জেনারেট:');
+        $sheet->setCellValue('M5', Carbon::now()->format('d/m/Y h:i A'));
 
         $sheet->getStyle('A5')->getFont()->setBold(true);
         $sheet->getStyle('D5')->getFont()->setBold(true);
         $sheet->getStyle('H5')->getFont()->setBold(true);
+        $sheet->getStyle('L5')->getFont()->setBold(true);
 
         // Summary Counts
-        $totalAmountSum = collect($rows)->sum('approved_amount');
-        $sheet->setCellValue('A6', 'মোট অনুমোদিত ঋণ:');
-        $sheet->setCellValue('B6', count($rows) . ' টি');
-        $sheet->setCellValue('D6', 'মোট অনুমোদিত টাকা:');
-        $sheet->setCellValue('E6', number_format($totalAmountSum, 2) . ' ৳');
+        $approvedRows = collect($rows)->filter(fn ($r) => $r['action_status'] === 'approved');
+        $rejectedRows = collect($rows)->filter(fn ($r) => $r['action_status'] === 'rejected');
+
+        $approvedAmountSum = $approvedRows->sum('approved_amount');
+        $rejectedAmountSum = $rejectedRows->sum('requested_amount');
+
+        $sheet->setCellValue('A6', 'অনুমোদিত ঋণ:');
+        $sheet->setCellValue('B6', $approvedRows->count() . ' টি (' . number_format($approvedAmountSum, 2) . ' ৳)');
+        $sheet->setCellValue('D6', 'বাতিল / প্রত্যাখ্যাত:');
+        $sheet->setCellValue('E6', $rejectedRows->count() . ' টি (' . number_format($rejectedAmountSum, 2) . ' ৳)');
+        $sheet->setCellValue('H6', 'মোট সিদ্ধান্ত কার্যক্রম:');
+        $sheet->setCellValue('I6', count($rows) . ' টি');
+
         $sheet->getStyle('A6')->getFont()->setBold(true);
+        $sheet->getStyle('B6')->getFont()->setBold(true)->setColor(new \PhpOffice\PhpSpreadsheet\Style\Color('FF059669'));
         $sheet->getStyle('D6')->getFont()->setBold(true);
-        $sheet->getStyle('E6')->getFont()->setBold(true)->setColor(new \PhpOffice\PhpSpreadsheet\Style\Color('FF059669'));
+        $sheet->getStyle('E6')->getFont()->setBold(true)->setColor(new \PhpOffice\PhpSpreadsheet\Style\Color('FFE11D48'));
+        $sheet->getStyle('H6')->getFont()->setBold(true);
 
         // Headers
         $headers = [
             'ক্রমিক',
-            'অনুমোদনের তারিখ ও সময়',
+            'তারিখ ও সময়',
             'আবেদন নং',
             'সদস্যের নাম',
             'সদস্য কোড',
@@ -291,9 +531,10 @@ class ApproverLoanApprovalReportController extends Controller
             'ঋণ প্রোডাক্ট',
             'চাহিদাকৃত টাকা (৳)',
             'অনুমোদিত টাকা (৳)',
-            'অনুমোদকের নাম ও পদবী',
+            'সিদ্ধান্তের ধরন',
+            'কর্মকর্তার নাম ও পদবী',
             'অনুমোদনের স্তর',
-            'মন্তব্য',
+            'মন্তব্য / বাতিলের কারণ',
         ];
 
         $headerRow = 8;
@@ -326,6 +567,8 @@ class ApproverLoanApprovalReportController extends Controller
         // Data Rows
         $currentRow = $headerRow + 1;
         foreach ($rows as $index => $row) {
+            $isRej = $row['action_status'] === 'rejected';
+
             $sheet->setCellValue('A' . $currentRow, $index + 1);
             $sheet->setCellValue('B' . $currentRow, $row['approval_date'] . ' ' . $row['approval_time']);
             $sheet->setCellValue('C' . $currentRow, $row['application_no']);
@@ -336,10 +579,11 @@ class ApproverLoanApprovalReportController extends Controller
             $sheet->setCellValue('H' . $currentRow, $row['samity_name']);
             $sheet->setCellValue('I' . $currentRow, $row['product_name']);
             $sheet->setCellValue('J' . $currentRow, $row['requested_amount']);
-            $sheet->setCellValue('K' . $currentRow, $row['approved_amount']);
-            $sheet->setCellValue('L' . $currentRow, $row['approver_name'] . ' (' . $row['approver_role'] . ')');
-            $sheet->setCellValue('M' . $currentRow, $row['level_label']);
-            $sheet->setCellValue('N' . $currentRow, $row['comments'] ?: '—');
+            $sheet->setCellValue('K' . $currentRow, $isRej ? 0 : $row['approved_amount']);
+            $sheet->setCellValue('L' . $currentRow, $isRej ? 'প্রত্যাখ্যাত / বাতিল' : 'অনুমোদিত');
+            $sheet->setCellValue('M' . $currentRow, $row['approver_name'] . ' (' . $row['approver_role'] . ')');
+            $sheet->setCellValue('N' . $currentRow, $row['level_label']);
+            $sheet->setCellValue('O' . $currentRow, $row['comments'] ?: '—');
 
             // Format numbers
             $sheet->getStyle('J' . $currentRow)->getNumberFormat()->setFormatCode('#,##0.00');
@@ -353,13 +597,22 @@ class ApproverLoanApprovalReportController extends Controller
             $sheet->getStyle('F' . $currentRow)->getAlignment()->setHorizontal(Alignment::HORIZONTAL_CENTER);
             $sheet->getStyle('J' . $currentRow)->getAlignment()->setHorizontal(Alignment::HORIZONTAL_RIGHT);
             $sheet->getStyle('K' . $currentRow)->getAlignment()->setHorizontal(Alignment::HORIZONTAL_RIGHT);
-            $sheet->getStyle('M' . $currentRow)->getAlignment()->setHorizontal(Alignment::HORIZONTAL_CENTER);
+            $sheet->getStyle('L' . $currentRow)->getAlignment()->setHorizontal(Alignment::HORIZONTAL_CENTER);
+            $sheet->getStyle('N' . $currentRow)->getAlignment()->setHorizontal(Alignment::HORIZONTAL_CENTER);
+
+            // Styling for status
+            if ($isRej) {
+                $sheet->getStyle('L' . $currentRow)->getFont()->setBold(true)->setColor(new \PhpOffice\PhpSpreadsheet\Style\Color('FFE11D48'));
+                $sheet->getStyle('O' . $currentRow)->getFont()->setColor(new \PhpOffice\PhpSpreadsheet\Style\Color('FFBE123C'));
+            } else {
+                $sheet->getStyle('L' . $currentRow)->getFont()->setBold(true)->setColor(new \PhpOffice\PhpSpreadsheet\Style\Color('FF059669'));
+            }
 
             // Row zebra striping
             if ($index % 2 === 1) {
                 $sheet->getStyle("A{$currentRow}:{$lastCol}{$currentRow}")->getFill()->applyFromArray([
                     'fillType' => Fill::FILL_SOLID,
-                    'startColor' => ['rgb' => 'F8FAFC'],
+                    'startColor' => ['rgb' => $isRej ? 'FFF1F2' : 'F8FAFC'],
                 ]);
             }
 
@@ -367,12 +620,12 @@ class ApproverLoanApprovalReportController extends Controller
         }
 
         // Totals Row
-        $sheet->setCellValue('A' . $currentRow, 'সর্বমোট (Total):');
+        $sheet->setCellValue('A' . $currentRow, 'সর্বমোট:');
         $sheet->mergeCells("A{$currentRow}:I{$currentRow}");
         $sheet->setCellValue('J' . $currentRow, "=SUM(J" . ($headerRow + 1) . ":J" . ($currentRow - 1) . ")");
         $sheet->setCellValue('K' . $currentRow, "=SUM(K" . ($headerRow + 1) . ":K" . ($currentRow - 1) . ")");
-        $sheet->setCellValue('L' . $currentRow, count($rows) . ' টি ঋণ অনুমোদন');
-        $sheet->mergeCells("L{$currentRow}:N{$currentRow}");
+        $sheet->setCellValue('L' . $currentRow, count($rows) . ' টি সিদ্ধান্ত');
+        $sheet->mergeCells("L{$currentRow}:O{$currentRow}");
 
         $sheet->getStyle("A{$currentRow}:{$lastCol}{$currentRow}")->applyFromArray([
             'font' => ['bold' => true, 'color' => ['rgb' => '0F172A'], 'size' => 10],
@@ -394,30 +647,37 @@ class ApproverLoanApprovalReportController extends Controller
             ],
         ]);
 
-        // Auto-fit column widths
         foreach (range('A', $lastCol) as $colID) {
             $sheet->getColumnDimension($colID)->setAutoSize(true);
         }
 
-        // ----------------- SHEET 2: তারিখভিত্তিক সারসংক্ষেপ (Date-wise Summary) -----------------
+        // ----------------- SHEET 3: তারিখভিত্তিক সারসংক্ষেপ (Date-wise Summary) -----------------
         $sheet2 = $spreadsheet->createSheet();
         $sheet2->setTitle('তারিখভিত্তিক সারসংক্ষেপ');
 
-        $sheet2->setCellValue('A1', 'মৌসুমী - তারিখভিত্তিক ঋণ অনুমোদন বিবরণী');
+        $sheet2->setCellValue('A1', 'মৌসুমী - তারিখভিত্তিক ঋণ অনুমোদন ও বাতিল বিবরণী');
         $sheet2->setCellValue('A2', 'তারিখ পরিসীমা: ' . Carbon::parse($dateFrom)->format('d/m/Y') . ' হতে ' . Carbon::parse($dateTo)->format('d/m/Y'));
-        $sheet2->mergeCells('A1:E1');
-        $sheet2->mergeCells('A2:E2');
+        $sheet2->mergeCells('A1:G1');
+        $sheet2->mergeCells('A2:G2');
         $sheet2->getStyle('A1')->getFont()->setBold(true)->setSize(14)->setColor(new \PhpOffice\PhpSpreadsheet\Style\Color('FF1E3A8A'));
         $sheet2->getStyle('A2')->getFont()->setSize(10)->setColor(new \PhpOffice\PhpSpreadsheet\Style\Color('FF64748B'));
 
-        $dateHeaders = ['ক্রমিক', 'তারিখ', 'অনুমোদিত ঋণের সংখ্যা (টি)', 'অনুমোদিত টাকার পরিমাণ (৳)', 'অনুমোদনকারী কর্মকর্তা ও ব্রেকডাউন'];
+        $dateHeaders = [
+            'ক্রমিক',
+            'তারিখ',
+            'অনুমোদিত ঋণ (টি)',
+            'অনুমোদিত টাকা (৳)',
+            'বাতিলকৃত ঋণ (টি)',
+            'মোট সিদ্ধান্ত (টি)',
+            'কর্মকর্তাভিত্তিক বিস্তারিত ব্রেকডাউন',
+        ];
         $dRow = 4;
         $dCol = 'A';
         foreach ($dateHeaders as $dText) {
             $sheet2->setCellValue($dCol . $dRow, $dText);
             $dCol++;
         }
-        $sheet2->getStyle("A{$dRow}:E{$dRow}")->applyFromArray([
+        $sheet2->getStyle("A{$dRow}:G{$dRow}")->applyFromArray([
             'font' => ['bold' => true, 'color' => ['rgb' => 'FFFFFF'], 'size' => 10],
             'fill' => ['fillType' => Fill::FILL_SOLID, 'startColor' => ['rgb' => '0284C7']],
             'alignment' => ['horizontal' => Alignment::HORIZONTAL_CENTER, 'vertical' => Alignment::VERTICAL_CENTER],
@@ -427,24 +687,29 @@ class ApproverLoanApprovalReportController extends Controller
         $curDRow = $dRow + 1;
         foreach ($dateSummary as $idx => $dItem) {
             $approversTxt = collect($dItem['approvers'])->map(function ($ap) {
-                return $ap['user_name'] . ' (' . $ap['role_name'] . '): ' . $ap['loans_count'] . ' টি - ' . number_format($ap['total_amount'], 2) . ' ৳';
+                $rejTxt = ! empty($ap['rejected_count']) ? ', বাতিল: ' . $ap['rejected_count'] . 'টি' : '';
+                return $ap['user_name'] . ' (' . $ap['role_name'] . '): অনুমোদন ' . ($ap['approved_count'] ?? $ap['loans_count']) . ' টি (' . number_format($ap['approved_amount'] ?? $ap['total_amount'], 2) . ' ৳)' . $rejTxt;
             })->implode("\n");
 
             $sheet2->setCellValue('A' . $curDRow, $idx + 1);
             $sheet2->setCellValue('B' . $curDRow, $dItem['formatted_date']);
-            $sheet2->setCellValue('C' . $curDRow, $dItem['total_loans']);
-            $sheet2->setCellValue('D' . $curDRow, $dItem['total_amount']);
-            $sheet2->setCellValue('E' . $curDRow, $approversTxt ?: '—');
+            $sheet2->setCellValue('C' . $curDRow, $dItem['approved_count'] ?? $dItem['total_loans']);
+            $sheet2->setCellValue('D' . $curDRow, $dItem['approved_amount'] ?? $dItem['total_amount']);
+            $sheet2->setCellValue('E' . $curDRow, $dItem['rejected_count'] ?? 0);
+            $sheet2->setCellValue('F' . $curDRow, $dItem['total_loans']);
+            $sheet2->setCellValue('G' . $curDRow, $approversTxt ?: '—');
 
             $sheet2->getStyle('A' . $curDRow)->getAlignment()->setHorizontal(Alignment::HORIZONTAL_CENTER);
             $sheet2->getStyle('B' . $curDRow)->getAlignment()->setHorizontal(Alignment::HORIZONTAL_CENTER);
             $sheet2->getStyle('C' . $curDRow)->getAlignment()->setHorizontal(Alignment::HORIZONTAL_CENTER);
             $sheet2->getStyle('D' . $curDRow)->getNumberFormat()->setFormatCode('#,##0.00');
             $sheet2->getStyle('D' . $curDRow)->getAlignment()->setHorizontal(Alignment::HORIZONTAL_RIGHT);
-            $sheet2->getStyle('E' . $curDRow)->getAlignment()->setWrapText(true);
+            $sheet2->getStyle('E' . $curDRow)->getAlignment()->setHorizontal(Alignment::HORIZONTAL_CENTER);
+            $sheet2->getStyle('F' . $curDRow)->getAlignment()->setHorizontal(Alignment::HORIZONTAL_CENTER);
+            $sheet2->getStyle('G' . $curDRow)->getAlignment()->setWrapText(true);
 
             if ($idx % 2 === 1) {
-                $sheet2->getStyle("A{$curDRow}:E{$curDRow}")->getFill()->applyFromArray([
+                $sheet2->getStyle("A{$curDRow}:G{$curDRow}")->getFill()->applyFromArray([
                     'fillType' => Fill::FILL_SOLID,
                     'startColor' => ['rgb' => 'F8FAFC'],
                 ]);
@@ -458,9 +723,11 @@ class ApproverLoanApprovalReportController extends Controller
         $sheet2->mergeCells("A{$curDRow}:B{$curDRow}");
         $sheet2->setCellValue('C' . $curDRow, "=SUM(C" . ($dRow + 1) . ":C" . ($curDRow - 1) . ")");
         $sheet2->setCellValue('D' . $curDRow, "=SUM(D" . ($dRow + 1) . ":D" . ($curDRow - 1) . ")");
-        $sheet2->setCellValue('E' . $curDRow, '—');
+        $sheet2->setCellValue('E' . $curDRow, "=SUM(E" . ($dRow + 1) . ":E" . ($curDRow - 1) . ")");
+        $sheet2->setCellValue('F' . $curDRow, "=SUM(F" . ($dRow + 1) . ":F" . ($curDRow - 1) . ")");
+        $sheet2->setCellValue('G' . $curDRow, '—');
 
-        $sheet2->getStyle("A{$curDRow}:E{$curDRow}")->applyFromArray([
+        $sheet2->getStyle("A{$curDRow}:G{$curDRow}")->applyFromArray([
             'font' => ['bold' => true, 'color' => ['rgb' => '0F172A'], 'size' => 10],
             'fill' => ['fillType' => Fill::FILL_SOLID, 'startColor' => ['rgb' => 'E0F2FE']],
         ]);
@@ -468,8 +735,10 @@ class ApproverLoanApprovalReportController extends Controller
         $sheet2->getStyle('C' . $curDRow)->getAlignment()->setHorizontal(Alignment::HORIZONTAL_CENTER);
         $sheet2->getStyle('D' . $curDRow)->getNumberFormat()->setFormatCode('#,##0.00');
         $sheet2->getStyle('D' . $curDRow)->getAlignment()->setHorizontal(Alignment::HORIZONTAL_RIGHT);
+        $sheet2->getStyle('E' . $curDRow)->getAlignment()->setHorizontal(Alignment::HORIZONTAL_CENTER);
+        $sheet2->getStyle('F' . $curDRow)->getAlignment()->setHorizontal(Alignment::HORIZONTAL_CENTER);
 
-        $sheet2->getStyle("A{$dRow}:E{$curDRow}")->applyFromArray([
+        $sheet2->getStyle("A{$dRow}:G{$curDRow}")->applyFromArray([
             'borders' => [
                 'allBorders' => [
                     'borderStyle' => Border::BORDER_THIN,
@@ -478,14 +747,21 @@ class ApproverLoanApprovalReportController extends Controller
             ],
         ]);
 
-        foreach (['A', 'B', 'C', 'D', 'E'] as $colID) {
+        foreach (['A', 'B', 'C', 'D', 'E', 'F', 'G'] as $colID) {
             $sheet2->getColumnDimension($colID)->setAutoSize(true);
         }
 
-        // Set active sheet back to 0
-        $spreadsheet->setActiveSheetIndex(0);
-
-        $filename = 'approver_loan_approval_report_' . Carbon::now()->format('Y_m_d_His') . '.xlsx';
+        // Set active sheet and filename based on report_type
+        if ($reportType === 'detailed') {
+            $spreadsheet->setActiveSheetIndex(1);
+            $filename = 'detailed_loan_decisions_report_' . Carbon::now()->format('Y_m_d_His') . '.xlsx';
+        } elseif ($reportType === 'date_wise') {
+            $spreadsheet->setActiveSheetIndex(2);
+            $filename = 'date_wise_loan_report_' . Carbon::now()->format('Y_m_d_His') . '.xlsx';
+        } else {
+            $spreadsheet->setActiveSheetIndex(0);
+            $filename = 'approver_wise_loan_summary_' . Carbon::now()->format('Y_m_d_His') . '.xlsx';
+        }
         $writer = new Xlsx($spreadsheet);
 
         return response()->streamDownload(function () use ($writer) {
@@ -504,10 +780,10 @@ class ApproverLoanApprovalReportController extends Controller
         string $dateFrom,
         string $dateTo,
         ?int $userId,
-        User $viewer
+        User $viewer,
+        string $decisionStatus = 'all'
     ) {
         $query = LoanApplicationApproval::query()
-            ->where('loan_application_approvals.status', 'approved')
             ->whereNotNull('loan_application_approvals.approved_at')
             ->whereBetween('loan_application_approvals.approved_at', [
                 Carbon::parse($dateFrom)->startOfDay(),
@@ -534,6 +810,15 @@ class ApproverLoanApprovalReportController extends Controller
                     ]);
                 },
             ]);
+
+        // Filter by Decision Status (All, Approved, Rejected)
+        if ($decisionStatus === 'approved') {
+            $query->where('loan_application_approvals.status', 'approved');
+        } elseif ($decisionStatus === 'rejected') {
+            $query->where('loan_application_approvals.status', 'rejected');
+        } else {
+            $query->whereIn('loan_application_approvals.status', ['approved', 'rejected']);
+        }
 
         // Filter by Approver (User)
         if ($userId) {
@@ -594,6 +879,7 @@ class ApproverLoanApprovalReportController extends Controller
 
         $approvedAmount = (float) ($loan?->approved_amount ?: ($loan?->requested_amount ?? 0));
         $requestedAmount = (float) ($loan?->requested_amount ?? 0);
+        $isRejected = $approval->status === 'rejected';
 
         return [
             'id' => $approval->id,
@@ -603,6 +889,8 @@ class ApproverLoanApprovalReportController extends Controller
             'approved_at_raw' => (string) $approval->approved_at,
             'level' => $approval->level,
             'level_label' => ApprovalService::approvalLevelLabel($approval->level),
+            'action_status' => $approval->status, // 'approved' | 'rejected'
+            'action_status_label' => $isRejected ? 'বাতিলকৃত / প্রত্যাখ্যাত' : 'অনুমোদিত',
             'comments' => $approval->comments,
             'approver_id' => $user?->id,
             'approver_name' => $user?->name ?? 'N/A',
@@ -620,7 +908,8 @@ class ApproverLoanApprovalReportController extends Controller
             'zone_name' => $branch?->area?->zone?->name ?? 'N/A',
             'samity_name' => $loan?->samity?->samity_name_bn ?: ($loan?->samity?->samity_name ?? '—'),
             'requested_amount' => $requestedAmount,
-            'approved_amount' => $approvedAmount,
+            'approved_amount' => $isRejected ? 0 : $approvedAmount,
+            'display_amount' => $isRejected ? $requestedAmount : $approvedAmount,
             'loan_status' => $loan?->status ?? '',
             'loan_status_label' => $this->getStatusLabel($loan?->status ?? ''),
         ];
@@ -637,6 +926,7 @@ class ApproverLoanApprovalReportController extends Controller
                 DB::raw('DATE(loan_application_approvals.approved_at) as approval_date'),
                 'loan_application_approvals.user_id',
                 'loan_application_approvals.loan_application_id',
+                'loan_application_approvals.status as approval_status',
                 DB::raw('COALESCE(la.approved_amount, la.requested_amount, 0) as loan_amount')
             )
             ->distinct();
@@ -650,7 +940,11 @@ class ApproverLoanApprovalReportController extends Controller
                 'u.name as user_name',
                 'r.name as role_slug',
                 'r.display_name as role_display_name',
-                DB::raw('COUNT(s.loan_application_id) as loans_count'),
+                DB::raw("COUNT(CASE WHEN s.approval_status = 'approved' THEN s.loan_application_id END) as approved_count"),
+                DB::raw("SUM(CASE WHEN s.approval_status = 'approved' THEN s.loan_amount ELSE 0 END) as approved_amount"),
+                DB::raw("COUNT(CASE WHEN s.approval_status = 'rejected' THEN s.loan_application_id END) as rejected_count"),
+                DB::raw("SUM(CASE WHEN s.approval_status = 'rejected' THEN s.loan_amount ELSE 0 END) as rejected_amount"),
+                DB::raw('COUNT(s.loan_application_id) as total_loans'),
                 DB::raw('SUM(s.loan_amount) as total_amount')
             )
             ->groupBy('s.approval_date', 's.user_id', 'u.name', 'r.name', 'r.display_name')
@@ -660,8 +954,12 @@ class ApproverLoanApprovalReportController extends Controller
         $dateSummary = [];
 
         foreach ($grouped as $dateStr => $rows) {
-            $totalLoans = $rows->sum('loans_count');
+            $totalLoans = $rows->sum('total_loans');
             $totalAmount = $rows->sum('total_amount');
+            $approvedCount = $rows->sum('approved_count');
+            $approvedAmount = $rows->sum('approved_amount');
+            $rejectedCount = $rows->sum('rejected_count');
+            $rejectedAmount = $rows->sum('rejected_amount');
 
             $approvers = $rows->map(function ($row) {
                 return [
@@ -669,7 +967,11 @@ class ApproverLoanApprovalReportController extends Controller
                     'user_name' => $row->user_name,
                     'role_name' => $row->role_display_name ?: ($row->role_slug ?? 'N/A'),
                     'role_rank' => $this->getRoleHierarchyRank($row->role_slug),
-                    'loans_count' => (int) $row->loans_count,
+                    'loans_count' => (int) $row->total_loans,
+                    'approved_count' => (int) $row->approved_count,
+                    'approved_amount' => (float) $row->approved_amount,
+                    'rejected_count' => (int) $row->rejected_count,
+                    'rejected_amount' => (float) $row->rejected_amount,
                     'total_amount' => (float) $row->total_amount,
                 ];
             })->sortBy('role_rank')->values()->all();
@@ -679,6 +981,10 @@ class ApproverLoanApprovalReportController extends Controller
                 'formatted_date' => Carbon::parse($dateStr)->format('d/m/Y'),
                 'total_loans' => (int) $totalLoans,
                 'total_amount' => (float) $totalAmount,
+                'approved_count' => (int) $approvedCount,
+                'approved_amount' => (float) $approvedAmount,
+                'rejected_count' => (int) $rejectedCount,
+                'rejected_amount' => (float) $rejectedAmount,
                 'approvers' => $approvers,
             ];
         }
@@ -726,13 +1032,15 @@ class ApproverLoanApprovalReportController extends Controller
      */
     protected function buildApproverSummaryFromQuery($baseQuery): array
     {
-        // Subquery: unique (user_id, loan_application_id) with loan amount and action count
+        // Subquery: unique (user_id, loan_application_id) with loan amount and action counts
         $subQuery = (clone $baseQuery)
             ->join('loan_applications as la', 'la.id', '=', 'loan_application_approvals.loan_application_id')
             ->select(
                 'loan_application_approvals.user_id',
                 'loan_application_approvals.loan_application_id',
                 DB::raw('COALESCE(la.approved_amount, la.requested_amount, 0) as loan_amount'),
+                DB::raw("SUM(CASE WHEN loan_application_approvals.status = 'approved' THEN 1 ELSE 0 END) as approved_actions"),
+                DB::raw("SUM(CASE WHEN loan_application_approvals.status = 'rejected' THEN 1 ELSE 0 END) as rejected_actions"),
                 DB::raw('COUNT(loan_application_approvals.id) as actions_count')
             )
             ->groupBy(
@@ -753,7 +1061,13 @@ class ApproverLoanApprovalReportController extends Controller
                 'r.display_name as role_display_name',
                 'b.name as branch_name',
                 DB::raw('COUNT(t.loan_application_id) as total_loans'),
-                DB::raw('SUM(t.actions_count) as total_approvals'),
+                DB::raw('SUM(t.actions_count) as total_actions'),
+                DB::raw("COUNT(CASE WHEN t.approved_actions > 0 THEN t.loan_application_id END) as approved_loans"),
+                DB::raw("SUM(t.approved_actions) as approved_actions_count"),
+                DB::raw("COUNT(CASE WHEN t.rejected_actions > 0 THEN t.loan_application_id END) as rejected_loans"),
+                DB::raw("SUM(t.rejected_actions) as rejected_actions_count"),
+                DB::raw("SUM(CASE WHEN t.approved_actions > 0 THEN t.loan_amount ELSE 0 END) as approved_amount"),
+                DB::raw("SUM(CASE WHEN t.rejected_actions > 0 THEN t.loan_amount ELSE 0 END) as rejected_amount"),
                 DB::raw('SUM(t.loan_amount) as total_amount')
             )
             ->groupBy('t.user_id', 'u.name', 'r.name', 'r.display_name', 'b.name')
@@ -761,6 +1075,10 @@ class ApproverLoanApprovalReportController extends Controller
 
         $approverSummary = $raw->map(function ($row) {
             $roleSlug = $row->role_slug;
+            $approvedLoans = (int) $row->approved_loans;
+            $approvedActions = (int) $row->approved_actions_count;
+            $reapprovalsCount = max(0, $approvedActions - $approvedLoans);
+
             return [
                 'user_id' => (int) $row->user_id,
                 'user_name' => $row->user_name ?? 'N/A',
@@ -769,12 +1087,19 @@ class ApproverLoanApprovalReportController extends Controller
                 'role_name' => $row->role_display_name ?: ($roleSlug ?? 'N/A'),
                 'branch_name' => $row->branch_name ?? 'হেড অফিস / সর্বজনীন',
                 'total_loans' => (int) $row->total_loans,
-                'total_approvals' => (int) $row->total_approvals,
+                'total_actions' => (int) $row->total_actions,
+                'total_approvals' => $approvedActions,
+                'approved_loans' => $approvedLoans,
+                'approved_amount' => (float) $row->approved_amount,
+                'reapprovals_count' => $reapprovalsCount,
+                'rejected_loans' => (int) $row->rejected_loans,
+                'rejected_actions' => (int) $row->rejected_actions_count,
+                'rejected_amount' => (float) $row->rejected_amount,
                 'total_amount' => (float) $row->total_amount,
             ];
         })->all();
 
-        // Sort by role hierarchy rank, then loans count descending, then name
+        // Sort by role hierarchy rank, then total loans descending, then name
         usort($approverSummary, function ($a, $b) {
             if ($a['role_rank'] !== $b['role_rank']) {
                 return $a['role_rank'] <=> $b['role_rank'];
@@ -815,7 +1140,7 @@ class ApproverLoanApprovalReportController extends Controller
         $query = User::query()
             ->where(function ($q) use ($approverRoleNames) {
                 $q->whereHas('role', fn ($rq) => $rq->whereIn('name', $approverRoleNames))
-                    ->orWhereHas('loanApplicationApprovals', fn ($aq) => $aq->where('status', 'approved'));
+                    ->orWhereHas('loanApplicationApprovals', fn ($aq) => $aq->whereIn('status', ['approved', 'rejected']));
             })
             ->with(['role:id,name,display_name', 'branch:id,name,code']);
 
