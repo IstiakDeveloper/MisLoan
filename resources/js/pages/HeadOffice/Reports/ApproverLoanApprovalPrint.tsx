@@ -424,44 +424,40 @@ export default function ApproverLoanApprovalPrint({
                     <button
                         type="button"
                         onClick={() => setCurrentReportType('approver_wise')}
-                        className={`px-3 py-1.5 rounded-lg text-xs font-bold transition cursor-pointer ${
-                            currentReportType === 'approver_wise'
+                        className={`px-3 py-1.5 rounded-lg text-xs font-bold transition cursor-pointer ${currentReportType === 'approver_wise'
                                 ? 'bg-blue-600 text-white shadow-xs'
                                 : 'bg-white text-slate-700 hover:bg-slate-200 border border-slate-300'
-                        }`}
+                            }`}
                     >
                         কর্মকর্তাভিত্তিক সারসংক্ষেপ
                     </button>
                     <button
                         type="button"
                         onClick={() => setCurrentReportType('detailed')}
-                        className={`px-3 py-1.5 rounded-lg text-xs font-bold transition cursor-pointer ${
-                            currentReportType === 'detailed'
+                        className={`px-3 py-1.5 rounded-lg text-xs font-bold transition cursor-pointer ${currentReportType === 'detailed'
                                 ? 'bg-blue-600 text-white shadow-xs'
                                 : 'bg-white text-slate-700 hover:bg-slate-200 border border-slate-300'
-                        }`}
+                            }`}
                     >
                         বিস্তারিত ঋণ তালিকা
                     </button>
                     <button
                         type="button"
                         onClick={() => setCurrentReportType('date_wise')}
-                        className={`px-3 py-1.5 rounded-lg text-xs font-bold transition cursor-pointer ${
-                            currentReportType === 'date_wise'
+                        className={`px-3 py-1.5 rounded-lg text-xs font-bold transition cursor-pointer ${currentReportType === 'date_wise'
                                 ? 'bg-blue-600 text-white shadow-xs'
                                 : 'bg-white text-slate-700 hover:bg-slate-200 border border-slate-300'
-                        }`}
+                            }`}
                     >
                         তারিখভিত্তিক সারসংক্ষেপ
                     </button>
                     <button
                         type="button"
                         onClick={() => setCurrentReportType('all')}
-                        className={`px-3 py-1.5 rounded-lg text-xs font-bold transition cursor-pointer ${
-                            currentReportType === 'all'
+                        className={`px-3 py-1.5 rounded-lg text-xs font-bold transition cursor-pointer ${currentReportType === 'all'
                                 ? 'bg-blue-600 text-white shadow-xs'
                                 : 'bg-white text-slate-700 hover:bg-slate-200 border border-slate-300'
-                        }`}
+                            }`}
                     >
                         সবগুলো একসাথে
                     </button>
@@ -472,11 +468,10 @@ export default function ApproverLoanApprovalPrint({
                     <button
                         type="button"
                         onClick={() => setOrientation('portrait')}
-                        className={`px-3 py-1.5 rounded-lg text-xs font-bold transition cursor-pointer ${
-                            orientation === 'portrait'
+                        className={`px-3 py-1.5 rounded-lg text-xs font-bold transition cursor-pointer ${orientation === 'portrait'
                                 ? 'bg-indigo-600 text-white shadow-xs'
                                 : 'bg-white text-slate-700 hover:bg-slate-200 border border-slate-300'
-                        }`}
+                            }`}
                         title="খাড়া পেজ (A4 Portrait)"
                     >
                         খাড়া (Portrait - A4)
@@ -484,11 +479,10 @@ export default function ApproverLoanApprovalPrint({
                     <button
                         type="button"
                         onClick={() => setOrientation('landscape')}
-                        className={`px-3 py-1.5 rounded-lg text-xs font-bold transition cursor-pointer ${
-                            orientation === 'landscape'
+                        className={`px-3 py-1.5 rounded-lg text-xs font-bold transition cursor-pointer ${orientation === 'landscape'
                                 ? 'bg-indigo-600 text-white shadow-xs'
                                 : 'bg-white text-slate-700 hover:bg-slate-200 border border-slate-300'
-                        }`}
+                            }`}
                         title="আড়াআড়ি পেজ (A4 Landscape)"
                     >
                         আড়াআড়ি (Landscape)

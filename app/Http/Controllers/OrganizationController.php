@@ -254,6 +254,52 @@ class OrganizationController extends Controller
         ]);
     }
 
+    public function structurePrint(Request $request)
+    {
+        $includeInactive = $request->has('include_inactive')
+            ? $request->boolean('include_inactive')
+            : true;
+
+        $zonesQuery = Zone::query()
+            ->orderBy('code')
+            ->with([
+                'areas' => function ($query) use ($includeInactive) {
+                    if (! $includeInactive) {
+                        $query->where('is_active', true);
+                    }
+                    $query->orderBy('code')->with([
+                        'branches' => function ($bQuery) use ($includeInactive) {
+                            if (! $includeInactive) {
+                                $bQuery->where('is_active', true);
+                            }
+                            $bQuery->orderBy('code');
+                        },
+                    ]);
+                },
+            ]);
+
+        if (! $includeInactive) {
+            $zonesQuery->where('is_active', true);
+        }
+
+        $zones = $zonesQuery->get();
+
+        $totalZones = $zones->count();
+        $totalAreas = $zones->sum(fn ($zone) => $zone->areas->count());
+        $totalBranches = $zones->sum(fn ($zone) => $zone->areas->sum(fn ($area) => $area->branches->count()));
+
+        return Inertia::render('Organizations/StructurePrint', [
+            'generatedAt' => Carbon::now()->format('d/m/Y h:i A'),
+            'zones' => $zones,
+            'summary' => [
+                'total_zones' => $totalZones,
+                'total_areas' => $totalAreas,
+                'total_branches' => $totalBranches,
+            ],
+            'includeInactive' => $includeInactive,
+        ]);
+    }
+
     // API Methods for cascading dropdowns
     public function getAreasByZone(Zone $zone)
     {
