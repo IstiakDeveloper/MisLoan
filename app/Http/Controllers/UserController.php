@@ -25,7 +25,7 @@ class UserController extends Controller
 {
     public function index(Request $request)
     {
-        $users = User::query()
+        $usersQuery = User::query()
             ->with(['role', 'zone', 'area', 'branch', 'zones', 'areas', 'branches'])
             ->when($request->search, function ($query, $search) {
                 $query->where('name', 'like', "%{$search}%")
@@ -57,7 +57,23 @@ class UserController extends Controller
             ->when($request->filled('is_active'), function ($query) use ($request) {
                 $isActive = $request->input('is_active') === '1';
                 $query->where('is_active', $isActive);
-            })
+            });
+
+        $activeCutoff = now()->subMinutes((int) config('session.lifetime', 120))->timestamp;
+        $onlineUserIds = \Illuminate\Support\Facades\DB::table('sessions')
+            ->whereNotNull('user_id')
+            ->where('last_activity', '>=', $activeCutoff)
+            ->pluck('user_id')
+            ->unique()
+            ->values()
+            ->map(fn ($id) => (int) $id)
+            ->toArray();
+
+        if ($request->input('is_online') === '1') {
+            $usersQuery->whereIn('id', $onlineUserIds);
+        }
+
+        $users = $usersQuery
             ->latest()
             ->paginate($request->integer('per_page', 50))
             ->withQueryString();
@@ -71,6 +87,7 @@ class UserController extends Controller
             'total' => User::count(),
             'active' => User::where('is_active', true)->count(),
             'inactive' => User::where('is_active', false)->count(),
+            'online' => count($onlineUserIds),
             'super_admins' => User::where('has_all_access', true)->count(),
         ];
 
@@ -81,7 +98,8 @@ class UserController extends Controller
             'areas' => $areas,
             'branches' => $branches,
             'stats' => $stats,
-            'filters' => $request->only(['search', 'role_id', 'zone_id', 'area_id', 'branch_id', 'is_active']),
+            'online_user_ids' => $onlineUserIds,
+            'filters' => $request->only(['search', 'role_id', 'zone_id', 'area_id', 'branch_id', 'is_active', 'is_online']),
             'hrmSyncEnabled' => app(HrmUserSyncService::class)->isConfigured(),
         ]);
     }
@@ -231,6 +249,15 @@ class UserController extends Controller
 
         if (filled($plainPassword)) {
             app(BranchAccountService::class)->updatePasswordOrPin($user, $plainPassword);
+
+            if ($user->id === Auth::id()) {
+                Auth::guard('web')->logout();
+                $request->session()->invalidate();
+                $request->session()->regenerateToken();
+
+                return redirect()->route('login')
+                    ->with('status', 'Your password was updated successfully. Please log in with your new password.');
+            }
         }
 
         // Sync multi-assignments
@@ -248,6 +275,7 @@ class UserController extends Controller
             return back()->with('error', 'Cannot delete your own account.');
         }
 
+        \Illuminate\Support\Facades\DB::table('sessions')->where('user_id', $user->id)->delete();
         $user->delete();
 
         return redirect()->route('users.index')
@@ -261,6 +289,10 @@ class UserController extends Controller
         }
 
         $user->update(['is_active' => ! $user->is_active]);
+
+        if (! $user->is_active) {
+            \Illuminate\Support\Facades\DB::table('sessions')->where('user_id', $user->id)->delete();
+        }
 
         return back()->with('success', 'User status updated successfully.');
     }
@@ -278,9 +310,18 @@ class UserController extends Controller
 
         app(BranchAccountService::class)->updatePasswordOrPin($user, $validated['password']);
 
+        if ($user->id === Auth::id()) {
+            Auth::guard('web')->logout();
+            $request->session()->invalidate();
+            $request->session()->regenerateToken();
+
+            return redirect()->route('login')
+                ->with('status', 'Your password was reset successfully. Please log in with your new password.');
+        }
+
         $message = $user->isBranchAccount()
-            ? 'Branch login PIN reset successfully.'
-            : 'Password reset successfully.';
+            ? 'Branch login PIN reset successfully. Active sessions have been logged out.'
+            : 'Password reset successfully. Active sessions have been logged out.';
 
         return back()->with('success', $message);
     }

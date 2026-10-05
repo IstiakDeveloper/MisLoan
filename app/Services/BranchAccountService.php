@@ -5,6 +5,7 @@ namespace App\Services;
 use App\Models\Branch;
 use App\Models\Role;
 use App\Models\User;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
@@ -157,6 +158,9 @@ class BranchAccountService
         if ($user->isBranchAccount()) {
             $this->updateLoginPin($user, $plainPassword);
         }
+
+        // Invalidate all active sessions for this user so they must re-authenticate
+        DB::table('sessions')->where('user_id', $user->id)->delete();
     }
 
     public function migrateLegacyBranchUsers(): int

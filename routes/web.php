@@ -35,6 +35,7 @@ use App\Http\Controllers\SavingsProductController;
 use App\Http\Controllers\TeamBasedApprovalController;
 use App\Http\Controllers\TeamBasedApprovalPrintController;
 use App\Http\Controllers\UserController;
+use App\Http\Controllers\UserSessionController;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\Redirect;
 use Illuminate\Support\Facades\Route;
@@ -132,6 +133,12 @@ Route::middleware(['auth', 'verified'])->group(function () {
         Route::post('users/{user}/send-credentials', [UserController::class, 'sendCredentials'])->name('users.send-credentials');
         Route::post('users/send-credentials-all', [UserController::class, 'sendCredentialsToAll'])->name('users.send-credentials-all');
         Route::post('users/send-branch-summary', [UserController::class, 'sendBranchSummary'])->name('users.send-branch-summary');
+
+        // User Active Sessions Management
+        Route::get('user-sessions', [UserSessionController::class, 'index'])->name('user-sessions.index');
+        Route::delete('user-sessions/{sessionId}', [UserSessionController::class, 'destroy'])->name('user-sessions.destroy');
+        Route::post('user-sessions/destroy-user/{user}', [UserSessionController::class, 'destroyUserSessions'])->name('user-sessions.destroy-user');
+        Route::post('user-sessions/destroy-all-others', [UserSessionController::class, 'destroyAllOthers'])->name('user-sessions.destroy-all-others');
     });
 
     // Samity Management Routes - Only for SuperAdmin/Head Office

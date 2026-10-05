@@ -10,9 +10,10 @@ import {
 } from '@/components/configuration';
 import { useCanMutate } from '@/hooks/use-can-mutate';
 import AdminLayout from '@/layouts/admin-layout';
-import { Head, router, usePage } from '@inertiajs/react';
+import { Head, Link, router, usePage } from '@inertiajs/react';
 import { formatBranchLabel, sortBranchesByCode } from '@/utils/branchLabel';
 import {
+    Activity,
     Building,
     CheckCircle2,
     Edit,
@@ -107,6 +108,7 @@ interface UserStats {
     total: number;
     active: number;
     inactive: number;
+    online?: number;
     super_admins: number;
 }
 
@@ -117,6 +119,7 @@ interface Props {
     areas: Area[];
     branches: Branch[];
     stats?: UserStats;
+    online_user_ids?: number[];
     filters: {
         search?: string;
         role_id?: string;
@@ -124,6 +127,7 @@ interface Props {
         area_id?: string;
         branch_id?: string;
         is_active?: string;
+        is_online?: string;
     };
     hrmSyncEnabled?: boolean;
 }
@@ -135,6 +139,7 @@ export default function Index({
     areas,
     branches,
     stats,
+    online_user_ids = [],
     filters,
     hrmSyncEnabled = false,
 }: Props) {
@@ -149,6 +154,7 @@ export default function Index({
     const [filterArea, setFilterArea] = useState(filters.area_id || '');
     const [filterBranch, setFilterBranch] = useState(filters.branch_id || '');
     const [filterStatus, setFilterStatus] = useState(filters.is_active || '');
+    const [filterOnline, setFilterOnline] = useState(filters.is_online || '');
 
     const [bulkMailModalOpen, setBulkMailModalOpen] = useState(false);
     const [excludeRoleIds, setExcludeRoleIds] = useState<number[]>([]);
@@ -373,6 +379,7 @@ export default function Index({
             area_id: filterArea,
             branch_id: filterBranch,
             is_active: filterStatus,
+            is_online: filterOnline,
             ...newParams,
         };
 
@@ -396,7 +403,19 @@ export default function Index({
 
     const handleStatusTabClick = (statusVal: string) => {
         setFilterStatus(statusVal);
-        applyFilters({ is_active: statusVal });
+        setFilterOnline('');
+        applyFilters({ is_active: statusVal, is_online: '' });
+    };
+
+    const handleOnlineTabClick = () => {
+        const next = filterOnline === '1' ? '' : '1';
+        setFilterOnline(next);
+        if (next === '1') {
+            setFilterStatus('');
+            applyFilters({ is_online: '1', is_active: '' });
+        } else {
+            applyFilters({ is_online: '' });
+        }
     };
 
     const handleClearFilters = () => {
@@ -406,6 +425,7 @@ export default function Index({
         setFilterArea('');
         setFilterBranch('');
         setFilterStatus('');
+        setFilterOnline('');
         router.get('/users', {}, { preserveState: true, replace: true });
     };
 
@@ -525,6 +545,19 @@ export default function Index({
                                             : 'Sync Officers from HRM'}
                                     </button>
                                 )}
+                                <Link
+                                    href="/user-sessions"
+                                    className="flex min-h-10 items-center justify-center gap-2 rounded-xl border border-white/20 bg-white/10 px-3.5 py-2 text-sm font-medium text-white backdrop-blur-md transition hover:bg-white/20 active:scale-98"
+                                    title="View Active Sessions / Logged-in Users"
+                                >
+                                    <Activity className="size-4 text-emerald-400 animate-pulse" />
+                                    <span>Active Sessions</span>
+                                    {stats?.online !== undefined && (
+                                        <span className="rounded-full bg-emerald-500/20 px-2 py-0.5 text-xs font-bold text-emerald-200">
+                                            {stats.online}
+                                        </span>
+                                    )}
+                                </Link>
                                 <button
                                     onClick={handleOpenBranchSummaryModal}
                                     className="flex min-h-10 items-center justify-center gap-2 rounded-xl border border-white/20 bg-white/10 px-4 py-2 text-sm font-medium text-white backdrop-blur-md transition hover:bg-white/20 active:scale-98"
@@ -566,6 +599,12 @@ export default function Index({
                         tone="green"
                     />
                     <StatCard
+                        label="Online Now"
+                        value={stats?.online ?? 0}
+                        icon={Activity}
+                        tone="green"
+                    />
+                    <StatCard
                         label="Inactive / Suspended"
                         value={stats?.inactive ?? '-'}
                         icon={UserX}
@@ -586,12 +625,12 @@ export default function Index({
                         {/* Top Bar: Search, Quick Tabs & Filter Toggle */}
                         <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
                             {/* Quick Status Tabs */}
-                            <div className="flex items-center gap-1 rounded-xl border border-slate-200 bg-slate-200/60 p-1">
+                            <div className="flex flex-wrap items-center gap-1 rounded-xl border border-slate-200 bg-slate-200/60 p-1">
                                 <button
                                     type="button"
                                     onClick={() => handleStatusTabClick('')}
                                     className={`flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-semibold transition-all ${
-                                        filterStatus === ''
+                                        filterStatus === '' && filterOnline === ''
                                             ? 'bg-white text-slate-900 shadow-sm'
                                             : 'text-slate-600 hover:text-slate-900'
                                     }`}
@@ -603,21 +642,44 @@ export default function Index({
                                 </button>
                                 <button
                                     type="button"
-                                    onClick={() => handleStatusTabClick('1')}
+                                    onClick={handleOnlineTabClick}
                                     className={`flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-semibold transition-all ${
-                                        filterStatus === '1'
+                                        filterOnline === '1'
                                             ? 'bg-emerald-600 text-white shadow-sm'
                                             : 'text-slate-600 hover:text-emerald-700'
                                     }`}
                                 >
-                                    <span className="size-1.5 rounded-full bg-emerald-400" />
+                                    <span className="size-1.5 rounded-full bg-emerald-400 animate-pulse" />
+                                    Online Now
+                                    {stats?.online !== undefined && (
+                                        <span
+                                            className={`rounded-full px-2 py-0.5 text-[10px] font-bold ${
+                                                filterOnline === '1'
+                                                    ? 'bg-emerald-700 text-white'
+                                                    : 'bg-emerald-100 text-emerald-800'
+                                            }`}
+                                        >
+                                            {stats.online}
+                                        </span>
+                                    )}
+                                </button>
+                                <button
+                                    type="button"
+                                    onClick={() => handleStatusTabClick('1')}
+                                    className={`flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-semibold transition-all ${
+                                        filterStatus === '1'
+                                            ? 'bg-blue-600 text-white shadow-sm'
+                                            : 'text-slate-600 hover:text-blue-700'
+                                    }`}
+                                >
+                                    <span className="size-1.5 rounded-full bg-blue-400" />
                                     Active
                                     {stats?.active !== undefined && (
                                         <span
                                             className={`rounded-full px-2 py-0.5 text-[10px] font-bold ${
                                                 filterStatus === '1'
-                                                    ? 'bg-emerald-700 text-white'
-                                                    : 'bg-emerald-100 text-emerald-800'
+                                                    ? 'bg-blue-700 text-white'
+                                                    : 'bg-blue-100 text-blue-800'
                                             }`}
                                         >
                                             {stats.active}
@@ -931,31 +993,49 @@ export default function Index({
                                 </tr>
                             </thead>
                             <tbody className="divide-y divide-slate-100 bg-white text-sm">
-                                {users.data.map((user) => (
-                                    <tr
-                                        key={user.id}
-                                        className="transition-colors hover:bg-blue-50/40"
-                                    >
-                                        {/* User Identity Column */}
-                                        <td className="px-6 py-4">
-                                            <div className="flex items-center gap-3.5">
-                                                {/* Initials Avatar */}
-                                                <div className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-gradient-to-tr from-blue-600 to-indigo-600 text-sm font-bold text-white shadow-sm shadow-blue-500/20">
-                                                    {user.name
-                                                        .charAt(0)
-                                                        .toUpperCase()}
-                                                </div>
-                                                <div className="min-w-0 space-y-0.5">
-                                                    <div className="flex items-center gap-2">
-                                                        <span className="font-semibold text-slate-900">
-                                                            {user.name}
-                                                        </span>
-                                                        {user.has_all_access && (
-                                                            <span className="inline-flex items-center gap-1 rounded-full border border-purple-200 bg-purple-100 px-2 py-0.5 text-[10px] font-bold text-purple-800">
-                                                                <Shield className="size-3" />
-                                                                Super Admin
-                                                            </span>
+                                {users.data.map((user) => {
+                                    const isOnline = online_user_ids.includes(user.id);
+                                    return (
+                                        <tr
+                                            key={user.id}
+                                            className="transition-colors hover:bg-blue-50/40"
+                                        >
+                                            {/* User Identity Column */}
+                                            <td className="px-6 py-4">
+                                                <div className="flex items-center gap-3.5">
+                                                    {/* Initials Avatar */}
+                                                    <div className="relative">
+                                                        <div className={`flex size-10 shrink-0 items-center justify-center rounded-xl bg-gradient-to-tr from-blue-600 to-indigo-600 text-sm font-bold text-white shadow-sm shadow-blue-500/20 ${
+                                                            isOnline ? 'ring-2 ring-emerald-500 ring-offset-2' : ''
+                                                        }`}>
+                                                            {user.name
+                                                                .charAt(0)
+                                                                .toUpperCase()}
+                                                        </div>
+                                                        {isOnline && (
+                                                            <span
+                                                                className="absolute -bottom-1 -right-1 size-3.5 rounded-full border-2 border-white bg-emerald-500 animate-pulse"
+                                                                title="User is currently logged in"
+                                                            />
                                                         )}
+                                                    </div>
+                                                    <div className="min-w-0 space-y-0.5">
+                                                        <div className="flex items-center gap-2">
+                                                            <span className="font-semibold text-slate-900">
+                                                                {user.name}
+                                                            </span>
+                                                            {isOnline && (
+                                                                <span className="inline-flex items-center gap-1 rounded-full border border-emerald-200 bg-emerald-50 px-2 py-0.5 text-[10px] font-bold text-emerald-700">
+                                                                    <span className="size-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                                                                    Online
+                                                                </span>
+                                                            )}
+                                                            {user.has_all_access && (
+                                                                <span className="inline-flex items-center gap-1 rounded-full border border-purple-200 bg-purple-100 px-2 py-0.5 text-[10px] font-bold text-purple-800">
+                                                                    <Shield className="size-3" />
+                                                                    Super Admin
+                                                                </span>
+                                                            )}
                                                         {user.signature && (
                                                             <span
                                                                 className="inline-flex items-center gap-1 text-teal-600"
@@ -1317,6 +1397,16 @@ export default function Index({
                                                         >
                                                             <Trash2 className="size-4" />
                                                         </button>
+
+                                                        {isOnline && (
+                                                            <Link
+                                                                href={`/user-sessions?search=${encodeURIComponent(user.username || user.name)}`}
+                                                                className="flex size-8 items-center justify-center rounded-lg text-emerald-600 transition-colors hover:bg-emerald-50 hover:text-emerald-700"
+                                                                title="Active Session - View or Terminate"
+                                                            >
+                                                                <Activity className="size-4 animate-pulse" />
+                                                            </Link>
+                                                        )}
                                                     </>
                                                 ) : (
                                                     <span className="text-xs text-slate-400">
@@ -1326,7 +1416,8 @@ export default function Index({
                                             </div>
                                         </td>
                                     </tr>
-                                ))}
+                                );
+                            })}
                             </tbody>
                         </table>
 

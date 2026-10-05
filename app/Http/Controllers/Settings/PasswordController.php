@@ -7,6 +7,7 @@ use App\Http\Requests\Settings\PasswordUpdateRequest;
 use App\Services\BranchAccountService;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Auth;
 use Inertia\Inertia;
 use Inertia\Response;
 
@@ -27,8 +28,19 @@ class PasswordController extends Controller
      */
     public function update(PasswordUpdateRequest $request, BranchAccountService $branchAccounts): RedirectResponse
     {
-        $branchAccounts->updatePasswordOrPin($request->user(), $request->validated('password'));
+        $user = $request->user();
+        $branchAccounts->updatePasswordOrPin($user, $request->validated('password'));
 
-        return back();
+        Auth::guard('web')->logout();
+        $request->session()->invalidate();
+        $request->session()->regenerateToken();
+
+        $message = $user->isBranchAccount()
+            ? 'Branch login PIN updated successfully. Please log in with your new PIN.'
+            : 'Password updated successfully. Please log in with your new password.';
+
+        return redirect()->route('login')
+            ->with('status', $message)
+            ->with('success', $message);
     }
 }

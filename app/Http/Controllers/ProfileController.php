@@ -126,11 +126,16 @@ class ProfileController extends Controller
         $user = $request->user();
         $branchAccounts->updatePasswordOrPin($user, $request->validated('password'));
 
-        $message = $user->isBranchAccount()
-            ? 'Branch login PIN updated successfully!'
-            : 'Password updated successfully!';
+        Auth::guard('web')->logout();
+        $request->session()->invalidate();
+        $request->session()->regenerateToken();
 
-        return redirect()->route('profile.edit')
+        $message = $user->isBranchAccount()
+            ? 'Branch login PIN updated successfully. Please log in with your new PIN.'
+            : 'Password updated successfully. Please log in with your new password.';
+
+        return redirect()->route('login')
+            ->with('status', $message)
             ->with('success', $message);
     }
 

@@ -41,6 +41,7 @@ import {
     SlidersHorizontal,
     Trash2,
     FileSpreadsheet,
+    Activity,
 } from 'lucide-react';
 import { useIsMobile } from '@/hooks/use-mobile';
 import { usePwaInstallPrompt } from '@/hooks/usePwaInstallPrompt';
@@ -85,7 +86,7 @@ interface AdminLayoutProps {
     children: ReactNode;
 }
 
-const SETUP_PATHS = ['/loan-categories', '/loan-products', '/savings-categories', '/savings-products', '/organizations', '/samities', '/member-categories', '/users', '/roles', '/head-office/cso-duty-roster', '/head-office/send-cutoff', '/head-office/loan-workflow-settings', '/head-office/recent-deletions'];
+const SETUP_PATHS = ['/loan-categories', '/loan-products', '/savings-categories', '/savings-products', '/organizations', '/samities', '/member-categories', '/users', '/user-sessions', '/roles', '/head-office/cso-duty-roster', '/head-office/send-cutoff', '/head-office/loan-workflow-settings', '/head-office/recent-deletions'];
 const REPORT_PATHS = [
     '/head-office/team-based-approvals/report',
     '/head-office/reports/guarantor-informants',
@@ -135,6 +136,7 @@ function getPageTitle(currentPath: string): string {
     if (currentPath.includes('/samities')) return 'Samities';
     if (currentPath.includes('/member-categories')) return 'Member Categories';
     if (currentPath.includes('/users')) return 'User Management';
+    if (currentPath.includes('/user-sessions')) return 'Active Sessions (সক্রিয় লগইন সেশন)';
     if (currentPath.includes('/roles')) return 'Roles & Permissions';
     if (currentPath.includes('/profile')) return 'Profile & Settings';
     if (currentPath.includes('/notifications')) return 'Notifications';
@@ -336,6 +338,7 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
         { name: 'Samities', href: '/samities', icon: Building2 },
         { name: 'Member Categories', href: '/member-categories', icon: Users },
         { name: 'Users', href: '/users', icon: CircleUser },
+        { name: 'Active Sessions', href: '/user-sessions', icon: Activity },
         { name: 'Roles', href: '/roles', icon: Shield },
     ];
 
