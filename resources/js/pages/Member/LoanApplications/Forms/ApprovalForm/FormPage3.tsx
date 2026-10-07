@@ -34,7 +34,7 @@ export function scaleAnnualToLoanYears(
     return String(Math.round(annual * getLoanYears(months)));
 }
 
-export default function FormPage3({ data, setData, member, loanProduct, loanCategory, requestedAmount }: FormPageProps) {
+export default function FormPage3({ data, setData, member, loanProduct, loanCategory, requestedAmount, errors = {} }: FormPageProps) {
     const durationMonths =
         data.loan_duration_months ||
         loanProduct?.duration_months ||
@@ -446,6 +446,15 @@ export default function FormPage3({ data, setData, member, loanProduct, loanCate
                         </div>
                     </div>
                 </div>
+
+                {((page3ExpenseTotal > page3IncomeTotal && (page3ExpenseTotal > 0 || page3IncomeTotal > 0)) || Number(data.annual_net_profit || 0) < 0 || errors?.annual_net_profit) && (
+                    <div className="p-3 bg-red-50 border-2 border-red-300 rounded-lg text-xs text-red-800 font-semibold flex items-center gap-2">
+                        <span className="text-base">⚠️</span>
+                        <span>
+                            {errors?.annual_net_profit || 'সতর্কতা: সম্ভাব্য আয়ের চেয়ে ব্যয় বেশি (নিট লাভ মাইনাস)। আয়ের চেয়ে ব্যয় বেশি হলে ঋণ আবেদন জমা দেওয়া যাবে না।'}
+                        </span>
+                    </div>
+                )}
 
                 {missingPage1Income && (
                     <div className="p-3 bg-amber-50 border border-amber-200 rounded-lg text-xs text-amber-800 font-medium">

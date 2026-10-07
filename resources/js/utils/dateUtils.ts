@@ -20,6 +20,10 @@ function parseDateValue(value: string | Date | number | null | undefined): Date 
     const str = String(value).trim();
     if (!str) return null;
 
+    // If it has a time component or timezone, parse as an instant first
+    const instant = parseDateTimeInstant(str);
+    if (instant) return instant;
+
     const datePart = str.split('T')[0].split(' ')[0];
 
     const iso = /^(\d{4})-(\d{2})-(\d{2})$/.exec(datePart);
@@ -40,7 +44,7 @@ function parseDateValue(value: string | Date | number | null | undefined): Date 
         return Number.isNaN(d.getTime()) ? null : d;
     }
 
-    return parseDateTimeInstant(str);
+    return null;
 }
 
 function isDateOnlyString(str: string): boolean {

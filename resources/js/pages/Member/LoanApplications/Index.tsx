@@ -291,10 +291,19 @@ export default function Index({
     };
 
     const handleSubmitApplication = (app: LoanApplication) => {
-        if (!app.can_submit) return;
-        if (confirm(`ঋণ আবেদন ${app.application_no} শাখা ব্যবস্থাপকের কাছে জমা দিতে চান?`)) {
-            router.patch(`/member/loan-applications/${app.id}/submit`, {}, keepListFilters);
+        if (!confirm(`ঋণ আবেদন ${app.application_no} শাখা ব্যবস্থাপকের কাছে জমা দিতে চান?`)) {
+            return;
         }
+        router.patch(`/member/loan-applications/${app.id}/submit`, {}, {
+            ...keepListFilters,
+            onError: (errs) => {
+                const msg = errs?.error || (typeof errs === 'string' ? errs : Object.values(errs || {})[0]);
+                if (msg) {
+                    alert(msg);
+                    setErrorMessage(msg);
+                }
+            },
+        });
     };
 
     const canChangeApprovedAmount = (app: LoanApplication) =>
@@ -415,6 +424,7 @@ export default function Index({
     };
     const [selectedProduct, setSelectedProduct] = useState<number | null>(null);
     const [showSuccessMessage, setShowSuccessMessage] = useState(!!flash?.success);
+    const [errorMessage, setErrorMessage] = useState<string | null>(flash?.error || null);
     const [selectedIssue, setSelectedIssue] = useState<{ applicationId: number; issueId: number } | null>(null);
     const [showResolveModal, setShowResolveModal] = useState(false);
     const [showRejectModal, setShowRejectModal] = useState(false);
@@ -442,6 +452,12 @@ export default function Index({
             return () => clearTimeout(timer);
         }
     }, [flash?.success]);
+
+    useEffect(() => {
+        if (flash?.error) {
+            setErrorMessage(flash.error);
+        }
+    }, [flash?.error]);
     const [products, setProducts] = useState<LoanProduct[]>([]);
 
     // Modal search states
@@ -1030,6 +1046,22 @@ export default function Index({
                     </div>
                 )}
 
+                {/* Flash Error Message */}
+                {errorMessage && (
+                    <div className="bg-red-50 border-2 border-red-300 rounded-xl p-3.5 flex items-start gap-2.5 shadow-sm text-xs text-red-900">
+                        <AlertCircle className="w-5 h-5 text-red-600 flex-shrink-0 mt-0.5" />
+                        <div className="flex-1">
+                            <p className="font-bold text-red-950 whitespace-pre-line">{errorMessage}</p>
+                        </div>
+                        <button
+                            onClick={() => setErrorMessage(null)}
+                            className="text-red-600 hover:text-red-800"
+                        >
+                            <X className="w-4 h-4" />
+                        </button>
+                    </div>
+                )}
+
                 {/* ── 1. SLIM PROFESSIONAL HEADER & TIMING WARNING ───────────────────── */}
                 <div className="space-y-2.5 print:hidden">
                     {/* Compact Top Action Bar */}
@@ -1463,7 +1495,7 @@ export default function Index({
                                                     <span>ফর্ম</span>
                                                 </button>
                                             )}
-                                            {app.status === 'draft' && app.can_submit && (
+                                            {app.status === 'draft' && (
                                                 <button
                                                     onClick={() => handleSubmitApplication(app)}
                                                     className="inline-flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold text-white bg-emerald-600 hover:bg-emerald-700 border border-emerald-700 transition active:scale-95"
@@ -1745,16 +1777,14 @@ export default function Index({
                                                             )}
                                                             {app.status === 'draft' && (
                                                                 <>
-                                                                    {app.can_submit && (
-                                                                        <button
-                                                                            onClick={() => handleSubmitApplication(app)}
-                                                                            className="inline-flex items-center gap-1 text-xs px-2.5 py-1 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-xl shadow-sm transition active:scale-95"
-                                                                            title=" শাখা ব্যবস্থাপকের কাছে জমা দিন"
-                                                                        >
-                                                                            <Send className="w-3 h-3" />
-                                                                            <span>সাবমিট</span>
-                                                                        </button>
-                                                                    )}
+                                                                    <button
+                                                                        onClick={() => handleSubmitApplication(app)}
+                                                                        className="inline-flex items-center gap-1 text-xs px-2.5 py-1 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-xl shadow-sm transition active:scale-95"
+                                                                        title="শাখা ব্যবস্থাপকের কাছে জমা দিন"
+                                                                    >
+                                                                        <Send className="w-3 h-3" />
+                                                                        <span>সাবমিট</span>
+                                                                    </button>
                                                                     <button
                                                                         onClick={() => router.get(`/member/loan-applications/${app.id}`)}
                                                                         className="p-1.5 text-amber-700 hover:bg-amber-50 rounded-xl transition"

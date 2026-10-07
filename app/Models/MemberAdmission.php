@@ -153,9 +153,9 @@ class MemberAdmission extends Model
 
     protected $casts = [
         'previous_admission_id' => 'integer',
-        'survey_date' => 'date',
-        'admission_date' => 'date',
-        'date_of_birth' => 'date',
+        'survey_date' => 'date:Y-m-d',
+        'admission_date' => 'date:Y-m-d',
+        'date_of_birth' => 'date:Y-m-d',
         'permanent_address_same' => 'boolean',
         'want_sms_service' => 'boolean',
         'nid_both_sides' => 'boolean',

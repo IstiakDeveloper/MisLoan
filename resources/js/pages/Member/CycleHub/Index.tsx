@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Head, Link, router } from '@inertiajs/react';
 import AdminLayout from '@/layouts/admin-layout';
+import { todayIsoDate } from '@/utils/dateUtils';
 import {
     Search,
     User,
@@ -227,7 +228,7 @@ export default function Index({
     // Repay modal state
     const [showRepayModal, setShowRepayModal] = useState(false);
     const [repayingLoanId, setRepayingLoanId] = useState<number | null>(null);
-    const [repayDate, setRepayDate] = useState<string>(new Date().toISOString().split('T')[0]);
+    const [repayDate, setRepayDate] = useState<string>(todayIsoDate());
     const [repayNotes, setRepayNotes] = useState<string>('');
     const [isSubmittingRepay, setIsSubmittingRepay] = useState(false);
 
@@ -304,7 +305,7 @@ export default function Index({
 
     const openRepayModal = (loanId: number) => {
         setRepayingLoanId(loanId);
-        setRepayDate(new Date().toISOString().split('T')[0]);
+        setRepayDate(todayIsoDate());
         setRepayNotes('');
         setShowRepayModal(true);
     };

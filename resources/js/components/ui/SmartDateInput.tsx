@@ -38,11 +38,51 @@ export function toEnglishDigits(value: string): string {
 }
 
 /**
- * Convert YYYY-MM-DD → DD/MM/YYYY for display.
+ * Convert ISO / YYYY-MM-DD → DD/MM/YYYY for display in Bangladesh.
  */
-function isoToDisplay(iso: string | null | undefined): string {
+export function isoToDisplay(iso: string | null | undefined): string {
     if (!iso || iso === '0000-00-00') return '';
-    const clean = iso.split('T')[0].split(' ')[0];
+    const str = String(iso).trim();
+    if (!str) return '';
+
+    // If already in DD/MM/YYYY format
+    if (/^\d{1,2}\/\d{1,2}\/\d{4}$/.test(str)) {
+        const [d, m, y] = str.split('/');
+        return `${d.padStart(2, '0')}/${m.padStart(2, '0')}/${y}`;
+    }
+
+    // Pure date YYYY-MM-DD (immune to any timezone conversion)
+    const pureMatch = /^(\d{4})-(\d{1,2})-(\d{1,2})$/.exec(str);
+    if (pureMatch) {
+        const [, year, month, day] = pureMatch;
+        return `${day.padStart(2, '0')}/${month.padStart(2, '0')}/${year}`;
+    }
+
+    // If it has a time component or UTC timezone (e.g. 1992-07-16T18:00:00.000000Z),
+    // strictly evaluate it in Asia/Dhaka wall clock time
+    try {
+        const normalized = str.replace(/\.(\d{3})\d+/, '.$1');
+        const d = new Date(normalized);
+        if (!Number.isNaN(d.getTime())) {
+            const parts = new Intl.DateTimeFormat('en-GB', {
+                timeZone: 'Asia/Dhaka',
+                day: '2-digit',
+                month: '2-digit',
+                year: 'numeric',
+            }).formatToParts(d);
+            const get = (type: Intl.DateTimeFormatPartTypes) => parts.find((p) => p.type === type)?.value ?? '';
+            const day = get('day');
+            const month = get('month');
+            const year = get('year');
+            if (day && month && year) {
+                return `${day}/${month}/${year}`;
+            }
+        }
+    } catch {
+        // Fallback
+    }
+
+    const clean = str.split('T')[0].split(' ')[0];
     const parts = clean.split('-');
     if (parts.length === 3) {
         const [year, month, day] = parts;
@@ -285,7 +325,12 @@ export function SmartDateInput({
         }
     };
 
-    const currentIsoForPicker = value && value.length === 10 ? value : '';
+    const currentParts = parseDateParts(displayVal);
+    const currentIsoForPicker = currentParts
+        ? toISO(currentParts)
+        : value && /^\d{4}-\d{2}-\d{2}$/.test(value)
+        ? value
+        : '';
     const hasError = Boolean(error || internalError);
     const errorMessage = typeof error === 'string' ? error : internalError;
 

@@ -3,7 +3,7 @@ import { FormPageProps } from './Types';
 import { toLocalDateTimeInput } from './index';
 import { Briefcase, Plane, ShieldAlert, Target, Users, CheckCircle2, MessageSquareText } from 'lucide-react';
 
-export default function FormPage4({ data, setData }: FormPageProps) {
+export default function FormPage4({ data, setData, errors = {} }: FormPageProps) {
     const projectName = data.project_name || data.proposed_project_name || '';
     const hasEmployeeSectionInput = [
         data.employee_workplace_name,
@@ -45,6 +45,7 @@ export default function FormPage4({ data, setData }: FormPageProps) {
     const inputClass = 'w-full border border-gray-300 rounded-lg px-3 py-2 text-xs md:text-sm bg-white focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition-all';
     const readOnlyClass = 'w-full border border-gray-200 rounded-lg px-3 py-2 text-xs md:text-sm bg-gray-100/90 text-gray-700 font-medium cursor-not-allowed';
     const textareaClass = 'w-full border border-gray-300 rounded-lg p-3 text-xs md:text-sm bg-white focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition-all';
+    const errorTextareaClass = 'w-full border-2 border-red-500 rounded-lg p-3 text-xs md:text-sm bg-red-50/50 text-gray-900 focus:ring-2 focus:ring-red-500 focus:border-red-500 transition-all';
 
     return (
         <div id="form-page-4" data-sync="page-4" className="space-y-5">
@@ -287,11 +288,22 @@ export default function FormPage4({ data, setData }: FormPageProps) {
                 
                 <div className="space-y-3.5">
                     <p className="text-[11px] text-indigo-700/80 bg-indigo-50 border border-indigo-100 rounded-lg px-3 py-2">
-                        এই অংশ ফিল্ড অফিসার বা শাখা ব্যবহারকারী পূরণ করবেন না। অনুমোদনের সময় সংশ্লিষ্ট অনুমোদনকারীর মন্তব্য ও অনুমোদিত তথ্য এখানে স্বয়ংক্রিয়ভাবে আসবে।
+                        ফিল্ড অফিসারকে &lsquo;অফিসারের পরিদর্শনোত্তর মন্তব্য&rsquo; অবশ্যই পূরণ করতে হবে। বাকি শাখা ব্যবস্থাপক ও উচ্চতর অনুমোদনকারীর মন্তব্য অনুমোদনের সময় প্রদান করবেন।
                     </p>
                     <div className="bg-gray-50/70 p-3.5 rounded-xl border border-gray-200">
-                        <label className="block text-xs font-semibold text-gray-700 mb-1">অফিসারের পরিদর্শনোত্তর মন্তব্য</label>
-                        <textarea value={data.officer_post_inspection_comments || ''} onChange={(e) => setData('officer_post_inspection_comments', e.target.value)} className={textareaClass} rows={2} placeholder="অফিসারের পরিদর্শনোত্তর মন্তব্য লিখুন..." />
+                        <label className="block text-xs font-semibold text-gray-700 mb-1">
+                            অফিসারের পরিদর্শনোত্তর মন্তব্য <span className="text-red-500 font-bold">*</span>
+                        </label>
+                        <textarea
+                            value={data.officer_post_inspection_comments || ''}
+                            onChange={(e) => setData('officer_post_inspection_comments', e.target.value)}
+                            className={errors?.officer_post_inspection_comments ? errorTextareaClass : textareaClass}
+                            rows={3}
+                            placeholder="অফিসারের পরিদর্শনোত্তর মন্তব্য লিখুন (বাধ্যতামূলক)..."
+                        />
+                        {errors?.officer_post_inspection_comments && (
+                            <p className="mt-1 text-xs text-red-600 font-medium">{errors.officer_post_inspection_comments}</p>
+                        )}
                     </div>
 
                     <div className="bg-gray-50/70 p-3.5 rounded-xl border border-gray-200">

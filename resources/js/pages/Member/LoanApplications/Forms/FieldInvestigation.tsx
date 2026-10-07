@@ -291,6 +291,9 @@ function renderFieldInvestigationPreviewContent(formData: any) {
                                         <div className="space-y-0.5">
                                             <div className="flex gap-2 items-center"><span className="border border-gray-600 w-3.5 h-3.5 inline-flex items-center justify-center text-[11px]">{d.previous_repayment_type === 'installment' ? '✓' : ''}</span><span>কিস্তিতে পরিশোধ করেছেন</span></div>
                                             <div className="flex gap-2 items-center"><span className="border border-gray-600 w-3.5 h-3.5 inline-flex items-center justify-center text-[11px]">{d.previous_repayment_type === 'savings_adjustment' ? '✓' : ''}</span><span>সঞ্চয়ের সাথে সমন্বয় করেছেন</span></div>
+                                            {d.previous_repayment_type === 'not_applicable' && (
+                                                <div className="text-[10px] text-gray-700 italic">নতুন সদস্য / প্রযোজ্য নয়</div>
+                                            )}
                                         </div>
                                     </td>
                                 </tr>
@@ -501,6 +504,17 @@ export default function FieldInvestigation({
     const [showPreview, setShowPreview] = useState(true);
     const [errors, setErrors] = useState<Record<string, string>>({});
 
+    const getInputClass = (fieldName?: string) => {
+        const base = 'w-full border rounded-lg px-2.5 py-1.5 text-xs focus:ring-2 transition-all';
+        if (fieldName && errors[fieldName]) {
+            return `${base} border-red-500 bg-red-50/40 text-red-900 focus:ring-red-400 focus:border-red-500`;
+        }
+        return `${base} border-gray-300 bg-white focus:ring-indigo-500 focus:border-indigo-500`;
+    };
+    const renderError = (fieldName: string) => {
+        if (!errors[fieldName]) return null;
+        return <p className="text-[10px] text-red-600 font-semibold mt-0.5">{errors[fieldName]}</p>;
+    };
     const inputClass = 'w-full border border-gray-300 rounded-lg px-2.5 py-1.5 text-xs bg-white focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition-all';
     const labelClass = 'block text-[11px] font-semibold text-gray-700 mb-0.5';
     const sectionClass = 'bg-white rounded-xl shadow-sm p-4 border border-gray-200 space-y-3';
@@ -599,19 +613,136 @@ export default function FieldInvestigation({
         const minSavings = Math.ceil((requestedAmount * requiredPercent) / 100);
         const generalAmount = Number(data.general_savings_amount) || 0;
 
-        // Soft draft: savings minimum only blocks when resuming approval; otherwise warn
-        if (generalAmount < minSavings) {
-            const msg = `সাধারণ সঞ্চয় সর্বনিম্ন ${requiredPercent}% (৳${minSavings.toLocaleString('bn-BD')}) থাকা উচিত।`;
-            if (resumeApprovalId) {
-                setErrors({ general_savings_amount: msg });
-                return;
-            }
-            const ok = confirm(`${msg}\nতবুও খসড়া সেভ করবেন? পরে সংশোধন করতে পারবেন।`);
-            if (!ok) {
-                setErrors({ general_savings_amount: msg });
-                return;
-            }
+        const newErrors: Record<string, string> = {};
+        const missingList: string[] = [];
+
+        // ১. শাখা সংক্রান্ত তথ্য
+        if (!String(data.branch_name || '').trim()) {
+            newErrors.branch_name = 'শাখার নাম পূরণ করা আবশ্যক';
+            missingList.push('শাখার নাম');
         }
+        if (!String(data.branch_address || '').trim()) {
+            newErrors.branch_address = 'শাখার ঠিকানা পূরণ করা আবশ্যক';
+            missingList.push('শাখার ঠিকানা');
+        }
+
+        // ২. সদস্য ও তথ্য প্রদানকারী তথ্য
+        if (!String(data.member_name || '').trim()) {
+            newErrors.member_name = 'সদস্যের নাম পূরণ করা আবশ্যক';
+            missingList.push('সদস্যের নাম');
+        }
+        if (!String(data.member_no || '').trim()) {
+            newErrors.member_no = 'সদস্য নং পূরণ করা আবশ্যক';
+            missingList.push('সদস্য নং');
+        }
+        if (!String(data.samity_name || '').trim()) {
+            newErrors.samity_name = 'সমিতির নাম পূরণ করা আবশ্যক';
+            missingList.push('সমিতির নাম');
+        }
+        if (!String(data.samity_code || '').trim()) {
+            newErrors.samity_code = 'সমিতি কোড পূরণ করা আবশ্যক';
+            missingList.push('সমিতি কোড');
+        }
+        if (!String(data.nid_number || '').trim()) {
+            newErrors.nid_number = 'জাতীয় পরিচয়পত্র / স্মার্ট কার্ড নং পূরণ করা আবশ্যক';
+            missingList.push('জাতীয় পরিচয়পত্র / স্মার্ট কার্ড নং');
+        }
+        if (!String(data.member_mobile || '').trim()) {
+            newErrors.member_mobile = 'সদস্যের মোবাইল নং পূরণ করা আবশ্যক';
+            missingList.push('সদস্যের মোবাইল নং');
+        }
+        if (!String(data.information_provider_name || '').trim()) {
+            newErrors.information_provider_name = 'তথ্য প্রদানকারীর নাম পূরণ করা আবশ্যক';
+            missingList.push('তথ্য প্রদানকারীর নাম');
+        }
+        if (!String(data.information_provider_mobile || '').trim()) {
+            newErrors.information_provider_mobile = 'তথ্য প্রদানকারীর মোবাইল নং পূরণ করা আবশ্যক';
+            missingList.push('তথ্য প্রদানকারীর মোবাইল নং');
+        }
+        if (!String(data.relationship_with_member || '').trim()) {
+            newErrors.relationship_with_member = 'সদস্যের সাথে সম্পর্ক পূরণ করা আবশ্যক';
+            missingList.push('সদস্যের সাথে সম্পর্ক');
+        }
+
+        // ৩. তদন্ত তথ্য (১-১৩)
+        if (!String(data.main_profession || '').trim()) {
+            newErrors.main_profession = 'মূল পেশা পূরণ করা আবশ্যক';
+            missingList.push('১. মূল পেশা');
+        }
+        if (!data.family_members_count || Number(data.family_members_count) <= 0) {
+            newErrors.family_members_count = 'পরিবারের লোক সংখ্যা ১ বা তার বেশি হতে হবে';
+            missingList.push('১. পরিবারের লোক সংখ্যা');
+        }
+        if (data.earning_members_count === undefined || data.earning_members_count === null || isNaN(Number(data.earning_members_count)) || Number(data.earning_members_count) < 0) {
+            newErrors.earning_members_count = 'উপার্জনকারী সংখ্যা পূরণ করা আবশ্যক';
+            missingList.push('১. উপার্জনকারী সংখ্যা');
+        }
+        if (!data.current_loan_demand || Number(data.current_loan_demand) <= 0) {
+            newErrors.current_loan_demand = 'বর্তমান ঋণের চাহিদা পূরণ করা আবশ্যক';
+            missingList.push('২. বর্তমান ঋণের চাহিদা');
+        }
+        if (!String(data.own_land_amount || '').trim()) {
+            newErrors.own_land_amount = 'নিজস্ব জমির পরিমাণ পূরণ করা আবশ্যক';
+            missingList.push('৩. নিজস্ব জমির পরিমাণ');
+        }
+        if (!String(data.mortgaged_land_amount || '').trim()) {
+            newErrors.mortgaged_land_amount = 'বন্ধকী জমির পরিমাণ পূরণ করা আবশ্যক (না থাকলে "০" বা "নেই" লিখুন)';
+            missingList.push('৩. বন্ধকী জমির পরিমাণ');
+        }
+        if (data.land_value === undefined || data.land_value === null || isNaN(Number(data.land_value)) || Number(data.land_value) < 0) {
+            newErrors.land_value = 'জমির মূল্য পূরণ করা আবশ্যক';
+            missingList.push('৩. জমির মূল্য');
+        }
+        if (!String(data.house_type || '').trim()) {
+            newErrors.house_type = 'বাড়ীর ধরণ পূরণ করা আবশ্যক';
+            missingList.push('৪. বাড়ীর ধরণ');
+        }
+        if (!data.room_count || Number(data.room_count) <= 0) {
+            newErrors.room_count = 'ঘরের সংখ্যা ১ বা তার বেশি হতে হবে';
+            missingList.push('৪. ঘরের সংখ্যা');
+        }
+        if (generalAmount <= 0) {
+            const msg = `সাধারণ সঞ্চয় সর্বনিম্ন ${requiredPercent}% (৳${minSavings.toLocaleString('bn-BD')}) আবশ্যক`;
+            newErrors.general_savings_amount = msg;
+            missingList.push('৮. ' + msg);
+        } else if (generalAmount < minSavings) {
+            const msg = `সাধারণ সঞ্চয় সর্বনিম্ন ${requiredPercent}% (৳${minSavings.toLocaleString('bn-BD')}) থাকা আবশ্যক`;
+            newErrors.general_savings_amount = msg;
+            missingList.push('৮. ' + msg);
+        }
+        if (!String(data.house_identification || '').trim()) {
+            newErrors.house_identification = 'সদস্যের বাড়ী চেনার নির্দেশনা পূরণ করা আবশ্যক';
+            missingList.push('৯. সদস্যের বাড়ী চেনার নির্দেশনা');
+        }
+        if (!String(data.other_organization_loans || '').trim()) {
+            newErrors.other_organization_loans = 'অন্যান্য সংস্থা হতে ঋণ গ্রহণের তথ্য পূরণ করা আবশ্যক (না থাকলে "নেই" লিখুন)';
+            missingList.push('১০. অন্যান্য সংস্থা হতে ঋণ গ্রহণের তথ্য');
+        }
+        if (!String(data.previous_repayment_type || '').trim()) {
+            newErrors.previous_repayment_type = 'বিগত দফার পরিশোধের ধরণ নির্বাচন করা আবশ্যক';
+            missingList.push('১১. বিগত দফার পরিশোধের ধরণ');
+        }
+
+        // তারিখ ও মন্তব্য
+        if (!String(data.field_visit_date || '').trim()) {
+            newErrors.field_visit_date = 'সরেজমিনে পরিদর্শনের তারিখ নির্বাচন করা আবশ্যক';
+            missingList.push('সরেজমিনে পরিদর্শনের তারিখ');
+        }
+        if (!String(data.loan_disbursement_date || '').trim()) {
+            newErrors.loan_disbursement_date = 'ঋণ প্রদানের তারিখ নির্বাচন করা আবশ্যক';
+            missingList.push('ঋণ প্রদানের তারিখ');
+        }
+        if (!String(data.comments || '').trim()) {
+            newErrors.comments = 'শাখা ব্যবস্থাপকের মন্তব্য লেখা আবশ্যক';
+            missingList.push('শাখা ব্যবস্থাপকের মন্তব্য');
+        }
+
+        if (missingList.length > 0) {
+            setErrors(newErrors);
+            alert(`সরেজমিনে তদন্ত প্রতিবেদনে নিচের তথ্যগুলো ফাঁকা রাখা যাবে না, পূরণ করা বাধ্যতামূলক:\n\n• ${missingList.join('\n• ')}`);
+            return;
+        }
+
         setErrors({});
         const payload: any = { loan_product_id: loanProduct.id, loan_category_id: loanCategory.id, requested_amount: requestedAmount, form_data: { ...data } as any, draft: 1 };
         if (isLegacy) payload.legacy = 1; else payload.member_id = member?.id;
@@ -768,12 +899,18 @@ export default function FieldInvestigation({
                                 <h3 className="text-sm font-bold text-gray-800 border-b pb-2">শাখার তথ্য (প্রিভিউ হেডার)</h3>
                                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                                     <div>
-                                        <label className={labelClass}>শাখার নাম</label>
-                                        <input type="text" value={data.branch_name} onChange={(e) => setData('branch_name', e.target.value)} className={inputClass} />
+                                        <label className={labelClass}>
+                                            শাখার নাম <span className="text-red-500 font-bold">*</span>
+                                        </label>
+                                        <input type="text" value={data.branch_name} onChange={(e) => setData('branch_name', e.target.value)} className={getInputClass('branch_name')} placeholder="শাখার নাম" />
+                                        {renderError('branch_name')}
                                     </div>
                                     <div>
-                                        <label className={labelClass}>শাখার ঠিকানা (প্রিভিউতে দেখায়)</label>
-                                        <input type="text" value={data.branch_address} onChange={(e) => setData('branch_address', e.target.value)} className={inputClass} />
+                                        <label className={labelClass}>
+                                            শাখার ঠিকানা (প্রিভিউতে দেখায়) <span className="text-red-500 font-bold">*</span>
+                                        </label>
+                                        <input type="text" value={data.branch_address} onChange={(e) => setData('branch_address', e.target.value)} className={getInputClass('branch_address')} placeholder="শাখার ঠিকানা" />
+                                        {renderError('branch_address')}
                                     </div>
                                 </div>
                             </div>
@@ -783,40 +920,67 @@ export default function FieldInvestigation({
                                 <h3 className="text-sm font-bold text-gray-800 border-b pb-2">সদস্য ও তথ্য প্রদানকারীর তথ্য</h3>
                                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                                     <div>
-                                        <label className={labelClass}>সদস্য নাম</label>
-                                        <input type="text" value={data.member_name} onChange={(e) => setData('member_name', e.target.value)} className={inputClass} />
+                                        <label className={labelClass}>
+                                            সদস্য নাম <span className="text-red-500 font-bold">*</span>
+                                        </label>
+                                        <input type="text" value={data.member_name} onChange={(e) => setData('member_name', e.target.value)} className={getInputClass('member_name')} placeholder="সদস্যের নাম" />
+                                        {renderError('member_name')}
                                     </div>
                                     <div>
-                                        <label className={labelClass}>সদস্য নং</label>
-                                        <input type="text" value={data.member_no} onChange={(e) => setData('member_no', e.target.value)} className={inputClass} />
+                                        <label className={labelClass}>
+                                            সদস্য নং <span className="text-red-500 font-bold">*</span>
+                                        </label>
+                                        <input type="text" value={data.member_no} onChange={(e) => setData('member_no', e.target.value)} className={getInputClass('member_no')} placeholder="সদস্য কোড / আবেদন নং" />
+                                        {renderError('member_no')}
                                     </div>
                                     <div>
-                                        <label className={labelClass}>সমিতির নাম</label>
-                                        <input type="text" value={data.samity_name} onChange={(e) => setData('samity_name', e.target.value)} className={inputClass} />
+                                        <label className={labelClass}>
+                                            সমিতির নাম <span className="text-red-500 font-bold">*</span>
+                                        </label>
+                                        <input type="text" value={data.samity_name} onChange={(e) => setData('samity_name', e.target.value)} className={getInputClass('samity_name')} placeholder="সমিতির নাম" />
+                                        {renderError('samity_name')}
                                     </div>
                                     <div>
-                                        <label className={labelClass}>সমিতি কোড নং</label>
-                                        <input type="text" value={data.samity_code} onChange={(e) => setData('samity_code', e.target.value)} className={inputClass} />
+                                        <label className={labelClass}>
+                                            সমিতি কোড নং <span className="text-red-500 font-bold">*</span>
+                                        </label>
+                                        <input type="text" value={data.samity_code} onChange={(e) => setData('samity_code', e.target.value)} className={getInputClass('samity_code')} placeholder="সমিতি কোড" />
+                                        {renderError('samity_code')}
                                     </div>
                                     <div>
-                                        <label className={labelClass}>জাতীয় পরিচয়পত্র / স্মার্ট কার্ড নং</label>
-                                        <input type="text" value={data.nid_number} onChange={(e) => setData('nid_number', e.target.value)} className={inputClass} />
+                                        <label className={labelClass}>
+                                            জাতীয় পরিচয়পত্র / স্মার্ট কার্ড নং <span className="text-red-500 font-bold">*</span>
+                                        </label>
+                                        <input type="text" value={data.nid_number} onChange={(e) => setData('nid_number', e.target.value)} className={getInputClass('nid_number')} placeholder="জাতীয় পরিচয়পত্র / স্মার্ট কার্ড নং" />
+                                        {renderError('nid_number')}
                                     </div>
                                     <div>
-                                        <label className={labelClass}>সদস্যের মোবাইল নং</label>
-                                        <input type="text" value={data.member_mobile} onChange={(e) => setData('member_mobile', e.target.value)} className={inputClass} />
+                                        <label className={labelClass}>
+                                            সদস্যের মোবাইল নং <span className="text-red-500 font-bold">*</span>
+                                        </label>
+                                        <input type="text" value={data.member_mobile} onChange={(e) => setData('member_mobile', e.target.value)} className={getInputClass('member_mobile')} placeholder="মোবাইল নম্বর" />
+                                        {renderError('member_mobile')}
                                     </div>
                                     <div>
-                                        <label className={labelClass}>তথ্য প্রদানকারীর নাম</label>
-                                        <input type="text" value={data.information_provider_name} onChange={(e) => setData('information_provider_name', e.target.value)} className={inputClass} />
+                                        <label className={labelClass}>
+                                            তথ্য প্রদানকারীর নাম <span className="text-red-500 font-bold">*</span>
+                                        </label>
+                                        <input type="text" value={data.information_provider_name} onChange={(e) => setData('information_provider_name', e.target.value)} className={getInputClass('information_provider_name')} placeholder="তথ্য প্রদানকারীর নাম লিখুন" />
+                                        {renderError('information_provider_name')}
                                     </div>
                                     <div>
-                                        <label className={labelClass}>তথ্য প্রদানকারীর মোবাইল নং</label>
-                                        <input type="text" value={data.information_provider_mobile} onChange={(e) => setData('information_provider_mobile', e.target.value)} className={inputClass} />
+                                        <label className={labelClass}>
+                                            তথ্য প্রদানকারীর মোবাইল নং <span className="text-red-500 font-bold">*</span>
+                                        </label>
+                                        <input type="text" value={data.information_provider_mobile} onChange={(e) => setData('information_provider_mobile', e.target.value)} className={getInputClass('information_provider_mobile')} placeholder="তথ্য প্রদানকারীর মোবাইল নং" />
+                                        {renderError('information_provider_mobile')}
                                     </div>
                                     <div className="sm:col-span-2">
-                                        <label className={labelClass}>সদস্যের সাথে সম্পর্ক</label>
-                                        <input type="text" value={data.relationship_with_member} onChange={(e) => setData('relationship_with_member', e.target.value)} className={inputClass} />
+                                        <label className={labelClass}>
+                                            সদস্যের সাথে সম্পর্ক <span className="text-red-500 font-bold">*</span>
+                                        </label>
+                                        <input type="text" value={data.relationship_with_member} onChange={(e) => setData('relationship_with_member', e.target.value)} className={getInputClass('relationship_with_member')} placeholder="সদস্যের সাথে সম্পর্ক (যেমন: স্বামী, পিতা, ইত্যাদি)" />
+                                        {renderError('relationship_with_member')}
                                     </div>
                                 </div>
                             </div>
@@ -829,20 +993,31 @@ export default function FieldInvestigation({
                                     <div className="p-3 bg-gray-50 rounded-lg border border-gray-200 space-y-2">
                                         <div className="flex items-start gap-2">
                                             {rowBadge('১')}
-                                            <p className="text-[11px] font-semibold text-gray-700 flex-1">মূল পেশা, পরিবারের লোক সংখ্যা ও উপার্জনকারী সংখ্যা</p>
+                                            <p className="text-[11px] font-semibold text-gray-700 flex-1">
+                                                মূল পেশা, পরিবারের লোক সংখ্যা ও উপার্জনকারী সংখ্যা <span className="text-red-500 font-bold">*</span>
+                                            </p>
                                         </div>
                                         <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 pl-7">
                                             <div>
-                                                <label className={labelClass}>পেশা</label>
-                                                <input type="text" value={data.main_profession} onChange={(e) => setData('main_profession', e.target.value)} className={inputClass} />
+                                                <label className={labelClass}>
+                                                    পেশা <span className="text-red-500 font-bold">*</span>
+                                                </label>
+                                                <input type="text" value={data.main_profession} onChange={(e) => setData('main_profession', e.target.value)} className={getInputClass('main_profession')} placeholder="যেমন: ব্যবসা / চাকরি" />
+                                                {renderError('main_profession')}
                                             </div>
                                             <div>
-                                                <label className={labelClass}>লোক সংখ্যা</label>
-                                                <input type="number" min={0} value={data.family_members_count || ''} onChange={(e) => setData('family_members_count', parseInt(e.target.value) || 0)} className={inputClass} />
+                                                <label className={labelClass}>
+                                                    লোক সংখ্যা <span className="text-red-500 font-bold">*</span>
+                                                </label>
+                                                <input type="number" min={1} value={data.family_members_count || ''} onChange={(e) => setData('family_members_count', parseInt(e.target.value) || 0)} className={getInputClass('family_members_count')} placeholder="পরিবারের সদস্য সংখ্যা" />
+                                                {renderError('family_members_count')}
                                             </div>
                                             <div>
-                                                <label className={labelClass}>উপার্জনকারী</label>
-                                                <input type="number" min={0} value={data.earning_members_count || ''} onChange={(e) => setData('earning_members_count', parseInt(e.target.value) || 0)} className={inputClass} />
+                                                <label className={labelClass}>
+                                                    উপার্জনকারী <span className="text-red-500 font-bold">*</span>
+                                                </label>
+                                                <input type="number" min={0} value={data.earning_members_count !== undefined && data.earning_members_count !== null ? data.earning_members_count : ''} onChange={(e) => setData('earning_members_count', e.target.value === '' ? ('' as any) : (parseInt(e.target.value) || 0))} className={getInputClass('earning_members_count')} placeholder="উপার্জনকারী সংখ্যা" />
+                                                {renderError('earning_members_count')}
                                             </div>
                                         </div>
                                     </div>
@@ -851,16 +1026,22 @@ export default function FieldInvestigation({
                                     <div className="p-3 bg-gray-50 rounded-lg border border-gray-200 space-y-2">
                                         <div className="flex items-start gap-2">
                                             {rowBadge('২')}
-                                            <p className="text-[11px] font-semibold text-gray-700 flex-1">বিগত দফায় পরিশোধিত ঋণের পরিমাণ ও বর্তমান ঋণের চাহিদা</p>
+                                            <p className="text-[11px] font-semibold text-gray-700 flex-1">
+                                                বিগত দফায় পরিশোধিত ঋণের পরিমাণ ও বর্তমান ঋণের চাহিদা <span className="text-red-500 font-bold">*</span>
+                                            </p>
                                         </div>
                                         <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 pl-7">
                                             <div>
                                                 <label className={labelClass}>পরিশোধিত (৳)</label>
-                                                <input type="number" min={0} value={data.previous_loan_amount || ''} onChange={(e) => setData('previous_loan_amount', parseFloat(e.target.value) || 0)} className={inputClass} />
+                                                <input type="number" min={0} value={data.previous_loan_amount !== undefined && data.previous_loan_amount !== null ? data.previous_loan_amount : ''} onChange={(e) => setData('previous_loan_amount', e.target.value === '' ? ('' as any) : (parseFloat(e.target.value) || 0))} className={getInputClass('previous_loan_amount')} placeholder="বিগত দফায় পরিশোধিত ঋণ" />
+                                                {renderError('previous_loan_amount')}
                                             </div>
                                             <div>
-                                                <label className={labelClass}>বর্তমান চাহিদা (৳)</label>
-                                                <input type="number" min={0} value={data.current_loan_demand || ''} onChange={(e) => setData('current_loan_demand', parseFloat(e.target.value) || 0)} className={inputClass} />
+                                                <label className={labelClass}>
+                                                    বর্তমান চাহিদা (৳) <span className="text-red-500 font-bold">*</span>
+                                                </label>
+                                                <input type="number" min={1} value={data.current_loan_demand || ''} onChange={(e) => setData('current_loan_demand', parseFloat(e.target.value) || 0)} className={getInputClass('current_loan_demand')} placeholder="বর্তমান চাহিদাকৃত ঋণ" />
+                                                {renderError('current_loan_demand')}
                                             </div>
                                         </div>
                                     </div>
@@ -869,20 +1050,31 @@ export default function FieldInvestigation({
                                     <div className="p-3 bg-gray-50 rounded-lg border border-gray-200 space-y-2">
                                         <div className="flex items-start gap-2">
                                             {rowBadge('৩')}
-                                            <p className="text-[11px] font-semibold text-gray-700 flex-1">নিজস্ব জমির পরিমাণ ও বন্ধকী জমির পরিমান এবং মূল্য</p>
+                                            <p className="text-[11px] font-semibold text-gray-700 flex-1">
+                                                নিজস্ব জমির পরিমাণ ও বন্ধকী জমির পরিমান এবং মূল্য <span className="text-red-500 font-bold">*</span>
+                                            </p>
                                         </div>
                                         <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 pl-7">
                                             <div>
-                                                <label className={labelClass}>নিজস্ব</label>
-                                                <input type="text" value={data.own_land_amount} onChange={(e) => setData('own_land_amount', e.target.value)} className={inputClass} />
+                                                <label className={labelClass}>
+                                                    নিজস্ব <span className="text-red-500 font-bold">*</span>
+                                                </label>
+                                                <input type="text" value={data.own_land_amount} onChange={(e) => setData('own_land_amount', e.target.value)} className={getInputClass('own_land_amount')} placeholder="যেমন: ০ বা ১০ শতক" />
+                                                {renderError('own_land_amount')}
                                             </div>
                                             <div>
-                                                <label className={labelClass}>বন্ধকী</label>
-                                                <input type="text" value={data.mortgaged_land_amount} onChange={(e) => setData('mortgaged_land_amount', e.target.value)} className={inputClass} />
+                                                <label className={labelClass}>
+                                                    বন্ধকী <span className="text-red-500 font-bold">*</span>
+                                                </label>
+                                                <input type="text" value={data.mortgaged_land_amount} onChange={(e) => setData('mortgaged_land_amount', e.target.value)} className={getInputClass('mortgaged_land_amount')} placeholder="যেমন: ০ বা নেই বা পরিমাণ" />
+                                                {renderError('mortgaged_land_amount')}
                                             </div>
                                             <div>
-                                                <label className={labelClass}>মূল্য (৳)</label>
-                                                <input type="number" min={0} value={data.land_value || ''} onChange={(e) => setData('land_value', parseFloat(e.target.value) || 0)} className={inputClass} />
+                                                <label className={labelClass}>
+                                                    মূল্য (৳) <span className="text-red-500 font-bold">*</span>
+                                                </label>
+                                                <input type="number" min={0} value={data.land_value !== undefined && data.land_value !== null ? data.land_value : ''} onChange={(e) => setData('land_value', e.target.value === '' ? ('' as any) : (parseFloat(e.target.value) || 0))} className={getInputClass('land_value')} placeholder="জমির মোট আনুমানিক মূল্য" />
+                                                {renderError('land_value')}
                                             </div>
                                         </div>
                                     </div>
@@ -891,16 +1083,24 @@ export default function FieldInvestigation({
                                     <div className="p-3 bg-gray-50 rounded-lg border border-gray-200 space-y-2">
                                         <div className="flex items-start gap-2">
                                             {rowBadge('৪')}
-                                            <p className="text-[11px] font-semibold text-gray-700 flex-1">বাড়ীর ধরণ ও ঘরের সংখ্যা (টিক চিহ্ন দিন)</p>
+                                            <p className="text-[11px] font-semibold text-gray-700 flex-1">
+                                                বাড়ীর ধরণ ও ঘরের সংখ্যা (টিক চিহ্ন দিন) <span className="text-red-500 font-bold">*</span>
+                                            </p>
                                         </div>
                                         <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 pl-7">
                                             <div>
-                                                <label className={labelClass}>ধরণ</label>
-                                                <input type="text" value={data.house_type} onChange={(e) => setData('house_type', e.target.value)} className={inputClass} placeholder="ছাপড়া/টিন/মাটি/পাকা" />
+                                                <label className={labelClass}>
+                                                    ধরণ <span className="text-red-500 font-bold">*</span>
+                                                </label>
+                                                <input type="text" value={data.house_type} onChange={(e) => setData('house_type', e.target.value)} className={getInputClass('house_type')} placeholder="ছাপড়া/টিন/মাটি/পাকা" />
+                                                {renderError('house_type')}
                                             </div>
                                             <div>
-                                                <label className={labelClass}>ছাপড়া/টিন/মাটি/পাকা-ঘরের সংখ্যা</label>
-                                                <input type="number" min={0} value={data.room_count || ''} onChange={(e) => setData('room_count', parseInt(e.target.value) || 0)} className={inputClass} />
+                                                <label className={labelClass}>
+                                                    ছাপড়া/টিন/মাটি/পাকা-ঘরের সংখ্যা <span className="text-red-500 font-bold">*</span>
+                                                </label>
+                                                <input type="number" min={1} value={data.room_count || ''} onChange={(e) => setData('room_count', parseInt(e.target.value) || 0)} className={getInputClass('room_count')} placeholder="ঘরের সংখ্যা" />
+                                                {renderError('room_count')}
                                             </div>
                                         </div>
                                     </div>
@@ -909,7 +1109,9 @@ export default function FieldInvestigation({
                                     <div className="p-3 bg-gray-50 rounded-lg border border-gray-200 space-y-2">
                                         <div className="flex items-start gap-2">
                                             {rowBadge('৫')}
-                                            <p className="text-[11px] font-semibold text-gray-700 flex-1">নিজস্ব টিউবওয়েল ও স্বাস্থ্যসম্মত পায়খানা আছে কি-না (টিক চিহ্ন দিন)</p>
+                                            <p className="text-[11px] font-semibold text-gray-700 flex-1">
+                                                নিজস্ব টিউবওয়েল ও স্বাস্থ্যসম্মত পায়খানা আছে কি-না (টিক চিহ্ন দিন) <span className="text-red-500 font-bold">*</span>
+                                            </p>
                                         </div>
                                         <div className="pl-7 space-y-2">
                                             <div className="flex flex-wrap items-center gap-4">
@@ -953,7 +1155,7 @@ export default function FieldInvestigation({
                                             ] as const).map(([key, lbl]) => (
                                                 <div key={key}>
                                                     <label className={labelClass}>{lbl}</label>
-                                                    <input type="number" min={0} value={data[key] || ''} onChange={(e) => setData(key, parseInt(e.target.value) || 0)} className={inputClass} />
+                                                    <input type="number" min={0} value={data[key] !== undefined && data[key] !== null ? data[key] : ''} onChange={(e) => setData(key, e.target.value === '' ? ('' as any) : (parseInt(e.target.value) || 0))} className={getInputClass(key)} />
                                                 </div>
                                             ))}
                                         </div>
@@ -975,7 +1177,7 @@ export default function FieldInvestigation({
                                             ] as const).map(([key, lbl]) => (
                                                 <div key={key}>
                                                     <label className={labelClass}>{lbl}</label>
-                                                    <input type="number" min={0} value={data[key] || ''} onChange={(e) => setData(key, parseInt(e.target.value) || 0)} className={inputClass} />
+                                                    <input type="number" min={0} value={data[key] !== undefined && data[key] !== null ? data[key] : ''} onChange={(e) => setData(key, e.target.value === '' ? ('' as any) : (parseInt(e.target.value) || 0))} className={getInputClass(key)} />
                                                 </div>
                                             ))}
                                         </div>
@@ -985,7 +1187,9 @@ export default function FieldInvestigation({
                                     <div className="p-3 bg-amber-50/60 rounded-lg border border-amber-200 space-y-2">
                                         <div className="flex items-start gap-2">
                                             {rowBadge('৮')}
-                                            <p className="text-[11px] font-semibold text-gray-700 flex-1">সাধারণ সঞ্চয় (দফা ও পরিমাণ)</p>
+                                            <p className="text-[11px] font-semibold text-gray-700 flex-1">
+                                                সাধারণ সঞ্চয় (দফা ও পরিমাণ) <span className="text-red-500 font-bold">*</span>
+                                            </p>
                                         </div>
                                         <div className="pl-7">
                                             <GeneralSavingsSection
@@ -1009,6 +1213,7 @@ export default function FieldInvestigation({
                                                 }}
                                                 errors={errors}
                                             />
+                                            {renderError('general_savings_amount')}
                                         </div>
                                     </div>
 
@@ -1016,10 +1221,13 @@ export default function FieldInvestigation({
                                     <div className="p-3 bg-gray-50 rounded-lg border border-gray-200 space-y-2">
                                         <div className="flex items-start gap-2">
                                             {rowBadge('৯')}
-                                            <p className="text-[11px] font-semibold text-gray-700 flex-1">সদস্যের বাড়ী চেনার নির্দেশনা</p>
+                                            <p className="text-[11px] font-semibold text-gray-700 flex-1">
+                                                সদস্যের বাড়ী চেনার নির্দেশনা <span className="text-red-500 font-bold">*</span>
+                                            </p>
                                         </div>
                                         <div className="pl-7">
-                                            <textarea value={data.house_identification} onChange={(e) => setData('house_identification', e.target.value)} className={inputClass} rows={3} />
+                                            <textarea value={data.house_identification} onChange={(e) => setData('house_identification', e.target.value)} className={getInputClass('house_identification')} rows={3} placeholder="সদস্যের বাড়ি চেনার সঠিক দিক ও বিবরণ লিখুন" />
+                                            {renderError('house_identification')}
                                         </div>
                                     </div>
 
@@ -1027,10 +1235,13 @@ export default function FieldInvestigation({
                                     <div className="p-3 bg-gray-50 rounded-lg border border-gray-200 space-y-2">
                                         <div className="flex items-start gap-2">
                                             {rowBadge('১০')}
-                                            <p className="text-[11px] font-semibold text-gray-700 flex-1">অন্যান্য সংস্থা হতে ঋণ গ্রহণের তথ্য</p>
+                                            <p className="text-[11px] font-semibold text-gray-700 flex-1">
+                                                অন্যান্য সংস্থা হতে ঋণ গ্রহণের তথ্য <span className="text-red-500 font-bold">*</span>
+                                            </p>
                                         </div>
                                         <div className="pl-7">
-                                            <textarea value={data.other_organization_loans} onChange={(e) => setData('other_organization_loans', e.target.value)} className={inputClass} rows={3} />
+                                            <textarea value={data.other_organization_loans} onChange={(e) => setData('other_organization_loans', e.target.value)} className={getInputClass('other_organization_loans')} rows={3} placeholder="অন্যান্য সংস্থা হতে ঋণ গ্রহণ থাকলে বিবরণ দিন, না থাকলে 'নেই' লিখুন" />
+                                            {renderError('other_organization_loans')}
                                         </div>
                                     </div>
 
@@ -1038,7 +1249,9 @@ export default function FieldInvestigation({
                                     <div className="p-3 bg-gray-50 rounded-lg border border-gray-200 space-y-2">
                                         <div className="flex items-start gap-2">
                                             {rowBadge('১১')}
-                                            <p className="text-[11px] font-semibold text-gray-700 flex-1">বিগত দফার পরিশোধের ধরণ (টিক চিহ্ন দিন)</p>
+                                            <p className="text-[11px] font-semibold text-gray-700 flex-1">
+                                                বিগত দফার পরিশোধের ধরণ (টিক চিহ্ন দিন) <span className="text-red-500 font-bold">*</span>
+                                            </p>
                                         </div>
                                         <div className="pl-7 space-y-1.5">
                                             <label className="flex items-center gap-2 text-xs cursor-pointer">
@@ -1049,6 +1262,11 @@ export default function FieldInvestigation({
                                                 <input type="radio" name="previous_repayment_type" checked={data.previous_repayment_type === 'savings_adjustment'} onChange={() => setData('previous_repayment_type', 'savings_adjustment')} className="text-indigo-600" />
                                                 সঞ্চয়ের সাথে সমন্বয় করেছেন
                                             </label>
+                                            <label className="flex items-center gap-2 text-xs cursor-pointer">
+                                                <input type="radio" name="previous_repayment_type" checked={data.previous_repayment_type === 'not_applicable'} onChange={() => setData('previous_repayment_type', 'not_applicable')} className="text-indigo-600" />
+                                                নতুন সদস্য / প্রযোজ্য নয়
+                                            </label>
+                                            {renderError('previous_repayment_type')}
                                         </div>
                                     </div>
 
@@ -1061,15 +1279,15 @@ export default function FieldInvestigation({
                                         <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 pl-7">
                                             <div>
                                                 <label className={labelClass}>সাধারণ</label>
-                                                <input type="number" min={0} value={data.general_savings_default_count || ''} onChange={(e) => setData('general_savings_default_count', parseInt(e.target.value) || 0)} className={inputClass} />
+                                                <input type="number" min={0} value={data.general_savings_default_count !== undefined && data.general_savings_default_count !== null ? data.general_savings_default_count : ''} onChange={(e) => setData('general_savings_default_count', e.target.value === '' ? ('' as any) : (parseInt(e.target.value) || 0))} className={getInputClass('general_savings_default_count')} />
                                             </div>
                                             <div>
                                                 <label className={labelClass}>আপদকালীন</label>
-                                                <input type="number" min={0} value={data.emergency_savings_default_count || ''} onChange={(e) => setData('emergency_savings_default_count', parseInt(e.target.value) || 0)} className={inputClass} />
+                                                <input type="number" min={0} value={data.emergency_savings_default_count !== undefined && data.emergency_savings_default_count !== null ? data.emergency_savings_default_count : ''} onChange={(e) => setData('emergency_savings_default_count', e.target.value === '' ? ('' as any) : (parseInt(e.target.value) || 0))} className={getInputClass('emergency_savings_default_count')} />
                                             </div>
                                             <div>
                                                 <label className={labelClass}>মেয়াদী</label>
-                                                <input type="number" min={0} value={data.term_savings_default_count || ''} onChange={(e) => setData('term_savings_default_count', parseInt(e.target.value) || 0)} className={inputClass} />
+                                                <input type="number" min={0} value={data.term_savings_default_count !== undefined && data.term_savings_default_count !== null ? data.term_savings_default_count : ''} onChange={(e) => setData('term_savings_default_count', e.target.value === '' ? ('' as any) : (parseInt(e.target.value) || 0))} className={getInputClass('term_savings_default_count')} />
                                             </div>
                                         </div>
                                     </div>
@@ -1083,11 +1301,11 @@ export default function FieldInvestigation({
                                         <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 pl-7">
                                             <div>
                                                 <label className={labelClass}>কিস্তি সংখ্যা</label>
-                                                <input type="number" min={0} value={data.term_savings_due_installments || ''} onChange={(e) => setData('term_savings_due_installments', parseInt(e.target.value) || 0)} className={inputClass} />
+                                                <input type="number" min={0} value={data.term_savings_due_installments !== undefined && data.term_savings_due_installments !== null ? data.term_savings_due_installments : ''} onChange={(e) => setData('term_savings_due_installments', e.target.value === '' ? ('' as any) : (parseInt(e.target.value) || 0))} className={getInputClass('term_savings_due_installments')} />
                                             </div>
                                             <div>
                                                 <label className={labelClass}>টাকার পরিমাণ (৳)</label>
-                                                <input type="number" min={0} value={data.term_savings_due_amount || ''} onChange={(e) => setData('term_savings_due_amount', parseFloat(e.target.value) || 0)} className={inputClass} />
+                                                <input type="number" min={0} value={data.term_savings_due_amount !== undefined && data.term_savings_due_amount !== null ? data.term_savings_due_amount : ''} onChange={(e) => setData('term_savings_due_amount', e.target.value === '' ? ('' as any) : (parseFloat(e.target.value) || 0))} className={getInputClass('term_savings_due_amount')} />
                                             </div>
                                         </div>
                                     </div>
@@ -1099,16 +1317,25 @@ export default function FieldInvestigation({
                                 <h3 className="text-sm font-bold text-gray-800 border-b pb-2">তারিখ ও মন্তব্য</h3>
                                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                                     <div>
-                                        <label className={labelClass}>সরেজমিনে পরিদর্শনের তারিখ</label>
-                                        <input type="date" value={data.field_visit_date} onChange={(e) => setData('field_visit_date', e.target.value)} className={inputClass} />
+                                        <label className={labelClass}>
+                                            সরেজমিনে পরিদর্শনের তারিখ <span className="text-red-500 font-bold">*</span>
+                                        </label>
+                                        <input type="date" value={data.field_visit_date} onChange={(e) => setData('field_visit_date', e.target.value)} className={getInputClass('field_visit_date')} />
+                                        {renderError('field_visit_date')}
                                     </div>
                                     <div>
-                                        <label className={labelClass}>ঋণ প্রদানের তারিখ</label>
-                                        <input type="date" value={data.loan_disbursement_date} onChange={(e) => setData('loan_disbursement_date', e.target.value)} className={inputClass} />
+                                        <label className={labelClass}>
+                                            ঋণ প্রদানের তারিখ <span className="text-red-500 font-bold">*</span>
+                                        </label>
+                                        <input type="date" value={data.loan_disbursement_date} onChange={(e) => setData('loan_disbursement_date', e.target.value)} className={getInputClass('loan_disbursement_date')} />
+                                        {renderError('loan_disbursement_date')}
                                     </div>
                                     <div className="sm:col-span-2">
-                                        <label className={labelClass}>মন্তব্য</label>
-                                        <textarea value={data.comments} onChange={(e) => setData('comments', e.target.value)} className={inputClass} rows={4} />
+                                        <label className={labelClass}>
+                                            মন্তব্য <span className="text-red-500 font-bold">*</span>
+                                        </label>
+                                        <textarea value={data.comments} onChange={(e) => setData('comments', e.target.value)} className={getInputClass('comments')} rows={4} placeholder="শাখা ব্যবস্থাপকের বিস্তারিত পরিদর্শনোত্তর মন্তব্য লিখুন" />
+                                        {renderError('comments')}
                                     </div>
                                 </div>
                             </div>

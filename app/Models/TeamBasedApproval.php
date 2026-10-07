@@ -29,7 +29,7 @@ class TeamBasedApproval extends Model
     ];
 
     protected $casts = [
-        'sheet_date' => 'date',
+        'sheet_date' => 'date:Y-m-d',
         'last_items_snapshot' => 'array',
     ];
 

@@ -93,6 +93,7 @@ const FIELD_NAMES_BN: Record<string, string> = {
     smart_card_number: 'স্মার্ট কার্ড নম্বর',
     date_of_birth: 'জন্ম তারিখ',
     gender: 'লিঙ্গ',
+    total_asset_value: '১৭. মোট সম্পদের পরিমাণ (Total Asset Value)',
     customer_photo: 'সদস্যের ছবি',
     customer_nid_photo: 'সদস্যের NID ছবি',
     customer_nid_back_photo: 'সদস্যের NID পেছনের পাশ',
@@ -587,6 +588,21 @@ export default function Edit({
         }
 
         const submitAfterSave = !!options?.submitAfterSave;
+        if (submitAfterSave) {
+            if (!data.date_of_birth) {
+                alert('জন্ম তারিখ দেওয়া বাধ্যতামূলক।');
+                return;
+            }
+            const landVal = (Number(data.cultivable_land_value) || 0) + (Number(data.non_cultivable_land_value) || 0);
+            const otherAssetsVal = Array.isArray(data.other_assets)
+                ? data.other_assets.reduce((sum: number, a: any) => sum + (Number(a?.estimated_value) || 0), 0)
+                : 0;
+            const totalAsset = landVal + otherAssetsVal;
+            if (totalAsset <= 0 && (!data.total_asset_value || Number(data.total_asset_value) <= 0)) {
+                alert('১৭. মোট সম্পদের পরিমাণ (Total Asset Value) ০ এর উপরে হতে হবে। জমি অথবা অস্থায়ী সম্পদ যোগ করুন।');
+                return;
+            }
+        }
         const nextAction = options?.nextAction;
         const formData = new FormData();
         formData.append('_method', 'PUT');
@@ -1069,6 +1085,7 @@ export default function Edit({
                         setData={setData}
                         toNumVal={toNumVal}
                         toNumChange={toNumChange}
+                        errors={mergedErrors}
                     />
 
                     <FamilyMembersSection

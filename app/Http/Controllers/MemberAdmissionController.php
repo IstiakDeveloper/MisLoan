@@ -1017,6 +1017,18 @@ class MemberAdmissionController extends Controller
             $admissionData['total_land_amount'] = ($admissionData['cultivable_land_amount'] ?? 0) + ($admissionData['non_cultivable_land_amount'] ?? 0);
             $admissionData['total_land_value'] = ($admissionData['cultivable_land_value'] ?? 0) + ($admissionData['non_cultivable_land_value'] ?? 0);
 
+            // মোট সম্পদের পরিমাণ (জমির মূল্য + অন্যান্য অস্থায়ী সম্পদের মূল্য)
+            $otherAssetsVal = 0;
+            if (! empty($validated['other_assets']) && is_array($validated['other_assets'])) {
+                foreach ($validated['other_assets'] as $asset) {
+                    $otherAssetsVal += (float) ($asset['estimated_value'] ?? 0);
+                }
+            }
+            $computedAssetVal = (float) $admissionData['total_land_value'] + $otherAssetsVal;
+            if ($computedAssetVal > 0 || ! isset($admissionData['total_asset_value'])) {
+                $admissionData['total_asset_value'] = max((float) ($admissionData['total_asset_value'] ?? 0), $computedAssetVal);
+            }
+
             $authUser = auth()->user();
             $authUser->loadMissing('role');
             if (in_array($authUser->role?->name, [Role::FIELD_OFFICER, Role::BRANCH_MANAGER], true)) {
@@ -1535,6 +1547,20 @@ class MemberAdmissionController extends Controller
             $updateData['total_land_amount'] = $cultivableAmount + $nonCultivableAmount;
             $updateData['total_land_value'] = $cultivableValue + $nonCultivableValue;
 
+            // মোট সম্পদের পরিমাণ (জমির মূল্য + অন্যান্য অস্থায়ী সম্পদের মূল্য)
+            $otherAssetsVal = 0;
+            if (isset($validated['other_assets']) && is_array($validated['other_assets'])) {
+                foreach ($validated['other_assets'] as $asset) {
+                    $otherAssetsVal += (float) ($asset['estimated_value'] ?? 0);
+                }
+            } elseif ($memberAdmission->exists) {
+                $otherAssetsVal = (float) $memberAdmission->otherAssets()->sum('estimated_value');
+            }
+            $computedAssetVal = (float) $updateData['total_land_value'] + $otherAssetsVal;
+            if ($computedAssetVal > 0 || ! isset($updateData['total_asset_value'])) {
+                $updateData['total_asset_value'] = max((float) ($updateData['total_asset_value'] ?? 0), $computedAssetVal);
+            }
+
             $updateData = $this->coerceNotNullCounts($updateData);
 
             if ($memberAdmission->previous_admission_id && ($updateData['is_legacy'] ?? $memberAdmission->is_legacy)) {
@@ -1680,8 +1706,12 @@ class MemberAdmissionController extends Controller
             // Identity & Photo
             'nid_number' => 'required_without:smart_card_number',
             'smart_card_number' => 'required_without:nid_number',
+            'date_of_birth' => 'required|date',
             'gender' => 'required',
             'customer_nid_photo_path' => 'required',
+
+            // Economic
+            'total_asset_value' => 'required|numeric|gt:0',
         ];
 
         $messages = [
@@ -1703,8 +1733,13 @@ class MemberAdmissionController extends Controller
             'present_upazila.required' => 'বর্তমান উপজেলা বাধ্যতামূলক।',
             'nid_number.required_without' => 'জাতীয় পরিচয়পত্র (NID) নম্বর অথবা স্মার্ট কার্ড নম্বর যেকোনো একটি প্রদান করা বাধ্যতামূলক।',
             'smart_card_number.required_without' => 'জাতীয় পরিচয়পত্র (NID) নম্বর অথবা স্মার্ট কার্ড নম্বর যেকোনো একটি প্রদান করা বাধ্যতামূলক।',
+            'date_of_birth.required' => 'জন্ম তারিখ দেওয়া বাধ্যতামূলক।',
+            'date_of_birth.date' => 'সঠিক জন্ম তারিখ প্রদান করুন।',
             'gender.required' => 'লিঙ্গ নির্বাচন বাধ্যতামূলক।',
             'customer_nid_photo_path.required' => 'সদস্যের NID ছবি আপলোড করা বাধ্যতামূলক।',
+            'total_asset_value.required' => '১৭. মোট সম্পদের পরিমাণ (Total Asset Value) ০ এর উপরে হতে হবে।',
+            'total_asset_value.numeric' => '১৭. মোট সম্পদের পরিমাণ (Total Asset Value) একটি সঠিক সংখ্যা হতে হবে।',
+            'total_asset_value.gt' => '১৭. মোট সম্পদের পরিমাণ (Total Asset Value) ০ এর উপরে হতে হবে।',
         ];
 
         $data = $memberAdmission->toArray();
@@ -1712,6 +1747,18 @@ class MemberAdmissionController extends Controller
             if (empty($data[$fk]) || (int) $data[$fk] === 0) {
                 $data[$fk] = null;
             }
+        }
+        if (empty($data['date_of_birth']) || $data['date_of_birth'] === '0000-00-00') {
+            $data['date_of_birth'] = null;
+        }
+
+        // মোট সম্পদ গণনা (জমিজমার মূল্য + অন্যান্য অস্থায়ী সম্পদ)
+        $landVal = (float) ($memberAdmission->cultivable_land_value ?? 0) + (float) ($memberAdmission->non_cultivable_land_value ?? 0);
+        $otherAssetsVal = (float) $memberAdmission->otherAssets()->sum('estimated_value');
+        $computedTotalAsset = $landVal + $otherAssetsVal;
+        if ($computedTotalAsset > 0 && (float) ($data['total_asset_value'] ?? 0) <= 0) {
+            $data['total_asset_value'] = $computedTotalAsset;
+            $memberAdmission->update(['total_asset_value' => $computedTotalAsset]);
         }
 
         $validator = Validator::make($data, $rules, $messages);

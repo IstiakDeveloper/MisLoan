@@ -192,14 +192,19 @@ export default function IdentitySection({
                     </div>
 
                     <div>
-                        <label className="mb-0.5 block text-xs font-semibold text-gray-700">Date of Birth</label>
+                        <label className="mb-0.5 block text-xs font-semibold text-gray-700">
+                            Date of Birth (জন্ম তারিখ) <span className="text-red-500 font-bold">*</span>
+                        </label>
                         <SmartDateInput
                             value={data.date_of_birth}
                             onChange={(val) => setData('date_of_birth', val)}
                             error={Boolean(errors.date_of_birth)}
                             disabled={lockIdentity}
-                            className={`w-full rounded-xl border text-xs md:text-sm focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 font-medium ${lockIdentity ? 'border-slate-200 bg-slate-50 cursor-not-allowed' : 'border-gray-300'}`}
+                            className={`w-full rounded-xl border text-xs md:text-sm focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 font-medium ${errors.date_of_birth ? 'border-red-500 bg-red-50' : lockIdentity ? 'border-slate-200 bg-slate-50 cursor-not-allowed' : 'border-gray-300'}`}
                         />
+                        {errors.date_of_birth && (
+                            <p className="mt-1 text-xs text-red-600 font-medium">{errors.date_of_birth}</p>
+                        )}
                     </div>
 
                     <div>

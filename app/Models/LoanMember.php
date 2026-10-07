@@ -59,8 +59,8 @@ class LoanMember extends Model
         'installment_increment_rate' => 'decimal:2',
         'general_savings' => 'decimal:2',
         'total_savings' => 'decimal:2',
-        'loan_release_or_approval_date' => 'date',
-        'loan_distribution_date' => 'date',
+        'loan_release_or_approval_date' => 'date:Y-m-d',
+        'loan_distribution_date' => 'date:Y-m-d',
     ];
 
     public function loanApplication(): BelongsTo

@@ -1,6 +1,7 @@
 import AdminLayout from '@/layouts/admin-layout';
 import { Head, router } from '@inertiajs/react';
 import { useState, useMemo } from 'react';
+import { todayIsoDate, startOfMonthIsoDate, lastMonthRangeIso, addCalendarDays } from '@/utils/dateUtils';
 import {
     Calendar,
     Search,
@@ -268,8 +269,8 @@ export default function ApproverLoanApprovalReport({
     };
 
     const handleResetFilters = () => {
-        const today = new Date().toISOString().split('T')[0];
-        const firstDay = new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString().split('T')[0];
+        const today = todayIsoDate();
+        const firstDay = startOfMonthIsoDate();
         setDateFrom(firstDay);
         setDateTo(today);
         setUserId('');
@@ -289,24 +290,20 @@ export default function ApproverLoanApprovalReport({
 
     // Quick Date shortcuts
     const setQuickDate = (type: 'today' | 'this_month' | 'last_month' | 'last_30_days') => {
-        const now = new Date();
-        const y = now.getFullYear();
-        const m = now.getMonth();
-
+        const today = todayIsoDate();
         let from = '';
-        let to = now.toISOString().split('T')[0];
+        let to = today;
 
         if (type === 'today') {
-            from = to;
+            from = today;
         } else if (type === 'this_month') {
-            from = new Date(y, m, 1).toISOString().split('T')[0];
+            from = startOfMonthIsoDate();
         } else if (type === 'last_month') {
-            from = new Date(y, m - 1, 1).toISOString().split('T')[0];
-            to = new Date(y, m, 0).toISOString().split('T')[0];
+            const range = lastMonthRangeIso();
+            from = range.from;
+            to = range.to;
         } else if (type === 'last_30_days') {
-            const d = new Date();
-            d.setDate(d.getDate() - 30);
-            from = d.toISOString().split('T')[0];
+            from = addCalendarDays(today, -30);
         }
 
         setDateFrom(from);

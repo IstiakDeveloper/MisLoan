@@ -43,6 +43,7 @@ export default function FormPage1({
     
     const editableClass = 'w-full border border-gray-300 rounded-lg px-3 py-2 text-xs md:text-sm bg-white focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition-all';
     const warningClass = 'w-full border border-amber-300 rounded-lg px-3 py-2 text-xs md:text-sm bg-amber-50/40 focus:bg-white focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition-all';
+    const errorClass = 'w-full border border-red-500 rounded-lg px-3 py-2 text-xs md:text-sm bg-red-50/70 focus:ring-2 focus:ring-red-500 focus:border-red-500 transition-all';
 
     const durationMonths =
         data.loan_duration_months ||
@@ -121,27 +122,37 @@ export default function FormPage1({
                             />
                         </div>
                         <div>
-                            <label className="block text-xs font-semibold text-gray-700 mb-1">বরাবর</label>
+                            <label className="block text-xs font-semibold text-gray-700 mb-1">
+                                বরাবর <span className="text-red-500 font-bold">*</span>
+                            </label>
                             <select
                                 value={data.recipient_to || ''}
                                 onChange={(e) => setData('recipient_to', e.target.value)}
-                                className={warningClass}
+                                className={errors?.recipient_to ? errorClass : warningClass}
                             >
                                 <option value="">নির্বাচন করুন</option>
                                 {RECIPIENT_OPTIONS.map((opt) => (
                                     <option key={opt} value={opt}>{opt}</option>
                                 ))}
                             </select>
+                            {errors?.recipient_to && (
+                                <p className="mt-1 text-xs text-red-600 font-medium">{errors.recipient_to}</p>
+                            )}
                         </div>
                         <div>
-                            <label className="block text-xs font-semibold text-gray-700 mb-1">ঠিকানা / মাধ্যম</label>
+                            <label className="block text-xs font-semibold text-gray-700 mb-1">
+                                ঠিকানা / মাধ্যম <span className="text-red-500 font-bold">*</span>
+                            </label>
                             <input
                                 type="text"
                                 value={data.authority_medium || ''}
                                 onChange={(e) => setData('authority_medium', e.target.value)}
-                                className={warningClass}
+                                className={errors?.authority_medium ? errorClass : warningClass}
                                 placeholder="ঠিকানা লিখুন"
                             />
+                            {errors?.authority_medium && (
+                                <p className="mt-1 text-xs text-red-600 font-medium">{errors.authority_medium}</p>
+                            )}
                         </div>
                     </div>
                     <div className="space-y-3 border border-indigo-100 p-3.5 rounded-xl bg-indigo-50/30">
@@ -350,19 +361,52 @@ export default function FormPage1({
                                 />
                             </div>
                             <div>
-                                <label className="block text-xs font-semibold text-gray-700 mb-1">ইতোপূর্বে গৃহীত ঋণ (টাকা)</label>
-                                <input type="number" value={data.previous_loan_amount || ''} onChange={(e) => setData('previous_loan_amount', e.target.value)} className={warningClass} placeholder="টাকা" />
+                                <label className="block text-xs font-semibold text-gray-700 mb-1">
+                                    ইতোপূর্বে গৃহীত ঋণ (টাকা) <span className="text-red-500 font-bold">*</span>
+                                </label>
+                                <input
+                                    type="number"
+                                    value={data.previous_loan_amount || ''}
+                                    onChange={(e) => setData('previous_loan_amount', e.target.value)}
+                                    className={errors?.previous_loan_amount ? errorClass : warningClass}
+                                    placeholder="টাকা"
+                                />
+                                {errors?.previous_loan_amount && (
+                                    <p className="mt-1 text-xs text-red-600 font-medium">{errors.previous_loan_amount}</p>
+                                )}
                             </div>
                         </div>
 
                         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
                             <div>
-                                <label className="block text-xs font-semibold text-gray-700 mb-1">১১. সর্বশেষ পরিশোধিত ঋণ</label>
-                                <input type="number" value={data.last_repaid_loan_amount || ''} onChange={(e) => setData('last_repaid_loan_amount', e.target.value)} className={warningClass} placeholder="টাকা" />
+                                <label className="block text-xs font-semibold text-gray-700 mb-1">
+                                    ১১. সর্বশেষ পরিশোধিত ঋণ <span className="text-red-500 font-bold">*</span>
+                                </label>
+                                <input
+                                    type="number"
+                                    value={data.last_repaid_loan_amount || ''}
+                                    onChange={(e) => setData('last_repaid_loan_amount', e.target.value)}
+                                    className={errors?.last_repaid_loan_amount ? errorClass : warningClass}
+                                    placeholder="টাকা"
+                                />
+                                {errors?.last_repaid_loan_amount && (
+                                    <p className="mt-1 text-xs text-red-600 font-medium">{errors.last_repaid_loan_amount}</p>
+                                )}
                             </div>
                             <div>
-                                <label className="block text-xs font-semibold text-gray-700 mb-1">১২. সর্বশেষ পরিশোধিত প্রকল্প</label>
-                                <input type="text" value={data.last_repaid_project_name || ''} onChange={(e) => setData('last_repaid_project_name', e.target.value)} className={warningClass} placeholder="প্রকল্পের নাম" />
+                                <label className="block text-xs font-semibold text-gray-700 mb-1">
+                                    ১২. সর্বশেষ পরিশোধিত প্রকল্প <span className="text-red-500 font-bold">*</span>
+                                </label>
+                                <input
+                                    type="text"
+                                    value={data.last_repaid_project_name || ''}
+                                    onChange={(e) => setData('last_repaid_project_name', e.target.value)}
+                                    className={errors?.last_repaid_project_name ? errorClass : warningClass}
+                                    placeholder="প্রকল্পের নাম"
+                                />
+                                {errors?.last_repaid_project_name && (
+                                    <p className="mt-1 text-xs text-red-600 font-medium">{errors.last_repaid_project_name}</p>
+                                )}
                             </div>
                         </div>
                     </div>
@@ -390,12 +434,18 @@ export default function FormPage1({
                 </div>
 
                 <div>
-                    <label className="block text-xs font-semibold text-gray-700 mb-1">১৪. ঋণ প্রস্তাবনার তারিখ</label>
+                    <label className="block text-xs font-semibold text-gray-700 mb-1">
+                        ১৪. ঋণ প্রস্তাবনার তারিখ <span className="text-red-500 font-bold">*</span>
+                    </label>
                     <SmartDateInput
                         value={data.loan_proposal_date}
                         onChange={(val) => setData('loan_proposal_date', val)}
-                        className={warningClass}
+                        className={errors?.loan_proposal_date ? errorClass : warningClass}
+                        error={errors?.loan_proposal_date}
                     />
+                    {errors?.loan_proposal_date && (
+                        <p className="mt-1 text-xs text-red-600 font-medium">{errors.loan_proposal_date}</p>
+                    )}
                 </div>
             </div>
 
@@ -430,7 +480,7 @@ export default function FormPage1({
                 <div className="grid grid-cols-1 sm:grid-cols-3 gap-3.5">
                     <div>
                         <label className="block text-xs font-semibold text-gray-700 mb-1 flex items-center justify-between">
-                            <span>১৭. সম্ভাব্য আয় ({durationLabel})</span>
+                            <span>১৭. সম্ভাব্য আয় ({durationLabel}) <span className="text-red-500 font-bold">*</span></span>
                             {fromAdmission && member?.estimated_annual_project_income != null && member?.estimated_annual_project_income !== '' && (
                                 <span className="flex items-center gap-1 text-[11px] text-gray-500 font-normal">
                                     <Lock className="w-3 h-3 text-gray-400" /> ভর্তি থেকে
@@ -442,9 +492,16 @@ export default function FormPage1({
                             value={data.project_income_1_2_yr || ''}
                             onChange={(e) => setData('project_income_1_2_yr', e.target.value)}
                             readOnly={fromAdmission && (member?.estimated_annual_project_income != null && member?.estimated_annual_project_income !== '')}
-                            className={fromAdmission && (member?.estimated_annual_project_income != null && member?.estimated_annual_project_income !== '') ? inputClass : warningClass}
+                            className={
+                                errors?.project_income_1_2_yr
+                                    ? errorClass
+                                    : (fromAdmission && (member?.estimated_annual_project_income != null && member?.estimated_annual_project_income !== '') ? inputClass : warningClass)
+                            }
                             placeholder="টাকা"
                         />
+                        {errors?.project_income_1_2_yr && (
+                            <p className="mt-1 text-xs text-red-600 font-medium">{errors.project_income_1_2_yr}</p>
+                        )}
                         {fromAdmission && member?.estimated_annual_project_income != null && member?.estimated_annual_project_income !== '' && (
                             <span className="text-[10px] text-gray-500 mt-1 block">
                                 বাৎসরিক আয়: {member.estimated_annual_project_income} × {yearsLabel} বছর
@@ -469,19 +526,31 @@ export default function FormPage1({
                     </div>
                     <div>
                         <label className="block text-xs font-semibold text-gray-700 mb-1 flex items-center justify-between">
-                            <span>১৯. নিট লাভ ({durationLabel})</span>
-                            <span className="text-[10px] text-emerald-600 font-normal">আয় − ব্যয় (স্বয়ংক্রিয়)</span>
+                            <span>১৯. নিট লাভ ({durationLabel}) <span className="text-red-500 font-bold">*</span></span>
+                            <span className={`text-[10px] font-normal ${Number(data.annual_net_profit || 0) < 0 ? 'text-red-600 font-bold' : 'text-emerald-600'}`}>
+                                আয় − ব্যয় (স্বয়ংক্রিয়)
+                            </span>
                         </label>
                         <input
                             type="number"
                             value={data.annual_net_profit || ''}
                             readOnly
-                            className={inputClass}
+                            className={
+                                (Number(data.annual_net_profit || 0) < 0 || errors?.annual_net_profit)
+                                    ? 'w-full px-3 py-2 text-sm rounded-lg border-2 border-red-500 bg-red-50 text-red-700 font-bold focus:outline-none'
+                                    : inputClass
+                            }
                             placeholder="আয় − ব্যয়"
                         />
-                        <span className="text-[10px] text-gray-500 mt-1 block">
-                            নিট লাভ = সম্ভাব্য আয় − সম্ভাব্য ব্যয়
-                        </span>
+                        {(Number(data.annual_net_profit || 0) < 0 || errors?.annual_net_profit) ? (
+                            <p className="mt-1 text-xs text-red-600 font-semibold">
+                                {errors?.annual_net_profit || 'আয়ের চেয়ে ব্যয় বেশি (নিট লাভ মাইনাস)। আয়ের চেয়ে ব্যয় বেশি হলে সাবমিট করা যাবে না।'}
+                            </p>
+                        ) : (
+                            <span className="text-[10px] text-gray-500 mt-1 block">
+                                নিট লাভ = সম্ভাব্য আয় − সম্ভাব্য ব্যয়
+                            </span>
+                        )}
                     </div>
                 </div>
 

@@ -2,6 +2,7 @@
  * Loan interest and installment calculation helpers.
  * Supports Factor-based, Per-thousand-based, Rate-based, and Lump-sum (Sufolon) products.
  */
+import { toIsoDate } from './dateUtils';
 
 export function isSufolonLoan(loanCategory?: any, loanProduct?: any): boolean {
     const code = String(loanCategory?.category_code || '').toUpperCase().trim();
@@ -192,7 +193,7 @@ export function calculateTenureEndDate(
     isWeekly: boolean,
     numberOfInstallments: number,
 ): string {
-    const raw = (startDateStr || '').trim().split('T')[0];
+    const raw = toIsoDate(startDateStr);
     let year: number;
     let month: number;
     let day: number;

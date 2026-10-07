@@ -131,6 +131,7 @@ interface LoanApplication {
     all_forms_complete?: boolean;
     disburse_forms_complete?: boolean;
     can_submit?: boolean;
+    approval_form_validation_error?: string | null;
     can_send_to_head_office?: boolean;
     can_disburse?: boolean;
     can_change_approved_amount?: boolean;
@@ -1402,12 +1403,19 @@ export default function Show({ application, routes, categories = [] }: Props) {
                                 </Button>
                             )}
 
-                            {application.status === 'draft' && application.can_submit && (
+                            {application.status === 'draft' && (
                                 <Button
                                     className="w-full sm:w-auto bg-emerald-600 hover:bg-emerald-700 text-white shadow-xs font-semibold rounded-xl text-xs sm:text-sm h-9 sm:h-10"
                                     onClick={() => {
                                         if (confirm('ঋণ আবেদনটি শাখা ব্যবস্থাপকের কাছে জমা দিতে চান?')) {
-                                            router.patch(routes.submit);
+                                            router.patch(routes.submit, {}, {
+                                                onError: (errs) => {
+                                                    const msg = errs?.error || (typeof errs === 'string' ? errs : Object.values(errs || {})[0]);
+                                                    if (msg) {
+                                                        alert(msg);
+                                                    }
+                                                },
+                                            });
                                         }
                                     }}
                                 >
@@ -1496,6 +1504,20 @@ export default function Show({ application, routes, categories = [] }: Props) {
                             )}
                         </div>
                     </div>
+
+                    {/* Validation Error Banner for Incomplete Approval Form */}
+                    {application.status === 'draft' && application.approval_form_validation_error && (
+                        <div className="rounded-2xl border-2 border-red-300 bg-red-50 p-4 text-xs sm:text-sm text-red-900 shadow-xs flex items-start gap-3 print:hidden">
+                            <AlertCircle className="w-5 h-5 text-red-600 shrink-0 mt-0.5" />
+                            <div>
+                                <h4 className="font-bold text-red-950 text-sm">আবেদনপত্রটি শাখা ব্যবস্থাপকের নিকট জমা দিতে নিচের তথ্যগুলো পূরণ করা আবশ্যক:</h4>
+                                <p className="mt-1 font-medium text-red-800 whitespace-pre-line">{application.approval_form_validation_error}</p>
+                                <p className="mt-1.5 text-[11px] text-red-700">
+                                    নিচের «আবেদন ও অনুমোদনপত্র» ফর্মে গিয়ে লাল চিহ্নিত ফিল্ডগুলো পূরণ ও সঠিক তথ্য দিয়ে সংরক্ষণ করুন।
+                                </p>
+                            </div>
+                        </div>
+                    )}
 
                     {/* APPLICATION LIFECYCLE PIPELINE STEPPER & PENDING STATUS HIGHLIGHT */}
                     <div className="bg-white p-3.5 sm:p-5 rounded-2xl border border-slate-200/80 shadow-xs space-y-3.5 print:hidden">

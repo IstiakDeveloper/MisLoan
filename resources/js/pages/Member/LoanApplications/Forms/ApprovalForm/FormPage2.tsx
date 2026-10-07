@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { FormPageProps } from './Types';
 import { Briefcase, CreditCard, PieChart, Users, Award, Landmark } from 'lucide-react';
+import { toIsoDate } from '@/utils/dateUtils';
 
 const toNum = (v: unknown): number => {
     const n = Number(v);
@@ -269,7 +270,7 @@ export default function FormPage2({ data, setData, requestedAmount }: FormPagePr
                                             rows[idx].loan_number = e.target.value;
                                             setData('last_three_loans', rows);
                                         }} className={inputClass} />
-                                        <input type="date" value={data.last_three_loans?.[idx]?.loan_date ? data.last_three_loans[idx].loan_date.split('T')[0] : ''} onChange={(e) => {
+                                        <input type="date" value={data.last_three_loans?.[idx]?.loan_date ? toIsoDate(data.last_three_loans[idx].loan_date) : ''} onChange={(e) => {
                                             const rows = [...(data.last_three_loans || [])];
                                             if (!rows[idx]) rows[idx] = {};
                                             rows[idx].loan_date = e.target.value;

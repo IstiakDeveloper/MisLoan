@@ -138,7 +138,16 @@ class LoanApplicationController extends Controller
         $application->form_saved = $formSaved;
         $application->all_forms_complete = LoanFormVisibility::allRequiredFormsSaved($submitRequired, $formSaved);
         $application->disburse_forms_complete = LoanFormVisibility::allRequiredFormsSaved($disburseRequired, $formSaved);
-        $application->can_submit = $application->all_forms_complete;
+
+        $formValidationError = null;
+        if (in_array(5, $submitRequired) || ! empty($formSaved[5])) {
+            $formValidationError = $this->validateApprovalFormForSubmit($application);
+        }
+        if ($formValidationError === null && (in_array(1, $submitRequired) || ! empty($formSaved[1]))) {
+            $formValidationError = $this->validateAgreementFormForSubmit($application);
+        }
+        $application->approval_form_validation_error = $formValidationError;
+        $application->can_submit = $application->all_forms_complete && ($formValidationError === null);
         $application->can_send_to_head_office = $memberAdmission === null
             || $memberAdmission->allowsLoanHeadOfficeSend();
         $application->can_disburse = $status === LoanApplication::STATUS_PENDING_DISBURSEMENT
@@ -1631,6 +1640,20 @@ class LoanApplicationController extends Controller
             return back()->withErrors(['error' => 'অনুমোদনের জন্য প্রয়োজনীয় ফর্ম (ঋণ চুক্তিপত্র বা আবেদন ও অনুমোদনপত্র) পূরণ করে তারপর সাবমিট করুন।']);
         }
 
+        if (in_array(5, $submitRequired) || ! empty($formSaved[5])) {
+            $approvalFormError = $this->validateApprovalFormForSubmit($application);
+            if ($approvalFormError !== null) {
+                return back()->withErrors(['error' => $approvalFormError]);
+            }
+        }
+
+        if (in_array(1, $submitRequired) || ! empty($formSaved[1])) {
+            $agreementFormError = $this->validateAgreementFormForSubmit($application);
+            if ($agreementFormError !== null) {
+                return back()->withErrors(['error' => $agreementFormError]);
+            }
+        }
+
         DB::beginTransaction();
         try {
             $application->update([
@@ -1674,6 +1697,145 @@ class LoanApplicationController extends Controller
 
         return redirect()->route('member.loan-applications.show', $application->id)
             ->with('success', 'ঋণ আবেদন শাখা ব্যবস্থাপকের কাছে জমা হয়েছে। অনুমোদনের পর শাখা থেকে Head Office এ পাঠানো যাবে।');
+    }
+
+    /**
+     * Validate 4-page loan application approval form requirements before submit.
+     */
+    private function validateApprovalFormForSubmit(LoanApplication $application): ?string
+    {
+        $plan = $application->business_plan;
+        if (! is_array($plan) || empty($plan)) {
+            return 'আবেদন ও অনুমোদনপত্র (৪ পৃষ্ঠার ফর্ম) পূরণ করা আবশ্যক।';
+        }
+
+        $errors = [];
+
+        // 1. বরাবর
+        $recipientTo = trim((string) ($plan['recipient_to'] ?? ''));
+        if ($recipientTo === '') {
+            $errors[] = '১. পৃষ্ঠা ১-এ "বরাবর" নির্বাচন করা হয়নি।';
+        }
+
+        // 2. ঠিকানা / মাধ্যম
+        $authorityMedium = trim((string) ($plan['authority_medium'] ?? ''));
+        if ($authorityMedium === '') {
+            $errors[] = '২. পৃষ্ঠা ১-এ "ঠিকানা / মাধ্যম" পূরণ করা হয়নি।';
+        }
+
+        // 3. সঞ্চয় ও পূর্ববর্তী ঋণ তথ্য
+        $savingsAmount = $plan['savings_amount'] ?? null;
+        if ($savingsAmount === null || $savingsAmount === '' || ! is_numeric($savingsAmount)) {
+            $errors[] = '৩. "সঞ্চয় ও পূর্ববর্তী ঋণ তথ্য"-এ মোট সঞ্চয়ের পরিমাণ পূরণ করা হয়নি।';
+        }
+
+        $generalSavings = $plan['general_savings_amount'] ?? null;
+        if ($generalSavings === null || $generalSavings === '' || ! is_numeric($generalSavings)) {
+            $errors[] = '৩. "সঞ্চয় ও পূর্ববর্তী ঋণ তথ্য"-এ সাধারণ সঞ্চয়ের পরিমাণ পূরণ করা হয়নি।';
+        }
+
+        $loanProposalDate = trim((string) ($plan['loan_proposal_date'] ?? ''));
+        if ($loanProposalDate === '') {
+            $errors[] = '৩. "সঞ্চয় ও পূর্ববর্তী ঋণ তথ্য"-এ ১৪. ঋণ প্রস্তাবনার তারিখ দেওয়া হয়নি।';
+        }
+
+        $isOld = ($plan['member_type'] ?? '') === 'old'
+            || ! empty($plan['years_involved'])
+            || ! empty($plan['previous_loan_times'])
+            || (int) ($plan['loan_round'] ?? 1) > 1
+            || (! empty($application->memberAdmission?->is_legacy));
+        if ($isOld) {
+            $prevAmount = $plan['previous_loan_amount'] ?? null;
+            if ($prevAmount === null || $prevAmount === '' || ! is_numeric($prevAmount)) {
+                $errors[] = '৩. পুরাতন সদস্যের ক্ষেত্রে "ইতোপূর্বে গৃহীত ঋণ (টাকা)" পূরণ করা হয়নি।';
+            }
+            $lastRepaidAmount = $plan['last_repaid_loan_amount'] ?? null;
+            if ($lastRepaidAmount === null || $lastRepaidAmount === '' || ! is_numeric($lastRepaidAmount)) {
+                $errors[] = '৩. পুরাতন সদস্যের ক্ষেত্রে "সর্বশেষ পরিশোধিত ঋণ" পূরণ করা হয়নি।';
+            }
+            $lastRepaidProject = trim((string) ($plan['last_repaid_project_name'] ?? ''));
+            if ($lastRepaidProject === '') {
+                $errors[] = '৩. পুরাতন সদস্যের ক্ষেত্রে "সর্বশেষ পরিশোধিত প্রকল্প" পূরণ করা হয়নি।';
+            }
+        }
+
+        // 4. ০৪. উদ্যোগের ৩ বছর এর সম্ভাব্য আয়-ব্যয় হিসাব (আয়ের চেয়ে ব্যয় বেশি হলে মানে নিট লাভ - থাকলে সাবমিট করতে পারবেনা)
+        $income = (float) ($plan['project_income_1_2_yr'] ?? 0);
+        $expense = (float) ($plan['project_expense_1_2_yr'] ?? 0);
+
+        $p3Expense = (float) ($plan['est_emp_salary'] ?? 0)
+            + (float) ($plan['est_transport'] ?? 0)
+            + (float) ($plan['est_bills'] ?? 0)
+            + (float) ($plan['est_rent'] ?? 0)
+            + (float) ($plan['est_loan_charge'] ?? 0)
+            + (float) ($plan['est_other_exp_1_amount'] ?? ($plan['est_other_exp_1_cost'] ?? 0))
+            + (float) ($plan['est_other_exp_2_amount'] ?? ($plan['est_other_exp_2_cost'] ?? 0))
+            + (float) ($plan['est_other_exp_3_amount'] ?? ($plan['est_other_exp_3_cost'] ?? 0));
+        if ($p3Expense > 0 && $expense <= 0) {
+            $expense = $p3Expense;
+        }
+
+        $p3Income = (float) ($plan['est_main_income_amount'] ?? 0) + (float) ($plan['est_other_income_amount'] ?? 0);
+        if ($p3Income > 0 && $income <= 0) {
+            $income = $p3Income;
+        }
+
+        if ($income <= 0) {
+            $errors[] = '৪. ০৪. উদ্যোগের সম্ভাব্য আয় পূরণ করা হয়নি (আয় ০ বা খালি রাখা যাবে না)।';
+        } elseif ($expense > $income || ($income - $expense) < 0) {
+            $errors[] = '৪. ০৪. উদ্যোগের সম্ভাব্য আয়ের চেয়ে ব্যয় বেশি (নিট লাভ মাইনাস)। আয়ের চেয়ে ব্যয় বেশি হলে সাবমিট করা যাবে না।';
+        }
+
+        // 5. অফিসারের পরিদর্শনোত্তর মন্তব্য
+        $officerComments = trim((string) ($plan['officer_post_inspection_comments'] ?? ''));
+        if ($officerComments === '') {
+            $errors[] = '৫. পৃষ্ঠা ৪-এ "অফিসারের পরিদর্শনোত্তর মন্তব্য" লেখা হয়নি।';
+        }
+
+        if (empty($errors)) {
+            return null;
+        }
+
+        return "আবেদনটি জমা দেওয়া যাচ্ছে না। নিচের তথ্যগুলো অসম্পূর্ণ রয়েছে:\n• " . implode("\n• ", $errors);
+    }
+
+    /**
+     * Validate loan agreement form (Form 1) requirements before submit (FO address fields).
+     */
+    private function validateAgreementFormForSubmit(LoanApplication $application): ?string
+    {
+        $agreement = $application->loan_agreement_data;
+        if (! is_array($agreement) || empty($agreement)) {
+            return 'ঋণ চুক্তিপত্র ফর্ম পূরণ ও সংরক্ষণ করা আবশ্যক।';
+        }
+
+        $errors = [];
+
+        $village = trim((string) ($agreement['village'] ?? ''));
+        if ($village === '') {
+            $errors[] = 'গ্রাম/রাস্তার নাম পূরণ করা হয়নি।';
+        }
+
+        $union = trim((string) ($agreement['union'] ?? ''));
+        if ($union === '') {
+            $errors[] = 'ইউনিয়নের নাম পূরণ করা হয়নি।';
+        }
+
+        $upazila = trim((string) ($agreement['upazila'] ?? ''));
+        if ($upazila === '') {
+            $errors[] = 'উপজেলা/থানার নাম পূরণ করা হয়নি।';
+        }
+
+        $district = trim((string) ($agreement['district'] ?? ''));
+        if ($district === '') {
+            $errors[] = 'জেলার নাম পূরণ করা হয়নি।';
+        }
+
+        if (empty($errors)) {
+            return null;
+        }
+
+        return "ঋণ চুক্তিপত্র ফর্মের ঠিকানা অসম্পূর্ণ রয়েছে:\n• " . implode("\n• ", $errors);
     }
 
     public function sendToHeadOffice(Request $request, $id)
@@ -2967,6 +3129,12 @@ class LoanApplicationController extends Controller
 
         $formData = $validated['form_data'];
         $loanProduct = LoanProduct::find($validated['loan_product_id']);
+
+        $investigationError = $this->validateFieldInvestigationForm($formData, (float) $validated['requested_amount'], $loanProduct);
+        if ($investigationError !== null) {
+            return back()->withInput()->withErrors(['error' => $investigationError]);
+        }
+
         $numberOfInstallments = $loanProduct->number_of_installments ?? 1;
         if ($loanProduct && $loanProduct->installment_type === 'weekly' && $loanProduct->duration_months) {
             $numberOfInstallments = (int) ceil(($loanProduct->duration_months * 30) / 7);
@@ -3003,6 +3171,16 @@ class LoanApplicationController extends Controller
         return redirect()->route('member.loan-applications.show', $loanApplication->id)
             ->with('success', 'সরেজমিনে তদন্ত প্রতিবেদন সংরক্ষিত হয়েছে। এখন অনুমোদন/ফরওয়ার্ড করতে পারবেন।');
     }
+
+    /**
+     * Validate field investigation form (Form 4) requirements.
+     * All empty fields are mandatory for Branch Manager.
+     */
+    private function validateFieldInvestigationForm(array $data, float $requestedAmount, ?LoanProduct $loanProduct = null): ?string
+    {
+        return LoanFormVisibility::validateFieldInvestigationData($data, $requestedAmount, $loanProduct);
+    }
+
 
     /**
      * Show loan application approval form (Jagoron/Buniad/Agrosor)

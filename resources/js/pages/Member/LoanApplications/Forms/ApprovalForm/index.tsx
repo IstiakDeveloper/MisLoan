@@ -699,42 +699,7 @@ export default function ApprovalForm({
         setErrors({});
         setSaveError(null);
 
-        // Soft draft: savings % — show red error + confirm before save
-        const effectiveDofa =
-            data.loan_round != null && Number(data.loan_round) >= 1
-                ? Number(data.loan_round)
-                : loanRound || 1;
-        const requiredPercent = getRequiredSavingsPercent(
-            loanProduct?.installment_type,
-            effectiveDofa,
-            !!data.is_against_savings,
-            loanProduct?.duration_months
-        );
-        const minSavings = Math.ceil(((Number(requestedAmount) || 0) * requiredPercent) / 100);
-        const generalAmount = Number(data.general_savings_amount) || 0;
-        const totalSavingsRaw = data.savings_amount;
-        const totalSavingsEmpty =
-            totalSavingsRaw === '' ||
-            totalSavingsRaw == null ||
-            Number.isNaN(Number(totalSavingsRaw));
-
-        if (totalSavingsEmpty) {
-            const msg = 'মোট সঞ্চয়ের পরিমাণ লিখুন (সদস্যের কাছে এখন কত সঞ্চয় আছে)।';
-            setErrors({ savings_amount: msg });
-            const ok = confirm(`${msg}\nতবুও খসড়া সেভ করবেন?`);
-            if (!ok) return;
-            setErrors({});
-        }
-
-        if ((Number(requestedAmount) || 0) > 0 && generalAmount < minSavings) {
-            const msg = `সাধারণ সঞ্চয় সর্বনিম্ন ${requiredPercent}% (৳${minSavings.toLocaleString('bn-BD')}) থাকা উচিত। এখন আছে ৳${generalAmount.toLocaleString('bn-BD')}।`;
-            setErrors({ general_savings_amount: msg });
-            const ok = confirm(`${msg}\nতবুও খসড়া সেভ করবেন? পরে সংশোধন করতে পারবেন।`);
-            if (!ok) return;
-            setErrors({});
-        }
-
-        // Auto-align page 3 expense and net profit before saving
+        // Auto-sync expense and net profit calculation
         const page3Expense =
             (Number(data.est_emp_salary) || 0) +
             (Number(data.est_transport) || 0) +
@@ -755,21 +720,13 @@ export default function ApprovalForm({
             data.est_main_income_amount = String(Math.max(0, income - (Number(data.est_other_income_amount) || 0)));
         }
 
-        if (!data.project_income_1_2_yr && data.project_income_1_2_yr !== '0') {
-            const msg = 'পৃষ্ঠা ১-এ সম্ভাব্য আয় নির্ধারণ করুন (ভর্তি ফরম বা ম্যানুয়ালি)।';
-            setErrors({ project_income_1_2_yr: msg });
-            const ok = confirm(`${msg}\nতবুও খসড়া সেভ করবেন?`);
-            if (!ok) return;
-            setErrors({});
-        }
-
         const planTotal = Number(data.invest_plan_total) || 0;
         const useTotal = Number(data.invest_use_total) || 0;
         const hasPlanTotal = data.invest_plan_total !== '' && data.invest_plan_total != null;
         const hasUseTotal = data.invest_use_total !== '' && data.invest_use_total != null;
         if (hasPlanTotal && hasUseTotal && planTotal !== useTotal) {
             const ok = confirm(
-                `বিনিয়োগের খাতের মোট (${planTotal}) এবং ঋণের ব্যবহারের মোট (${useTotal}) মিলছে না।\nতবুও খসড়া সেভ করবেন?`
+                `বিনিয়োগের খাতের মোট (${planTotal}) এবং ঋণের ব্যবহারের মোট (${useTotal}) মিলছে না।\nতবুও সংরক্ষণ করবেন?`
             );
             if (!ok) return;
         }

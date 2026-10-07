@@ -113,39 +113,51 @@ export function LoanAgreementForm({
                         <input type="text" value={data.samity_code} disabled className={disabledClass} />
                     </div>
                     <div>
-                        <label className="block text-xs font-semibold text-gray-700 mb-1">গ্রাম/রাস্তা</label>
+                        <label className="block text-xs font-semibold text-gray-700 mb-1">
+                            গ্রাম/রাস্তা <span className="text-red-500 font-bold">*</span>
+                        </label>
                         <input
                             type="text"
                             value={data.village}
                             onChange={(e) => setData('village', e.target.value)}
                             className={inputClass}
+                            placeholder="গ্রাম বা রাস্তার নাম লিখুন"
                         />
                     </div>
                     <div>
-                        <label className="block text-xs font-semibold text-gray-700 mb-1">ইউনিয়ন</label>
+                        <label className="block text-xs font-semibold text-gray-700 mb-1">
+                            ইউনিয়ন <span className="text-red-500 font-bold">*</span>
+                        </label>
                         <input
                             type="text"
                             value={data.union}
                             onChange={(e) => setData('union', e.target.value)}
                             className={inputClass}
+                            placeholder="ইউনিয়নের নাম লিখুন"
                         />
                     </div>
                     <div>
-                        <label className="block text-xs font-semibold text-gray-700 mb-1">উপজেলা/থানা</label>
+                        <label className="block text-xs font-semibold text-gray-700 mb-1">
+                            উপজেলা/থানা <span className="text-red-500 font-bold">*</span>
+                        </label>
                         <input
                             type="text"
                             value={data.upazila}
                             onChange={(e) => setData('upazila', e.target.value)}
                             className={inputClass}
+                            placeholder="উপজেলা বা থানার নাম লিখুন"
                         />
                     </div>
                     <div>
-                        <label className="block text-xs font-semibold text-gray-700 mb-1">জেলা</label>
+                        <label className="block text-xs font-semibold text-gray-700 mb-1">
+                            জেলা <span className="text-red-500 font-bold">*</span>
+                        </label>
                         <input
                             type="text"
                             value={data.district}
                             onChange={(e) => setData('district', e.target.value)}
                             className={inputClass}
+                            placeholder="জেলার নাম লিখুন"
                         />
                     </div>
                 </div>

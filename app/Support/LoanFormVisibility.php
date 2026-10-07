@@ -603,9 +603,27 @@ class LoanFormVisibility
             1 => self::hasMeaningfulFormData($application->loan_agreement_data),
             2 => self::hasMeaningfulFormData($application->guarantor_info),
             3 => self::hasMeaningfulFormData($application->nominee_info),
-            4 => self::hasMeaningfulFormData($application->asset_info),
+            4 => self::isFieldInvestigationSaved($application->asset_info),
             5 => self::hasMeaningfulFormData($application->business_plan),
         ];
+    }
+
+    /**
+     * Form 4 (সরেজমিন তদন্ত প্রতিবেদন) is only saved when the branch manager
+     * actually fills and saves the investigation report, not just the raw
+     * member admission house counts cloned by LoanApplicationCloneService.
+     */
+    public static function isFieldInvestigationSaved(mixed $data): bool
+    {
+        if (! is_array($data) || empty($data)) {
+            return false;
+        }
+
+        // Must have the core field investigation report fields filled by the manager
+        return ! empty(trim((string) ($data['field_visit_date'] ?? '')))
+            && ! empty(trim((string) ($data['comments'] ?? '')))
+            && ! empty(trim((string) ($data['information_provider_name'] ?? '')))
+            && ! empty(trim((string) ($data['house_identification'] ?? '')));
     }
 
     public static function hasMeaningfulFormData(mixed $data): bool
@@ -661,6 +679,140 @@ class LoanFormVisibility
         if (! self::allRequiredFormsSaved($required, $saved)) {
             throw new \Exception(self::BM_FORM_INCOMPLETE_MESSAGE);
         }
+
+        if (in_array(4, $required, true)) {
+            $validationError = self::validateFieldInvestigationData($loan->asset_info, $amount, $product);
+            if ($validationError !== null) {
+                throw new \Exception(self::BM_FORM_INCOMPLETE_MESSAGE);
+            }
+        }
+    }
+
+    /**
+     * Validate field investigation form (Form 4) requirements.
+     * All empty fields are mandatory for Branch Manager.
+     */
+    public static function validateFieldInvestigationData(mixed $data, float $requestedAmount = 0, ?object $loanProduct = null): ?string
+    {
+        if (! is_array($data) || empty($data)) {
+            return 'সরেজমিন তদন্ত প্রতিবেদন (ফর্ম ৪) পূরণ করা আবশ্যক।';
+        }
+
+        $errors = [];
+
+        // শাখার তথ্য
+        if (trim((string) ($data['branch_name'] ?? '')) === '') {
+            $errors[] = 'শাখার নাম পূরণ করা আবশ্যক।';
+        }
+        if (trim((string) ($data['branch_address'] ?? '')) === '') {
+            $errors[] = 'শাখার ঠিকানা পূরণ করা আবশ্যক।';
+        }
+
+        // সদস্য ও তথ্য প্রদানকারীর তথ্য
+        if (trim((string) ($data['member_name'] ?? '')) === '') {
+            $errors[] = 'সদস্যের নাম পূরণ করা আবশ্যক।';
+        }
+        if (trim((string) ($data['member_no'] ?? '')) === '') {
+            $errors[] = 'সদস্য নং পূরণ করা আবশ্যক।';
+        }
+        if (trim((string) ($data['samity_name'] ?? '')) === '') {
+            $errors[] = 'সমিতির নাম পূরণ করা আবশ্যক।';
+        }
+        if (trim((string) ($data['samity_code'] ?? '')) === '') {
+            $errors[] = 'সমিতি কোড পূরণ করা আবশ্যক।';
+        }
+        if (trim((string) ($data['nid_number'] ?? '')) === '') {
+            $errors[] = 'জাতীয় পরিচয়পত্র / স্মার্ট কার্ড নং পূরণ করা আবশ্যক।';
+        }
+        if (trim((string) ($data['member_mobile'] ?? '')) === '') {
+            $errors[] = 'সদস্যের মোবাইল নং পূরণ করা আবশ্যক।';
+        }
+        if (trim((string) ($data['information_provider_name'] ?? '')) === '') {
+            $errors[] = 'তথ্য প্রদানকারীর নাম পূরণ করা আবশ্যক।';
+        }
+        if (trim((string) ($data['information_provider_mobile'] ?? '')) === '') {
+            $errors[] = 'তথ্য প্রদানকারীর মোবাইল নং পূরণ করা আবশ্যক।';
+        }
+        if (trim((string) ($data['relationship_with_member'] ?? '')) === '') {
+            $errors[] = 'সদস্যের সাথে সম্পর্ক পূরণ করা আবশ্যক।';
+        }
+
+        // তদন্ত তথ্য
+        // ১. মূল পেশা, লোক সংখ্যা, উপার্জনকারী
+        if (trim((string) ($data['main_profession'] ?? '')) === '') {
+            $errors[] = '১. মূল পেশা পূরণ করা আবশ্যক।';
+        }
+        $familyCount = isset($data['family_members_count']) ? (int) $data['family_members_count'] : 0;
+        if ($familyCount <= 0) {
+            $errors[] = '১. পরিবারের লোক সংখ্যা পূরণ করা আবশ্যক (কমপক্ষে ১ হতে হবে)।';
+        }
+        if (! isset($data['earning_members_count']) || $data['earning_members_count'] === '' || (int) $data['earning_members_count'] < 0) {
+            $errors[] = '১. উপার্জনকারী সংখ্যা পূরণ করা আবশ্যক।';
+        }
+
+        // ২. বর্তমান ঋণের চাহিদা
+        $demand = isset($data['current_loan_demand']) ? (float) $data['current_loan_demand'] : 0;
+        if ($demand <= 0) {
+            $errors[] = '২. বর্তমান ঋণের চাহিদা পূরণ করা আবশ্যক।';
+        }
+
+        // ৩. জমি ও মূল্য
+        if (trim((string) ($data['own_land_amount'] ?? '')) === '') {
+            $errors[] = '৩. নিজস্ব জমির পরিমাণ পূরণ করা আবশ্যক।';
+        }
+        if (trim((string) ($data['mortgaged_land_amount'] ?? '')) === '') {
+            $errors[] = '৩. বন্ধকী জমির পরিমাণ পূরণ করা আবশ্যক (না থাকলে "০" বা "নেই" লিখুন)।';
+        }
+        if (! isset($data['land_value']) || $data['land_value'] === '' || (float) $data['land_value'] < 0) {
+            $errors[] = '৩. জমির মূল্য পূরণ করা আবশ্যক।';
+        }
+
+        // ৪. ঘরের ধরণ ও সংখ্যা
+        if (trim((string) ($data['house_type'] ?? '')) === '') {
+            $errors[] = '৪. বাড়ীর ধরণ পূরণ করা আবশ্যক।';
+        }
+        $roomCount = isset($data['room_count']) ? (int) $data['room_count'] : 0;
+        if ($roomCount <= 0) {
+            $errors[] = '৪. ঘরের সংখ্যা পূরণ করা আবশ্যক (কমপক্ষে ১ হতে হবে)।';
+        }
+
+        // ৮. সাধারণ সঞ্চয়
+        $genSavings = isset($data['general_savings_amount']) ? (float) $data['general_savings_amount'] : 0;
+        if ($genSavings <= 0) {
+            $errors[] = '৮. সাধারণ সঞ্চয়ের পরিমাণ পূরণ করা আবশ্যক।';
+        }
+
+        // ৯. বাড়ী চেনার নির্দেশনা
+        if (trim((string) ($data['house_identification'] ?? '')) === '') {
+            $errors[] = '৯. সদস্যের বাড়ী চেনার নির্দেশনা পূরণ করা আবশ্যক।';
+        }
+
+        // ১০. অন্যান্য সংস্থা হতে ঋণ গ্রহণের তথ্য
+        if (trim((string) ($data['other_organization_loans'] ?? '')) === '') {
+            $errors[] = '১০. অন্যান্য সংস্থা হতে ঋণ গ্রহণের তথ্য পূরণ করা আবশ্যক (না থাকলে "নেই" লিখুন)।';
+        }
+
+        // ১১. বিগত দফার পরিশোধের ধরণ
+        if (trim((string) ($data['previous_repayment_type'] ?? '')) === '') {
+            $errors[] = '১১. বিগত দফার পরিশোধের ধরণ নির্বাচন করা আবশ্যক।';
+        }
+
+        // তারিখ ও মন্তব্য
+        if (trim((string) ($data['field_visit_date'] ?? '')) === '') {
+            $errors[] = 'সরেজমিনে পরিদর্শনের তারিখ নির্বাচন করা আবশ্যক।';
+        }
+        if (trim((string) ($data['loan_disbursement_date'] ?? '')) === '') {
+            $errors[] = 'ঋণ প্রদানের তারিখ নির্বাচন করা আবশ্যক।';
+        }
+        if (trim((string) ($data['comments'] ?? '')) === '') {
+            $errors[] = 'শাখা ব্যবস্থাপকের মন্তব্য লেখা আবশ্যক।';
+        }
+
+        if (empty($errors)) {
+            return null;
+        }
+
+        return "সরেজমিনে তদন্ত প্রতিবেদনের সব তথ্য পূরণ করা বাধ্যতামূলক। নিচের তথ্যগুলো অসম্পূর্ণ রয়েছে:\n• " . implode("\n• ", $errors);
     }
 
     public static function isBmFormIncompleteMessage(?string $message): bool
@@ -673,3 +825,4 @@ class LoanFormVisibility
             || str_contains($message, 'সরেজমিন তদন্ত প্রতিবেদন (ফর্ম ৪)');
     }
 }
+

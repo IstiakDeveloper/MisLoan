@@ -44,7 +44,7 @@ class TeamBasedApprovalItem extends Model
         // repaid_loan_amount, repaid_installment_no, other_institution_loan_amount, proposed_loan_amount: stored as string (text+number)
         'approved_amount' => 'integer',
         'loan_term_years' => 'float',
-        'dob' => 'date',
+        'dob' => 'date:Y-m-d',
     ];
 
     /** Numeric amount strings as whole numbers (0.00 → "0"); non-numeric text left as-is. */
