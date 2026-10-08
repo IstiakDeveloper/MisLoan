@@ -146,7 +146,7 @@ export default function FormPage1({ data, setData, member, isLegacy }: AgrosorFo
                     </div>
                     <div>
                         <label className="block text-xs font-semibold text-gray-700 mb-1 flex items-center justify-between">
-                            <span>বাস্তবায়িত প্রকল্পের নাম</span>
+                            <span>বাস্তবায়িত প্রকল্পের নাম <span className="text-red-500 font-bold">*</span></span>
                             {fromAdmission && <Lock className="w-3 h-3 text-gray-400" />}
                         </label>
                         <input type="text" value={data.implemented_project_name || ''} onChange={(e) => setData('implemented_project_name', e.target.value)} readOnly={fromAdmission} className={inputClass} />
@@ -227,7 +227,9 @@ export default function FormPage1({ data, setData, member, isLegacy }: AgrosorFo
 
             <div className="bg-white p-4 rounded-xl border border-gray-200 shadow-sm space-y-3">
                 <div>
-                    <p className="text-xs font-semibold text-gray-800 mb-2">২. উৎপাদিত পণ্য সামগ্রীর কাঁচামালের উৎস ও বিবরণ তথ্য (টিক চিহ্ন দিন)</p>
+                    <p className="text-xs font-semibold text-gray-800 mb-2">
+                        ২. উৎপাদিত পণ্য সামগ্রীর কাঁচামালের উৎস ও বিবরণ তথ্য (টিক চিহ্ন দিন) <span className="text-red-500 font-bold">*</span>
+                    </p>
                     <div className="flex flex-wrap gap-4 text-xs">
                         {[
                             { v: 'local', l: 'ক) স্থানীয়' },
@@ -242,7 +244,9 @@ export default function FormPage1({ data, setData, member, isLegacy }: AgrosorFo
                     </div>
                 </div>
                 <div>
-                    <p className="text-xs font-semibold text-gray-800 mb-2">৩. চূড়ান্ত উৎপাদিত পণ্য সামগ্রী বিক্রয় তথ্য (টিক চিহ্ন দিন)</p>
+                    <p className="text-xs font-semibold text-gray-800 mb-2">
+                        ৩. চূড়ান্ত উৎপাদিত পণ্য সামগ্রী বিক্রয় তথ্য (টিক চিহ্ন দিন) <span className="text-red-500 font-bold">*</span>
+                    </p>
                     <div className="flex flex-wrap gap-4 text-xs">
                         {[
                             { v: 'local_market', l: 'ক) স্থানীয় বাজারে' },

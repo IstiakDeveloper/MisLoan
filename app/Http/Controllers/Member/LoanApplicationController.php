@@ -1700,15 +1700,147 @@ class LoanApplicationController extends Controller
     }
 
     /**
-     * Validate 4-page loan application approval form requirements before submit.
+     * Validate loan application approval form requirements before submit.
+     * Routes to 2-page (Agrosor Profile) or standard 4-page validator based on product/variant.
      */
     private function validateApprovalFormForSubmit(LoanApplication $application): ?string
     {
         $plan = $application->business_plan;
         if (! is_array($plan) || empty($plan)) {
-            return 'আবেদন ও অনুমোদনপত্র (৪ পৃষ্ঠার ফর্ম) পূরণ করা আবশ্যক।';
+            return 'আবেদন ও অনুমোদনপত্র ফর্ম পূরণ ও সংরক্ষণ করা আবশ্যক।';
         }
 
+        if ($this->isAgrosorProfileForm($application, $plan)) {
+            return $this->validateAgrosorProfileForSubmit($application, $plan);
+        }
+
+        return $this->validateStandardApprovalFormForSubmit($application, $plan);
+    }
+
+    private function isAgrosorProfileForm(LoanApplication $application, array $plan): bool
+    {
+        $variant = $plan['form_variant'] ?? null;
+        if ($variant === 'agrosor_profile') {
+            return true;
+        }
+        if ($variant === 'approval_form') {
+            return false;
+        }
+
+        $application->loadMissing(['loanProduct.loanCategory', 'loanCategory']);
+        $product = $application->loanProduct;
+        $category = $application->loanCategory ?? $product?->loanCategory;
+
+        return LoanFormVisibility::isSufolon($product, $category);
+    }
+
+    /**
+     * Validate 2-page Agrosor Profile (অগ্রসর ঋণ আবেদন ও অনুমোদনপত্র) requirements before submit.
+     */
+    private function validateAgrosorProfileForSubmit(LoanApplication $application, array $plan): ?string
+    {
+        $errors = [];
+
+        // ১. বাস্তবায়িত প্রকল্পের নাম
+        $projectName = trim((string) ($plan['implemented_project_name'] ?? ''));
+        if ($projectName === '') {
+            $errors[] = '১. পৃষ্ঠা ১-এ "বাস্তবায়িত প্রকল্পের নাম" পূরণ করা হয়নি।';
+        }
+
+        // ২. কাঁচামালের উৎস
+        $rawSource = trim((string) ($plan['raw_material_source'] ?? ''));
+        if ($rawSource === '') {
+            $errors[] = '২. পৃষ্ঠা ১-এ "কাঁচামালের উৎস ও বিবরণ তথ্য" নির্বাচন করা হয়নি।';
+        }
+
+        // ৩. পণ্য সামগ্রী বিক্রয় তথ্য
+        $salesMarket = trim((string) ($plan['sales_market'] ?? ''));
+        if ($salesMarket === '') {
+            $errors[] = '৩. পৃষ্ঠা ১-এ "চূড়ান্ত উৎপাদিত পণ্য সামগ্রী বিক্রয় তথ্য" নির্বাচন করা হয়নি।';
+        }
+
+        // ৯. উদ্যোক্তার গত বছরের সংক্ষিপ্ত আয়-ব্যয় বিবরণী
+        $income = $plan['last_year_total_income'] ?? null;
+        $expense = $plan['last_year_total_expense'] ?? null;
+        if ($income === null || $income === '' || (float) $income <= 0) {
+            $errors[] = '৯. পৃষ্ঠা ২-এ "উদ্যোক্তার গত বছরের মোট আয়" পূরণ করা হয়নি (আয় ০ বা খালি রাখা যাবে না)।';
+        }
+        if ($expense === null || $expense === '' || (float) $expense < 0) {
+            $errors[] = '৯. পৃষ্ঠা ২-এ "উদ্যোক্তার গত বছরের মোট ব্যয়" পূরণ করা হয়নি।';
+        }
+        if ($income !== null && $income !== '' && $expense !== null && $expense !== '') {
+            $fIncome = (float) $income;
+            $fExpense = (float) $expense;
+            if ($fExpense > $fIncome) {
+                $errors[] = '৯. পৃষ্ঠা ২-এ উদ্যোক্তার গত বছরের আয়ের চেয়ে ব্যয় বেশি (নিট লাভ মাইনাস)। আয়ের চেয়ে ব্যয় বেশি হলে সাবমিট করা যাবে না।';
+            }
+        }
+
+        // ১১. পুরাতন সদস্যের ক্ষেত্রে বিগত ঋণের তথ্য
+        $round = (int) ($plan['current_loan_round'] ?? 1);
+        $isOld = ($plan['member_type'] ?? '') === 'old'
+            || $round > 1
+            || (! empty($application->memberAdmission?->is_legacy));
+        if ($isOld) {
+            $prevLoans = $plan['previous_loans'] ?? [];
+            $hasPrevInfo = false;
+            if (is_array($prevLoans)) {
+                foreach ($prevLoans as $row) {
+                    if (! empty(trim((string) ($row['receive_date'] ?? '')))
+                        || ! empty(trim((string) ($row['project_name'] ?? '')))
+                        || ! empty(trim((string) ($row['repay_date'] ?? '')))
+                    ) {
+                        $hasPrevInfo = true;
+                        break;
+                    }
+                }
+            }
+            if (! $hasPrevInfo) {
+                $errors[] = '১১. পৃষ্ঠা ২-এ পুরাতন সদস্যের ক্ষেত্রে "বিগত ঋণের তথ্য (সর্বশেষ ৩ দফা)" পূরণ করা হয়নি।';
+            }
+        }
+
+        // ১৩. জামিনদারের তথ্য (২ জন)
+        // ১ম জামিনদার
+        if (trim((string) ($plan['guarantor_1_name'] ?? '')) === '') {
+            $errors[] = '১৩. পৃষ্ঠা ২-এ ১ম জামিনদারের নাম পূরণ করা হয়নি।';
+        }
+        if (trim((string) ($plan['guarantor_1_address'] ?? '')) === '') {
+            $errors[] = '১৩. পৃষ্ঠা ২-এ ১ম জামিনদারের ঠিকানা পূরণ করা হয়নি।';
+        }
+        if (trim((string) ($plan['guarantor_1_mobile'] ?? '')) === '') {
+            $errors[] = '১৩. পৃষ্ঠা ২-এ ১ম জামিনদারের মোবাইল নম্বর পূরণ করা হয়নি।';
+        }
+
+        // ২য় জামিনদার
+        if (trim((string) ($plan['guarantor_2_name'] ?? '')) === '') {
+            $errors[] = '১৩. পৃষ্ঠা ২-এ ২য় জামিনদারের নাম পূরণ করা হয়নি।';
+        }
+        if (trim((string) ($plan['guarantor_2_address'] ?? '')) === '') {
+            $errors[] = '১৩. পৃষ্ঠা ২-এ ২য় জামিনদারের ঠিকানা পূরণ করা হয়নি।';
+        }
+        if (trim((string) ($plan['guarantor_2_mobile'] ?? '')) === '') {
+            $errors[] = '১৩. পৃষ্ঠা ২-এ ২য় জামিনদারের মোবাইল নম্বর পূরণ করা হয়নি।';
+        }
+
+        // অফিসারের পরিদর্শনোত্তর মন্তব্য
+        $officerComments = trim((string) ($plan['officer_post_inspection_comments'] ?? ($plan['officer_comments'] ?? '')));
+        if ($officerComments === '') {
+            $errors[] = 'পৃষ্ঠা ২-এ "(ক) অফিসারের পরিদর্শনোত্তর মন্তব্য" লেখা হয়নি।';
+        }
+
+        if (empty($errors)) {
+            return null;
+        }
+
+        return "আবেদনটি জমা দেওয়া যাচ্ছে না। অগ্রসর ঋণ আবেদন ও অনুমোদনপত্র (২ পৃষ্ঠার ফর্ম)-এ নিচের তথ্যগুলো অসম্পূর্ণ রয়েছে:\n• " . implode("\n• ", $errors);
+    }
+
+    /**
+     * Validate 4-page loan application approval form requirements before submit.
+     */
+    private function validateStandardApprovalFormForSubmit(LoanApplication $application, array $plan): ?string
+    {
         $errors = [];
 
         // 1. বরাবর
@@ -1796,8 +1928,9 @@ class LoanApplicationController extends Controller
             return null;
         }
 
-        return "আবেদনটি জমা দেওয়া যাচ্ছে না। নিচের তথ্যগুলো অসম্পূর্ণ রয়েছে:\n• " . implode("\n• ", $errors);
+        return "আবেদনটি জমা দেওয়া যাচ্ছে না। আবেদন ও অনুমোদনপত্র (৪ পৃষ্ঠার ফর্ম)-এ নিচের তথ্যগুলো অসম্পূর্ণ রয়েছে:\n• " . implode("\n• ", $errors);
     }
+
 
     /**
      * Validate loan agreement form (Form 1) requirements before submit (FO address fields).

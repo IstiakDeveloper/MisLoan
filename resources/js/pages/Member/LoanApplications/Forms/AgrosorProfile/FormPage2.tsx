@@ -18,6 +18,7 @@ export default function FormPage2({
     isLegacy,
 }: AgrosorFormPageProps) {
     const fromAdmission = !!(member && !isLegacy);
+    const isOld = data.member_type === 'old' || Number(data.current_loan_round || 1) > 1 || Boolean(isLegacy);
 
     useEffect(() => {
         if (!Array.isArray(data.previous_loans) || data.previous_loans.length === 0) {
@@ -214,11 +215,15 @@ export default function FormPage2({
                 <p className="font-bold text-sm text-gray-800 border-b pb-2">৯. উদ্যোক্তার গত বছরের সংক্ষিপ্ত আয়-ব্যয় বিবরণী</p>
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
                     <div>
-                        <label className="text-xs font-semibold text-gray-700 mb-1 block">মোট আয়</label>
+                        <label className="text-xs font-semibold text-gray-700 mb-1 block">
+                            মোট আয় <span className="text-red-500 font-bold">*</span>
+                        </label>
                         <input type="number" className={admissionClass} readOnly={fromAdmission} value={data.last_year_total_income || ''} onChange={(e) => setData('last_year_total_income', e.target.value)} />
                     </div>
                     <div>
-                        <label className="text-xs font-semibold text-gray-700 mb-1 block">মোট ব্যয়</label>
+                        <label className="text-xs font-semibold text-gray-700 mb-1 block">
+                            মোট ব্যয় <span className="text-red-500 font-bold">*</span>
+                        </label>
                         <input type="number" className={admissionClass} readOnly={fromAdmission} value={data.last_year_total_expense || ''} onChange={(e) => setData('last_year_total_expense', e.target.value)} />
                     </div>
                     <div>
@@ -242,7 +247,10 @@ export default function FormPage2({
 
             {/* 11 Previous loans */}
             <div className="bg-white p-4 rounded-xl border border-gray-200 shadow-sm space-y-3 overflow-x-auto">
-                <p className="font-bold text-sm text-gray-800 border-b pb-2">১১. বিগত ঋণের তথ্য (সর্বশেষ ৩ দফা)</p>
+                <p className="font-bold text-sm text-gray-800 border-b pb-2">
+                    ১১. বিগত ঋণের তথ্য (সর্বশেষ ৩ দফা)
+                    {isOld && <span className="text-red-500 font-bold ml-1.5 text-xs">* (পুরাতন সদস্যের ক্ষেত্রে আবশ্যক)</span>}
+                </p>
                 <table className="w-full min-w-[750px] border-collapse text-xs">
                     <thead>
                         <tr>
@@ -342,7 +350,9 @@ export default function FormPage2({
                     <div className="rounded-xl border border-gray-200 bg-gray-50/70 p-3 space-y-2">
                         <p className="text-xs font-bold text-emerald-800 border-b border-emerald-100 pb-1">১| ১ম জামিনদার</p>
                         <div>
-                            <label className="text-[10px] font-medium text-gray-600 mb-0.5 block">নাম</label>
+                            <label className="text-[10px] font-medium text-gray-600 mb-0.5 block">
+                                নাম <span className="text-red-500 font-bold">*</span>
+                            </label>
                             <input
                                 type="text"
                                 placeholder="জামিনদারের নাম"
@@ -353,7 +363,9 @@ export default function FormPage2({
                             />
                         </div>
                         <div>
-                            <label className="text-[10px] font-medium text-gray-600 mb-0.5 block">ঠিকানা</label>
+                            <label className="text-[10px] font-medium text-gray-600 mb-0.5 block">
+                                ঠিকানা <span className="text-red-500 font-bold">*</span>
+                            </label>
                             <input
                                 type="text"
                                 placeholder="ঠিকানা"
@@ -364,7 +376,9 @@ export default function FormPage2({
                             />
                         </div>
                         <div>
-                            <label className="text-[10px] font-medium text-gray-600 mb-0.5 block">মোবাইল নং</label>
+                            <label className="text-[10px] font-medium text-gray-600 mb-0.5 block">
+                                মোবাইল নং <span className="text-red-500 font-bold">*</span>
+                            </label>
                             <input
                                 type="text"
                                 placeholder="মোবাইল নং"
@@ -378,17 +392,21 @@ export default function FormPage2({
                     <div className="rounded-xl border border-emerald-200 bg-emerald-50/40 p-3 space-y-2">
                         <p className="text-xs font-bold text-emerald-800 border-b border-emerald-100 pb-1">২| ২য় জামিনদার</p>
                         <div>
-                            <label className="text-[10px] font-medium text-gray-600 mb-0.5 block">নাম</label>
+                            <label className="text-[10px] font-medium text-gray-600 mb-0.5 block">
+                                ২য় জামিনদারের নাম <span className="text-red-500 font-bold">*</span>
+                            </label>
                             <input
                                 type="text"
-                                placeholder="২য় জামিনদারের নাম"
+                                placeholder="২য় জামিনদারের নাম"
                                 className={inputClass}
                                 value={data.guarantor_2_name || ''}
                                 onChange={(e) => setData('guarantor_2_name', e.target.value)}
                             />
                         </div>
                         <div>
-                            <label className="text-[10px] font-medium text-gray-600 mb-0.5 block">ঠিকানা</label>
+                            <label className="text-[10px] font-medium text-gray-600 mb-0.5 block">
+                                ঠিকানা <span className="text-red-500 font-bold">*</span>
+                            </label>
                             <input
                                 type="text"
                                 placeholder="ঠিকানা"
@@ -398,7 +416,9 @@ export default function FormPage2({
                             />
                         </div>
                         <div>
-                            <label className="text-[10px] font-medium text-gray-600 mb-0.5 block">মোবাইল নং</label>
+                            <label className="text-[10px] font-medium text-gray-600 mb-0.5 block">
+                                মোবাইল নং <span className="text-red-500 font-bold">*</span>
+                            </label>
                             <input
                                 type="text"
                                 placeholder="মোবাইল নং"
@@ -423,7 +443,7 @@ export default function FormPage2({
 
                 <div>
                     <label className="text-xs font-semibold text-gray-700 mb-1 block">
-                        (ক) অফিসারের পরিদর্শনোত্তর মন্তব্য ও স্বাক্ষর
+                        (ক) অফিসারের পরিদর্শনোত্তর মন্তব্য ও স্বাক্ষর <span className="text-red-500 font-bold">*</span>
                     </label>
                     <textarea
                         rows={2}
