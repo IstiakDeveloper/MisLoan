@@ -206,10 +206,10 @@ class MemberAdmissionController extends Controller
                 $q->where(function ($sub) {
                     $sub->where('is_legacy', false)->orWhereNull('is_legacy');
                 })
-                ->whereNull('previous_admission_id')
-                ->where(function ($sub) {
-                    $sub->whereNull('loan_dofa')->orWhere('loan_dofa', '<=', 1);
-                });
+                    ->whereNull('previous_admission_id')
+                    ->where(function ($sub) {
+                        $sub->whereNull('loan_dofa')->orWhere('loan_dofa', '<=', 1);
+                    });
             });
         }
     }
@@ -1036,9 +1036,8 @@ class MemberAdmissionController extends Controller
                 $admissionData['employee_name'] = $admissionData['employee_name'] ?: ($authUser->pin ?: $authUser->username);
             }
 
-            // Draft stays draft; only legacy/old members auto-approve. New members keep
-            // their own admission workflow even when proceeding to a loan form.
-            $isProceedingToLoan = $request->input('next_action') === 'loan_application' || $request->boolean('redirect_to_loan') || $request->boolean('cycle_renewal');
+            // Draft stays draft; only legacy/old members auto-approve.
+            // Member Admission create saves the admission only. Loan forms start from Cycle Hub.
             if ($isLegacy || $admissionData['is_legacy']) {
                 $admissionData['status'] = 'approved';
                 $admissionData['submitted_by'] = $authUser->id;
@@ -1067,11 +1066,6 @@ class MemberAdmissionController extends Controller
             }
 
             DB::commit();
-
-            // Redirect directly to loan selection or draft if officer clicked 'Save & Proceed to Loan'
-            if ($isProceedingToLoan) {
-                return $this->handleLoanRedirectOrDraft($request, $admission);
-            }
 
             if ($isLegacy && ! $saveAsDraft) {
                 return redirect()->route('member-admissions.index')
@@ -1203,7 +1197,9 @@ class MemberAdmissionController extends Controller
             'loanCategories' => $loanCategories,
             'for_submit' => $request->boolean('for_submit'),
             'can_change_member_type' => $canChangeMemberType,
-            'is_cycle_renewal' => $request->boolean('cycle_renewal') || (bool) $memberAdmission->previous_admission_id || ((int) ($memberAdmission->loan_dofa ?? 0) > 1),
+            // Loan-together buttons only when opened from Cycle Hub (?cycle_renewal=1).
+            // Old-member edit from Member Admission (loan_dofa > 1, no previous cycle) is save-only.
+            'is_cycle_renewal' => $request->boolean('cycle_renewal'),
             'has_active_loan' => $hasActiveLoan,
             'existing_loan_form' => $existingLoan ? [
                 'id' => $existingLoan->id,
@@ -1570,10 +1566,10 @@ class MemberAdmissionController extends Controller
                 }
             }
 
-            // Legacy / renewal draft auto-approves. New members keep the admission workflow
-            // even when the officer proceeds to fill a loan form.
-            $isProceedingToLoan = $request->input('next_action') === 'loan_application' || $request->boolean('redirect_to_loan');
-            $isCycleRenewal = $request->boolean('cycle_renewal') || (bool) $memberAdmission->previous_admission_id || ((int) ($memberAdmission->loan_dofa ?? 0) > 1);
+            // Legacy / renewal draft auto-approves. New members keep the admission workflow.
+            // A loan draft is created only from the Cycle Hub edit (?cycle_renewal=1).
+            $isCycleRenewal = $request->boolean('cycle_renewal');
+            $isProceedingToLoan = $isCycleRenewal && ($request->input('next_action') === 'loan_application' || $request->boolean('redirect_to_loan'));
             $legacyAutoApproved = false;
             if (($isLegacy || $isRenewalOrOld) && ($memberAdmission->isDraft() || ! $saveAsDraft || $isProceedingToLoan)) {
                 $updateData['status'] = 'approved';
@@ -2203,7 +2199,6 @@ class MemberAdmissionController extends Controller
                     ->route('member.cycle-hub.index')
                     ->with('error', MemberAdmission::nextLoanViaCycleHubMessage());
             }
-
 
             return $this->createAdmissionLoanDraftOrRedirect(
                 $memberAdmission,

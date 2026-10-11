@@ -52,24 +52,6 @@ interface SamityItem {
     branch?: { id: number; name: string; code?: string };
 }
 
-interface LoanCategoryItem {
-    id: number;
-    category_name: string;
-    category_name_bn?: string;
-    category_code: string;
-    loan_products: Array<{
-        id: number;
-        product_name: string;
-        product_name_bn?: string;
-        product_code: string;
-        min_amount: number;
-        max_amount: number;
-        interest_rate: number;
-        duration_months: number;
-        installment_type: string;
-    }>;
-}
-
 interface Props {
     branches: Array<{ id: number; name: string }>;
     samities: Array<SamityItem>;
@@ -80,7 +62,6 @@ interface Props {
         email: string;
         role: { name: string };
     }>;
-    loanCategories?: Array<LoanCategoryItem>;
     suggested_application_no?: string;
 }
 
@@ -297,7 +278,6 @@ export default function Create({
     samities,
     categories,
     availableApprovers,
-    loanCategories = [],
     suggested_application_no = '',
 }: Props) {
     const page = usePage<{
@@ -326,12 +306,6 @@ export default function Create({
     const [samityDropdownOpen, setSamityDropdownOpen] = useState(false);
     const [memberTypeChosen, setMemberTypeChosen] = useState(false);
     const [draftTypeHint, setDraftTypeHint] = useState<'new' | 'old' | null>(null);
-
-    // Loan modal states for saving and proceeding directly to loan application
-    const [showLoanModal, setShowLoanModal] = useState(false);
-    const [selectedLoanCategory, setSelectedLoanCategory] = useState<number | null>(null);
-    const [selectedLoanProduct, setSelectedLoanProduct] = useState<number | null>(null);
-    const [loanRequestedAmount, setLoanRequestedAmount] = useState<string>('');
 
     // Auto-save & draft states
     const [isInitialized, setIsInitialized] = useState(false);
@@ -688,16 +662,8 @@ export default function Create({
         }
     };
 
-    const handleSubmit = (
-        saveAsDraft: boolean,
-        options?: {
-            nextAction?: string;
-            loanCategoryId?: number;
-            loanProductId?: number;
-            requestedAmount?: string | number;
-        }
-    ) => {
-        if (isLegacyMember && !saveAsDraft && !options?.nextAction) {
+    const handleSubmit = (saveAsDraft: boolean) => {
+        if (isLegacyMember && !saveAsDraft) {
             const dofa = Number(data.loan_dofa);
             if (!dofa || dofa < 1) {
                 alert('পুরাতন সদস্যের জন্য ঋণের দফা দেওয়া বাধ্যতামূলক।');
@@ -762,19 +728,6 @@ export default function Create({
                 ? next.other_assets.reduce((sum: number, a: any) => sum + (Number(a?.estimated_value) || 0), 0)
                 : 0;
             next.total_asset_value = landVal + otherAssetsVal;
-            if (options?.nextAction) {
-                next.next_action = options.nextAction;
-            }
-            if (options?.loanCategoryId) {
-                next.loan_category_id = options.loanCategoryId;
-            }
-            if (options?.loanProductId) {
-                next.loan_product_id = options.loanProductId;
-            }
-            if (options?.requestedAmount) {
-                next.requested_amount = options.requestedAmount;
-                next.requested_loan_amount = options.requestedAmount;
-            }
             if (Array.isArray(next.family_members)) {
                 next.family_members = next.family_members.map((item: any) => {
                     const cleaned: any = { ...item };
@@ -797,10 +750,6 @@ export default function Create({
         });
 
         const queryParams = new URLSearchParams({ draft: asDraft ? '1' : '0' });
-        if (options?.nextAction) queryParams.set('next_action', options.nextAction);
-        if (options?.loanCategoryId) queryParams.set('loan_category_id', String(options.loanCategoryId));
-        if (options?.loanProductId) queryParams.set('loan_product_id', String(options.loanProductId));
-        if (options?.requestedAmount) queryParams.set('requested_amount', String(options.requestedAmount));
 
         post(`/member-admissions?${queryParams.toString()}`, {
             preserveScroll: true,
@@ -817,28 +766,6 @@ export default function Create({
             onError: () => {
                 window.scrollTo({ top: 0, behavior: 'smooth' });
             },
-        });
-    };
-
-    const handleOpenLoanModal = () => {
-        if (loanCategories && loanCategories.length > 0) {
-            setShowLoanModal(true);
-        } else {
-            handleSubmit(true, { nextAction: 'loan_application' });
-        }
-    };
-
-    const handleConfirmLoanSubmit = () => {
-        if (!selectedLoanCategory || !selectedLoanProduct || !loanRequestedAmount) {
-            alert('দয়া করে ঋণ ক্যাটাগরি, পণ্য এবং ঋণের পরিমাণ পূরণ করুন।');
-            return;
-        }
-        setShowLoanModal(false);
-        handleSubmit(true, {
-            nextAction: 'loan_application',
-            loanCategoryId: selectedLoanCategory,
-            loanProductId: selectedLoanProduct,
-            requestedAmount: loanRequestedAmount,
         });
     };
 
@@ -1377,178 +1304,6 @@ export default function Create({
                     )}
                 </div>
 
-                {/* LOAN SELECTION MODAL */}
-                {showLoanModal && (
-                    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-xs p-4">
-                        <div className="w-full max-w-lg rounded-3xl bg-white shadow-2xl overflow-hidden border border-slate-200">
-                            {/* Header */}
-                            <div className="bg-gradient-to-r from-emerald-700 to-teal-800 text-white p-5 flex items-center justify-between">
-                                <div className="flex items-center gap-3">
-                                    <div className="p-2.5 rounded-2xl bg-white/10 backdrop-blur-md">
-                                        <Sparkles className="w-5 h-5 text-emerald-300" />
-                                    </div>
-                                    <div>
-                                        <h3 className="text-base font-extrabold">ঋণের তথ্য নির্বাচন</h3>
-                                        <p className="text-xs text-emerald-100/90 mt-0.5">
-                                            ভর্তি সংরক্ষণ শেষে সরাসরি ঋণ ফর্মে প্রবেশ করবে
-                                        </p>
-                                    </div>
-                                </div>
-                                <button
-                                    type="button"
-                                    onClick={() => setShowLoanModal(false)}
-                                    className="p-1.5 text-white/80 hover:text-white rounded-xl hover:bg-white/10 transition"
-                                >
-                                    <X className="w-5 h-5" />
-                                </button>
-                            </div>
-
-                            {/* Body */}
-                            <div className="p-6 space-y-4 max-h-[80vh] overflow-y-auto">
-                                {/* Member Card */}
-                                <div className="p-3.5 bg-slate-50 border border-slate-200 rounded-2xl flex items-center justify-between">
-                                    <div>
-                                        <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">আবেদনকারী</span>
-                                        <h4 className="font-extrabold text-slate-900 text-sm">
-                                            {data.applicant_name_bn || data.applicant_name_en || 'নামহীন সদস্য'}
-                                        </h4>
-                                        <span className="text-xs font-mono font-bold text-indigo-600">
-                                            কোড: {data.application_no || suggested_application_no}
-                                        </span>
-                                    </div>
-                                    <div className="text-right">
-                                        {data.is_legacy ? (
-                                            <span className="inline-flex items-center px-2.5 py-1 bg-amber-100 text-amber-900 border border-amber-300 text-xs font-bold rounded-full">
-                                                পুরাতন{data.loan_dofa ? ` · দফা ${data.loan_dofa}` : ''}
-                                            </span>
-                                        ) : (
-                                            <span className="inline-flex items-center px-2.5 py-1 bg-emerald-100 text-emerald-900 border border-emerald-300 text-xs font-bold rounded-full">
-                                                নতুন সদস্য
-                                            </span>
-                                        )}
-                                    </div>
-                                </div>
-
-                                {/* Loan Category */}
-                                <div>
-                                    <label className="block text-xs font-extrabold text-slate-800 uppercase mb-1">
-                                        ১. ঋণ ক্যাটাগরি <span className="text-red-500">*</span>
-                                    </label>
-                                    <select
-                                        value={selectedLoanCategory || ''}
-                                        onChange={(e) => {
-                                            const catId = Number(e.target.value);
-                                            setSelectedLoanCategory(catId);
-                                            setSelectedLoanProduct(null);
-                                        }}
-                                        className="w-full px-3.5 py-2.5 border border-slate-300 rounded-2xl text-xs md:text-sm font-medium focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500"
-                                    >
-                                        <option value="">ক্যাটাগরি নির্বাচন করুন...</option>
-                                        {loanCategories.map((cat) => (
-                                            <option key={cat.id} value={cat.id}>
-                                                {cat.category_name_bn || cat.category_name} ({cat.category_code})
-                                            </option>
-                                        ))}
-                                    </select>
-                                </div>
-
-                                {/* Loan Product */}
-                                {selectedLoanCategory && (
-                                    <div>
-                                        <label className="block text-xs font-extrabold text-slate-800 uppercase mb-1">
-                                            ২. ঋণ পণ্য <span className="text-red-500">*</span>
-                                        </label>
-                                        <select
-                                            value={selectedLoanProduct || ''}
-                                            onChange={(e) => {
-                                                const prodId = Number(e.target.value);
-                                                setSelectedLoanProduct(prodId);
-                                                const prod = (loanCategories.find((c) => c.id === selectedLoanCategory)?.loan_products || []).find((p) => p.id === prodId);
-                                                if (prod && (!loanRequestedAmount || Number(loanRequestedAmount) < prod.min_amount)) {
-                                                    setLoanRequestedAmount(String(prod.min_amount));
-                                                }
-                                            }}
-                                            className="w-full px-3.5 py-2.5 border border-slate-300 rounded-2xl text-xs md:text-sm font-medium focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500"
-                                        >
-                                            <option value="">পণ্য নির্বাচন করুন...</option>
-                                            {(loanCategories.find((c) => c.id === selectedLoanCategory)?.loan_products || []).map((prod) => (
-                                                <option key={prod.id} value={prod.id}>
-                                                    {prod.product_name_bn || prod.product_name} ({prod.product_code})
-                                                </option>
-                                            ))}
-                                        </select>
-                                    </div>
-                                )}
-
-                                {/* Requested Amount */}
-                                {selectedLoanProduct && (
-                                    <div>
-                                        <label className="block text-xs font-extrabold text-slate-800 uppercase mb-1">
-                                            ৩. অনুরোধকৃত ঋণের পরিমাণ (টাকা) <span className="text-red-500">*</span>
-                                        </label>
-                                        <div className="relative">
-                                            <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-500 font-bold">৳</span>
-                                            <input
-                                                type="number"
-                                                value={loanRequestedAmount}
-                                                onChange={(e) => setLoanRequestedAmount(e.target.value)}
-                                                placeholder="ঋণের পরিমাণ টাইপ করুন..."
-                                                className="w-full pl-9 pr-4 py-2.5 border border-slate-300 rounded-2xl text-xs md:text-sm font-bold focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500"
-                                            />
-                                        </div>
-                                    </div>
-                                )}
-
-                                {/* Product Info Card */}
-                                {selectedLoanProduct && (() => {
-                                    const prod = (loanCategories.find((c) => c.id === selectedLoanCategory)?.loan_products || []).find((p) => p.id === selectedLoanProduct);
-                                    if (!prod) return null;
-                                    return (
-                                        <div className="rounded-2xl border border-emerald-100 bg-emerald-50/60 p-3.5 space-y-2 text-xs">
-                                            <div className="flex items-center justify-between font-bold text-emerald-950 border-b border-emerald-200/60 pb-1.5">
-                                                <span>{prod.product_name_bn || prod.product_name}</span>
-                                                <span className="bg-emerald-200/80 px-2 py-0.5 rounded-full text-[10px] text-emerald-900 font-extrabold">
-                                                    {prod.duration_months} মাস
-                                                </span>
-                                            </div>
-                                            <div className="grid grid-cols-2 gap-2">
-                                                <div className="bg-white/80 p-2 rounded-xl border border-emerald-100">
-                                                    <span className="text-[10px] font-bold text-slate-400 block">ঋণ সীমা</span>
-                                                    <span className="font-extrabold text-slate-800">
-                                                        ৳{Number(prod.min_amount).toLocaleString('bn-BD')} - ৳{Number(prod.max_amount).toLocaleString('bn-BD')}
-                                                    </span>
-                                                </div>
-                                                <div className="bg-white/80 p-2 rounded-xl border border-emerald-100">
-                                                    <span className="text-[10px] font-bold text-slate-400 block">সুদের হার</span>
-                                                    <span className="font-extrabold text-emerald-700">{prod.interest_rate}%</span>
-                                                </div>
-                                            </div>
-                                        </div>
-                                    );
-                                })()}
-                            </div>
-
-                            {/* Footer */}
-                            <div className="flex items-center justify-end gap-3 px-6 py-4 bg-slate-50 border-t border-slate-100">
-                                <button
-                                    type="button"
-                                    onClick={() => setShowLoanModal(false)}
-                                    className="px-4 py-2.5 text-xs font-bold text-slate-600 hover:bg-slate-200/60 rounded-xl transition"
-                                >
-                                    বাতিল
-                                </button>
-                                <button
-                                    type="button"
-                                    onClick={handleConfirmLoanSubmit}
-                                    disabled={processing || !selectedLoanCategory || !selectedLoanProduct || !loanRequestedAmount}
-                                    className="px-6 py-2.5 text-xs font-bold bg-gradient-to-r from-emerald-600 to-teal-700 text-white rounded-xl shadow-lg shadow-emerald-600/30 hover:from-emerald-700 hover:to-teal-800 disabled:opacity-50 disabled:cursor-not-allowed transition active:scale-95"
-                                >
-                                    {processing ? 'সংরক্ষণ হচ্ছে...' : 'সংরক্ষণ ও ঋণ ফর্মে প্রবেশ করুন'}
-                                </button>
-                            </div>
-                        </div>
-                    </div>
-                )}
             </div>
         </AdminLayout>
     );

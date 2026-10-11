@@ -356,9 +356,7 @@ export default function Edit({
 
     const isCycleRenewal =
         Boolean(is_cycle_renewal) ||
-        Boolean(typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('cycle_renewal') === '1') ||
-        Boolean(admission.previous_admission_id) ||
-        (Boolean(data.is_legacy) && Number(data.loan_dofa) > 1);
+        Boolean(typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('cycle_renewal') === '1');
 
     const hasActiveLoan = Boolean(has_active_loan || admission.has_active_loan);
 

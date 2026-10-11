@@ -11,6 +11,7 @@ use App\Models\User;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
+use Inertia\Testing\AssertableInertia as Assert;
 use Tests\TestCase;
 
 class MemberAdmissionSubmitValidationTest extends TestCase
@@ -466,5 +467,71 @@ class MemberAdmissionSubmitValidationTest extends TestCase
         $response->assertSessionHasNoErrors();
         $this->assertEquals('submitted', $admission->fresh()->status);
         $this->assertEquals(60000, (float) $admission->fresh()->total_asset_value);
+    }
+
+    public function test_member_admission_edit_is_save_only_unless_opened_from_cycle_hub(): void
+    {
+        $this->createDummyTables();
+        $this->addEditPageColumns();
+
+        $role = Role::create(['name' => Role::HEAD_OFFICE, 'display_name' => 'Head Office']);
+        $branch = Branch::create(['name' => 'Dhaka Branch', 'is_active' => true]);
+        $user = User::create([
+            'name' => 'Head Office',
+            'email' => 'ho-admission-edit@example.com',
+            'role_id' => $role->id,
+            'branch_id' => $branch->id,
+            'is_active' => true,
+            'has_all_access' => true,
+        ]);
+        $this->actingAs($user);
+
+        $admission = $this->createValidDraftMember($branch, [
+            'is_legacy' => true,
+            'loan_dofa' => 3,
+            'status' => 'approved',
+        ]);
+
+        $this->get(route('member-admissions.edit', $admission))
+            ->assertOk()
+            ->assertInertia(fn (Assert $page) => $page
+                ->component('MemberAdmission/Edit')
+                ->where('is_cycle_renewal', false)
+            );
+
+        $this->get(route('member-admissions.edit', [
+            'memberAdmission' => $admission,
+            'cycle_renewal' => 1,
+        ]))
+            ->assertOk()
+            ->assertInertia(fn (Assert $page) => $page
+                ->component('MemberAdmission/Edit')
+                ->where('is_cycle_renewal', true)
+            );
+    }
+
+    private function addEditPageColumns(): void
+    {
+        Schema::table('branches', function (Blueprint $table) {
+            $table->boolean('is_active')->default(true);
+        });
+
+        Schema::table('member_categories', function (Blueprint $table) {
+            $table->boolean('is_active')->default(true);
+        });
+
+        Schema::table('loan_products', function (Blueprint $table) {
+            $table->unsignedBigInteger('loan_category_id')->nullable();
+            $table->boolean('is_active')->default(true);
+            $table->integer('display_order')->default(0);
+        });
+
+        Schema::create('loan_categories', function (Blueprint $table) {
+            $table->id();
+            $table->string('category_name')->nullable();
+            $table->boolean('is_active')->default(true);
+            $table->integer('display_order')->default(0);
+            $table->timestamps();
+        });
     }
 }
