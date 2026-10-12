@@ -28,7 +28,6 @@ import {
     RefreshCw,
     RotateCcw,
     Save,
-    Send,
     Sparkles,
     UserPlus,
     X,
@@ -300,7 +299,6 @@ export default function Create({
     const pageAuth = page.props.auth;
     const flashError = page.props.flash?.error || null;
     const currentUser = pageAuth.user;
-    const isFieldOfficer = pageAuth.user?.role?.name === 'field_officer';
     const [availableSamities, setAvailableSamities] = useState(samities);
     const [samitySearchQuery, setSamitySearchQuery] = useState('');
     const [samityDropdownOpen, setSamityDropdownOpen] = useState(false);
@@ -360,7 +358,7 @@ export default function Create({
             if (!ok) return;
         } else {
             const ok = window.confirm(
-                'পুরাতন সদস্যে পরিবর্তন করলে ঋণের দফা দিতে হবে এবং জমা দিলে স্বয়ংক্রিয় অনুমোদন হবে। পূরণ করা তথ্য থাকবে। চালিয়ে যাবেন?'
+                'পুরাতন সদস্যে পরিবর্তন করলে ঋণের দফা দিতে হবে। খসড়া সেভ অনুমোদন নয় — তালিকা থেকে জমা দিলে স্বয়ংক্রিয় অনুমোদন হবে। পূরণ করা তথ্য থাকবে। চালিয়ে যাবেন?'
             );
             if (!ok) return;
         }
@@ -986,7 +984,7 @@ export default function Create({
                                     <Save className="w-4 h-4 text-blue-400" />
                                     <span>
                                         {isLegacyMember
-                                            ? 'পুরাতন সদস্য — ডাটা উঠানো (অটো অনুমোদন)'
+                                            ? 'পুরাতন সদস্য — খসড়া সংরক্ষণ'
                                             : 'Member Admission Registration Form'}
                                     </span>
                                 </div>
@@ -1012,7 +1010,7 @@ export default function Create({
                             </h1>
                             <p className="text-slate-300 text-xs sm:text-sm leading-relaxed">
                                 {isLegacyMember
-                                    ? 'আগের সদস্যের তথ্য উঠান এবং ঋণের দফা উল্লেখ করুন। জমা দিলে স্বয়ংক্রিয়ভাবে অনুমোদিত হবে।'
+                                    ? 'আগের সদস্যের তথ্য উঠান। খসড়া সেভ করলে অনুমোদন হবে না। তালিকা থেকে জমা দিলে নতুন সদস্যের মতো আবশ্যকীয় তথ্য যাচাই হয়ে স্বয়ংক্রিয় অনুমোদন হবে।'
                                     : 'আবেদনকারীর সমস্ত তথ্য ও নথি সঠিক উপায়ে পূরণ করুন। যেকোনো সময় খসড়া হিসেবে সংরক্ষণ করা যাবে।'}
                             </p>
                         </div>
@@ -1037,17 +1035,6 @@ export default function Create({
                                 <Save className="w-4 h-4 text-amber-400" />
                                 <span>খসড়া সংরক্ষণ</span>
                             </button>
-                            {!isFieldOfficer && isLegacyMember && (
-                                <button
-                                    type="button"
-                                    onClick={() => handleSubmit(false)}
-                                    disabled={processing || !memberTypeChosen}
-                                    className="inline-flex items-center justify-center gap-2 px-6 py-3 rounded-2xl bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white text-xs sm:text-sm font-bold shadow-lg shadow-blue-600/30 transition-all active:scale-95 disabled:opacity-50"
-                                >
-                                    <Send className="w-4 h-4" />
-                                    <span>সংরক্ষণ ও অনুমোদন</span>
-                                </button>
-                            )}
                         </div>
                     </div>
                 </div>
@@ -1257,17 +1244,6 @@ export default function Create({
                             <Save className="w-4 h-4" />
                             <span>খসড়া সংরক্ষণ (Save Draft)</span>
                         </button>
-                        {!isFieldOfficer && isLegacyMember && (
-                            <button
-                                type="button"
-                                onClick={() => handleSubmit(false)}
-                                disabled={processing}
-                                className="w-full sm:w-auto inline-flex items-center justify-center gap-2 px-6 py-2.5 rounded-xl bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white text-xs sm:text-sm font-bold shadow-lg shadow-blue-600/30 transition-all active:scale-95 disabled:opacity-50"
-                            >
-                                <Send className="w-4 h-4" />
-                                <span>সংরক্ষণ ও অনুমোদন</span>
-                            </button>
-                        )}
                     </div>
                 </div>
 
@@ -1291,17 +1267,6 @@ export default function Create({
                         <Save className="w-4 h-4" />
                         <span>খসড়া</span>
                     </button>
-                    {!isFieldOfficer && isLegacyMember && (
-                        <button
-                            type="button"
-                            onClick={() => handleSubmit(false)}
-                            disabled={processing || !memberTypeChosen}
-                            className="flex-[1.5] inline-flex items-center justify-center gap-1.5 py-2.5 px-3 rounded-xl bg-gradient-to-r from-blue-600 to-indigo-600 text-white text-xs font-bold shadow-md active:scale-95 transition disabled:opacity-50"
-                        >
-                            <Send className="w-4 h-4" />
-                            <span>অনুমোদন</span>
-                        </button>
-                    )}
                 </div>
 
             </div>

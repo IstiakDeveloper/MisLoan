@@ -510,6 +510,67 @@ class MemberAdmissionSubmitValidationTest extends TestCase
             );
     }
 
+    public function test_old_member_draft_save_stays_draft_until_submit_auto_approves(): void
+    {
+        $this->createDummyTables();
+        $this->addDraftSaveColumns();
+
+        $role = Role::create(['name' => Role::FIELD_OFFICER, 'display_name' => 'Field Officer']);
+        $branch = Branch::create(['name' => 'Dhaka Branch', 'code' => '0001', 'is_active' => true]);
+        $user = User::create([
+            'name' => 'Field Officer',
+            'email' => 'fo-old-draft@example.com',
+            'role_id' => $role->id,
+            'branch_id' => $branch->id,
+            'is_active' => true,
+            'has_all_access' => true,
+        ]);
+        $this->actingAs($user);
+
+        $this->post(route('member-admissions.store').'?draft=1', [
+            'draft' => 1,
+            'is_legacy' => 1,
+            'loan_dofa' => 2,
+            'branch_id' => $branch->id,
+            'application_no' => '0001000099',
+            'applicant_name_bn' => 'পুরাতন সদস্য',
+            'interviewer_name' => '',
+            'employee_name' => '',
+        ])->assertRedirect(route('member-admissions.index'));
+
+        $admission = MemberAdmission::where('application_no', '0001000099')->first();
+        $this->assertNotNull($admission);
+        $this->assertTrue((bool) $admission->is_legacy);
+        $this->assertSame('draft', $admission->status);
+        $this->assertNull($admission->submitted_at);
+        $this->assertNull($admission->reviewed_at);
+
+        $this->patch(route('member-admissions.submit', $admission))
+            ->assertRedirect(route('member-admissions.edit', [
+                'memberAdmission' => $admission->id,
+                'for_submit' => 1,
+            ]));
+        $this->assertSame('draft', $admission->fresh()->status);
+
+        $complete = $this->createValidDraftMember($branch, [
+            'application_no' => '0001000100',
+            'is_legacy' => true,
+            'loan_dofa' => 2,
+            'status' => 'draft',
+            'mobile_number' => '01812345678',
+            'nid_number' => '9876543210123',
+        ]);
+
+        $this->from(route('member-admissions.index'))
+            ->patch(route('member-admissions.submit', $complete))
+            ->assertRedirect(route('member-admissions.index'));
+
+        $complete->refresh();
+        $this->assertSame('approved', $complete->status);
+        $this->assertNotNull($complete->submitted_at);
+        $this->assertNotNull($complete->reviewed_at);
+    }
+
     private function addEditPageColumns(): void
     {
         Schema::table('branches', function (Blueprint $table) {
@@ -533,5 +594,33 @@ class MemberAdmissionSubmitValidationTest extends TestCase
             $table->integer('display_order')->default(0);
             $table->timestamps();
         });
+    }
+
+    private function addDraftSaveColumns(): void
+    {
+        Schema::table('branches', function (Blueprint $table) {
+            $table->boolean('is_active')->default(true);
+        });
+
+        foreach ([
+            'permanent_address_same' => fn (Blueprint $table) => $table->boolean('permanent_address_same')->default(false),
+            'want_sms_service' => fn (Blueprint $table) => $table->boolean('want_sms_service')->default(true),
+            'total_land_amount' => fn (Blueprint $table) => $table->decimal('total_land_amount', 12, 2)->default(0),
+            'total_land_value' => fn (Blueprint $table) => $table->decimal('total_land_value', 12, 2)->default(0),
+            'interviewer_name' => fn (Blueprint $table) => $table->string('interviewer_name')->nullable(),
+            'employee_name' => fn (Blueprint $table) => $table->string('employee_name')->nullable(),
+            'mud_house_count' => fn (Blueprint $table) => $table->integer('mud_house_count')->default(0),
+            'tin_house_count' => fn (Blueprint $table) => $table->integer('tin_house_count')->default(0),
+            'brick_house_count' => fn (Blueprint $table) => $table->integer('brick_house_count')->default(0),
+            'semi_brick_house_count' => fn (Blueprint $table) => $table->integer('semi_brick_house_count')->default(0),
+            'cow_buffalo_count' => fn (Blueprint $table) => $table->integer('cow_buffalo_count')->default(0),
+            'goat_sheep_count' => fn (Blueprint $table) => $table->integer('goat_sheep_count')->default(0),
+            'duck_chicken_count' => fn (Blueprint $table) => $table->integer('duck_chicken_count')->default(0),
+            'other_livestock_count' => fn (Blueprint $table) => $table->integer('other_livestock_count')->default(0),
+        ] as $column => $define) {
+            Schema::table('member_admissions', function (Blueprint $table) use ($define) {
+                $define($table);
+            });
+        }
     }
 }

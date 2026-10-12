@@ -1036,15 +1036,9 @@ class MemberAdmissionController extends Controller
                 $admissionData['employee_name'] = $admissionData['employee_name'] ?: ($authUser->pin ?: $authUser->username);
             }
 
-            // Draft stays draft; only legacy/old members auto-approve.
-            // Member Admission create saves the admission only. Loan forms start from Cycle Hub.
-            if ($isLegacy || $admissionData['is_legacy']) {
-                $admissionData['status'] = 'approved';
-                $admissionData['submitted_by'] = $authUser->id;
-                $admissionData['submitted_at'] = now();
-                $admissionData['reviewed_by'] = $authUser->id;
-                $admissionData['reviewed_at'] = now();
-            } elseif ($saveAsDraft) {
+            // Create only stores a draft. An old member is auto-approved later, in submit(),
+            // after the same required fields as a new member (plus loan_dofa).
+            if ($saveAsDraft || $isLegacy || $admissionData['is_legacy']) {
                 $admissionData['status'] = 'draft';
             }
 
@@ -1066,11 +1060,6 @@ class MemberAdmissionController extends Controller
             }
 
             DB::commit();
-
-            if ($isLegacy && ! $saveAsDraft) {
-                return redirect()->route('member-admissions.index')
-                    ->with('success', 'পুরাতন সদস্যের ভর্তি স্বয়ংক্রিয়ভাবে অনুমোদিত হয়েছে! আবেদন নং: '.$admission->application_no);
-            }
 
             return redirect()->route('member-admissions.index')
                 ->with('success', 'Member admission created successfully! Application No: '.$admission->application_no);
@@ -1566,12 +1555,12 @@ class MemberAdmissionController extends Controller
                 }
             }
 
-            // Legacy / renewal draft auto-approves. New members keep the admission workflow.
-            // A loan draft is created only from the Cycle Hub edit (?cycle_renewal=1).
+            // A draft save stays a draft, including old members. Auto-approve is submit().
+            // Cycle Hub still approves when the officer continues straight into a loan form.
             $isCycleRenewal = $request->boolean('cycle_renewal');
             $isProceedingToLoan = $isCycleRenewal && ($request->input('next_action') === 'loan_application' || $request->boolean('redirect_to_loan'));
             $legacyAutoApproved = false;
-            if (($isLegacy || $isRenewalOrOld) && ($memberAdmission->isDraft() || ! $saveAsDraft || $isProceedingToLoan)) {
+            if (($isLegacy || $isRenewalOrOld) && $isProceedingToLoan) {
                 $updateData['status'] = 'approved';
                 $updateData['submitted_by'] = $updateData['submitted_by'] ?? auth()->id();
                 $updateData['submitted_at'] = $updateData['submitted_at'] ?? now();
