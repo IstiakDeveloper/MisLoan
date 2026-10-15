@@ -510,6 +510,66 @@ class MemberAdmissionSubmitValidationTest extends TestCase
             );
     }
 
+    public function test_new_member_stays_new_when_dofa_one_is_posted(): void
+    {
+        $this->createDummyTables();
+        $this->addDraftSaveColumns();
+
+        $role = Role::create(['name' => Role::FIELD_OFFICER, 'display_name' => 'Field Officer']);
+        $branch = Branch::create(['name' => 'Dhaka Branch', 'code' => '0001', 'is_active' => true]);
+        $user = User::create([
+            'name' => 'Field Officer',
+            'email' => 'fo-new-dofa@example.com',
+            'role_id' => $role->id,
+            'branch_id' => $branch->id,
+            'is_active' => true,
+            'has_all_access' => true,
+        ]);
+        $this->actingAs($user);
+
+        $this->post(route('member-admissions.store').'?draft=1', [
+            'draft' => 1,
+            'is_legacy' => 0,
+            'loan_dofa' => 1,
+            'branch_id' => $branch->id,
+            'application_no' => '0001000201',
+            'applicant_name_bn' => 'নতুন সদস্য',
+            'interviewer_name' => '',
+            'employee_name' => '',
+        ])->assertRedirect(route('member-admissions.index'));
+
+        $created = MemberAdmission::where('application_no', '0001000201')->first();
+        $this->assertNotNull($created);
+        $this->assertFalse((bool) $created->is_legacy);
+        $this->assertNull($created->loan_dofa);
+
+        $submitted = MemberAdmission::create([
+            'application_no' => '0001000202',
+            'applicant_name_bn' => 'জমা দেওয়া নতুন',
+            'branch_id' => $branch->id,
+            'status' => 'submitted',
+            'is_legacy' => false,
+            'loan_dofa' => 1,
+            'mobile_number' => '01700002002',
+            'nid_number' => '1234567890123',
+        ]);
+
+        $this->put(route('member-admissions.update', $submitted).'?draft=1', [
+            'draft' => 1,
+            'is_legacy' => 0,
+            'loan_dofa' => 1,
+            'branch_id' => $branch->id,
+            'application_no' => '0001000202',
+            'applicant_name_bn' => 'জমা দেওয়া নতুন',
+            'interviewer_name' => '',
+            'employee_name' => '',
+        ])->assertRedirect(route('member-admissions.index'));
+
+        $submitted->refresh();
+        $this->assertFalse((bool) $submitted->is_legacy);
+        $this->assertNull($submitted->loan_dofa);
+    }
+
     public function test_old_member_draft_save_stays_draft_until_submit_auto_approves(): void
     {
         $this->createDummyTables();

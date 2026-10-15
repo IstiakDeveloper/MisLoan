@@ -495,6 +495,33 @@ it('still treats another person with the same nid as a duplicate', function () {
         ->and(MemberAdmission::findDuplicateByMobile('01711111111', null, '0001000055'))->toBeNull();
 });
 
+it('does not stamp dofa or legacy on a new member first loan', function () {
+    $branch = Branch::create(['name' => 'Dhaka', 'code' => '0001']);
+
+    $admission = MemberAdmission::create([
+        'application_no' => '0001000066',
+        'nid_number' => '1990123456700',
+        'mobile_number' => '01722222222',
+        'branch_id' => $branch->id,
+        'status' => 'approved',
+        'is_legacy' => false,
+        'loan_dofa' => 1,
+    ]);
+
+    LoanApplication::create([
+        'application_no' => 'LN-NEW',
+        'member_admission_id' => $admission->id,
+        'branch_id' => $branch->id,
+        'status' => LoanApplication::STATUS_DRAFT,
+    ]);
+
+    $admission->refreshCycleDofaFromLoans();
+
+    $fresh = $admission->fresh();
+    expect((bool) $fresh->is_legacy)->toBeFalse()
+        ->and($fresh->loan_dofa)->toBeNull();
+});
+
 it('raises loan dofa when a second loan exists on the same member', function () {
     $branch = Branch::create(['name' => 'Dhaka', 'code' => '0001']);
 

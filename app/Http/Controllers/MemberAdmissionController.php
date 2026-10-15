@@ -995,8 +995,12 @@ class MemberAdmissionController extends Controller
             if (empty($admissionData['branch_id']) && auth()->user()?->branch_id) {
                 $admissionData['branch_id'] = auth()->user()->branch_id;
             }
-            $admissionData['is_legacy'] = $isLegacy || ! empty($validated['loan_dofa']) || $request->filled('loan_dofa');
-            $admissionData['loan_dofa'] = $admissionData['is_legacy'] ? ($validated['loan_dofa'] ?? ($request->input('loan_dofa') ?: null)) : null;
+            // New stays new. Dofa alone does not make a member old — that needs an explicit old-member choice.
+            $admissionData['is_legacy'] = $isLegacy;
+            $postedDofa = $validated['loan_dofa'] ?? $request->input('loan_dofa');
+            $admissionData['loan_dofa'] = $isLegacy && $postedDofa !== null && $postedDofa !== ''
+                ? (int) $postedDofa
+                : null;
             $admissionData['nid_both_sides'] = $request->boolean('nid_both_sides');
             if (! $admissionData['nid_both_sides']) {
                 $admissionData['customer_nid_back_photo_path'] = null;
@@ -1394,14 +1398,19 @@ class MemberAdmissionController extends Controller
                     $isRenewalOrOld = true;
                 }
             } else {
-                $isRenewalOrOld = $isLegacy || (bool) $memberAdmission->previous_admission_id || (int) ($validated['loan_dofa'] ?? $memberAdmission->loan_dofa) > 1 || ! empty($validated['loan_dofa']) || $request->filled('loan_dofa');
+                // Type cannot be switched here. A posted dofa of 1 must not turn a new member into an old one.
+                $storedDofa = (int) ($memberAdmission->loan_dofa ?? 0);
+                $isRenewalOrOld = (bool) $memberAdmission->is_legacy
+                    || (bool) $memberAdmission->previous_admission_id
+                    || $storedDofa > 1;
 
                 if ($isRenewalOrOld) {
                     $updateData['is_legacy'] = true;
-                    if ($request->filled('loan_dofa') || ! empty($validated['loan_dofa'])) {
-                        $updateData['loan_dofa'] = (int) ($validated['loan_dofa'] ?? $request->input('loan_dofa'));
-                    } elseif (! empty($memberAdmission->loan_dofa)) {
-                        $updateData['loan_dofa'] = $memberAdmission->loan_dofa;
+                    $incomingDofa = $validated['loan_dofa'] ?? ($request->filled('loan_dofa') ? $request->input('loan_dofa') : null);
+                    if ($incomingDofa !== null && $incomingDofa !== '' && (int) $incomingDofa >= 1) {
+                        $updateData['loan_dofa'] = (int) $incomingDofa;
+                    } else {
+                        $updateData['loan_dofa'] = $storedDofa > 0 ? $storedDofa : null;
                     }
                 } else {
                     $updateData['is_legacy'] = false;

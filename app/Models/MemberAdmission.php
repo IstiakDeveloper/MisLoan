@@ -517,7 +517,6 @@ class MemberAdmission extends Model
             && ! $this->previous_admission_id;
     }
 
-
     public static function alreadyLoanFormMessage(?LoanApplication $loan = null): string
     {
         $no = $loan?->application_no;
@@ -660,10 +659,21 @@ class MemberAdmission extends Model
             ->count();
 
         $canonical = $this->canonicalAdmission();
-        $newDofa = max((int) ($canonical->loan_dofa ?: 1), $loanCount);
+        $storedDofa = (int) ($canonical->loan_dofa ?? 0);
+
+        // First loan of a new member is dofa-less. Do not stamp loan_dofa=1 or mark them old.
+        if (! $canonical->is_legacy && ! $canonical->previous_admission_id && $loanCount <= 1 && $storedDofa <= 1) {
+            if ($storedDofa > 0) {
+                $canonical->update(['loan_dofa' => null]);
+            }
+
+            return;
+        }
+
+        $newDofa = max($storedDofa > 0 ? $storedDofa : 1, $loanCount);
         $updates = [];
 
-        if ((int) $canonical->loan_dofa !== $newDofa) {
+        if ($storedDofa !== $newDofa) {
             $updates['loan_dofa'] = $newDofa;
         }
 
