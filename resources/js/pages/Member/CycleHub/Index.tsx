@@ -517,11 +517,17 @@ export default function Index({
                                             className="w-full h-11 sm:h-12 bg-slate-50 hover:bg-slate-100 text-slate-800 rounded-xl px-3 font-semibold border border-slate-200 focus:bg-white focus:ring-0 outline-none text-xs transition-colors cursor-pointer"
                                         >
                                             <option value="">🏢 সকল ব্রাঞ্চ</option>
-                                            {branches.map((b) => (
-                                                <option key={b.id} value={b.id}>
-                                                    {b.name} ({b.code})
-                                                </option>
-                                            ))}
+                                            {[...branches]
+                                                .sort((a, b) =>
+                                                    String(a.code).localeCompare(String(b.code), undefined, {
+                                                        numeric: true,
+                                                    }),
+                                                )
+                                                .map((b) => (
+                                                    <option key={b.id} value={b.id}>
+                                                        {b.name} ({b.code})
+                                                    </option>
+                                                ))}
                                         </select>
                                     </div>
                                 )}

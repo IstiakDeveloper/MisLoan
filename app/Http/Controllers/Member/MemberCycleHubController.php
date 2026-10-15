@@ -86,7 +86,7 @@ class MemberCycleHubController extends Controller
 
         $branches = Branch::whereIn('id', $branchIds)
             ->select('id', 'name', 'code')
-            ->orderBy('name')
+            ->orderedByCode()
             ->get();
 
         $samities = Samity::whereIn('branch_id', $branchIds)
