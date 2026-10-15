@@ -21,6 +21,7 @@ use App\Support\RoleListWorkQueue;
 use Carbon\Carbon;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Inertia\Inertia;
 
@@ -665,7 +666,7 @@ class HeadOfficeLoanController extends Controller
 
         $orgFilters = $this->organizationFilterOptions();
 
-        $commonIssues = \Illuminate\Support\Facades\Cache::remember('common_loan_issues', 300, function () {
+        $commonIssues = Cache::remember('common_loan_issues', 300, function () {
             return LoanApplicationIssue::select('issue_description', DB::raw('count(*) as usage_count'))
                 ->whereNotNull('issue_description')
                 ->where('issue_description', '!=', '')
@@ -1120,7 +1121,8 @@ class HeadOfficeLoanController extends Controller
                     'আবেদন নং' => $loanApplication->application_no,
                     'সদস্যের নাম' => $loanApplication->memberAdmission?->applicant_name_bn ?: ($loanApplication->memberAdmission?->applicant_name_en ?? 'N/A'),
                     'বাতিলের কারণ' => $validated['rejection_reason'],
-                ]
+                ],
+                immediateEmail: true,
             );
         }
 

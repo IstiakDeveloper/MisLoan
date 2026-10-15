@@ -13,15 +13,11 @@ use Illuminate\Support\Facades\Mail;
 class NotificationService
 {
     /**
-     * Send notification (in-app + mail) to single user or collection of users.
+     * Send an in-app notification, and optionally an immediate email.
+     * Routine events stay unsent so the daily digest can pack them into one email.
      *
-     * @param User|Collection|array $users
-     * @param string $type e.g. 'member_admission', 'loan_application', 'approval'
-     * @param string $title
-     * @param string $message
-     * @param Model|null $notifiable Related model (e.g. MemberAdmission)
-     * @param string|null $actionUrl Route or relative URL to navigate
-     * @param array|null $details Key-value pairs for additional context (e.g. ['আবেদন নং' => '...'])
+     * @param  User|Collection<int, User>|array<int, User>  $users
+     * @param  array<string, mixed>|null  $details
      */
     public function send(
         User|Collection|array $users,
@@ -30,7 +26,8 @@ class NotificationService
         string $message,
         ?Model $notifiable = null,
         ?string $actionUrl = null,
-        ?array $details = null
+        ?array $details = null,
+        bool $immediateEmail = false,
     ): void {
         if ($users instanceof User) {
             $users = collect([$users]);
@@ -38,12 +35,10 @@ class NotificationService
             $users = collect($users);
         }
 
-        // Deduplicate users by ID and filter active users
         $users = $users->filter(fn ($u) => $u instanceof User && $u->is_active)->unique('id');
 
         foreach ($users as $user) {
             try {
-                // 1. Create In-App Notification record
                 $notification = Notification::create([
                     'user_id' => $user->id,
                     'type' => $type,
@@ -57,12 +52,11 @@ class NotificationService
                     'is_sent_email' => false,
                 ]);
 
-                // 2. Send Mail if user has valid email address
-                if (!empty($user->email) && filter_var($user->email, FILTER_VALIDATE_EMAIL)) {
+                if ($immediateEmail && $this->canReceiveEmail($user)) {
                     $this->sendEmail($user, $notification, $title, $message, $actionUrl, $details);
                 }
             } catch (\Throwable $e) {
-                Log::error("Failed to process notification for user ID {$user->id}: " . $e->getMessage(), [
+                Log::error("Failed to process notification for user ID {$user->id}: ".$e->getMessage(), [
                     'exception' => $e,
                     'user_id' => $user->id,
                     'type' => $type,
@@ -71,8 +65,17 @@ class NotificationService
         }
     }
 
+    public function canReceiveEmail(User $user): bool
+    {
+        return $user->is_active
+            && is_string($user->email)
+            && filter_var($user->email, FILTER_VALIDATE_EMAIL) !== false;
+    }
+
     /**
-     * Send email wrapped in defer() to ensure form submission returns instantly without waiting for mail server.
+     * Send email wrapped in defer() so form submission returns without waiting for the mail server.
+     *
+     * @param  array<string, mixed>|null  $details
      */
     private function sendEmail(
         User $user,
@@ -96,8 +99,7 @@ class NotificationService
 
                 $notification->markAsEmailSent();
             } catch (\Throwable $e) {
-                // Mail is best-effort: never queue or store failures.
-                Log::warning("Email dispatch failed for notification ID {$notification->id} to {$user->email}: " . $e->getMessage());
+                Log::warning("Email dispatch failed for notification ID {$notification->id} to {$user->email}: ".$e->getMessage());
             }
         });
     }

@@ -19,6 +19,7 @@ use App\Support\RoleListWorkQueue;
 use Carbon\Carbon;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Inertia\Inertia;
 use PhpOffice\PhpSpreadsheet\Cell\Coordinate;
@@ -572,7 +573,7 @@ class HeadOfficeAdmissionController extends Controller
 
         $orgFilters = $this->organizationFilterOptions();
 
-        $commonIssues = \Illuminate\Support\Facades\Cache::remember('common_admission_issues', 300, function () {
+        $commonIssues = Cache::remember('common_admission_issues', 300, function () {
             return MemberAdmissionIssue::select('issue_description', DB::raw('count(*) as usage_count'))
                 ->whereNotNull('issue_description')
                 ->where('issue_description', '!=', '')
@@ -1036,7 +1037,8 @@ class HeadOfficeAdmissionController extends Controller
                 'আবেদনকারীর নাম' => $admission->applicant_name_bn ?: $admission->applicant_name_en,
                 'শাখা' => $admission->branch?->name ?? 'N/A',
                 'বাতিলের কারণ' => $validated['rejection_reason'],
-            ]
+            ],
+            immediateEmail: true,
         );
 
         $message = 'Admission rejected successfully!';
@@ -1224,7 +1226,8 @@ class HeadOfficeAdmissionController extends Controller
                             'আবেদন নং' => $admission->application_no,
                             'আবেদনকারীর নাম' => $admission->applicant_name_bn ?: $admission->applicant_name_en,
                             'মন্তব্য' => $comments,
-                        ]
+                        ],
+                        immediateEmail: true,
                     );
                 } else {
                     // No issues - approve
@@ -1454,10 +1457,10 @@ class HeadOfficeAdmissionController extends Controller
                 $q->where(function ($sub) {
                     $sub->where('is_legacy', false)->orWhereNull('is_legacy');
                 })
-                ->whereNull('previous_admission_id')
-                ->where(function ($sub) {
-                    $sub->whereNull('loan_dofa')->orWhere('loan_dofa', '<=', 1);
-                });
+                    ->whereNull('previous_admission_id')
+                    ->where(function ($sub) {
+                        $sub->whereNull('loan_dofa')->orWhere('loan_dofa', '<=', 1);
+                    });
             });
         }
     }

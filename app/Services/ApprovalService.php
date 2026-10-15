@@ -303,7 +303,8 @@ class ApprovalService
                 'আবেদন নং' => $admission->application_no,
                 'আবেদনকারীর নাম' => $admission->applicant_name_bn ?: $admission->applicant_name_en,
                 'বাতিলের কারণ' => $comments,
-            ]
+            ],
+            immediateEmail: true,
         );
 
         return true;
@@ -413,7 +414,8 @@ class ApprovalService
                 'আবেদন নং' => $admission->application_no,
                 'আবেদনকারীর নাম' => $admission->applicant_name_bn ?: $admission->applicant_name_en,
                 'মন্তব্য' => $comments,
-            ]
+            ],
+            immediateEmail: true,
         );
 
         return true;
@@ -669,7 +671,7 @@ class ApprovalService
         $approverRole = $approval->user?->role?->name;
         $roleCeiling = null;
         try {
-            $roleCeiling = app(\App\Services\LoanWorkflowConfigService::class)->roleCeiling($approverRole);
+            $roleCeiling = app(LoanWorkflowConfigService::class)->roleCeiling($approverRole);
         } catch (\Throwable) {
             $roleCeiling = null;
         }
@@ -861,7 +863,8 @@ class ApprovalService
                     'আবেদন নং' => $loan->application_no,
                     'সদস্যের নাম' => $loan->memberAdmission?->applicant_name_bn ?: ($loan->memberAdmission?->applicant_name_en ?? 'N/A'),
                     'বাতিলের কারণ' => $comments,
-                ]
+                ],
+                immediateEmail: true,
             );
         }
 
@@ -874,7 +877,7 @@ class ApprovalService
     public function bmApprovalCeiling(): float
     {
         try {
-            return app(\App\Services\LoanWorkflowConfigService::class)->bmApprovalCeiling();
+            return app(LoanWorkflowConfigService::class)->bmApprovalCeiling();
         } catch (\Throwable) {
             return (float) self::BRANCH_MANAGER_LOAN_CEILING;
         }
@@ -1456,7 +1459,7 @@ class ApprovalService
      */
     public function syncTeamBasedApprovalForLoan(LoanApplication $loan): void
     {
-        if (! \Illuminate\Support\Facades\Schema::hasTable('team_based_approvals')) {
+        if (! Schema::hasTable('team_based_approvals')) {
             return;
         }
 
@@ -1580,6 +1583,7 @@ class ApprovalService
                 if ((int) $teamBased->loan_application_id === (int) $loan->id && $teamBased->items->count() === 1) {
                     return true;
                 }
+
                 return false;
             });
 
@@ -1742,7 +1746,8 @@ class ApprovalService
                 'আগের অনুমোদিত পরিমাণ' => number_format($currentApproved).' টাকা',
                 'প্রস্তাবিত পরিমাণ' => number_format($newAmount).' টাকা',
                 'পরিবর্তন করেছেন' => $accountant->name,
-            ]
+            ],
+            immediateEmail: true,
         );
     }
 
@@ -1836,7 +1841,8 @@ class ApprovalService
                     'আবেদন নং' => $loan->application_no,
                     'অনুমোদিত পরিমাণ' => number_format($previousAmount).' টাকা',
                     'কারণ' => $comments,
-                ]
+                ],
+                immediateEmail: true,
             );
         }
 
