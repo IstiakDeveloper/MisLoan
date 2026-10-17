@@ -205,9 +205,10 @@ class BranchLoanPendingReportService
 
         return $query->get()
             ->sortBy(function (Branch $branch) {
-                return mb_strtolower((string) ($branch->area?->zone?->name ?? ''))
-                    .'|'.mb_strtolower((string) ($branch->area?->name ?? ''))
-                    .'|'.mb_strtolower((string) $branch->name);
+                $code = trim((string) $branch->code);
+                $numeric = $code === '' ? '9999999999' : str_pad((string) ((int) $code), 10, '0', STR_PAD_LEFT);
+
+                return $numeric.'|'.$code.'|'.mb_strtolower((string) $branch->name);
             })
             ->values();
     }

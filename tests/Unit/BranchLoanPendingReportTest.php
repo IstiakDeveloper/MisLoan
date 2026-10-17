@@ -240,6 +240,19 @@ function pendingReportPage(User $user, array $query, string $method = 'index'): 
     return (new ReflectionProperty(InertiaResponse::class, 'props'))->getValue($response);
 }
 
+it('numbers branches in branch code order', function () {
+    createBranchPendingReportTables();
+    ['area' => $area] = pendingReportOrg('North', 'Sadar', 'Later', '0010');
+    pendingReportBranch('Middle', '0002', $area);
+    pendingReportBranch('First', '0001', $area);
+
+    $report = app(BranchLoanPendingReportService::class)->build(null, '2026-10-01', '2026-10-17');
+
+    expect(collect($report['rows'])->pluck('branch_code')->all())->toBe(['0001', '0002', '0010'])
+        ->and(collect($report['rows'])->pluck('serial')->all())->toBe([1, 2, 3])
+        ->and(collect($report['rows'])->pluck('branch_name')->all())->toBe(['First', 'Middle', 'Later']);
+});
+
 it('counts several branch manager rows on one loan a single time', function () {
     createBranchPendingReportTables();
     ['branch' => $branch] = pendingReportOrg();
