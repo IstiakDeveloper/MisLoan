@@ -40,6 +40,7 @@ import {
 import SuperAdminDeletePinModal from '@/components/SuperAdminDeletePinModal';
 import { toEnglishDigits, formatBranchCode, parseMemberCode } from '@/utils/memberCodeUtils';
 import GuarantorCommitment from './Forms/GuarantorCommitment';
+import GuarantorApprovalSection, { GuarantorFormState } from '@/components/GuarantorApprovalSection';
 import DeathRiskFund from './Forms/DeathRiskFund';
 import LoanAgreement from './Forms/LoanAgreement';
 import FieldInvestigation from './Forms/FieldInvestigation';
@@ -394,6 +395,29 @@ export default function Show({ application, routes, categories = [], can_update_
     const [approvalComments, setApprovalComments] = useState<string>('');
     const [forwardToUserId, setForwardToUserId] = useState<string>('');
     const [submittingApproval, setSubmittingApproval] = useState(false);
+
+    // Guarantor Verification State for Branch Manager Approval
+    const initialGuarantorState: GuarantorFormState = {
+        guarantor_name: (application as any).guarantor_payload?.guarantor_name || application.guarantor_info?.guarantor_name || application.member_admission?.guarantor_name || '',
+        guarantor_father_or_spouse: (application as any).guarantor_payload?.guarantor_father_or_spouse || application.guarantor_info?.guarantor_father_or_spouse || '',
+        guarantor_nid: (application as any).guarantor_payload?.guarantor_nid || application.guarantor_info?.guarantor_nid || application.guarantor_info?.guarantor_nid_no || '',
+        guarantor_mobile: (application as any).guarantor_payload?.guarantor_mobile || application.guarantor_info?.guarantor_mobile || application.member_admission?.guarantor_mobile || '',
+        guarantor_village: (application as any).guarantor_payload?.guarantor_village || application.guarantor_info?.guarantor_village || application.member_admission?.present_village_road || '',
+        guarantor_post_office: (application as any).guarantor_payload?.guarantor_post_office || application.guarantor_info?.guarantor_post_office || application.member_admission?.present_post_code || '',
+        guarantor_upazila: (application as any).guarantor_payload?.guarantor_upazila || application.guarantor_info?.guarantor_upazila || application.member_admission?.present_upazila || '',
+        guarantor_district: (application as any).guarantor_payload?.guarantor_district || application.guarantor_info?.guarantor_district || application.member_admission?.present_district || '',
+        guarantor_relation: (application as any).guarantor_payload?.guarantor_relation || application.guarantor_info?.guarantor_relation || '',
+    };
+    const [guarantorForm, setGuarantorForm] = useState<GuarantorFormState>(initialGuarantorState);
+    const [guarantorVerifiedMark, setGuarantorVerifiedMark] = useState<boolean>(
+        Boolean((application as any).guarantor_verified || (application as any).guarantor_verified_at)
+    );
+
+    const isGuarantorRequired = (application as any).guarantor_required ?? (Number(application.requested_amount || 0) >= 20000);
+    const isGuarantorValid = !isGuarantorRequired || (
+        Boolean(guarantorForm.guarantor_name.trim()) &&
+        (guarantorVerifiedMark || Boolean((application as any).guarantor_verified))
+    );
 
     // Member Code Update Modal State (10-digit policy: 4-digit branch code + 6-digit serial)
     const branchPrefix = formatBranchCode(
@@ -823,18 +847,34 @@ export default function Show({ application, routes, categories = [], can_update_
             alert('অনুমোদন আইডি পাওয়া যায়নি।');
             return;
         }
+
+        if (isGuarantorRequired) {
+            if (!guarantorForm.guarantor_name.trim()) {
+                alert('অনুমোদনের পূর্বে জামিনদারের নাম পূরণ করা আবশ্যক।');
+                return;
+            }
+            if (!guarantorVerifiedMark && !(application as any).guarantor_verified) {
+                alert('অনুগ্রহ করে জামিনদারের তথ্য সঠিক আছে মর্মে নিশ্চিত করুন (টিক দিন)।');
+                return;
+            }
+        }
+
+        const payload: Record<string, any> = {
+            comments: approvalComments,
+            guarantor_data: guarantorForm,
+            mark_guarantor_verified: guarantorVerifiedMark,
+        };
+
         if (mustForwardApproval) {
             if (!forwardToUserId) {
                 alert('উচ্চতর কর্মকর্তা নির্বাচন করুন।');
                 return;
             }
+            payload.forward_to_user_id = forwardToUserId;
             setSubmittingApproval(true);
             router.patch(
                 `/approvals/loan/${approvalId}/forward`,
-                {
-                    forward_to_user_id: forwardToUserId,
-                    comments: approvalComments,
-                },
+                payload,
                 {
                     preserveScroll: true,
                     onFinish: () => {
@@ -845,13 +885,12 @@ export default function Show({ application, routes, categories = [], can_update_
             );
             return;
         }
+
+        payload.approved_amount = approvalAmount;
         setSubmittingApproval(true);
         router.patch(
             `/approvals/loan/${approvalId}/approve`,
-            {
-                approved_amount: approvalAmount,
-                comments: approvalComments,
-            },
+            payload,
             {
                 preserveScroll: true,
                 onFinish: () => {
@@ -2348,28 +2387,33 @@ export default function Show({ application, routes, categories = [], can_update_
 
             {/* Branch Manager Approval / Forward Modal */}
             {approveModalOpen && (
-                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-xs p-4 print:hidden">
-                    <div className="w-full max-w-md rounded-2xl bg-white shadow-2xl overflow-hidden border border-slate-200">
-                        <div className="border-b px-5 py-4 bg-slate-50 flex items-center justify-between">
+                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-xs p-3 sm:p-4 print:hidden animate-in fade-in duration-200">
+                    <div className="w-full max-w-lg md:max-w-xl max-h-[92vh] flex flex-col rounded-2xl bg-white shadow-2xl overflow-hidden border border-slate-200">
+                        <div className="border-b px-4 py-3 sm:px-5 sm:py-4 bg-slate-50 flex items-center justify-between shrink-0">
                             <div>
-                                <h3 className="text-base font-bold text-slate-900 flex items-center gap-2">
+                                <h3 className="text-sm sm:text-base font-bold text-slate-900 flex items-center gap-2">
                                     {mustForwardApproval ? (
                                         <>
-                                            <ArrowUpRight className="w-5 h-5 text-blue-600" /> উচ্চতর কর্মকর্তার কাছে ফরওয়ার্ড
+                                            <ArrowUpRight className="w-5 h-5 text-blue-600 shrink-0" /> উচ্চতর কর্মকর্তার কাছে ফরওয়ার্ড
                                         </>
                                     ) : (
                                         <>
-                                            <ShieldCheck className="w-5 h-5 text-emerald-600" /> ঋণ আবেদন শাখা অনুমোদন
+                                            <ShieldCheck className="w-5 h-5 text-emerald-600 shrink-0" /> ঋণ আবেদন শাখা অনুমোদন
                                         </>
                                     )}
                                 </h3>
                                 <p className="text-xs text-slate-500 mt-0.5">আবেদন নং: {application.application_no}</p>
                             </div>
-                            <button type="button" onClick={() => setApproveModalOpen(false)} className="text-slate-400 hover:text-slate-600 p-1">
-                                <XCircle className="w-5 h-5" />
+                            <button
+                                type="button"
+                                onClick={() => setApproveModalOpen(false)}
+                                className="text-slate-400 hover:text-slate-600 p-1.5 rounded-full hover:bg-slate-100 transition"
+                            >
+                                <X className="w-5 h-5" />
                             </button>
                         </div>
-                        <form onSubmit={handleBranchApprovalSubmit} className="p-5 space-y-4">
+
+                        <form onSubmit={handleBranchApprovalSubmit} className="p-4 sm:p-5 space-y-4 overflow-y-auto flex-1">
                             {mustForwardApproval ? (
                                 <div>
                                     <label className="block text-xs font-bold text-slate-700 mb-1">
@@ -2410,34 +2454,59 @@ export default function Show({ application, routes, categories = [], can_update_
                                 </div>
                             )}
 
+                            {/* Guarantor Verification & Update Section */}
+                            {isGuarantorRequired && (
+                                <GuarantorApprovalSection
+                                    data={guarantorForm}
+                                    onChange={(field, val) => setGuarantorForm(prev => ({ ...prev, [field]: val }))}
+                                    isVerifiedMarked={guarantorVerifiedMark}
+                                    onVerifiedMarkChange={setGuarantorVerifiedMark}
+                                    initiallyVerified={Boolean((application as any).guarantor_verified)}
+                                    isRequired={isGuarantorRequired}
+                                />
+                            )}
+
                             <div>
                                 <label className="block text-xs font-bold text-slate-700 mb-1">শাখা ব্যবস্থাপকের মন্তব্য (ঐচ্ছিক):</label>
                                 <textarea
                                     value={approvalComments}
                                     onChange={(e) => setApprovalComments(e.target.value)}
-                                    rows={3}
+                                    rows={2}
                                     className="w-full rounded-xl border border-slate-300 p-3 text-sm focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 shadow-xs"
                                     placeholder={mustForwardApproval ? 'ঐচ্ছিক মন্তব্য লিখুন...' : 'অনুমোদন সংক্রান্ত মন্তব্য লিখুন...'}
                                 />
                             </div>
 
-                            <div className="flex justify-end gap-2 pt-2 border-t">
-                                <Button type="button" variant="outline" className="rounded-xl text-xs" onClick={() => setApproveModalOpen(false)}>
-                                    বাতিল
-                                </Button>
-                                <Button
-                                    type="submit"
-                                    className={`text-white rounded-xl text-xs font-bold shadow-xs ${
-                                        mustForwardApproval
-                                            ? 'bg-blue-600 hover:bg-blue-700'
-                                            : 'bg-emerald-600 hover:bg-emerald-700'
-                                    }`}
-                                    disabled={submittingApproval || (mustForwardApproval && !forwardToUserId)}
-                                >
-                                    {submittingApproval
-                                        ? (mustForwardApproval ? 'ফরওয়ার্ড হচ্ছে...' : 'অনুমোদন হচ্ছে...')
-                                        : (mustForwardApproval ? 'ফরওয়ার্ড নিশ্চিত করুন' : 'অনুমোদন নিশ্চিত করুন')}
-                                </Button>
+                            <div className="pt-3 border-t flex flex-col sm:flex-row items-center justify-between gap-2 shrink-0">
+                                <div className="text-[11px] text-slate-500 w-full sm:w-auto text-center sm:text-left">
+                                    {!isGuarantorValid && (
+                                        <span className="text-amber-700 font-semibold flex items-center justify-center sm:justify-start gap-1">
+                                            ⚠️ জামিনদারের নাম পূরণ ও সঠিক আছে মর্মে নিশ্চিত করুন।
+                                        </span>
+                                    )}
+                                </div>
+                                <div className="flex items-center justify-end gap-2 w-full sm:w-auto">
+                                    <Button type="button" variant="outline" className="rounded-xl text-xs flex-1 sm:flex-initial" onClick={() => setApproveModalOpen(false)}>
+                                        বাতিল
+                                    </Button>
+                                    <Button
+                                        type="submit"
+                                        className={`text-white rounded-xl text-xs font-bold shadow-xs flex-1 sm:flex-initial ${
+                                            mustForwardApproval
+                                                ? 'bg-blue-600 hover:bg-blue-700'
+                                                : 'bg-emerald-600 hover:bg-emerald-700'
+                                        }`}
+                                        disabled={
+                                            submittingApproval ||
+                                            (mustForwardApproval && !forwardToUserId) ||
+                                            !isGuarantorValid
+                                        }
+                                    >
+                                        {submittingApproval
+                                            ? (mustForwardApproval ? 'ফরওয়ার্ড হচ্ছে...' : 'অনুমোদন হচ্ছে...')
+                                            : (mustForwardApproval ? 'ফরওয়ার্ড নিশ্চিত করুন' : 'অনুমোদন নিশ্চিত করুন')}
+                                    </Button>
+                                </div>
                             </div>
                         </form>
                     </div>

@@ -665,6 +665,58 @@ class LoanFormVisibility
         return collect($requiredFormIds)->every(fn ($id) => $formSaved[$id] ?? false);
     }
 
+    /**
+     * Extract structured guarantor data from loan, member admission, or business plan.
+     *
+     * @return array{
+     *     guarantor_name: string,
+     *     guarantor_father_or_spouse: string,
+     *     guarantor_nid: string,
+     *     guarantor_mobile: string,
+     *     guarantor_village: string,
+     *     guarantor_post_office: string,
+     *     guarantor_upazila: string,
+     *     guarantor_district: string,
+     *     guarantor_relation: string,
+     *     is_complete: bool,
+     *     verified_at: ?string,
+     *     is_verified: bool
+     * }
+     */
+    public static function extractGuarantorPayload(LoanApplication $loan): array
+    {
+        $member = $loan->memberAdmission;
+        $gInfo = is_array($loan->guarantor_info) ? $loan->guarantor_info : [];
+        $bp = is_array($loan->business_plan) ? $loan->business_plan : [];
+
+        $name = trim((string) ($gInfo['guarantor_name'] ?? ($member?->guarantor_name ?? ($bp['guarantor_1_name'] ?? ''))));
+        $fatherOrSpouse = trim((string) ($gInfo['guarantor_father_or_spouse'] ?? ''));
+        $nid = trim((string) ($gInfo['guarantor_nid'] ?? ($gInfo['guarantor_nid_no'] ?? '')));
+        $mobile = trim((string) ($gInfo['guarantor_mobile'] ?? ($member?->guarantor_mobile ?? ($bp['guarantor_1_mobile'] ?? ''))));
+        $village = trim((string) ($gInfo['guarantor_village'] ?? ($member?->present_village_road ?: ($member?->permanent_village_road ?: ''))));
+        $postOffice = trim((string) ($gInfo['guarantor_post_office'] ?? ($member?->present_post_code ?: ($member?->permanent_post_code ?: ''))));
+        $upazila = trim((string) ($gInfo['guarantor_upazila'] ?? ($member?->present_upazila ?: ($member?->permanent_upazila ?: ''))));
+        $district = trim((string) ($gInfo['guarantor_district'] ?? ($member?->present_district ?: ($member?->permanent_district ?: ''))));
+        $relation = trim((string) ($gInfo['guarantor_relation'] ?? ''));
+
+        $isComplete = $name !== '' && $mobile !== '';
+
+        return [
+            'guarantor_name' => $name,
+            'guarantor_father_or_spouse' => $fatherOrSpouse,
+            'guarantor_nid' => $nid,
+            'guarantor_mobile' => $mobile,
+            'guarantor_village' => $village,
+            'guarantor_post_office' => $postOffice,
+            'guarantor_upazila' => $upazila,
+            'guarantor_district' => $district,
+            'guarantor_relation' => $relation,
+            'is_complete' => $isComplete,
+            'verified_at' => $loan->guarantor_verified_at?->format('Y-m-d H:i:s'),
+            'is_verified' => ! empty($loan->guarantor_verified_at),
+        ];
+    }
+
     public static function assertBmFormsComplete(LoanApplication $loan): void
     {
         $loan->loadMissing(['loanProduct.loanCategory', 'loanCategory']);

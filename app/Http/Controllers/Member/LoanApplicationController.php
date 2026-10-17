@@ -27,6 +27,7 @@ use App\Services\ApprovalService;
 use App\Services\HoSendCutoffService;
 use App\Services\LoanApplicationCloneService;
 use App\Services\LoanWorkflowConfigService;
+use App\Services\MemberAdmissionLoanSyncService;
 use App\Services\MemberCodeService;
 use App\Services\MemberSamityService;
 use App\Services\NotificationService;
@@ -247,6 +248,10 @@ class LoanApplicationController extends Controller
                 ])
                 ->values();
         }
+
+        $application->guarantor_payload = LoanFormVisibility::extractGuarantorPayload($application);
+        $application->guarantor_required = LoanFormVisibility::requiresGuarantorForm($amount);
+        $application->guarantor_verified = ! empty($application->guarantor_verified_at);
     }
 
     private function maybeApproveRepeatOrLegacyMember(MemberAdmission $member): void
@@ -1679,6 +1684,7 @@ class LoanApplicationController extends Controller
                 'requestAmountChange' => route('member.loan-applications.request-amount-change', $application->id),
                 'requestCancellation' => route('member.loan-applications.request-cancellation', $application->id),
                 'updateLoanProduct' => route('member.loan-applications.update-loan-product', $application->id),
+                'updateGuarantor' => route('member.loan-applications.update-guarantor', $application->id),
             ],
         ]);
     }
@@ -4025,5 +4031,40 @@ class LoanApplicationController extends Controller
         }
 
         return back()->with('success', 'অনুমোদনকারীর মন্তব্য সফলভাবে আপডেট করা হয়েছে।');
+    }
+
+    /**
+     * Update and sync guarantor information across all loan forms and member admission.
+     */
+    public function updateGuarantor(Request $request, $id)
+    {
+        $user = $request->user();
+        $application = LoanApplication::with(['loanProduct', 'memberAdmission'])->findOrFail($id);
+        $this->ensureApplicationAccessibleToUser($application, $user);
+
+        $validated = $request->validate([
+            'guarantor_name' => 'required|string|max:191',
+            'guarantor_father_or_spouse' => 'nullable|string|max:191',
+            'guarantor_nid' => 'nullable|string|max:50',
+            'guarantor_mobile' => 'nullable|string|max:20',
+            'guarantor_village' => 'nullable|string|max:191',
+            'guarantor_post_office' => 'nullable|string|max:100',
+            'guarantor_upazila' => 'nullable|string|max:100',
+            'guarantor_district' => 'nullable|string|max:100',
+            'guarantor_relation' => 'nullable|string|max:100',
+            'guarantor_2_name' => 'nullable|string|max:191',
+            'guarantor_2_mobile' => 'nullable|string|max:20',
+            'guarantor_2_address' => 'nullable|string|max:255',
+        ], [
+            'guarantor_name.required' => 'জামিনদারের নাম পূরণ করা আবশ্যক।',
+        ]);
+
+        app(MemberAdmissionLoanSyncService::class)->syncGuarantorDetails(
+            $application,
+            $validated,
+            $user->id
+        );
+
+        return back()->with('success', 'জামিনদারের তথ্য সফলভাবে হালনাগাদ ও সিঙ্ক করা হয়েছে।');
     }
 }

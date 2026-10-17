@@ -354,6 +354,7 @@ Route::middleware(['auth', 'verified'])->group(function () {
             Route::patch('{id}/update-member-code', [App\Http\Controllers\Member\LoanApplicationController::class, 'updateMemberCode'])->name('update-member-code');
             Route::patch('{id}/update-samity', [App\Http\Controllers\Member\LoanApplicationController::class, 'updateSamity'])->name('update-samity')->middleware('branch.user');
             Route::patch('{id}/update-loan-product', [App\Http\Controllers\Member\LoanApplicationController::class, 'updateLoanProduct'])->name('update-loan-product');
+            Route::patch('{id}/update-guarantor', [App\Http\Controllers\Member\LoanApplicationController::class, 'updateGuarantor'])->name('update-guarantor');
             Route::post('{id}/unlock-edit', [App\Http\Controllers\Member\LoanApplicationController::class, 'unlockEdit'])->name('unlock-edit');
             Route::get('{id}/print', [App\Http\Controllers\Member\LoanApplicationController::class, 'print'])->name('print');
             Route::delete('{id}', [App\Http\Controllers\Member\LoanApplicationController::class, 'destroy'])->name('destroy');

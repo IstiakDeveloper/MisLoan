@@ -10,6 +10,7 @@ use App\Models\MemberAdmissionApproval;
 use App\Models\Zone;
 use App\Services\ApprovalService;
 use App\Services\LoanWorkflowConfigService;
+use App\Services\MemberAdmissionLoanSyncService;
 use App\Support\LoanFormVisibility;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -119,6 +120,9 @@ class ApprovalController extends Controller
                     && $approval->level === 'branch'
                     && (float) ($loan->requested_amount ?? 0) >= app(LoanWorkflowConfigService::class)->bmApprovalCeiling(),
                 'bm_ceiling' => app(LoanWorkflowConfigService::class)->bmApprovalCeiling(),
+                'guarantor_payload' => LoanFormVisibility::extractGuarantorPayload($loan),
+                'guarantor_required' => LoanFormVisibility::requiresGuarantorForm((float) ($loan->requested_amount ?? 0)),
+                'guarantor_verified' => ! empty($loan->guarantor_verified_at),
             ];
             $forwardTargets = $this->approvalService->getForwardTargetsForLoanApproval($approval);
             $data['escalation_approvers'] = $forwardTargets
@@ -271,10 +275,32 @@ class ApprovalController extends Controller
     {
         abort_unless((int) $loanApproval->user_id === (int) $request->user()->id, 403);
         $isCancellation = (bool) $loanApproval->loanApplication?->hasPendingCancellation();
-        $request->validate([
-            'comments' => 'nullable|string|max:1000',
-            'approved_amount' => $isCancellation ? 'nullable|numeric|min:0' : 'required|numeric|min:0',
-        ]);
+        $loan = $loanApproval->loanApplication;
+        $loan?->loadMissing(['loanProduct', 'memberAdmission']);
+        $amount = (float) ($request->approved_amount ?? $loan?->requested_amount ?? 0);
+
+        if ($loan && $loanApproval->level === 'branch' && ! $isCancellation && LoanFormVisibility::requiresGuarantorForm($amount)) {
+            $guarantorData = $request->input('guarantor_data');
+            $markVerified = $request->boolean('mark_guarantor_verified');
+
+            if (is_array($guarantorData) && ! empty(trim((string) ($guarantorData['guarantor_name'] ?? '')))) {
+                app(MemberAdmissionLoanSyncService::class)->syncGuarantorDetails(
+                    $loan,
+                    $guarantorData,
+                    $request->user()->id
+                );
+            } elseif ($markVerified) {
+                $payload = LoanFormVisibility::extractGuarantorPayload($loan);
+                if (empty($payload['guarantor_name'])) {
+                    return back()->with('error', 'জামিনদারের নাম পূরণ করা আবশ্যক। জামিনদারের তথ্য আপডেট করুন।');
+                }
+                $loan->guarantor_verified_at = now();
+                $loan->guarantor_verified_by = $request->user()->id;
+                $loan->save();
+            } elseif (empty($loan->guarantor_verified_at)) {
+                return back()->with('error', 'অনুমোদন করার আগে জামিনদারের তথ্য হালনাগাদ করুন অথবা তথ্য সঠিক আছে মর্মে নিশ্চিত করুন।');
+            }
+        }
 
         try {
             $success = $this->approvalService->approveLoan(
@@ -377,9 +403,34 @@ class ApprovalController extends Controller
         }
 
         $loan = $loanApproval->loanApplication;
+        $loan?->loadMissing(['loanProduct', 'memberAdmission']);
         $isBranch = $loanApproval->level === 'branch';
+        $amount = (float) ($loan?->requested_amount ?? 0);
         $aboveCeiling = $isBranch
-            && (float) ($loan?->requested_amount ?? 0) >= app(LoanWorkflowConfigService::class)->bmApprovalCeiling();
+            && $amount >= app(LoanWorkflowConfigService::class)->bmApprovalCeiling();
+
+        if ($loan && $isBranch && LoanFormVisibility::requiresGuarantorForm($amount)) {
+            $guarantorData = $request->input('guarantor_data');
+            $markVerified = $request->boolean('mark_guarantor_verified');
+
+            if (is_array($guarantorData) && ! empty(trim((string) ($guarantorData['guarantor_name'] ?? '')))) {
+                app(MemberAdmissionLoanSyncService::class)->syncGuarantorDetails(
+                    $loan,
+                    $guarantorData,
+                    $request->user()->id
+                );
+            } elseif ($markVerified) {
+                $payload = LoanFormVisibility::extractGuarantorPayload($loan);
+                if (empty($payload['guarantor_name'])) {
+                    return back()->with('error', 'জামিনদারের নাম পূরণ করা আবশ্যক। জামিনদারের তথ্য আপডেট করুন।');
+                }
+                $loan->guarantor_verified_at = now();
+                $loan->guarantor_verified_by = $request->user()->id;
+                $loan->save();
+            } elseif (empty($loan->guarantor_verified_at)) {
+                return back()->with('error', 'ফরওয়ার্ড করার আগে জামিনদারের তথ্য হালনাগাদ করুন অথবা তথ্য সঠিক আছে মর্মে নিশ্চিত করুন।');
+            }
+        }
 
         try {
             $success = $this->approvalService->forwardLoanToApprover(

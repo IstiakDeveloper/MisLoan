@@ -623,4 +623,103 @@ class MemberAdmissionLoanSyncService
 
         return '/storage/'.$path;
     }
+
+    /**
+     * Synchronize and verify guarantor details across MemberAdmission, Form 2 (guarantor_info),
+     * and Form 5 (business_plan), and stamp verification.
+     */
+    public function syncGuarantorDetails(LoanApplication $loan, array $guarantorData, ?int $verifiedByUserId = null): void
+    {
+        $name = trim((string) ($guarantorData['guarantor_name'] ?? ''));
+        $fatherOrSpouse = trim((string) ($guarantorData['guarantor_father_or_spouse'] ?? ''));
+        $nid = trim((string) ($guarantorData['guarantor_nid'] ?? ($guarantorData['guarantor_nid_no'] ?? '')));
+        $mobile = trim((string) ($guarantorData['guarantor_mobile'] ?? ''));
+        $village = trim((string) ($guarantorData['guarantor_village'] ?? ''));
+        $postOffice = trim((string) ($guarantorData['guarantor_post_office'] ?? ''));
+        $upazila = trim((string) ($guarantorData['guarantor_upazila'] ?? ''));
+        $district = trim((string) ($guarantorData['guarantor_district'] ?? ''));
+        $relation = trim((string) ($guarantorData['guarantor_relation'] ?? ''));
+
+        // 1. Sync MemberAdmission
+        if ($loan->member_admission_id) {
+            $member = $loan->memberAdmission ?? MemberAdmission::find($loan->member_admission_id);
+            if ($member) {
+                $memberDirty = false;
+                if ($name !== '' && $member->guarantor_name !== $name) {
+                    $member->guarantor_name = $name;
+                    $memberDirty = true;
+                }
+                if ($mobile !== '' && $member->guarantor_mobile !== $mobile) {
+                    $member->guarantor_mobile = $mobile;
+                    $memberDirty = true;
+                }
+                if ($memberDirty) {
+                    $member->save();
+                }
+            }
+        }
+
+        // 2. Sync Loan Form 2 (guarantor_info)
+        $gInfo = is_array($loan->guarantor_info) ? $loan->guarantor_info : [];
+        if ($name !== '') {
+            $gInfo['guarantor_name'] = $name;
+        }
+        if ($fatherOrSpouse !== '') {
+            $gInfo['guarantor_father_or_spouse'] = $fatherOrSpouse;
+        }
+        if ($nid !== '') {
+            $gInfo['guarantor_nid'] = $nid;
+        }
+        if ($mobile !== '') {
+            $gInfo['guarantor_mobile'] = $mobile;
+        }
+        if ($village !== '') {
+            $gInfo['guarantor_village'] = $village;
+        }
+        if ($postOffice !== '') {
+            $gInfo['guarantor_post_office'] = $postOffice;
+        }
+        if ($upazila !== '') {
+            $gInfo['guarantor_upazila'] = $upazila;
+        }
+        if ($district !== '') {
+            $gInfo['guarantor_district'] = $district;
+        }
+        if ($relation !== '') {
+            $gInfo['guarantor_relation'] = $relation;
+        }
+        $loan->guarantor_info = $gInfo;
+
+        // 3. Sync Loan Form 5 (business_plan)
+        if (is_array($loan->business_plan) && ! empty($loan->business_plan)) {
+            $bp = $loan->business_plan;
+            if ($name !== '') {
+                $bp['guarantor_1_name'] = $name;
+            }
+            if ($mobile !== '') {
+                $bp['guarantor_1_mobile'] = $mobile;
+            }
+            $addrParts = array_filter([$village, $postOffice, $upazila, $district]);
+            if (! empty($addrParts)) {
+                $bp['guarantor_1_address'] = implode(', ', $addrParts);
+            }
+            if (! empty($guarantorData['guarantor_2_name'])) {
+                $bp['guarantor_2_name'] = trim((string) $guarantorData['guarantor_2_name']);
+            }
+            if (! empty($guarantorData['guarantor_2_mobile'])) {
+                $bp['guarantor_2_mobile'] = trim((string) $guarantorData['guarantor_2_mobile']);
+            }
+            if (! empty($guarantorData['guarantor_2_address'])) {
+                $bp['guarantor_2_address'] = trim((string) $guarantorData['guarantor_2_address']);
+            }
+            $loan->business_plan = $bp;
+        }
+
+        // 4. Mark verified
+        $loan->guarantor_verified_at = now();
+        if ($verifiedByUserId) {
+            $loan->guarantor_verified_by = $verifiedByUserId;
+        }
+        $loan->save();
+    }
 }

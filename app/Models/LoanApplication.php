@@ -108,6 +108,8 @@ class LoanApplication extends Model
         'selected_approvers',
         'legacy_application_key',
         'legacy_member_snapshot',
+        'guarantor_verified_at',
+        'guarantor_verified_by',
     ];
 
     protected $casts = [
@@ -159,6 +161,8 @@ class LoanApplication extends Model
         'selected_approvers' => 'array',
         'business_plan' => 'array', // JSON column - cast to array for Laravel
         'legacy_member_snapshot' => 'array',
+        'guarantor_verified_at' => 'datetime',
+        'guarantor_verified_by' => 'integer',
     ];
 
     protected $appends = ['member_display'];
@@ -279,6 +283,11 @@ class LoanApplication extends Model
     public function cancellationRequestedBy(): BelongsTo
     {
         return $this->belongsTo(User::class, 'cancellation_requested_by');
+    }
+
+    public function guarantorVerifiedBy(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'guarantor_verified_by');
     }
 
     public function hasPendingAmountChange(): bool

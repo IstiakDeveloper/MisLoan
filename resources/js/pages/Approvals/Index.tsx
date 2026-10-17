@@ -30,6 +30,7 @@ import {
     ShieldCheck,
     UserCheck,
 } from 'lucide-react';
+import GuarantorApprovalSection, { GuarantorFormState } from '@/components/GuarantorApprovalSection';
 
 interface EscalationApprover {
     id: number;
@@ -85,6 +86,9 @@ interface LoanApproval {
     block_list?: BlockListFields;
     is_high_amount?: boolean;
     bm_ceiling?: number;
+    guarantor_payload?: any;
+    guarantor_required?: boolean;
+    guarantor_verified?: boolean;
 }
 
 interface BlockListFields {
@@ -759,6 +763,18 @@ export default function Index({
     const [loanUsernameVerified, setLoanUsernameVerified] = useState(false);
     const [loanUsernameVerifyError, setLoanUsernameVerifyError] = useState<string | null>(null);
     const [checkingLoanUsername, setCheckingLoanUsername] = useState(false);
+    const [loanGuarantorForm, setLoanGuarantorForm] = useState<GuarantorFormState>({
+        guarantor_name: '',
+        guarantor_father_or_spouse: '',
+        guarantor_nid: '',
+        guarantor_mobile: '',
+        guarantor_village: '',
+        guarantor_post_office: '',
+        guarantor_upazila: '',
+        guarantor_district: '',
+        guarantor_relation: '',
+    });
+    const [loanGuarantorVerifiedMark, setLoanGuarantorVerifiedMark] = useState(false);
 
     // Search Filtering
     const filteredApprovals = useMemo(() => {
@@ -967,6 +983,20 @@ export default function Index({
         const amount = Number(loanApproval.requested_amount || 0);
         const ceiling = loanApproval.bm_ceiling ?? 70000;
         const isHigh = loanApproval.is_high_amount ?? (amount >= ceiling);
+
+        const gp = loanApproval.guarantor_payload || {};
+        setLoanGuarantorForm({
+            guarantor_name: gp.guarantor_name || '',
+            guarantor_father_or_spouse: gp.guarantor_father_or_spouse || '',
+            guarantor_nid: gp.guarantor_nid || '',
+            guarantor_mobile: gp.guarantor_mobile || '',
+            guarantor_village: gp.guarantor_village || '',
+            guarantor_post_office: gp.guarantor_post_office || '',
+            guarantor_upazila: gp.guarantor_upazila || '',
+            guarantor_district: gp.guarantor_district || '',
+            guarantor_relation: gp.guarantor_relation || '',
+        });
+        setLoanGuarantorVerifiedMark(Boolean(loanApproval.guarantor_verified));
 
         if (actionType === 'approve' && isBranch && isHigh && !loanApproval.is_amount_change_approval && !loanApproval.is_cancellation_approval) {
             setSelectedLoanApproval(loanApproval);
@@ -1271,6 +1301,17 @@ export default function Index({
             }
         }
 
+        if (selectedLoanApproval.level === 'branch' && selectedLoanApproval.guarantor_required && (loanAction === 'approve' || loanAction === 'forward')) {
+            if (!loanGuarantorForm.guarantor_name.trim()) {
+                alert('অনুমোদনের পূর্বে জামিনদারের নাম পূরণ করা আবশ্যক।');
+                return;
+            }
+            if (!loanGuarantorVerifiedMark && !selectedLoanApproval.guarantor_verified) {
+                alert('অনুগ্রহ করে জামিনদারের তথ্য সঠিক আছে মর্মে নিশ্চিত করুন (টিক দিন)।');
+                return;
+            }
+        }
+
         setIsSubmitting(true);
         setLoanServerError(null);
 
@@ -1280,6 +1321,8 @@ export default function Index({
                 {
                     forward_to_user_id: loanForwardToUserId,
                     comments: loanComments,
+                    guarantor_data: loanGuarantorForm,
+                    mark_guarantor_verified: loanGuarantorVerifiedMark,
                 },
                 {
                     ...keepListFilters,
@@ -1301,7 +1344,11 @@ export default function Index({
             return;
         }
 
-        const payload: Record<string, unknown> = { comments: loanComments };
+        const payload: Record<string, unknown> = {
+            comments: loanComments,
+            guarantor_data: loanGuarantorForm,
+            mark_guarantor_verified: loanGuarantorVerifiedMark,
+        };
         if (loanAction === 'approve' && !selectedLoanApproval.is_cancellation_approval) {
             payload.approved_amount = Math.round(Number(loanApprovedAmount));
         } else if (loanAction === 'reject' && !selectedLoanApproval.is_cancellation_approval) {
@@ -2280,8 +2327,8 @@ export default function Index({
 
             {/* ── LOAN ACTION MODAL ────────────────────────────────────────── */}
             {showLoanModal && selectedLoanApproval && loanAction && (
-                <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center z-50 p-4 overflow-y-auto animate-in fade-in duration-200">
-                    <div className="bg-white rounded-2xl p-5 max-w-md w-full max-h-[90vh] overflow-y-auto shadow-2xl border border-slate-200 space-y-3.5">
+                <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center z-50 p-3 sm:p-4 overflow-y-auto animate-in fade-in duration-200">
+                    <div className="bg-white rounded-2xl p-4 sm:p-5 max-w-lg md:max-w-xl w-full max-h-[92vh] overflow-y-auto shadow-2xl border border-slate-200 space-y-3.5">
                         <div className="flex items-center justify-between border-b border-slate-100 pb-2.5">
                             <div className="flex items-center gap-2">
                                 <div className={`w-7 h-7 rounded-lg flex items-center justify-center ${
@@ -2377,6 +2424,18 @@ export default function Index({
                                 </div>
                             )}
                         </div>
+
+                        {/* Guarantor Verification for Branch Level Approvals */}
+                        {selectedLoanApproval.level === 'branch' && selectedLoanApproval.guarantor_required && (loanAction === 'approve' || loanAction === 'forward') && (
+                            <GuarantorApprovalSection
+                                data={loanGuarantorForm}
+                                onChange={(field, val) => setLoanGuarantorForm((prev) => ({ ...prev, [field]: val }))}
+                                isVerifiedMarked={loanGuarantorVerifiedMark}
+                                onVerifiedMarkChange={setLoanGuarantorVerifiedMark}
+                                initiallyVerified={Boolean(selectedLoanApproval.guarantor_verified)}
+                                isRequired={true}
+                            />
+                        )}
 
                         {/* Escalation Approver for Forward */}
                         {loanAction === 'forward' && (
@@ -2638,30 +2697,43 @@ export default function Index({
                             </div>
                         )}
 
-                        <div className="flex items-center justify-end gap-2 pt-1">
-                            <button
-                                type="button"
-                                onClick={resetLoanModal}
-                                className="px-3.5 py-2 border border-slate-300 rounded-xl text-xs font-bold text-slate-700 hover:bg-slate-50 transition"
-                            >
-                                বাতিল
-                            </button>
-                            <button
-                                type="button"
-                                onClick={submitLoanAction}
-                                disabled={
-                                    isSubmitting ||
-                                    (loanAction === 'approve' && !selectedLoanApproval.is_cancellation_approval && !loanApprovedAmount.trim()) ||
-                                    (loanAction === 'forward' && !loanForwardToUserId)
-                                }
-                                className={`px-4 py-2 rounded-xl text-xs font-bold text-white shadow-xs transition disabled:opacity-50 disabled:cursor-not-allowed ${
-                                    loanAction === 'approve'
-                                        ? 'bg-emerald-600 hover:bg-emerald-700'
-                                        : loanAction === 'forward'
-                                          ? 'bg-blue-600 hover:bg-blue-700'
-                                          : 'bg-rose-600 hover:bg-rose-700'
-                                }`}
-                            >
+                        {/* Modal Action Buttons */}
+                        {(() => {
+                            const isGuarValidInModal = !(selectedLoanApproval.level === 'branch' && selectedLoanApproval.guarantor_required && (loanAction === 'approve' || loanAction === 'forward')) || (
+                                Boolean(loanGuarantorForm.guarantor_name.trim()) &&
+                                (loanGuarantorVerifiedMark || Boolean(selectedLoanApproval.guarantor_verified))
+                            );
+
+                            return (
+                                <div className="flex flex-col sm:flex-row items-center justify-between gap-2 pt-2 border-t border-slate-100">
+                                    <div className="text-[11px] text-amber-700 font-semibold w-full sm:w-auto text-center sm:text-left">
+                                        {!isGuarValidInModal && '⚠️ জামিনদারের তথ্য পূরণ ও নিশ্চিত করুন।'}
+                                    </div>
+                                    <div className="flex items-center justify-end gap-2 w-full sm:w-auto">
+                                        <button
+                                            type="button"
+                                            onClick={resetLoanModal}
+                                            className="px-3.5 py-2 border border-slate-300 rounded-xl text-xs font-bold text-slate-700 hover:bg-slate-50 transition flex-1 sm:flex-initial"
+                                        >
+                                            বাতিল
+                                        </button>
+                                        <button
+                                            type="button"
+                                            onClick={submitLoanAction}
+                                            disabled={
+                                                isSubmitting ||
+                                                (loanAction === 'approve' && !selectedLoanApproval.is_cancellation_approval && !loanApprovedAmount.trim()) ||
+                                                (loanAction === 'forward' && !loanForwardToUserId) ||
+                                                !isGuarValidInModal
+                                            }
+                                            className={`px-4 py-2 rounded-xl text-xs font-bold text-white shadow-xs transition disabled:opacity-50 disabled:cursor-not-allowed flex-1 sm:flex-initial ${
+                                                loanAction === 'approve'
+                                                    ? 'bg-emerald-600 hover:bg-emerald-700'
+                                                    : loanAction === 'forward'
+                                                      ? 'bg-blue-600 hover:bg-blue-700'
+                                                      : 'bg-rose-600 hover:bg-rose-700'
+                                            }`}
+                                        >
                                 {isSubmitting
                                     ? 'প্রসেসিং...'
                                     : loanAction === 'approve'
@@ -2675,8 +2747,11 @@ export default function Index({
                                         : loanPushToBlockList
                                           ? 'প্রত্যাখ্যান ও Block List'
                                           : 'শুধু প্রত্যাখ্যান'}
-                            </button>
-                        </div>
+                                        </button>
+                                    </div>
+                                </div>
+                            );
+                        })()}
                     </div>
                 </div>
             )}
