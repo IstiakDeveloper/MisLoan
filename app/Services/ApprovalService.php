@@ -654,6 +654,10 @@ class ApprovalService
             return false;
         }
 
+        if ($this->isLoanCancellationApproval($approval->loanApplication)) {
+            return $this->approveLoanCancellation($approval, $comments);
+        }
+
         if ($this->isLoanAmountChangeApproval($approval->loanApplication)) {
             return $this->approveLoanAmountChange($approval, $comments, $approvedAmount);
         }
@@ -805,6 +809,10 @@ class ApprovalService
             return false;
         }
 
+        if ($this->isLoanCancellationApproval($approval->loanApplication)) {
+            return $this->rejectLoanCancellation($approval, $comments);
+        }
+
         if ($this->isLoanAmountChangeApproval($approval->loanApplication)) {
             return $this->rejectLoanAmountChange($approval, $comments);
         }
@@ -896,7 +904,7 @@ class ApprovalService
         }
 
         $loan = $approval->loanApplication;
-        if ($this->isLoanAmountChangeApproval($loan)) {
+        if ($this->isLoanAmountChangeApproval($loan) || $this->isLoanCancellationApproval($loan)) {
             return false;
         }
 
@@ -1619,6 +1627,11 @@ class ApprovalService
         return $loan !== null && $loan->hasPendingAmountChange();
     }
 
+    public function isLoanCancellationApproval(?LoanApplication $loan): bool
+    {
+        return $loan !== null && $loan->hasPendingCancellation();
+    }
+
     public static function approvalLevelLabel(?string $level): string
     {
         return match ($level) {
@@ -1850,6 +1863,149 @@ class ApprovalService
     }
 
     /**
+     * Branch user asks the final approver to cancel a loan sitting in «পরে নেবে».
+     */
+    public function requestLoanCancellation(LoanApplication $loan, User $requester, string $reason): void
+    {
+        if ($loan->status !== LoanApplication::STATUS_AWAITING_TAKEUP) {
+            throw new \Exception('শুধু «পরে নেবে» তালিকার ঋণ বাতিলের জন্য পাঠানো যাবে।');
+        }
+
+        if ($loan->hasPendingCancellation()) {
+            throw new \Exception('ইতিমধ্যে বাতিলের অনুমোদন অপেক্ষমাণ।');
+        }
+
+        $reason = trim($reason);
+        if ($reason === '') {
+            throw new \Exception('বাতিলের কারণ লিখুন।');
+        }
+
+        $lastApproval = $this->lastLoanAmountApproval($loan);
+        if (! $lastApproval || ! $lastApproval->user_id) {
+            throw new \Exception('এই ঋণের চূড়ান্ত অনুমোদনকারী পাওয়া যায়নি। বাতিলের অনুরোধ পাঠানো যায়নি।');
+        }
+
+        $targetUser = User::query()->find($lastApproval->user_id);
+        if (! $targetUser || ! $targetUser->is_active) {
+            throw new \Exception('চূড়ান্ত অনুমোদনকারী এখন সক্রিয় নন। বাতিলের অনুরোধ পাঠানো যায়নি।');
+        }
+
+        $nextSequence = ((int) $loan->approvals()->max('sequence')) + 1;
+
+        DB::transaction(function () use ($loan, $requester, $reason, $lastApproval, $nextSequence) {
+            $loan->update([
+                'status' => LoanApplication::STATUS_PENDING_CANCELLATION,
+                'cancellation_reason' => $reason,
+                'cancellation_requested_by' => $requester->id,
+                'cancellation_requested_at' => now(),
+            ]);
+
+            LoanApplicationApproval::create([
+                'loan_application_id' => $loan->id,
+                'user_id' => $lastApproval->user_id,
+                'level' => $lastApproval->level ?: 'branch',
+                'sequence' => $nextSequence,
+                'status' => 'pending',
+            ]);
+        });
+
+        $loan = $loan->fresh(['memberAdmission', 'submittedBy']);
+        app(NotificationService::class)->send(
+            users: $targetUser,
+            type: 'loan_application',
+            title: 'ঋণ বাতিলের অনুমোদন প্রয়োজন',
+            message: "ঋণ আবেদন নং {$loan->application_no} «পরে নেবে» তালিকা থেকে বাতিলের জন্য পাঠানো হয়েছে। অনুমোদন দিলে ঋণ বাতিল হবে।",
+            notifiable: $loan,
+            actionUrl: '/approvals',
+            details: [
+                'আবেদন নং' => $loan->application_no,
+                'কারণ' => $reason,
+                'অনুরোধ করেছেন' => $requester->name,
+            ],
+            immediateEmail: true,
+        );
+    }
+
+    private function approveLoanCancellation(LoanApplicationApproval $approval, ?string $comments): bool
+    {
+        $loan = $approval->loanApplication;
+
+        DB::transaction(function () use ($approval, $comments, $loan) {
+            $approval->update([
+                'status' => 'approved',
+                'comments' => $comments ?: 'বাতিল অনুমোদিত',
+                'approved_at' => now(),
+                'approver_signature' => $approval->user->signature ?? null,
+            ]);
+
+            $loan->update([
+                'status' => LoanApplication::STATUS_CANCELLED,
+            ]);
+        });
+
+        $loan = $loan->fresh(['submittedBy', 'cancellationRequestedBy', 'memberAdmission']);
+        $recipients = collect([$loan->cancellationRequestedBy, $loan->submittedBy])->filter()->unique('id');
+        if ($recipients->isNotEmpty()) {
+            app(NotificationService::class)->send(
+                users: $recipients,
+                type: 'loan_application',
+                title: 'ঋণ বাতিল অনুমোদিত',
+                message: "ঋণ আবেদন নং {$loan->application_no} বাতিল করা হয়েছে।",
+                notifiable: $loan,
+                actionUrl: "/member/loan-applications/{$loan->id}",
+                details: [
+                    'আবেদন নং' => $loan->application_no,
+                    'অনুমোদনকারী' => auth()->user()?->name ?? 'Approver',
+                ]
+            );
+        }
+
+        return true;
+    }
+
+    private function rejectLoanCancellation(LoanApplicationApproval $approval, string $comments): bool
+    {
+        $loan = $approval->loanApplication;
+        $requesterId = $loan->cancellation_requested_by;
+
+        DB::transaction(function () use ($approval, $comments, $loan) {
+            $approval->update([
+                'status' => 'rejected',
+                'comments' => $comments,
+                'approved_at' => now(),
+            ]);
+
+            $loan->update([
+                'status' => LoanApplication::STATUS_AWAITING_TAKEUP,
+                'cancellation_reason' => null,
+                'cancellation_requested_by' => null,
+                'cancellation_requested_at' => null,
+            ]);
+        });
+
+        $loan = $loan->fresh(['submittedBy', 'memberAdmission']);
+        $requester = $requesterId ? User::query()->find($requesterId) : null;
+        $recipients = collect([$requester, $loan->submittedBy])->filter()->unique('id');
+        if ($recipients->isNotEmpty()) {
+            app(NotificationService::class)->send(
+                users: $recipients,
+                type: 'loan_application',
+                title: 'ঋণ বাতিলের অনুরোধ প্রত্যাখ্যাত',
+                message: "ঋণ আবেদন নং {$loan->application_no} এর বাতিল অনুরোধ প্রত্যাখ্যান হয়েছে। ঋণ আবার «পরে নেবে» তালিকায় আছে।",
+                notifiable: $loan,
+                actionUrl: "/member/loan-applications/{$loan->id}",
+                details: [
+                    'আবেদন নং' => $loan->application_no,
+                    'কারণ' => $comments,
+                ],
+                immediateEmail: true,
+            );
+        }
+
+        return true;
+    }
+
+    /**
      * Get pending loan approvals for a user (branch/area/zone/escalation approvers)
      */
     public function getPendingLoanApprovalsForUser(User $user)
@@ -1861,6 +2017,7 @@ class ApprovalService
                     LoanApplication::STATUS_SUBMITTED,
                     LoanApplication::STATUS_UNDER_REVIEW,
                     LoanApplication::STATUS_PENDING_AMOUNT_APPROVAL,
+                    LoanApplication::STATUS_PENDING_CANCELLATION,
                 ]);
             })
             ->with(['loanApplication.memberAdmission', 'loanApplication.branch.area.zone', 'loanApplication.loanProduct', 'loanApplication.loanCategory'])
@@ -1875,6 +2032,9 @@ class ApprovalService
                 return true;
             }
             if ($loan && $loan->status === LoanApplication::STATUS_PENDING_AMOUNT_APPROVAL) {
+                return true;
+            }
+            if ($loan && $loan->status === LoanApplication::STATUS_PENDING_CANCELLATION) {
                 return true;
             }
 

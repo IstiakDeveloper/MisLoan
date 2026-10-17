@@ -117,7 +117,6 @@ export function calculateLoanSchedule(
     customDurationMonths?: number | string | null,
 ) {
     const amount = Number(loanAmount) || 0;
-    const rawType = String(loanProduct?.installment_type || '').toLowerCase();
     const isLumpSum = isLumpSumProduct(loanProduct, loanCategory);
     const durationMonths = Number(customDurationMonths) > 0
         ? Number(customDurationMonths)
@@ -159,15 +158,8 @@ export function calculateLoanSchedule(
         }
     }
 
-    // Calculate last installment date (Sufolon/Lump-sum = tenure months minus 1 day; e.g. 20/08 + 6m -> 19/02)
-    const isWeekly = rawType === 'weekly' || rawType.includes('week');
-    const lastInstallmentDate = calculateTenureEndDate(
-        customDisbursementDate,
-        durationMonths,
-        isLumpSum,
-        isWeekly,
-        numberOfInstallments
-    );
+    // Tenure ends the day before the disbursement anniversary (17/10/2026 + 1 year -> 16/10/2027).
+    const lastInstallmentDate = calculateTenureEndDate(customDisbursementDate, durationMonths);
 
     return {
         loanAmount: amount,
@@ -184,14 +176,12 @@ export function calculateLoanSchedule(
 }
 
 /**
- * Helper to safely calculate end date by adding months/days to YYYY-MM-DD without timezone shifts
+ * End of tenure: add the loan months, then go back one day.
+ * 17/10/2026 disbursed for 12 months ends on 16/10/2027.
  */
 export function calculateTenureEndDate(
     startDateStr: string | null | undefined,
     durationMonths: number,
-    isLumpSum: boolean,
-    isWeekly: boolean,
-    numberOfInstallments: number,
 ): string {
     const raw = toIsoDate(startDateStr);
     let year: number;
@@ -201,7 +191,7 @@ export function calculateTenureEndDate(
     const parts = raw.split('-').map(Number);
     if (parts.length === 3 && !isNaN(parts[0]) && !isNaN(parts[1]) && !isNaN(parts[2])) {
         year = parts[0];
-        month = parts[1]; // 1-12
+        month = parts[1];
         day = parts[2];
     } else {
         const now = new Date();
@@ -210,50 +200,27 @@ export function calculateTenureEndDate(
         day = now.getDate();
     }
 
-    if (isLumpSum) {
-        // e.g. 20/08/2026 + 6 months -> Month 2, Year 2027. Minus 1 day -> Day 19.
-        let targetMonth = month + durationMonths;
-        let targetYear = year + Math.floor((targetMonth - 1) / 12);
-        targetMonth = ((targetMonth - 1) % 12) + 1;
+    const monthsToAdd = durationMonths > 0 ? durationMonths : 12;
+    let targetMonth = month + monthsToAdd;
+    let targetYear = year + Math.floor((targetMonth - 1) / 12);
+    targetMonth = ((targetMonth - 1) % 12) + 1;
 
-        let targetDay = day - 1;
-        if (targetDay < 1) {
-            targetMonth -= 1;
-            if (targetMonth < 1) {
-                targetMonth = 12;
-                targetYear -= 1;
-            }
-            targetDay = new Date(targetYear, targetMonth, 0).getDate();
-        } else {
-            const maxDaysInMonth = new Date(targetYear, targetMonth, 0).getDate();
-            if (targetDay > maxDaysInMonth) {
-                targetDay = maxDaysInMonth;
-            }
+    const maxDaysInTargetMonth = new Date(targetYear, targetMonth, 0).getDate();
+    let targetDay = Math.min(day, maxDaysInTargetMonth) - 1;
+    if (targetDay < 1) {
+        targetMonth -= 1;
+        if (targetMonth < 1) {
+            targetMonth = 12;
+            targetYear -= 1;
         }
-
-        const yStr = String(targetYear);
-        const mStr = String(targetMonth).padStart(2, '0');
-        const dStr = String(targetDay).padStart(2, '0');
-        return `${yStr}-${mStr}-${dStr}`;
-    } else if (isWeekly) {
-        const d = new Date(year, month - 1, day);
-        d.setDate(d.getDate() + (numberOfInstallments * 7));
-        const yStr = String(d.getFullYear());
-        const mStr = String(d.getMonth() + 1).padStart(2, '0');
-        const dStr = String(d.getDate()).padStart(2, '0');
-        return `${yStr}-${mStr}-${dStr}`;
-    } else {
-        let targetMonth = month + numberOfInstallments;
-        let targetYear = year + Math.floor((targetMonth - 1) / 12);
-        targetMonth = ((targetMonth - 1) % 12) + 1;
-        const maxDaysInMonth = new Date(targetYear, targetMonth, 0).getDate();
-        const targetDay = Math.min(day, maxDaysInMonth);
-
-        const yStr = String(targetYear);
-        const mStr = String(targetMonth).padStart(2, '0');
-        const dStr = String(targetDay).padStart(2, '0');
-        return `${yStr}-${mStr}-${dStr}`;
+        targetDay = new Date(targetYear, targetMonth, 0).getDate();
     }
+
+    const yStr = String(targetYear);
+    const mStr = String(targetMonth).padStart(2, '0');
+    const dStr = String(targetDay).padStart(2, '0');
+
+    return `${yStr}-${mStr}-${dStr}`;
 }
 
 /** Per-installment principal + service charge for approval form pages */

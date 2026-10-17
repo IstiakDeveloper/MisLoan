@@ -25,6 +25,7 @@ import {
     Coins,
     Banknote,
     AlertTriangle,
+    Ban,
     RefreshCw,
     ShieldCheck,
     UserCheck,
@@ -73,6 +74,8 @@ interface LoanApproval {
     approved_amount?: number | null;
     pending_approved_amount?: number | null;
     is_amount_change_approval?: boolean;
+    is_cancellation_approval?: boolean;
+    cancellation_reason?: string | null;
     submitted_at: string;
     level: string;
     sequence?: number;
@@ -194,12 +197,13 @@ function loanIsHighAmount(la: LoanApproval): boolean {
     }
     const ceiling = la.bm_ceiling ?? 70000;
     return !la.is_amount_change_approval
+        && !la.is_cancellation_approval
         && la.level === 'branch'
         && Number(la.requested_amount || 0) >= ceiling;
 }
 
 function loanCanForwardFurther(la: LoanApproval): boolean {
-    if (la.is_amount_change_approval) {
+    if (la.is_amount_change_approval || la.is_cancellation_approval) {
         return false;
     }
 
@@ -252,6 +256,7 @@ function LoanApprovalsPanel({
             <div className="md:hidden flex flex-col gap-2.5">
                 {items.map((la) => {
                     const isHighAmount = loanIsHighAmount(la);
+                    const isCancellation = Boolean(la.is_cancellation_approval);
                     const canForwardFurther = Boolean(onForward) && loanCanForwardFurther(la);
                     const memberCode = loanMemberCode(la);
                     const canCopy = memberCode !== '—';
@@ -324,6 +329,15 @@ function LoanApprovalsPanel({
                                     </span>
                                 </div>
                             )}
+                            {isCancellation && (
+                                <div className="flex items-start gap-1 p-1.5 rounded-lg bg-rose-50 border border-rose-200 text-rose-900 text-[10px] font-semibold">
+                                    <Ban className="w-3 h-3 text-rose-600 shrink-0 mt-0.5" />
+                                    <span>
+                                        বাতিল অনুমোদন
+                                        {la.cancellation_reason ? ` — ${la.cancellation_reason}` : ''}
+                                    </span>
+                                </div>
+                            )}
 
                             <div className="grid grid-cols-2 gap-2 bg-slate-50 p-2 rounded-lg border border-slate-100 text-[11px]">
                                 <div>
@@ -346,11 +360,11 @@ function LoanApprovalsPanel({
                                 <button
                                     onClick={() => onApprove(la)}
                                     className={`inline-flex items-center justify-center gap-1 px-2 py-1.5 rounded-lg text-xs font-bold text-white ${
-                                        isHighAmount ? 'bg-blue-600 hover:bg-blue-700' : isAmountChange ? 'bg-orange-600 hover:bg-orange-700' : 'bg-emerald-600 hover:bg-emerald-700'
+                                        isHighAmount ? 'bg-blue-600 hover:bg-blue-700' : isCancellation ? 'bg-rose-600 hover:bg-rose-700' : isAmountChange ? 'bg-orange-600 hover:bg-orange-700' : 'bg-emerald-600 hover:bg-emerald-700'
                                     }`}
                                 >
                                     {isHighAmount ? <ArrowUpRight className="w-3 h-3" /> : <CheckCircle2 className="w-3 h-3" />}
-                                    <span>{isHighAmount ? 'ফরওয়ার্ড' : 'অনুমোদন'}</span>
+                                    <span>{isHighAmount ? 'ফরওয়ার্ড' : isCancellation ? 'বাতিল অনুমোদন' : 'অনুমোদন'}</span>
                                 </button>
                                 {canForwardFurther && (
                                     <button
@@ -364,7 +378,7 @@ function LoanApprovalsPanel({
                                     onClick={() => onReject(la)}
                                     className="inline-flex items-center justify-center gap-1 px-2 py-1.5 rounded-lg text-xs font-bold text-rose-700 bg-rose-50 hover:bg-rose-100 border border-rose-200"
                                 >
-                                    <XCircle className="w-3 h-3" /> বাতিল
+                                    <XCircle className="w-3 h-3" /> {isCancellation ? 'ফেরত' : 'বাতিল'}
                                 </button>
                             </div>
                         </div>
@@ -395,6 +409,7 @@ function LoanApprovalsPanel({
                         <tbody className="divide-y divide-slate-100 text-xs">
                             {items.map((la) => {
                                 const isHighAmount = loanIsHighAmount(la);
+                                const isCancellation = Boolean(la.is_cancellation_approval);
                                 const canForwardFurther = Boolean(onForward) && loanCanForwardFurther(la);
                                 const memberCode = loanMemberCode(la);
                                 const canCopy = memberCode !== '—';
@@ -465,6 +480,11 @@ function LoanApprovalsPanel({
                                                         আগে: ৳ {Number(la.approved_amount || 0).toLocaleString('bn-BD')}
                                                     </span>
                                                 )}
+                                                {isCancellation && (
+                                                    <span className="inline-flex items-center gap-1 text-[9px] font-bold text-rose-700 bg-rose-50 border border-rose-200 px-1 py-0.2 rounded mt-0.5">
+                                                        বাতিল অনুমোদন
+                                                    </span>
+                                                )}
                                             </div>
                                         </td>
                                         <td className="py-2.5 px-3.5 text-slate-600">
@@ -486,11 +506,13 @@ function LoanApprovalsPanel({
                                                     className={`inline-flex items-center gap-1 px-2.5 py-1 text-xs font-bold text-white rounded shadow-2xs transition active:scale-95 ${
                                                         isHighAmount
                                                             ? 'bg-blue-600 hover:bg-blue-700'
-                                                            : isAmountChange
-                                                                ? 'bg-orange-600 hover:bg-orange-700'
-                                                                : 'bg-emerald-600 hover:bg-emerald-700'
+                                                            : isCancellation
+                                                                ? 'bg-rose-600 hover:bg-rose-700'
+                                                                : isAmountChange
+                                                                    ? 'bg-orange-600 hover:bg-orange-700'
+                                                                    : 'bg-emerald-600 hover:bg-emerald-700'
                                                     }`}
-                                                    title={isHighAmount ? 'উচ্চতর অনুমোদনে ফরওয়ার্ড' : 'ঋণ অনুমোদন করুন'}
+                                                    title={isHighAmount ? 'উচ্চতর অনুমোদনে ফরওয়ার্ড' : isCancellation ? 'বাতিল অনুমোদন করুন' : 'ঋণ অনুমোদন করুন'}
                                                 >
                                                     {isHighAmount ? (
                                                         <>
@@ -500,7 +522,7 @@ function LoanApprovalsPanel({
                                                     ) : (
                                                         <>
                                                             <CheckCircle2 className="w-3 h-3" />
-                                                            <span>অনুমোদন</span>
+                                                            <span>{isCancellation ? 'বাতিল অনুমোদন' : 'অনুমোদন'}</span>
                                                         </>
                                                     )}
                                                 </button>
@@ -519,10 +541,10 @@ function LoanApprovalsPanel({
                                                 <button
                                                     onClick={() => onReject(la)}
                                                     className="inline-flex items-center gap-1 px-2 py-1 text-xs font-bold text-rose-700 bg-rose-50 hover:bg-rose-100 rounded border border-rose-200 transition active:scale-95"
-                                                    title="ঋণ আবেদন প্রত্যাখ্যান করুন"
+                                                    title={isCancellation ? 'বাতিল অনুরোধ ফেরত দিন' : 'ঋণ আবেদন প্রত্যাখ্যান করুন'}
                                                 >
                                                     <XCircle className="w-3 h-3" />
-                                                    <span>বাতিল</span>
+                                                    <span>{isCancellation ? 'ফেরত' : 'বাতিল'}</span>
                                                 </button>
                                             </div>
                                         </td>
@@ -945,7 +967,7 @@ export default function Index({
         const ceiling = loanApproval.bm_ceiling ?? 70000;
         const isHigh = loanApproval.is_high_amount ?? (amount >= ceiling);
 
-        if (actionType === 'approve' && isBranch && isHigh && !loanApproval.is_amount_change_approval) {
+        if (actionType === 'approve' && isBranch && isHigh && !loanApproval.is_amount_change_approval && !loanApproval.is_cancellation_approval) {
             setSelectedLoanApproval(loanApproval);
             setLoanAction('forward');
             setLoanComments('');
@@ -1240,7 +1262,7 @@ export default function Index({
             return;
         }
 
-        if (loanAction === 'approve') {
+        if (loanAction === 'approve' && !selectedLoanApproval.is_cancellation_approval) {
             const amount = Number(loanApprovedAmount);
             if (!loanApprovedAmount.trim() || Number.isNaN(amount) || amount <= 0) {
                 alert('সঠিক ও চূড়ান্ত অনুমোদিত ঋণের পরিমাণ দিন।');
@@ -1279,9 +1301,9 @@ export default function Index({
         }
 
         const payload: Record<string, unknown> = { comments: loanComments };
-        if (loanAction === 'approve') {
+        if (loanAction === 'approve' && !selectedLoanApproval.is_cancellation_approval) {
             payload.approved_amount = Math.round(Number(loanApprovedAmount));
-        } else if (loanAction === 'reject') {
+        } else if (loanAction === 'reject' && !selectedLoanApproval.is_cancellation_approval) {
             payload.push_to_block_list = loanPushToBlockList;
             if (loanPushToBlockList) {
                 payload.block_list = {
@@ -2274,10 +2296,14 @@ export default function Index({
                                 </div>
                                 <h3 className="text-sm font-bold text-slate-900">
                                     {loanAction === 'approve'
-                                        ? 'ঋণ আবেদন অনুমোদন'
+                                        ? selectedLoanApproval.is_cancellation_approval
+                                            ? 'বাতিল অনুমোদন'
+                                            : 'ঋণ আবেদন অনুমোদন'
                                         : loanAction === 'forward'
                                           ? 'অন্য অনুমোদনকারীর নিকট ফরওয়ার্ড'
-                                          : 'ঋণ আবেদন প্রত্যাখ্যান'}
+                                          : selectedLoanApproval.is_cancellation_approval
+                                            ? 'বাতিল অনুরোধ ফেরত'
+                                            : 'ঋণ আবেদন প্রত্যাখ্যান'}
                                 </h3>
                             </div>
                             <button
@@ -2318,6 +2344,20 @@ export default function Index({
                                     ৳ {Number(selectedLoanApproval.requested_amount).toLocaleString('bn-BD')}
                                 </strong>
                             </div>
+                            {selectedLoanApproval.is_cancellation_approval && (
+                                <div className="pt-1.5 border-t border-rose-200/80 space-y-1">
+                                    <p className="text-[11px] font-bold text-rose-800">বাতিল অনুমোদন</p>
+                                    <p className="text-slate-700">
+                                        অনুমোদন দিলে ঋণ বাতিল হবে। না দিলে আবার «পরে নেবে» তালিকায় ফিরবে। Block List হবে না।
+                                    </p>
+                                    {selectedLoanApproval.cancellation_reason && (
+                                        <p className="text-slate-800">
+                                            <span className="text-slate-500">কারণ: </span>
+                                            {selectedLoanApproval.cancellation_reason}
+                                        </p>
+                                    )}
+                                </div>
+                            )}
                             {selectedLoanApproval.is_amount_change_approval && (
                                 <div className="pt-1.5 border-t border-orange-200/80 space-y-1">
                                     <p className="text-[11px] font-bold text-orange-800">হিসাবরক্ষক অনুমোদিত পরিমাণ পরিবর্তন করেছেন</p>
@@ -2360,7 +2400,7 @@ export default function Index({
                         )}
 
                         {/* Approval Amount Input */}
-                        {loanAction === 'approve' && (
+                        {loanAction === 'approve' && !selectedLoanApproval.is_cancellation_approval && (
                             <div className="space-y-1.5">
                                 <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider">
                                     চূড়ান্ত অনুমোদিত ঋণের পরিমাণ (সংখ্যায়) <span className="text-rose-500">*</span>
@@ -2415,14 +2455,20 @@ export default function Index({
                                 className={`w-full border rounded-xl p-2.5 text-xs focus:outline-none focus:ring-1 focus:ring-blue-500 focus:border-blue-500 text-slate-900 transition ${
                                     loanCommentsError ? 'border-rose-400' : 'border-slate-300'
                                 }`}
-                                placeholder={loanAction === 'approve' ? 'ঐচ্ছিক মন্তব্য লিখুন...' : 'প্রত্যাখ্যানের কারণ উল্লেখ করুন...'}
+                                placeholder={
+                                    loanAction === 'approve'
+                                        ? 'ঐচ্ছিক মন্তব্য লিখুন...'
+                                        : selectedLoanApproval.is_cancellation_approval
+                                          ? 'ফেরত দেওয়ার কারণ লিখুন...'
+                                          : 'প্রত্যাখ্যানের কারণ উল্লেখ করুন...'
+                                }
                                 required={loanAction === 'reject'}
                             />
                             <FieldError message={loanCommentsError} />
                         </div>
 
                         {/* Block List Section for Loan Rejection */}
-                        {loanAction === 'reject' && (
+                        {loanAction === 'reject' && !selectedLoanApproval.is_cancellation_approval && (
                             <div className="space-y-2.5">
                                 <label className="flex cursor-pointer items-start gap-2.5 rounded-xl border border-slate-200 bg-white p-2.5 shadow-sm">
                                     <input
@@ -2600,7 +2646,7 @@ export default function Index({
                                 onClick={submitLoanAction}
                                 disabled={
                                     isSubmitting ||
-                                    (loanAction === 'approve' && !loanApprovedAmount.trim()) ||
+                                    (loanAction === 'approve' && !selectedLoanApproval.is_cancellation_approval && !loanApprovedAmount.trim()) ||
                                     (loanAction === 'forward' && !loanForwardToUserId)
                                 }
                                 className={`px-4 py-2 rounded-xl text-xs font-bold text-white shadow-xs transition disabled:opacity-50 disabled:cursor-not-allowed ${
@@ -2614,9 +2660,13 @@ export default function Index({
                                 {isSubmitting
                                     ? 'প্রসেসিং...'
                                     : loanAction === 'approve'
-                                      ? 'অনুমোদন করুন'
+                                      ? selectedLoanApproval.is_cancellation_approval
+                                        ? 'বাতিল অনুমোদন করুন'
+                                        : 'অনুমোদন করুন'
                                       : loanAction === 'forward'
                                         ? 'ফরওয়ার্ড করুন'
+                                        : selectedLoanApproval.is_cancellation_approval
+                                          ? 'পরে নেবেতে ফেরত'
                                         : loanPushToBlockList
                                           ? 'প্রত্যাখ্যান ও Block List'
                                           : 'শুধু প্রত্যাখ্যান'}

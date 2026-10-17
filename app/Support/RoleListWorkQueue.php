@@ -53,12 +53,28 @@ class RoleListWorkQueue
         return $status;
     }
 
+    /**
+     * Branch users see every loan on the application list until they pick dates.
+     * Other roles keep the current-month default outside a work-queue status.
+     */
+    public static function loanListUsesDefaultMonthDates(?User $user): bool
+    {
+        if (! $user) {
+            return true;
+        }
+
+        $user->loadMissing('role');
+
+        return $user->role?->name !== Role::BRANCH_USER;
+    }
+
     public static function isWorkQueue(?string $status): bool
     {
         return in_array($status, [
             'ready_for_head_office',
             'pending_head_office',
             'awaiting_takeup',
+            'pending_cancellation',
             self::PENDING_MY_APPROVAL,
         ], true);
     }

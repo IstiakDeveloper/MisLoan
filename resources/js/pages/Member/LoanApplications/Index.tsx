@@ -124,8 +124,11 @@ interface LoanApplication {
     can_send_to_head_office?: boolean;
     can_disburse?: boolean;
     can_change_approved_amount?: boolean;
+    can_request_cancellation?: boolean;
     amount_change_pending?: boolean;
     amount_change_approver_name?: string | null;
+    cancellation_pending?: boolean;
+    cancellation_approver_name?: string | null;
     member_admission_status?: string;
     issues?: LoanApplicationIssue[];
     tracking_state?: {
@@ -146,6 +149,7 @@ interface Stats {
     approved: number;
     pending_disbursement?: number;
     awaiting_takeup?: number;
+    pending_cancellation?: number;
     rejected: number;
     ready_for_head_office?: number;
     pending_head_office?: number;
@@ -201,6 +205,7 @@ const statusLabels: Record<string, { label: string; bg: string; text: string; bo
     approved: { label: 'Approved (অনুমোদিত)', bg: 'bg-emerald-100', text: 'text-emerald-800', border: 'border-emerald-300' },
     pending_disbursement: { label: 'Disburse Pending (বিতরণ অপেক্ষা)', bg: 'bg-amber-50', text: 'text-amber-800', border: 'border-amber-200' },
     awaiting_takeup: { label: 'পরে নেবে', bg: 'bg-violet-50', text: 'text-violet-800', border: 'border-violet-200' },
+    pending_cancellation: { label: 'বাতিল অনুমোদন অপেক্ষা', bg: 'bg-rose-50', text: 'text-rose-800', border: 'border-rose-200' },
     pending_amount_approval: { label: 'Amount Re-approval (পরিমাণ অনুমোদন)', bg: 'bg-orange-50', text: 'text-orange-800', border: 'border-orange-200' },
     rejected: { label: 'Rejected (প্রত্যাখ্যাত)', bg: 'bg-rose-50', text: 'text-rose-700', border: 'border-rose-200' },
     disbursed: { label: 'Disbursed (বিতরণকৃত)', bg: 'bg-purple-50', text: 'text-purple-700', border: 'border-purple-200' },
@@ -339,6 +344,58 @@ export default function Index({
         setAmountChangeApp(null);
         setAmountChangeValue('');
         setAmountChangeError(null);
+    };
+
+    const [cancelApp, setCancelApp] = useState<LoanApplication | null>(null);
+    const [cancelReason, setCancelReason] = useState('');
+    const [cancelError, setCancelError] = useState<string | null>(null);
+    const [submittingCancel, setSubmittingCancel] = useState(false);
+
+    const openCancel = (app: LoanApplication) => {
+        setCancelApp(app);
+        setCancelReason('');
+        setCancelError(null);
+    };
+
+    const closeCancel = () => {
+        if (submittingCancel) {
+            return;
+        }
+        setCancelApp(null);
+        setCancelReason('');
+        setCancelError(null);
+    };
+
+    const handleCancelSubmit = (e: FormEvent) => {
+        e.preventDefault();
+        if (!cancelApp) {
+            return;
+        }
+        const reason = cancelReason.trim();
+        if (reason.length < 3) {
+            setCancelError('বাতিলের কারণ কমপক্ষে ৩ অক্ষরের হতে হবে।');
+            return;
+        }
+        setCancelError(null);
+        setSubmittingCancel(true);
+        router.patch(
+            `/member/loan-applications/${cancelApp.id}/request-cancellation`,
+            { reason },
+            {
+                ...keepListFilters,
+                preserveScroll: true,
+                onSuccess: () => {
+                    setCancelApp(null);
+                    setCancelReason('');
+                },
+                onError: (errs) => {
+                    setCancelError(errs.reason || errs.error || 'বাতিলের অনুরোধ পাঠানো যায়নি।');
+                },
+                onFinish: () => {
+                    setSubmittingCancel(false);
+                },
+            },
+        );
     };
 
     const handleAmountChangeSubmit = (e: FormEvent) => {
@@ -784,6 +841,7 @@ export default function Index({
             approved: stats.approved || 0,
             pending_disbursement: stats.pending_disbursement || 0,
             awaiting_takeup: stats.awaiting_takeup || 0,
+            pending_cancellation: stats.pending_cancellation || 0,
             rejected: stats.rejected || 0,
             pending_head_office: (stats as any).pending_head_office || 0,
             ready_for_head_office: (stats as any).ready_for_head_office || 0,
@@ -902,6 +960,16 @@ export default function Index({
             iconBg: 'bg-violet-50',
             barColor: 'from-violet-500 to-violet-600',
             activeBg: 'bg-violet-600 border-violet-600 text-white',
+        },
+        {
+            key: 'pending_cancellation',
+            label: 'বাতিল অপেক্ষা',
+            count: filteredStats.pending_cancellation,
+            icon: Ban,
+            iconColor: 'text-rose-600',
+            iconBg: 'bg-rose-50',
+            barColor: 'from-rose-500 to-rose-600',
+            activeBg: 'bg-rose-600 border-rose-600 text-white',
         },
         ...(isBranchUser
             ? [{
@@ -1558,6 +1626,7 @@ export default function Index({
                                             </>
                                         )}
                                         {app.status === 'awaiting_takeup' && isBranchUser && (
+                                            <>
                                             <button
                                                 onClick={() => markReadyFromAwaiting(app)}
                                                 className="inline-flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold text-white bg-indigo-600 hover:bg-indigo-700 border border-indigo-700 transition active:scale-95"
@@ -1566,6 +1635,20 @@ export default function Index({
                                                 <Send className="w-3.5 h-3.5" />
                                                 <span>HO রেডি</span>
                                             </button>
+                                            <button
+                                                onClick={() => openCancel(app)}
+                                                className="inline-flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold text-rose-800 bg-rose-50 hover:bg-rose-100 border border-rose-200 transition active:scale-95"
+                                                title="চূড়ান্ত অনুমোদনকারীর কাছে বাতিলের অনুরোধ পাঠান"
+                                            >
+                                                <Ban className="w-3.5 h-3.5" />
+                                                <span>বাতিল</span>
+                                            </button>
+                                            </>
+                                        )}
+                                        {app.status === 'pending_cancellation' && (
+                                            <span className="inline-flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold text-rose-800 bg-rose-50 border border-rose-200">
+                                                বাতিল অনুমোদন অপেক্ষা
+                                            </span>
                                         )}
                                         </div>
                                     </div>
@@ -1849,6 +1932,7 @@ export default function Index({
                                                                 </>
                                                             )}
                                                             {app.status === 'awaiting_takeup' && isBranchUser && (
+                                                                <>
                                                                 <button
                                                                     onClick={() => markReadyFromAwaiting(app)}
                                                                     className="inline-flex items-center gap-1 text-xs px-2.5 py-1 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-xl shadow-sm transition active:scale-95"
@@ -1857,6 +1941,20 @@ export default function Index({
                                                                     <Send className="w-3 h-3" />
                                                                     <span>HO রেডি</span>
                                                                 </button>
+                                                                <button
+                                                                    onClick={() => openCancel(app)}
+                                                                    className="inline-flex items-center gap-1 text-xs px-2.5 py-1 bg-rose-50 hover:bg-rose-100 text-rose-800 font-bold rounded-xl border border-rose-200 transition active:scale-95"
+                                                                    title="চূড়ান্ত অনুমোদনকারীর কাছে বাতিলের অনুরোধ পাঠান"
+                                                                >
+                                                                    <Ban className="w-3 h-3" />
+                                                                    <span>বাতিল</span>
+                                                                </button>
+                                                                </>
+                                                            )}
+                                                            {app.status === 'pending_cancellation' && (
+                                                                <span className="inline-flex items-center text-[11px] px-2 py-1 bg-rose-50 text-rose-800 font-bold rounded-xl border border-rose-200">
+                                                                    বাতিল অনুমোদন অপেক্ষা
+                                                                </span>
                                                             )}
                                                         </div>
                                                     </td>
@@ -2399,6 +2497,74 @@ export default function Index({
                                     disabled={submittingAmountChange || !amountChangeValue}
                                 >
                                     {submittingAmountChange ? 'পাঠানো হচ্ছে...' : 'অনুমোদনের জন্য পাঠান'}
+                                </button>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+            )}
+
+            {cancelApp && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-xs p-4">
+                    <div className="w-full max-w-lg rounded-2xl bg-white shadow-2xl overflow-hidden border border-slate-200">
+                        <div className="border-b px-5 py-4 bg-gradient-to-r from-rose-600 to-rose-700 text-white flex items-center justify-between">
+                            <div>
+                                <h3 className="text-base font-bold">ঋণ বাতিলের অনুরোধ</h3>
+                                <p className="text-xs text-rose-100 mt-0.5">
+                                    আবেদন নং: {cancelApp.application_no || '—'}
+                                </p>
+                            </div>
+                            <button
+                                type="button"
+                                onClick={closeCancel}
+                                className="text-white/80 hover:text-white p-1 rounded-lg hover:bg-white/10 transition"
+                            >
+                                <XCircle className="w-5 h-5" />
+                            </button>
+                        </div>
+                        <form onSubmit={handleCancelSubmit} className="p-5 space-y-4">
+                            <p className="text-xs text-slate-600 leading-relaxed">
+                                সাথে সাথে বাতিল হবে না। অনুরোধ যাবে এই ঋণের চূড়ান্ত অনুমোদনকারীর কাছে।
+                                তিনি অনুমোদন দিলে বাতিল হবে, না দিলে ঋণ আবার «পরে নেবে» তালিকায় থাকবে।
+                            </p>
+                            {cancelApp.cancellation_approver_name && (
+                                <div className="bg-slate-50 border border-slate-200/80 rounded-xl p-3 text-xs flex justify-between items-center">
+                                    <span className="text-slate-500 font-medium">অনুমোদন করবেন:</span>
+                                    <span className="font-semibold text-slate-800">{cancelApp.cancellation_approver_name}</span>
+                                </div>
+                            )}
+                            <div>
+                                <label className="block text-xs font-bold text-slate-700 mb-1.5">
+                                    বাতিলের কারণ <span className="text-rose-500">*</span>
+                                </label>
+                                <textarea
+                                    value={cancelReason}
+                                    onChange={(e) => setCancelReason(e.target.value)}
+                                    rows={3}
+                                    maxLength={500}
+                                    className="w-full border border-slate-300 rounded-xl p-2.5 text-sm text-slate-900 focus:outline-none focus:ring-1 focus:ring-rose-500"
+                                    placeholder="কেন বাতিল করতে চান"
+                                    required
+                                />
+                                {cancelError && (
+                                    <p className="text-xs text-rose-600 font-semibold mt-1.5">{cancelError}</p>
+                                )}
+                            </div>
+                            <div className="flex items-center justify-end gap-2">
+                                <button
+                                    type="button"
+                                    className="px-4 py-2 rounded-xl text-xs font-bold text-slate-600 border border-slate-200 hover:bg-slate-50"
+                                    onClick={closeCancel}
+                                    disabled={submittingCancel}
+                                >
+                                    বন্ধ
+                                </button>
+                                <button
+                                    type="submit"
+                                    className="px-4 py-2 rounded-xl text-xs font-bold text-white bg-rose-600 hover:bg-rose-700 shadow-xs disabled:opacity-50"
+                                    disabled={submittingCancel || cancelReason.trim().length < 3}
+                                >
+                                    {submittingCancel ? 'পাঠানো হচ্ছে...' : 'অনুমোদনের জন্য পাঠান'}
                                 </button>
                             </div>
                         </form>

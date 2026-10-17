@@ -92,10 +92,12 @@ const REPORT_PATHS = [
     '/head-office/reports/guarantor-informants',
     '/head-office/reports/approver-loan-approvals',
     '/reports/approver-loan-approvals',
+    '/reports/branch-loan-pending',
 ];
 const TEAM_BASED_REPORT_HREF = '/head-office/team-based-approvals/report';
 const GUARANTOR_INFORMANT_REPORT_HREF = '/head-office/reports/guarantor-informants';
 const APPROVER_LOAN_REPORT_HREF = '/head-office/reports/approver-loan-approvals';
+const BRANCH_LOAN_PENDING_REPORT_HREF = '/reports/branch-loan-pending';
 
 function isNavItemActive(currentPath: string, href: string): boolean {
     if (currentPath === href) return true;
@@ -126,6 +128,7 @@ function getPageTitle(currentPath: string): string {
     if (currentPath.includes('/team-based-approvals')) return 'Team Based Approvals';
     if (currentPath.includes('/reports/guarantor-informants')) return 'Guarantor & Informant Report';
     if (currentPath.includes('/reports/approver-loan-approvals')) return 'Approver Loan Approval Report';
+    if (currentPath.includes('/reports/branch-loan-pending')) return 'Branch-wise Loan Pending Report';
     if (currentPath.includes('/approvals')) return 'Pending Approvals';
     if (currentPath.includes('/verifications')) return 'Verifications';
     if (currentPath.includes('/loan-categories')) return 'Loan Categories';
@@ -243,6 +246,7 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
     const canViewTeamBasedReport = auth.user.has_all_access || isSuperAdmin || isHeadOfficeRole || isEdRole;
     const canViewGuarantorReport = auth.user.has_all_access || isSuperAdmin || isHeadOfficeRole || isCsoRole || isEdRole;
     const canViewApproverLoanReport = auth.user.has_all_access || isSuperAdmin || isHeadOfficeRole || isCsoRole || isEdRole || isTeamApproverRole || isBranchRole;
+    const canViewBranchPendingReport = auth.user.has_all_access || isSuperAdmin || isHeadOfficeRole || isCsoRole || isEdRole || isTeamApproverRole || isBranchRole;
     const showConfigurationSection = (!isBranchRole && !isTeamApproverRole && !isCsoRole) || isEdRole;
     const { canInstall, promptInstall, isInstalled, isStandalone, platform } = usePwaInstallPrompt();
 
@@ -323,6 +327,7 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
         ...(canViewTeamBasedReport ? [{ name: 'Team Based Report', href: TEAM_BASED_REPORT_HREF, icon: PieChart }] : []),
         ...(canViewGuarantorReport ? [{ name: 'Guarantor & Informant Report', href: GUARANTOR_INFORMANT_REPORT_HREF, icon: Users }] : []),
         ...(canViewApproverLoanReport ? [{ name: 'Approver Loan Approval Report', href: APPROVER_LOAN_REPORT_HREF, icon: FileSpreadsheet }] : []),
+        ...(canViewBranchPendingReport ? [{ name: 'Branch-wise Loan Pending', href: BRANCH_LOAN_PENDING_REPORT_HREF, icon: Clock }] : []),
     ];
 
     const headOfficeSetupItems = [

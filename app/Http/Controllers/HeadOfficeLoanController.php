@@ -187,6 +187,8 @@ class HeadOfficeLoanController extends Controller
             'approved' => (clone $statsQuery)->where('status', 'approved')->count(),
             'rejected' => (clone $statsQuery)->where('status', 'rejected')->count(),
             'pending_disbursement' => (clone $statsQuery)->where('status', 'pending_disbursement')->count(),
+            'awaiting_takeup' => (clone $statsQuery)->where('status', LoanApplication::STATUS_AWAITING_TAKEUP)->count(),
+            'pending_cancellation' => (clone $statsQuery)->where('status', LoanApplication::STATUS_PENDING_CANCELLATION)->count(),
             'disbursed' => (clone $statsQuery)->where('status', 'disbursed')->count(),
             'pending_my_approval' => $this->countPendingMyApproval($statsQuery, $user, 'loan'),
         ];
@@ -1367,6 +1369,8 @@ class HeadOfficeLoanController extends Controller
             LoanApplication::STATUS_PENDING_HEAD_OFFICE,
             LoanApplication::STATUS_APPROVED,
             LoanApplication::STATUS_PENDING_DISBURSEMENT,
+            LoanApplication::STATUS_AWAITING_TAKEUP,
+            LoanApplication::STATUS_PENDING_CANCELLATION,
             LoanApplication::STATUS_DISBURSED,
             LoanApplication::STATUS_REJECTED,
             LoanApplication::STATUS_NEEDS_CORRECTION,

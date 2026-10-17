@@ -43,6 +43,13 @@ it('keeps the same unrestricted list for super admin', function () {
     expect(invokeHeadOfficeLoanMethod('shouldRestrictToHeadOfficeStage'))->toBeFalse();
 });
 
+it('keeps later-takeup and cancellation loans visible on the head office list', function () {
+    $statuses = invokeHeadOfficeLoanMethod('headOfficeVisibleLoanStatuses');
+
+    expect($statuses)->toContain(LoanApplication::STATUS_AWAITING_TAKEUP)
+        ->and($statuses)->toContain(LoanApplication::STATUS_PENDING_CANCELLATION);
+});
+
 it('still defaults head office to the pending head office work queue', function () {
     $user = userWithRole(Role::HEAD_OFFICE);
 

@@ -14,6 +14,7 @@ use App\Services\ApprovalService;
 use App\Services\ClusterHandoverService;
 use App\Services\CsoAllocationService;
 use App\Services\HoSendCutoffService;
+use App\Services\LoanWorkflowConfigService;
 use Carbon\Carbon;
 use Illuminate\Foundation\Inspiring;
 use Illuminate\Http\Request;
@@ -267,7 +268,7 @@ class HandleInertiaRequests extends Middleware
             // Pending Approvals: LoanApplicationApproval + MemberAdmissionApproval where status = pending
             $pendingLoanApprovals = LoanApplicationApproval::where('status', 'pending')
                 ->whereHas('loanApplication', function ($query) {
-                    $query->whereIn('status', ['submitted', 'under_review']);
+                    $query->whereIn('status', ['submitted', 'under_review', 'pending_cancellation', 'pending_amount_approval']);
                 })
                 ->count();
 
@@ -358,7 +359,7 @@ class HandleInertiaRequests extends Middleware
             $memberCount = $approvalService->getPendingApprovalsForUser($request->user())->count();
             $loanCount = LoanApplicationApproval::where('user_id', $request->user()->id)
                 ->where('status', 'pending')
-                ->whereHas('loanApplication', fn ($q) => $q->whereIn('status', ['submitted', 'under_review']))
+                ->whereHas('loanApplication', fn ($q) => $q->whereIn('status', ['submitted', 'under_review', 'pending_cancellation', 'pending_amount_approval']))
                 ->count();
             $badgeCounts['pendingApprovals'] = $memberCount + $loanCount;
         }
@@ -400,7 +401,7 @@ class HandleInertiaRequests extends Middleware
                 ? app(HoSendCutoffService::class)->toSharedArray()
                 : null,
             'loanWorkflowConfig' => $request->user()
-                ? app(\App\Services\LoanWorkflowConfigService::class)->toSharedArray()
+                ? app(LoanWorkflowConfigService::class)->toSharedArray()
                 : null,
         ]);
     }

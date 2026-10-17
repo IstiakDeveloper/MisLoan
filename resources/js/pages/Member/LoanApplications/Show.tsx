@@ -1,5 +1,5 @@
 import AdminLayout from '@/layouts/admin-layout';
-import { formatDate, formatDateTime } from '@/utils/dateUtils';
+import { formatDate, formatDateTime, todayIsoDate } from '@/utils/dateUtils';
 import { Head, Link, router, useForm, usePage } from '@inertiajs/react';
 import { useEffect, useState, useRef } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -137,6 +137,10 @@ interface LoanApplication {
     can_change_approved_amount?: boolean;
     can_edit_loan_details?: boolean;
     amount_change_pending?: boolean;
+    cancellation_pending?: boolean;
+    cancellation_reason?: string | null;
+    cancellation_approver_name?: string | null;
+    can_request_cancellation?: boolean;
     amount_change_approver_name?: string | null;
     final_approver?: {
         id?: number | null;
@@ -239,6 +243,7 @@ interface Props {
         deferTakeup?: string;
         readyFromAwaiting?: string;
         requestAmountChange?: string;
+        requestCancellation?: string;
         updateLoanProduct?: string;
     };
     categories?: LoanCategoryOption[];
@@ -262,6 +267,7 @@ const statusConfig = {
     approved: { label: 'অনুমোদিত', color: 'bg-green-100 text-green-800 border-green-300', icon: CheckCircle2 },
     pending_disbursement: { label: 'বিতরণের অপেক্ষায়', color: 'bg-amber-100 text-amber-800 border-amber-300', icon: Clock },
     awaiting_takeup: { label: 'পরে নেবে', color: 'bg-violet-100 text-violet-800 border-violet-300', icon: PauseCircle },
+    pending_cancellation: { label: 'বাতিল অনুমোদন অপেক্ষা', color: 'bg-rose-100 text-rose-800 border-rose-300', icon: Clock },
     pending_amount_approval: { label: 'পরিমাণ পরিবর্তনের অনুমোদন অপেক্ষা', color: 'bg-orange-100 text-orange-800 border-orange-300', icon: Clock },
     rejected: { label: 'প্রত্যাখ্যাত', color: 'bg-rose-100 text-rose-800 border-rose-300', icon: XCircle },
     disbursed: { label: 'বিতরণ হয়েছে', color: 'bg-emerald-100 text-emerald-800 border-emerald-300', icon: CheckCircle2 },
@@ -451,8 +457,13 @@ export default function Show({ application, routes, categories = [] }: Props) {
     );
     const [disbursementMethod, setDisbursementMethod] = useState<string>(application.disbursement_method || 'cash');
     const [disbursementReference, setDisbursementReference] = useState<string>(application.disbursement_reference || '');
+    const [disbursementDate, setDisbursementDate] = useState<string>(todayIsoDate());
     const [submittingDisburse, setSubmittingDisburse] = useState(false);
     const [disburseError, setDisburseError] = useState<string | null>(null);
+    const [cancelModalOpen, setCancelModalOpen] = useState(false);
+    const [cancelReason, setCancelReason] = useState('');
+    const [cancelError, setCancelError] = useState<string | null>(null);
+    const [submittingCancel, setSubmittingCancel] = useState(false);
     const [amountChangeModalOpen, setAmountChangeModalOpen] = useState(false);
     const [amountChangeValue, setAmountChangeValue] = useState<string>(String(maxDisburseAmount || ''));
     const [amountChangeError, setAmountChangeError] = useState<string | null>(null);
@@ -542,6 +553,7 @@ export default function Show({ application, routes, categories = [] }: Props) {
 
     const openDisburseModal = () => {
         setDisburseAmount(String(application.disbursed_amount || maxDisburseAmount));
+        setDisbursementDate(todayIsoDate());
         setDisburseError(null);
         setDisburseModalOpen(true);
     };
@@ -857,6 +869,37 @@ export default function Show({ application, routes, categories = [] }: Props) {
         );
     };
 
+    const handleCancelSubmit = (e: React.FormEvent) => {
+        e.preventDefault();
+        if (!routes.requestCancellation) {
+            return;
+        }
+        const reason = cancelReason.trim();
+        if (reason.length < 3) {
+            setCancelError('বাতিলের কারণ কমপক্ষে ৩ অক্ষরের হতে হবে।');
+            return;
+        }
+        setCancelError(null);
+        setSubmittingCancel(true);
+        router.patch(
+            routes.requestCancellation,
+            { reason },
+            {
+                preserveScroll: true,
+                onSuccess: () => {
+                    setCancelModalOpen(false);
+                    setCancelReason('');
+                },
+                onError: (errs) => {
+                    setCancelError(errs.reason || errs.error || 'বাতিলের অনুরোধ পাঠানো যায়নি।');
+                },
+                onFinish: () => {
+                    setSubmittingCancel(false);
+                },
+            },
+        );
+    };
+
     const handleAmountChangeSubmit = (e: React.FormEvent) => {
         e.preventDefault();
         if (!routes.requestAmountChange) {
@@ -916,12 +959,21 @@ export default function Show({ application, routes, categories = [] }: Props) {
             setDisburseError('অনুগ্রহ করে সঠিক বিতরণ পরিমাণ লিখুন।');
             return;
         }
+        if (!disbursementDate) {
+            setDisburseError('বিতরণের তারিখ নির্বাচন করুন।');
+            return;
+        }
+        if (disbursementDate > todayIsoDate()) {
+            setDisburseError('বিতরণের তারিখ আজকের তারিখের পরে হতে পারবে না।');
+            return;
+        }
         setDisburseError(null);
         setSubmittingDisburse(true);
         router.patch(
             routes.disburse!,
             {
                 disbursed_amount: amt,
+                disbursement_date: disbursementDate,
                 disbursement_method: disbursementMethod,
                 disbursement_reference: disbursementReference.trim() || undefined,
             },
@@ -933,6 +985,8 @@ export default function Show({ application, routes, categories = [] }: Props) {
                 onError: (errs) => {
                     if (errs.error) {
                         setDisburseError(errs.error);
+                    } else if (errs.disbursement_date) {
+                        setDisburseError(errs.disbursement_date);
                     } else if (errs.disbursed_amount) {
                         setDisburseError(errs.disbursed_amount);
                     }
@@ -1050,10 +1104,18 @@ export default function Show({ application, routes, categories = [] }: Props) {
             case 'awaiting_takeup':
                 return {
                     title: 'পেন্ডিং অবস্থা: পরে নেবে — শাখা কিউ',
-                    desc: 'সদস্য এখন ঋণ নেবেন না। নেওয়ার সময় «HO রেডি» চাপুন, তারপর হেড অফিসে পাঠিয়ে আবার অনুমোদন নিন। এই অবস্থায় বিতরণ বা সরাসরি HO পাঠানো যাবে না।',
+                    desc: 'সদস্য এখন ঋণ নেবেন না। নেওয়ার সময় «HO রেডি» চাপুন, তারপর হেড অফিসে পাঠিয়ে আবার অনুমোদন নিন। বাতিল চাইলে অনুমোদনকারীর অনুমোদন লাগবে।',
                     badgeColor: 'bg-violet-100 text-violet-900 border-violet-300',
                     cardBg: 'bg-violet-50/90 border-violet-200 text-violet-950',
                     iconColor: 'text-violet-600',
+                };
+            case 'pending_cancellation':
+                return {
+                    title: 'পেন্ডিং অবস্থা: বাতিল অনুমোদন অপেক্ষা',
+                    desc: `${application.cancellation_approver_name ? `${application.cancellation_approver_name} অনুমোদন` : 'চূড়ান্ত অনুমোদনকারী অনুমোদন'} দিলে ঋণ বাতিল হবে। না দিলে আবার «পরে নেবে» তালিকায় ফিরবে।${application.cancellation_reason ? ` কারণ: ${application.cancellation_reason}` : ''}`,
+                    badgeColor: 'bg-rose-100 text-rose-900 border-rose-300',
+                    cardBg: 'bg-rose-50/90 border-rose-200 text-rose-950',
+                    iconColor: 'text-rose-600',
                 };
             case 'pending_head_office':
                 return {
@@ -1492,6 +1554,18 @@ export default function Show({ application, routes, categories = [] }: Props) {
                                     HO রেডি
                                 </Button>
                             )}
+                            {application.status === 'awaiting_takeup' && isBranchUser && routes.requestCancellation && (
+                                <Button
+                                    className="w-full sm:w-auto bg-rose-50 hover:bg-rose-100 text-rose-800 border border-rose-200 shadow-xs font-semibold rounded-xl text-xs sm:text-sm h-9 sm:h-10"
+                                    onClick={() => {
+                                        setCancelError(null);
+                                        setCancelModalOpen(true);
+                                    }}
+                                >
+                                    <XCircle className="w-4 h-4 mr-1.5" />
+                                    বাতিল
+                                </Button>
+                            )}
                             {isSuperAdmin && application.status !== 'draft' && application.status !== 'disbursed' && application.status !== 'cancelled' && (
                                 <Button
                                     variant="outline"
@@ -1674,20 +1748,35 @@ export default function Show({ application, routes, categories = [] }: Props) {
                                         )}
                                     </div>
                                 )}
-                                {application.status === 'awaiting_takeup' && isBranchUser && routes.readyFromAwaiting && (
-                                    <div className="mt-2.5">
-                                        <Button
-                                            size="sm"
-                                            className="bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-lg text-xs"
-                                            onClick={() => {
-                                                if (confirm('এই ঋণ হেড অফিসে পাঠানোর জন্য রেডি করবেন? এরপর «HO পাঠান» চাপতে হবে।')) {
-                                                    router.patch(routes.readyFromAwaiting!);
-                                                }
-                                            }}
-                                        >
-                                            <Send className="w-4 h-4 mr-1" />
-                                            HO রেডি
-                                        </Button>
+                                {application.status === 'awaiting_takeup' && isBranchUser && (routes.readyFromAwaiting || routes.requestCancellation) && (
+                                    <div className="mt-2.5 flex flex-wrap gap-2">
+                                        {routes.readyFromAwaiting && (
+                                            <Button
+                                                size="sm"
+                                                className="bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-lg text-xs"
+                                                onClick={() => {
+                                                    if (confirm('এই ঋণ হেড অফিসে পাঠানোর জন্য রেডি করবেন? এরপর «HO পাঠান» চাপতে হবে।')) {
+                                                        router.patch(routes.readyFromAwaiting!);
+                                                    }
+                                                }}
+                                            >
+                                                <Send className="w-4 h-4 mr-1" />
+                                                HO রেডি
+                                            </Button>
+                                        )}
+                                        {routes.requestCancellation && (
+                                            <Button
+                                                size="sm"
+                                                className="bg-rose-50 hover:bg-rose-100 text-rose-800 border border-rose-200 font-bold rounded-lg text-xs"
+                                                onClick={() => {
+                                                    setCancelError(null);
+                                                    setCancelModalOpen(true);
+                                                }}
+                                            >
+                                                <XCircle className="w-4 h-4 mr-1" />
+                                                বাতিল
+                                            </Button>
+                                        )}
                                     </div>
                                 )}
                             </div>
@@ -2366,6 +2455,26 @@ export default function Show({ application, routes, categories = [] }: Props) {
                                 )}
                             </div>
 
+                            <div>
+                                <label className="block text-xs font-bold text-slate-700 mb-1">
+                                    বিতরণের তারিখ: <span className="text-rose-500">*</span>
+                                </label>
+                                <input
+                                    type="date"
+                                    value={disbursementDate}
+                                    max={todayIsoDate()}
+                                    onChange={(e) => {
+                                        setDisbursementDate(e.target.value);
+                                        setDisburseError(null);
+                                    }}
+                                    className="w-full rounded-xl border border-slate-300 px-3 py-2.5 text-sm focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20 bg-white"
+                                    required
+                                />
+                                <p className="text-[11px] text-slate-500 mt-1.5 leading-relaxed">
+                                    ডিফল্ট আজকের তারিখ। আগে বিতরণ হয়ে থাকলে সেই তারিখ বেছে নিন। এই তারিখ ফর্মের বিতরণের তারিখে বসবে।
+                                </p>
+                            </div>
+
                             {/* Disbursement Method & Reference */}
                             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
                                 <div>
@@ -2407,9 +2516,76 @@ export default function Show({ application, routes, categories = [] }: Props) {
                                 <Button
                                     type="submit"
                                     className="bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold shadow-xs px-4"
-                                    disabled={submittingDisburse || !!disburseError || !disburseAmount || parseFloat(disburseAmount) <= 0}
+                                    disabled={submittingDisburse || !!disburseError || !disburseAmount || parseFloat(disburseAmount) <= 0 || !disbursementDate || disbursementDate > todayIsoDate()}
                                 >
                                     {submittingDisburse ? 'বিতরণ হচ্ছে...' : 'বিতরণ নিশ্চিত করুন'}
+                                </Button>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+            )}
+            {cancelModalOpen && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-xs p-4 print:hidden">
+                    <div className="w-full max-w-lg rounded-2xl bg-white shadow-2xl overflow-hidden border border-slate-200">
+                        <div className="border-b px-5 py-4 bg-gradient-to-r from-rose-600 to-rose-700 text-white flex items-center justify-between">
+                            <div>
+                                <h3 className="text-base font-bold">ঋণ বাতিলের অনুরোধ</h3>
+                                <p className="text-xs text-rose-100 mt-0.5">আবেদন নং: {application.application_no}</p>
+                            </div>
+                            <button
+                                type="button"
+                                onClick={() => setCancelModalOpen(false)}
+                                className="text-white/80 hover:text-white p-1 rounded-lg hover:bg-white/10 transition"
+                                disabled={submittingCancel}
+                            >
+                                <XCircle className="w-5 h-5" />
+                            </button>
+                        </div>
+                        <form onSubmit={handleCancelSubmit} className="p-5 space-y-4">
+                            <p className="text-xs text-slate-600 leading-relaxed">
+                                সাথে সাথে বাতিল হবে না। অনুরোধ যাবে এই ঋণের চূড়ান্ত অনুমোদনকারীর কাছে।
+                                তিনি অনুমোদন দিলে বাতিল হবে, না দিলে ঋণ আবার «পরে নেবে» তালিকায় ফিরবে।
+                            </p>
+                            {application.cancellation_approver_name && (
+                                <div className="bg-slate-50 border border-slate-200/80 rounded-xl p-3 text-xs flex justify-between items-center">
+                                    <span className="text-slate-500 font-medium">অনুমোদন করবেন:</span>
+                                    <span className="font-semibold text-slate-800">{application.cancellation_approver_name}</span>
+                                </div>
+                            )}
+                            <div>
+                                <label className="block text-xs font-bold text-slate-700 mb-1.5">
+                                    বাতিলের কারণ <span className="text-rose-500">*</span>
+                                </label>
+                                <textarea
+                                    value={cancelReason}
+                                    onChange={(e) => setCancelReason(e.target.value)}
+                                    rows={3}
+                                    maxLength={500}
+                                    className="w-full border border-slate-300 rounded-xl p-2.5 text-sm text-slate-900 focus:outline-none focus:ring-1 focus:ring-rose-500"
+                                    placeholder="কেন বাতিল করতে চান"
+                                    required
+                                />
+                                {cancelError && (
+                                    <p className="text-xs text-rose-600 font-semibold mt-1.5">{cancelError}</p>
+                                )}
+                            </div>
+                            <div className="flex items-center justify-end gap-2">
+                                <Button
+                                    type="button"
+                                    variant="outline"
+                                    className="rounded-xl text-xs"
+                                    onClick={() => setCancelModalOpen(false)}
+                                    disabled={submittingCancel}
+                                >
+                                    বন্ধ
+                                </Button>
+                                <Button
+                                    type="submit"
+                                    className="bg-rose-600 hover:bg-rose-700 text-white rounded-xl text-xs font-bold"
+                                    disabled={submittingCancel || cancelReason.trim().length < 3}
+                                >
+                                    {submittingCancel ? 'পাঠানো হচ্ছে...' : 'অনুমোদনের জন্য পাঠান'}
                                 </Button>
                             </div>
                         </form>

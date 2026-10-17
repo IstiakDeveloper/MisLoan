@@ -4,6 +4,7 @@ use App\Http\Controllers\ApprovalController;
 use App\Http\Controllers\ClusterHandoverController;
 use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\HeadOffice\ApproverLoanApprovalReportController;
+use App\Http\Controllers\HeadOffice\BranchLoanPendingReportController;
 use App\Http\Controllers\HeadOffice\CsoDutyRosterController;
 use App\Http\Controllers\HeadOffice\GuarantorInformantReportController;
 use App\Http\Controllers\HeadOffice\HoSendCutoffController;
@@ -348,6 +349,7 @@ Route::middleware(['auth', 'verified'])->group(function () {
             Route::patch('{id}/defer-takeup', [App\Http\Controllers\Member\LoanApplicationController::class, 'deferTakeup'])->name('defer-takeup');
             Route::patch('{id}/ready-from-awaiting', [App\Http\Controllers\Member\LoanApplicationController::class, 'markReadyForHoFromAwaiting'])->name('ready-from-awaiting');
             Route::patch('{id}/request-amount-change', [App\Http\Controllers\Member\LoanApplicationController::class, 'requestAmountChange'])->name('request-amount-change');
+            Route::patch('{id}/request-cancellation', [App\Http\Controllers\Member\LoanApplicationController::class, 'requestCancellation'])->name('request-cancellation');
             Route::patch('{id}/update-member-code', [App\Http\Controllers\Member\LoanApplicationController::class, 'updateMemberCode'])->name('update-member-code');
             Route::patch('{id}/update-loan-product', [App\Http\Controllers\Member\LoanApplicationController::class, 'updateLoanProduct'])->name('update-loan-product');
             Route::post('{id}/unlock-edit', [App\Http\Controllers\Member\LoanApplicationController::class, 'unlockEdit'])->name('unlock-edit');
@@ -485,6 +487,9 @@ Route::middleware(['auth', 'verified'])->group(function () {
         Route::get('reports/approver-loan-approvals', [ApproverLoanApprovalReportController::class, 'index'])->name('reports.approver-loan-approvals.direct');
         Route::get('reports/approver-loan-approvals/print', [ApproverLoanApprovalReportController::class, 'print'])->name('reports.approver-loan-approvals.print.direct');
         Route::get('reports/approver-loan-approvals/export', [ApproverLoanApprovalReportController::class, 'exportExcel'])->name('reports.approver-loan-approvals.export.direct');
+
+        Route::get('reports/branch-loan-pending', [BranchLoanPendingReportController::class, 'index'])->name('reports.branch-loan-pending');
+        Route::get('reports/branch-loan-pending/print', [BranchLoanPendingReportController::class, 'print'])->name('reports.branch-loan-pending.print');
     });
 
     // Team Based Approval Report - Head Office, SuperAdmin, ED

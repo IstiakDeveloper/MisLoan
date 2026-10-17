@@ -2,11 +2,14 @@
 
 namespace App\Models;
 
+use App\Services\ApprovalService;
 use Carbon\Carbon;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\SoftDeletes;
+use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Schema;
 
 class LoanApplication extends Model
 {
@@ -25,6 +28,9 @@ class LoanApplication extends Model
         'pending_approved_amount',
         'amount_change_requested_by',
         'amount_change_requested_at',
+        'cancellation_reason',
+        'cancellation_requested_by',
+        'cancellation_requested_at',
         'disbursed_amount',
         'installment_amount',
         'number_of_installments',
@@ -140,6 +146,7 @@ class LoanApplication extends Model
         'submitted_at' => 'datetime',
         'reviewed_at' => 'datetime',
         'amount_change_requested_at' => 'datetime',
+        'cancellation_requested_at' => 'datetime',
         'disbursed_at' => 'datetime',
         'repaid_at' => 'datetime',
         'awaiting_takeup_at' => 'datetime',
@@ -195,6 +202,8 @@ class LoanApplication extends Model
     const STATUS_PENDING_DISBURSEMENT = 'pending_disbursement';
 
     const STATUS_AWAITING_TAKEUP = 'awaiting_takeup';
+
+    const STATUS_PENDING_CANCELLATION = 'pending_cancellation';
 
     const STATUS_PENDING_AMOUNT_APPROVAL = 'pending_amount_approval';
 
@@ -264,10 +273,26 @@ class LoanApplication extends Model
         return $this->belongsTo(User::class, 'amount_change_requested_by');
     }
 
+    public function cancellationRequestedBy(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'cancellation_requested_by');
+    }
+
     public function hasPendingAmountChange(): bool
     {
         return $this->status === self::STATUS_PENDING_AMOUNT_APPROVAL
             && $this->pending_approved_amount !== null;
+    }
+
+    public function hasPendingCancellation(): bool
+    {
+        return $this->status === self::STATUS_PENDING_CANCELLATION;
+    }
+
+    public function canRequestCancellation(): bool
+    {
+        return $this->status === self::STATUS_AWAITING_TAKEUP
+            && ! $this->hasPendingCancellation();
     }
 
     public function canRequestApprovedAmountChange(): bool
@@ -407,6 +432,12 @@ class LoanApplication extends Model
             return ['label' => 'পরে নেবে (শাখা কিউ)', 'pending_with_name' => null];
         }
 
+        if ($status === self::STATUS_PENDING_CANCELLATION) {
+            $approverName = $this->getCurrentPendingApprovalForTracking()?->user?->name;
+
+            return ['label' => 'বাতিল অনুমোদন অপেক্ষা', 'pending_with_name' => $approverName];
+        }
+
         if ($status === self::STATUS_NEEDS_CORRECTION) {
             return ['label' => 'সংশোধনের জন্য ফেরত', 'pending_with_name' => null];
         }
@@ -458,7 +489,7 @@ class LoanApplication extends Model
             $pending = $this->approvals->where('status', 'pending')->sortBy('sequence');
             foreach ($pending as $p) {
                 $previous = $this->approvals->where('sequence', '<', $p->sequence);
-                if ($previous->every(fn ($a) => $a->status === 'approved')) {
+                if ($previous->every(fn ($a) => in_array($a->status, ['approved', 'rejected'], true))) {
                     return $p;
                 }
             }
@@ -469,7 +500,7 @@ class LoanApplication extends Model
         $pending = $this->approvals()->where('status', 'pending')->orderBy('sequence')->get();
         foreach ($pending as $p) {
             $previous = $this->approvals()->where('sequence', '<', $p->sequence)->get();
-            if ($previous->every(fn ($a) => $a->status === 'approved')) {
+            if ($previous->every(fn ($a) => in_array($a->status, ['approved', 'rejected'], true))) {
                 return $p;
             }
         }
@@ -502,14 +533,8 @@ class LoanApplication extends Model
             $businessPlan['loan_disbursement_date'] = $disbursementDate;
             $businessPlan['disbursement_date'] = $disbursementDate;
 
-            $duration = (int) ($this->loan_term_months ?: $this->loanProduct?->duration_months ?: 0);
-            if ($duration > 0) {
-                $end = Carbon::parse($disbursementDate)->addMonths($duration);
-                $type = strtolower((string) ($this->loanProduct?->installment_type ?? ''));
-                if (str_contains($type, 'lump')) {
-                    $end->subDay();
-                }
-                $repay = $end->toDateString();
+            $repay = $this->repaymentDateFrom($disbursementDate);
+            if ($repay) {
                 $businessPlan['loan_repayment_date'] = $repay;
                 $businessPlan['repayment_date'] = $repay;
             }
@@ -518,27 +543,120 @@ class LoanApplication extends Model
         return $businessPlan;
     }
 
+    /**
+     * Write the chosen disbursement date onto every saved form that stores a distribution date.
+     *
+     * @param  array<string, mixed>  $agreementData
+     * @param  array<string, mixed>  $guarantorInfo
+     * @param  array<string, mixed>  $nomineeInfo
+     * @param  array<string, mixed>  $assetInfo
+     * @param  array<string, mixed>  $businessPlan
+     * @return array{
+     *     loan_agreement_data: array<string, mixed>,
+     *     guarantor_info: array<string, mixed>,
+     *     nominee_info: array<string, mixed>,
+     *     asset_info: array<string, mixed>,
+     *     business_plan: array<string, mixed>
+     * }
+     */
+    public function stampDisbursementDateOnForms(
+        string $disbursementDate,
+        array $agreementData,
+        array $guarantorInfo,
+        array $nomineeInfo,
+        array $assetInfo,
+        array $businessPlan,
+        ?string $approvalDate = null,
+    ): array {
+        if ($agreementData !== []) {
+            $agreementData['disbursement_date'] = $disbursementDate;
+            $agreementData['last_installment_date'] = $this->lastInstallmentDateFrom($disbursementDate);
+        }
+
+        if ($guarantorInfo !== []) {
+            $guarantorInfo['loan_date'] = $disbursementDate;
+        }
+
+        if ($nomineeInfo !== []) {
+            $nomineeInfo['loan_sanction_date'] = $disbursementDate;
+        }
+
+        if ($assetInfo !== []) {
+            $assetInfo['loan_disbursement_date'] = $disbursementDate;
+        }
+
+        return [
+            'loan_agreement_data' => $agreementData,
+            'guarantor_info' => $guarantorInfo,
+            'nominee_info' => $nomineeInfo,
+            'asset_info' => $assetInfo,
+            'business_plan' => $this->mergeOfficialDatesIntoBusinessPlan(
+                $businessPlan,
+                $approvalDate,
+                $disbursementDate,
+            ),
+        ];
+    }
+
+    /**
+     * Last installment date printed on the loan agreement.
+     * Always one day before the disbursement anniversary.
+     */
+    public function lastInstallmentDateFrom(string $disbursementDate): string
+    {
+        return $this->tenureEndDate($disbursementDate);
+    }
+
+    /**
+     * Repayment date stored on the approval / Agrosor form.
+     * Same day as the last installment: tenure anniversary minus one day.
+     */
+    public function repaymentDateFrom(string $disbursementDate): string
+    {
+        return $this->tenureEndDate($disbursementDate);
+    }
+
+    /**
+     * 17/10/2026 disbursed for 12 months ends on 16/10/2027.
+     */
+    private function tenureEndDate(string $disbursementDate): string
+    {
+        return Carbon::parse($disbursementDate)
+            ->startOfDay()
+            ->addMonthsNoOverflow($this->disbursementDurationMonths())
+            ->subDay()
+            ->toDateString();
+    }
+
+    private function disbursementDurationMonths(): int
+    {
+        $this->loadMissing('loanProduct');
+        $duration = (int) ($this->loan_term_months ?: $this->loanProduct?->duration_months ?: 12);
+
+        return $duration > 0 ? $duration : 12;
+    }
+
     protected static function booted(): void
     {
         static::updated(function (LoanApplication $loan) {
             if ($loan->wasChanged(['requested_amount', 'approved_amount', 'loan_product_id', 'loan_term_months'])) {
                 try {
-                    if (\Illuminate\Support\Facades\Schema::hasTable('team_based_approvals')) {
-                        app(\App\Services\ApprovalService::class)->syncTeamBasedApprovalForLoan($loan);
+                    if (Schema::hasTable('team_based_approvals')) {
+                        app(ApprovalService::class)->syncTeamBasedApprovalForLoan($loan);
                     }
                 } catch (\Throwable $e) {
-                    \Illuminate\Support\Facades\Log::warning('Failed to sync team-based approval for loan ' . $loan->id . ': ' . $e->getMessage());
+                    Log::warning('Failed to sync team-based approval for loan '.$loan->id.': '.$e->getMessage());
                 }
             }
         });
 
         static::deleting(function (LoanApplication $loan) {
             try {
-                if (\Illuminate\Support\Facades\Schema::hasTable('team_based_approvals')) {
-                    app(\App\Services\ApprovalService::class)->deleteTeamBasedApprovalForLoan($loan);
+                if (Schema::hasTable('team_based_approvals')) {
+                    app(ApprovalService::class)->deleteTeamBasedApprovalForLoan($loan);
                 }
             } catch (\Throwable $e) {
-                \Illuminate\Support\Facades\Log::warning('Failed to delete team-based approval for loan ' . $loan->id . ': ' . $e->getMessage());
+                Log::warning('Failed to delete team-based approval for loan '.$loan->id.': '.$e->getMessage());
             }
         });
     }

@@ -4,6 +4,7 @@ namespace App\Support;
 
 use App\Models\LoanApplication;
 use App\Models\Role;
+use App\Services\LoanWorkflowConfigService;
 
 class LoanFormVisibility
 {
@@ -64,7 +65,7 @@ class LoanFormVisibility
     public static function sufolonAgreementMax(): float
     {
         try {
-            return app(\App\Services\LoanWorkflowConfigService::class)->sufolonAgreementMax();
+            return app(LoanWorkflowConfigService::class)->sufolonAgreementMax();
         } catch (\Throwable) {
             return self::SUFOLON_AGREEMENT_MAX;
         }
@@ -73,7 +74,7 @@ class LoanFormVisibility
     public static function guarantorMinAmount(): float
     {
         try {
-            return app(\App\Services\LoanWorkflowConfigService::class)->guarantorMinAmount();
+            return app(LoanWorkflowConfigService::class)->guarantorMinAmount();
         } catch (\Throwable) {
             return self::GUARANTOR_MIN_AMOUNT;
         }
@@ -82,7 +83,7 @@ class LoanFormVisibility
     public static function bmCeiling(): float
     {
         try {
-            return app(\App\Services\LoanWorkflowConfigService::class)->bmApprovalCeiling();
+            return app(LoanWorkflowConfigService::class)->bmApprovalCeiling();
         } catch (\Throwable) {
             return self::BM_CEILING;
         }
@@ -91,7 +92,7 @@ class LoanFormVisibility
     public static function oneLakh(): float
     {
         try {
-            return app(\App\Services\LoanWorkflowConfigService::class)->monthlyInvestigationMax();
+            return app(LoanWorkflowConfigService::class)->monthlyInvestigationMax();
         } catch (\Throwable) {
             return self::ONE_LAKH;
         }
@@ -106,7 +107,7 @@ class LoanFormVisibility
 
         if (self::isWeekly($product)) {
             try {
-                $weeklyMin = app(\App\Services\LoanWorkflowConfigService::class)->weeklyApprovalFormMinAmount();
+                $weeklyMin = app(LoanWorkflowConfigService::class)->weeklyApprovalFormMinAmount();
                 if ($weeklyMin !== null && $weeklyMin > 0 && $amount >= $weeklyMin) {
                     return [5];
                 }
@@ -248,6 +249,7 @@ class LoanFormVisibility
             LoanApplication::STATUS_PENDING_HEAD_OFFICE,
             LoanApplication::STATUS_APPROVED,
             LoanApplication::STATUS_PENDING_DISBURSEMENT,
+            LoanApplication::STATUS_PENDING_CANCELLATION,
             LoanApplication::STATUS_PENDING_AMOUNT_APPROVAL,
             LoanApplication::STATUS_REJECTED,
             LoanApplication::STATUS_NEEDS_CORRECTION,
@@ -812,7 +814,7 @@ class LoanFormVisibility
             return null;
         }
 
-        return "সরেজমিনে তদন্ত প্রতিবেদনের সব তথ্য পূরণ করা বাধ্যতামূলক। নিচের তথ্যগুলো অসম্পূর্ণ রয়েছে:\n• " . implode("\n• ", $errors);
+        return "সরেজমিনে তদন্ত প্রতিবেদনের সব তথ্য পূরণ করা বাধ্যতামূলক। নিচের তথ্যগুলো অসম্পূর্ণ রয়েছে:\n• ".implode("\n• ", $errors);
     }
 
     public static function isBmFormIncompleteMessage(?string $message): bool
@@ -825,4 +827,3 @@ class LoanFormVisibility
             || str_contains($message, 'সরেজমিন তদন্ত প্রতিবেদন (ফর্ম ৪)');
     }
 }
-

@@ -9,6 +9,7 @@ use App\Models\MemberAdmission;
 use App\Models\MemberAdmissionApproval;
 use App\Models\Zone;
 use App\Services\ApprovalService;
+use App\Services\LoanWorkflowConfigService;
 use App\Support\LoanFormVisibility;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -106,12 +107,17 @@ class ApprovalController extends Controller
                 'approved_amount' => $loan->approved_amount,
                 'pending_approved_amount' => $loan->pending_approved_amount,
                 'is_amount_change_approval' => $loan->hasPendingAmountChange(),
+                'is_cancellation_approval' => $loan->hasPendingCancellation(),
+                'cancellation_reason' => $loan->cancellation_reason,
                 'submitted_at' => $loan->submitted_at,
                 'level' => $approval->level,
                 'sequence' => $approval->sequence,
                 'block_list' => $member ? $this->blockListFieldsFromMember($member) : null,
-                'is_high_amount' => ! $loan->hasPendingAmountChange() && $approval->level === 'branch' && (float) ($loan->requested_amount ?? 0) >= app(\App\Services\LoanWorkflowConfigService::class)->bmApprovalCeiling(),
-                'bm_ceiling' => app(\App\Services\LoanWorkflowConfigService::class)->bmApprovalCeiling(),
+                'is_high_amount' => ! $loan->hasPendingAmountChange()
+                    && ! $loan->hasPendingCancellation()
+                    && $approval->level === 'branch'
+                    && (float) ($loan->requested_amount ?? 0) >= app(LoanWorkflowConfigService::class)->bmApprovalCeiling(),
+                'bm_ceiling' => app(LoanWorkflowConfigService::class)->bmApprovalCeiling(),
             ];
             $forwardTargets = $this->approvalService->getForwardTargetsForLoanApproval($approval);
             $data['escalation_approvers'] = $forwardTargets
@@ -123,7 +129,7 @@ class ApprovalController extends Controller
                     'role_name' => $u->role->display_name ?? $u->role->name ?? '',
                 ])
                 ->values();
-            $data['can_forward'] = $forwardTargets->isNotEmpty();
+            $data['can_forward'] = $forwardTargets->isNotEmpty() && ! $loan->hasPendingCancellation();
 
             return $data;
         });
@@ -263,16 +269,17 @@ class ApprovalController extends Controller
     public function approveLoan(Request $request, LoanApplicationApproval $loanApproval)
     {
         abort_unless((int) $loanApproval->user_id === (int) $request->user()->id, 403);
+        $isCancellation = (bool) $loanApproval->loanApplication?->hasPendingCancellation();
         $request->validate([
             'comments' => 'nullable|string|max:1000',
-            'approved_amount' => 'required|numeric|min:0',
+            'approved_amount' => $isCancellation ? 'nullable|numeric|min:0' : 'required|numeric|min:0',
         ]);
 
         try {
             $success = $this->approvalService->approveLoan(
                 $loanApproval,
                 $request->comments,
-                (float) $request->approved_amount
+                $isCancellation ? null : (float) $request->approved_amount
             );
         } catch (\Exception $e) {
             if (LoanFormVisibility::isBmFormIncompleteMessage($e->getMessage())) {
@@ -283,7 +290,11 @@ class ApprovalController extends Controller
         }
 
         if ($success) {
-            return $this->redirectToListPreservingFilters('approvals.index', 'ঋণ আবেদন অনুমোদিত হয়েছে।');
+            $message = $isCancellation
+                ? 'ঋণ বাতিল অনুমোদিত হয়েছে।'
+                : 'ঋণ আবেদন অনুমোদিত হয়েছে।';
+
+            return $this->redirectToListPreservingFilters('approvals.index', $message);
         }
 
         return back()->with('error', 'অনুমোদন করা যাচ্ছে না।');
@@ -296,13 +307,14 @@ class ApprovalController extends Controller
     public function rejectLoan(Request $request, LoanApplicationApproval $loanApproval)
     {
         abort_unless((int) $loanApproval->user_id === (int) $request->user()->id, 403);
+        $isCancellation = (bool) $loanApproval->loanApplication?->hasPendingCancellation();
 
         $rules = [
             'comments' => 'required|string|max:1000',
             'push_to_block_list' => ['sometimes', 'boolean'],
         ];
 
-        $pushToBlockList = $request->boolean('push_to_block_list', false);
+        $pushToBlockList = $isCancellation ? false : $request->boolean('push_to_block_list', false);
 
         if ($pushToBlockList) {
             $rules = array_merge($rules, $this->blockListValidationRules());
@@ -322,6 +334,13 @@ class ApprovalController extends Controller
         }
 
         if ($success) {
+            if ($isCancellation) {
+                return $this->redirectToListPreservingFilters(
+                    'approvals.index',
+                    'বাতিলের অনুরোধ প্রত্যাখ্যান হয়েছে। ঋণ আবার «পরে নেবে» তালিকায় আছে।'
+                );
+            }
+
             $message = 'ঋণ আবেদন প্রত্যাখ্যান হয়েছে।';
             if ($pushToBlockList) {
                 $message .= ' Block List-এ যোগ করা হয়েছে।';
@@ -359,7 +378,7 @@ class ApprovalController extends Controller
         $loan = $loanApproval->loanApplication;
         $isBranch = $loanApproval->level === 'branch';
         $aboveCeiling = $isBranch
-            && (float) ($loan?->requested_amount ?? 0) >= app(\App\Services\LoanWorkflowConfigService::class)->bmApprovalCeiling();
+            && (float) ($loan?->requested_amount ?? 0) >= app(LoanWorkflowConfigService::class)->bmApprovalCeiling();
 
         try {
             $success = $this->approvalService->forwardLoanToApprover(

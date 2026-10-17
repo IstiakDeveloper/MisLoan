@@ -180,6 +180,8 @@ const statusConfig: Record<string, { label: string; color: string; icon: any }> 
     pending_head_office: { label: 'হেড অফিসে প্রেরিত', color: 'bg-indigo-100 text-indigo-800 border-indigo-300', icon: Clock },
     approved: { label: 'অনুমোদিত', color: 'bg-green-100 text-green-800 border-green-300', icon: CheckCircle2 },
     pending_disbursement: { label: 'বিতরণের অপেক্ষায়', color: 'bg-amber-100 text-amber-800 border-amber-300', icon: Clock },
+    awaiting_takeup: { label: 'পরে নেবে', color: 'bg-violet-100 text-violet-800 border-violet-300', icon: Clock },
+    pending_cancellation: { label: 'বাতিল অনুমোদন অপেক্ষা', color: 'bg-rose-100 text-rose-800 border-rose-300', icon: Clock },
     pending_amount_approval: { label: 'পরিমাণ পরিবর্তনের অনুমোদন অপেক্ষা', color: 'bg-orange-100 text-orange-800 border-orange-300', icon: Clock },
     rejected: { label: 'প্রত্যাখ্যাত', color: 'bg-rose-100 text-rose-800 border-rose-300', icon: XCircle },
     disbursed: { label: 'বিতরণ হয়েছে', color: 'bg-emerald-100 text-emerald-800 border-emerald-300', icon: CheckCircle2 },
@@ -563,6 +565,8 @@ export default function LoanApplicationShow({ loan, categories = [], flash }: Pr
                 return 2;
             case 'approved':
             case 'pending_disbursement':
+            case 'awaiting_takeup':
+            case 'pending_cancellation':
                 return 3;
             case 'disbursed':
                 return 4;
@@ -625,6 +629,22 @@ export default function LoanApplicationShow({ loan, categories = [], flash }: Pr
                     badgeColor: 'bg-indigo-100 text-indigo-900 border-indigo-300',
                     cardBg: 'bg-indigo-50/90 border-indigo-200 text-indigo-950',
                     iconColor: 'text-indigo-600',
+                };
+            case 'awaiting_takeup':
+                return {
+                    title: 'পেন্ডিং অবস্থা: পরে নেবে — শাখা কিউ',
+                    desc: 'সদস্য এখন ঋণ নেবেন না। শাখা থেকে HO রেডি করে আবার পাঠালে হেড অফিসে আসবে।',
+                    badgeColor: 'bg-violet-100 text-violet-900 border-violet-300',
+                    cardBg: 'bg-violet-50/90 border-violet-200 text-violet-950',
+                    iconColor: 'text-violet-600',
+                };
+            case 'pending_cancellation':
+                return {
+                    title: 'পেন্ডিং অবস্থা: বাতিল অনুমোদন অপেক্ষা',
+                    desc: 'শাখা থেকে বাতিল চাওয়া হয়েছে। চূড়ান্ত অনুমোদনকারী অনুমোদন দিলে ঋণ বাতিল হবে, না দিলে আবার «পরে নেবে» তালিকায় ফিরবে।',
+                    badgeColor: 'bg-rose-100 text-rose-900 border-rose-300',
+                    cardBg: 'bg-rose-50/90 border-rose-200 text-rose-950',
+                    iconColor: 'text-rose-600',
                 };
             case 'approved':
             case 'pending_disbursement':

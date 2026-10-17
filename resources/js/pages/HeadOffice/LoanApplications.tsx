@@ -33,6 +33,7 @@ import {
     Send,
     Banknote,
     Ban,
+    PauseCircle,
     PlayCircle,
 } from 'lucide-react';
 import AutoFitTableContainer from '@/components/AutoFitTableContainer';
@@ -146,6 +147,8 @@ interface Props {
         pending_head_office: number;
         approved: number;
         pending_disbursement?: number;
+        awaiting_takeup?: number;
+        pending_cancellation?: number;
         rejected: number;
         disbursed: number;
         pending_my_approval?: number;
@@ -402,6 +405,8 @@ export default function LoanApplications({ loans, filters, stats, zones, areas, 
             pending_head_office: { label: 'হেড অফিস পেন্ডিং', bg: 'bg-indigo-50 border-indigo-200', text: 'text-indigo-700' },
             approved: { label: 'অনুমোদিত', bg: 'bg-emerald-50 border-emerald-200', text: 'text-emerald-700' },
             pending_disbursement: { label: 'বিতরণ অপেক্ষা', bg: 'bg-amber-50 border-amber-200', text: 'text-amber-800' },
+            awaiting_takeup: { label: 'পরে নেবে', bg: 'bg-violet-50 border-violet-200', text: 'text-violet-800' },
+            pending_cancellation: { label: 'বাতিল অপেক্ষা', bg: 'bg-rose-50 border-rose-200', text: 'text-rose-800' },
             rejected: { label: 'প্রত্যাখ্যাত', bg: 'bg-red-50 border-red-200', text: 'text-red-700' },
             disbursed: { label: 'বিতরণকৃত', bg: 'bg-teal-50 border-teal-200', text: 'text-teal-700' },
         };
@@ -475,6 +480,26 @@ export default function LoanApplications({ loans, filters, stats, zones, areas, 
             iconBg: 'bg-amber-50',
             barColor: 'from-amber-500 to-amber-600',
             activeBg: 'bg-amber-600 border-amber-600 text-white',
+        },
+        {
+            key: 'awaiting_takeup',
+            label: 'পরে নেবে',
+            count: stats.awaiting_takeup ?? 0,
+            icon: PauseCircle,
+            iconColor: 'text-violet-600',
+            iconBg: 'bg-violet-50',
+            barColor: 'from-violet-500 to-violet-600',
+            activeBg: 'bg-violet-600 border-violet-600 text-white',
+        },
+        {
+            key: 'pending_cancellation',
+            label: 'বাতিল অপেক্ষা',
+            count: stats.pending_cancellation ?? 0,
+            icon: Ban,
+            iconColor: 'text-rose-600',
+            iconBg: 'bg-rose-50',
+            barColor: 'from-rose-500 to-rose-600',
+            activeBg: 'bg-rose-600 border-rose-600 text-white',
         },
         {
             key: 'disbursed',

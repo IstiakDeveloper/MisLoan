@@ -6,7 +6,9 @@ use App\Http\Controllers\Concerns\AppliesRoleDefaultListFilter;
 use App\Http\Controllers\Concerns\RequiresSuperAdminDeletePin;
 use App\Http\Controllers\Concerns\ResolvesListPerPage;
 use App\Http\Controllers\Controller;
+use App\Http\Requests\Member\DisburseLoanRequest;
 use App\Http\Requests\Member\RequestLoanAmountChangeRequest;
+use App\Http\Requests\Member\RequestLoanCancellationRequest;
 use App\Models\Area;
 use App\Models\Branch;
 use App\Models\LoanApplication;
@@ -23,6 +25,7 @@ use App\Models\Zone;
 use App\Services\ApprovalService;
 use App\Services\HoSendCutoffService;
 use App\Services\LoanApplicationCloneService;
+use App\Services\LoanWorkflowConfigService;
 use App\Services\MemberCodeService;
 use App\Services\NotificationService;
 use App\Support\LoanFormVisibility;
@@ -156,6 +159,8 @@ class LoanApplicationController extends Controller
             && ! $application->hasPendingAmountChange();
         $application->can_change_approved_amount = $this->isBranchUserRole($user)
             && $application->canRequestApprovedAmountChange();
+        $application->can_request_cancellation = $this->isBranchUserRole($user)
+            && $application->canRequestCancellation();
         $isPrivilegedLoanEditor = (bool) ($user->has_all_access || $user->isSuperAdmin() || $user->isHeadOffice());
         $application->can_edit_loan_details = LoanFormVisibility::canEditLoanDetails(
             $roleName,
@@ -167,6 +172,8 @@ class LoanApplicationController extends Controller
         $application->amount_change_approver_name = $application->hasPendingAmountChange()
             ? ($application->approvals()->where('status', 'pending')->reorder()->latest('id')->first()?->user?->name)
             : $lastAmountApproval?->user?->name;
+        $application->cancellation_approver_name = $lastAmountApproval?->user?->name;
+        $application->cancellation_pending = $application->hasPendingCancellation();
         $application->final_approver = $lastAmountApproval ? [
             'id' => $lastAmountApproval->user_id,
             'name' => $lastAmountApproval->user?->name,
@@ -202,7 +209,7 @@ class LoanApplicationController extends Controller
             && $pendingApproval !== null
             && in_array($status, [LoanApplication::STATUS_SUBMITTED, LoanApplication::STATUS_UNDER_REVIEW]);
 
-        $bmCeiling = app(\App\Services\LoanWorkflowConfigService::class)->bmApprovalCeiling();
+        $bmCeiling = app(LoanWorkflowConfigService::class)->bmApprovalCeiling();
         $mustForward = (bool) $application->can_branch_approve
             && $amount >= $bmCeiling;
         $application->must_forward_approval = $mustForward;
@@ -689,7 +696,11 @@ class LoanApplicationController extends Controller
     public function index(Request $request)
     {
         $user = $request->user();
-        $workQueue = RoleListWorkQueue::resolveWithDates($request, true, $user);
+        $workQueue = RoleListWorkQueue::resolveWithDates(
+            $request,
+            RoleListWorkQueue::loanListUsesDefaultMonthDates($user),
+            $user,
+        );
         $dateFrom = $workQueue['date_from'];
         $dateTo = $workQueue['date_to'];
         $statusFilter = $workQueue['status'];
@@ -849,6 +860,7 @@ class LoanApplicationController extends Controller
             'approved' => (clone $statsBaseQuery)->where('status', LoanApplication::STATUS_APPROVED)->count(),
             'pending_disbursement' => (clone $statsBaseQuery)->where('status', LoanApplication::STATUS_PENDING_DISBURSEMENT)->count(),
             'awaiting_takeup' => (clone $statsBaseQuery)->where('status', LoanApplication::STATUS_AWAITING_TAKEUP)->count(),
+            'pending_cancellation' => (clone $statsBaseQuery)->where('status', LoanApplication::STATUS_PENDING_CANCELLATION)->count(),
             'rejected' => (clone $statsBaseQuery)->where('status', LoanApplication::STATUS_REJECTED)->count(),
             'ready_for_head_office' => (clone $statsBaseQuery)->where('status', LoanApplication::STATUS_READY_FOR_HEAD_OFFICE)->count(),
             'pending_head_office' => (clone $statsBaseQuery)->where('status', LoanApplication::STATUS_PENDING_HEAD_OFFICE)->count(),
@@ -886,7 +898,11 @@ class LoanApplicationController extends Controller
     public function exportExcel(Request $request)
     {
         $user = $request->user();
-        $workQueue = RoleListWorkQueue::resolveWithDates($request, true, $user);
+        $workQueue = RoleListWorkQueue::resolveWithDates(
+            $request,
+            RoleListWorkQueue::loanListUsesDefaultMonthDates($user),
+            $user,
+        );
         $dateFrom = $workQueue['date_from'];
         $dateTo = $workQueue['date_to'];
         $statusFilter = $workQueue['status'];
@@ -949,6 +965,7 @@ class LoanApplicationController extends Controller
             'approved' => 'অনুমোদিত (Approved)',
             'pending_disbursement' => 'বিতরণ অপেক্ষা (Pending Disburse)',
             'awaiting_takeup' => 'পরে নেবে (Awaiting Take-up)',
+            'pending_cancellation' => 'বাতিল অনুমোদন অপেক্ষা (Pending Cancellation)',
             'rejected' => 'প্রত্যাখ্যাত (Rejected)',
             'disbursed' => 'বিতরণকৃত (Disbursed)',
             'repaid' => 'পরিশোধিত (Repaid)',
@@ -1603,6 +1620,7 @@ class LoanApplicationController extends Controller
                 'deferTakeup' => route('member.loan-applications.defer-takeup', $application->id),
                 'readyFromAwaiting' => route('member.loan-applications.ready-from-awaiting', $application->id),
                 'requestAmountChange' => route('member.loan-applications.request-amount-change', $application->id),
+                'requestCancellation' => route('member.loan-applications.request-cancellation', $application->id),
                 'updateLoanProduct' => route('member.loan-applications.update-loan-product', $application->id),
             ],
         ]);
@@ -1833,7 +1851,7 @@ class LoanApplicationController extends Controller
             return null;
         }
 
-        return "আবেদনটি জমা দেওয়া যাচ্ছে না। অগ্রসর ঋণ আবেদন ও অনুমোদনপত্র (২ পৃষ্ঠার ফর্ম)-এ নিচের তথ্যগুলো অসম্পূর্ণ রয়েছে:\n• " . implode("\n• ", $errors);
+        return "আবেদনটি জমা দেওয়া যাচ্ছে না। অগ্রসর ঋণ আবেদন ও অনুমোদনপত্র (২ পৃষ্ঠার ফর্ম)-এ নিচের তথ্যগুলো অসম্পূর্ণ রয়েছে:\n• ".implode("\n• ", $errors);
     }
 
     /**
@@ -1928,9 +1946,8 @@ class LoanApplicationController extends Controller
             return null;
         }
 
-        return "আবেদনটি জমা দেওয়া যাচ্ছে না। আবেদন ও অনুমোদনপত্র (৪ পৃষ্ঠার ফর্ম)-এ নিচের তথ্যগুলো অসম্পূর্ণ রয়েছে:\n• " . implode("\n• ", $errors);
+        return "আবেদনটি জমা দেওয়া যাচ্ছে না। আবেদন ও অনুমোদনপত্র (৪ পৃষ্ঠার ফর্ম)-এ নিচের তথ্যগুলো অসম্পূর্ণ রয়েছে:\n• ".implode("\n• ", $errors);
     }
-
 
     /**
      * Validate loan agreement form (Form 1) requirements before submit (FO address fields).
@@ -1968,7 +1985,7 @@ class LoanApplicationController extends Controller
             return null;
         }
 
-        return "ঋণ চুক্তিপত্র ফর্মের ঠিকানা অসম্পূর্ণ রয়েছে:\n• " . implode("\n• ", $errors);
+        return "ঋণ চুক্তিপত্র ফর্মের ঠিকানা অসম্পূর্ণ রয়েছে:\n• ".implode("\n• ", $errors);
     }
 
     public function sendToHeadOffice(Request $request, $id)
@@ -2230,7 +2247,7 @@ class LoanApplicationController extends Controller
     /**
      * Branch user disburses loan after HO approval and pre-disbursement forms (2 & 3).
      */
-    public function disburse(Request $request, $id)
+    public function disburse(DisburseLoanRequest $request, $id)
     {
         $user = $request->user();
         if (! $this->isBranchUserRole($user)) {
@@ -2253,24 +2270,10 @@ class LoanApplicationController extends Controller
 
         $approvedAmount = (float) ($application->approved_amount ?? $application->requested_amount ?? 0);
         $loanProduct = $application->loanProduct;
-        $productMax = (float) ($loanProduct?->max_amount ?? 0);
-        $maxLimit = $productMax > 0 ? $productMax : 99999999;
 
-        $validated = $request->validate([
-            'disbursed_amount' => [
-                'nullable',
-                'numeric',
-                'min:1',
-                'max:'.$maxLimit,
-            ],
-            'disbursement_method' => ['nullable', 'string', 'max:50'],
-            'disbursement_reference' => ['nullable', 'string', 'max:100'],
-        ], [
-            'disbursed_amount.max' => $productMax > 0
-                ? 'বিতরণকৃত ঋণের পরিমাণ প্রডাক্টের সর্বোচ্চ সীমার (৳'.number_format($productMax).') চেয়ে বেশি হতে পারবে না।'
-                : 'বিতরণকৃত ঋণের পরিমাণ অতিরিক্ত বেশি হতে পারবে না।',
-            'disbursed_amount.min' => 'বিতরণকৃত ঋণের পরিমাণ অন্তত ১ টাকা হতে হবে।',
-        ]);
+        $validated = $request->validated();
+        $disbursementDate = Carbon::parse($validated['disbursement_date'])->toDateString();
+        $disbursedAt = Carbon::parse($disbursementDate)->startOfDay();
 
         $disbursedAmount = isset($validated['disbursed_amount']) && (float) $validated['disbursed_amount'] > 0
             ? (float) $validated['disbursed_amount']
@@ -2330,6 +2333,10 @@ class LoanApplicationController extends Controller
             $businessPlan['final_approved_loan_amount_words'] = $wordsDisbursed ? $wordsDisbursed.' টাকা' : '';
             $businessPlan['applied_loan_amount'] = (string) $disbursedAmount;
             $businessPlan['fund_applied_loan'] = (string) $disbursedAmount;
+        }
+
+        $approvalDate = null;
+        if ($businessPlan !== []) {
             $approvalDate = $application->reviewed_at?->format('Y-m-d')
                 ?: $application->approvals()
                     ->where('status', 'approved')
@@ -2338,12 +2345,22 @@ class LoanApplicationController extends Controller
             $approvalDate = $approvalDate instanceof \DateTimeInterface
                 ? $approvalDate->format('Y-m-d')
                 : ($approvalDate ? Carbon::parse($approvalDate)->toDateString() : now()->toDateString());
-            $businessPlan = $application->mergeOfficialDatesIntoBusinessPlan(
-                $businessPlan,
-                $approvalDate,
-                now()->toDateString(),
-            );
         }
+
+        $stamped = $application->stampDisbursementDateOnForms(
+            $disbursementDate,
+            $agreementData,
+            $guarantorInfo,
+            $nomineeInfo,
+            $assetInfo,
+            $businessPlan,
+            $approvalDate,
+        );
+        $agreementData = $stamped['loan_agreement_data'];
+        $guarantorInfo = $stamped['guarantor_info'];
+        $nomineeInfo = $stamped['nominee_info'];
+        $assetInfo = $stamped['asset_info'];
+        $businessPlan = $stamped['business_plan'];
 
         // Update application
         $updateData = [
@@ -2351,7 +2368,7 @@ class LoanApplicationController extends Controller
             'disbursed_amount' => $disbursedAmount,
             'installment_amount' => $newInstallmentAmount,
             'disbursed_by' => $user->id,
-            'disbursed_at' => now(),
+            'disbursed_at' => $disbursedAt,
         ];
 
         if (! empty($validated['disbursement_method'])) {
@@ -2392,7 +2409,7 @@ class LoanApplicationController extends Controller
                     'সদস্যের নাম' => $application->memberAdmission?->applicant_name_bn ?: ($application->memberAdmission?->applicant_name_en ?? 'N/A'),
                     'বিতরণকৃত ঋণ' => number_format($disbursedAmount).' টাকা',
                     'অনুমোদিত ঋণ' => number_format($approvedAmount).' টাকা',
-                    'বিতরণের তারিখ' => now()->format('Y-m-d H:i'),
+                    'বিতরণের তারিখ' => $disbursementDate,
                 ]
             );
         }
@@ -2425,6 +2442,32 @@ class LoanApplicationController extends Controller
         }
 
         return back()->with('success', 'নতুন পরিমাণ অনুমোদনকারীর কাছে পাঠানো হয়েছে। অনুমোদন হলেই বিতরণ করা যাবে।');
+    }
+
+    /**
+     * Branch user asks the final approver to cancel a loan in the «পরে নেবে» queue.
+     */
+    public function requestCancellation(RequestLoanCancellationRequest $request, $id)
+    {
+        $user = $request->user();
+        if (! $this->isBranchUserRole($user)) {
+            abort(403, 'শুধুমাত্র শাখা ব্যবহারকারী বাতিলের অনুরোধ পাঠাতে পারবেন।');
+        }
+
+        $application = LoanApplication::with(['approvals'])->findOrFail($id);
+        $this->ensureApplicationAccessibleToUser($application, $user);
+
+        try {
+            app(ApprovalService::class)->requestLoanCancellation(
+                $application,
+                $user,
+                (string) $request->validated('reason')
+            );
+        } catch (\Exception $e) {
+            return back()->withErrors(['reason' => $e->getMessage()]);
+        }
+
+        return back()->with('success', 'বাতিলের অনুরোধ অনুমোদনকারীর কাছে পাঠানো হয়েছে। তিনি অনুমোদন দিলেই ঋণ বাতিল হবে।');
     }
 
     /**
@@ -3313,7 +3356,6 @@ class LoanApplicationController extends Controller
     {
         return LoanFormVisibility::validateFieldInvestigationData($data, $requestedAmount, $loanProduct);
     }
-
 
     /**
      * Show loan application approval form (Jagoron/Buniad/Agrosor)
