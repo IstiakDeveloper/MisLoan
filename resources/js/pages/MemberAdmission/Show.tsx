@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Head, Link, router, usePage } from '@inertiajs/react';
+import { ComboSelect } from '@/components/ComboSelect';
 import AdminLayout from '@/layouts/admin-layout';
 import { Badge } from '@/components/ui/badge';
 import {
@@ -41,8 +42,17 @@ interface CycleSurveyItem {
     is_cycle_survey: boolean;
 }
 
+interface SamityOption {
+    id: number;
+    samity_code?: string | null;
+    samity_name?: string | null;
+    samity_name_bn?: string | null;
+}
+
 interface Props {
     cycleSurveys?: CycleSurveyItem[];
+    can_update_samity?: boolean;
+    samities?: SamityOption[];
     admission: MemberAdmission & {
         previous_admission_id?: number | null;
         customer_photo_path?: string;
@@ -69,7 +79,10 @@ interface Props {
     };
 }
 
-export default function Show({ admission, cycleSurveys = [] }: Props) {
+const samityLabel = (samity?: { samity_name_bn?: string | null; samity_name?: string | null } | null) =>
+    samity?.samity_name_bn || samity?.samity_name || '';
+
+export default function Show({ admission, cycleSurveys = [], can_update_samity = false, samities = [] }: Props) {
     const pageAuth = usePage().props.auth as { user?: { id?: number; has_all_access?: boolean; role?: { name: string } } } | undefined;
     const roleName = pageAuth?.user?.role?.name?.toLowerCase() || '';
     const isHeadOffice = canHeadOfficeModify(pageAuth);
@@ -211,6 +224,47 @@ export default function Show({ admission, cycleSurveys = [] }: Props) {
                 },
                 onFinish: () => {
                     setSubmittingMemberCode(false);
+                },
+            }
+        );
+    };
+
+    const [samityModalOpen, setSamityModalOpen] = useState(false);
+    const [samityIdInput, setSamityIdInput] = useState<number | null>(admission.samity_id ? Number(admission.samity_id) : null);
+    const [submittingSamity, setSubmittingSamity] = useState(false);
+    const [samityError, setSamityError] = useState<string | null>(null);
+    const samityItems = samities.map((samity) => {
+        const name = samity.samity_name_bn || samity.samity_name || '';
+        return {
+            value: samity.id,
+            label: samity.samity_code ? `${samity.samity_code} — ${name}` : name,
+            keywords: `${samity.samity_code ?? ''} ${samity.samity_name ?? ''} ${samity.samity_name_bn ?? ''}`,
+        };
+    });
+
+    useEffect(() => {
+        setSamityIdInput(admission.samity_id ? Number(admission.samity_id) : null);
+    }, [admission.samity_id]);
+
+    const handleSamitySubmit = (e: React.FormEvent) => {
+        e.preventDefault();
+        if (!samityIdInput) return;
+        setSamityError(null);
+        setSubmittingSamity(true);
+        router.patch(
+            `/member-admissions/${admission.id}/update-samity`,
+            { samity_id: samityIdInput },
+            {
+                preserveScroll: true,
+                onSuccess: () => {
+                    setSamityError(null);
+                    setSamityModalOpen(false);
+                },
+                onError: (errors) => {
+                    setSamityError(errors.samity_id || errors.error || 'সমিতি আপডেট করা যায়নি।');
+                },
+                onFinish: () => {
+                    setSubmittingSamity(false);
                 },
             }
         );
@@ -409,6 +463,22 @@ export default function Show({ admission, cycleSurveys = [] }: Props) {
                                             title="ঋণ বিতরণের পূর্বে মেম্বার কোড পরিবর্তন করুন"
                                         >
                                             <Edit className="w-3 h-3 text-indigo-600" /> কোড পরিবর্তন
+                                        </button>
+                                    )}
+                                    <span className="text-slate-300 mx-1">|</span>
+                                    <span>সমিতি: <span className="font-bold text-slate-800">{samityLabel(admission.samity) || 'নির্ধারিত নয়'}</span></span>
+                                    {can_update_samity && (
+                                        <button
+                                            type="button"
+                                            onClick={() => {
+                                                setSamityIdInput(admission.samity_id ? Number(admission.samity_id) : null);
+                                                setSamityError(null);
+                                                setSamityModalOpen(true);
+                                            }}
+                                            className="inline-flex items-center gap-1 text-[10px] bg-indigo-50 hover:bg-indigo-100 text-indigo-700 px-1.5 py-0.5 rounded border border-indigo-200 font-semibold cursor-pointer"
+                                            title="হেড অফিসে পাঠানোর আগে সমিতি পরিবর্তন করুন"
+                                        >
+                                            <Edit className="w-3 h-3 text-indigo-600" /> সমিতি পরিবর্তন
                                         </button>
                                     )}
                                     <span className="text-slate-300 mx-1">|</span>
@@ -916,6 +986,52 @@ export default function Show({ admission, cycleSurveys = [] }: Props) {
                                     disabled={submittingMemberCode || !serialInput}
                                 >
                                     {submittingMemberCode ? 'আপডেট হচ্ছে...' : 'কোড আপডেট করুন'}
+                                </button>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+            )}
+
+            {samityModalOpen && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-xs p-4 print:hidden">
+                    <div className="w-full max-w-md rounded-2xl bg-white shadow-2xl overflow-hidden border border-slate-200 animate-in fade-in zoom-in-95 duration-150">
+                        <div className="border-b px-5 py-4 bg-slate-50 flex items-center justify-between">
+                            <div>
+                                <h3 className="text-base font-bold text-slate-900 flex items-center gap-2">
+                                    <Edit className="w-5 h-5 text-indigo-600" /> সমিতি আপডেট
+                                </h3>
+                                <p className="text-xs text-slate-500 mt-0.5">এই শাখার সক্রিয় সমিতি থেকে নির্বাচন করুন। হেড অফিসে পাঠানোর পর বদলানো যাবে না।</p>
+                            </div>
+                            <button type="button" onClick={() => setSamityModalOpen(false)} className="text-slate-400 hover:text-slate-600 p-1 cursor-pointer">
+                                <X className="w-5 h-5" />
+                            </button>
+                        </div>
+                        <form onSubmit={handleSamitySubmit} className="p-5 space-y-4">
+                            <div>
+                                <label className="block text-xs font-bold text-slate-700 mb-1">সমিতি:</label>
+                                <ComboSelect
+                                    value={samityIdInput}
+                                    onChange={setSamityIdInput}
+                                    items={samityItems}
+                                    placeholder="নাম বা কোড লিখে সমিতি খুঁজুন"
+                                    clearable={false}
+                                    disabled={submittingSamity}
+                                />
+                                {samityError && (
+                                    <p className="mt-2 text-xs font-semibold text-rose-600">{samityError}</p>
+                                )}
+                            </div>
+                            <div className="flex justify-end gap-2 pt-2 border-t">
+                                <button type="button" className="px-4 py-2 rounded-xl text-xs border border-slate-300 font-semibold text-slate-700 hover:bg-slate-50 cursor-pointer" onClick={() => setSamityModalOpen(false)}>
+                                    বাতিল
+                                </button>
+                                <button
+                                    type="submit"
+                                    className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-bold shadow-xs cursor-pointer"
+                                    disabled={submittingSamity || !samityIdInput}
+                                >
+                                    {submittingSamity ? 'আপডেট হচ্ছে...' : 'সমিতি আপডেট করুন'}
                                 </button>
                             </div>
                         </form>

@@ -232,6 +232,7 @@ Route::middleware(['auth', 'verified'])->group(function () {
         Route::patch('{memberAdmission}/send-to-head-office', [MemberAdmissionController::class, 'sendToHeadOffice'])->name('send-to-head-office')->middleware('branch.user');
         Route::patch('{memberAdmission}/reject', [MemberAdmissionController::class, 'reject'])->name('reject')->middleware('branch.user');
         Route::patch('{memberAdmission}/update-member-code', [MemberAdmissionController::class, 'updateMemberCode'])->name('update-member-code');
+        Route::patch('{memberAdmission}/update-samity', [MemberAdmissionController::class, 'updateSamity'])->name('update-samity')->middleware('branch.user');
     });
 
     Route::patch('member-admission-approvals/{approval}/update-comment', [MemberAdmissionController::class, 'updateApprovalComment'])
@@ -351,6 +352,7 @@ Route::middleware(['auth', 'verified'])->group(function () {
             Route::patch('{id}/request-amount-change', [App\Http\Controllers\Member\LoanApplicationController::class, 'requestAmountChange'])->name('request-amount-change');
             Route::patch('{id}/request-cancellation', [App\Http\Controllers\Member\LoanApplicationController::class, 'requestCancellation'])->name('request-cancellation');
             Route::patch('{id}/update-member-code', [App\Http\Controllers\Member\LoanApplicationController::class, 'updateMemberCode'])->name('update-member-code');
+            Route::patch('{id}/update-samity', [App\Http\Controllers\Member\LoanApplicationController::class, 'updateSamity'])->name('update-samity')->middleware('branch.user');
             Route::patch('{id}/update-loan-product', [App\Http\Controllers\Member\LoanApplicationController::class, 'updateLoanProduct'])->name('update-loan-product');
             Route::post('{id}/unlock-edit', [App\Http\Controllers\Member\LoanApplicationController::class, 'unlockEdit'])->name('unlock-edit');
             Route::get('{id}/print', [App\Http\Controllers\Member\LoanApplicationController::class, 'print'])->name('print');

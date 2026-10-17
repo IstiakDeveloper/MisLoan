@@ -60,6 +60,7 @@ function createLoanCancellationTables(): void
         $table->text('cancellation_reason')->nullable();
         $table->unsignedBigInteger('cancellation_requested_by')->nullable();
         $table->timestamp('cancellation_requested_at')->nullable();
+        $table->string('cancellation_from_status', 40)->nullable();
         $table->timestamps();
         $table->softDeletes();
     });
@@ -376,4 +377,62 @@ it('refuses a cancellation request unless the loan is awaiting take-up', functio
 
     expect($loan->fresh()->status)->toBe(LoanApplication::STATUS_PENDING_DISBURSEMENT)
         ->and(LoanApplicationApproval::query()->where('status', 'pending')->count())->toBe(0);
+});
+
+it('accepts a cancellation from head office pending and returns there if rejected', function () {
+    createLoanCancellationTables();
+
+    $bm = User::create([
+        'name' => 'Branch Manager',
+        'email' => 'bm-cancel-ho@test.com',
+        'role_id' => Role::create(['name' => Role::BRANCH_MANAGER, 'display_name' => 'Branch Manager'])->id,
+        'is_active' => true,
+    ]);
+    $accountant = User::create([
+        'name' => 'Accountant',
+        'email' => 'acc-cancel-ho@test.com',
+        'role_id' => Role::create(['name' => Role::BRANCH_USER, 'display_name' => 'Branch User'])->id,
+        'is_active' => true,
+    ]);
+
+    $loan = LoanApplication::create([
+        'application_no' => 'LN-CAN-HO',
+        'status' => LoanApplication::STATUS_PENDING_HEAD_OFFICE,
+        'requested_amount' => 18000,
+        'approved_amount' => 18000,
+        'submitted_by' => $accountant->id,
+    ]);
+
+    LoanApplicationApproval::create([
+        'loan_application_id' => $loan->id,
+        'user_id' => $bm->id,
+        'level' => 'branch',
+        'sequence' => 1,
+        'status' => 'approved',
+        'approved_at' => now(),
+    ]);
+
+    mockCancellationNotifications();
+
+    app(ApprovalService::class)->requestLoanCancellation($loan, $accountant, 'হেড অফিসে থাকতে বাতিল');
+
+    $loan->refresh();
+    expect($loan->status)->toBe(LoanApplication::STATUS_PENDING_CANCELLATION)
+        ->and($loan->cancellation_from_status)->toBe(LoanApplication::STATUS_PENDING_HEAD_OFFICE)
+        ->and($loan->isHoPendingCancellation())->toBeTrue();
+
+    $pending = LoanApplicationApproval::query()
+        ->where('loan_application_id', $loan->id)
+        ->where('status', 'pending')
+        ->first();
+
+    expect($pending)->not->toBeNull()
+        ->and((int) $pending->user_id)->toBe($bm->id);
+
+    app(ApprovalService::class)->rejectLoan($pending, 'হেড অফিসেই থাক');
+
+    $loan->refresh();
+    expect($loan->status)->toBe(LoanApplication::STATUS_PENDING_HEAD_OFFICE)
+        ->and($loan->cancellation_from_status)->toBeNull()
+        ->and($loan->cancellation_reason)->toBeNull();
 });

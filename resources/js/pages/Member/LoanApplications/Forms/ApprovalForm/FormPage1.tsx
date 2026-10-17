@@ -9,7 +9,7 @@ import {
     isAdmissionFamilyAssetRow,
     isFamilyAssetRowPopulated,
 } from './familyAssets';
-import { formatLoanYearsLabel, getLoanYears, scaleAnnualToLoanYears } from './FormPage3';
+import { formatLoanYearsLabel, getLoanYears } from './FormPage3';
 import { numberToWordsBangla } from './PrintPreview';
 
 const RECIPIENT_OPTIONS = [
@@ -53,23 +53,11 @@ export default function FormPage1({
     const yearsLabel = formatLoanYearsLabel(durationMonths);
     const loanYears = getLoanYears(durationMonths);
     const durationLabel = `${yearsLabel} বছর`;
-    const annualIncomeFromAdmission = Number(member?.estimated_annual_project_income) || 0;
-    const durationIncomeFromAdmission = scaleAnnualToLoanYears(
-        member?.estimated_annual_project_income,
-        durationMonths,
-    );
-
     useEffect(() => {
         if (data.recipient_to === 'প্রধান নির্বাহী') {
             setData('recipient_to', 'নির্বাহী পরিচালক');
         }
     }, [data.recipient_to]);
-
-    useEffect(() => {
-        if (durationIncomeFromAdmission && String(data.project_income_1_2_yr || '') !== durationIncomeFromAdmission) {
-            setData('project_income_1_2_yr', durationIncomeFromAdmission);
-        }
-    }, [durationIncomeFromAdmission, data.project_income_1_2_yr]);
 
     useEffect(() => {
         const inc = Number(data.project_income_1_2_yr) || 0;
@@ -481,32 +469,25 @@ export default function FormPage1({
                     <div>
                         <label className="block text-xs font-semibold text-gray-700 mb-1 flex items-center justify-between">
                             <span>১৭. সম্ভাব্য আয় ({durationLabel}) <span className="text-red-500 font-bold">*</span></span>
-                            {fromAdmission && member?.estimated_annual_project_income != null && member?.estimated_annual_project_income !== '' && (
-                                <span className="flex items-center gap-1 text-[11px] text-gray-500 font-normal">
-                                    <Lock className="w-3 h-3 text-gray-400" /> ভর্তি থেকে
-                                </span>
-                            )}
+                            <span className="text-[10px] text-indigo-600 font-normal">পৃষ্ঠা ৩ হতে স্বয়ংক্রিয়</span>
                         </label>
                         <input
-                            type="number"
+                            type="text"
+                            inputMode="numeric"
                             value={data.project_income_1_2_yr || ''}
-                            onChange={(e) => setData('project_income_1_2_yr', e.target.value)}
-                            readOnly={fromAdmission && (member?.estimated_annual_project_income != null && member?.estimated_annual_project_income !== '')}
-                            className={
-                                errors?.project_income_1_2_yr
-                                    ? errorClass
-                                    : (fromAdmission && (member?.estimated_annual_project_income != null && member?.estimated_annual_project_income !== '') ? inputClass : warningClass)
-                            }
-                            placeholder="টাকা"
+                            disabled
+                            className="w-full border border-gray-200 rounded-lg px-3 py-2 text-xs md:text-sm bg-gray-100 text-gray-700 font-medium cursor-not-allowed disabled:opacity-100"
+                            placeholder="পৃষ্ঠা ৩-এর আয়ের যোগফল"
                         />
                         {errors?.project_income_1_2_yr && (
                             <p className="mt-1 text-xs text-red-600 font-medium">{errors.project_income_1_2_yr}</p>
                         )}
-                        {fromAdmission && member?.estimated_annual_project_income != null && member?.estimated_annual_project_income !== '' && (
-                            <span className="text-[10px] text-gray-500 mt-1 block">
-                                বাৎসরিক আয়: {member.estimated_annual_project_income} × {yearsLabel} বছর
-                            </span>
-                        )}
+                        <span className="text-[10px] text-gray-500 mt-1 block">
+                            পৃষ্ঠা ৩-এর প্রধান আয় ও অন্যান্য আয়ের মোট। প্রয়োজনে সেখান থেকে বদলানো যাবে।
+                            {member?.estimated_annual_project_income != null && member?.estimated_annual_project_income !== '' && (
+                                <> ভর্তির বাৎসরিক আয়: {member.estimated_annual_project_income} × {yearsLabel} বছর।</>
+                            )}
+                        </span>
                     </div>
                     <div>
                         <label className="block text-xs font-semibold text-gray-700 mb-1 flex items-center justify-between">

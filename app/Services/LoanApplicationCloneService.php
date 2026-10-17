@@ -461,10 +461,16 @@ class LoanApplicationCloneService
                     'current_address_line3' => collect([$currUpazila, $currDistrict])->filter()->implode(', '),
                     'nid_smart_card' => $nidValue,
                     'admission_date' => $member->admission_date ? (string) $member->admission_date : null,
-                    'committee_name' => $samity?->samity_name_bn ?: $samity?->samity_name,
+                    'committee_name' => MemberCodeService::formatSamityNameWithCode(
+                        $samity?->samity_name_bn ?: $samity?->samity_name,
+                        $samity?->samity_code ?: (string) ($samity?->id ?? ''),
+                    ),
                     'committee_code' => $samity?->samity_code ?: ((string) ($samity?->id ?? '')),
                     'member_name_code' => collect([$memberName, $memberCode])->filter()->implode(' / '),
-                    'samity_name_code' => collect([$samity?->samity_name_bn ?: $samity?->samity_name, $samity?->samity_code])->filter()->implode(' / '),
+                    'samity_name_code' => MemberCodeService::formatSamityNameWithCode(
+                        $samity?->samity_name_bn ?: $samity?->samity_name,
+                        $samity?->samity_code ?: (string) ($samity?->id ?? ''),
+                    ),
                 ], fn ($v) => $v !== null && $v !== '');
 
                 $businessData = array_merge($businessData, $memberOverrides);

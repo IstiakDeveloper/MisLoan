@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Http\Requests\Member\UpdateMemberSamityRequest;
 use App\Models\Area;
 use App\Models\Branch;
 use App\Models\LoanApplication;
@@ -20,6 +21,7 @@ use App\Services\ImageCompressionService;
 use App\Services\LoanApplicationCloneService;
 use App\Services\MemberAdmissionLoanSyncService;
 use App\Services\MemberCodeService;
+use App\Services\MemberSamityService;
 use App\Services\NotificationService;
 use App\Support\AdmissionFormVisibility;
 use App\Support\LoanFormVisibility;
@@ -1092,12 +1094,24 @@ class MemberAdmissionController extends Controller
             'approvals.user',
         ]);
 
+        $user = auth()->user();
+        $user?->loadMissing('role');
+        $samityService = app(MemberSamityService::class);
+        $canUpdateSamity = $user
+            && strtolower((string) $user->role?->name) === Role::BRANCH_USER
+            && $user->canAccessBranch((int) $memberAdmission->branch_id)
+            && $samityService->admissionCanBeUpdated($memberAdmission);
+
         $memberAdmission->setAttribute('has_disbursed_loan', $memberAdmission->hasDisbursedLoan());
-        $memberAdmission->setAttribute('can_be_edited', $memberAdmission->canBeEditedBy(auth()->user()));
+        $memberAdmission->setAttribute('can_be_edited', $memberAdmission->canBeEditedBy($user));
 
         return Inertia::render('MemberAdmission/Show', [
             'admission' => $memberAdmission,
             'cycleSurveys' => $memberAdmission->cycleSurveyList(),
+            'can_update_samity' => $canUpdateSamity,
+            'samities' => $canUpdateSamity
+                ? $samityService->optionsForBranch((int) $memberAdmission->branch_id)
+                : [],
         ]);
     }
 
@@ -2131,6 +2145,44 @@ class MemberAdmissionController extends Controller
         }
 
         return back()->with('success', MemberCodeService::updatedFlashMessage($result));
+    }
+
+    /**
+     * Branch user changes this member's samity before the admission is sent to Head Office.
+     */
+    public function updateSamity(UpdateMemberSamityRequest $request, MemberAdmission $memberAdmission): RedirectResponse
+    {
+        $user = $request->user();
+        $user?->loadMissing('role');
+
+        if (! $user || strtolower((string) $user->role?->name) !== Role::BRANCH_USER) {
+            abort(403, 'শুধুমাত্র শাখা ব্যবহারকারী সমিতি পরিবর্তন করতে পারবেন।');
+        }
+
+        if (! $user->canAccessBranch((int) $memberAdmission->branch_id)) {
+            abort(403, 'আপনার এই সদস্যের সমিতি পরিবর্তন করার অনুমতি নেই।');
+        }
+
+        if (! app(MemberSamityService::class)->admissionCanBeUpdated($memberAdmission)) {
+            $message = 'হেড অফিসে পাঠানোর পর সমিতি পরিবর্তন করা যাবে না।';
+            session()->flash('error', $message);
+
+            throw ValidationException::withMessages([
+                'samity_id' => $message,
+            ]);
+        }
+
+        $result = app(MemberSamityService::class)->assign($memberAdmission, $request->input('samity_id'));
+
+        if (! $result['ok']) {
+            session()->flash('error', $result['message']);
+
+            throw ValidationException::withMessages([
+                $result['field'] => $result['message'],
+            ]);
+        }
+
+        return back()->with('success', 'সমিতি সফলভাবে আপডেট করা হয়েছে।');
     }
 
     /**

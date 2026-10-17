@@ -5,6 +5,7 @@ namespace App\Services;
 use App\Models\LoanApplication;
 use App\Models\LoanMember;
 use App\Models\MemberAdmission;
+use App\Models\Samity;
 use Carbon\Carbon;
 
 class MemberAdmissionLoanSyncService
@@ -75,7 +76,7 @@ class MemberAdmissionLoanSyncService
             $this->investigationFields($member),
             $dirty,
         );
-        $approvalFields = $this->approvalFields($member, $loan);
+        $approvalFields = $this->approvalFields($member);
         $familyAssets = $approvalFields['family_assets'] ?? null;
         unset($approvalFields['family_assets']);
 
@@ -84,6 +85,7 @@ class MemberAdmissionLoanSyncService
             $approvalFields,
             $dirty,
         );
+        $this->fillBlankProjectIncome($loan, $member, $dirty);
 
         if (is_array($familyAssets) && is_array($loan->business_plan) && $loan->business_plan !== []) {
             $existing = $loan->business_plan['family_assets'] ?? [];
@@ -200,7 +202,7 @@ class MemberAdmissionLoanSyncService
             'mother_name' => $member->mother_name_bn ?: $member->mother_name_en,
             'nid_number' => $this->nid($member),
             'mobile_number' => $member->mobile_number,
-            'samity_name' => $samity?->samity_name_bn ?: $samity?->samity_name,
+            'samity_name' => $this->samityDisplayName($samity),
             'samity_code' => $samity?->samity_code ?: (string) $samity?->id,
             'applicant_signature_image' => $member->applicant_signature_path,
         ], fn ($v) => $v !== null && $v !== '');
@@ -223,7 +225,7 @@ class MemberAdmissionLoanSyncService
             'member_upazila' => $member->present_upazila ?: $member->permanent_upazila,
             'member_district' => $member->present_district ?: $member->permanent_district,
             'member_code' => $this->memberCode($member),
-            'samity_name' => $samity?->samity_name_bn ?: $samity?->samity_name,
+            'samity_name' => $this->samityDisplayName($samity),
             'samity_code' => $samity?->samity_code ?: (string) $samity?->id,
         ], fn ($v) => $v !== null && $v !== '');
     }
@@ -240,7 +242,7 @@ class MemberAdmissionLoanSyncService
             'loan_recipient_name' => $this->memberName($member),
             'loan_recipient_code1' => $code,
             'loan_recipient_code2' => $code,
-            'samity_name' => $samity?->samity_name_bn ?: $samity?->samity_name,
+            'samity_name' => $this->samityDisplayName($samity),
             'village' => $member->present_village_road ?: $member->permanent_village_road,
             'post_office' => $member->present_post_code ?: $member->permanent_post_code,
             'upazila' => $member->present_upazila ?: $member->permanent_upazila,
@@ -269,7 +271,7 @@ class MemberAdmissionLoanSyncService
         return array_filter([
             'member_name' => $this->memberName($member),
             'member_no' => $this->memberCode($member),
-            'samity_name' => $samity?->samity_name_bn ?: $samity?->samity_name,
+            'samity_name' => $this->samityDisplayName($samity),
             'samity_code' => $samity?->samity_code ?: (string) $samity?->id,
             'nid_number' => $this->nid($member),
             'member_mobile' => $member->mobile_number,
@@ -288,10 +290,46 @@ class MemberAdmissionLoanSyncService
         ], fn ($v) => $v !== null && $v !== '');
     }
 
+    private function fillBlankProjectIncome(LoanApplication $loan, MemberAdmission $member, bool &$dirty): void
+    {
+        if (! is_array($loan->business_plan) || $loan->business_plan === []) {
+            return;
+        }
+
+        $plan = $loan->business_plan;
+        $projectIncome = $plan['project_income_1_2_yr'] ?? null;
+        $mainIncome = $plan['est_main_income_amount'] ?? null;
+        $projectBlank = $projectIncome === null || $projectIncome === '';
+        $mainBlank = $mainIncome === null || $mainIncome === '';
+
+        if (! $projectBlank || ! $mainBlank) {
+            return;
+        }
+
+        $income = $this->durationProjectIncome($member, $loan);
+        if ($income === null) {
+            return;
+        }
+
+        $plan['project_income_1_2_yr'] = $income;
+        $plan['est_main_income_amount'] = $income;
+        $loan->business_plan = $plan;
+        $dirty = true;
+    }
+
+    private function durationProjectIncome(MemberAdmission $member, ?LoanApplication $loan): ?string
+    {
+        $durationMonths = (int) ($loan?->loan_term_months ?: $loan?->loanProduct?->duration_months ?: 12);
+        $years = $durationMonths > 0 ? $durationMonths / 12 : 1;
+        $annualIncome = (float) ($member->estimated_annual_project_income ?? 0);
+
+        return $annualIncome > 0 ? (string) round($annualIncome * $years) : null;
+    }
+
     /**
      * @return array<string, mixed>
      */
-    private function approvalFields(MemberAdmission $member, ?LoanApplication $loan = null): array
+    private function approvalFields(MemberAdmission $member): array
     {
         $code = $this->memberCode($member);
         $name = $this->memberName($member);
@@ -299,13 +337,8 @@ class MemberAdmissionLoanSyncService
         $self = $this->selfOccupationAndEducation($member);
         $project = (string) ($member->project_name ?: '');
 
-        $durationMonths = (int) ($loan?->loan_term_months ?: $loan?->loanProduct?->duration_months ?: 12);
-        $years = $durationMonths > 0 ? $durationMonths / 12 : 1;
-        $annualIncome = (float) ($member->estimated_annual_project_income ?? 0);
-        $durationIncome = $annualIncome > 0 ? (string) round($annualIncome * $years) : null;
-
         $fields = [
-            'committee_name' => $samity?->samity_name_bn ?: $samity?->samity_name,
+            'committee_name' => $this->samityDisplayName($samity),
             'committee_code' => $samity?->samity_code ?: (string) $samity?->id,
             'member_name_detail' => $name,
             'member_code' => $code,
@@ -333,12 +366,8 @@ class MemberAdmissionLoanSyncService
             'loan_program_name' => $project,
             'occupation' => $self['occupation'],
             'educational_qualification' => $self['education'],
-            'project_income_1_2_yr' => $durationIncome,
             'member_name_code' => collect([$name, $code])->filter()->implode(' / '),
-            'samity_name_code' => collect([
-                $samity?->samity_name_bn ?: $samity?->samity_name,
-                $samity?->samity_code,
-            ])->filter()->implode(' / '),
+            'samity_name_code' => $this->samityDisplayName($samity),
             'implemented_project_name' => $project,
             'immovable_land_qty' => $this->positiveString($member->cultivable_land_amount),
             'immovable_land_value' => $this->positiveString($member->cultivable_land_value),
@@ -348,6 +377,20 @@ class MemberAdmissionLoanSyncService
         ];
 
         return array_filter($fields, fn ($v) => $v !== null && $v !== '' && $v !== []);
+    }
+
+    private function samityDisplayName(?Samity $samity): ?string
+    {
+        if (! $samity) {
+            return null;
+        }
+
+        $label = MemberCodeService::formatSamityNameWithCode(
+            $samity->samity_name_bn ?: $samity->samity_name,
+            $samity->samity_code ?: (string) $samity->id,
+        );
+
+        return $label !== '' ? $label : null;
     }
 
     /**

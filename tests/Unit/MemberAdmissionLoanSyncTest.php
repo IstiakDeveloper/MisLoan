@@ -86,7 +86,7 @@ class MemberAdmissionLoanSyncTest extends TestCase
         $this->assertSame('0001000099', $loan->loan_agreement_data['member_code']);
         $this->assertSame('1990123456789', $loan->loan_agreement_data['nid_number']);
         $this->assertSame(50000, $loan->loan_agreement_data['loan_amount']);
-        $this->assertSame('নতুন সমিতি', $loan->loan_agreement_data['samity_name']);
+        $this->assertSame('নতুন সমিতি (0009)', $loan->loan_agreement_data['samity_name']);
         $this->assertSame('ফর্মে সংশোধিত অভিভাবক', $loan->loan_agreement_data['guardian_name']);
         $this->assertSame('ফর্মের গ্রাম', $loan->loan_agreement_data['village']);
         $this->assertSame('ফর্মের উদ্দেশ্য', $loan->loan_agreement_data['loan_purpose']);
@@ -127,5 +127,59 @@ class MemberAdmissionLoanSyncTest extends TestCase
         $changed = (new MemberAdmissionLoanSyncService)->overlayOnLoan($loan, $member);
 
         $this->assertFalse($changed);
+    }
+
+    #[Test]
+    public function it_keeps_a_project_income_edited_on_the_approval_form(): void
+    {
+        $member = new MemberAdmission([
+            'application_no' => '0001000099',
+            'applicant_name_bn' => 'মৌসুমি বেগম',
+            'project_name' => 'গরু পালন',
+            'estimated_annual_project_income' => 80000,
+        ]);
+        $member->setRelation('familyMembers', new Collection);
+        $member->setRelation('otherAssets', new Collection);
+
+        $loan = new LoanApplication([
+            'loan_term_months' => 12,
+            'business_plan' => [
+                'project_name' => 'গরু পালন',
+                'project_income_1_2_yr' => '150000',
+                'est_main_income_amount' => '120000',
+                'est_other_income_amount' => '30000',
+            ],
+        ]);
+
+        (new MemberAdmissionLoanSyncService)->overlayOnLoan($loan, $member);
+
+        $this->assertSame('150000', $loan->business_plan['project_income_1_2_yr']);
+        $this->assertSame('120000', $loan->business_plan['est_main_income_amount']);
+        $this->assertSame('30000', $loan->business_plan['est_other_income_amount']);
+    }
+
+    #[Test]
+    public function it_fills_project_income_from_admission_only_when_the_form_is_blank(): void
+    {
+        $member = new MemberAdmission([
+            'application_no' => '0001000099',
+            'applicant_name_bn' => 'মৌসুমি বেগম',
+            'project_name' => 'গরু পালন',
+            'estimated_annual_project_income' => 80000,
+        ]);
+        $member->setRelation('familyMembers', new Collection);
+        $member->setRelation('otherAssets', new Collection);
+
+        $loan = new LoanApplication([
+            'loan_term_months' => 18,
+            'business_plan' => [
+                'project_name' => 'গরু পালন',
+            ],
+        ]);
+
+        (new MemberAdmissionLoanSyncService)->overlayOnLoan($loan, $member);
+
+        $this->assertSame('120000', $loan->business_plan['project_income_1_2_yr']);
+        $this->assertSame('120000', $loan->business_plan['est_main_income_amount']);
     }
 }

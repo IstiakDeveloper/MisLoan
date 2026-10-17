@@ -76,6 +76,7 @@ interface LoanApplication {
     id: number;
     application_no: string;
     status: string;
+    cancellation_from_status?: string | null;
     requested_amount: number;
     approved_amount: number | null;
     created_at: string;
@@ -149,6 +150,7 @@ interface Props {
         pending_disbursement?: number;
         awaiting_takeup?: number;
         pending_cancellation?: number;
+        ho_pending_cancellation?: number;
         rejected: number;
         disbursed: number;
         pending_my_approval?: number;
@@ -396,7 +398,7 @@ export default function LoanApplications({ loans, filters, stats, zones, areas, 
         );
     };
 
-    const getStatusBadge = (status: string) => {
+    const getStatusBadge = (status: string, cancellationFromStatus?: string | null) => {
         const statusMap: Record<string, { label: string; bg: string; text: string }> = {
             draft: { label: 'ড্রাফট', bg: 'bg-slate-100 border-slate-300', text: 'text-slate-700' },
             submitted: { label: 'জমাকৃত', bg: 'bg-blue-50 border-blue-200', text: 'text-blue-700' },
@@ -407,11 +409,14 @@ export default function LoanApplications({ loans, filters, stats, zones, areas, 
             pending_disbursement: { label: 'বিতরণ অপেক্ষা', bg: 'bg-amber-50 border-amber-200', text: 'text-amber-800' },
             awaiting_takeup: { label: 'পরে নেবে', bg: 'bg-violet-50 border-violet-200', text: 'text-violet-800' },
             pending_cancellation: { label: 'বাতিল অপেক্ষা', bg: 'bg-rose-50 border-rose-200', text: 'text-rose-800' },
+            ho_pending_cancellation: { label: 'HO পেন্ডিং — বাতিল জমা', bg: 'bg-fuchsia-50 border-fuchsia-200', text: 'text-fuchsia-800' },
             rejected: { label: 'প্রত্যাখ্যাত', bg: 'bg-red-50 border-red-200', text: 'text-red-700' },
             disbursed: { label: 'বিতরণকৃত', bg: 'bg-teal-50 border-teal-200', text: 'text-teal-700' },
         };
 
-        const current = statusMap[status] || { label: status, bg: 'bg-slate-100 border-slate-200', text: 'text-slate-700' };
+        const current = status === 'pending_cancellation' && cancellationFromStatus === 'pending_head_office'
+            ? { label: 'HO পেন্ডিং — বাতিল জমা', bg: 'bg-fuchsia-50 border-fuchsia-200', text: 'text-fuchsia-800' }
+            : (statusMap[status] || { label: status, bg: 'bg-slate-100 border-slate-200', text: 'text-slate-700' });
         return (
             <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-[11px] font-semibold border ${current.bg} ${current.text}`}>
                 {current.label}
@@ -500,6 +505,16 @@ export default function LoanApplications({ loans, filters, stats, zones, areas, 
             iconBg: 'bg-rose-50',
             barColor: 'from-rose-500 to-rose-600',
             activeBg: 'bg-rose-600 border-rose-600 text-white',
+        },
+        {
+            key: 'ho_pending_cancellation',
+            label: 'HO পেন্ডিং — বাতিল জমা',
+            count: stats.ho_pending_cancellation ?? 0,
+            icon: Building2,
+            iconColor: 'text-fuchsia-700',
+            iconBg: 'bg-fuchsia-50',
+            barColor: 'from-fuchsia-500 to-fuchsia-600',
+            activeBg: 'bg-fuchsia-700 border-fuchsia-700 text-white',
         },
         {
             key: 'disbursed',
@@ -988,7 +1003,7 @@ export default function LoanApplications({ loans, filters, stats, zones, areas, 
 
                                         {/* Status */}
                                         <td className="py-2 px-2 whitespace-nowrap">
-                                            {getStatusBadge(loan.status)}
+                                            {getStatusBadge(loan.status, loan.cancellation_from_status)}
                                         </td>
 
                                         {/* Actions */}

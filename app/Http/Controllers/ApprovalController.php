@@ -108,6 +108,7 @@ class ApprovalController extends Controller
                 'pending_approved_amount' => $loan->pending_approved_amount,
                 'is_amount_change_approval' => $loan->hasPendingAmountChange(),
                 'is_cancellation_approval' => $loan->hasPendingCancellation(),
+                'cancellation_from_head_office' => $loan->isHoPendingCancellation(),
                 'cancellation_reason' => $loan->cancellation_reason,
                 'submitted_at' => $loan->submitted_at,
                 'level' => $approval->level,

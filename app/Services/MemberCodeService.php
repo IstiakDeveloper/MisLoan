@@ -79,6 +79,28 @@ class MemberCodeService
     }
 
     /**
+     * Loan-form samity label: name plus the last 4 digits, e.g. "Koli (5050)".
+     */
+    public static function formatSamityNameWithCode(?string $name, mixed $code): string
+    {
+        $label = trim((string) $name);
+        $suffix = self::formatSamitySuffix($code);
+        if ($label === '') {
+            return '';
+        }
+        if ($suffix === '') {
+            return $label;
+        }
+
+        $wrapped = '('.$suffix.')';
+        if (str_ends_with($label, $wrapped)) {
+            return $label;
+        }
+
+        return $label.' '.$wrapped;
+    }
+
+    /**
      * Combine 4-digit branch code and 4-digit samity suffix (e.g. 1 + 5 -> '00010005').
      * Returns an empty string when branch or samity digits are missing.
      */

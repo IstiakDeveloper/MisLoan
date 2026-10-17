@@ -75,6 +75,7 @@ interface LoanApproval {
     pending_approved_amount?: number | null;
     is_amount_change_approval?: boolean;
     is_cancellation_approval?: boolean;
+    cancellation_from_head_office?: boolean;
     cancellation_reason?: string | null;
     submitted_at: string;
     level: string;
@@ -333,7 +334,7 @@ function LoanApprovalsPanel({
                                 <div className="flex items-start gap-1 p-1.5 rounded-lg bg-rose-50 border border-rose-200 text-rose-900 text-[10px] font-semibold">
                                     <Ban className="w-3 h-3 text-rose-600 shrink-0 mt-0.5" />
                                     <span>
-                                        বাতিল অনুমোদন
+                                        {la.cancellation_from_head_office ? 'হেড অফিস পেন্ডিং — বাতিলের জন্য জমা' : 'বাতিল অনুমোদন'}
                                         {la.cancellation_reason ? ` — ${la.cancellation_reason}` : ''}
                                     </span>
                                 </div>
@@ -482,7 +483,7 @@ function LoanApprovalsPanel({
                                                 )}
                                                 {isCancellation && (
                                                     <span className="inline-flex items-center gap-1 text-[9px] font-bold text-rose-700 bg-rose-50 border border-rose-200 px-1 py-0.2 rounded mt-0.5">
-                                                        বাতিল অনুমোদন
+                                                        {la.cancellation_from_head_office ? 'HO পেন্ডিং — বাতিল জমা' : 'বাতিল অনুমোদন'}
                                                     </span>
                                                 )}
                                             </div>
@@ -2346,9 +2347,13 @@ export default function Index({
                             </div>
                             {selectedLoanApproval.is_cancellation_approval && (
                                 <div className="pt-1.5 border-t border-rose-200/80 space-y-1">
-                                    <p className="text-[11px] font-bold text-rose-800">বাতিল অনুমোদন</p>
+                                    <p className="text-[11px] font-bold text-rose-800">
+                                        {selectedLoanApproval.cancellation_from_head_office
+                                            ? 'হেড অফিস পেন্ডিং — বাতিলের জন্য জমা'
+                                            : 'বাতিল অনুমোদন'}
+                                    </p>
                                     <p className="text-slate-700">
-                                        অনুমোদন দিলে ঋণ বাতিল হবে। না দিলে আবার «পরে নেবে» তালিকায় ফিরবে। Block List হবে না।
+                                        অনুমোদন দিলে ঋণ বাতিল হবে। না দিলে আবার {selectedLoanApproval.cancellation_from_head_office ? 'হেড অফিস পেন্ডিং' : '«পরে নেবে»'} তালিকায় ফিরবে। Block List হবে না।
                                     </p>
                                     {selectedLoanApproval.cancellation_reason && (
                                         <p className="text-slate-800">

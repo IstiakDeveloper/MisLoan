@@ -437,7 +437,10 @@ export default function ApprovalForm({
         ),
         ...(() => {
             const src = savedData || {};
-            const initialIncome = durationIncomeFromAdmission || String(src.project_income_1_2_yr || '');
+            const savedIncome = src.project_income_1_2_yr !== '' && src.project_income_1_2_yr != null
+                ? String(src.project_income_1_2_yr)
+                : '';
+            const initialIncome = savedIncome || durationIncomeFromAdmission;
             const initialExpCharge = computedInstallment.total_service_charge || (src as any)?.est_loan_charge || '';
             const calcExpense = (
                 (Number(src.est_emp_salary) || 0) +
@@ -542,7 +545,10 @@ export default function ApprovalForm({
                         loanCategory,
                     ),
                     ...(() => {
-                        const mergedIncome = durationIncomeFromAdmission || String(merged.project_income_1_2_yr || '');
+                        const savedMergedIncome = merged.project_income_1_2_yr !== '' && merged.project_income_1_2_yr != null
+                            ? String(merged.project_income_1_2_yr)
+                            : '';
+                        const mergedIncome = savedMergedIncome || durationIncomeFromAdmission;
                         const calcExpense = (
                             (Number(merged.est_emp_salary) || 0) +
                             (Number(merged.est_transport) || 0) +
@@ -607,15 +613,12 @@ export default function ApprovalForm({
         );
 
         const expStr = expTotal > 0 ? String(expTotal) : (data.project_expense_1_2_yr || '');
-        const incStr = data.project_income_1_2_yr || durationIncomeFromAdmission || '';
+        const incStr = String(data.project_income_1_2_yr ?? '');
         const numInc = Number(incStr) || 0;
         const numExp = Number(expStr) || 0;
         const netStr = (incStr !== '' || expStr !== '') ? String(numInc - numExp) : '';
 
         const updates: Partial<LoanApplicationApprovalData> = {};
-        if (!data.project_income_1_2_yr && durationIncomeFromAdmission) {
-            updates.project_income_1_2_yr = durationIncomeFromAdmission;
-        }
         if (expTotal > 0 && data.project_expense_1_2_yr !== String(expTotal)) {
             updates.project_expense_1_2_yr = String(expTotal);
         }
@@ -627,7 +630,6 @@ export default function ApprovalForm({
             setData((prev) => ({ ...prev, ...updates }));
         }
     }, [
-        durationIncomeFromAdmission,
         data.est_emp_salary,
         data.est_transport,
         data.est_bills,

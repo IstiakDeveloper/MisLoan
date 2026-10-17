@@ -1,3 +1,4 @@
+import { ComboSelect } from '@/components/ComboSelect';
 import AdminLayout from '@/layouts/admin-layout';
 import { formatDate, formatDateTime, todayIsoDate } from '@/utils/dateUtils';
 import { Head, Link, router, useForm, usePage } from '@inertiajs/react';
@@ -107,6 +108,11 @@ interface LoanApplication {
     member_admission: {
         id: number;
         application_no: string;
+        samity_id?: number | null;
+        samity?: {
+            samity_name?: string | null;
+            samity_name_bn?: string | null;
+        } | null;
         applicant_name_en?: string;
         applicant_name_bn?: string;
         member_name_en?: string;
@@ -138,6 +144,7 @@ interface LoanApplication {
     can_edit_loan_details?: boolean;
     amount_change_pending?: boolean;
     cancellation_pending?: boolean;
+    cancellation_from_status?: string | null;
     cancellation_reason?: string | null;
     cancellation_approver_name?: string | null;
     can_request_cancellation?: boolean;
@@ -232,8 +239,17 @@ interface LoanCategoryOption {
     loan_products?: LoanProductOption[];
 }
 
+interface SamityOption {
+    id: number;
+    samity_code?: string | null;
+    samity_name?: string | null;
+    samity_name_bn?: string | null;
+}
+
 interface Props {
     application: LoanApplication;
+    can_update_samity?: boolean;
+    samities?: SamityOption[];
     routes: {
         index: string;
         edit: string;
@@ -287,7 +303,10 @@ const PIPELINE_STAGES = [
 const ADMISSION_HO_BLOCKED_MESSAGE =
     'সদস্য ভর্তি অনুমোদিত না হওয়া পর্যন্ত Head Office এ পাঠানো যাবে না। আগে ভর্তি অনুমোদন সম্পন্ন করতে হবে।';
 
-export default function Show({ application, routes, categories = [] }: Props) {
+const samityLabel = (samity?: { samity_name_bn?: string | null; samity_name?: string | null } | null) =>
+    samity?.samity_name_bn || samity?.samity_name || '';
+
+export default function Show({ application, routes, categories = [], can_update_samity = false, samities = [] }: Props) {
     const pageAuth = usePage().props.auth as { user?: { role?: { name: string } } } | undefined;
     const roleName = pageAuth?.user?.role?.name;
     const isBranchUser = roleName === 'branch_user';
@@ -869,6 +888,48 @@ export default function Show({ application, routes, categories = [] }: Props) {
         );
     };
 
+    const memberSamityId = application.member_admission?.samity_id ?? null;
+    const [samityModalOpen, setSamityModalOpen] = useState(false);
+    const [samityIdInput, setSamityIdInput] = useState<number | null>(memberSamityId ? Number(memberSamityId) : null);
+    const [submittingSamity, setSubmittingSamity] = useState(false);
+    const [samityError, setSamityError] = useState<string | null>(null);
+    const samityItems = samities.map((samity) => {
+        const name = samity.samity_name_bn || samity.samity_name || '';
+        return {
+            value: samity.id,
+            label: samity.samity_code ? `${samity.samity_code} — ${name}` : name,
+            keywords: `${samity.samity_code ?? ''} ${samity.samity_name ?? ''} ${samity.samity_name_bn ?? ''}`,
+        };
+    });
+
+    useEffect(() => {
+        setSamityIdInput(memberSamityId ? Number(memberSamityId) : null);
+    }, [memberSamityId]);
+
+    const handleSamitySubmit = (e: React.FormEvent) => {
+        e.preventDefault();
+        if (!samityIdInput) return;
+        setSamityError(null);
+        setSubmittingSamity(true);
+        router.patch(
+            `/member/loan-applications/${application.id}/update-samity`,
+            { samity_id: samityIdInput },
+            {
+                preserveScroll: true,
+                onSuccess: () => {
+                    setSamityError(null);
+                    setSamityModalOpen(false);
+                },
+                onError: (errors) => {
+                    setSamityError(errors.samity_id || errors.error || 'সমিতি আপডেট করা যায়নি।');
+                },
+                onFinish: () => {
+                    setSubmittingSamity(false);
+                },
+            }
+        );
+    };
+
     const handleCancelSubmit = (e: React.FormEvent) => {
         e.preventDefault();
         if (!routes.requestCancellation) {
@@ -1111,8 +1172,10 @@ export default function Show({ application, routes, categories = [] }: Props) {
                 };
             case 'pending_cancellation':
                 return {
-                    title: 'পেন্ডিং অবস্থা: বাতিল অনুমোদন অপেক্ষা',
-                    desc: `${application.cancellation_approver_name ? `${application.cancellation_approver_name} অনুমোদন` : 'চূড়ান্ত অনুমোদনকারী অনুমোদন'} দিলে ঋণ বাতিল হবে। না দিলে আবার «পরে নেবে» তালিকায় ফিরবে।${application.cancellation_reason ? ` কারণ: ${application.cancellation_reason}` : ''}`,
+                    title: application.cancellation_from_status === 'pending_head_office'
+                        ? 'পেন্ডিং অবস্থা: হেড অফিস পেন্ডিং — বাতিলের জন্য জমা'
+                        : 'পেন্ডিং অবস্থা: বাতিল অনুমোদন অপেক্ষা',
+                    desc: `${application.cancellation_approver_name ? `${application.cancellation_approver_name} অনুমোদন` : 'চূড়ান্ত অনুমোদনকারী অনুমোদন'} দিলে ঋণ বাতিল হবে। না দিলে আবার ${application.cancellation_from_status === 'pending_head_office' ? 'হেড অফিস পেন্ডিং' : '«পরে নেবে»'} তালিকায় ফিরবে।${application.cancellation_reason ? ` কারণ: ${application.cancellation_reason}` : ''}`,
                     badgeColor: 'bg-rose-100 text-rose-900 border-rose-300',
                     cardBg: 'bg-rose-50/90 border-rose-200 text-rose-950',
                     iconColor: 'text-rose-600',
@@ -1406,6 +1469,22 @@ export default function Show({ application, routes, categories = [] }: Props) {
                                         </button>
                                     )}
                                     <span className="text-slate-300 mx-1">|</span>
+                                    <span>সমিতি: <span className="font-bold text-slate-800">{samityLabel(application.member_admission?.samity) || samityLabel(application.samity) || 'নির্ধারিত নয়'}</span></span>
+                                    {can_update_samity && (
+                                        <button
+                                            type="button"
+                                            onClick={() => {
+                                                setSamityIdInput(memberSamityId ? Number(memberSamityId) : null);
+                                                setSamityError(null);
+                                                setSamityModalOpen(true);
+                                            }}
+                                            className="inline-flex items-center gap-1 text-[10px] bg-indigo-50 hover:bg-indigo-100 text-indigo-700 px-1.5 py-0.5 rounded border border-indigo-200 font-semibold cursor-pointer transition shadow-2xs"
+                                            title="হেড অফিসে পাঠানোর আগে সমিতি পরিবর্তন করুন"
+                                        >
+                                            <Edit className="w-3 h-3 text-indigo-600" /> সমিতি পরিবর্তন
+                                        </button>
+                                    )}
+                                    <span className="text-slate-300 mx-1">|</span>
                                     <span>সদস্য: <span className="font-bold text-slate-800">{application.member_admission?.applicant_name_bn || application.member_admission?.applicant_name_en || application.member_admission?.member_name_bn || application.member_admission?.member_name_en || '-'}</span></span>
                                     <span className="text-slate-300 mx-1">|</span>
                                     <span>আবেদন: <span className="font-medium text-slate-700">{formatDate(application.created_at)}</span></span>
@@ -1554,7 +1633,7 @@ export default function Show({ application, routes, categories = [] }: Props) {
                                     HO রেডি
                                 </Button>
                             )}
-                            {application.status === 'awaiting_takeup' && isBranchUser && routes.requestCancellation && (
+                            {(application.status === 'awaiting_takeup' || application.status === 'pending_head_office') && isBranchUser && routes.requestCancellation && (
                                 <Button
                                     className="w-full sm:w-auto bg-rose-50 hover:bg-rose-100 text-rose-800 border border-rose-200 shadow-xs font-semibold rounded-xl text-xs sm:text-sm h-9 sm:h-10"
                                     onClick={() => {
@@ -1777,6 +1856,21 @@ export default function Show({ application, routes, categories = [] }: Props) {
                                                 বাতিল
                                             </Button>
                                         )}
+                                    </div>
+                                )}
+                                {application.status === 'pending_head_office' && isBranchUser && routes.requestCancellation && (
+                                    <div className="mt-2.5">
+                                        <Button
+                                            size="sm"
+                                            className="bg-fuchsia-50 hover:bg-fuchsia-100 text-fuchsia-800 border border-fuchsia-200 font-bold rounded-lg text-xs"
+                                            onClick={() => {
+                                                setCancelError(null);
+                                                setCancelModalOpen(true);
+                                            }}
+                                        >
+                                            <XCircle className="w-4 h-4 mr-1" />
+                                            বাতিল
+                                        </Button>
                                     </div>
                                 )}
                             </div>
@@ -2686,6 +2780,52 @@ export default function Show({ application, routes, categories = [] }: Props) {
                 placeholder="লগইন পাসওয়ার্ড লিখুন"
                 accent="indigo"
             />
+
+            {samityModalOpen && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-xs p-4 print:hidden">
+                    <div className="w-full max-w-md rounded-2xl bg-white shadow-2xl overflow-hidden border border-slate-200 animate-in fade-in zoom-in-95 duration-150">
+                        <div className="border-b px-5 py-4 bg-slate-50 flex items-center justify-between">
+                            <div>
+                                <h3 className="text-base font-bold text-slate-900 flex items-center gap-2">
+                                    <Edit className="w-5 h-5 text-indigo-600" /> সমিতি আপডেট
+                                </h3>
+                                <p className="text-xs text-slate-500 mt-0.5">এই শাখার সক্রিয় সমিতি থেকে নির্বাচন করুন। হেড অফিসে পাঠানোর পর বদলানো যাবে না।</p>
+                            </div>
+                            <button type="button" onClick={() => setSamityModalOpen(false)} className="text-slate-400 hover:text-slate-600 p-1 cursor-pointer">
+                                <X className="w-5 h-5" />
+                            </button>
+                        </div>
+                        <form onSubmit={handleSamitySubmit} className="p-5 space-y-4">
+                            <div>
+                                <label className="block text-xs font-bold text-slate-700 mb-1">সমিতি:</label>
+                                <ComboSelect
+                                    value={samityIdInput}
+                                    onChange={setSamityIdInput}
+                                    items={samityItems}
+                                    placeholder="নাম বা কোড লিখে সমিতি খুঁজুন"
+                                    clearable={false}
+                                    disabled={submittingSamity}
+                                />
+                                {samityError && (
+                                    <p className="mt-2 text-xs font-semibold text-rose-600">{samityError}</p>
+                                )}
+                            </div>
+                            <div className="flex justify-end gap-2 pt-2 border-t">
+                                <button type="button" className="px-4 py-2 rounded-xl text-xs border border-slate-300 font-semibold text-slate-700 hover:bg-slate-50 cursor-pointer" onClick={() => setSamityModalOpen(false)}>
+                                    বাতিল
+                                </button>
+                                <button
+                                    type="submit"
+                                    className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-bold shadow-xs cursor-pointer"
+                                    disabled={submittingSamity || !samityIdInput}
+                                >
+                                    {submittingSamity ? 'আপডেট হচ্ছে...' : 'সমিতি আপডেট করুন'}
+                                </button>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+            )}
 
             {/* Member Code Update Modal */}
             {memberCodeModalOpen && (

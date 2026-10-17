@@ -75,6 +75,7 @@ class RoleListWorkQueue
             'pending_head_office',
             'awaiting_takeup',
             'pending_cancellation',
+            'ho_pending_cancellation',
             self::PENDING_MY_APPROVAL,
         ], true);
     }

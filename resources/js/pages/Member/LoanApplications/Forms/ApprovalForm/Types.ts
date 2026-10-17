@@ -18,7 +18,10 @@ export interface ApprovalFormProps {
 
 export interface FormPageProps {
     data: LoanApplicationApprovalData;
-    setData: (key: keyof LoanApplicationApprovalData | string, value: any) => void;
+    setData: (
+        key: keyof LoanApplicationApprovalData | string | ((previous: LoanApplicationApprovalData) => LoanApplicationApprovalData),
+        value?: any,
+    ) => void;
     member: any;
     isLegacy: boolean;
     handleImageUpload: (key: string, file: File | null) => void;

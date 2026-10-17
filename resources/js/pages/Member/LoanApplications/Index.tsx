@@ -1,4 +1,4 @@
-import { useState, useMemo, useEffect, type FormEvent } from 'react';
+import { useState, useMemo, useEffect, useCallback, type FormEvent } from 'react';
 import { Head, router, useForm, usePage } from '@inertiajs/react';
 import AdminLayout from '@/layouts/admin-layout';
 import { formatDate, startOfMonthIsoDate, todayIsoDate } from '@/utils/dateUtils';
@@ -10,6 +10,7 @@ import {
 } from 'lucide-react';
 import ListPagination from '@/components/ListPagination';
 import AutoFitTableContainer from '@/components/AutoFitTableContainer';
+import { ComboSelect } from '@/components/ComboSelect';
 import { formatBranchLabel, keepListFilters, sortBranchesByCode } from '@/utils/branchLabel';
 import SendLoanToHoModal, { HoLoanItem } from '@/components/LoanApplications/SendLoanToHoModal';
 import HoSendCutoffNotice from '@/components/HoSendCutoffNotice';
@@ -33,6 +34,14 @@ interface BranchOption {
     name: string;
     code?: string;
     area_id: number;
+}
+
+interface SamityOption {
+    id: number;
+    branch_id: number;
+    samity_code: string;
+    samity_name: string;
+    samity_name_bn?: string | null;
 }
 
 interface LoanProduct {
@@ -129,6 +138,7 @@ interface LoanApplication {
     amount_change_approver_name?: string | null;
     cancellation_pending?: boolean;
     cancellation_approver_name?: string | null;
+    cancellation_from_status?: string | null;
     member_admission_status?: string;
     issues?: LoanApplicationIssue[];
     tracking_state?: {
@@ -150,6 +160,7 @@ interface Stats {
     pending_disbursement?: number;
     awaiting_takeup?: number;
     pending_cancellation?: number;
+    ho_pending_cancellation?: number;
     rejected: number;
     ready_for_head_office?: number;
     pending_head_office?: number;
@@ -173,10 +184,14 @@ interface Props {
     zones?: ZoneOption[];
     areas?: AreaOption[];
     branches?: BranchOption[];
+    samities?: SamityOption[];
     filters?: {
         zone_id?: string;
         area_id?: string;
         branch_id?: string;
+        samity_id?: string;
+        loan_category_id?: string;
+        loan_product_id?: string;
     };
     selectedDate: string;
     dateFrom?: string;
@@ -206,10 +221,19 @@ const statusLabels: Record<string, { label: string; bg: string; text: string; bo
     pending_disbursement: { label: 'Disburse Pending (বিতরণ অপেক্ষা)', bg: 'bg-amber-50', text: 'text-amber-800', border: 'border-amber-200' },
     awaiting_takeup: { label: 'পরে নেবে', bg: 'bg-violet-50', text: 'text-violet-800', border: 'border-violet-200' },
     pending_cancellation: { label: 'বাতিল অনুমোদন অপেক্ষা', bg: 'bg-rose-50', text: 'text-rose-800', border: 'border-rose-200' },
+    ho_pending_cancellation: { label: 'HO পেন্ডিং — বাতিল জমা', bg: 'bg-fuchsia-50', text: 'text-fuchsia-800', border: 'border-fuchsia-200' },
     pending_amount_approval: { label: 'Amount Re-approval (পরিমাণ অনুমোদন)', bg: 'bg-orange-50', text: 'text-orange-800', border: 'border-orange-200' },
     rejected: { label: 'Rejected (প্রত্যাখ্যাত)', bg: 'bg-rose-50', text: 'text-rose-700', border: 'border-rose-200' },
     disbursed: { label: 'Disbursed (বিতরণকৃত)', bg: 'bg-purple-50', text: 'text-purple-700', border: 'border-purple-200' },
 };
+
+function loanStatusPresentation(app: { status: string; cancellation_from_status?: string | null }) {
+    if (app.status === 'pending_cancellation' && app.cancellation_from_status === 'pending_head_office') {
+        return statusLabels.ho_pending_cancellation;
+    }
+
+    return statusLabels[app.status] || statusLabels.draft;
+}
 
 const formatAmount = (amount: number) => {
     return new Intl.NumberFormat('en-BD', {
@@ -263,6 +287,7 @@ export default function Index({
     zones = [],
     areas = [],
     branches = [],
+    samities = [],
     filters,
     selectedDate,
     dateFrom,
@@ -439,6 +464,9 @@ export default function Index({
     const [selectedZone, setSelectedZone] = useState(filters?.zone_id ? String(filters.zone_id) : '');
     const [selectedArea, setSelectedArea] = useState(filters?.area_id ? String(filters.area_id) : '');
     const [selectedBranch, setSelectedBranch] = useState(filters?.branch_id ? String(filters.branch_id) : '');
+    const [selectedSamityId, setSelectedSamityId] = useState(filters?.samity_id ? String(filters.samity_id) : '');
+    const [selectedCategoryId, setSelectedCategoryId] = useState(filters?.loan_category_id ? String(filters.loan_category_id) : '');
+    const [selectedProductId, setSelectedProductId] = useState(filters?.loan_product_id ? String(filters.loan_product_id) : '');
     const [currentDateFrom, setCurrentDateFrom] = useState(dateFrom || '');
     const [currentDateTo, setCurrentDateTo] = useState(dateTo || '');
     const [currentStatusFilter, setCurrentStatusFilter] = useState(statusFilter || 'all');
@@ -454,7 +482,29 @@ export default function Index({
         setSelectedZone(filters?.zone_id ? String(filters.zone_id) : '');
         setSelectedArea(filters?.area_id ? String(filters.area_id) : '');
         setSelectedBranch(filters?.branch_id ? String(filters.branch_id) : '');
-    }, [filters?.zone_id, filters?.area_id, filters?.branch_id]);
+        setSelectedSamityId(filters?.samity_id ? String(filters.samity_id) : '');
+        setSelectedCategoryId(filters?.loan_category_id ? String(filters.loan_category_id) : '');
+        setSelectedProductId(filters?.loan_product_id ? String(filters.loan_product_id) : '');
+    }, [filters?.zone_id, filters?.area_id, filters?.branch_id, filters?.samity_id, filters?.loan_category_id, filters?.loan_product_id]);
+
+    const samitiesInScope = useCallback((zoneVal: string, areaVal: string, branchVal: string) => {
+        let scopedBranches = branches;
+        if (zoneVal) {
+            const areaIds = new Set(
+                areas.filter((a) => String(a.zone_id) === String(zoneVal)).map((a) => String(a.id)),
+            );
+            scopedBranches = scopedBranches.filter((b) => areaIds.has(String(b.area_id)));
+        }
+        if (areaVal) {
+            scopedBranches = scopedBranches.filter((b) => String(b.area_id) === String(areaVal));
+        }
+        if (branchVal) {
+            scopedBranches = scopedBranches.filter((b) => String(b.id) === String(branchVal));
+        }
+        const branchIds = new Set(scopedBranches.map((b) => String(b.id)));
+
+        return samities.filter((s) => branchIds.has(String(s.branch_id)));
+    }, [areas, branches, samities]);
 
     const filteredAreas = useMemo(() => {
         if (!selectedZone) return areas;
@@ -473,11 +523,62 @@ export default function Index({
         return sortBranchesByCode(list);
     }, [branches, selectedZone, selectedArea, filteredAreas]);
 
+    const filteredSamities = useMemo(
+        () => samitiesInScope(selectedZone, selectedArea, selectedBranch),
+        [samitiesInScope, selectedZone, selectedArea, selectedBranch],
+    );
+
+    const samityItems = useMemo(
+        () => filteredSamities.map((samity) => ({
+            value: String(samity.id),
+            label: `${samity.samity_code} — ${samity.samity_name_bn || samity.samity_name}`,
+            keywords: `${samity.samity_code} ${samity.samity_name} ${samity.samity_name_bn ?? ''}`,
+        })),
+        [filteredSamities],
+    );
+
+    const categoryItems = useMemo(
+        () => categories.map((category) => ({
+            value: String(category.id),
+            label: category.category_code
+                ? `${category.category_code} — ${category.category_name_bn || category.category_name}`
+                : (category.category_name_bn || category.category_name),
+            keywords: `${category.category_code} ${category.category_name} ${category.category_name_bn}`,
+        })),
+        [categories],
+    );
+
+    const productFilterItems = useMemo(() => {
+        const source = selectedCategoryId
+            ? (categories.find((category) => String(category.id) === selectedCategoryId)?.loan_products ?? [])
+            : categories.flatMap((category) => category.loan_products ?? []);
+
+        return source.map((product) => ({
+            value: String(product.id),
+            label: product.product_code
+                ? `${product.product_code} — ${product.product_name_bn || product.product_name}`
+                : (product.product_name_bn || product.product_name),
+            keywords: `${product.product_code ?? ''} ${product.main_product_code ?? ''} ${product.product_name} ${product.product_name_bn}`,
+        }));
+    }, [categories, selectedCategoryId]);
+
     const handleLocationFilterChange = (zoneVal: string, areaVal: string, branchVal: string) => {
+        const nextSamities = samitiesInScope(zoneVal, areaVal, branchVal);
+        const samityStillValid = !selectedSamityId || nextSamities.some((samity) => String(samity.id) === selectedSamityId);
+        const nextSamity = samityStillValid ? selectedSamityId : '';
         setSelectedZone(zoneVal);
         setSelectedArea(areaVal);
         setSelectedBranch(branchVal);
-        applyListFilters({ zone_id: zoneVal, area_id: areaVal, branch_id: branchVal, page: 1 });
+        if (!samityStillValid) {
+            setSelectedSamityId('');
+        }
+        applyListFilters({
+            zone_id: zoneVal,
+            area_id: areaVal,
+            branch_id: branchVal,
+            samity_id: nextSamity,
+            page: 1,
+        });
     };
     const [selectedProduct, setSelectedProduct] = useState<number | null>(null);
     const [showSuccessMessage, setShowSuccessMessage] = useState(!!flash?.success);
@@ -545,6 +646,9 @@ export default function Index({
             zone_id: selectedZone,
             area_id: selectedArea,
             branch_id: selectedBranch,
+            samity_id: selectedSamityId,
+            loan_category_id: selectedCategoryId,
+            loan_product_id: selectedProductId,
             ...overrides,
         };
         const status = Object.prototype.hasOwnProperty.call(overrides, 'status')
@@ -575,6 +679,43 @@ export default function Index({
         });
     };
 
+    const handleSelectorChange = (patch: {
+        samity_id?: string;
+        loan_category_id?: string;
+        loan_product_id?: string;
+    }) => {
+        let samity = patch.samity_id !== undefined ? patch.samity_id : selectedSamityId;
+        let category = patch.loan_category_id !== undefined ? patch.loan_category_id : selectedCategoryId;
+        let product = patch.loan_product_id !== undefined ? patch.loan_product_id : selectedProductId;
+
+        if (patch.loan_product_id && patch.loan_category_id === undefined) {
+            const owner = categories.find((item) =>
+                item.loan_products?.some((loanProduct) => String(loanProduct.id) === patch.loan_product_id),
+            );
+            if (owner) {
+                category = String(owner.id);
+            }
+        }
+
+        if (patch.loan_category_id !== undefined) {
+            const selected = categories.find((item) => String(item.id) === category);
+            const productStillValid = !product || (selected?.loan_products ?? []).some((loanProduct) => String(loanProduct.id) === product);
+            if (!productStillValid) {
+                product = '';
+            }
+        }
+
+        setSelectedSamityId(samity);
+        setSelectedCategoryId(category);
+        setSelectedProductId(product);
+        applyListFilters({
+            samity_id: samity,
+            loan_category_id: category,
+            loan_product_id: product,
+            page: 1,
+        });
+    };
+
     const handleTodayFilter = () => {
         setCurrentDateFrom(today);
         setCurrentDateTo(today);
@@ -593,6 +734,9 @@ export default function Index({
         setSelectedZone('');
         setSelectedArea('');
         setSelectedBranch('');
+        setSelectedSamityId('');
+        setSelectedCategoryId('');
+        setSelectedProductId('');
         router.get('/member/loan-applications', {
             per_page: applications.per_page || perPage || 20,
         }, { preserveState: true });
@@ -842,6 +986,7 @@ export default function Index({
             pending_disbursement: stats.pending_disbursement || 0,
             awaiting_takeup: stats.awaiting_takeup || 0,
             pending_cancellation: stats.pending_cancellation || 0,
+            ho_pending_cancellation: stats.ho_pending_cancellation || 0,
             rejected: stats.rejected || 0,
             pending_head_office: (stats as any).pending_head_office || 0,
             ready_for_head_office: (stats as any).ready_for_head_office || 0,
@@ -970,6 +1115,16 @@ export default function Index({
             iconBg: 'bg-rose-50',
             barColor: 'from-rose-500 to-rose-600',
             activeBg: 'bg-rose-600 border-rose-600 text-white',
+        },
+        {
+            key: 'ho_pending_cancellation',
+            label: 'HO পেন্ডিং — বাতিল জমা',
+            count: filteredStats.ho_pending_cancellation,
+            icon: Building2,
+            iconColor: 'text-fuchsia-700',
+            iconBg: 'bg-fuchsia-50',
+            barColor: 'from-fuchsia-500 to-fuchsia-600',
+            activeBg: 'bg-fuchsia-700 border-fuchsia-700 text-white',
         },
         ...(isBranchUser
             ? [{
@@ -1259,69 +1414,95 @@ export default function Index({
                         })}
                     </div>
 
-                    {/* Location, Search & Date Toolbar */}
-                    <div className="pt-2.5 border-t border-slate-100 space-y-2.5 text-xs">
-                        {/* Zone / Area / Branch Filters for Approvers & Multi-branch users */}
-                        {(zones.length > 0 || areas.length > 0 || branches.length > 0) && (
-                            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-2">
-                                {zones.length > 0 && (
-                                    <div>
-                                        <select
-                                            value={selectedZone}
-                                            onChange={(e) => handleLocationFilterChange(e.target.value, '', '')}
-                                            className="h-8.5 w-full border border-slate-300 rounded-xl px-2.5 text-xs bg-white text-slate-800 focus:outline-none focus:ring-1 focus:ring-blue-500 focus:border-blue-500 transition"
-                                        >
-                                            <option value="">সকল জোন ({zones.length})</option>
-                                            {zones.map((z) => (
-                                                <option key={z.id} value={z.id}>
-                                                    {z.name} {z.code ? `(${z.code})` : ''}
-                                                </option>
-                                            ))}
-                                        </select>
-                                    </div>
-                                )}
+                    {/* Location, selectors, search and dates — two rows on desktop */}
+                    <div className="space-y-1.5 border-t border-slate-100 pt-2 text-xs">
+                        <div className="flex flex-wrap gap-1.5">
+                            {zones.length > 0 && (
+                                <div className="w-[calc(50%-0.1875rem)] min-w-0 sm:w-[calc(33.333%-0.25rem)] lg:w-0 lg:min-w-0 lg:flex-1">
+                                    <select
+                                        value={selectedZone}
+                                        onChange={(e) => handleLocationFilterChange(e.target.value, '', '')}
+                                        title="জোন"
+                                        className="h-8.5 w-full min-w-0 truncate rounded-xl border border-slate-300 bg-white px-2 text-xs text-slate-800 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                                    >
+                                        <option value="">জোন ({zones.length})</option>
+                                        {zones.map((z) => (
+                                            <option key={z.id} value={z.id}>
+                                                {z.name} {z.code ? `(${z.code})` : ''}
+                                            </option>
+                                        ))}
+                                    </select>
+                                </div>
+                            )}
 
-                                {areas.length > 0 && (
-                                    <div>
-                                        <select
-                                            value={selectedArea}
-                                            onChange={(e) => handleLocationFilterChange(selectedZone, e.target.value, '')}
-                                            className="h-8.5 w-full border border-slate-300 rounded-xl px-2.5 text-xs bg-white text-slate-800 focus:outline-none focus:ring-1 focus:ring-blue-500 focus:border-blue-500 transition"
-                                        >
-                                            <option value="">সকল অঞ্চল ({filteredAreas.length})</option>
-                                            {filteredAreas.map((a) => (
-                                                <option key={a.id} value={a.id}>
-                                                    {a.name} {a.code ? `(${a.code})` : ''}
-                                                </option>
-                                            ))}
-                                        </select>
-                                    </div>
-                                )}
+                            {areas.length > 0 && (
+                                <div className="w-[calc(50%-0.1875rem)] min-w-0 sm:w-[calc(33.333%-0.25rem)] lg:w-0 lg:min-w-0 lg:flex-1">
+                                    <select
+                                        value={selectedArea}
+                                        onChange={(e) => handleLocationFilterChange(selectedZone, e.target.value, '')}
+                                        title="অঞ্চল"
+                                        className="h-8.5 w-full min-w-0 truncate rounded-xl border border-slate-300 bg-white px-2 text-xs text-slate-800 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                                    >
+                                        <option value="">অঞ্চল ({filteredAreas.length})</option>
+                                        {filteredAreas.map((a) => (
+                                            <option key={a.id} value={a.id}>
+                                                {a.name} {a.code ? `(${a.code})` : ''}
+                                            </option>
+                                        ))}
+                                    </select>
+                                </div>
+                            )}
 
-                                {branches.length > 0 && (
-                                    <div className="md:col-span-1 lg:col-span-2">
-                                        <select
-                                            value={selectedBranch}
-                                            onChange={(e) => handleLocationFilterChange(selectedZone, selectedArea, e.target.value)}
-                                            className="h-8.5 w-full border border-slate-300 rounded-xl px-2.5 text-xs bg-white text-slate-800 focus:outline-none focus:ring-1 focus:ring-blue-500 focus:border-blue-500 transition"
-                                        >
-                                            <option value="">সকল শাখা ({filteredBranches.length})</option>
-                                            {filteredBranches.map((b) => (
-                                                <option key={b.id} value={b.id}>
-                                                    {formatBranchLabel(b)}
-                                                </option>
-                                            ))}
-                                        </select>
-                                    </div>
-                                )}
+                            {branches.length > 0 && (
+                                <div className="w-[calc(50%-0.1875rem)] min-w-0 sm:w-[calc(33.333%-0.25rem)] lg:w-0 lg:min-w-0 lg:flex-1">
+                                    <select
+                                        value={selectedBranch}
+                                        onChange={(e) => handleLocationFilterChange(selectedZone, selectedArea, e.target.value)}
+                                        title="শাখা"
+                                        className="h-8.5 w-full min-w-0 truncate rounded-xl border border-slate-300 bg-white px-2 text-xs text-slate-800 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                                    >
+                                        <option value="">শাখা ({filteredBranches.length})</option>
+                                        {filteredBranches.map((b) => (
+                                            <option key={b.id} value={b.id}>
+                                                {formatBranchLabel(b)}
+                                            </option>
+                                        ))}
+                                    </select>
+                                </div>
+                            )}
+
+                            <div className="w-[calc(50%-0.1875rem)] min-w-0 sm:w-[calc(33.333%-0.25rem)] lg:w-0 lg:min-w-0 lg:flex-1">
+                                <ComboSelect
+                                    size="sm"
+                                    value={selectedSamityId || null}
+                                    onChange={(value) => handleSelectorChange({ samity_id: value ? String(value) : '' })}
+                                    items={samityItems}
+                                    placeholder="সমিতি"
+                                />
                             </div>
-                        )}
+                            <div className="w-[calc(50%-0.1875rem)] min-w-0 sm:w-[calc(33.333%-0.25rem)] lg:w-0 lg:min-w-0 lg:flex-1">
+                                <ComboSelect
+                                    size="sm"
+                                    value={selectedCategoryId || null}
+                                    onChange={(value) => handleSelectorChange({ loan_category_id: value ? String(value) : '' })}
+                                    items={categoryItems}
+                                    placeholder="ক্যাটাগরি"
+                                />
+                            </div>
+                            <div className="w-[calc(50%-0.1875rem)] min-w-0 sm:w-[calc(33.333%-0.25rem)] lg:w-0 lg:min-w-0 lg:flex-1">
+                                <ComboSelect
+                                    size="sm"
+                                    value={selectedProductId || null}
+                                    onChange={(value) => handleSelectorChange({ loan_product_id: value ? String(value) : '' })}
+                                    items={productFilterItems}
+                                    placeholder="প্রোডাক্ট"
+                                />
+                            </div>
+                        </div>
 
-                        {/* Integrated Search & Date Toolbar */}
-                        <div className="flex flex-col lg:flex-row items-stretch lg:items-center justify-between gap-2.5 text-xs">
-                            {/* Search Input Box */}
-                            <div className="relative flex-grow max-w-lg">
-                                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 pointer-events-none" />
+                        <div className="flex flex-wrap items-center gap-1.5 lg:flex-nowrap">
+                            <div className="relative min-w-[10rem] flex-1 lg:min-w-0">
+                                <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-400" />
                                 <input
                                     type="text"
                                     placeholder="সদস্য কোড, নাম, ফোন..."
@@ -1333,55 +1514,52 @@ export default function Index({
                                             applyListFilters({ page: 1 });
                                         }
                                     }}
-                                    className="w-full pl-9 pr-7 py-2 text-xs border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 bg-slate-50/50 transition-all font-medium"
+                                    className="h-8.5 w-full rounded-xl border border-slate-200 bg-slate-50/50 pr-7 pl-8 text-xs font-medium focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
                                 />
                                 {searchQuery && (
                                     <button
+                                        type="button"
                                         onClick={() => setSearchQuery('')}
-                                        className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
+                                        className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
                                     >
-                                        <X className="w-3.5 h-3.5" />
+                                        <X className="h-3.5 w-3.5" />
                                     </button>
                                 )}
                             </div>
 
-                            {/* Date Range & Action Buttons */}
-                            <div className="flex flex-wrap items-center gap-2">
-                                <div className="flex items-center gap-1.5 bg-slate-50 border border-slate-200 p-1 rounded-xl">
-                                    <input
-                                        type="date"
-                                        value={currentDateFrom}
-                                        onChange={(e) => setCurrentDateFrom(e.target.value)}
-                                        className="px-2 py-1 text-xs border border-slate-300 rounded-lg bg-white focus:outline-none"
-                                        title="তারিখ হতে"
-                                    />
-                                    <span className="text-slate-400 text-xs font-bold">–</span>
-                                    <input
-                                        type="date"
-                                        value={currentDateTo}
-                                        onChange={(e) => setCurrentDateTo(e.target.value)}
-                                        className="px-2 py-1 text-xs border border-slate-300 rounded-lg bg-white focus:outline-none"
-                                        title="তারিখ পর্যন্ত"
-                                    />
-                                </div>
+                            <input
+                                type="date"
+                                value={currentDateFrom}
+                                onChange={(e) => setCurrentDateFrom(e.target.value)}
+                                className="h-8.5 w-[8.75rem] shrink-0 rounded-xl border border-slate-300 bg-white px-1.5 text-xs focus:border-blue-500 focus:outline-none"
+                                title="তারিখ হতে"
+                            />
+                            <input
+                                type="date"
+                                value={currentDateTo}
+                                onChange={(e) => setCurrentDateTo(e.target.value)}
+                                className="h-8.5 w-[8.75rem] shrink-0 rounded-xl border border-slate-300 bg-white px-1.5 text-xs focus:border-blue-500 focus:outline-none"
+                                title="তারিখ পর্যন্ত"
+                            />
 
-                                <button
-                                    onClick={handleDateFilterChange}
-                                    className="px-4 py-2 text-xs font-bold bg-slate-800 hover:bg-slate-900 text-white rounded-xl transition shadow-2xs active:scale-95 flex items-center gap-1"
-                                >
-                                    <Filter className="w-3.5 h-3.5" />
-                                    <span>ফিল্টার</span>
-                                </button>
+                            <button
+                                type="button"
+                                onClick={handleDateFilterChange}
+                                className="inline-flex h-8.5 shrink-0 items-center gap-1 rounded-xl bg-slate-800 px-2.5 text-xs font-bold text-white transition hover:bg-slate-900 active:scale-95"
+                            >
+                                <Filter className="h-3.5 w-3.5" />
+                                <span>ফিল্টার</span>
+                            </button>
 
-                                <button
-                                    onClick={resetFilters}
-                                    className="px-3 py-2 text-xs font-bold text-slate-600 bg-slate-100 hover:bg-slate-200 rounded-xl transition flex items-center gap-1"
-                                    title="ফিল্টার রিসেট"
-                                >
-                                    <RefreshCw className="w-3.5 h-3.5" />
-                                    <span>রিসেট</span>
-                                </button>
-                            </div>
+                            <button
+                                type="button"
+                                onClick={resetFilters}
+                                className="inline-flex h-8.5 shrink-0 items-center gap-1 rounded-xl bg-slate-100 px-2.5 text-xs font-bold text-slate-600 transition hover:bg-slate-200"
+                                title="ফিল্টার রিসেট"
+                            >
+                                <RefreshCw className="h-3.5 w-3.5" />
+                                <span>রিসেট</span>
+                            </button>
                         </div>
                     </div>
 
@@ -1439,7 +1617,7 @@ export default function Index({
                                 const memberCode = member?.application_no || member?.member_code || app.member_code || '—';
                                 const pendingIssues = app.issues?.filter((issue) => issue.status === 'pending') || [];
                                 const hasPendingIssues = pendingIssues.length > 0;
-                                let statusInfo = statusLabels[app.status] || statusLabels.draft;
+                                let statusInfo = loanStatusPresentation(app);
 
                                 return (
                                     <div
@@ -1645,9 +1823,25 @@ export default function Index({
                                             </button>
                                             </>
                                         )}
+                                        {app.status === 'pending_head_office' && isBranchUser && (
+                                            <button
+                                                onClick={() => openCancel(app)}
+                                                className="inline-flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold text-fuchsia-800 bg-fuchsia-50 hover:bg-fuchsia-100 border border-fuchsia-200 transition active:scale-95"
+                                                title="হেড অফিস পেন্ডিং থেকে বাতিলের জন্য পাঠান"
+                                            >
+                                                <Ban className="w-3.5 h-3.5" />
+                                                <span>বাতিল</span>
+                                            </button>
+                                        )}
                                         {app.status === 'pending_cancellation' && (
-                                            <span className="inline-flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold text-rose-800 bg-rose-50 border border-rose-200">
-                                                বাতিল অনুমোদন অপেক্ষা
+                                            <span className={`inline-flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold border ${
+                                                app.cancellation_from_status === 'pending_head_office'
+                                                    ? 'text-fuchsia-800 bg-fuchsia-50 border-fuchsia-200'
+                                                    : 'text-rose-800 bg-rose-50 border-rose-200'
+                                            }`}>
+                                                {app.cancellation_from_status === 'pending_head_office'
+                                                    ? 'HO পেন্ডিং — বাতিল জমা'
+                                                    : 'বাতিল অনুমোদন অপেক্ষা'}
                                             </span>
                                         )}
                                         </div>
@@ -1710,7 +1904,7 @@ export default function Index({
                                             const memberCode = member?.application_no || member?.member_code || app.member_code || '—';
                                             const pendingIssues = app.issues?.filter((issue) => issue.status === 'pending') || [];
                                             const hasPendingIssues = pendingIssues.length > 0;
-                                            let statusInfo = statusLabels[app.status] || statusLabels.draft;
+                                            let statusInfo = loanStatusPresentation(app);
 
                                             if (hasPendingIssues && (app.status === 'pending_head_office' || app.status === 'under_review' || app.status === 'submitted')) {
                                                 statusInfo = {
@@ -1951,9 +2145,25 @@ export default function Index({
                                                                 </button>
                                                                 </>
                                                             )}
+                                                            {app.status === 'pending_head_office' && isBranchUser && (
+                                                                <button
+                                                                    onClick={() => openCancel(app)}
+                                                                    className="inline-flex items-center gap-1 text-xs px-2.5 py-1 bg-fuchsia-50 hover:bg-fuchsia-100 text-fuchsia-800 font-bold rounded-xl border border-fuchsia-200 transition active:scale-95"
+                                                                    title="হেড অফিস পেন্ডিং থেকে বাতিলের জন্য পাঠান"
+                                                                >
+                                                                    <Ban className="w-3 h-3" />
+                                                                    <span>বাতিল</span>
+                                                                </button>
+                                                            )}
                                                             {app.status === 'pending_cancellation' && (
-                                                                <span className="inline-flex items-center text-[11px] px-2 py-1 bg-rose-50 text-rose-800 font-bold rounded-xl border border-rose-200">
-                                                                    বাতিল অনুমোদন অপেক্ষা
+                                                                <span className={`inline-flex items-center text-[11px] px-2 py-1 font-bold rounded-xl border ${
+                                                                    app.cancellation_from_status === 'pending_head_office'
+                                                                        ? 'bg-fuchsia-50 text-fuchsia-800 border-fuchsia-200'
+                                                                        : 'bg-rose-50 text-rose-800 border-rose-200'
+                                                                }`}>
+                                                                    {app.cancellation_from_status === 'pending_head_office'
+                                                                        ? 'HO পেন্ডিং — বাতিল জমা'
+                                                                        : 'বাতিল অনুমোদন অপেক্ষা'}
                                                                 </span>
                                                             )}
                                                         </div>

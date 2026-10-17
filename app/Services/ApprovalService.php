@@ -1863,12 +1863,12 @@ class ApprovalService
     }
 
     /**
-     * Branch user asks the final approver to cancel a loan sitting in «পরে নেবে».
+     * Branch user asks the final approver to cancel a loan in «পরে নেবে» or Head Office pending.
      */
     public function requestLoanCancellation(LoanApplication $loan, User $requester, string $reason): void
     {
-        if ($loan->status !== LoanApplication::STATUS_AWAITING_TAKEUP) {
-            throw new \Exception('শুধু «পরে নেবে» তালিকার ঋণ বাতিলের জন্য পাঠানো যাবে।');
+        if (! in_array($loan->status, [LoanApplication::STATUS_AWAITING_TAKEUP, LoanApplication::STATUS_PENDING_HEAD_OFFICE], true)) {
+            throw new \Exception('শুধু «পরে নেবে» বা হেড অফিস পেন্ডিং ঋণ বাতিলের জন্য পাঠানো যাবে।');
         }
 
         if ($loan->hasPendingCancellation()) {
@@ -1891,13 +1891,16 @@ class ApprovalService
         }
 
         $nextSequence = ((int) $loan->approvals()->max('sequence')) + 1;
+        $fromStatus = $loan->status;
+        $fromHeadOffice = $fromStatus === LoanApplication::STATUS_PENDING_HEAD_OFFICE;
 
-        DB::transaction(function () use ($loan, $requester, $reason, $lastApproval, $nextSequence) {
+        DB::transaction(function () use ($loan, $requester, $reason, $lastApproval, $nextSequence, $fromStatus) {
             $loan->update([
                 'status' => LoanApplication::STATUS_PENDING_CANCELLATION,
                 'cancellation_reason' => $reason,
                 'cancellation_requested_by' => $requester->id,
                 'cancellation_requested_at' => now(),
+                'cancellation_from_status' => $fromStatus,
             ]);
 
             LoanApplicationApproval::create([
@@ -1914,7 +1917,9 @@ class ApprovalService
             users: $targetUser,
             type: 'loan_application',
             title: 'ঋণ বাতিলের অনুমোদন প্রয়োজন',
-            message: "ঋণ আবেদন নং {$loan->application_no} «পরে নেবে» তালিকা থেকে বাতিলের জন্য পাঠানো হয়েছে। অনুমোদন দিলে ঋণ বাতিল হবে।",
+            message: $fromHeadOffice
+                ? "ঋণ আবেদন নং {$loan->application_no} হেড অফিস পেন্ডিং থেকে বাতিলের জন্য জমা হয়েছে। অনুমোদন দিলে ঋণ বাতিল হবে।"
+                : "ঋণ আবেদন নং {$loan->application_no} «পরে নেবে» তালিকা থেকে বাতিলের জন্য পাঠানো হয়েছে। অনুমোদন দিলে ঋণ বাতিল হবে।",
             notifiable: $loan,
             actionUrl: '/approvals',
             details: [
@@ -1967,8 +1972,14 @@ class ApprovalService
     {
         $loan = $approval->loanApplication;
         $requesterId = $loan->cancellation_requested_by;
+        $returnStatus = $loan->cancellation_from_status === LoanApplication::STATUS_PENDING_HEAD_OFFICE
+            ? LoanApplication::STATUS_PENDING_HEAD_OFFICE
+            : LoanApplication::STATUS_AWAITING_TAKEUP;
+        $returnLabel = $returnStatus === LoanApplication::STATUS_PENDING_HEAD_OFFICE
+            ? 'হেড অফিস পেন্ডিং'
+            : '«পরে নেবে»';
 
-        DB::transaction(function () use ($approval, $comments, $loan) {
+        DB::transaction(function () use ($approval, $comments, $loan, $returnStatus) {
             $approval->update([
                 'status' => 'rejected',
                 'comments' => $comments,
@@ -1976,10 +1987,11 @@ class ApprovalService
             ]);
 
             $loan->update([
-                'status' => LoanApplication::STATUS_AWAITING_TAKEUP,
+                'status' => $returnStatus,
                 'cancellation_reason' => null,
                 'cancellation_requested_by' => null,
                 'cancellation_requested_at' => null,
+                'cancellation_from_status' => null,
             ]);
         });
 
@@ -1991,7 +2003,7 @@ class ApprovalService
                 users: $recipients,
                 type: 'loan_application',
                 title: 'ঋণ বাতিলের অনুরোধ প্রত্যাখ্যাত',
-                message: "ঋণ আবেদন নং {$loan->application_no} এর বাতিল অনুরোধ প্রত্যাখ্যান হয়েছে। ঋণ আবার «পরে নেবে» তালিকায় আছে।",
+                message: "ঋণ আবেদন নং {$loan->application_no} এর বাতিল অনুরোধ প্রত্যাখ্যান হয়েছে। ঋণ আবার {$returnLabel} তালিকায় আছে।",
                 notifiable: $loan,
                 actionUrl: "/member/loan-applications/{$loan->id}",
                 details: [

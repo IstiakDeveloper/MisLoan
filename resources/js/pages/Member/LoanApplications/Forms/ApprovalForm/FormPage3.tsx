@@ -164,9 +164,9 @@ export default function FormPage3({ data, setData, member, loanProduct, loanCate
     // যদি পৃষ্ঠা ৩-এ প্রধান আয় বা অন্যান্য আয় এডিট করা হয়, তাহলে পৃষ্ঠা ১-এর সম্ভাব্য আয় স্বয়ংক্রিয়ভাবে আপডেট হবে
     useEffect(() => {
         if (data.est_main_income_amount !== '' && data.est_main_income_amount != null) {
-            const totalInc = (Number(data.est_main_income_amount) || 0) + otherIncome;
-            if (totalInc > 0 && String(data.project_income_1_2_yr || '') !== String(totalInc)) {
-                setData('project_income_1_2_yr', String(totalInc));
+            const totalInc = String((Number(data.est_main_income_amount) || 0) + otherIncome);
+            if (String(data.project_income_1_2_yr ?? '') !== totalInc) {
+                setData('project_income_1_2_yr', totalInc);
             }
         }
     }, [data.est_main_income_amount, otherIncome, data.project_income_1_2_yr]);
@@ -392,8 +392,12 @@ export default function FormPage3({ data, setData, member, loanProduct, loanCate
                                     placeholder="প্রধান আয়ের খাত"
                                     value={data.est_main_income_desc || data.est_main_income_source || ''}
                                     onChange={(e) => {
-                                        setData('est_main_income_desc', e.target.value);
-                                        setData('est_main_income_source', e.target.value);
+                                        const value = e.target.value;
+                                        setData((prev) => ({
+                                            ...prev,
+                                            est_main_income_desc: value,
+                                            est_main_income_source: value,
+                                        }));
                                     }}
                                     className={inputClass}
                                 />
@@ -403,9 +407,13 @@ export default function FormPage3({ data, setData, member, loanProduct, loanCate
                                     value={data.est_main_income_amount ?? ''}
                                     onChange={(e) => {
                                         const val = e.target.value;
-                                        setData('est_main_income_amount', val);
                                         const inc = (Number(val) || 0) + otherIncome;
-                                        setData('project_income_1_2_yr', inc > 0 ? String(inc) : '');
+                                        const otherBlank = data.est_other_income_amount === '' || data.est_other_income_amount == null;
+                                        setData((prev) => ({
+                                            ...prev,
+                                            est_main_income_amount: val,
+                                            project_income_1_2_yr: val === '' && otherBlank ? '' : String(inc),
+                                        }));
                                     }}
                                     className={inputClass}
                                 />
@@ -416,8 +424,12 @@ export default function FormPage3({ data, setData, member, loanProduct, loanCate
                                     placeholder="অন্যান্য আয়ের খাত"
                                     value={data.est_other_income_desc || data.est_other_income_source || ''}
                                     onChange={(e) => {
-                                        setData('est_other_income_desc', e.target.value);
-                                        setData('est_other_income_source', e.target.value);
+                                        const value = e.target.value;
+                                        setData((prev) => ({
+                                            ...prev,
+                                            est_other_income_desc: value,
+                                            est_other_income_source: value,
+                                        }));
                                     }}
                                     className={inputClass}
                                 />
@@ -427,9 +439,13 @@ export default function FormPage3({ data, setData, member, loanProduct, loanCate
                                     value={data.est_other_income_amount ?? ''}
                                     onChange={(e) => {
                                         const val = e.target.value;
-                                        setData('est_other_income_amount', val);
                                         const inc = (Number(data.est_main_income_amount) || 0) + (Number(val) || 0);
-                                        setData('project_income_1_2_yr', inc > 0 ? String(inc) : '');
+                                        const mainBlank = data.est_main_income_amount === '' || data.est_main_income_amount == null;
+                                        setData((prev) => ({
+                                            ...prev,
+                                            est_other_income_amount: val,
+                                            project_income_1_2_yr: mainBlank && val === '' ? '' : String(inc),
+                                        }));
                                     }}
                                     className={inputClass}
                                 />

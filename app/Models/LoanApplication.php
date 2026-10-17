@@ -31,6 +31,7 @@ class LoanApplication extends Model
         'cancellation_reason',
         'cancellation_requested_by',
         'cancellation_requested_at',
+        'cancellation_from_status',
         'disbursed_amount',
         'installment_amount',
         'number_of_installments',
@@ -205,6 +206,8 @@ class LoanApplication extends Model
 
     const STATUS_PENDING_CANCELLATION = 'pending_cancellation';
 
+    const FILTER_HO_PENDING_CANCELLATION = 'ho_pending_cancellation';
+
     const STATUS_PENDING_AMOUNT_APPROVAL = 'pending_amount_approval';
 
     const STATUS_REJECTED = 'rejected';
@@ -291,8 +294,14 @@ class LoanApplication extends Model
 
     public function canRequestCancellation(): bool
     {
-        return $this->status === self::STATUS_AWAITING_TAKEUP
+        return in_array($this->status, [self::STATUS_AWAITING_TAKEUP, self::STATUS_PENDING_HEAD_OFFICE], true)
             && ! $this->hasPendingCancellation();
+    }
+
+    public function isHoPendingCancellation(): bool
+    {
+        return $this->hasPendingCancellation()
+            && $this->cancellation_from_status === self::STATUS_PENDING_HEAD_OFFICE;
     }
 
     public function canRequestApprovedAmountChange(): bool
@@ -434,8 +443,11 @@ class LoanApplication extends Model
 
         if ($status === self::STATUS_PENDING_CANCELLATION) {
             $approverName = $this->getCurrentPendingApprovalForTracking()?->user?->name;
+            $label = $this->isHoPendingCancellation()
+                ? 'হেড অফিস পেন্ডিং — বাতিলের জন্য জমা'
+                : 'বাতিল অনুমোদন অপেক্ষা';
 
-            return ['label' => 'বাতিল অনুমোদন অপেক্ষা', 'pending_with_name' => $approverName];
+            return ['label' => $label, 'pending_with_name' => $approverName];
         }
 
         if ($status === self::STATUS_NEEDS_CORRECTION) {

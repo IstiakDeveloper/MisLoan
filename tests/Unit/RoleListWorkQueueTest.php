@@ -43,7 +43,7 @@ class RoleListWorkQueueTest extends TestCase
         $this->assertNull($resolved['date_from']);
         $this->assertNull($resolved['date_to']);
 
-        foreach (['awaiting_takeup', 'pending_cancellation'] as $status) {
+        foreach (['awaiting_takeup', 'pending_cancellation', 'ho_pending_cancellation'] as $status) {
             $queueRequest = Request::create('/head-office/loan-applications', 'GET', [
                 'status' => $status,
             ]);

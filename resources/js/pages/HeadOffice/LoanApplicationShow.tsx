@@ -48,6 +48,7 @@ interface Loan {
     application_no: string;
     form_type: number;
     status: string;
+    cancellation_from_status?: string | null;
     requested_amount: number;
     approved_amount: number | null;
     installment_amount: number | null;
@@ -640,8 +641,12 @@ export default function LoanApplicationShow({ loan, categories = [], flash }: Pr
                 };
             case 'pending_cancellation':
                 return {
-                    title: 'পেন্ডিং অবস্থা: বাতিল অনুমোদন অপেক্ষা',
-                    desc: 'শাখা থেকে বাতিল চাওয়া হয়েছে। চূড়ান্ত অনুমোদনকারী অনুমোদন দিলে ঋণ বাতিল হবে, না দিলে আবার «পরে নেবে» তালিকায় ফিরবে।',
+                    title: loan.cancellation_from_status === 'pending_head_office'
+                        ? 'পেন্ডিং অবস্থা: হেড অফিস পেন্ডিং — বাতিলের জন্য জমা'
+                        : 'পেন্ডিং অবস্থা: বাতিল অনুমোদন অপেক্ষা',
+                    desc: loan.cancellation_from_status === 'pending_head_office'
+                        ? 'শাখা থেকে হেড অফিস পেন্ডিং ঋণ বাতিলের জন্য জমা হয়েছে। অনুমোদনকারী না বললে আবার হেড অফিস পেন্ডিংয়ে ফিরবে।'
+                        : 'শাখা থেকে বাতিল চাওয়া হয়েছে। চূড়ান্ত অনুমোদনকারী অনুমোদন দিলে ঋণ বাতিল হবে, না দিলে আবার «পরে নেবে» তালিকায় ফিরবে।',
                     badgeColor: 'bg-rose-100 text-rose-900 border-rose-300',
                     cardBg: 'bg-rose-50/90 border-rose-200 text-rose-950',
                     iconColor: 'text-rose-600',

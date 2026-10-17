@@ -125,6 +125,35 @@ export function liveMemberMobile(member: any): string {
     return usableIdentityValue(member?.mobile_number) || usableIdentityValue(member?.mobile) || '';
 }
 
+/** Last 4 digits of a samity code, zero-padded. "00015050" and "5050" both become "5050". */
+export function samityCodeSuffix(code: unknown): string {
+    const digits = toEnglishDigits(String(code ?? '')).replace(/\D/g, '');
+    if (!digits) {
+        return '';
+    }
+
+    return digits.slice(-4).padStart(4, '0');
+}
+
+/** Loan-form samity label: "Koli (5050)". */
+export function formatSamityNameWithCode(name: unknown, code: unknown): string {
+    const label = String(name ?? '').trim();
+    const suffix = samityCodeSuffix(code);
+    if (!label) {
+        return '';
+    }
+    if (!suffix) {
+        return label;
+    }
+
+    const wrapped = `(${suffix})`;
+    if (label.endsWith(wrapped)) {
+        return label;
+    }
+
+    return `${label} ${wrapped}`;
+}
+
 /**
  * Keep read-only member identity (code, name, NID, mobile, samity) live.
  * Do not overwrite form-editable snapshot fields such as guardian_name,
@@ -144,10 +173,11 @@ export function withLiveMemberCode<T extends Record<string, any>>(data: T, membe
     const mother = String(member?.mother_name_bn || member?.mother_name_en || '').trim();
     const nid = liveMemberIdentityNumber(member);
     const mobile = liveMemberMobile(member);
-    const samityName = String(
-        member?.samity?.samity_name_bn || member?.samity?.samity_name || '',
-    ).trim();
     const samityCode = String(member?.samity?.samity_code || member?.samity?.id || '').trim();
+    const samityName = formatSamityNameWithCode(
+        member?.samity?.samity_name_bn || member?.samity?.samity_name || '',
+        samityCode,
+    );
 
     const assign = (key: string, value: string) => {
         if (key in next && value !== '') {
@@ -185,8 +215,8 @@ export function withLiveMemberCode<T extends Record<string, any>>(data: T, membe
     assign('samity_code', samityCode);
     assign('committee_code', samityCode);
 
-    if ('samity_name_code' in next && (samityName || samityCode)) {
-        next.samity_name_code = [samityName, samityCode].filter(Boolean).join(' / ');
+    if ('samity_name_code' in next && samityName) {
+        next.samity_name_code = samityName;
     }
 
     return next as T;

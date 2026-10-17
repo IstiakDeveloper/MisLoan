@@ -2,17 +2,19 @@
 
 namespace App\Http\Controllers\Concerns;
 
+use App\Models\LoanApplication;
 use App\Models\User;
 use App\Services\ApprovalService;
 use App\Support\RoleListWorkQueue;
 use Carbon\Carbon;
 use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Facades\DB;
 
 trait AppliesRoleDefaultListFilter
 {
     /**
-     * @param  Builder<\Illuminate\Database\Eloquent\Model>  $query
+     * @param  Builder<Model>  $query
      */
     protected function applyResolvedStatusFilter($query, ?string $status, User $user, string $type, bool $excludeDraftsWhenAll = false): void
     {
@@ -22,6 +24,13 @@ trait AppliesRoleDefaultListFilter
                 : app(ApprovalService::class)->pendingAdmissionIdsForUser($user);
 
             $query->whereIn('id', $ids !== [] ? $ids : [0]);
+
+            return;
+        }
+
+        if ($type === 'loan' && $status === LoanApplication::FILTER_HO_PENDING_CANCELLATION) {
+            $query->where('status', LoanApplication::STATUS_PENDING_CANCELLATION)
+                ->where('cancellation_from_status', LoanApplication::STATUS_PENDING_HEAD_OFFICE);
 
             return;
         }
@@ -38,7 +47,7 @@ trait AppliesRoleDefaultListFilter
     }
 
     /**
-     * @param  Builder<\Illuminate\Database\Eloquent\Model>  $query
+     * @param  Builder<Model>  $query
      */
     protected function applySubmittedAtDateRange($query, ?string $dateFrom, ?string $dateTo): void
     {
@@ -81,7 +90,7 @@ trait AppliesRoleDefaultListFilter
     }
 
     /**
-     * @param  Builder<\Illuminate\Database\Eloquent\Model>  $query
+     * @param  Builder<Model>  $query
      */
     protected function applyCoalesceDateRange($query, ?string $dateFrom, ?string $dateTo, string $expression): void
     {
@@ -107,7 +116,7 @@ trait AppliesRoleDefaultListFilter
     }
 
     /**
-     * @param  Builder<\Illuminate\Database\Eloquent\Model>  $baseQuery
+     * @param  Builder<Model>  $baseQuery
      */
     protected function countPendingMyApproval($baseQuery, User $user, string $type): int
     {

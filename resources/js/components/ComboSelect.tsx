@@ -19,6 +19,7 @@ type Props<TValue extends string | number = string> = {
     className?: string;
     portal?: boolean;
     clearable?: boolean;
+    size?: 'md' | 'sm';
 };
 
 export function ComboSelect<TValue extends string | number = string>({
@@ -30,7 +31,9 @@ export function ComboSelect<TValue extends string | number = string>({
     className,
     portal = true,
     clearable = true,
+    size = 'md',
 }: Props<TValue>) {
+    const isSmall = size === 'sm';
     const [query, setQuery] = useState('');
 
     const selectedItem = useMemo(() => {
@@ -67,19 +70,23 @@ export function ComboSelect<TValue extends string | number = string>({
             onClose={() => setQuery('')}
         >
             {({ open }) => (
-                <div className={cn('relative w-full min-w-[9.5rem]', className)}>
+                <div className={cn('relative w-full', isSmall ? 'min-w-0' : 'min-w-[9.5rem]', className)}>
                     <div
                         className={cn(
-                            'flex h-12 w-full min-w-0 items-center gap-2 rounded-md border border-gray-200 bg-white px-3 py-1.5 text-sm shadow-xs transition-[color,box-shadow] outline-none focus-within:ring-[3px] disabled:cursor-not-allowed disabled:opacity-50 dark:border-gray-800 dark:bg-gray-900',
+                            'flex w-full min-w-0 items-center gap-2 border border-gray-200 bg-white shadow-xs transition-[color,box-shadow] outline-none focus-within:ring-[3px] disabled:cursor-not-allowed disabled:opacity-50 dark:border-gray-800 dark:bg-gray-900',
+                            isSmall ? 'h-8.5 rounded-xl px-2.5 text-xs' : 'h-12 rounded-md px-3 py-1.5 text-sm',
                             open
                                 ? 'border-emerald-500 ring-emerald-500/20'
                                 : 'focus-within:border-emerald-500 focus-within:ring-emerald-500/20',
                             disabled && 'pointer-events-none opacity-50',
                         )}
                     >
-                        <Search className="h-4 w-4 shrink-0 text-gray-400" />
+                        <Search className={cn('shrink-0 text-gray-400', isSmall ? 'h-3.5 w-3.5' : 'h-4 w-4')} />
                         <ComboboxInput
-                            className="w-full min-w-0 bg-transparent py-0.5 text-sm outline-none placeholder:text-gray-400"
+                            className={cn(
+                                'w-full min-w-0 bg-transparent outline-none placeholder:text-gray-400',
+                                isSmall ? 'py-0 text-xs' : 'py-0.5 text-sm',
+                            )}
                             displayValue={(item) => (item as ComboSelectItem<TValue> | null)?.label ?? ''}
                             autoComplete="off"
                             onChange={(event) => setQuery(event.target.value)}
@@ -117,7 +124,8 @@ export function ComboSelect<TValue extends string | number = string>({
                         portal={portal}
                         anchor={portal ? { to: 'bottom start', gap: 4 } : undefined}
                         className={cn(
-                            'max-h-60 overflow-y-auto rounded-md border border-gray-200 bg-white p-1 text-sm shadow-md focus:outline-none dark:border-gray-800 dark:bg-gray-900',
+                            'max-h-60 overflow-y-auto rounded-md border border-gray-200 bg-white p-1 shadow-md focus:outline-none dark:border-gray-800 dark:bg-gray-900',
+                            isSmall ? 'text-xs' : 'text-sm',
                             portal ? 'z-[200] w-[var(--anchor-width)] min-w-[10rem]' : 'absolute left-0 z-50 mt-1 w-full',
                         )}
                     >
@@ -130,7 +138,8 @@ export function ComboSelect<TValue extends string | number = string>({
                                     value={item}
                                     disabled={item.disabled}
                                     className={cn(
-                                        'group relative flex cursor-default items-center rounded-sm py-2 pr-8 pl-2.5 text-sm outline-none select-none',
+                                        'group relative flex cursor-default items-center rounded-sm pr-8 pl-2.5 outline-none select-none',
+                                        isSmall ? 'py-1.5 text-xs' : 'py-2 text-sm',
                                         'data-[focus]:bg-emerald-50 data-[focus]:text-emerald-900',
                                         'data-[selected]:bg-emerald-500/10 data-[selected]:font-semibold data-[selected]:text-emerald-800',
                                     )}

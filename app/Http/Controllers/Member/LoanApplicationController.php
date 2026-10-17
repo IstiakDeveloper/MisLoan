@@ -9,6 +9,7 @@ use App\Http\Controllers\Controller;
 use App\Http\Requests\Member\DisburseLoanRequest;
 use App\Http\Requests\Member\RequestLoanAmountChangeRequest;
 use App\Http\Requests\Member\RequestLoanCancellationRequest;
+use App\Http\Requests\Member\UpdateMemberSamityRequest;
 use App\Models\Area;
 use App\Models\Branch;
 use App\Models\LoanApplication;
@@ -27,11 +28,13 @@ use App\Services\HoSendCutoffService;
 use App\Services\LoanApplicationCloneService;
 use App\Services\LoanWorkflowConfigService;
 use App\Services\MemberCodeService;
+use App\Services\MemberSamityService;
 use App\Services\NotificationService;
 use App\Support\LoanFormVisibility;
 use App\Support\NumberToWordsBangla;
 use App\Support\RoleListWorkQueue;
 use Carbon\Carbon;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\Exceptions\HttpResponseException;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -109,6 +112,24 @@ class LoanApplicationController extends Controller
         $user->loadMissing('role');
 
         return $user->role?->name === Role::BRANCH_MANAGER;
+    }
+
+    /**
+     * @param  Builder<LoanApplication>  $query
+     */
+    private function applyLoanListSelectors($query, Request $request): void
+    {
+        if ($request->filled('samity_id')) {
+            $query->where('samity_id', $request->integer('samity_id'));
+        }
+
+        if ($request->filled('loan_category_id')) {
+            $query->where('loan_category_id', $request->integer('loan_category_id'));
+        }
+
+        if ($request->filled('loan_product_id')) {
+            $query->where('loan_product_id', $request->integer('loan_product_id'));
+        }
     }
 
     private function attachFormMeta(LoanApplication $application, $user, ?array $formSavedOverride = null, bool $withEscalationApprovers = false): void
@@ -762,6 +783,7 @@ class LoanApplicationController extends Controller
             $applicationsQuery->whereHas('branch.area', fn ($q) => $q->where('zone_id', $zoneId));
         }
 
+        $this->applyLoanListSelectors($applicationsQuery, $request);
         $this->applyCoalesceDateRange($applicationsQuery, $dateFrom, $dateTo, $dateExpression);
         $this->applyResolvedStatusFilter($applicationsQuery, $statusFilter, $user, 'loan');
 
@@ -775,6 +797,7 @@ class LoanApplicationController extends Controller
                 'id', 'application_no', 'member_admission_id', 'loan_product_id',
                 'loan_category_id', 'branch_id', 'samity_id', 'form_type', 'status',
                 'requested_amount', 'approved_amount', 'pending_approved_amount', 'disbursed_amount', 'created_at', 'updated_at',
+                'cancellation_from_status',
                 'submitted_at', 'reviewed_at', 'disbursed_at', 'purpose_of_loan', 'legacy_member_snapshot',
             ])
             ->paginate($perPage)
@@ -827,6 +850,7 @@ class LoanApplicationController extends Controller
             $statsBaseQuery->whereHas('branch.area', fn ($q) => $q->where('zone_id', $zoneId));
         }
 
+        $this->applyLoanListSelectors($statsBaseQuery, $request);
         $this->applyCoalesceDateRange($statsBaseQuery, $dateFrom, $dateTo, $dateExpression);
 
         $accessibleBranches = $user->getAccessibleBranches()->sortBy('code')->values();
@@ -853,6 +877,15 @@ class LoanApplicationController extends Controller
             ->orderBy('name')
             ->get(['id', 'name', 'code']);
 
+        $branchIds = $branches->pluck('id');
+        $samities = $branchIds->isEmpty()
+            ? collect()
+            : Samity::query()
+                ->where('is_active', true)
+                ->whereIn('branch_id', $branchIds)
+                ->orderBy('samity_code')
+                ->get(['id', 'branch_id', 'samity_code', 'samity_name', 'samity_name_bn']);
+
         $stats = [
             'total' => (clone $statsBaseQuery)->where('status', '!=', 'draft')->count(),
             'draft' => (clone $statsBaseQuery)->where('status', LoanApplication::STATUS_DRAFT)->count(),
@@ -861,6 +894,10 @@ class LoanApplicationController extends Controller
             'pending_disbursement' => (clone $statsBaseQuery)->where('status', LoanApplication::STATUS_PENDING_DISBURSEMENT)->count(),
             'awaiting_takeup' => (clone $statsBaseQuery)->where('status', LoanApplication::STATUS_AWAITING_TAKEUP)->count(),
             'pending_cancellation' => (clone $statsBaseQuery)->where('status', LoanApplication::STATUS_PENDING_CANCELLATION)->count(),
+            'ho_pending_cancellation' => (clone $statsBaseQuery)
+                ->where('status', LoanApplication::STATUS_PENDING_CANCELLATION)
+                ->where('cancellation_from_status', LoanApplication::STATUS_PENDING_HEAD_OFFICE)
+                ->count(),
             'rejected' => (clone $statsBaseQuery)->where('status', LoanApplication::STATUS_REJECTED)->count(),
             'ready_for_head_office' => (clone $statsBaseQuery)->where('status', LoanApplication::STATUS_READY_FOR_HEAD_OFFICE)->count(),
             'pending_head_office' => (clone $statsBaseQuery)->where('status', LoanApplication::STATUS_PENDING_HEAD_OFFICE)->count(),
@@ -876,10 +913,14 @@ class LoanApplicationController extends Controller
             'zones' => $zones,
             'areas' => $areas,
             'branches' => $branches,
+            'samities' => $samities,
             'filters' => [
                 'zone_id' => $zoneId,
                 'area_id' => $areaId,
                 'branch_id' => $branchId,
+                'samity_id' => $request->filled('samity_id') ? (string) $request->input('samity_id') : null,
+                'loan_category_id' => $request->filled('loan_category_id') ? (string) $request->input('loan_category_id') : null,
+                'loan_product_id' => $request->filled('loan_product_id') ? (string) $request->input('loan_product_id') : null,
             ],
             'selectedDate' => $dateFrom, // Keep for backward compatibility
             'dateFrom' => $dateFrom,
@@ -936,6 +977,7 @@ class LoanApplicationController extends Controller
             $query->whereHas('branch.area', fn ($q) => $q->where('zone_id', $zoneId));
         }
 
+        $this->applyLoanListSelectors($query, $request);
         $this->applyCoalesceDateRange($query, $dateFrom, $dateTo, 'COALESCE(disbursed_at, reviewed_at, submitted_at, created_at)');
         $this->applyResolvedStatusFilter($query, $statusFilter, $user, 'loan');
 
@@ -966,6 +1008,7 @@ class LoanApplicationController extends Controller
             'pending_disbursement' => 'বিতরণ অপেক্ষা (Pending Disburse)',
             'awaiting_takeup' => 'পরে নেবে (Awaiting Take-up)',
             'pending_cancellation' => 'বাতিল অনুমোদন অপেক্ষা (Pending Cancellation)',
+            'ho_pending_cancellation' => 'হেড অফিস পেন্ডিং — বাতিলের জন্য জমা',
             'rejected' => 'প্রত্যাখ্যাত (Rejected)',
             'disbursed' => 'বিতরণকৃত (Disbursed)',
             'repaid' => 'পরিশোধিত (Repaid)',
@@ -1036,7 +1079,9 @@ class LoanApplicationController extends Controller
                 $loan->approved_amount ?? 0,
                 $loan->branch?->name ?? '',
                 $loan->samity?->samity_name ?? '',
-                $statusLabels[$loan->status] ?? $loan->status,
+                $loan->isHoPendingCancellation()
+                    ? 'হেড অফিস পেন্ডিং — বাতিলের জন্য জমা'
+                    : ($statusLabels[$loan->status] ?? $loan->status),
                 $tracking['label'] ?? '',
                 $loan->submitted_at ? $loan->submitted_at->format('Y-m-d') : '',
                 $loan->reviewed_at ? $loan->reviewed_at->format('Y-m-d') : '',
@@ -1608,9 +1653,21 @@ class LoanApplicationController extends Controller
             ->orderBy('display_order')
             ->get();
 
+        $user = request()->user();
+        $user?->loadMissing('role');
+        $samityService = app(MemberSamityService::class);
+        $canUpdateSamity = $user
+            && strtolower((string) $user->role?->name) === Role::BRANCH_USER
+            && $application->memberAdmission
+            && $samityService->loanCanBeUpdated($application);
+
         return Inertia::render('Member/LoanApplications/Show', [
             'application' => $application,
             'categories' => $categories,
+            'can_update_samity' => $canUpdateSamity,
+            'samities' => $canUpdateSamity
+                ? $samityService->optionsForBranch((int) $application->memberAdmission->branch_id)
+                : [],
             'routes' => [
                 'index' => route('member.loan-applications.index'),
                 'edit' => route('member.loan-applications.edit', $application->id),
@@ -3608,6 +3665,52 @@ class LoanApplicationController extends Controller
         }
 
         return back()->with('success', MemberCodeService::updatedFlashMessage($result));
+    }
+
+    /**
+     * Branch user changes this member's samity before the loan is sent to Head Office.
+     */
+    public function updateSamity(UpdateMemberSamityRequest $request, $id): RedirectResponse
+    {
+        $user = $request->user();
+        $user?->loadMissing('role');
+        $application = LoanApplication::with('memberAdmission')->findOrFail($id);
+        $this->ensureApplicationAccessibleToUser($application, $user);
+
+        if (! $user || strtolower((string) $user->role?->name) !== Role::BRANCH_USER) {
+            abort(403, 'শুধুমাত্র শাখা ব্যবহারকারী সমিতি পরিবর্তন করতে পারবেন।');
+        }
+
+        if (! app(MemberSamityService::class)->loanCanBeUpdated($application)) {
+            $message = 'হেড অফিসে পাঠানোর পর সমিতি পরিবর্তন করা যাবে না।';
+            session()->flash('error', $message);
+
+            throw ValidationException::withMessages([
+                'samity_id' => $message,
+            ]);
+        }
+
+        $member = $application->memberAdmission;
+        if (! $member) {
+            $message = 'সদস্য ভর্তি তথ্য পাওয়া যায়নি।';
+            session()->flash('error', $message);
+
+            throw ValidationException::withMessages([
+                'samity_id' => $message,
+            ]);
+        }
+
+        $result = app(MemberSamityService::class)->assign($member, $request->input('samity_id'));
+
+        if (! $result['ok']) {
+            session()->flash('error', $result['message']);
+
+            throw ValidationException::withMessages([
+                $result['field'] => $result['message'],
+            ]);
+        }
+
+        return back()->with('success', 'সমিতি সফলভাবে আপডেট করা হয়েছে।');
     }
 
     /**

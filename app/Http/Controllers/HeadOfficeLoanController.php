@@ -63,6 +63,7 @@ class HeadOfficeLoanController extends Controller
                 'branch_id',
                 'samity_id',
                 'status',
+                'cancellation_from_status',
                 'requested_amount',
                 'approved_amount',
                 'created_at',
@@ -189,6 +190,10 @@ class HeadOfficeLoanController extends Controller
             'pending_disbursement' => (clone $statsQuery)->where('status', 'pending_disbursement')->count(),
             'awaiting_takeup' => (clone $statsQuery)->where('status', LoanApplication::STATUS_AWAITING_TAKEUP)->count(),
             'pending_cancellation' => (clone $statsQuery)->where('status', LoanApplication::STATUS_PENDING_CANCELLATION)->count(),
+            'ho_pending_cancellation' => (clone $statsQuery)
+                ->where('status', LoanApplication::STATUS_PENDING_CANCELLATION)
+                ->where('cancellation_from_status', LoanApplication::STATUS_PENDING_HEAD_OFFICE)
+                ->count(),
             'disbursed' => (clone $statsQuery)->where('status', 'disbursed')->count(),
             'pending_my_approval' => $this->countPendingMyApproval($statsQuery, $user, 'loan'),
         ];

@@ -29,6 +29,14 @@ it('formats a 4-digit samity suffix from short or full codes', function () {
     expect(MemberCodeService::formatSamitySuffix(null))->toBe('');
 });
 
+it('appends the last 4 samity digits to the name', function () {
+    expect(MemberCodeService::formatSamityNameWithCode('Koli', '00015050'))->toBe('Koli (5050)');
+    expect(MemberCodeService::formatSamityNameWithCode('Koli', '5050'))->toBe('Koli (5050)');
+    expect(MemberCodeService::formatSamityNameWithCode('Koli (5050)', '00015050'))->toBe('Koli (5050)');
+    expect(MemberCodeService::formatSamityNameWithCode('Koli', ''))->toBe('Koli');
+    expect(MemberCodeService::formatSamityNameWithCode('', '5050'))->toBe('');
+});
+
 it('combines branch and samity into an 8-digit samity code', function () {
     expect(MemberCodeService::formatFullSamityCode(1, 5))->toBe('00010005');
     expect(MemberCodeService::formatFullSamityCode('0001', '0005'))->toBe('00010005');
