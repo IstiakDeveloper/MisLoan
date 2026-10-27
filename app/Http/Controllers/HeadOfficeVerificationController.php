@@ -127,54 +127,18 @@ class HeadOfficeVerificationController extends Controller
             });
         }
 
-        // STAGE 1: Lightweight Summary Query (loads ~95% less data, only metadata needed for stats, filters & sorting)
+        // STAGE 1: Lightweight Summary Query (only loads branch and issues for indexing, avoids heavy relations)
         $admissionsSummary = ($type === 'loan') ? collect() : (clone $admissionQuery)
-            ->select([
-                'id',
-                'branch_id',
-                'status',
-                'submitted_at',
-                'created_at',
-                'reviewed_at',
-                'revision_comments',
-            ])
             ->with([
-                'branch' => fn ($q) => $q->withTrashed()->select(['id', 'code']),
-                'issues' => fn ($q) => $q->select([
-                    'id',
-                    'member_admission_id',
-                    'issue_description',
-                    'status',
-                    'resolution_note',
-                    'resolved_at',
-                    'zm_approved_at',
-                    'created_at',
-                ])->orderBy('created_at', 'asc'),
+                'branch' => fn ($q) => $q->withTrashed(),
+                'issues' => fn ($q) => $q->orderBy('created_at', 'asc'),
             ])
             ->get();
 
         $loansSummary = ($type === 'admission') ? collect() : (clone $loanQuery)
-            ->select([
-                'id',
-                'branch_id',
-                'status',
-                'submitted_at',
-                'created_at',
-                'reviewed_at',
-                'revision_comments',
-            ])
             ->with([
-                'branch' => fn ($q) => $q->withTrashed()->select(['id', 'code']),
-                'issues' => fn ($q) => $q->select([
-                    'id',
-                    'loan_application_id',
-                    'issue_description',
-                    'status',
-                    'response_message',
-                    'responded_at',
-                    'zm_approved_at',
-                    'created_at',
-                ])->orderBy('created_at', 'asc'),
+                'branch' => fn ($q) => $q->withTrashed(),
+                'issues' => fn ($q) => $q->orderBy('created_at', 'asc'),
             ])
             ->get();
 
