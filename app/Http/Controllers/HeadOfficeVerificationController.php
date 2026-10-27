@@ -139,7 +139,7 @@ class HeadOfficeVerificationController extends Controller
                 'revision_comments',
             ])
             ->with([
-                'branch' => fn ($q) => $q->withTrashed()->select(['id', 'code', 'branch_code']),
+                'branch' => fn ($q) => $q->withTrashed()->select(['id', 'code']),
                 'issues' => fn ($q) => $q->select([
                     'id',
                     'member_admission_id',
@@ -164,7 +164,7 @@ class HeadOfficeVerificationController extends Controller
                 'revision_comments',
             ])
             ->with([
-                'branch' => fn ($q) => $q->withTrashed()->select(['id', 'code', 'branch_code']),
+                'branch' => fn ($q) => $q->withTrashed()->select(['id', 'code']),
                 'issues' => fn ($q) => $q->select([
                     'id',
                     'loan_application_id',
