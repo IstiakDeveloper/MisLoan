@@ -29,6 +29,8 @@ class HeadOfficeVerificationController extends Controller
      */
     public function index(Request $request)
     {
+        @ini_set('memory_limit', '512M');
+
         $authUser = auth()->user();
         $authUser->loadMissing('role');
         $roleName = strtolower($authUser->role->name ?? '');
@@ -53,21 +55,12 @@ class HeadOfficeVerificationController extends Controller
         $areaId = $request->input('area_id');
         $branchId = $request->input('branch_id');
 
-        // 1. Query Member Admissions with issues or revisions
-        $admissionQuery = MemberAdmission::with([
-            'branch' => fn ($q) => $q->withTrashed()->with(['area.zone']),
-            'samity:id,samity_name',
-            'memberCategory:id,category_name',
-            'submittedBy:id,name',
-            'createdBy:id,name',
-            'reviewedBy:id,name',
-            'issues' => fn ($q) => $q->with(['reporter:id,name', 'resolver:id,name', 'zmApprover:id,name'])->orderBy('created_at', 'asc'),
-        ])
-            ->where(function ($q) {
-                $q->whereHas('issues')
-                    ->orWhere('revision_count', '>', 0)
-                    ->orWhere('status', 'needs_revision');
-            });
+        // 1. Base Query for Member Admissions with issues or revisions
+        $admissionQuery = MemberAdmission::where(function ($q) {
+            $q->whereHas('issues')
+                ->orWhere('revision_count', '>', 0)
+                ->orWhere('status', 'needs_revision');
+        });
 
         $this->applyAccessibleBranchScope($admissionQuery);
 
@@ -97,21 +90,11 @@ class HeadOfficeVerificationController extends Controller
             });
         }
 
-        // 2. Query Loan Applications with issues or revisions
-        $loanQuery = LoanApplication::with([
-            'branch' => fn ($q) => $q->withTrashed()->with(['area.zone']),
-            'samity:id,samity_name',
-            'loanProduct:id,product_name,product_name_bn,product_code',
-            'loanCategory:id,category_name,category_name_bn',
-            'memberAdmission:id,applicant_name_en,applicant_name_bn,nid_number,mobile_number,application_no,is_legacy,loan_dofa',
-            'submittedBy:id,name',
-            'reviewedBy:id,name',
-            'issues' => fn ($q) => $q->with(['reporter:id,name', 'responder:id,name', 'zmApprover:id,name'])->orderBy('created_at', 'asc'),
-        ])
-            ->where(function ($q) {
-                $q->whereHas('issues')
-                    ->orWhere('status', LoanApplication::STATUS_NEEDS_CORRECTION);
-            });
+        // 2. Base Query for Loan Applications with issues or revisions
+        $loanQuery = LoanApplication::where(function ($q) {
+            $q->whereHas('issues')
+                ->orWhere('status', LoanApplication::STATUS_NEEDS_CORRECTION);
+        });
 
         $this->applyAccessibleBranchScope($loanQuery);
 
@@ -144,82 +127,104 @@ class HeadOfficeVerificationController extends Controller
             });
         }
 
-        $admissionList = ($type === 'loan') ? collect() : $admissionQuery->get();
-        $loanList = ($type === 'admission') ? collect() : $loanQuery->get();
+        // STAGE 1: Lightweight Summary Query (loads ~95% less data, only metadata needed for stats, filters & sorting)
+        $admissionsSummary = ($type === 'loan') ? collect() : (clone $admissionQuery)
+            ->select([
+                'id',
+                'branch_id',
+                'status',
+                'submitted_at',
+                'created_at',
+                'reviewed_at',
+                'revision_comments',
+            ])
+            ->with([
+                'branch' => fn ($q) => $q->withTrashed()->select(['id', 'code', 'branch_code']),
+                'issues' => fn ($q) => $q->select([
+                    'id',
+                    'member_admission_id',
+                    'issue_description',
+                    'status',
+                    'resolution_note',
+                    'resolved_at',
+                    'zm_approved_at',
+                    'created_at',
+                ])->orderBy('created_at', 'asc'),
+            ])
+            ->get();
+
+        $loansSummary = ($type === 'admission') ? collect() : (clone $loanQuery)
+            ->select([
+                'id',
+                'branch_id',
+                'status',
+                'submitted_at',
+                'created_at',
+                'reviewed_at',
+                'revision_comments',
+            ])
+            ->with([
+                'branch' => fn ($q) => $q->withTrashed()->select(['id', 'code', 'branch_code']),
+                'issues' => fn ($q) => $q->select([
+                    'id',
+                    'loan_application_id',
+                    'issue_description',
+                    'status',
+                    'response_message',
+                    'responded_at',
+                    'zm_approved_at',
+                    'created_at',
+                ])->orderBy('created_at', 'asc'),
+            ])
+            ->get();
 
         // Permissions:
-        // - canApprove: HO / Super Admin / ED (final 1-click approve)
-        // - canReject: HO, Branch Manager, Area Manager, Zone Manager, Super Admin
-        // - canZmApprove: Zone Manager, Super Admin, has_all_access
         $isZoneManager = in_array($roleName, [Role::ZONE_MANAGER, 'zone_manager'], true);
         $canApprove = $authUser->has_all_access || $authUser->isSuperAdmin() || $authUser->isHeadOffice() || $authUser->isEd();
         $canReject = $canApprove || in_array($roleName, ['branch_manager', 'area_manager', 'zone_manager', 'admf', 'dmf'], true);
         $canZmApprove = $isZoneManager || $authUser->has_all_access || $authUser->isSuperAdmin();
-        // Head Office users ONLY raise issues and approve/reject. They do NOT write replies.
-        // Branch users (FO, BM, AM) and Zone Managers (ZM) can reply.
         $canReply = (! $authUser->isHeadOffice() && ! $authUser->isEd()) || $isZoneManager;
         $isHoAdmin = $canApprove && ! $isZoneManager;
 
-        // Standardize into unified Verification Items
-        $verificationItems = collect();
+        // Build unified lightweight summary items
+        $summaryItems = collect();
 
-        foreach ($admissionList as $admission) {
+        foreach ($admissionsSummary as $admission) {
             $latestIssue = $admission->issues->last();
             $hasPendingIssue = $admission->issues->contains(fn ($i) => $i->status === 'pending');
 
             $branchCode = (string) ($admission->branch?->code ?? $admission->branch?->branch_code ?? '0000');
             $branchCodeInt = is_numeric($branchCode) ? (int) $branchCode : 999999;
 
-            $viewUrl = $isHoAdmin
-                ? "/head-office/admissions/{$admission->id}"
-                : "/member-admissions/{$admission->id}";
+            $parsed = $this->parseObjectionAndReply(
+                $latestIssue?->issue_description,
+                $latestIssue?->resolution_note,
+                $admission->revision_comments
+            );
 
-            $mappedIssues = $admission->issues->map(function ($i) use ($admission, $latestIssue) {
+            $hasReplied = $admission->issues->contains(function ($i) use ($admission, $latestIssue) {
                 $itemParsed = $this->parseObjectionAndReply(
                     $i->issue_description,
                     $i->resolution_note,
                     $latestIssue && $i->id === $latestIssue->id ? $admission->revision_comments : null
                 );
 
-                return [
-                    'id' => $i->id,
-                    'issue_description' => $itemParsed['ho_objection'],
-                    'reporter_name' => $i->reporter?->name ?? 'Head Office',
-                    'status' => $i->status,
-                    'reply_message' => $itemParsed['branch_reply'],
-                    'responder_name' => $i->resolver?->name ?? null,
-                    'created_at' => $i->created_at ? $i->created_at->toIso8601String() : null,
-                    'replied_at' => $itemParsed['branch_reply'] && $i->resolved_at
-                        ? $i->resolved_at->toIso8601String()
-                        : null,
-                    'is_zm_approved' => ! empty($i->zm_approved_at),
-                    'zm_approved_at' => $i->zm_approved_at ? Carbon::parse($i->zm_approved_at)->toIso8601String() : null,
-                    'zm_approver_name' => $i->zmApprover?->name ?? null,
-                    'zm_approval_note' => $i->zm_approval_note ?? null,
-                ];
-            })->values();
+                return ! empty($itemParsed['branch_reply']);
+            }) || ! empty($parsed['branch_reply']);
 
-            $latestMapped = $mappedIssues->last() ?: [];
-            $parsed = $this->parseObjectionAndReply(
-                $latestIssue?->issue_description,
-                $latestIssue?->resolution_note,
-                $admission->revision_comments
-            );
-            $hasReplied = $mappedIssues->contains(fn ($i) => ! empty($i['reply_message']))
-                || ! empty($parsed['branch_reply']);
             $hasUnapprovedIssue = $admission->issues->contains(fn ($i) => empty($i->zm_approved_at));
             $isZmApproved = $admission->issues->isNotEmpty() && ! $hasUnapprovedIssue;
 
             $timelineDates = collect();
-            foreach ($mappedIssues as $issue) {
-                if (! empty($issue['created_at'])) {
-                    $timelineDates->push(Carbon::parse($issue['created_at'])->toIso8601String());
+            foreach ($admission->issues as $issue) {
+                if (! empty($issue->created_at)) {
+                    $timelineDates->push($issue->created_at->toIso8601String());
                 }
-                if (! empty($issue['replied_at'])) {
-                    $timelineDates->push(Carbon::parse($issue['replied_at'])->toIso8601String());
+                if (! empty($issue->resolved_at)) {
+                    $timelineDates->push(Carbon::parse($issue->resolved_at)->toIso8601String());
                 }
-                if (! empty($issue['zm_approved_at'])) {
-                    $timelineDates->push(Carbon::parse($issue['zm_approved_at'])->toIso8601String());
+                if (! empty($issue->zm_approved_at)) {
+                    $timelineDates->push(Carbon::parse($issue->zm_approved_at)->toIso8601String());
                 }
             }
 
@@ -234,108 +239,55 @@ class HeadOfficeVerificationController extends Controller
 
             $effectiveActionAt = $timelineDates->max();
 
-            $verificationItems->push([
+            $summaryItems->push([
                 'id' => 'admission_'.$admission->id,
                 'raw_id' => $admission->id,
                 'item_type' => 'admission',
-                'application_no' => $admission->application_no,
-                'applicant_name' => $admission->applicant_name_bn ?: $admission->applicant_name_en,
-                'applicant_name_en' => $admission->applicant_name_en,
-                'mobile_number' => $admission->mobile_number,
-                'nid_number' => $admission->nid_number,
-                'category_name' => $admission->memberCategory?->category_name ?? '—',
-                'branch_id' => $admission->branch_id,
-                'branch_name' => $admission->branch?->name ?? '—',
-                'branch_code' => $branchCode,
-                'branch_code_int' => $branchCodeInt,
-                'area_name' => $admission->branch?->area?->name ?? '—',
-                'zone_name' => $admission->branch?->area?->zone?->name ?? '—',
-                'samity_name' => $admission->samity?->samity_name ?? '—',
                 'status' => $admission->status,
-                'submitted_at' => $admission->submitted_at ? Carbon::parse($admission->submitted_at)->toIso8601String() : null,
-                'sent_at' => $effectiveActionAt ? Carbon::parse($effectiveActionAt)->toIso8601String() : null,
-                'issue_date' => $latestIssue?->created_at ? Carbon::parse($latestIssue->created_at)->toIso8601String() : null,
-                'reply_date' => $latestIssue?->resolved_at ? Carbon::parse($latestIssue->resolved_at)->toIso8601String() : null,
-                'created_at' => $admission->created_at->toIso8601String(),
+                'branch_code_int' => $branchCodeInt,
                 'latest_action_at' => Carbon::parse($effectiveActionAt)->toIso8601String(),
-                'reviewed_at' => $admission->reviewed_at ? Carbon::parse($admission->reviewed_at)->toIso8601String() : null,
-                'reviewed_by_name' => $admission->reviewedBy?->name ?? null,
-                'rejection_reason' => $admission->rejection_reason,
                 'has_pending_issue' => $hasPendingIssue,
                 'has_replied' => $hasReplied,
                 'is_zm_approved' => $isZmApproved,
-                'zm_approved_at' => $latestIssue?->zm_approved_at ? Carbon::parse($latestIssue->zm_approved_at)->toIso8601String() : null,
-                'zm_approver_name' => $latestIssue?->zmApprover?->name ?? null,
-                'zm_approval_note' => $latestIssue?->zm_approval_note ?? null,
-                'issues' => $mappedIssues,
-                'latest_issue_id' => $latestIssue?->id ?? null,
-                'latest_issue_description' => $latestMapped['issue_description'] ?? $parsed['ho_objection'],
-                'latest_reply_message' => $latestMapped['reply_message'] ?? $parsed['branch_reply'],
-                'latest_reply_by_name' => $latestMapped['responder_name'] ?? null,
-                'view_url' => $viewUrl,
-                'amount' => null,
             ]);
         }
 
-        foreach ($loanList as $loan) {
+        foreach ($loansSummary as $loan) {
             $latestIssue = $loan->issues->last();
             $hasPendingIssue = $loan->issues->contains(fn ($i) => $i->status === 'pending');
 
             $branchCode = (string) ($loan->branch?->code ?? $loan->branch?->branch_code ?? '0000');
             $branchCodeInt = is_numeric($branchCode) ? (int) $branchCode : 999999;
 
-            $viewUrl = $isHoAdmin
-                ? "/head-office/loans/{$loan->id}"
-                : "/member/loan-applications/{$loan->id}";
+            $parsed = $this->parseObjectionAndReply(
+                $latestIssue?->issue_description,
+                $latestIssue?->response_message,
+                $loan->revision_comments ?? null
+            );
 
-            $mappedIssues = $loan->issues->map(function ($i) use ($loan, $latestIssue) {
+            $hasReplied = $loan->issues->contains(function ($i) use ($loan, $latestIssue) {
                 $itemParsed = $this->parseObjectionAndReply(
                     $i->issue_description,
                     $i->response_message,
                     $latestIssue && $i->id === $latestIssue->id ? ($loan->revision_comments ?? null) : null
                 );
 
-                return [
-                    'id' => $i->id,
-                    'issue_description' => $itemParsed['ho_objection'],
-                    'reporter_name' => $i->reporter?->name ?? 'Head Office',
-                    'status' => $i->status,
-                    'reply_message' => $itemParsed['branch_reply'],
-                    'responder_name' => $i->responder?->name ?? null,
-                    'created_at' => $i->created_at ? $i->created_at->toIso8601String() : null,
-                    'replied_at' => $itemParsed['branch_reply'] && $i->responded_at
-                        ? $i->responded_at->toIso8601String()
-                        : null,
-                    'is_zm_approved' => ! empty($i->zm_approved_at),
-                    'zm_approved_at' => $i->zm_approved_at ? Carbon::parse($i->zm_approved_at)->toIso8601String() : null,
-                    'zm_approver_name' => $i->zmApprover?->name ?? null,
-                    'zm_approval_note' => $i->zm_approval_note ?? null,
-                ];
-            })->values();
-
-            $latestMapped = $mappedIssues->last() ?: [];
-            $parsed = $this->parseObjectionAndReply(
-                $latestIssue?->issue_description,
-                $latestIssue?->response_message,
-                $loan->revision_comments ?? null
-            );
-            $hasReplied = $mappedIssues->contains(fn ($i) => ! empty($i['reply_message']))
-                || ! empty($parsed['branch_reply'])
-                || ! empty($latestMapped['reply_message']);
+                return ! empty($itemParsed['branch_reply']);
+            }) || ! empty($parsed['branch_reply']);
 
             $hasUnapprovedIssue = $loan->issues->contains(fn ($i) => empty($i->zm_approved_at));
             $isZmApproved = $loan->issues->isNotEmpty() && ! $hasUnapprovedIssue;
 
             $timelineDates = collect();
-            foreach ($mappedIssues as $issue) {
-                if (! empty($issue['created_at'])) {
-                    $timelineDates->push(Carbon::parse($issue['created_at'])->toIso8601String());
+            foreach ($loan->issues as $issue) {
+                if (! empty($issue->created_at)) {
+                    $timelineDates->push($issue->created_at->toIso8601String());
                 }
-                if (! empty($issue['replied_at'])) {
-                    $timelineDates->push(Carbon::parse($issue['replied_at'])->toIso8601String());
+                if (! empty($issue->responded_at)) {
+                    $timelineDates->push(Carbon::parse($issue->responded_at)->toIso8601String());
                 }
-                if (! empty($issue['zm_approved_at'])) {
-                    $timelineDates->push(Carbon::parse($issue['zm_approved_at'])->toIso8601String());
+                if (! empty($issue->zm_approved_at)) {
+                    $timelineDates->push(Carbon::parse($issue->zm_approved_at)->toIso8601String());
                 }
             }
 
@@ -350,64 +302,34 @@ class HeadOfficeVerificationController extends Controller
 
             $effectiveActionAt = $timelineDates->max();
 
-            $verificationItems->push([
+            $summaryItems->push([
                 'id' => 'loan_'.$loan->id,
                 'raw_id' => $loan->id,
                 'item_type' => 'loan',
-                'application_no' => $loan->application_no,
-                'applicant_name' => $loan->memberAdmission?->applicant_name_bn ?: ($loan->memberAdmission?->applicant_name_en ?? '—'),
-                'applicant_name_en' => $loan->memberAdmission?->applicant_name_en ?? '',
-                'mobile_number' => $loan->memberAdmission?->mobile_number ?? '',
-                'nid_number' => $loan->memberAdmission?->nid_number ?? '',
-                'category_name' => $loan->loanProduct?->product_name_bn ?? ($loan->loanProduct?->product_name ?? '—'),
-                'branch_id' => $loan->branch_id,
-                'branch_name' => $loan->branch?->name ?? '—',
-                'branch_code' => $branchCode,
-                'branch_code_int' => $branchCodeInt,
-                'area_name' => $loan->branch?->area?->name ?? '—',
-                'zone_name' => $loan->branch?->area?->zone?->name ?? '—',
-                'samity_name' => $loan->samity?->samity_name ?? '—',
                 'status' => $loan->status,
-                'submitted_at' => $loan->submitted_at ? Carbon::parse($loan->submitted_at)->toIso8601String() : null,
-                'sent_at' => $effectiveActionAt ? Carbon::parse($effectiveActionAt)->toIso8601String() : null,
-                'issue_date' => $latestIssue?->created_at ? Carbon::parse($latestIssue->created_at)->toIso8601String() : null,
-                'reply_date' => $latestIssue?->responded_at ? Carbon::parse($latestIssue->responded_at)->toIso8601String() : null,
-                'created_at' => $loan->created_at->toIso8601String(),
+                'branch_code_int' => $branchCodeInt,
                 'latest_action_at' => Carbon::parse($effectiveActionAt)->toIso8601String(),
-                'reviewed_at' => $loan->reviewed_at ? Carbon::parse($loan->reviewed_at)->toIso8601String() : null,
-                'reviewed_by_name' => $loan->reviewedBy?->name ?? null,
-                'rejection_reason' => $loan->rejection_reason,
                 'has_pending_issue' => $hasPendingIssue,
                 'has_replied' => $hasReplied,
                 'is_zm_approved' => $isZmApproved,
-                'zm_approved_at' => $latestIssue?->zm_approved_at ? Carbon::parse($latestIssue->zm_approved_at)->toIso8601String() : null,
-                'zm_approver_name' => $latestIssue?->zmApprover?->name ?? null,
-                'zm_approval_note' => $latestIssue?->zm_approval_note ?? null,
-                'issues' => $mappedIssues,
-                'latest_issue_id' => $latestIssue?->id ?? null,
-                'latest_issue_description' => $latestMapped['issue_description'] ?? $parsed['ho_objection'],
-                'latest_reply_message' => $latestMapped['reply_message'] ?? $parsed['branch_reply'],
-                'latest_reply_by_name' => $latestMapped['responder_name'] ?? null,
-                'view_url' => $viewUrl,
-                'amount' => $loan->approved_amount ?: $loan->requested_amount,
             ]);
         }
 
         // Strict filtering by effective action/sent date range when date filters are specified
         if ($startOfDay && $endOfDay) {
-            $verificationItems = $verificationItems->filter(function ($item) use ($startOfDay, $endOfDay) {
+            $summaryItems = $summaryItems->filter(function ($item) use ($startOfDay, $endOfDay) {
                 $dt = Carbon::parse($item['latest_action_at']);
 
                 return $dt->between($startOfDay, $endOfDay);
             });
         } elseif ($startOfDay) {
-            $verificationItems = $verificationItems->filter(function ($item) use ($startOfDay) {
+            $summaryItems = $summaryItems->filter(function ($item) use ($startOfDay) {
                 $dt = Carbon::parse($item['latest_action_at']);
 
                 return $dt->gte($startOfDay);
             });
         } elseif ($endOfDay) {
-            $verificationItems = $verificationItems->filter(function ($item) use ($endOfDay) {
+            $summaryItems = $summaryItems->filter(function ($item) use ($endOfDay) {
                 $dt = Carbon::parse($item['latest_action_at']);
 
                 return $dt->lte($endOfDay);
@@ -416,31 +338,31 @@ class HeadOfficeVerificationController extends Controller
 
         // Calculate statistics across all active items for the tabs
         $stats = [
-            'total' => $verificationItems->count(),
-            'pending_action' => $verificationItems->filter(fn ($i) => ! in_array($i['status'], ['approved', 'pending_disbursement', 'disbursed', 'rejected'], true))->count(),
-            'admission_count' => $verificationItems->where('item_type', 'admission')->count(),
-            'loan_count' => $verificationItems->where('item_type', 'loan')->count(),
-            'pending_issues' => $verificationItems->filter(fn ($i) => $i['has_pending_issue'] && ! $i['has_replied'] && ! in_array($i['status'], ['approved', 'pending_disbursement', 'disbursed', 'rejected'], true))->count(),
-            'branch_replied' => $verificationItems->filter(fn ($i) => $i['has_replied'] && ! $i['is_zm_approved'] && ! in_array($i['status'], ['approved', 'pending_disbursement', 'disbursed', 'rejected'], true))->count(),
-            'zm_approved' => $verificationItems->filter(fn ($i) => $i['is_zm_approved'] && ! in_array($i['status'], ['approved', 'pending_disbursement', 'disbursed', 'rejected'], true))->count(),
-            'approved' => $verificationItems->whereIn('status', ['approved', 'pending_disbursement', 'disbursed'])->count(),
-            'rejected' => $verificationItems->where('status', 'rejected')->count(),
+            'total' => $summaryItems->count(),
+            'pending_action' => $summaryItems->filter(fn ($i) => ! in_array($i['status'], ['approved', 'pending_disbursement', 'disbursed', 'rejected'], true))->count(),
+            'admission_count' => $summaryItems->where('item_type', 'admission')->count(),
+            'loan_count' => $summaryItems->where('item_type', 'loan')->count(),
+            'pending_issues' => $summaryItems->filter(fn ($i) => $i['has_pending_issue'] && ! $i['has_replied'] && ! in_array($i['status'], ['approved', 'pending_disbursement', 'disbursed', 'rejected'], true))->count(),
+            'branch_replied' => $summaryItems->filter(fn ($i) => $i['has_replied'] && ! $i['is_zm_approved'] && ! in_array($i['status'], ['approved', 'pending_disbursement', 'disbursed', 'rejected'], true))->count(),
+            'zm_approved' => $summaryItems->filter(fn ($i) => $i['is_zm_approved'] && ! in_array($i['status'], ['approved', 'pending_disbursement', 'disbursed', 'rejected'], true))->count(),
+            'approved' => $summaryItems->whereIn('status', ['approved', 'pending_disbursement', 'disbursed'])->count(),
+            'rejected' => $summaryItems->where('status', 'rejected')->count(),
         ];
 
         // Apply issue status filter
-        $filteredItems = $verificationItems;
+        $filteredItems = $summaryItems;
         if ($issueStatus === 'pending_action') {
-            $filteredItems = $verificationItems->filter(fn ($i) => ! in_array($i['status'], ['approved', 'pending_disbursement', 'disbursed', 'rejected'], true));
+            $filteredItems = $summaryItems->filter(fn ($i) => ! in_array($i['status'], ['approved', 'pending_disbursement', 'disbursed', 'rejected'], true));
         } elseif ($issueStatus === 'zm_approved') {
-            $filteredItems = $verificationItems->filter(fn ($i) => $i['is_zm_approved'] && ! in_array($i['status'], ['approved', 'pending_disbursement', 'disbursed', 'rejected'], true));
+            $filteredItems = $summaryItems->filter(fn ($i) => $i['is_zm_approved'] && ! in_array($i['status'], ['approved', 'pending_disbursement', 'disbursed', 'rejected'], true));
         } elseif ($issueStatus === 'branch_replied') {
-            $filteredItems = $verificationItems->filter(fn ($i) => $i['has_replied'] && ! $i['is_zm_approved'] && ! in_array($i['status'], ['approved', 'pending_disbursement', 'disbursed', 'rejected'], true));
+            $filteredItems = $summaryItems->filter(fn ($i) => $i['has_replied'] && ! $i['is_zm_approved'] && ! in_array($i['status'], ['approved', 'pending_disbursement', 'disbursed', 'rejected'], true));
         } elseif ($issueStatus === 'pending') {
-            $filteredItems = $verificationItems->filter(fn ($i) => $i['has_pending_issue'] && ! $i['has_replied'] && ! in_array($i['status'], ['approved', 'pending_disbursement', 'disbursed', 'rejected'], true));
+            $filteredItems = $summaryItems->filter(fn ($i) => $i['has_pending_issue'] && ! $i['has_replied'] && ! in_array($i['status'], ['approved', 'pending_disbursement', 'disbursed', 'rejected'], true));
         } elseif ($issueStatus === 'approved') {
-            $filteredItems = $verificationItems->filter(fn ($i) => in_array($i['status'], ['approved', 'pending_disbursement', 'disbursed'], true));
+            $filteredItems = $summaryItems->filter(fn ($i) => in_array($i['status'], ['approved', 'pending_disbursement', 'disbursed'], true));
         } elseif ($issueStatus === 'rejected') {
-            $filteredItems = $verificationItems->filter(fn ($i) => $i['status'] === 'rejected');
+            $filteredItems = $summaryItems->filter(fn ($i) => $i['status'] === 'rejected');
         } // 'all' keeps all items
 
         // Sort items strictly by latest action date DESCENDING (latest update first)
@@ -454,11 +376,48 @@ class HeadOfficeVerificationController extends Controller
             return $a['branch_code_int'] <=> $b['branch_code_int'];
         })->values();
 
-        // Paginate in memory or return sorted collection
+        // Paginate in memory
         $page = (int) $request->input('page', 1);
         $perPage = $this->resolvePerPage($request);
         $totalItems = $sortedItems->count();
-        $pagedItems = $sortedItems->slice(($page - 1) * $perPage, $perPage)->values();
+        $pageSummaryItems = $sortedItems->slice(($page - 1) * $perPage, $perPage)->values();
+
+        // STAGE 2: Hydrate full relationships ONLY for the items on the current page (e.g. 25 items max)
+        $pageAdmissionIds = $pageSummaryItems->where('item_type', 'admission')->pluck('raw_id')->all();
+        $pageLoanIds = $pageSummaryItems->where('item_type', 'loan')->pluck('raw_id')->all();
+
+        $fullAdmissions = empty($pageAdmissionIds) ? collect() : MemberAdmission::with([
+            'branch' => fn ($q) => $q->withTrashed()->with(['area.zone']),
+            'samity:id,samity_name',
+            'memberCategory:id,category_name',
+            'submittedBy:id,name',
+            'createdBy:id,name',
+            'reviewedBy:id,name',
+            'issues' => fn ($q) => $q->with(['reporter:id,name', 'resolver:id,name', 'zmApprover:id,name'])->orderBy('created_at', 'asc'),
+        ])->whereIn('id', $pageAdmissionIds)->get()->keyBy('id');
+
+        $fullLoans = empty($pageLoanIds) ? collect() : LoanApplication::with([
+            'branch' => fn ($q) => $q->withTrashed()->with(['area.zone']),
+            'samity:id,samity_name',
+            'loanProduct:id,product_name,product_name_bn,product_code',
+            'loanCategory:id,category_name,category_name_bn',
+            'memberAdmission:id,applicant_name_en,applicant_name_bn,nid_number,mobile_number,application_no,is_legacy,loan_dofa',
+            'submittedBy:id,name',
+            'reviewedBy:id,name',
+            'issues' => fn ($q) => $q->with(['reporter:id,name', 'responder:id,name', 'zmApprover:id,name'])->orderBy('created_at', 'asc'),
+        ])->whereIn('id', $pageLoanIds)->get()->keyBy('id');
+
+        $pagedItems = $pageSummaryItems->map(function ($summary) use ($fullAdmissions, $fullLoans, $isHoAdmin) {
+            if ($summary['item_type'] === 'admission') {
+                $admission = $fullAdmissions->get($summary['raw_id']);
+
+                return $admission ? $this->formatAdmissionItem($admission, $isHoAdmin) : null;
+            } else {
+                $loan = $fullLoans->get($summary['raw_id']);
+
+                return $loan ? $this->formatLoanItem($loan, $isHoAdmin) : null;
+            }
+        })->filter()->values();
 
         $paginatedData = [
             'data' => $pagedItems,
@@ -499,6 +458,244 @@ class HeadOfficeVerificationController extends Controller
             'areas' => $orgFilters['areas'],
             'branches' => $orgFilters['branches'],
         ]);
+    }
+
+    /**
+     * Format a MemberAdmission model into unified verification item array.
+     */
+    private function formatAdmissionItem(MemberAdmission $admission, bool $isHoAdmin): array
+    {
+        $latestIssue = $admission->issues->last();
+        $hasPendingIssue = $admission->issues->contains(fn ($i) => $i->status === 'pending');
+
+        $branchCode = (string) ($admission->branch?->code ?? $admission->branch?->branch_code ?? '0000');
+        $branchCodeInt = is_numeric($branchCode) ? (int) $branchCode : 999999;
+
+        $viewUrl = $isHoAdmin
+            ? "/head-office/admissions/{$admission->id}"
+            : "/member-admissions/{$admission->id}";
+
+        $mappedIssues = $admission->issues->map(function ($i) use ($admission, $latestIssue) {
+            $itemParsed = $this->parseObjectionAndReply(
+                $i->issue_description,
+                $i->resolution_note,
+                $latestIssue && $i->id === $latestIssue->id ? $admission->revision_comments : null
+            );
+
+            return [
+                'id' => $i->id,
+                'issue_description' => $itemParsed['ho_objection'],
+                'reporter_name' => $i->reporter?->name ?? 'Head Office',
+                'status' => $i->status,
+                'reply_message' => $itemParsed['branch_reply'],
+                'responder_name' => $i->resolver?->name ?? null,
+                'created_at' => $i->created_at ? $i->created_at->toIso8601String() : null,
+                'replied_at' => $itemParsed['branch_reply'] && $i->resolved_at
+                    ? $i->resolved_at->toIso8601String()
+                    : null,
+                'is_zm_approved' => ! empty($i->zm_approved_at),
+                'zm_approved_at' => $i->zm_approved_at ? Carbon::parse($i->zm_approved_at)->toIso8601String() : null,
+                'zm_approver_name' => $i->zmApprover?->name ?? null,
+                'zm_approval_note' => $i->zm_approval_note ?? null,
+            ];
+        })->values();
+
+        $latestMapped = $mappedIssues->last() ?: [];
+        $parsed = $this->parseObjectionAndReply(
+            $latestIssue?->issue_description,
+            $latestIssue?->resolution_note,
+            $admission->revision_comments
+        );
+        $hasReplied = $mappedIssues->contains(fn ($i) => ! empty($i['reply_message']))
+            || ! empty($parsed['branch_reply']);
+        $hasUnapprovedIssue = $admission->issues->contains(fn ($i) => empty($i->zm_approved_at));
+        $isZmApproved = $admission->issues->isNotEmpty() && ! $hasUnapprovedIssue;
+
+        $timelineDates = collect();
+        foreach ($mappedIssues as $issue) {
+            if (! empty($issue['created_at'])) {
+                $timelineDates->push(Carbon::parse($issue['created_at'])->toIso8601String());
+            }
+            if (! empty($issue['replied_at'])) {
+                $timelineDates->push(Carbon::parse($issue['replied_at'])->toIso8601String());
+            }
+            if (! empty($issue['zm_approved_at'])) {
+                $timelineDates->push(Carbon::parse($issue['zm_approved_at'])->toIso8601String());
+            }
+        }
+
+        if (in_array($admission->status, ['approved', 'pending_disbursement', 'disbursed', 'rejected'], true) && $admission->reviewed_at) {
+            $timelineDates->push(Carbon::parse($admission->reviewed_at)->toIso8601String());
+        }
+
+        if ($timelineDates->isEmpty()) {
+            $fallback = $admission->submitted_at ?: $admission->created_at;
+            $timelineDates->push(Carbon::parse($fallback)->toIso8601String());
+        }
+
+        $effectiveActionAt = $timelineDates->max();
+
+        return [
+            'id' => 'admission_'.$admission->id,
+            'raw_id' => $admission->id,
+            'item_type' => 'admission',
+            'application_no' => $admission->application_no,
+            'applicant_name' => $admission->applicant_name_bn ?: $admission->applicant_name_en,
+            'applicant_name_en' => $admission->applicant_name_en,
+            'mobile_number' => $admission->mobile_number,
+            'nid_number' => $admission->nid_number,
+            'category_name' => $admission->memberCategory?->category_name ?? '—',
+            'branch_id' => $admission->branch_id,
+            'branch_name' => $admission->branch?->name ?? '—',
+            'branch_code' => $branchCode,
+            'branch_code_int' => $branchCodeInt,
+            'area_name' => $admission->branch?->area?->name ?? '—',
+            'zone_name' => $admission->branch?->area?->zone?->name ?? '—',
+            'samity_name' => $admission->samity?->samity_name ?? '—',
+            'status' => $admission->status,
+            'submitted_at' => $admission->submitted_at ? Carbon::parse($admission->submitted_at)->toIso8601String() : null,
+            'sent_at' => $effectiveActionAt ? Carbon::parse($effectiveActionAt)->toIso8601String() : null,
+            'issue_date' => $latestIssue?->created_at ? Carbon::parse($latestIssue->created_at)->toIso8601String() : null,
+            'reply_date' => $latestIssue?->resolved_at ? Carbon::parse($latestIssue->resolved_at)->toIso8601String() : null,
+            'created_at' => $admission->created_at->toIso8601String(),
+            'latest_action_at' => Carbon::parse($effectiveActionAt)->toIso8601String(),
+            'reviewed_at' => $admission->reviewed_at ? Carbon::parse($admission->reviewed_at)->toIso8601String() : null,
+            'reviewed_by_name' => $admission->reviewedBy?->name ?? null,
+            'rejection_reason' => $admission->rejection_reason,
+            'has_pending_issue' => $hasPendingIssue,
+            'has_replied' => $hasReplied,
+            'is_zm_approved' => $isZmApproved,
+            'zm_approved_at' => $latestIssue?->zm_approved_at ? Carbon::parse($latestIssue->zm_approved_at)->toIso8601String() : null,
+            'zm_approver_name' => $latestIssue?->zmApprover?->name ?? null,
+            'zm_approval_note' => $latestIssue?->zm_approval_note ?? null,
+            'issues' => $mappedIssues,
+            'latest_issue_id' => $latestIssue?->id ?? null,
+            'latest_issue_description' => $latestMapped['issue_description'] ?? $parsed['ho_objection'],
+            'latest_reply_message' => $latestMapped['reply_message'] ?? $parsed['branch_reply'],
+            'latest_reply_by_name' => $latestMapped['responder_name'] ?? null,
+            'view_url' => $viewUrl,
+            'amount' => null,
+        ];
+    }
+
+    /**
+     * Format a LoanApplication model into unified verification item array.
+     */
+    private function formatLoanItem(LoanApplication $loan, bool $isHoAdmin): array
+    {
+        $latestIssue = $loan->issues->last();
+        $hasPendingIssue = $loan->issues->contains(fn ($i) => $i->status === 'pending');
+
+        $branchCode = (string) ($loan->branch?->code ?? $loan->branch?->branch_code ?? '0000');
+        $branchCodeInt = is_numeric($branchCode) ? (int) $branchCode : 999999;
+
+        $viewUrl = $isHoAdmin
+            ? "/head-office/loans/{$loan->id}"
+            : "/member/loan-applications/{$loan->id}";
+
+        $mappedIssues = $loan->issues->map(function ($i) use ($loan, $latestIssue) {
+            $itemParsed = $this->parseObjectionAndReply(
+                $i->issue_description,
+                $i->response_message,
+                $latestIssue && $i->id === $latestIssue->id ? ($loan->revision_comments ?? null) : null
+            );
+
+            return [
+                'id' => $i->id,
+                'issue_description' => $itemParsed['ho_objection'],
+                'reporter_name' => $i->reporter?->name ?? 'Head Office',
+                'status' => $i->status,
+                'reply_message' => $itemParsed['branch_reply'],
+                'responder_name' => $i->responder?->name ?? null,
+                'created_at' => $i->created_at ? $i->created_at->toIso8601String() : null,
+                'replied_at' => $itemParsed['branch_reply'] && $i->responded_at
+                    ? $i->responded_at->toIso8601String()
+                    : null,
+                'is_zm_approved' => ! empty($i->zm_approved_at),
+                'zm_approved_at' => $i->zm_approved_at ? Carbon::parse($i->zm_approved_at)->toIso8601String() : null,
+                'zm_approver_name' => $i->zmApprover?->name ?? null,
+                'zm_approval_note' => $i->zm_approval_note ?? null,
+            ];
+        })->values();
+
+        $latestMapped = $mappedIssues->last() ?: [];
+        $parsed = $this->parseObjectionAndReply(
+            $latestIssue?->issue_description,
+            $latestIssue?->response_message,
+            $loan->revision_comments ?? null
+        );
+        $hasReplied = $mappedIssues->contains(fn ($i) => ! empty($i['reply_message']))
+            || ! empty($parsed['branch_reply'])
+            || ! empty($latestMapped['reply_message']);
+
+        $hasUnapprovedIssue = $loan->issues->contains(fn ($i) => empty($i->zm_approved_at));
+        $isZmApproved = $loan->issues->isNotEmpty() && ! $hasUnapprovedIssue;
+
+        $timelineDates = collect();
+        foreach ($mappedIssues as $issue) {
+            if (! empty($issue['created_at'])) {
+                $timelineDates->push(Carbon::parse($issue['created_at'])->toIso8601String());
+            }
+            if (! empty($issue['replied_at'])) {
+                $timelineDates->push(Carbon::parse($issue['replied_at'])->toIso8601String());
+            }
+            if (! empty($issue['zm_approved_at'])) {
+                $timelineDates->push(Carbon::parse($issue['zm_approved_at'])->toIso8601String());
+            }
+        }
+
+        if (in_array($loan->status, [LoanApplication::STATUS_APPROVED, LoanApplication::STATUS_PENDING_DISBURSEMENT, LoanApplication::STATUS_DISBURSED, LoanApplication::STATUS_REJECTED], true) && $loan->reviewed_at) {
+            $timelineDates->push(Carbon::parse($loan->reviewed_at)->toIso8601String());
+        }
+
+        if ($timelineDates->isEmpty()) {
+            $fallback = $loan->submitted_at ?: $loan->created_at;
+            $timelineDates->push(Carbon::parse($fallback)->toIso8601String());
+        }
+
+        $effectiveActionAt = $timelineDates->max();
+
+        return [
+            'id' => 'loan_'.$loan->id,
+            'raw_id' => $loan->id,
+            'item_type' => 'loan',
+            'application_no' => $loan->application_no,
+            'applicant_name' => $loan->memberAdmission?->applicant_name_bn ?: ($loan->memberAdmission?->applicant_name_en ?? '—'),
+            'applicant_name_en' => $loan->memberAdmission?->applicant_name_en ?? '',
+            'mobile_number' => $loan->memberAdmission?->mobile_number ?? '',
+            'nid_number' => $loan->memberAdmission?->nid_number ?? '',
+            'category_name' => $loan->loanProduct?->product_name_bn ?? ($loan->loanProduct?->product_name ?? '—'),
+            'branch_id' => $loan->branch_id,
+            'branch_name' => $loan->branch?->name ?? '—',
+            'branch_code' => $branchCode,
+            'branch_code_int' => $branchCodeInt,
+            'area_name' => $loan->branch?->area?->name ?? '—',
+            'zone_name' => $loan->branch?->area?->zone?->name ?? '—',
+            'samity_name' => $loan->samity?->samity_name ?? '—',
+            'status' => $loan->status,
+            'submitted_at' => $loan->submitted_at ? Carbon::parse($loan->submitted_at)->toIso8601String() : null,
+            'sent_at' => $effectiveActionAt ? Carbon::parse($effectiveActionAt)->toIso8601String() : null,
+            'issue_date' => $latestIssue?->created_at ? Carbon::parse($latestIssue->created_at)->toIso8601String() : null,
+            'reply_date' => $latestIssue?->responded_at ? Carbon::parse($latestIssue->responded_at)->toIso8601String() : null,
+            'created_at' => $loan->created_at->toIso8601String(),
+            'latest_action_at' => Carbon::parse($effectiveActionAt)->toIso8601String(),
+            'reviewed_at' => $loan->reviewed_at ? Carbon::parse($loan->reviewed_at)->toIso8601String() : null,
+            'reviewed_by_name' => $loan->reviewedBy?->name ?? null,
+            'rejection_reason' => $loan->rejection_reason,
+            'has_pending_issue' => $hasPendingIssue,
+            'has_replied' => $hasReplied,
+            'is_zm_approved' => $isZmApproved,
+            'zm_approved_at' => $latestIssue?->zm_approved_at ? Carbon::parse($latestIssue->zm_approved_at)->toIso8601String() : null,
+            'zm_approver_name' => $latestIssue?->zmApprover?->name ?? null,
+            'zm_approval_note' => $latestIssue?->zm_approval_note ?? null,
+            'issues' => $mappedIssues,
+            'latest_issue_id' => $latestIssue?->id ?? null,
+            'latest_issue_description' => $latestMapped['issue_description'] ?? $parsed['ho_objection'],
+            'latest_reply_message' => $latestMapped['reply_message'] ?? $parsed['branch_reply'],
+            'latest_reply_by_name' => $latestMapped['responder_name'] ?? null,
+            'view_url' => $viewUrl,
+            'amount' => $loan->approved_amount ?: $loan->requested_amount,
+        ];
     }
 
     /**
