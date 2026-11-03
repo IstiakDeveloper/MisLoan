@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { Head, router, Link, usePage } from '@inertiajs/react';
 import AdminLayout from '@/layouts/admin-layout';
 import { formatDate, formatTime, todayIsoDate } from '@/utils/dateUtils';
@@ -6,7 +6,7 @@ import {
     Search,
     Eye,
     Pencil,
-    CalendarDays,
+    Calendar,
     Filter,
     PlayCircle,
     Trash2,
@@ -29,6 +29,11 @@ import {
     RotateCcw,
     CheckCircle2,
     Ban,
+    ChevronDown,
+    SlidersHorizontal,
+    Smartphone,
+    Check,
+    Loader2,
 } from 'lucide-react';
 import { MemberAdmission } from '@/types/memberAdmission';
 import AutoFitTableContainer from '@/components/AutoFitTableContainer';
@@ -80,13 +85,14 @@ interface Props {
     filters: {
         status?: string;
         search?: string;
-        zone_id?: number;
-        area_id?: number;
-        branch_id?: number;
+        zone_id?: number | string;
+        area_id?: number | string;
+        branch_id?: number | string;
         date_from?: string;
         date_to?: string;
         had_issues?: string;
         printed?: string;
+        member_type?: string;
         per_page?: number | string;
     };
     stats: {
@@ -130,7 +136,16 @@ function branchLabel(admission: MemberAdmission): { name: string; meta?: string 
     return { name: branch.name, meta };
 }
 
-export default function AdmissionMembers({ admissions, filters, stats, zones, areas, branches, viewAllAdmissions = false, workQueue }: Props) {
+export default function AdmissionMembers({
+    admissions,
+    filters,
+    stats,
+    zones,
+    areas,
+    branches,
+    viewAllAdmissions = false,
+    workQueue,
+}: Props) {
     const { auth } = usePage().props as any;
     const roleName = (auth?.user?.role?.name || (typeof auth?.user?.role === 'string' ? auth?.user?.role : '')).toLowerCase();
     const isSuperAdmin = roleName === 'super_admin' || roleName === 'superadmin' || roleName === 'super admin';
@@ -150,9 +165,44 @@ export default function AdmissionMembers({ admissions, filters, stats, zones, ar
     const [deleteIntent, setDeleteIntent] = useState<{ type: 'single'; id: number; label: string } | { type: 'bulk' } | null>(null);
     const [deleteProcessing, setDeleteProcessing] = useState(false);
     const [markAsPrintedCheckbox, setMarkAsPrintedCheckbox] = useState(false);
+    const [appRegisteredMap, setAppRegisteredMap] = useState<Record<number, boolean>>({});
+    const [togglingId, setTogglingId] = useState<number | null>(null);
+
+    const handleToggleAppRegister = async (admission: MemberAdmission) => {
+        const currentState = appRegisteredMap[admission.id] ?? Boolean(admission.is_app_registered);
+        const newState = !currentState;
+
+        setAppRegisteredMap((prev) => ({ ...prev, [admission.id]: newState }));
+        setTogglingId(admission.id);
+
+        try {
+            const csrfToken = (document.querySelector('meta[name="csrf-token"]') as HTMLMetaElement)?.content || '';
+            const res = await fetch(`/member-admissions/${admission.id}/toggle-app-register`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    Accept: 'application/json',
+                    'X-CSRF-TOKEN': csrfToken,
+                },
+                body: JSON.stringify({ force_state: newState }),
+            });
+
+            const data = await res.json();
+            if (!res.ok || !data.ok) {
+                setAppRegisteredMap((prev) => ({ ...prev, [admission.id]: currentState }));
+                if (data.message) {
+                    alert(data.message);
+                }
+            }
+        } catch {
+            setAppRegisteredMap((prev) => ({ ...prev, [admission.id]: currentState }));
+        } finally {
+            setTogglingId(null);
+        }
+    };
 
     const today = todayIsoDate();
-    const monthStart = `${today.slice(0, 7)}-01`;
+    // Default date filter removed: only populate if passed in filters
     const [dateFrom, setDateFrom] = useState(filters.date_from || '');
     const [dateTo, setDateTo] = useState(filters.date_to || '');
     const isTodayFilter = dateFrom === today && dateTo === today;
@@ -163,6 +213,33 @@ export default function AdmissionMembers({ admissions, filters, stats, zones, ar
     const [hadIssues, setHadIssues] = useState(filters.had_issues || '');
     const [printedFilter, setPrintedFilter] = useState(filters.printed || '');
     const [memberType, setMemberType] = useState(filters.member_type || '');
+
+    // Advanced filters collapse state
+    const hasInitialAdvancedFilters = Boolean(
+        filters.zone_id ||
+        filters.area_id ||
+        filters.branch_id ||
+        filters.had_issues ||
+        filters.printed ||
+        filters.member_type ||
+        (filters.date_from && filters.date_from !== today) ||
+        (filters.date_to && filters.date_to !== today)
+    );
+    const [showAdvancedFilters, setShowAdvancedFilters] = useState(hasInitialAdvancedFilters);
+
+    const searchInputRef = useRef<HTMLInputElement>(null);
+
+    // Global keyboard shortcut: Ctrl+/ or Cmd+/ to focus search input
+    useEffect(() => {
+        const handleKeyDown = (e: KeyboardEvent) => {
+            if ((e.ctrlKey || e.metaKey) && e.key === '/') {
+                e.preventDefault();
+                searchInputRef.current?.focus();
+            }
+        };
+        window.addEventListener('keydown', handleKeyDown);
+        return () => window.removeEventListener('keydown', handleKeyDown);
+    }, []);
 
     const [filteredAreas, setFilteredAreas] = useState<Area[]>(areas);
     const [filteredBranches, setFilteredBranches] = useState<Branch[]>(branches);
@@ -202,25 +279,25 @@ export default function AdmissionMembers({ admissions, filters, stats, zones, ar
     }, [selectedArea, selectedZone, filteredAreas, branches]);
 
     const getStatusBadge = (status: string) => {
-        const variants: Record<string, { bg: string; text: string; label: string }> = {
-            draft: { bg: 'bg-slate-100 border-slate-300', text: 'text-slate-700', label: 'খসড়া' },
-            submitted: { bg: 'bg-sky-50 border-sky-300', text: 'text-sky-800', label: 'জমা' },
-            under_review: { bg: 'bg-amber-50 border-amber-300', text: 'text-amber-800', label: 'পর্যালোচনায়' },
-            ready_for_head_office: { bg: 'bg-cyan-50 border-cyan-300', text: 'text-cyan-800', label: 'শাখা অনুমোদিত' },
-            pending_head_office: { bg: 'bg-blue-50 border-blue-400', text: 'text-blue-800', label: 'হেড অফিসে' },
-            approved: { bg: 'bg-emerald-50 border-emerald-300', text: 'text-emerald-800', label: 'অনুমোদিত' },
-            rejected: { bg: 'bg-rose-50 border-rose-300', text: 'text-rose-800', label: 'প্রত্যাখ্যাত' },
-            needs_revision: { bg: 'bg-orange-50 border-orange-300', text: 'text-orange-800', label: 'সংশোধন' },
+        const variants: Record<string, { bg: string; text: string; dot: string; label: string }> = {
+            draft: { bg: 'bg-slate-100 border-slate-200/80', text: 'text-slate-700', dot: 'bg-slate-400', label: 'খসড়া' },
+            submitted: { bg: 'bg-blue-50 border-blue-200/80', text: 'text-blue-700', dot: 'bg-blue-500', label: 'জমা' },
+            under_review: { bg: 'bg-amber-50 border-amber-200/80', text: 'text-amber-700', dot: 'bg-amber-500', label: 'পর্যালোচনায়' },
+            ready_for_head_office: { bg: 'bg-emerald-50 border-emerald-200/80', text: 'text-emerald-700', dot: 'bg-emerald-500', label: 'শাখা অনুমোদিত' },
+            pending_head_office: { bg: 'bg-purple-50 border-purple-200/80', text: 'text-purple-700', dot: 'bg-purple-500', label: 'হেড অফিসে' },
+            approved: { bg: 'bg-green-50 border-green-200/80', text: 'text-green-700', dot: 'bg-green-600', label: 'অনুমোদিত' },
+            rejected: { bg: 'bg-rose-50 border-rose-200/80', text: 'text-rose-700', dot: 'bg-rose-500', label: 'প্রত্যাখ্যাত' },
+            needs_revision: { bg: 'bg-orange-50 border-orange-200/80', text: 'text-orange-700', dot: 'bg-orange-500', label: 'সংশোধন' },
         };
         const config = variants[status] || {
-            bg: 'bg-slate-100 border-slate-300',
+            bg: 'bg-slate-50 border-slate-200',
             text: 'text-slate-700',
+            dot: 'bg-slate-400',
             label: status,
         };
         return (
-            <span
-                className={`inline-flex items-center px-2 py-0.5 rounded-md border text-[11px] font-semibold whitespace-nowrap ${config.bg} ${config.text}`}
-            >
+            <span className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full border text-[11px] font-semibold tracking-tight whitespace-nowrap ${config.bg} ${config.text}`}>
+                <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${config.dot}`} />
                 {config.label}
             </span>
         );
@@ -253,18 +330,20 @@ export default function AdmissionMembers({ admissions, filters, stats, zones, ar
     };
 
     const handleTodayFilter = () => {
-        setDateFrom(today);
-        setDateTo(today);
-        router.get(
-            '/head-office/admission-members',
-            filterPayload({ date_from: today, date_to: today }),
-            { preserveState: true }
-        );
+        if (isTodayFilter) {
+            setDateFrom('');
+            setDateTo('');
+            router.get('/head-office/admission-members', filterPayload({ date_from: '', date_to: '' }), { preserveState: true });
+        } else {
+            setDateFrom(today);
+            setDateTo(today);
+            router.get('/head-office/admission-members', filterPayload({ date_from: today, date_to: today }), { preserveState: true });
+        }
     };
 
     const clearFilters = () => {
         setSearchQuery('');
-        setStatusFilter(workQueue?.default_status || 'all');
+        setStatusFilter('all');
         setSelectedZone('');
         setSelectedArea('');
         setSelectedBranch('');
@@ -273,11 +352,8 @@ export default function AdmissionMembers({ admissions, filters, stats, zones, ar
         setHadIssues('');
         setPrintedFilter('');
         setMemberType('');
-        router.get(
-            '/head-office/admission-members',
-            {},
-            { preserveState: true }
-        );
+        setShowAdvancedFilters(false);
+        router.get('/head-office/admission-members', { status: 'all', per_page: admissions.per_page || 20 }, { preserveState: true });
     };
 
     const getPrintParams = () => {
@@ -292,6 +368,7 @@ export default function AdmissionMembers({ admissions, filters, stats, zones, ar
         if (dateTo) params.date_to = dateTo;
         if (hadIssues) params.had_issues = hadIssues;
         if (printedFilter) params.printed = printedFilter;
+        if (memberType) params.member_type = memberType;
         return params;
     };
 
@@ -397,21 +474,28 @@ export default function AdmissionMembers({ admissions, filters, stats, zones, ar
         });
     };
 
-    const hasActiveFilters = Boolean(
-        searchQuery ||
-        (statusFilter && statusFilter !== 'all') ||
-        selectedZone ||
-        selectedArea ||
-        selectedBranch ||
-        dateFrom ||
-        dateTo ||
-        hadIssues ||
-        printedFilter ||
-        memberType
-    );
+    const highlightMatch = (text?: string | null, query?: string) => {
+        if (!text) return '–';
+        if (!query || !query.trim()) return text;
+        const cleanQ = query.trim();
+        const str = String(text);
+        const idx = str.toLowerCase().indexOf(cleanQ.toLowerCase());
+        if (idx === -1) return str;
+        const before = str.slice(0, idx);
+        const match = str.slice(idx, idx + cleanQ.length);
+        const after = str.slice(idx + cleanQ.length);
+        return (
+            <>
+                {before}
+                <mark className="bg-amber-200 text-amber-950 font-bold rounded px-0.5">{match}</mark>
+                {after}
+            </>
+        );
+    };
 
     const defaultStatus = workQueue?.default_status || '';
     const isAllStatus = statusFilter === 'all' || statusFilter === '';
+
     const statCards = [
         ...(defaultStatus
             ? [{
@@ -421,7 +505,6 @@ export default function AdmissionMembers({ admissions, filters, stats, zones, ar
                 icon: UserCheck,
                 iconColor: 'text-indigo-600',
                 iconBg: 'bg-indigo-50',
-                barColor: 'from-indigo-500 to-indigo-600',
                 activeBg: 'bg-indigo-600 border-indigo-600 text-white',
                 highlight: true,
             }]
@@ -433,7 +516,6 @@ export default function AdmissionMembers({ admissions, filters, stats, zones, ar
             icon: Layers,
             iconColor: 'text-slate-700',
             iconBg: 'bg-slate-100',
-            barColor: 'from-slate-600 to-slate-800',
             activeBg: 'bg-slate-900 border-slate-900 text-white',
         },
         ...(canViewAllAdmissions
@@ -445,7 +527,6 @@ export default function AdmissionMembers({ admissions, filters, stats, zones, ar
                       icon: FileText,
                       iconColor: 'text-slate-600',
                       iconBg: 'bg-slate-100',
-                      barColor: 'from-slate-400 to-slate-500',
                       activeBg: 'bg-slate-800 border-slate-800 text-white',
                   },
                   {
@@ -455,7 +536,6 @@ export default function AdmissionMembers({ admissions, filters, stats, zones, ar
                       icon: Send,
                       iconColor: 'text-blue-600',
                       iconBg: 'bg-blue-50',
-                      barColor: 'from-blue-500 to-blue-600',
                       activeBg: 'bg-blue-600 border-blue-600 text-white',
                   },
                   {
@@ -465,7 +545,6 @@ export default function AdmissionMembers({ admissions, filters, stats, zones, ar
                       icon: Clock,
                       iconColor: 'text-amber-600',
                       iconBg: 'bg-amber-50',
-                      barColor: 'from-amber-400 to-amber-500',
                       activeBg: 'bg-amber-500 border-amber-500 text-white',
                   },
               ]
@@ -477,7 +556,6 @@ export default function AdmissionMembers({ admissions, filters, stats, zones, ar
             icon: Building2,
             iconColor: 'text-purple-600',
             iconBg: 'bg-purple-50',
-            barColor: 'from-purple-500 to-purple-600',
             activeBg: 'bg-purple-600 border-purple-600 text-white',
             highlight: stats.pending_head_office > 0,
         },
@@ -488,7 +566,6 @@ export default function AdmissionMembers({ admissions, filters, stats, zones, ar
             icon: RotateCcw,
             iconColor: 'text-orange-600',
             iconBg: 'bg-orange-50',
-            barColor: 'from-orange-500 to-orange-600',
             activeBg: 'bg-orange-500 border-orange-500 text-white',
         },
         {
@@ -498,7 +575,6 @@ export default function AdmissionMembers({ admissions, filters, stats, zones, ar
             icon: CheckCircle2,
             iconColor: 'text-teal-600',
             iconBg: 'bg-teal-50',
-            barColor: 'from-teal-500 to-teal-600',
             activeBg: 'bg-teal-600 border-teal-600 text-white',
         },
         {
@@ -508,96 +584,128 @@ export default function AdmissionMembers({ admissions, filters, stats, zones, ar
             icon: Ban,
             iconColor: 'text-rose-600',
             iconBg: 'bg-rose-50',
-            barColor: 'from-rose-500 to-rose-600',
             activeBg: 'bg-rose-600 border-rose-600 text-white',
         },
     ].filter((stat, index, all) => all.findIndex((s) => s.filter === stat.filter) === index);
 
+    // Active filters count for badge
+    const activeFiltersCount = useMemo(() => {
+        let count = 0;
+        if (selectedZone) count++;
+        if (selectedArea) count++;
+        if (selectedBranch) count++;
+        if (hadIssues) count++;
+        if (printedFilter) count++;
+        if (memberType) count++;
+        if (dateFrom && !isTodayFilter) count++;
+        if (dateTo && !isTodayFilter) count++;
+        return count;
+    }, [selectedZone, selectedArea, selectedBranch, hadIssues, printedFilter, memberType, dateFrom, dateTo, isTodayFilter]);
+
+    const hasAnyActiveFilter = Boolean(
+        searchQuery ||
+        (!isAllStatus && statusFilter !== 'all') ||
+        dateFrom ||
+        dateTo ||
+        selectedZone ||
+        selectedArea ||
+        selectedBranch ||
+        hadIssues ||
+        printedFilter ||
+        memberType
+    );
+
     const ActionButtons = ({ admission }: { admission: MemberAdmission }) => (
-        <div className="flex items-center justify-end gap-1">
+        <div className="flex items-center justify-end gap-0.5">
             <Link
                 href={`/head-office/admissions/${admission.id}`}
-                className="p-1.5 text-blue-600 hover:text-white hover:bg-blue-600 border border-blue-200 hover:border-blue-600 rounded-md transition"
+                className="p-1.5 text-slate-500 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition"
                 title="দেখুন"
             >
-                <Eye className="w-4 h-4" />
+                <Eye size={14} />
             </Link>
             <Link
                 href={`/member-admissions/${admission.id}/edit`}
-                className="p-1.5 text-sky-700 hover:text-white hover:bg-sky-600 border border-sky-200 hover:border-sky-600 rounded-md transition"
+                className="p-1.5 text-slate-500 hover:text-amber-600 hover:bg-amber-50 rounded-lg transition"
                 title="সম্পাদনা"
             >
-                <Pencil className="w-4 h-4" />
+                <Pencil size={14} />
             </Link>
             {canModify && admission.status !== 'draft' && (
                 <button
+                    type="button"
                     onClick={() => openModificationModal(admission)}
-                    className="p-1.5 text-slate-700 hover:text-white hover:bg-slate-800 border border-slate-200 hover:border-slate-800 rounded-md transition"
+                    className="p-1.5 text-slate-500 hover:text-slate-800 hover:bg-slate-100 rounded-lg transition"
                     title="Modification"
                 >
-                    <Wrench className="w-4 h-4" />
+                    <Wrench size={14} />
                 </button>
             )}
             {admission.status === 'approved' && (admission.revision_count ?? 0) > 0 && (
                 <button
+                    type="button"
                     onClick={() => openHistoryModal(admission)}
-                    className="p-1.5 text-blue-700 hover:text-white hover:bg-blue-700 border border-blue-200 hover:border-blue-700 rounded-md transition"
+                    className="p-1.5 text-slate-500 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg transition"
                     title="ইতিহাস"
                 >
-                    <FileText className="w-4 h-4" />
+                    <FileText size={14} />
                 </button>
             )}
             {canDelete && (
-                    <button
-                        onClick={() => handleDelete(admission.id, admission.application_no)}
-                        className="p-1.5 text-rose-500 hover:text-white hover:bg-rose-600 border border-rose-200 hover:border-rose-600 rounded-md transition"
-                        title="মুছুন"
-                    >
-                        <Trash2 className="w-4 h-4" />
-                    </button>
+                <button
+                    type="button"
+                    onClick={() => handleDelete(admission.id, admission.application_no)}
+                    className="p-1.5 text-rose-500 hover:text-rose-700 hover:bg-rose-50 rounded-lg transition"
+                    title="মুছুন"
+                >
+                    <Trash2 size={14} />
+                </button>
             )}
         </div>
     );
 
     return (
         <AdminLayout>
-            <Head title="Admission Members" />
+            <Head title="Admission Members (Head Office)" />
 
-            <div className="p-3 md:p-4 space-y-3 max-w-[1600px] mx-auto pb-16 print:block">
-                {/* ── 1. SLIM PROFESSIONAL HEADER ───────────────────────────────────── */}
-                <div className="bg-white px-4 py-3 rounded-2xl border border-slate-200/90 shadow-2xs flex flex-wrap items-center justify-between gap-3 print:hidden">
+            <div className="p-3 sm:p-4 md:p-5 space-y-3 max-w-[1600px] mx-auto pb-24 print:p-0 print:pb-0">
+                {/* ── 1. COMPACT PROFESSIONAL HEADER ───────────────────────────────────── */}
+                <div className="bg-white px-4 py-2.5 rounded-2xl border border-slate-200/90 shadow-2xs flex flex-wrap items-center justify-between gap-3 print:hidden">
+                    {/* Title & Count */}
                     <div className="flex items-center gap-2.5 min-w-0">
-                        <div className="w-8 h-8 rounded-xl bg-slate-800 text-white flex items-center justify-center shadow-xs shrink-0">
+                        <div className="w-8 h-8 rounded-xl bg-slate-900 text-white flex items-center justify-center shadow-xs shrink-0">
                             <Building2 size={16} />
                         </div>
                         <div>
                             <div className="flex items-center gap-2">
-                                <h1 className="text-sm sm:text-base font-bold text-slate-800 tracking-tight">
-                                    সদস্য ভর্তি তালিকা (Head Office)
+                                <h1 className="text-sm sm:text-base font-bold text-slate-900 tracking-tight">
+                                    সদস্য ভর্তি আবেদন (Head Office)
                                 </h1>
-                                <span className="text-[10px] font-bold px-2 py-0.5 bg-slate-100 text-slate-700 rounded-md border border-slate-200">
-                                    মোট {stats.total || 0} টি
+                                <span className="text-[11px] font-bold px-2 py-0.5 bg-slate-100 text-slate-700 rounded-md border border-slate-200/80">
+                                    {admissions.total || 0} টি
                                 </span>
                             </div>
                         </div>
                     </div>
 
-                    {/* Action Buttons */}
-                    <div className="flex items-center gap-2 flex-wrap">
+                    {/* Action CTAs */}
+                    <div className="flex items-center gap-1.5 sm:gap-2 flex-wrap">
+                        {/* Today Shortcut Button */}
                         <button
                             type="button"
                             onClick={handleTodayFilter}
                             className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl border text-xs font-semibold transition-all active:scale-95 shadow-2xs ${
                                 isTodayFilter
                                     ? 'bg-blue-600 text-white border-blue-600 font-bold'
-                                    : 'bg-slate-50 text-slate-700 border-slate-200 hover:bg-slate-100'
+                                    : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-50'
                             }`}
                             title="আজকের ভর্তি আবেদনসমূহ (Today)"
                         >
-                            <CalendarDays size={13} />
-                            <span>Today (আজ)</span>
+                            <Calendar size={13} />
+                            <span>আজ</span>
                         </button>
 
+                        {/* Process Admissions */}
                         <Link
                             href="/head-office/process-admissions"
                             className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold shadow-2xs transition-all active:scale-95"
@@ -606,246 +714,312 @@ export default function AdmissionMembers({ admissions, filters, stats, zones, ar
                             <span>Process Admissions</span>
                         </Link>
 
+                        {/* Excel Export */}
                         <button
                             type="button"
                             onClick={handleExportExcel}
-                            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-emerald-50 text-emerald-700 hover:bg-emerald-100 border border-emerald-200 text-xs font-semibold transition-all active:scale-95 shadow-2xs"
+                            className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-xl bg-slate-50 hover:bg-slate-100 text-slate-700 border border-slate-200 text-xs font-medium transition-all active:scale-95 shadow-2xs"
                             title="XLSX এক্সেল ডাউনলোড"
                         >
-                            <Download size={13} />
-                            <span>Excel</span>
+                            <Download size={13} className="text-emerald-600" />
+                            <span className="hidden sm:inline">Excel</span>
                         </button>
 
+                        {/* Print */}
                         <button
                             type="button"
                             onClick={() => setShowPrintModal(true)}
-                            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-200 text-xs font-semibold transition-all active:scale-95 shadow-2xs"
+                            className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-xl bg-slate-50 hover:bg-slate-100 text-slate-700 border border-slate-200 text-xs font-medium transition-all active:scale-95 shadow-2xs"
                         >
-                            <Printer size={13} />
-                            <span>প্রিন্ট</span>
+                            <Printer size={13} className="text-slate-600" />
+                            <span className="hidden sm:inline">প্রিন্ট</span>
                         </button>
 
+                        {/* Recent Deletions Link */}
                         {canDelete && (
                             <Link
                                 href="/head-office/recent-deletions?type=member_admission"
-                                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-rose-50 text-rose-700 hover:bg-rose-100 border border-rose-200 text-xs font-semibold transition-all active:scale-95 shadow-2xs"
+                                className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-xl bg-rose-50 text-rose-700 hover:bg-rose-100 border border-rose-200 text-xs font-medium transition-all active:scale-95 shadow-2xs"
                                 title="বিগত ৭ দিনে মুছে ফেলা সদস্য ভর্তি তালিকা"
                             >
                                 <Trash2 size={13} />
-                                <span>মুছে ফেলা ডাটা (৭ দিন)</span>
+                                <span className="hidden md:inline">মুছে ফেলা ডাটা (৭ দিন)</span>
                             </Link>
                         )}
                     </div>
                 </div>
 
-                {/* ── 2. UNIFIED FILTER & STATUS CONTROL CARD ─────────────────────────── */}
-                <div className="bg-white rounded-3xl border border-slate-200/90 shadow-2xs p-3.5 space-y-3.5 print:hidden">
-                    {/* Status Filter Cards in 1 Row with Micro Visual Progress & Icons */}
-                    <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 lg:grid-cols-8 gap-2">
+                {/* ── 2. COMPACT STATUS FILTER MINI-CARDS ───────────────────────────── */}
+                <div className="print:hidden">
+                    <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-8 gap-1.5 sm:gap-2">
                         {statCards.map((stat) => {
                             const isActive = statusFilter === stat.filter || (stat.filter === 'all' && isAllStatus);
                             const IconComponent = stat.icon;
-                            const percentage = Math.min(100, Math.round((stat.count / (stats.total || 1)) * 100));
 
                             return (
                                 <button
-                                    key={stat.label}
+                                    key={stat.filter}
                                     type="button"
                                     onClick={() => handleFilterChange(stat.filter)}
-                                    className={`relative p-2.5 rounded-2xl border text-left transition-all duration-150 active:scale-95 group overflow-hidden ${
+                                    className={`relative p-2 sm:p-2.5 rounded-xl border text-left transition-all duration-150 active:scale-95 group overflow-hidden ${
                                         isActive
-                                            ? `${stat.activeBg} shadow-md ring-2 ring-offset-1 ring-blue-500/40`
+                                            ? `${stat.activeBg} shadow-sm ring-2 ring-offset-1 ring-blue-500/30`
                                             : stat.highlight
-                                            ? 'bg-gradient-to-b from-purple-50/90 to-white border-purple-300 hover:border-purple-400 hover:shadow-xs'
-                                            : 'bg-white hover:bg-slate-50/90 border-slate-200/90 hover:border-slate-300 shadow-2xs'
+                                            ? 'bg-gradient-to-b from-purple-50/90 to-white border-purple-300 hover:border-purple-400 hover:shadow-2xs'
+                                            : 'bg-white hover:bg-slate-50 border-slate-200/90 hover:border-slate-300 shadow-2xs'
                                     }`}
                                 >
-                                    {/* Top Row: Icon & Count */}
-                                    <div className="flex items-center justify-between gap-1 mb-1.5">
-                                        <div className={`w-7 h-7 rounded-xl flex items-center justify-center shrink-0 transition-transform group-hover:scale-105 ${
+                                    {/* Top Row: Mini Icon & Bold Count */}
+                                    <div className="flex items-center justify-between gap-1 mb-1">
+                                        <div className={`w-5 h-5 rounded-md flex items-center justify-center shrink-0 transition-transform group-hover:scale-105 ${
                                             isActive ? 'bg-white/20 text-white' : `${stat.iconBg} ${stat.iconColor}`
                                         }`}>
-                                            <IconComponent size={14} className="stroke-[2.2]" />
+                                            <IconComponent size={12} className="stroke-[2.2]" />
                                         </div>
-                                        <span className={`text-base font-black tracking-tight ${
+                                        <span className={`text-sm sm:text-base font-extrabold tracking-tight ${
                                             isActive ? 'text-white' : 'text-slate-900'
                                         }`}>
                                             {stat.count}
                                         </span>
                                     </div>
 
-                                    {/* Middle: Label */}
-                                    <span className={`text-[11px] font-bold truncate block ${
-                                        isActive ? 'text-white/90' : 'text-slate-600'
-                                    }`}>
-                                        {stat.label}
-                                    </span>
-
-                                    {/* Visual Micro Progress Bar */}
-                                    <div className="mt-1.5 w-full bg-slate-100 rounded-full h-1 overflow-hidden">
-                                        <div
-                                            className={`h-full rounded-full transition-all duration-300 ${
-                                                isActive ? 'bg-white' : `bg-gradient-to-r ${stat.barColor}`
-                                            }`}
-                                            style={{ width: `${stat.filter === 'all' ? 100 : Math.max(8, percentage)}%` }}
-                                        />
+                                    {/* Bottom Row: Label & Indicator */}
+                                    <div className="flex items-center justify-between gap-1">
+                                        <span className={`text-[10.5px] font-semibold truncate block ${
+                                            isActive ? 'text-white/95 font-bold' : 'text-slate-600'
+                                        }`}>
+                                            {stat.label}
+                                        </span>
+                                        {stat.highlight && !isActive && (
+                                            <span className="w-1.5 h-1.5 rounded-full bg-purple-500 animate-pulse shrink-0" />
+                                        )}
                                     </div>
                                 </button>
                             );
                         })}
                     </div>
+                </div>
 
-                    {/* Integrated Search & Filter Controls Toolbar */}
-                    <form onSubmit={handleSearch} className="pt-2 border-t border-slate-100 flex flex-wrap items-center gap-2 text-xs">
-                        <div className="relative flex-grow min-w-[200px] max-w-sm">
-                            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 pointer-events-none" />
+                {/* ── 3. UNIFIED OMNI-SEARCH & FILTER BAR ─────────────────────────────── */}
+                <div className="bg-white rounded-2xl border border-slate-200/90 shadow-2xs p-2.5 sm:p-3 space-y-2.5 print:hidden">
+                    <form onSubmit={handleSearch} className="flex flex-col md:flex-row items-stretch md:items-center gap-2">
+                        {/* Search Input Box */}
+                        <div className="relative flex-1">
+                            <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 pointer-events-none" />
                             <input
+                                ref={searchInputRef}
                                 type="text"
                                 value={searchQuery}
                                 onChange={(e) => setSearchQuery(e.target.value)}
-                                placeholder="সদস্য নাম্বার, নাম, মোবাইল, এনআইডি..."
-                                className="w-full pl-9 pr-4 py-2 text-xs border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 bg-slate-50/50 transition-all font-medium"
+                                placeholder="সদস্য কোড (যেমন: 4040), নাম, মোবাইল অথবা এনআইডি খুঁজুন... (Ctrl + /)"
+                                className="w-full pl-9 pr-9 py-2 text-xs border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 bg-slate-50/50 hover:bg-white focus:bg-white font-medium text-slate-800 shadow-2xs transition-all"
                             />
+                            {searchQuery && (
+                                <button
+                                    type="button"
+                                    onClick={() => {
+                                        setSearchQuery('');
+                                        router.get('/head-office/admission-members', filterPayload({ search: '' }), { preserveState: true });
+                                    }}
+                                    className="absolute right-2.5 top-1/2 -translate-y-1/2 w-4 h-4 rounded-full bg-slate-200 hover:bg-slate-300 text-slate-500 hover:text-slate-800 flex items-center justify-center transition"
+                                    title="সার্চ মুছুন"
+                                >
+                                    <X size={10} />
+                                </button>
+                            )}
                         </div>
 
-                        <div className="flex items-center gap-1.5 bg-slate-50 border border-slate-200 p-1 rounded-xl">
-                            <input
-                                type="date"
-                                value={dateFrom}
-                                onChange={(e) => setDateFrom(e.target.value)}
-                                className="px-2 py-1 text-xs border border-slate-300 rounded-lg bg-white focus:outline-none"
-                                title="তারিখ হতে"
-                            />
-                            <span className="text-slate-400 text-xs font-bold">–</span>
-                            <input
-                                type="date"
-                                value={dateTo}
-                                onChange={(e) => setDateTo(e.target.value)}
-                                className="px-2 py-1 text-xs border border-slate-300 rounded-lg bg-white focus:outline-none"
-                                title="তারিখ পর্যন্ত"
-                            />
-                        </div>
+                        {/* Controls Group */}
+                        <div className="flex items-center gap-1.5 shrink-0 flex-wrap">
+                            {/* Search Submit */}
+                            <button
+                                type="submit"
+                                className="inline-flex items-center gap-1.5 px-3.5 py-2 text-xs font-bold bg-blue-600 hover:bg-blue-700 text-white rounded-xl transition shadow-2xs active:scale-95"
+                            >
+                                <Search size={13} />
+                                <span>খুঁজুন</span>
+                            </button>
 
-                        <select
-                            value={selectedZone}
-                            onChange={(e) => setSelectedZone(e.target.value)}
-                            className="px-2.5 py-2 text-xs border border-slate-200 rounded-xl bg-slate-50/50 font-medium"
-                        >
-                            <option value="">সব জোন</option>
-                            {zones.map((zone) => (
-                                <option key={zone.id} value={zone.id.toString()}>
-                                    {zone.name}
-                                </option>
-                            ))}
-                        </select>
-
-                        <select
-                            value={selectedArea}
-                            onChange={(e) => setSelectedArea(e.target.value)}
-                            disabled={!selectedZone && filteredAreas.length === 0}
-                            className="px-2.5 py-2 text-xs border border-slate-200 rounded-xl bg-slate-50/50 font-medium disabled:opacity-50"
-                        >
-                            <option value="">সব এলাকা</option>
-                            {filteredAreas.map((area) => (
-                                <option key={area.id} value={area.id.toString()}>
-                                    {area.name}
-                                </option>
-                            ))}
-                        </select>
-
-                        <select
-                            value={selectedBranch}
-                            onChange={(e) => setSelectedBranch(e.target.value)}
-                            disabled={!selectedZone && !selectedArea && filteredBranches.length === 0}
-                            className="px-2.5 py-2 text-xs border border-slate-200 rounded-xl bg-slate-50/50 font-medium disabled:opacity-50"
-                        >
-                            <option value="">সব শাখা</option>
-                            {filteredBranches.map((branch) => (
-                                <option key={branch.id} value={branch.id.toString()}>
-                                    {formatBranchLabel(branch)}
-                                </option>
-                            ))}
-                        </select>
-
-                        <select
-                            value={hadIssues}
-                            onChange={(e) => setHadIssues(e.target.value)}
-                            className="px-2.5 py-2 text-xs border border-slate-200 rounded-xl bg-slate-50/50 font-medium"
-                        >
-                            <option value="">ইস্যু: সব</option>
-                            <option value="yes">ইস্যু ছিল</option>
-                            <option value="no">সরাসরি অনুমোদিত</option>
-                        </select>
-
-                        <select
-                            value={printedFilter}
-                            onChange={(e) => setPrintedFilter(e.target.value)}
-                            className="px-2.5 py-2 text-xs border border-slate-200 rounded-xl bg-slate-50/50 font-medium"
-                        >
-                            <option value="">প্রিন্ট: সব</option>
-                            <option value="yes">প্রিন্ট সম্পন্ন</option>
-                            <option value="no">প্রিন্ট হয়নি</option>
-                        </select>
-
-                        <select
-                            value={memberType}
-                            onChange={(e) => {
-                                const val = e.target.value;
-                                setMemberType(val);
-                                router.get('/head-office/admission-members', filterPayload({ member_type: val }), { preserveState: true });
-                            }}
-                            className="px-2.5 py-2 text-xs border border-slate-200 rounded-xl bg-slate-50/50 font-medium cursor-pointer"
-                        >
-                            <option value="">সদস্য ধরন: সব</option>
-                            <option value="new">নতুন সদস্য</option>
-                            <option value="old">পুরাতন সদস্য</option>
-                        </select>
-
-                        <button
-                            type="submit"
-                            className="px-4 py-2 text-xs font-bold bg-slate-800 hover:bg-slate-900 text-white rounded-xl transition shadow-2xs active:scale-95"
-                        >
-                            খুঁজুন
-                        </button>
-
-                        {hasActiveFilters && (
+                            {/* Advanced Filter Collapse Toggle */}
                             <button
                                 type="button"
-                                onClick={clearFilters}
-                                className="px-3 py-2 text-xs font-bold text-slate-600 bg-slate-100 hover:bg-slate-200 rounded-xl transition"
+                                onClick={() => setShowAdvancedFilters(!showAdvancedFilters)}
+                                className={`inline-flex items-center gap-1.5 px-3 py-2 text-xs font-semibold rounded-xl border transition shadow-2xs active:scale-95 ${
+                                    showAdvancedFilters || activeFiltersCount > 0
+                                        ? 'bg-blue-50 border-blue-200 text-blue-700'
+                                        : 'bg-white border-slate-200 text-slate-700 hover:bg-slate-50'
+                                }`}
                             >
-                                রিসেট
+                                <SlidersHorizontal size={13} />
+                                <span>ফিল্টার</span>
+                                {activeFiltersCount > 0 && (
+                                    <span className="w-4 h-4 rounded-full bg-blue-600 text-white text-[10px] font-bold flex items-center justify-center">
+                                        {activeFiltersCount}
+                                    </span>
+                                )}
+                                <ChevronDown
+                                    size={12}
+                                    className={`transition-transform duration-200 ${showAdvancedFilters ? 'rotate-180' : ''}`}
+                                />
                             </button>
-                        )}
+
+                            {/* Global Reset Button */}
+                            {hasAnyActiveFilter && (
+                                <button
+                                    type="button"
+                                    onClick={clearFilters}
+                                    className="inline-flex items-center gap-1 px-2.5 py-2 text-xs font-medium text-rose-600 hover:text-rose-700 bg-rose-50 hover:bg-rose-100 rounded-xl border border-rose-200 transition shadow-2xs"
+                                    title="সব ফিল্টার রিসেট করুন"
+                                >
+                                    <RotateCcw size={12} />
+                                    <span className="hidden sm:inline">রিসেট</span>
+                                </button>
+                            )}
+                        </div>
                     </form>
+
+                    {/* Collapsible Advanced Filters */}
+                    {showAdvancedFilters && (
+                        <div className="pt-2.5 border-t border-slate-100 grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-2 animate-in fade-in duration-150">
+                            <div>
+                                <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">জোন</label>
+                                <select
+                                    value={selectedZone}
+                                    onChange={(e) => setSelectedZone(e.target.value)}
+                                    className="h-8 w-full border border-slate-200 rounded-xl px-2.5 text-xs bg-slate-50/50 hover:bg-white text-slate-800 focus:outline-none focus:ring-1 focus:ring-blue-500 focus:border-blue-500"
+                                >
+                                    <option value="">সকল জোন ({zones.length})</option>
+                                    {zones.map((zone) => (
+                                        <option key={zone.id} value={zone.id.toString()}>
+                                            {zone.name}
+                                        </option>
+                                    ))}
+                                </select>
+                            </div>
+
+                            <div>
+                                <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">অঞ্চল</label>
+                                <select
+                                    value={selectedArea}
+                                    onChange={(e) => setSelectedArea(e.target.value)}
+                                    disabled={!selectedZone && filteredAreas.length === 0}
+                                    className="h-8 w-full border border-slate-200 rounded-xl px-2.5 text-xs bg-slate-50/50 hover:bg-white text-slate-800 focus:outline-none focus:ring-1 focus:ring-blue-500 focus:border-blue-500 disabled:opacity-50"
+                                >
+                                    <option value="">সকল অঞ্চল</option>
+                                    {filteredAreas.map((area) => (
+                                        <option key={area.id} value={area.id.toString()}>
+                                            {area.name}
+                                        </option>
+                                    ))}
+                                </select>
+                            </div>
+
+                            <div>
+                                <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">শাখা</label>
+                                <select
+                                    value={selectedBranch}
+                                    onChange={(e) => setSelectedBranch(e.target.value)}
+                                    disabled={!selectedZone && !selectedArea && filteredBranches.length === 0}
+                                    className="h-8 w-full border border-slate-200 rounded-xl px-2.5 text-xs bg-slate-50/50 hover:bg-white text-slate-800 focus:outline-none focus:ring-1 focus:ring-blue-500 focus:border-blue-500 disabled:opacity-50"
+                                >
+                                    <option value="">সকল শাখা ({filteredBranches.length})</option>
+                                    {filteredBranches.map((branch) => (
+                                        <option key={branch.id} value={branch.id.toString()}>
+                                            {formatBranchLabel(branch)}
+                                        </option>
+                                    ))}
+                                </select>
+                            </div>
+
+                            <div>
+                                <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">সদস্য ধরন</label>
+                                <select
+                                    value={memberType}
+                                    onChange={(e) => setMemberType(e.target.value)}
+                                    className="h-8 w-full border border-slate-200 rounded-xl px-2.5 text-xs bg-slate-50/50 hover:bg-white text-slate-800 focus:outline-none focus:ring-1 focus:ring-blue-500 focus:border-blue-500"
+                                >
+                                    <option value="">সকল ধরন</option>
+                                    <option value="new">নতুন সদস্য</option>
+                                    <option value="old">পুরাতন সদস্য</option>
+                                </select>
+                            </div>
+
+                            <div>
+                                <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">ইস্যু / প্রিন্ট</label>
+                                <div className="grid grid-cols-2 gap-1">
+                                    <select
+                                        value={hadIssues}
+                                        onChange={(e) => setHadIssues(e.target.value)}
+                                        className="h-8 w-full border border-slate-200 rounded-xl px-1.5 text-[11px] bg-slate-50/50 hover:bg-white text-slate-800 focus:outline-none"
+                                    >
+                                        <option value="">ইস্যু: সব</option>
+                                        <option value="yes">ইস্যু ছিল</option>
+                                        <option value="no">সরাসরি</option>
+                                    </select>
+                                    <select
+                                        value={printedFilter}
+                                        onChange={(e) => setPrintedFilter(e.target.value)}
+                                        className="h-8 w-full border border-slate-200 rounded-xl px-1.5 text-[11px] bg-slate-50/50 hover:bg-white text-slate-800 focus:outline-none"
+                                    >
+                                        <option value="">প্রিন্ট: সব</option>
+                                        <option value="yes">প্রিন্ট</option>
+                                        <option value="no">হয়নি</option>
+                                    </select>
+                                </div>
+                            </div>
+
+                            <div>
+                                <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">তারিখ সীমা</label>
+                                <div className="flex items-center gap-1">
+                                    <input
+                                        type="date"
+                                        value={dateFrom}
+                                        onChange={(e) => setDateFrom(e.target.value)}
+                                        className="h-8 w-1/2 border border-slate-200 rounded-xl px-2 text-[11px] bg-slate-50/50 hover:bg-white text-slate-700 focus:outline-none"
+                                        title="তারিখ হতে"
+                                    />
+                                    <span className="text-slate-400 text-xs">–</span>
+                                    <input
+                                        type="date"
+                                        value={dateTo}
+                                        onChange={(e) => setDateTo(e.target.value)}
+                                        className="h-8 w-1/2 border border-slate-200 rounded-xl px-2 text-[11px] bg-slate-50/50 hover:bg-white text-slate-700 focus:outline-none"
+                                        title="তারিখ পর্যন্ত"
+                                    />
+                                </div>
+                            </div>
+                        </div>
+                    )}
+
+                    {/* Active Search Highlight Strip */}
+                    {filters.search && (
+                        <div className="flex items-center justify-between px-3 py-1.5 bg-blue-50/80 border border-blue-200/70 rounded-xl text-xs text-blue-900 animate-in fade-in">
+                            <div className="flex items-center gap-2">
+                                <span className="w-2 h-2 rounded-full bg-blue-600 animate-pulse shrink-0" />
+                                <span>
+                                    সার্চ ফিল্টার: <span className="font-mono font-bold text-blue-700 px-1.5 py-0.5 bg-white rounded-md border border-blue-200/80">"{filters.search}"</span>
+                                    <span className="text-slate-500 ml-1.5 text-[11px] hidden sm:inline">(সর্বোচ্চ প্রাসঙ্গিক ও কাছাকাছি মিল শীর্ষে)</span>
+                                </span>
+                            </div>
+                            <button
+                                type="button"
+                                onClick={() => {
+                                    setSearchQuery('');
+                                    router.get('/head-office/admission-members', filterPayload({ search: '' }), { preserveState: true });
+                                }}
+                                className="text-[11px] font-bold text-blue-700 hover:text-blue-900 bg-white px-2 py-0.5 rounded-md border border-blue-200 hover:bg-blue-50 transition shadow-2xs flex items-center gap-1 shrink-0"
+                            >
+                                <X size={11} />
+                                <span>মুছুন</span>
+                            </button>
+                        </div>
+                    )}
                 </div>
 
-                {canDelete && selectedIds.length > 0 && (
-                    <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-rose-200 bg-rose-50 px-4 py-3">
-                        <p className="text-sm text-rose-800 font-medium">{selectedIds.length} টি আবেদন নির্বাচিত</p>
-                        <div className="flex flex-wrap gap-2">
-                            <button
-                                type="button"
-                                onClick={() => setSelectedIds([])}
-                                className="px-4 py-2 rounded-lg border border-slate-300 bg-white text-xs font-medium text-slate-700 hover:bg-slate-50"
-                            >
-                                নির্বাচন সরান
-                            </button>
-                            <button
-                                type="button"
-                                onClick={() => setDeleteIntent({ type: 'bulk' })}
-                                className="px-4 py-2 rounded-lg bg-rose-600 text-white text-xs font-semibold hover:bg-rose-700 shadow-sm"
-                            >
-                                নির্বাচিত মুছুন
-                            </button>
-                        </div>
-                    </div>
-                )}
-
-                {/* List */}
-                <div className="bg-white rounded-xl border border-blue-200 shadow-sm overflow-hidden">
+                {/* ── 4. MAIN DATA TABLE CONTAINER ────────────────────────────────────── */}
+                <div className="bg-white rounded-2xl border border-slate-200/80 shadow-2xs overflow-hidden">
                     {/* Mobile cards */}
-                    <div className="md:hidden divide-y divide-blue-100">
+                    <div className="md:hidden divide-y divide-slate-100">
                         {admissions.data.length === 0 ? (
                             <div className="p-12 text-center text-slate-400 text-sm">
                                 {workQueue?.hint && !isAllStatus
@@ -856,125 +1030,156 @@ export default function AdmissionMembers({ admissions, filters, stats, zones, ar
                             admissions.data.map((admission) => {
                                 const branch = branchLabel(admission);
                                 return (
-                                    <div key={admission.id} className="p-4 space-y-3">
-                                        <div className="flex items-start justify-between gap-3">
+                                    <div key={admission.id} className="p-3.5 space-y-2.5 hover:bg-slate-50/50 transition-colors">
+                                        <div className="flex items-start justify-between gap-2.5">
                                             <div className="flex items-start gap-2 min-w-0">
                                                 {canDelete && (
                                                     <input
                                                         type="checkbox"
                                                         checked={selectedIds.includes(admission.id)}
                                                         onChange={() => toggleSelect(admission.id)}
-                                                        className="mt-1 h-4 w-4 rounded border-slate-300 text-rose-600 focus:ring-rose-500"
+                                                        className="mt-1 h-4 w-4 rounded border-slate-300 text-rose-600 focus:ring-rose-500 shrink-0"
                                                     />
                                                 )}
-                                            <div>
-                                                <span className="text-xs font-mono font-semibold text-blue-700 bg-blue-50 px-2 py-0.5 rounded-md border border-blue-200">
-                                                    {admission.application_no}
-                                                </span>
-                                                <h3 className="font-semibold text-slate-900 text-sm mt-1.5">
-                                                    {admission.applicant_name_bn || admission.applicant_name_en}
-                                                </h3>
-                                                {admission.applicant_name_bn && admission.applicant_name_en && (
-                                                    <p className="text-xs text-slate-500">{admission.applicant_name_en}</p>
-                                                )}
+                                                <div>
+                                                    <span className="text-[11px] font-mono font-bold text-blue-700 bg-blue-50 px-1.5 py-0.5 rounded border border-blue-200">
+                                                        {highlightMatch(admission.application_no, filters.search)}
+                                                    </span>
+                                                    <h3 className="font-bold text-slate-900 text-xs mt-1">
+                                                        {highlightMatch(admission.applicant_name_bn || admission.applicant_name_en, filters.search)}
+                                                    </h3>
+                                                    {admission.is_legacy && (
+                                                        <span className="mt-0.5 inline-flex items-center rounded-full bg-amber-50 border border-amber-200 px-1.5 py-0.2 text-[9.5px] font-semibold text-amber-800">
+                                                            পুরাতন{admission.loan_dofa ? ` · দফা ${admission.loan_dofa}` : ''}
+                                                        </span>
+                                                    )}
+                                                </div>
                                             </div>
-                                            </div>
-                                            {getStatusBadge(admission.status)}
+                                            <div className="shrink-0">{getStatusBadge(admission.status)}</div>
                                         </div>
-                                        <div className="grid grid-cols-2 gap-2.5 bg-blue-50/50 p-3 rounded-lg border border-blue-100 text-xs">
+
+                                        <div className="grid grid-cols-2 gap-2 bg-slate-50/80 p-2.5 rounded-xl border border-slate-100 text-xs">
                                             <div>
-                                                <span className="text-[10px] font-semibold uppercase text-blue-400 block">মোবাইল</span>
-                                                <div className="font-medium text-slate-800 flex items-center gap-1 mt-0.5">
+                                                <span className="text-[9.5px] font-bold uppercase text-slate-400 block">মোবাইল</span>
+                                                <div className="font-semibold text-blue-600 flex items-center gap-1 mt-0.5">
                                                     <PhoneCallLink
                                                         phone={admission.mobile_number}
-                                                        className="text-slate-800"
-                                                        iconClassName="w-3 h-3 text-blue-400"
+                                                        className="text-blue-600"
+                                                        iconClassName="w-3 h-3 text-blue-500"
                                                     />
                                                 </div>
                                             </div>
                                             <div>
-                                                <span className="text-[10px] font-semibold uppercase text-blue-400 block">শাখা</span>
-                                                <p className="font-medium text-slate-800 truncate mt-0.5 flex items-center gap-1">
-                                                    <Building2 className="w-3 h-3 text-blue-400 shrink-0" />
-                                                    {branch.name}
-                                                </p>
-                                                {branch.meta && (
-                                                    <p className="text-[10px] text-slate-400 truncate">{branch.meta}</p>
-                                                )}
+                                                <span className="text-[9.5px] font-bold uppercase text-slate-400 block">সমিতি ও শাখা</span>
+                                                <p className="font-semibold text-slate-800 truncate mt-0.5">{admission.samity?.samity_name || '–'}</p>
+                                                <p className="text-[10px] text-slate-500 truncate">{branch.name}</p>
                                             </div>
                                             <div>
-                                                <span className="text-[10px] font-semibold uppercase text-blue-400 block">সমিতি</span>
-                                                <p className="font-medium text-slate-800 truncate mt-0.5">
-                                                    {admission.samity?.samity_name || '—'}
-                                                </p>
-                                            </div>
-                                            <div>
-                                                <span className="text-[10px] font-semibold uppercase text-blue-400 block">জমাদানের তারিখ</span>
-                                                <p className="font-bold text-slate-800 mt-0.5">
+                                                <span className="text-[9.5px] font-bold uppercase text-slate-400 block">তারিখ</span>
+                                                <p className="font-semibold text-slate-700 mt-0.5">
                                                     {formatDate(admission.submitted_at || admission.created_at)}
                                                 </p>
-                                                {formatTime(admission.submitted_at || admission.created_at) && (
-                                                    <p className="text-[10px] text-slate-500 font-medium">
-                                                        {formatTime(admission.submitted_at || admission.created_at)}
-                                                    </p>
-                                                )}
                                             </div>
                                             <div>
-                                                <span className="text-[10px] font-semibold uppercase text-blue-400 block">তৈরি করেছেন</span>
-                                                <p className="font-medium text-slate-800 truncate mt-0.5">{creatorName(admission)}</p>
-                                            </div>
-                                            <div className="col-span-2 border-t border-blue-100 pt-1.5 mt-0.5 flex items-center justify-between gap-2">
-                                                <span className="text-[10px] font-semibold uppercase text-blue-400 flex items-center gap-1">
-                                                    <MapPin className="w-3 h-3" /> কার কাছে পেন্ডিং
-                                                </span>
-                                                <span className="font-semibold text-blue-800 bg-white border border-blue-200 px-2 py-0.5 rounded-md text-[11px]">
+                                                <span className="text-[9.5px] font-bold uppercase text-slate-400 block">পেন্ডিং</span>
+                                                <p className="font-semibold text-indigo-700 truncate mt-0.5">
                                                     {admission.tracking_state?.label ?? '—'}
-                                                </span>
+                                                </p>
                                             </div>
                                         </div>
-                                        <ActionButtons admission={admission} />
+
+                                        {/* App Register Mobile Switch */}
+                                        <div className="flex items-center justify-between px-2.5 py-1.5 bg-blue-50/40 rounded-xl border border-blue-100/70">
+                                            <div className="flex items-center gap-1.5 text-xs font-semibold text-slate-700">
+                                                <Smartphone size={13} className="text-blue-600" />
+                                                <span>অ্যাপ রেজিস্টার</span>
+                                            </div>
+                                            <button
+                                                type="button"
+                                                disabled={togglingId === admission.id}
+                                                onClick={() => handleToggleAppRegister(admission)}
+                                                className={`relative inline-flex h-5 w-9 shrink-0 cursor-pointer rounded-full border border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${
+                                                    (appRegisteredMap[admission.id] ?? admission.is_app_registered)
+                                                        ? 'bg-emerald-500 shadow-2xs hover:bg-emerald-600'
+                                                        : 'bg-slate-300 hover:bg-slate-400'
+                                                }`}
+                                                title={
+                                                    (appRegisteredMap[admission.id] ?? admission.is_app_registered)
+                                                        ? 'অ্যাপ রেজিস্টার্ড (ক্লিক করে বাতিল করুন)'
+                                                        : 'অ্যাপ রেজিস্টার করতে ক্লিক করুন'
+                                                }
+                                            >
+                                                <span
+                                                    className={`pointer-events-none inline-block h-4 w-4 transform rounded-full bg-white shadow-xs ring-0 transition duration-200 ease-in-out flex items-center justify-center text-[8px] ${
+                                                        (appRegisteredMap[admission.id] ?? admission.is_app_registered)
+                                                            ? 'translate-x-4 text-emerald-600'
+                                                            : 'translate-x-0.5 text-slate-400'
+                                                    }`}
+                                                >
+                                                    {togglingId === admission.id ? (
+                                                        <Loader2 size={9} className="animate-spin text-slate-500" />
+                                                    ) : (appRegisteredMap[admission.id] ?? admission.is_app_registered) ? (
+                                                        <Check size={9} className="stroke-[3]" />
+                                                    ) : null}
+                                                </span>
+                                            </button>
+                                        </div>
+
+                                        <div className="flex items-center justify-between pt-1">
+                                            <div className="text-[10.5px] text-slate-500">
+                                                {admission.printed_at ? (
+                                                    <span className="inline-flex items-center gap-1 text-emerald-700 font-semibold">
+                                                        <CheckCircle size={12} className="text-emerald-600" /> প্রিন্ট সম্পন্ন
+                                                    </span>
+                                                ) : (
+                                                    <span className="text-slate-400">প্রিন্ট হয়নি</span>
+                                                )}
+                                            </div>
+                                            <ActionButtons admission={admission} />
+                                        </div>
                                     </div>
                                 );
                             })
                         )}
                     </div>
 
-                    {/* Desktop table with auto-fit zoom scaling */}
+                    {/* Desktop table */}
                     <div className="hidden md:block">
                         <AutoFitTableContainer
-                            minWidth={1200}
+                            minWidth={1100}
                             storageKey="ho_admission_members_table"
-                            title="সদস্য ভর্তি আবেদন তালিকা"
+                            title="সদস্য ভর্তি আবেদন তালিকা (Head Office)"
                             subtitle={`(পৃষ্ঠা ${admissions.current_page || 1}/${admissions.last_page || 1} · মোট ${admissions.total || 0} টি)`}
                         >
                             <table className="w-full text-left border-collapse table-auto">
                                 <thead>
-                                    <tr className="bg-gradient-to-r from-blue-700 to-blue-600 text-[11px] font-semibold text-white uppercase tracking-wide">
+                                    <tr className="bg-slate-50/90 border-b border-slate-200/90 text-[11px] font-semibold text-slate-500 uppercase tracking-wider">
                                         {canDelete && (
-                                            <th className="py-2.5 px-2 border-b border-blue-500 text-center w-8">
+                                            <th className="py-3 px-3 text-center w-9">
                                                 <input
                                                     type="checkbox"
                                                     checked={allPageSelected}
                                                     onChange={toggleSelectAllOnPage}
-                                                    className="h-3.5 w-3.5 rounded border-blue-300 text-rose-600 focus:ring-rose-500"
+                                                    className="h-3.5 w-3.5 rounded border-slate-300 text-rose-600 focus:ring-rose-500"
                                                 />
                                             </th>
                                         )}
-                                        <th className="py-2.5 px-2.5 border-b border-blue-500 text-center w-10">ক্রমিক</th>
-                                        <th className="py-2.5 px-2.5 border-b border-blue-500">আবেদন নং ও টাইপ</th>
-                                        <th className="py-2.5 px-2.5 border-b border-blue-500">আবেদনকারী ও মোবাইল</th>
-                                        <th className="py-2.5 px-2.5 border-b border-blue-500">শাখা ও সমিতি</th>
-                                        <th className="py-2.5 px-2.5 border-b border-blue-500">জমাদানের তারিখ</th>
-                                        <th className="py-2.5 px-2.5 border-b border-blue-500">স্ট্যাটাস</th>
-                                        <th className="py-2.5 px-2.5 border-b border-blue-500">পেন্ডিং অবস্থান</th>
-                                        <th className="py-2.5 px-2.5 border-b border-blue-500 text-center">প্রিন্ট</th>
-                                        <th className="py-2.5 px-2.5 border-b border-blue-500 text-center">অ্যাকশন</th>
+                                        <th className="py-3 px-3 text-center w-12">#</th>
+                                        <th className="py-3 px-3.5">সদস্য কোড</th>
+                                        <th className="py-3 px-3.5">আবেদনকারী</th>
+                                        <th className="py-3 px-3.5">মোবাইল</th>
+                                        <th className="py-3 px-3.5">সমিতি ও শাখা</th>
+                                        <th className="py-3 px-3.5">স্ট্যাটাস ও ট্র্যাকিং</th>
+                                        <th className="py-3 px-3">তারিখ ও এন্ট্রি</th>
+                                        <th className="py-3 px-2.5 text-center">অ্যাপ</th>
+                                        <th className="py-3 px-2.5 text-center">প্রিন্ট</th>
+                                        <th className="py-3 px-3.5 text-right">অ্যাকশন</th>
                                     </tr>
                                 </thead>
-                                <tbody>
+                                <tbody className="divide-y divide-slate-100 text-xs">
                                     {admissions.data.length === 0 ? (
                                         <tr>
-                                            <td colSpan={canDelete ? 10 : 9} className="py-12 text-center text-slate-400 border-b border-blue-100">
+                                            <td colSpan={canDelete ? 11 : 10} className="py-12 text-center text-slate-400">
                                                 {workQueue?.hint && !isAllStatus
                                                     ? 'এখন কোনো পেন্ডিং কাজ নেই। সব আবেদন দেখতে “সর্বমোট” চাপুন।'
                                                     : 'কোনো ভর্তি আবেদন পাওয়া যায়নি'}
@@ -986,12 +1191,10 @@ export default function AdmissionMembers({ admissions, filters, stats, zones, ar
                                             return (
                                                 <tr
                                                     key={admission.id}
-                                                    className={`text-xs border-b border-blue-100/70 hover:bg-blue-50/70 transition-colors ${
-                                                        index % 2 === 1 ? 'bg-sky-50/30' : 'bg-white'
-                                                    }`}
+                                                    className="hover:bg-slate-50/70 transition-colors"
                                                 >
                                                     {canDelete && (
-                                                        <td className="py-2 px-2 text-center">
+                                                        <td className="py-2.5 px-3 text-center">
                                                             <input
                                                                 type="checkbox"
                                                                 checked={selectedIds.includes(admission.id)}
@@ -1000,109 +1203,138 @@ export default function AdmissionMembers({ admissions, filters, stats, zones, ar
                                                             />
                                                         </td>
                                                     )}
+
                                                     {/* Serial No */}
-                                                    <td className="py-2 px-2 text-center font-bold text-slate-500 text-[11px] whitespace-nowrap">
+                                                    <td className="py-2.5 px-3 text-center font-bold text-slate-400 whitespace-nowrap text-[11px]">
                                                         {((admissions.current_page || 1) - 1) * (admissions.per_page || 15) + index + 1}
                                                     </td>
 
-                                                    {/* App No & Member Type */}
-                                                    <td className="py-2 px-2.5 whitespace-nowrap">
-                                                        <div className="font-mono font-bold text-blue-700 text-xs">
-                                                            {admission.application_no}
-                                                        </div>
-                                                        <div className="mt-0.5">
-                                                            {admission.is_legacy ? (
-                                                                <span className="inline-flex items-center px-1.5 py-0.2 bg-amber-100 text-amber-800 text-[10px] font-semibold rounded">
+                                                    {/* Member Code */}
+                                                    <td className="py-2.5 px-3.5 whitespace-nowrap">
+                                                        <span className="font-mono font-bold text-blue-700 bg-blue-50/90 border border-blue-200/70 px-2 py-0.5 rounded-md text-[11.5px] inline-block shadow-2xs">
+                                                            {highlightMatch(admission.application_no, filters.search)}
+                                                        </span>
+                                                        {admission.is_legacy && (
+                                                            <div className="mt-0.5">
+                                                                <span className="inline-flex items-center px-1.5 py-0.2 bg-amber-50 border border-amber-200/80 text-amber-800 text-[9.5px] font-semibold rounded-full">
                                                                     পুরাতন{admission.loan_dofa ? ` · দফা ${admission.loan_dofa}` : ''}
                                                                 </span>
-                                                            ) : (
-                                                                <span className="inline-flex items-center px-1.5 py-0.2 bg-emerald-100 text-emerald-800 text-[10px] font-semibold rounded">
-                                                                    নতুন সদস্য
-                                                                </span>
-                                                            )}
-                                                        </div>
-                                                    </td>
-
-                                                    {/* Applicant Name & Mobile */}
-                                                    <td className="py-2 px-2.5">
-                                                        <div className="font-bold text-slate-900 leading-tight">
-                                                            {admission.applicant_name_bn || admission.applicant_name_en}
-                                                        </div>
-                                                        <div className="font-mono text-slate-600 text-[11px] flex items-center gap-1 mt-0.5">
-                                                            <PhoneCallLink
-                                                                phone={admission.mobile_number}
-                                                                className="text-slate-700"
-                                                                iconClassName="w-3 h-3 text-blue-500 shrink-0"
-                                                            />
-                                                        </div>
-                                                        {admission.member_category?.category_name && (
-                                                            <div className="text-[10px] text-blue-500 font-medium mt-0.5">
-                                                                {admission.member_category.category_name}
                                                             </div>
                                                         )}
                                                     </td>
 
-                                                    {/* Branch & Samity */}
-                                                    <td className="py-2 px-2.5">
-                                                        <div className="font-semibold text-slate-800 flex items-center gap-1 leading-tight">
-                                                            <Building2 className="w-3 h-3 text-blue-500 shrink-0" />
+                                                    {/* Applicant Name */}
+                                                    <td className="py-2.5 px-3.5">
+                                                        <div className="font-bold text-slate-900 leading-tight">
+                                                            {highlightMatch(admission.applicant_name_bn || admission.applicant_name_en, filters.search)}
+                                                        </div>
+                                                        {admission.applicant_name_bn && admission.applicant_name_en && (
+                                                            <div className="text-[10.5px] text-slate-400 font-normal">
+                                                                {highlightMatch(admission.applicant_name_en, filters.search)}
+                                                            </div>
+                                                        )}
+                                                        {admission.member_category?.category_name && (
+                                                            <span className="text-[10px] text-slate-500 font-medium">
+                                                                {admission.member_category.category_name}
+                                                            </span>
+                                                        )}
+                                                    </td>
+
+                                                    {/* Mobile */}
+                                                    <td className="py-2.5 px-3.5 whitespace-nowrap">
+                                                        <PhoneCallLink
+                                                            phone={admission.mobile_number}
+                                                            className="text-slate-700 font-medium hover:text-blue-600 transition"
+                                                            iconClassName="w-3 h-3 text-blue-500 shrink-0"
+                                                        />
+                                                    </td>
+
+                                                    {/* Unified Samity & Branch */}
+                                                    <td className="py-2.5 px-3.5">
+                                                        <div className="font-semibold text-slate-800 truncate max-w-[170px]" title={admission.samity?.samity_name}>
+                                                            {admission.samity?.samity_name || '–'}
+                                                        </div>
+                                                        <div className="text-[10.5px] text-slate-500 flex items-center gap-1 truncate max-w-[170px] mt-0.5" title={branch.name}>
+                                                            <Building2 size={10} className="shrink-0 text-slate-400" />
                                                             <span>{branch.name}</span>
                                                         </div>
-                                                        <div className="text-[11px] text-slate-600 mt-0.5">
-                                                            {admission.samity?.samity_name || '—'}
-                                                        </div>
-                                                        {branch.meta && (
-                                                            <div className="text-[10px] text-slate-400 truncate max-w-[130px]">{branch.meta}</div>
+                                                    </td>
+
+                                                    {/* Unified Status & Tracking */}
+                                                    <td className="py-2.5 px-3.5">
+                                                        <div>{getStatusBadge(admission.status)}</div>
+                                                        {admission.tracking_state?.label && (
+                                                            <div className="text-[10px] text-slate-500 mt-1 flex items-center gap-1">
+                                                                <span className="w-1 h-1 rounded-full bg-slate-300 shrink-0" />
+                                                                <span className="truncate max-w-[140px]" title={admission.tracking_state.label}>
+                                                                    {admission.tracking_state.label}
+                                                                </span>
+                                                            </div>
                                                         )}
                                                     </td>
 
-                                                    {/* Submission Date + time (AM/PM) */}
-                                                    <td className="py-2 px-2.5 whitespace-nowrap">
-                                                        <div className="font-bold text-slate-800 text-xs">
+                                                    {/* Date & Entry User */}
+                                                    <td className="py-2.5 px-3 whitespace-nowrap">
+                                                        <div className="font-semibold text-slate-800 text-[11px]">
                                                             {formatDate(admission.submitted_at || admission.created_at)}
                                                         </div>
-                                                        {formatTime(admission.submitted_at || admission.created_at) && (
-                                                            <div className="text-slate-500 text-[10px] font-medium mt-0.5">
-                                                                {formatTime(admission.submitted_at || admission.created_at)}
-                                                            </div>
-                                                        )}
                                                         {creatorName(admission) !== '—' && (
-                                                            <div className="text-slate-400 text-[10px] mt-0.5" title="তৈরি করেছেন">
+                                                            <div className="text-slate-400 text-[10px] truncate max-w-[120px]" title={`তৈরি করেছেন: ${creatorName(admission)}`}>
                                                                 এন্ট্রি: {creatorName(admission)}
                                                             </div>
                                                         )}
                                                     </td>
 
-                                                    {/* Status */}
-                                                    <td className="py-2 px-2 whitespace-nowrap">
-                                                        {getStatusBadge(admission.status)}
-                                                    </td>
-
-                                                    {/* Pending Position */}
-                                                    <td className="py-2 px-2 whitespace-nowrap">
-                                                        <span className="inline-flex items-center gap-1 font-semibold text-blue-800 bg-blue-50 border border-blue-200 px-2 py-0.5 rounded-md text-[10.5px]">
-                                                            <MapPin className="w-3 h-3 shrink-0 text-blue-500" />
-                                                            {admission.tracking_state?.label ?? '—'}
-                                                        </span>
+                                                    {/* Compact App Register Toggle (Super Admin / Head Office can toggle) */}
+                                                    <td className="py-2.5 px-2.5 text-center whitespace-nowrap">
+                                                        <button
+                                                            type="button"
+                                                            disabled={togglingId === admission.id}
+                                                            onClick={() => handleToggleAppRegister(admission)}
+                                                            className={`relative inline-flex h-5 w-9 shrink-0 cursor-pointer rounded-full border border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${
+                                                                (appRegisteredMap[admission.id] ?? admission.is_app_registered)
+                                                                    ? 'bg-emerald-500 shadow-2xs hover:bg-emerald-600'
+                                                                    : 'bg-slate-200 hover:bg-slate-300'
+                                                            }`}
+                                                            title={
+                                                                (appRegisteredMap[admission.id] ?? admission.is_app_registered)
+                                                                    ? 'অ্যাপ রেজিস্টার্ড (ক্লিক করে বাতিল করুন)'
+                                                                    : 'অ্যাপ রেজিস্টার করতে ক্লিক করুন'
+                                                            }
+                                                        >
+                                                            <span
+                                                                className={`pointer-events-none inline-block h-4 w-4 transform rounded-full bg-white shadow-xs ring-0 transition duration-200 ease-in-out flex items-center justify-center text-[8px] ${
+                                                                    (appRegisteredMap[admission.id] ?? admission.is_app_registered)
+                                                                        ? 'translate-x-4 text-emerald-600'
+                                                                        : 'translate-x-0.5 text-slate-400'
+                                                                }`}
+                                                            >
+                                                                {togglingId === admission.id ? (
+                                                                    <Loader2 size={9} className="animate-spin text-slate-500" />
+                                                                ) : (appRegisteredMap[admission.id] ?? admission.is_app_registered) ? (
+                                                                    <Check size={9} className="stroke-[3]" />
+                                                                ) : null}
+                                                            </span>
+                                                        </button>
                                                     </td>
 
                                                     {/* Print Status */}
-                                                    <td className="py-2 px-2 text-center whitespace-nowrap">
+                                                    <td className="py-2.5 px-2.5 text-center whitespace-nowrap">
                                                         {admission.printed_at ? (
-                                                            <span className="inline-flex items-center gap-1 text-emerald-700 text-[10.5px] font-semibold bg-emerald-50 border border-emerald-200 px-1.5 py-0.5 rounded">
+                                                            <span className="inline-flex items-center gap-1 text-emerald-700 text-[10px] font-semibold bg-emerald-50 border border-emerald-200/80 px-1.5 py-0.5 rounded-md">
                                                                 <CheckCircle className="w-3 h-3 text-emerald-600" />
                                                                 প্রিন্ট
                                                             </span>
                                                         ) : (
-                                                            <span className="inline-flex items-center gap-1 text-slate-400 text-[10.5px] bg-slate-50 border border-slate-200 px-1.5 py-0.5 rounded">
+                                                            <span className="inline-flex items-center gap-1 text-slate-400 text-[10px] bg-slate-50 border border-slate-200 px-1.5 py-0.5 rounded-md">
                                                                 <Circle className="w-2.5 h-2.5" />
-                                                                হয়নি
+                                                                না
                                                             </span>
                                                         )}
                                                     </td>
 
                                                     {/* Actions */}
-                                                    <td className="py-2 px-2 text-center whitespace-nowrap">
+                                                    <td className="py-2.5 px-3.5 text-right whitespace-nowrap">
                                                         <ActionButtons admission={admission} />
                                                     </td>
                                                 </tr>
@@ -1114,6 +1346,7 @@ export default function AdmissionMembers({ admissions, filters, stats, zones, ar
                         </AutoFitTableContainer>
                     </div>
 
+                    {/* Pagination */}
                     <ListPagination
                         meta={admissions}
                         onPageChange={goToPage}
@@ -1121,42 +1354,84 @@ export default function AdmissionMembers({ admissions, filters, stats, zones, ar
                     />
                 </div>
 
+                {/* ── 5. FLOATING BOTTOM BULK ACTION DOCK ──────────────────────────────── */}
+                {canDelete && selectedIds.length > 0 && (
+                    <div className="fixed bottom-5 left-1/2 -translate-x-1/2 z-40 bg-slate-900/95 backdrop-blur-md text-white px-4 sm:px-5 py-2.5 rounded-2xl shadow-2xl border border-slate-700/80 flex items-center gap-3 sm:gap-4 animate-in slide-in-from-bottom-5">
+                        <div className="flex items-center gap-2 text-xs font-medium">
+                            <span className="w-2 h-2 rounded-full bg-rose-400 animate-pulse shrink-0" />
+                            <span>
+                                নির্বাচিত: <strong className="font-bold text-rose-300">{selectedIds.length}</strong> টি
+                            </span>
+                        </div>
+                        <div className="h-4 w-px bg-slate-700" />
+                        <div className="flex items-center gap-2">
+                            <button
+                                type="button"
+                                onClick={() => setSelectedIds([])}
+                                className="px-2 py-1 text-xs text-slate-300 hover:text-white hover:bg-slate-800 rounded-lg transition"
+                            >
+                                নির্বাচন সরান
+                            </button>
+                            <button
+                                type="button"
+                                onClick={() => setDeleteIntent({ type: 'bulk' })}
+                                className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold shadow-md transition active:scale-95"
+                            >
+                                <Trash2 size={13} />
+                                <span>নির্বাচিত মুছুন ({selectedIds.length})</span>
+                            </button>
+                        </div>
+                    </div>
+                )}
+
                 {/* Print Modal */}
                 {showPrintModal && (
-                    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-                        <div className="bg-white rounded-2xl shadow-xl max-w-md w-full p-6">
-                            <h3 className="text-lg font-semibold text-slate-900 mb-3">প্রিন্ট</h3>
-                            <p className="text-sm text-slate-600 mb-4">
-                                বর্তমান ফিল্টার অনুযায়ী তালিকা প্রিন্ট করা হবে। প্রিন্টের পর নিচের চেকবক্স চিহ্নিত করলে এই
-                                তালিকার সব রেকর্ড <strong>প্রিন্ট সম্পন্ন</strong> হিসেবে নোট থাকবে।
-                            </p>
-                            <label className="flex items-center gap-2 cursor-pointer mb-6">
-                                <input
-                                    type="checkbox"
-                                    checked={markAsPrintedCheckbox}
-                                    onChange={(e) => setMarkAsPrintedCheckbox(e.target.checked)}
-                                    className="w-4 h-4 rounded border-slate-300 text-emerald-600 focus:ring-emerald-500"
-                                />
-                                <span className="text-sm font-medium text-slate-700">প্রিন্ট সম্পন্ন চিহ্নিত করুন</span>
-                            </label>
-                            <div className="flex gap-3 justify-end">
+                    <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center z-50 p-4 animate-in fade-in">
+                        <div className="bg-white rounded-3xl shadow-2xl max-w-md w-full p-6 border border-slate-100 space-y-4">
+                            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+                                <h3 className="text-lg font-bold text-slate-900">তালিকা প্রিন্ট</h3>
                                 <button
                                     type="button"
                                     onClick={() => {
                                         setShowPrintModal(false);
                                         setMarkAsPrintedCheckbox(false);
                                     }}
-                                    className="px-4 py-2 text-sm font-medium text-slate-700 bg-slate-100 rounded-xl hover:bg-slate-200"
+                                    className="p-1 rounded-full text-slate-400 hover:text-slate-600"
+                                >
+                                    <X size={16} />
+                                </button>
+                            </div>
+                            <p className="text-xs text-slate-600 leading-relaxed">
+                                বর্তমান ফিল্টার অনুযায়ী তালিকা প্রিন্ট করা হবে। প্রিন্টের পর নিচের চেকবক্স চিহ্নিত করলে এই
+                                তালিকার সব রেকর্ড <strong>প্রিন্ট সম্পন্ন</strong> হিসেবে নোট থাকবে।
+                            </p>
+                            <label className="flex items-center gap-2.5 cursor-pointer p-3 bg-slate-50 rounded-xl border border-slate-200">
+                                <input
+                                    type="checkbox"
+                                    checked={markAsPrintedCheckbox}
+                                    onChange={(e) => setMarkAsPrintedCheckbox(e.target.checked)}
+                                    className="w-4 h-4 rounded border-slate-300 text-emerald-600 focus:ring-emerald-500"
+                                />
+                                <span className="text-xs font-bold text-slate-700">প্রিন্ট সম্পন্ন হিসেবে চিহ্নিত করুন</span>
+                            </label>
+                            <div className="flex gap-2 justify-end pt-2">
+                                <button
+                                    type="button"
+                                    onClick={() => {
+                                        setShowPrintModal(false);
+                                        setMarkAsPrintedCheckbox(false);
+                                    }}
+                                    className="px-4 py-2 text-xs font-bold text-slate-700 bg-slate-100 rounded-xl hover:bg-slate-200"
                                 >
                                     বাতিল
                                 </button>
                                 <button
                                     type="button"
                                     onClick={handlePrintConfirm}
-                                    className="px-4 py-2 text-sm font-medium text-white bg-emerald-600 rounded-xl hover:bg-emerald-700 flex items-center gap-1"
+                                    className="px-4 py-2 text-xs font-bold text-white bg-emerald-600 rounded-xl hover:bg-emerald-700 flex items-center gap-1.5 shadow-xs"
                                 >
-                                    <Printer className="w-4 h-4" />
-                                    প্রিন্ট
+                                    <Printer size={13} />
+                                    <span>প্রিন্ট করুন</span>
                                 </button>
                             </div>
                         </div>
@@ -1165,63 +1440,68 @@ export default function AdmissionMembers({ admissions, filters, stats, zones, ar
 
                 {/* History Modal */}
                 {showHistoryModal && selectedAdmission && (
-                    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-                        <div className="bg-white rounded-2xl max-w-3xl w-full max-h-[90vh] overflow-y-auto">
-                            <div className="sticky top-0 bg-white border-b border-slate-200 px-6 py-4 flex items-center justify-between rounded-t-2xl">
+                    <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center z-50 p-4 animate-in fade-in">
+                        <div className="bg-white rounded-3xl max-w-3xl w-full max-h-[90vh] overflow-y-auto shadow-2xl border border-slate-100">
+                            <div className="sticky top-0 bg-white/95 backdrop-blur border-b border-slate-100 px-6 py-4 flex items-center justify-between rounded-t-3xl">
                                 <div>
                                     <h3 className="text-lg font-bold text-slate-900">Revision History</h3>
-                                    <p className="text-sm text-slate-600">
-                                        {selectedAdmission.application_no} — {selectedAdmission.applicant_name_en}
+                                    <p className="text-xs text-slate-500 mt-0.5">
+                                        {selectedAdmission.application_no} — {selectedAdmission.applicant_name_en || selectedAdmission.applicant_name_bn}
                                     </p>
                                 </div>
-                                <button onClick={() => { setShowHistoryModal(false); setSelectedAdmission(null); }} className="p-2 hover:bg-slate-100 rounded-full">
-                                    <X className="w-5 h-5" />
+                                <button
+                                    type="button"
+                                    onClick={() => { setShowHistoryModal(false); setSelectedAdmission(null); }}
+                                    className="p-1 rounded-full text-slate-400 hover:text-slate-600"
+                                >
+                                    <X size={18} />
                                 </button>
                             </div>
                             <div className="p-6 space-y-4">
                                 <div className="flex items-center justify-between">
                                     <div className="flex items-center gap-2">
-                                        <FileText className="w-5 h-5 text-blue-600" />
-                                        <span className="text-sm font-medium text-slate-700">Total Revisions:</span>
-                                        <span className="px-3 py-1 bg-blue-100 text-blue-700 rounded-full text-sm font-semibold">
-                                            {selectedAdmission.revision_count}
+                                        <FileText className="w-4 h-4 text-blue-600" />
+                                        <span className="text-xs font-semibold text-slate-700">Total Revisions:</span>
+                                        <span className="px-2.5 py-0.5 bg-blue-50 text-blue-700 border border-blue-200 rounded-full text-xs font-bold">
+                                            {selectedAdmission.revision_count || 0}
                                         </span>
                                     </div>
                                 </div>
                                 {selectedAdmission.revision_comments ? (
-                                    <div className="border border-blue-200 bg-blue-50 rounded-xl p-4 space-y-3">
+                                    <div className="space-y-2.5">
                                         {selectedAdmission.revision_comments.split('\n\n').map((comment, index) => {
                                             const isHeadOffice = comment.includes('Head Office') || comment.includes('Issue');
                                             const isBranch = comment.includes('Branch Revision Note');
                                             return (
                                                 <div
                                                     key={index}
-                                                    className={`p-3 rounded-lg border ${
+                                                    className={`p-3 rounded-2xl border text-xs leading-relaxed ${
                                                         isHeadOffice
-                                                            ? 'bg-orange-50 border-orange-200'
+                                                            ? 'bg-orange-50/70 border-orange-200 text-orange-950'
                                                             : isBranch
-                                                              ? 'bg-emerald-50 border-emerald-200'
-                                                              : 'bg-white border-slate-200'
+                                                            ? 'bg-emerald-50/70 border-emerald-200 text-emerald-950'
+                                                            : 'bg-slate-50 border-slate-200 text-slate-800'
                                                     }`}
                                                 >
-                                                    <p className="text-sm whitespace-pre-wrap text-slate-800">{comment.trim()}</p>
+                                                    <p className="whitespace-pre-wrap">{comment.trim()}</p>
                                                 </div>
                                             );
                                         })}
                                     </div>
                                 ) : (
-                                    <div className="text-center py-8 text-slate-500">
-                                        <FileText className="w-12 h-12 mx-auto mb-2 text-slate-300" />
-                                        <p>No revision history available</p>
+                                    <div className="text-center py-8 text-slate-400 text-xs">
+                                        <FileText className="w-10 h-10 mx-auto mb-2 text-slate-300" />
+                                        <p>কোনো রিভিশন হিস্ট্রি পাওয়া যায়নি</p>
                                     </div>
                                 )}
                             </div>
-                            <div className="sticky bottom-0 bg-slate-50 border-t border-slate-200 px-6 py-4 flex justify-end rounded-b-2xl">
+                            <div className="sticky bottom-0 bg-slate-50 border-t border-slate-100 px-6 py-3.5 flex justify-end rounded-b-3xl">
                                 <button
+                                    type="button"
                                     onClick={() => { setShowHistoryModal(false); setSelectedAdmission(null); }}
-                                    className="px-6 py-2 bg-slate-200 text-slate-700 rounded-xl hover:bg-slate-300"
+                                    className="px-5 py-2 bg-slate-200 hover:bg-slate-300 text-slate-700 text-xs font-bold rounded-xl transition"
                                 >
-                                    Close
+                                    বন্ধ করুন
                                 </button>
                             </div>
                         </div>

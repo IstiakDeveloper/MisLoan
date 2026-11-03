@@ -42,6 +42,7 @@ import {
     Trash2,
     FileSpreadsheet,
     Activity,
+    Smartphone,
 } from 'lucide-react';
 import { useIsMobile } from '@/hooks/use-mobile';
 import { usePwaInstallPrompt } from '@/hooks/usePwaInstallPrompt';
@@ -93,11 +94,13 @@ const REPORT_PATHS = [
     '/head-office/reports/approver-loan-approvals',
     '/reports/approver-loan-approvals',
     '/reports/branch-loan-pending',
+    '/reports/app-registrations',
 ];
 const TEAM_BASED_REPORT_HREF = '/head-office/team-based-approvals/report';
 const GUARANTOR_INFORMANT_REPORT_HREF = '/head-office/reports/guarantor-informants';
 const APPROVER_LOAN_REPORT_HREF = '/head-office/reports/approver-loan-approvals';
 const BRANCH_LOAN_PENDING_REPORT_HREF = '/reports/branch-loan-pending';
+const APP_REGISTRATION_REPORT_HREF = '/reports/app-registrations';
 
 function isNavItemActive(currentPath: string, href: string): boolean {
     if (currentPath === href) return true;
@@ -129,6 +132,7 @@ function getPageTitle(currentPath: string): string {
     if (currentPath.includes('/reports/guarantor-informants')) return 'Guarantor & Informant Report';
     if (currentPath.includes('/reports/approver-loan-approvals')) return 'Approver Loan Approval Report';
     if (currentPath.includes('/reports/branch-loan-pending')) return 'Branch-wise Loan Pending Report';
+    if (currentPath.includes('/reports/app-registrations')) return 'App Registration Report';
     if (currentPath.includes('/approvals')) return 'Pending Approvals';
     if (currentPath.includes('/verifications')) return 'Verifications';
     if (currentPath.includes('/loan-categories')) return 'Loan Categories';
@@ -324,6 +328,7 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
     ];
 
     const headOfficeReportItems = [
+        { name: 'App Registrations (অ্যাপ রেজিস্ট্রেশন)', href: APP_REGISTRATION_REPORT_HREF, icon: Smartphone },
         ...(canViewTeamBasedReport ? [{ name: 'Team Based Report', href: TEAM_BASED_REPORT_HREF, icon: PieChart }] : []),
         ...(canViewGuarantorReport ? [{ name: 'Guarantor & Informant Report', href: GUARANTOR_INFORMANT_REPORT_HREF, icon: Users }] : []),
         ...(canViewApproverLoanReport ? [{ name: 'Approver Loan Approval Report', href: APPROVER_LOAN_REPORT_HREF, icon: FileSpreadsheet }] : []),

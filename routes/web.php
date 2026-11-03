@@ -1,6 +1,7 @@
 <?php
 
 use App\Http\Controllers\ApprovalController;
+use App\Http\Controllers\AppRegistrationController;
 use App\Http\Controllers\ClusterHandoverController;
 use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\HeadOffice\ApproverLoanApprovalReportController;
@@ -233,6 +234,17 @@ Route::middleware(['auth', 'verified'])->group(function () {
         Route::patch('{memberAdmission}/reject', [MemberAdmissionController::class, 'reject'])->name('reject')->middleware('branch.user');
         Route::patch('{memberAdmission}/update-member-code', [MemberAdmissionController::class, 'updateMemberCode'])->name('update-member-code');
         Route::patch('{memberAdmission}/update-samity', [MemberAdmissionController::class, 'updateSamity'])->name('update-samity')->middleware('branch.user');
+        Route::post('{memberAdmission}/toggle-app-register', [AppRegistrationController::class, 'toggle'])->name('toggle-app-register');
+    });
+
+    // App Registration Routes
+    Route::prefix('app-registrations')->name('app-registrations.')->middleware('auth')->group(function () {
+        Route::get('branches', [AppRegistrationController::class, 'getBranches'])->name('branches');
+        Route::get('samities-by-branch', [AppRegistrationController::class, 'getSamitiesByBranch'])->name('samities-by-branch');
+        Route::post('/', [AppRegistrationController::class, 'store'])->name('store');
+        Route::get('lookup-member', [AppRegistrationController::class, 'lookupMember'])->name('lookup-member');
+        Route::post('bulk-upload', [AppRegistrationController::class, 'bulkUpload'])->name('bulk-upload');
+        Route::get('sample-template', [AppRegistrationController::class, 'downloadTemplate'])->name('sample-template');
     });
 
     Route::patch('member-admission-approvals/{approval}/update-comment', [MemberAdmissionController::class, 'updateApprovalComment'])
@@ -493,6 +505,10 @@ Route::middleware(['auth', 'verified'])->group(function () {
 
         Route::get('reports/branch-loan-pending', [BranchLoanPendingReportController::class, 'index'])->name('reports.branch-loan-pending');
         Route::get('reports/branch-loan-pending/print', [BranchLoanPendingReportController::class, 'print'])->name('reports.branch-loan-pending.print');
+
+        // App Registration Report (Branch-wise & Ledger)
+        Route::get('reports/app-registrations', [AppRegistrationController::class, 'report'])->name('reports.app-registrations');
+        Route::get('reports/app-registrations/export-ledger', [AppRegistrationController::class, 'exportLedgerExcel'])->name('reports.app-registrations.export-ledger');
     });
 
     // Team Based Approval Report - Head Office, SuperAdmin, ED

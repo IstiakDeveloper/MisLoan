@@ -9,6 +9,7 @@ use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\Relations\HasOne;
 use Illuminate\Support\Facades\Schema;
 
 class MemberAdmission extends Model
@@ -149,6 +150,11 @@ class MemberAdmission extends Model
         'is_legacy',
         'loan_dofa',
         'previous_admission_id',
+
+        // App Registration
+        'is_app_registered',
+        'app_registered_at',
+        'app_registered_by',
     ];
 
     protected $casts = [
@@ -184,9 +190,21 @@ class MemberAdmission extends Model
         'returned_at' => 'datetime',
         'printed_at' => 'datetime',
         'selected_approvers' => 'array',
+        'is_app_registered' => 'boolean',
+        'app_registered_at' => 'datetime',
     ];
 
     // Relationships
+    public function appRegistration(): HasOne
+    {
+        return $this->hasOne(AppRegistration::class);
+    }
+
+    public function appRegisteredByUser(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'app_registered_by');
+    }
+
     public function branch(): BelongsTo
     {
         return $this->belongsTo(Branch::class);

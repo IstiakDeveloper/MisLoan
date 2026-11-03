@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Models\AppRegistration;
 use App\Models\Area;
 use App\Models\Branch;
 use App\Models\MemberAdmission;
@@ -42,7 +43,7 @@ class HeadOfficeAdmissionController extends Controller
     public function index(Request $request)
     {
         $user = $request->user();
-        $workQueue = RoleListWorkQueue::resolveWithDates($request, true, $user);
+        $workQueue = RoleListWorkQueue::resolveWithDates($request, false, $user);
         $statusFilter = $workQueue['status'];
         $dateFrom = $workQueue['date_from'];
         $dateTo = $workQueue['date_to'];
@@ -85,7 +86,9 @@ class HeadOfficeAdmissionController extends Controller
 
         // Search filter
         if ($request->has('search') && $request->search) {
-            MemberCodeService::applyAdmissionSearch($query, $request->search);
+            MemberCodeService::applyAdmissionSearchOrdering($query, $request->search);
+        } else {
+            $query->orderByRaw('COALESCE(submitted_at, created_at) desc');
         }
 
         // Had issues filter (for admissions that went through revision)
@@ -163,7 +166,7 @@ class HeadOfficeAdmissionController extends Controller
         ];
 
         $perPage = $this->resolvePerPage($request);
-        $admissions = $query->orderByRaw('COALESCE(submitted_at, created_at) desc')->paginate($perPage)->withQueryString();
+        $admissions = $query->paginate($perPage)->withQueryString();
 
         $admissions = $admissions->through(function (MemberAdmission $admission) {
             $arr = $admission->toArray();
@@ -211,7 +214,7 @@ class HeadOfficeAdmissionController extends Controller
         $this->applyAccessibleBranchScope($query);
         $this->applyHeadOfficeStageVisibility($query);
 
-        $workQueue = RoleListWorkQueue::resolveWithDates($request, true);
+        $workQueue = RoleListWorkQueue::resolveWithDates($request, false);
         $this->applySubmittedAtDateRange($query, $workQueue['date_from'], $workQueue['date_to']);
 
         if ($request->zone_id) {
@@ -296,7 +299,7 @@ class HeadOfficeAdmissionController extends Controller
         $this->applyAccessibleBranchScope($query);
         $this->applyHeadOfficeStageVisibility($query);
 
-        $workQueue = RoleListWorkQueue::resolveWithDates($request, true);
+        $workQueue = RoleListWorkQueue::resolveWithDates($request, false);
         $this->applySubmittedAtDateRange($query, $workQueue['date_from'], $workQueue['date_to']);
 
         if ($request->zone_id) {
@@ -448,7 +451,7 @@ class HeadOfficeAdmissionController extends Controller
         $this->applyAccessibleBranchScope($query);
         $this->applyHeadOfficeStageVisibility($query);
 
-        $workQueue = RoleListWorkQueue::resolveWithDates($request, true);
+        $workQueue = RoleListWorkQueue::resolveWithDates($request, false);
         $this->applySubmittedAtDateRange($query, $workQueue['date_from'], $workQueue['date_to']);
 
         if ($request->zone_id) {
@@ -1340,6 +1343,7 @@ class HeadOfficeAdmissionController extends Controller
             $admission->issues()->delete();
             $admission->familyMembers()->delete();
             $admission->otherAssets()->delete();
+            AppRegistration::where('member_admission_id', $admission->id)->delete();
             $admission->delete();
         });
     }

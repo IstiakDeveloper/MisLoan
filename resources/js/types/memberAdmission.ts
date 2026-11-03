@@ -151,6 +151,8 @@ export interface MemberAdmission {
     existing_loan_form?: { id: number; application_no: string; status: string } | null;
     has_disbursed_loan?: boolean;
     can_be_edited?: boolean;
+    is_app_registered?: boolean;
+    app_registered_at?: string | null;
 
     created_at: string;
     updated_at: string;

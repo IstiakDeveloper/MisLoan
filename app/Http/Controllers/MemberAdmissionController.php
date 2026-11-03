@@ -515,7 +515,12 @@ class MemberAdmissionController extends Controller
                 $q->where('status', LoanApplication::STATUS_DISBURSED);
             },
         ]);
-        $admissions = $query->orderByRaw('COALESCE(reviewed_at, submitted_at, created_at) desc')->paginate($perPage)->withQueryString();
+        if ($request->filled('search')) {
+            MemberCodeService::applyAdmissionSearchOrdering($query, (string) $request->search);
+        } else {
+            $query->orderByRaw('COALESCE(reviewed_at, submitted_at, created_at) desc');
+        }
+        $admissions = $query->paginate($perPage)->withQueryString();
 
         $admissions = $admissions->through(function (MemberAdmission $admission) use ($user) {
             $arr = $admission->toArray();
@@ -538,6 +543,7 @@ class MemberAdmissionController extends Controller
                 $this->canManageAnyStatus(),
                 $isRenewalOrLegacy
             );
+            $arr['is_app_registered'] = (bool) ($admission->is_app_registered ?? false);
 
             return $arr;
         });
@@ -1670,6 +1676,14 @@ class MemberAdmissionController extends Controller
 
     public function destroy(MemberAdmission $memberAdmission)
     {
+        $user = auth()->user();
+        if ($memberAdmission->is_app_registered) {
+            $canDelete = $user->isSuperAdmin() || $user->isHeadOffice() || (bool) $user->has_all_access;
+            if (! $canDelete) {
+                return back()->with('error', 'অ্যাপ রেজিস্টার সম্পন্ন সদস্য মুছে ফেলার অনুমতি শুধুমাত্র হেড অফিস ও সুপার অ্যাডমিনের আছে।');
+            }
+        }
+
         // Only draft admissions can be deleted
         if (! $memberAdmission->isDraft()) {
             return back()->with('error', 'Only draft admissions can be deleted!');

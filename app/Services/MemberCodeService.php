@@ -255,6 +255,52 @@ class MemberCodeService
     }
 
     /**
+     * Apply intelligent relevance ordering for admission search.
+     * Guarantees exact and contiguous matches on member code and mobile appear first.
+     */
+    public static function applyAdmissionSearchOrdering(Builder $query, string $search): void
+    {
+        $clean = self::toEnglishDigits(trim($search));
+        if ($clean === '') {
+            $query->orderByRaw('COALESCE(reviewed_at, submitted_at, created_at) desc');
+
+            return;
+        }
+
+        $onlyDigits = preg_replace('/\D/', '', $clean);
+        $isNumeric = ($onlyDigits !== '' && $onlyDigits === $clean);
+        $padded6 = ($isNumeric && strlen($onlyDigits) <= 6) ? str_pad($onlyDigits, 6, '0', STR_PAD_LEFT) : null;
+
+        $escaped = addslashes($clean);
+        $escapedPad = $padded6 ? addslashes($padded6) : null;
+
+        if ($isNumeric) {
+            $orderSql = 'CASE ';
+            if ($escapedPad) {
+                $orderSql .= "WHEN application_no LIKE '%{$escapedPad}' THEN 1 ";
+            }
+            $orderSql .= "WHEN application_no LIKE '%{$escaped}' THEN 2 ";
+            $orderSql .= "WHEN application_no LIKE '%{$escaped}%' THEN 3 ";
+            $orderSql .= "WHEN mobile_number LIKE '%{$escaped}' THEN 4 ";
+            $orderSql .= "WHEN mobile_number LIKE '%{$escaped}%' THEN 5 ";
+            $orderSql .= "WHEN nid_number LIKE '%{$escaped}%' THEN 6 ";
+            $orderSql .= 'ELSE 9 END ASC, COALESCE(reviewed_at, submitted_at, created_at) desc';
+
+            $query->orderByRaw($orderSql);
+        } else {
+            $orderSql = 'CASE ';
+            $orderSql .= "WHEN applicant_name_bn = '{$escaped}' OR applicant_name_en = '{$escaped}' THEN 1 ";
+            $orderSql .= "WHEN applicant_name_bn LIKE '{$escaped}%' OR applicant_name_en LIKE '{$escaped}%' THEN 2 ";
+            $orderSql .= "WHEN applicant_name_bn LIKE '%{$escaped}%' OR applicant_name_en LIKE '%{$escaped}%' THEN 3 ";
+            $orderSql .= "WHEN application_no LIKE '%{$escaped}%' THEN 4 ";
+            $orderSql .= "WHEN mobile_number LIKE '%{$escaped}%' THEN 5 ";
+            $orderSql .= 'ELSE 9 END ASC, COALESCE(reviewed_at, submitted_at, created_at) desc';
+
+            $query->orderByRaw($orderSql);
+        }
+    }
+
+    /**
      * Apply loan application search filter on a Query Builder:
      * - Searches loan application_no
      * - Searches member admission names, phone, nid, and member code (with 6-digit zero-padded support).
