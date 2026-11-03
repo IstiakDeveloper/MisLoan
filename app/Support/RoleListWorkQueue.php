@@ -65,6 +65,10 @@ class RoleListWorkQueue
 
         $user->loadMissing('role');
 
+        if ($user->has_all_access || $user->isSuperAdmin() || $user->isHeadOffice()) {
+            return false;
+        }
+
         return $user->role?->name !== Role::BRANCH_USER;
     }
 

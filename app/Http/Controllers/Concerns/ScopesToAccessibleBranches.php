@@ -4,9 +4,10 @@ namespace App\Http\Controllers\Concerns;
 
 use App\Models\Area;
 use App\Models\Branch;
-use App\Models\Zone;
 use App\Models\User;
+use App\Models\Zone;
 use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Support\Facades\Cache;
 
 trait ScopesToAccessibleBranches
 {
@@ -70,11 +71,13 @@ trait ScopesToAccessibleBranches
     protected function organizationFilterOptions(): array
     {
         if (! $this->shouldRestrictToAccessibleBranches()) {
-            return [
-                'zones' => Zone::active()->orderBy('name')->get(),
-                'areas' => Area::active()->with('zone')->orderBy('name')->get(),
-                'branches' => Branch::active()->with('area.zone')->orderedByCode()->get(),
-            ];
+            return Cache::remember('global_org_filter_options', 3600, function () {
+                return [
+                    'zones' => Zone::active()->orderBy('name')->get(),
+                    'areas' => Area::active()->with('zone')->orderBy('name')->get(),
+                    'branches' => Branch::active()->with('area.zone')->orderedByCode()->get(),
+                ];
+            });
         }
 
         $ids = $this->accessibleBranchIds();

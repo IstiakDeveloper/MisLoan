@@ -120,8 +120,16 @@ trait AppliesRoleDefaultListFilter
      */
     protected function countPendingMyApproval($baseQuery, User $user, string $type): int
     {
+        $ids = $type === 'loan'
+            ? app(ApprovalService::class)->pendingLoanApplicationIdsForUser($user)
+            : app(ApprovalService::class)->pendingAdmissionIdsForUser($user);
+
+        if (empty($ids)) {
+            return 0;
+        }
+
         $clone = clone $baseQuery;
-        $this->applyResolvedStatusFilter($clone, RoleListWorkQueue::PENDING_MY_APPROVAL, $user, $type);
+        $clone->whereIn('id', $ids);
 
         return $clone->count();
     }

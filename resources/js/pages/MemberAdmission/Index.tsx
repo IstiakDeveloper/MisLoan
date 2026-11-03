@@ -369,11 +369,10 @@ export default function Index({ admissions, zones = [], areas = [], branches = [
         const isDisbursed = admission.active_loan_status === 'disbursed';
         const loanNo = admission.existing_loan_form?.application_no;
         return (
-            <span className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md border text-[10px] font-semibold tracking-tight ${
-                isDisbursed
-                    ? 'bg-rose-50 border-rose-200/80 text-rose-700'
-                    : 'bg-amber-50 border-amber-200/80 text-amber-700'
-            }`}>
+            <span className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md border text-[10px] font-semibold tracking-tight ${isDisbursed
+                ? 'bg-rose-50 border-rose-200/80 text-rose-700'
+                : 'bg-amber-50 border-amber-200/80 text-amber-700'
+                }`}>
                 <span className={`w-1 h-1 rounded-full ${isDisbursed ? 'bg-rose-500' : 'bg-amber-500'}`} />
                 Loan: {loanNo || 'বিদ্যমান'}
             </span>
@@ -710,11 +709,10 @@ export default function Index({ admissions, zones = [], areas = [], branches = [
                             <button
                                 type="button"
                                 onClick={handleTodayFilter}
-                                className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl border text-xs font-semibold transition-all active:scale-95 shadow-2xs ${
-                                    isTodayFilter
-                                        ? 'bg-blue-600 text-white border-blue-600 font-bold'
-                                        : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-50'
-                                }`}
+                                className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl border text-xs font-semibold transition-all active:scale-95 shadow-2xs ${isTodayFilter
+                                    ? 'bg-blue-600 text-white border-blue-600 font-bold'
+                                    : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-50'
+                                    }`}
                                 title="আজকের আবেদনসমূহ (Today)"
                             >
                                 <Calendar size={13} />
@@ -785,33 +783,29 @@ export default function Index({ admissions, zones = [], areas = [], branches = [
                                     key={stat.filter}
                                     type="button"
                                     onClick={() => handleFilterChange(stat.filter)}
-                                    className={`relative p-2 sm:p-2.5 rounded-xl border text-left transition-all duration-150 active:scale-95 group overflow-hidden ${
-                                        isActive
-                                            ? `${stat.activeBg} shadow-sm ring-2 ring-offset-1 ring-blue-500/30`
-                                            : stat.highlight
+                                    className={`relative p-2 sm:p-2.5 rounded-xl border text-left transition-all duration-150 active:scale-95 group overflow-hidden ${isActive
+                                        ? `${stat.activeBg} shadow-sm ring-2 ring-offset-1 ring-blue-500/30`
+                                        : stat.highlight
                                             ? 'bg-gradient-to-b from-emerald-50/90 to-white border-emerald-300 hover:border-emerald-400 hover:shadow-2xs'
                                             : 'bg-white hover:bg-slate-50 border-slate-200/90 hover:border-slate-300 shadow-2xs'
-                                    }`}
+                                        }`}
                                 >
                                     {/* Top Row: Mini Icon & Bold Count */}
                                     <div className="flex items-center justify-between gap-1 mb-1">
-                                        <div className={`w-5 h-5 rounded-md flex items-center justify-center shrink-0 transition-transform group-hover:scale-105 ${
-                                            isActive ? 'bg-white/20 text-white' : `${stat.iconBg} ${stat.iconColor}`
-                                        }`}>
+                                        <div className={`w-5 h-5 rounded-md flex items-center justify-center shrink-0 transition-transform group-hover:scale-105 ${isActive ? 'bg-white/20 text-white' : `${stat.iconBg} ${stat.iconColor}`
+                                            }`}>
                                             <IconComponent size={12} className="stroke-[2.2]" />
                                         </div>
-                                        <span className={`text-sm sm:text-base font-extrabold tracking-tight ${
-                                            isActive ? 'text-white' : 'text-slate-900'
-                                        }`}>
+                                        <span className={`text-sm sm:text-base font-extrabold tracking-tight ${isActive ? 'text-white' : 'text-slate-900'
+                                            }`}>
                                             {stat.count}
                                         </span>
                                     </div>
 
                                     {/* Bottom Row: Label & Indicator */}
                                     <div className="flex items-center justify-between gap-1">
-                                        <span className={`text-[10.5px] font-semibold truncate block ${
-                                            isActive ? 'text-white/95 font-bold' : 'text-slate-600'
-                                        }`}>
+                                        <span className={`text-[10.5px] font-semibold truncate block ${isActive ? 'text-white/95 font-bold' : 'text-slate-600'
+                                            }`}>
                                             {stat.label}
                                         </span>
                                         {stat.highlight && !isActive && (
@@ -869,11 +863,10 @@ export default function Index({ admissions, zones = [], areas = [], branches = [
                                 <button
                                     type="button"
                                     onClick={() => setShowAdvancedFilters(!showAdvancedFilters)}
-                                    className={`inline-flex items-center gap-1.5 px-3 py-2 text-xs font-semibold rounded-xl border transition shadow-2xs active:scale-95 ${
-                                        showAdvancedFilters || activeFiltersCount > 0
-                                            ? 'bg-blue-50 border-blue-200 text-blue-700'
-                                            : 'bg-white border-slate-200 text-slate-700 hover:bg-slate-50'
-                                    }`}
+                                    className={`inline-flex items-center gap-1.5 px-3 py-2 text-xs font-semibold rounded-xl border transition shadow-2xs active:scale-95 ${showAdvancedFilters || activeFiltersCount > 0
+                                        ? 'bg-blue-50 border-blue-200 text-blue-700'
+                                        : 'bg-white border-slate-200 text-slate-700 hover:bg-slate-50'
+                                        }`}
                                 >
                                     <SlidersHorizontal size={13} />
                                     <span>ফিল্টার</span>
@@ -1122,13 +1115,12 @@ export default function Index({ admissions, zones = [], areas = [], branches = [
                                                     type="button"
                                                     disabled={togglingId === admission.id || isLocked}
                                                     onClick={() => handleToggleAppRegister(admission)}
-                                                    className={`relative inline-flex h-5 w-9 shrink-0 rounded-full border border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${
-                                                        isRegistered
-                                                            ? isLocked
-                                                                ? 'bg-emerald-500 cursor-not-allowed opacity-90'
-                                                                : 'bg-emerald-500 cursor-pointer hover:bg-emerald-600'
-                                                            : 'bg-slate-300 cursor-pointer hover:bg-slate-400'
-                                                    }`}
+                                                    className={`relative inline-flex h-5 w-9 shrink-0 rounded-full border border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${isRegistered
+                                                        ? isLocked
+                                                            ? 'bg-emerald-500 cursor-not-allowed opacity-90'
+                                                            : 'bg-emerald-500 cursor-pointer hover:bg-emerald-600'
+                                                        : 'bg-slate-300 cursor-pointer hover:bg-slate-400'
+                                                        }`}
                                                     title={
                                                         isRegistered
                                                             ? isLocked
@@ -1138,11 +1130,10 @@ export default function Index({ admissions, zones = [], areas = [], branches = [
                                                     }
                                                 >
                                                     <span
-                                                        className={`pointer-events-none inline-block h-4 w-4 transform rounded-full bg-white shadow-xs ring-0 transition duration-200 ease-in-out flex items-center justify-center text-[8px] ${
-                                                            isRegistered
-                                                                ? 'translate-x-4 text-emerald-600'
-                                                                : 'translate-x-0.5 text-slate-400'
-                                                        }`}
+                                                        className={`pointer-events-none inline-block h-4 w-4 transform rounded-full bg-white shadow-xs ring-0 transition duration-200 ease-in-out flex items-center justify-center text-[8px] ${isRegistered
+                                                            ? 'translate-x-4 text-emerald-600'
+                                                            : 'translate-x-0.5 text-slate-400'
+                                                            }`}
                                                     >
                                                         {togglingId === admission.id ? (
                                                             <Loader2 size={9} className="animate-spin text-slate-500" />
@@ -1362,13 +1353,12 @@ export default function Index({ admissions, zones = [], areas = [], branches = [
                                                                 type="button"
                                                                 disabled={togglingId === admission.id || isLocked}
                                                                 onClick={() => handleToggleAppRegister(admission)}
-                                                                className={`relative inline-flex h-5 w-9 shrink-0 rounded-full border border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${
-                                                                    isRegistered
-                                                                        ? isLocked
-                                                                            ? 'bg-emerald-500 shadow-2xs cursor-not-allowed opacity-90'
-                                                                            : 'bg-emerald-500 shadow-2xs cursor-pointer hover:bg-emerald-600'
-                                                                        : 'bg-slate-200 hover:bg-slate-300 cursor-pointer'
-                                                                }`}
+                                                                className={`relative inline-flex h-5 w-9 shrink-0 rounded-full border border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${isRegistered
+                                                                    ? isLocked
+                                                                        ? 'bg-emerald-500 shadow-2xs cursor-not-allowed opacity-90'
+                                                                        : 'bg-emerald-500 shadow-2xs cursor-pointer hover:bg-emerald-600'
+                                                                    : 'bg-slate-200 hover:bg-slate-300 cursor-pointer'
+                                                                    }`}
                                                                 title={
                                                                     isRegistered
                                                                         ? isLocked
@@ -1378,11 +1368,10 @@ export default function Index({ admissions, zones = [], areas = [], branches = [
                                                                 }
                                                             >
                                                                 <span
-                                                                    className={`pointer-events-none inline-block h-4 w-4 transform rounded-full bg-white shadow-xs ring-0 transition duration-200 ease-in-out flex items-center justify-center text-[8px] ${
-                                                                        isRegistered
-                                                                            ? 'translate-x-4 text-emerald-600'
-                                                                            : 'translate-x-0.5 text-slate-400'
-                                                                    }`}
+                                                                    className={`pointer-events-none inline-block h-4 w-4 transform rounded-full bg-white shadow-xs ring-0 transition duration-200 ease-in-out flex items-center justify-center text-[8px] ${isRegistered
+                                                                        ? 'translate-x-4 text-emerald-600'
+                                                                        : 'translate-x-0.5 text-slate-400'
+                                                                        }`}
                                                                 >
                                                                     {togglingId === admission.id ? (
                                                                         <Loader2 size={9} className="animate-spin text-slate-500" />

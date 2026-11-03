@@ -460,7 +460,9 @@ class MemberAdmissionController extends Controller
         }
 
         $this->applyMemberTypeFilter($statsQuery, $request->input('member_type'));
-        $this->applyCoalesceDateRange($statsQuery, $fromDate, $toDate, 'COALESCE(reviewed_at, submitted_at, created_at)');
+        if (! $request->filled('search')) {
+            $this->applyCoalesceDateRange($statsQuery, $fromDate, $toDate, 'COALESCE(reviewed_at, submitted_at, created_at)');
+        }
 
         // Calculate stats
         $stats = [
@@ -483,7 +485,9 @@ class MemberAdmissionController extends Controller
         }
 
         $this->applyMemberTypeFilter($query, $request->input('member_type'));
-        $this->applyCoalesceDateRange($query, $fromDate, $toDate, 'COALESCE(reviewed_at, submitted_at, created_at)');
+        if (! $request->filled('search')) {
+            $this->applyCoalesceDateRange($query, $fromDate, $toDate, 'COALESCE(reviewed_at, submitted_at, created_at)');
+        }
 
         $accessibleBranches = $user->getAccessibleBranches()->sortBy('code')->values();
         if ($accessibleBranches->isEmpty()) {

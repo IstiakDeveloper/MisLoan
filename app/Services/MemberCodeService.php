@@ -227,8 +227,8 @@ class MemberCodeService
     /**
      * Apply member admission search filter on a Query Builder:
      * - Converts Bengali digits to English
-     * - Searches partial code, names, phone, nid
-     * - If query is <= 6 digits, also matches 6-digit zero-padded serial (e.g. 65 matches 0001000065).
+     * - If query is <= 6 digits and not a phone prefix (01), it matches ONLY member code (application_no) when matches exist.
+     * - Avoids returning random phone or NID numbers when searching for a member code.
      */
     public static function applyAdmissionSearch(Builder $query, string $search): void
     {
@@ -238,12 +238,50 @@ class MemberCodeService
         }
 
         $onlyDigits = preg_replace('/\D/', '', $clean);
-        $padded6 = ($onlyDigits !== '' && strlen($onlyDigits) <= 6) ? str_pad($onlyDigits, 6, '0', STR_PAD_LEFT) : null;
+        $isNumeric = ($onlyDigits !== '' && $onlyDigits === $clean);
+        $isPhonePrefix = str_starts_with($clean, '01');
+        $padded6 = ($isNumeric && strlen($onlyDigits) <= 6) ? str_pad($onlyDigits, 6, '0', STR_PAD_LEFT) : null;
 
+        // 1. Numeric query of 1-6 digits not starting with 01 is treated as Member Code Search
+        if ($isNumeric && ! $isPhonePrefix && strlen($clean) <= 6) {
+            $hasMemberCode = MemberAdmission::where(function ($sq) use ($clean, $padded6) {
+                $sq->where('application_no', 'like', "%{$clean}%");
+                if ($padded6) {
+                    $sq->orWhere('application_no', 'like', "%{$padded6}");
+                    $sq->orWhere('application_no', 'like', "%{$padded6}%");
+                }
+            })->exists();
+
+            if ($hasMemberCode) {
+                $query->where(function ($q) use ($clean, $padded6) {
+                    $q->where('application_no', 'like', "%{$clean}%");
+                    if ($padded6) {
+                        $q->orWhere('application_no', 'like', "%{$padded6}");
+                        $q->orWhere('application_no', 'like', "%{$padded6}%");
+                    }
+                });
+
+                return;
+            }
+        }
+
+        // 2. Phone or NID search
+        if ($isPhonePrefix || (strlen($clean) >= 8 && $isNumeric)) {
+            $query->where(function ($q) use ($clean) {
+                $q->where('mobile_number', 'like', "%{$clean}%")
+                    ->orWhere('nid_number', 'like', "%{$clean}%")
+                    ->orWhere('smart_card_number', 'like', "%{$clean}%")
+                    ->orWhere('application_no', 'like', "%{$clean}%");
+            });
+
+            return;
+        }
+
+        // 3. General text or fallback search
         $query->where(function ($q) use ($clean, $padded6) {
-            $q->where('application_no', 'like', "%{$clean}%")
-                ->orWhere('applicant_name_en', 'like', "%{$clean}%")
+            $q->where('applicant_name_en', 'like', "%{$clean}%")
                 ->orWhere('applicant_name_bn', 'like', "%{$clean}%")
+                ->orWhere('application_no', 'like', "%{$clean}%")
                 ->orWhere('mobile_number', 'like', "%{$clean}%")
                 ->orWhere('nid_number', 'like', "%{$clean}%");
 
@@ -262,7 +300,7 @@ class MemberCodeService
     {
         $clean = self::toEnglishDigits(trim($search));
         if ($clean === '') {
-            $query->orderByRaw('COALESCE(reviewed_at, submitted_at, created_at) desc');
+            $query->orderByDesc('id');
 
             return;
         }
@@ -276,15 +314,16 @@ class MemberCodeService
 
         if ($isNumeric) {
             $orderSql = 'CASE ';
+            $orderSql .= "WHEN application_no = '{$escaped}' THEN 1 ";
             if ($escapedPad) {
-                $orderSql .= "WHEN application_no LIKE '%{$escapedPad}' THEN 1 ";
+                $orderSql .= "WHEN application_no LIKE '%{$escapedPad}' THEN 2 ";
             }
-            $orderSql .= "WHEN application_no LIKE '%{$escaped}' THEN 2 ";
-            $orderSql .= "WHEN application_no LIKE '%{$escaped}%' THEN 3 ";
-            $orderSql .= "WHEN mobile_number LIKE '%{$escaped}' THEN 4 ";
-            $orderSql .= "WHEN mobile_number LIKE '%{$escaped}%' THEN 5 ";
-            $orderSql .= "WHEN nid_number LIKE '%{$escaped}%' THEN 6 ";
-            $orderSql .= 'ELSE 9 END ASC, COALESCE(reviewed_at, submitted_at, created_at) desc';
+            $orderSql .= "WHEN application_no LIKE '%{$escaped}' THEN 3 ";
+            $orderSql .= "WHEN application_no LIKE '%{$escaped}%' THEN 4 ";
+            $orderSql .= "WHEN mobile_number LIKE '%{$escaped}' THEN 5 ";
+            $orderSql .= "WHEN mobile_number LIKE '%{$escaped}%' THEN 6 ";
+            $orderSql .= "WHEN nid_number LIKE '%{$escaped}%' THEN 7 ";
+            $orderSql .= 'ELSE 9 END ASC, id DESC';
 
             $query->orderByRaw($orderSql);
         } else {
@@ -294,7 +333,7 @@ class MemberCodeService
             $orderSql .= "WHEN applicant_name_bn LIKE '%{$escaped}%' OR applicant_name_en LIKE '%{$escaped}%' THEN 3 ";
             $orderSql .= "WHEN application_no LIKE '%{$escaped}%' THEN 4 ";
             $orderSql .= "WHEN mobile_number LIKE '%{$escaped}%' THEN 5 ";
-            $orderSql .= 'ELSE 9 END ASC, COALESCE(reviewed_at, submitted_at, created_at) desc';
+            $orderSql .= 'ELSE 9 END ASC, id DESC';
 
             $query->orderByRaw($orderSql);
         }
@@ -312,24 +351,83 @@ class MemberCodeService
             return;
         }
 
+        $admissionQuery = MemberAdmission::query();
+        self::applyAdmissionSearch($admissionQuery, $clean);
+        $matchingAdmissionIds = $admissionQuery->pluck('id');
+
+        $query->where(function ($q) use ($clean, $matchingAdmissionIds) {
+            $q->where('loan_applications.application_no', 'like', "%{$clean}%");
+            if ($matchingAdmissionIds->isNotEmpty()) {
+                $q->orWhereIn('loan_applications.member_admission_id', $matchingAdmissionIds);
+            }
+        });
+    }
+
+    /**
+     * Apply intelligent relevance ordering for loan application search.
+     * Guarantees exact and contiguous matches on loan application_no, member code, and mobile appear first.
+     */
+    public static function applyLoanSearchOrdering(Builder $query, string $search): void
+    {
+        $clean = self::toEnglishDigits(trim($search));
+        if ($clean === '') {
+            $query->orderByDesc('loan_applications.id');
+
+            return;
+        }
+
         $onlyDigits = preg_replace('/\D/', '', $clean);
         $padded6 = ($onlyDigits !== '' && strlen($onlyDigits) <= 6) ? str_pad($onlyDigits, 6, '0', STR_PAD_LEFT) : null;
 
-        $query->where(function ($q) use ($clean, $padded6) {
-            $q->where('application_no', 'like', "%{$clean}%")
-                ->orWhereHas('memberAdmission', function ($mq) use ($clean, $padded6) {
-                    $mq->where('applicant_name_en', 'like', "%{$clean}%")
-                        ->orWhere('applicant_name_bn', 'like', "%{$clean}%")
-                        ->orWhere('mobile_number', 'like', "%{$clean}%")
-                        ->orWhere('nid_number', 'like', "%{$clean}%")
-                        ->orWhere('application_no', 'like', "%{$clean}%");
+        // Step 1: Matching admission IDs ordered by relevance
+        $admissionQuery = MemberAdmission::query();
+        self::applyAdmissionSearch($admissionQuery, $clean);
+        self::applyAdmissionSearchOrdering($admissionQuery, $clean);
+        $matchingAdmissions = $admissionQuery->get(['id']);
 
-                    if ($padded6) {
-                        $mq->orWhere('application_no', 'like', "%{$padded6}");
-                        $mq->orWhere('application_no', 'like', "%{$padded6}%");
-                    }
-                });
+        // Step 2: Direct loan application matches
+        $directLoanApps = LoanApplication::query()
+            ->where('application_no', 'like', "%{$clean}%")
+            ->get(['id', 'application_no', 'member_admission_id']);
+
+        $sortedLoanIds = collect();
+
+        // 1. Direct loan applications prioritized (exact -> ends with -> contains)
+        $directSorted = $directLoanApps->sortBy(function ($l) use ($clean, $padded6) {
+            if ($l->application_no === $clean) return 1;
+            if ($padded6 && str_ends_with($l->application_no, $padded6)) return 2;
+            if (str_ends_with($l->application_no, $clean)) return 3;
+            return 4;
         });
+
+        foreach ($directSorted as $l) {
+            $sortedLoanIds->push($l->id);
+        }
+
+        // 2. Loans linked to matching member admissions (in member relevance order)
+        if ($matchingAdmissions->isNotEmpty()) {
+            $admissionIds = $matchingAdmissions->pluck('id')->all();
+            $loansForAdmissions = LoanApplication::whereIn('member_admission_id', $admissionIds)
+                ->get(['id', 'member_admission_id']);
+
+            $loansGrouped = $loansForAdmissions->groupBy('member_admission_id');
+            foreach ($admissionIds as $admId) {
+                if (isset($loansGrouped[$admId])) {
+                    foreach ($loansGrouped[$admId] as $l) {
+                        if (! $sortedLoanIds->contains($l->id)) {
+                            $sortedLoanIds->push($l->id);
+                        }
+                    }
+                }
+            }
+        }
+
+        $idList = $sortedLoanIds->all();
+        if (! empty($idList)) {
+            $query->orderByRaw('FIELD(loan_applications.id, '.implode(',', $idList).')');
+        } else {
+            $query->orderByDesc('loan_applications.id');
+        }
     }
 
     /**

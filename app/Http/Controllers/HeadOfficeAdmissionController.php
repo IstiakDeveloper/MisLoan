@@ -48,35 +48,61 @@ class HeadOfficeAdmissionController extends Controller
         $dateFrom = $workQueue['date_from'];
         $dateTo = $workQueue['date_to'];
 
-        $query = MemberAdmission::with([
-            'branch' => fn ($q) => $q->withTrashed()->with(['area.zone']),
-            'samity',
-            'memberCategory',
-            'submittedBy',
-            'createdBy',
-            'approvals.user',
-        ])->withCount('loanApplications');
+        $query = MemberAdmission::query()
+            ->select([
+                'id',
+                'application_no',
+                'branch_id',
+                'samity_id',
+                'member_category_id',
+                'applicant_name_bn',
+                'applicant_name_en',
+                'mobile_number',
+                'nid_number',
+                'smart_card_number',
+                'status',
+                'submitted_at',
+                'created_at',
+                'printed_at',
+                'revision_count',
+                'revision_comments',
+                'is_legacy',
+                'loan_dofa',
+                'is_app_registered',
+                'created_by',
+                'submitted_by',
+            ])
+            ->with([
+                'branch' => fn ($q) => $q->withTrashed()->with(['area.zone']),
+                'samity',
+                'memberCategory',
+                'submittedBy',
+                'createdBy',
+                'approvals.user',
+            ])
+            ->withCount('loanApplications');
 
         $this->applyAccessibleBranchScope($query);
         $this->applyHeadOfficeStageVisibility($query);
-        $this->applySubmittedAtDateRange($query, $dateFrom, $dateTo);
-
-        // Zone filter
-        if ($request->has('zone_id') && $request->zone_id) {
-            $query->whereHas('branch.area', function ($q) use ($request) {
-                $q->where('zone_id', $request->zone_id);
-            });
+        if (! $request->filled('search')) {
+            $this->applySubmittedAtDateRange($query, $dateFrom, $dateTo);
         }
 
-        // Area filter
-        if ($request->has('area_id') && $request->area_id) {
-            $query->whereHas('branch', function ($q) use ($request) {
-                $q->where('area_id', $request->area_id);
-            });
+        // Zone filter (fast indexed lookup)
+        if ($request->filled('zone_id')) {
+            $areaIds = Area::where('zone_id', $request->zone_id)->pluck('id');
+            $branchIds = Branch::whereIn('area_id', $areaIds)->pluck('id');
+            $query->whereIn('branch_id', $branchIds->isEmpty() ? [0] : $branchIds);
+        }
+
+        // Area filter (fast indexed lookup)
+        if ($request->filled('area_id')) {
+            $branchIds = Branch::where('area_id', $request->area_id)->pluck('id');
+            $query->whereIn('branch_id', $branchIds->isEmpty() ? [0] : $branchIds);
         }
 
         // Branch filter
-        if ($request->has('branch_id') && $request->branch_id) {
+        if ($request->filled('branch_id')) {
             $query->where('branch_id', $request->branch_id);
         }
 
@@ -85,14 +111,15 @@ class HeadOfficeAdmissionController extends Controller
         $this->applyResolvedStatusFilter($query, $statusFilter, $user, 'admission', true);
 
         // Search filter
-        if ($request->has('search') && $request->search) {
-            MemberCodeService::applyAdmissionSearchOrdering($query, $request->search);
+        if ($request->filled('search')) {
+            MemberCodeService::applyAdmissionSearch($query, (string) $request->search);
+            MemberCodeService::applyAdmissionSearchOrdering($query, (string) $request->search);
         } else {
-            $query->orderByRaw('COALESCE(submitted_at, created_at) desc');
+            $query->orderByDesc('id');
         }
 
         // Had issues filter (for admissions that went through revision)
-        if ($request->has('had_issues') && $request->had_issues) {
+        if ($request->filled('had_issues')) {
             if ($request->had_issues === 'yes') {
                 $query->where('revision_count', '>', 0);
             } elseif ($request->had_issues === 'no') {
@@ -109,27 +136,28 @@ class HeadOfficeAdmissionController extends Controller
         $statsQuery = MemberAdmission::query();
         $this->applyAccessibleBranchScope($statsQuery);
         $this->applyHeadOfficeStageVisibility($statsQuery);
-        $this->applySubmittedAtDateRange($statsQuery, $dateFrom, $dateTo);
+        if (! $request->filled('search')) {
+            $this->applySubmittedAtDateRange($statsQuery, $dateFrom, $dateTo);
+        }
         $this->applyMemberTypeFilter($statsQuery, $request->input('member_type'));
 
         // Apply zone/area/branch filters to stats
-        if ($request->has('zone_id') && $request->zone_id) {
-            $statsQuery->whereHas('branch.area', function ($q) use ($request) {
-                $q->where('zone_id', $request->zone_id);
-            });
+        if ($request->filled('zone_id')) {
+            $areaIds = Area::where('zone_id', $request->zone_id)->pluck('id');
+            $branchIds = Branch::whereIn('area_id', $areaIds)->pluck('id');
+            $statsQuery->whereIn('branch_id', $branchIds->isEmpty() ? [0] : $branchIds);
         }
 
-        if ($request->has('area_id') && $request->area_id) {
-            $statsQuery->whereHas('branch', function ($q) use ($request) {
-                $q->where('area_id', $request->area_id);
-            });
+        if ($request->filled('area_id')) {
+            $branchIds = Branch::where('area_id', $request->area_id)->pluck('id');
+            $statsQuery->whereIn('branch_id', $branchIds->isEmpty() ? [0] : $branchIds);
         }
 
-        if ($request->has('branch_id') && $request->branch_id) {
+        if ($request->filled('branch_id')) {
             $statsQuery->where('branch_id', $request->branch_id);
         }
 
-        if ($request->has('had_issues') && $request->had_issues) {
+        if ($request->filled('had_issues')) {
             if ($request->had_issues === 'yes') {
                 $statsQuery->where('revision_count', '>', 0);
             } elseif ($request->had_issues === 'no') {
@@ -139,29 +167,35 @@ class HeadOfficeAdmissionController extends Controller
             }
         }
 
-        if ($request->has('search') && $request->search) {
-            $search = $request->search;
-            $statsQuery->where(function ($q) use ($search) {
-                $q->where('application_no', 'like', "%{$search}%")
-                    ->orWhere('applicant_name_en', 'like', "%{$search}%")
-                    ->orWhere('applicant_name_bn', 'like', "%{$search}%")
-                    ->orWhere('mobile_number', 'like', "%{$search}%")
-                    ->orWhere('nid_number', 'like', "%{$search}%");
-            });
+        if ($request->filled('search')) {
+            MemberCodeService::applyAdmissionSearch($statsQuery, (string) $request->search);
         }
 
         $this->applyPrintedFilter($statsQuery, $request);
 
+        // Single aggregation query for all status counts (fast single SQL execution)
+        $rawStats = (clone $statsQuery)
+            ->selectRaw("
+                COUNT(CASE WHEN status != 'draft' THEN 1 END) as total,
+                COUNT(CASE WHEN status = 'draft' THEN 1 END) as draft,
+                COUNT(CASE WHEN status = 'submitted' THEN 1 END) as submitted,
+                COUNT(CASE WHEN status = 'under_review' THEN 1 END) as under_review,
+                COUNT(CASE WHEN status = 'pending_head_office' THEN 1 END) as pending_head_office,
+                COUNT(CASE WHEN status = 'approved' THEN 1 END) as approved,
+                COUNT(CASE WHEN status = 'rejected' THEN 1 END) as rejected,
+                COUNT(CASE WHEN status = 'needs_revision' THEN 1 END) as needs_revision
+            ")
+            ->first();
+
         $stats = [
-            // "Total" mirrors the default (All) list, which excludes drafts.
-            'total' => (clone $statsQuery)->where('status', '!=', 'draft')->count(),
-            'draft' => (clone $statsQuery)->where('status', 'draft')->count(),
-            'submitted' => (clone $statsQuery)->where('status', 'submitted')->count(),
-            'under_review' => (clone $statsQuery)->where('status', 'under_review')->count(),
-            'pending_head_office' => (clone $statsQuery)->where('status', 'pending_head_office')->count(),
-            'approved' => (clone $statsQuery)->where('status', 'approved')->count(),
-            'rejected' => (clone $statsQuery)->where('status', 'rejected')->count(),
-            'needs_revision' => (clone $statsQuery)->where('status', 'needs_revision')->count(),
+            'total' => (int) ($rawStats->total ?? 0),
+            'draft' => (int) ($rawStats->draft ?? 0),
+            'submitted' => (int) ($rawStats->submitted ?? 0),
+            'under_review' => (int) ($rawStats->under_review ?? 0),
+            'pending_head_office' => (int) ($rawStats->pending_head_office ?? 0),
+            'approved' => (int) ($rawStats->approved ?? 0),
+            'rejected' => (int) ($rawStats->rejected ?? 0),
+            'needs_revision' => (int) ($rawStats->needs_revision ?? 0),
             'pending_my_approval' => $this->countPendingMyApproval($statsQuery, $user, 'admission'),
         ];
 
@@ -217,33 +251,25 @@ class HeadOfficeAdmissionController extends Controller
         $workQueue = RoleListWorkQueue::resolveWithDates($request, false);
         $this->applySubmittedAtDateRange($query, $workQueue['date_from'], $workQueue['date_to']);
 
-        if ($request->zone_id) {
-            $query->whereHas('branch.area', function ($q) use ($request) {
-                $q->where('zone_id', $request->zone_id);
-            });
+        if ($request->filled('zone_id')) {
+            $areaIds = Area::where('zone_id', $request->zone_id)->pluck('id');
+            $branchIds = Branch::whereIn('area_id', $areaIds)->pluck('id');
+            $query->whereIn('branch_id', $branchIds->isEmpty() ? [0] : $branchIds);
         }
 
-        if ($request->area_id) {
-            $query->whereHas('branch', function ($q) use ($request) {
-                $q->where('area_id', $request->area_id);
-            });
+        if ($request->filled('area_id')) {
+            $branchIds = Branch::where('area_id', $request->area_id)->pluck('id');
+            $query->whereIn('branch_id', $branchIds->isEmpty() ? [0] : $branchIds);
         }
 
-        if ($request->branch_id) {
+        if ($request->filled('branch_id')) {
             $query->where('branch_id', $request->branch_id);
         }
 
         $this->applyResolvedStatusFilter($query, $workQueue['status'], $request->user(), 'admission', true);
 
-        if ($request->search) {
-            $search = $request->search;
-            $query->where(function ($q) use ($search) {
-                $q->where('application_no', 'like', "%{$search}%")
-                    ->orWhere('applicant_name_en', 'like', "%{$search}%")
-                    ->orWhere('applicant_name_bn', 'like', "%{$search}%")
-                    ->orWhere('mobile_number', 'like', "%{$search}%")
-                    ->orWhere('nid_number', 'like', "%{$search}%");
-            });
+        if ($request->filled('search')) {
+            MemberCodeService::applyAdmissionSearch($query, (string) $request->search);
         }
 
         if ($request->had_issues) {
@@ -302,27 +328,23 @@ class HeadOfficeAdmissionController extends Controller
         $workQueue = RoleListWorkQueue::resolveWithDates($request, false);
         $this->applySubmittedAtDateRange($query, $workQueue['date_from'], $workQueue['date_to']);
 
-        if ($request->zone_id) {
-            $query->whereHas('branch.area', fn ($q) => $q->where('zone_id', $request->zone_id));
+        if ($request->filled('zone_id')) {
+            $areaIds = Area::where('zone_id', $request->zone_id)->pluck('id');
+            $branchIds = Branch::whereIn('area_id', $areaIds)->pluck('id');
+            $query->whereIn('branch_id', $branchIds->isEmpty() ? [0] : $branchIds);
         }
-        if ($request->area_id) {
-            $query->whereHas('branch', fn ($q) => $q->where('area_id', $request->area_id));
+        if ($request->filled('area_id')) {
+            $branchIds = Branch::where('area_id', $request->area_id)->pluck('id');
+            $query->whereIn('branch_id', $branchIds->isEmpty() ? [0] : $branchIds);
         }
-        if ($request->branch_id) {
+        if ($request->filled('branch_id')) {
             $query->where('branch_id', $request->branch_id);
         }
 
         $this->applyResolvedStatusFilter($query, $workQueue['status'], $request->user(), 'admission', true);
 
-        if ($request->search) {
-            $search = $request->search;
-            $query->where(function ($q) use ($search) {
-                $q->where('application_no', 'like', "%{$search}%")
-                    ->orWhere('applicant_name_en', 'like', "%{$search}%")
-                    ->orWhere('applicant_name_bn', 'like', "%{$search}%")
-                    ->orWhere('mobile_number', 'like', "%{$search}%")
-                    ->orWhere('nid_number', 'like', "%{$search}%");
-            });
+        if ($request->filled('search')) {
+            MemberCodeService::applyAdmissionSearch($query, (string) $request->search);
         }
 
         if ($request->had_issues === 'yes') {
