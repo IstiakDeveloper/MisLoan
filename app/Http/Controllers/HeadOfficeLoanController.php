@@ -181,9 +181,9 @@ class HeadOfficeLoanController extends Controller
                 COUNT(CASE WHEN status = 'approved' THEN 1 END) as approved,
                 COUNT(CASE WHEN status = 'rejected' THEN 1 END) as rejected,
                 COUNT(CASE WHEN status = 'pending_disbursement' THEN 1 END) as pending_disbursement,
-                COUNT(CASE WHEN status = '" . LoanApplication::STATUS_AWAITING_TAKEUP . "' THEN 1 END) as awaiting_takeup,
-                COUNT(CASE WHEN status = '" . LoanApplication::STATUS_PENDING_CANCELLATION . "' THEN 1 END) as pending_cancellation,
-                COUNT(CASE WHEN status = '" . LoanApplication::STATUS_PENDING_CANCELLATION . "' AND cancellation_from_status = '" . LoanApplication::STATUS_PENDING_HEAD_OFFICE . "' THEN 1 END) as ho_pending_cancellation,
+                COUNT(CASE WHEN status = '".LoanApplication::STATUS_AWAITING_TAKEUP."' THEN 1 END) as awaiting_takeup,
+                COUNT(CASE WHEN status = '".LoanApplication::STATUS_PENDING_CANCELLATION."' THEN 1 END) as pending_cancellation,
+                COUNT(CASE WHEN status = '".LoanApplication::STATUS_PENDING_CANCELLATION."' AND cancellation_from_status = '".LoanApplication::STATUS_PENDING_HEAD_OFFICE."' THEN 1 END) as ho_pending_cancellation,
                 COUNT(CASE WHEN status = 'disbursed' THEN 1 END) as disbursed
             ")
             ->first();
@@ -1277,6 +1277,7 @@ class HeadOfficeLoanController extends Controller
         }
 
         $this->ensureCanAccessBranch($loanApplication->branch_id);
+        $loanApplication->assertNoFinancialLedger();
         RecentDeletion::recordLoanDeletion($loanApplication, $request->user(), $request);
         app(ApprovalService::class)->deleteTeamBasedApprovalForLoan($loanApplication);
         $loanApplication->forceDelete();
@@ -1302,6 +1303,9 @@ class HeadOfficeLoanController extends Controller
         $this->applyAccessibleBranchScope($query);
         $loans = $query->get();
         $count = $loans->count();
+        foreach ($loans as $loan) {
+            $loan->assertNoFinancialLedger();
+        }
 
         foreach ($loans as $loan) {
             RecentDeletion::recordLoanDeletion($loan, $request->user(), $request);

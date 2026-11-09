@@ -20,6 +20,7 @@ use App\Http\Controllers\HeadOfficeVerificationController;
 use App\Http\Controllers\IssueProcessingController;
 use App\Http\Controllers\LoanApplicationController;
 use App\Http\Controllers\LoanCategoryController;
+use App\Http\Controllers\LoanLedgerController;
 use App\Http\Controllers\LoanProductController;
 use App\Http\Controllers\LoanQuoteController;
 use App\Http\Controllers\MaintenanceController;
@@ -58,6 +59,14 @@ Route::middleware(['auth', 'verified'])->group(function () {
     Route::get('dashboard', [DashboardController::class, 'index'])->name('dashboard');
 
     Route::get('loan-products/{loanProduct}/quote', LoanQuoteController::class)->name('loan-products.quote');
+
+    Route::prefix('loan-ledger')->name('loan-ledger.')->controller(LoanLedgerController::class)->group(function () {
+        Route::get('/', 'index')->name('index');
+        Route::get('contracts/{loan}', 'contract')->name('contract');
+        Route::post('accounts', 'open')->name('open');
+        Route::post('accounts/{account}/repayments', 'repay')->name('repay');
+        Route::post('transactions/{transaction}/reverse', 'reverse')->name('reverse');
+    });
 
     Route::prefix('savings-ledger')->name('savings-ledger.')->controller(SavingsLedgerController::class)->group(function () {
         Route::get('/', 'index')->name('index');

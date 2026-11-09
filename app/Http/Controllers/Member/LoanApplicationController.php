@@ -23,9 +23,11 @@ use App\Models\Samity;
 use App\Models\SavingsProduct;
 use App\Models\User;
 use App\Models\Zone;
+use App\Services\Accounting\Money;
 use App\Services\ApprovalService;
 use App\Services\HoSendCutoffService;
 use App\Services\LoanApplicationCloneService;
+use App\Services\Loans\ProductLoanPricing;
 use App\Services\LoanWorkflowConfigService;
 use App\Services\MemberAdmissionLoanSyncService;
 use App\Services\MemberCodeService;
@@ -2272,11 +2274,11 @@ class LoanApplicationController extends Controller
         }
 
         if ($loanProduct->interest_calculation_type === 'reducing') {
-            $quote = app(\App\Services\Loans\ProductLoanPricing::class)->quote(
+            $quote = app(ProductLoanPricing::class)->quote(
                 $loanProduct, number_format($amount, 2, '.', ''), $customMonths,
             );
 
-            return (float) \App\Services\Accounting\Money::format($quote['service_charge_paisa']);
+            return (float) Money::format($quote['service_charge_paisa']);
         }
 
         $scPerThousand = (float) ($loanProduct->service_charge_per_thousand ?? 0);
@@ -2364,11 +2366,11 @@ class LoanApplicationController extends Controller
 
         $lastInstallmentAmount = $newInstallmentAmount;
         if ($loanProduct?->interest_calculation_type === 'reducing') {
-            $quote = app(\App\Services\Loans\ProductLoanPricing::class)->quote(
+            $quote = app(ProductLoanPricing::class)->quote(
                 $loanProduct, number_format($disbursedAmount, 2, '.', ''),
             );
-            $newInstallmentAmount = (float) \App\Services\Accounting\Money::format($quote['installment_paisa']);
-            $lastInstallmentAmount = (float) \App\Services\Accounting\Money::format($quote['last_installment_paisa']);
+            $newInstallmentAmount = (float) Money::format($quote['installment_paisa']);
+            $lastInstallmentAmount = (float) Money::format($quote['last_installment_paisa']);
         }
 
         // Auto-synchronize all forms with the final disbursed amount
@@ -3643,6 +3645,8 @@ class LoanApplicationController extends Controller
         $application = LoanApplication::findOrFail($id);
         $user = auth()->user();
         $this->ensureApplicationAccessibleToUser($application, $user);
+
+        $application->assertNoFinancialLedger();
 
         // Only allow deletion if status is draft
         if ($application->status !== LoanApplication::STATUS_DRAFT) {

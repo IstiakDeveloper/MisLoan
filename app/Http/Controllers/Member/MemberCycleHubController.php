@@ -471,6 +471,8 @@ class MemberCycleHubController extends Controller
             return response()->json(['message' => 'এই ঋণটি আপনার শাখার নয়।'], 403);
         }
 
+        $loan->assertNoFinancialLedger();
+
         if ($loan->status !== LoanApplication::STATUS_DISBURSED) {
             return response()->json(['message' => 'শুধুমাত্র বিতরণকৃত (Disbursed) ঋণ পরিশোধ করা যাবে।'], 422);
         }

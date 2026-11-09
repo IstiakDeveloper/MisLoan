@@ -3,13 +3,16 @@
 namespace App\Models;
 
 use App\Services\ApprovalService;
+use App\Services\Loans\LoanContract;
 use Carbon\Carbon;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\SoftDeletes;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Schema;
+use Illuminate\Validation\ValidationException;
 
 class LoanApplication extends Model
 {
@@ -657,8 +660,41 @@ class LoanApplication extends Model
         return $duration > 0 ? $duration : 12;
     }
 
+    public function hasFinancialLedger(): bool
+    {
+        return Schema::hasTable('loan_accounts')
+            && DB::table('loan_accounts')->where('loan_application_id', $this->id)->exists();
+    }
+
+    public function assertNoFinancialLedger(): void
+    {
+        if ($this->hasFinancialLedger()) {
+            throw ValidationException::withMessages(['ledger' => 'This loan has a financial ledger. Use the loan-ledger settlement/correction workflow; its source terms and history cannot be changed here.']);
+        }
+    }
+
     protected static function booted(): void
     {
+        static::updating(function (LoanApplication $loan) {
+            $fields = ['status', 'repaid_at', 'repaid_by', 'requested_amount', 'disbursed_by', 'disbursed_amount', 'disbursed_at', 'approved_amount', 'installment_amount', 'number_of_installments', 'repayment_frequency', 'loan_term_months', 'loan_product_id', 'loan_category_id', 'branch_id', 'member_admission_id'];
+            if (! $loan->isDirty([...$fields, 'loan_agreement_data', 'business_plan']) || ! $loan->hasFinancialLedger()) {
+                return;
+            }
+            if ($loan->isDirty($fields)) {
+                $loan->assertNoFinancialLedger();
+            }
+            $original = new self;
+            $original->setRawAttributes($loan->getRawOriginal());
+            $contracts = app(LoanContract::class);
+            $before = $contracts->read($original);
+            $after = $contracts->read($loan);
+            foreach (['principal_paisa', 'charge_paisa', 'regular_paisa', 'last_paisa', 'count', 'frequency', 'disbursed_on'] as $key) {
+                if ($before[$key] !== $after[$key]) {
+                    $loan->assertNoFinancialLedger();
+                }
+            }
+        });
+
         static::updated(function (LoanApplication $loan) {
             if ($loan->wasChanged(['requested_amount', 'approved_amount', 'loan_product_id', 'loan_term_months'])) {
                 try {
@@ -672,6 +708,7 @@ class LoanApplication extends Model
         });
 
         static::deleting(function (LoanApplication $loan) {
+            $loan->assertNoFinancialLedger();
             try {
                 if (Schema::hasTable('team_based_approvals')) {
                     app(ApprovalService::class)->deleteTeamBasedApprovalForLoan($loan);
