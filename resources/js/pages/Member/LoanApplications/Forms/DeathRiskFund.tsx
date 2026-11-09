@@ -71,11 +71,49 @@ interface Props {
     isLegacy?: boolean;
 }
 
+/** Check if Customer Welfare Fund (গ্রাহক কল্যান তহবিল) policy is effective (on or after 01/11/2026) */
+export function isCustomerWelfareFundEffective(dateValue?: string | Date | null, fallbackDateValue?: string | Date | null): boolean {
+    const raw = dateValue || fallbackDateValue;
+    if (!raw) return true; // Default to active policy
+    const s = String(raw).trim();
+    if (!s) return true;
+
+    // YYYY-MM-DD
+    const isoMatch = /^(\d{4})-(\d{1,2})-(\d{1,2})/.exec(s);
+    if (isoMatch) {
+        const y = Number(isoMatch[1]);
+        const m = Number(isoMatch[2]);
+        const d = Number(isoMatch[3]);
+        if (y !== 2026) return y > 2026;
+        if (m !== 11) return m > 11;
+        return d >= 1;
+    }
+
+    // DD/MM/YYYY or DD-MM-YYYY
+    const bdMatch = /^(\d{1,2})[-/](\d{1,2})[-/](\d{4})/.exec(s);
+    if (bdMatch) {
+        const d = Number(bdMatch[1]);
+        const m = Number(bdMatch[2]);
+        const y = Number(bdMatch[3]);
+        if (y !== 2026) return y > 2026;
+        if (m !== 11) return m > 11;
+        return d >= 1;
+    }
+
+    const parsed = new Date(s);
+    if (!Number.isNaN(parsed.getTime())) {
+        return parsed >= new Date('2026-11-01T00:00:00');
+    }
+
+    return true;
+}
+
 /** Module-level so Show page can use with savedData for onlyPreview */
 function renderDeathRiskFundPreviewPart(partNumber: 1 | 2, formData: any) {
     const isPart1 = partNumber === 1;
     const showDeclaration = isPart1;
     const d = formData || {};
+    const isWelfare = isCustomerWelfareFundEffective(d.date, d.loan_sanction_date);
 
     // Helper to get image URL (data URL, absolute, or /storage/ path)
     const getImageUrl = (url: string | null | undefined) => {
@@ -117,7 +155,9 @@ function renderDeathRiskFundPreviewPart(partNumber: 1 | 2, formData: any) {
                             <img src="/logo.png" alt="Logo" style={{ height: '36px', width: '36px', objectFit: 'contain' }} onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }} />
                             <h1 className="font-black text-[18px] text-gray-900 leading-none">মৌসুমী</h1>
                         </div>
-                        <p className="font-bold text-[13px] text-gray-900 leading-tight mt-1">মৃত্যুজনিত ঋণঝুঁকি তহবিলে অন্তর্ভুক্তির আবেদনপত্র</p>
+                        <p className="font-bold text-[13px] text-gray-900 leading-tight mt-1">
+                            {isWelfare ? 'গ্রাহক কল্যান তহবিলে অন্তর্ভুক্তির আবেদনপত্র' : 'মৃত্যুজনিত ঋণঝুঁকি তহবিলে অন্তর্ভুক্তির আবেদনপত্র'}
+                        </p>
                         <p className="font-bold text-gray-700 text-[11px] mt-0.5">
                             {isPart1 ? 'প্রথম অংশ (প্রোফাইলে সংযুক্ত করতে হবে)' : 'দ্বিতীয় অংশ (পাশবইয়ে সংযুক্ত করতে হবে)'}
                         </p>
@@ -222,11 +262,22 @@ function renderDeathRiskFundPreviewPart(partNumber: 1 | 2, formData: any) {
                 </div>
             </div>
 
+            {/* Section 3: Customer Welfare Fund Terms (Point 3) */}
+            {isWelfare && (
+                <div className="mb-2 text-[11px] print:text-[10px] leading-tight text-gray-900 border-t border-gray-300 pt-1">
+                    <p className="text-justify" style={{ marginBottom: 0, lineHeight: 1.35 }}>
+                        <span className="font-bold">৩।</span> গ্রাহক ঋণ গ্রহণের সময় ঋণের বিপরীতে প্রতি হাজারে ৬/- (ছয়) টাকা হারে শাখা অফিসের গ্রাহক কল্যাণ তহবিলে জমা দিতে হবে। গ্রাহক অথবা অভিভাবক/পরিবারের প্রধান উপার্জনকারী ব্যক্তির মধ্যে উপরে উল্লিখিত দুজনের যেকোনো একজনের মৃত্যু, গুরুতর আহত হওয়া, জটিল ও ব্যয়বহুল রোগে আক্রান্ত হওয়ার কারণে উত্থাপিত দাবি গ্রাহক কল্যাণ তহবিল নীতিমালার আওতাভুক্ত হবে। উপরে উল্লিখিত দুজনের মধ্যে যেকোনো একজনের মৃত্যু হলে দাফন/সत्कार সহায়তা বাবদ তাৎক্ষণিকভাবে ৫,০০০/- (পাঁচ হাজার) টাকা মৃত ব্যক্তির অভিভাবক/বৈধ উত্তরাধিকারীকে এককালীন প্রদান করা হবে। একই সঙ্গে মৃত্যুর তারিখে অবশিষ্ট ঋণস্থিতি (সার্ভিস চার্জ ব্যতীত) গ্রাহক কল্যাণ তহবিল হতে মওকুফ করা হবে এবং মুনাফাসহ সঞ্চয়ের অর্থ ফেরত দেওয়া হবে।
+                    </p>
+                </div>
+            )}
+
             {/* Declaration (only Part 1) */}
             {showDeclaration && (
-                <div className="mb-2 leading-relaxed p-1.5 bg-gray-50 border border-gray-300 rounded text-[11px]">
-                    <p className="font-bold mb-0.5 text-[11.5px] text-gray-900">ঘোষণা:</p>
-                    <p style={{ marginBottom: 0, lineHeight: 1.25 }} className="text-gray-800">আমরা এই মর্মে ঘোষণা করছি যে, উপরিল্লিখিত সকল তথ্য সঠিক ও সত্য। আমরা ঋণঝুঁকি তহবিলের সকল নিয়মাবলি ও শর্তাবলি মেনে এবং বুঝে স্বাক্ষর করছি। অনুগ্রহপূর্বক আমাদেরকে ঋণঝুঁকি তহবিলের সদস্য হিসেবে অর্ন্তভুক্ত করলে বাধিত হব।</p>
+                <div className="mb-2 leading-relaxed p-1.5 bg-gray-50 border border-gray-300 rounded text-[11px] print:text-[10px]">
+                    <p className="font-bold mb-0.5 text-[11.5px] print:text-[10.5px] text-gray-900">ঘোষণা:</p>
+                    <p style={{ marginBottom: 0, lineHeight: 1.25 }} className="text-gray-800">
+                        আমরা এই মর্মে ঘোষণা করছি যে, উপরিল্লিখিত সকল তথ্য সঠিক ও সত্য। আমরা {isWelfare ? 'গ্রাহক কল্যাণ' : 'ঋণঝুঁকি'} তহবিলের সকল নিয়মাবলি ও শর্তাবলি মেনে এবং বুঝে স্বাক্ষর করছি। অনুগ্রহপূর্বক আমাদেরকে {isWelfare ? 'গ্রাহক কল্যাণ' : 'ঋণঝুঁকি'} তহবিলের সদস্য হিসেবে অর্ন্তভুক্ত করলে বাধিত হব।
+                    </p>
                 </div>
             )}
 
@@ -747,6 +798,7 @@ export default function DeathRiskFund({
     const _renderPreviewPartOriginal = (partNumber: 1 | 2) => {
         const isPart1 = partNumber === 1;
         const showDeclaration = isPart1;
+        const isWelfare = isCustomerWelfareFundEffective(data.date, data.loan_sanction_date);
 
         return (
             <div className={`half-page-form bg-white border border-gray-300 p-1.5 ${isPart1 ? 'mb-0.5' : ''}`} style={{ minHeight: '48vh', fontSize: '11px' }}>
@@ -765,7 +817,7 @@ export default function DeathRiskFund({
                             />
                             <div className="text-center">
                                 <h1 className="text-base font-bold leading-tight print:text-sm">মৌসুমী</h1>
-                                <p className="text-[9px] leading-tight print:text-[8px]">মৃত্যুজনিত ঋণঝুঁকি তহবিলে অন্তর্ভুক্তির আবেদনপত্র</p>
+                                <p className="text-[9px] leading-tight print:text-[8px]">{isWelfare ? 'গ্রাহক কল্যান তহবিলে অন্তর্ভুক্তির আবেদনপত্র' : 'মৃত্যুজনিত ঋণঝুঁকি তহবিলে অন্তর্ভুক্তির আবেদনপত্র'}</p>
                                 <p className="text-[9px] font-semibold mt-0.5 text-gray-700 print:text-[8px]">
                                     {isPart1 ? 'প্রথম অংশ (প্রোফাইলে সংযুক্ত করতে হবে)' : 'দ্বিতীয় অংশ (পাশবইয়ে সংযুক্ত করতে হবে)'}
                                 </p>
@@ -903,11 +955,20 @@ export default function DeathRiskFund({
                     </div>
                 </div>
 
+                {/* Section 3: Customer Welfare Fund Terms (Point 3) */}
+                {isWelfare && (
+                    <div className="mb-1 text-[8.5px] print:text-[8px] leading-tight text-gray-900 border-t border-gray-300 pt-0.5">
+                        <p className="text-justify" style={{ marginBottom: 0, lineHeight: 1.25 }}>
+                            <span className="font-bold">৩।</span> গ্রাহক ঋণ গ্রহণের সময় ঋণের বিপরীতে প্রতি হাজারে ৬/- (ছয়) টাকা হারে শাখা অফিসের গ্রাহক কল্যাণ তহবিলে জমা দিতে হবে। গ্রাহক অথবা অভিভাবক/পরিবারের প্রধান উপার্জনকারী ব্যক্তির মধ্যে উপরে উল্লিখিত দুজনের যেকোনো একজনের মৃত্যু, গুরুতর আহত হওয়া, জটিল ও ব্যয়বহুল রোগে আক্রান্ত হওয়ার কারণে উত্থাপিত দাবি গ্রাহক কল্যাণ তহবিল নীতিমালার আওতাভুক্ত হবে। উপরে উল্লিখিত দুজনের মধ্যে যেকোনো একজনের মৃত্যু হলে দাফন/সत्कार সহায়তা বাবদ তাৎক্ষণিকভাবে ৫,০০০/- (পাঁচ হাজার) টাকা মৃত ব্যক্তির অভিভাবক/বৈধ উত্তরাধিকারীকে এককালীন প্রদান করা হবে। একই সঙ্গে মৃত্যুর তারিখে অবশিষ্ট ঋণস্থিতি (সার্ভিস চার্জ ব্যতীত) গ্রাহক কল্যাণ তহবিল হতে মওকুফ করা হবে এবং মুনাফাসহ সঞ্চয়ের অর্থ ফেরত দেওয়া হবে।
+                        </p>
+                    </div>
+                )}
+
                 {/* Declaration (only Part 1) */}
                 {showDeclaration && (
                     <div className="mb-1 leading-relaxed p-0.5 bg-gray-50 border border-gray-300" style={{ fontSize: '9px' }}>
                         <p className="font-semibold mb-0.5" style={{ fontSize: '10px' }}>ঘোষণা:</p>
-                        <p>আমরা এই মর্মে ঘোষণা করছি যে, উপরিল্লিখিত সকল তথ্য সঠিক ও সত্য। আমরা ঋণঝুঁকি তহবিলের সকল নিয়মাবলি ও শর্তাবলি মেনে এবং বুঝে স্বাক্ষর করছি। অনুগ্রহপূর্বক আমাদেরকে ঋণঝুঁকি তহবিলের সদস্য হিসেবে অর্ন্তভুক্ত করলে বাধিত হব।</p>
+                        <p>আমরা এই মর্মে ঘোষণা করছি যে, উপরিল্লিখিত সকল তথ্য সঠিক ও সত্য। আমরা {isWelfare ? 'গ্রাহক কল্যাণ' : 'ঋণঝুঁকি'} তহবিলের সকল নিয়মাবলি ও শর্তাবলি মেনে এবং বুঝে স্বাক্ষর করছি। অনুগ্রহপূর্বক আমাদেরকে {isWelfare ? 'গ্রাহক কল্যাণ' : 'ঋণঝুঁকি'} তহবিলের সদস্য হিসেবে অর্ন্তভুক্ত করলে বাধিত হব।</p>
                     </div>
                 )}
 
@@ -967,6 +1028,7 @@ export default function DeathRiskFund({
     const renderFormPart = (partNumber: 1 | 2) => {
         const isPart1 = partNumber === 1;
         const showDeclaration = isPart1;
+        const isWelfare = isCustomerWelfareFundEffective(data.date, data.loan_sanction_date);
 
         return (
             <div className="bg-white rounded-lg shadow-sm p-4 border">
@@ -988,7 +1050,7 @@ export default function DeathRiskFund({
                             />
                             <div className="text-center">
                                 <h1 className="text-xl font-bold">মৌসুমী</h1>
-                                <p className="text-sm">মৃত্যুজনিত ঋণঝুঁকি তহবিলে অন্তর্ভুক্তির আবেদনপত্র</p>
+                                <p className="text-sm font-semibold text-gray-800">{isWelfare ? 'গ্রাহক কল্যান তহবিলে অন্তর্ভুক্তির আবেদনপত্র' : 'মৃত্যুজনিত ঋণঝুঁকি তহবিলে অন্তর্ভুক্তির আবেদনপত্র'}</p>
                             </div>
                         </div>
                     </div>
@@ -1527,11 +1589,21 @@ export default function DeathRiskFund({
                     </div>
                 </div>
 
+                {/* Section 3: Customer Welfare Fund Terms (Point 3) */}
+                {isWelfare && (
+                    <div className="mb-4 p-3.5 bg-blue-50/70 border border-blue-200 rounded-lg text-sm text-gray-800 leading-relaxed">
+                        <p className="font-bold mb-1.5 text-gray-900">৩। গ্রাহক কল্যাণ তহবিল নীতিমালা:</p>
+                        <p className="text-justify leading-relaxed">
+                            গ্রাহক ঋণ গ্রহণের সময় ঋণের বিপরীতে প্রতি হাজারে ৬/- (ছয়) টাকা হারে শাখা অফিসের গ্রাহক কল্যাণ তহবিলে জমা দিতে হবে। গ্রাহক অথবা অভিভাবক/পরিবারের প্রধান উপার্জনকারী ব্যক্তির মধ্যে উপরে উল্লিখিত দুজনের যেকোনো একজনের মৃত্যু, গুরুতর আহত হওয়া, জটিল ও ব্যয়বহুল রোগে আক্রান্ত হওয়ার কারণে উত্থাপিত দাবি গ্রাহক কল্যাণ তহবিল নীতিমালার আওতাভুক্ত হবে। উপরে উল্লিখিত দুজনের মধ্যে যেকোনো একজনের মৃত্যু হলে দাফন/সत्कार সহায়তা বাবদ তাৎক্ষণিকভাবে ৫,০০০/- (পাঁচ হাজার) টাকা মৃত ব্যক্তির অভিভাবক/বৈধ উত্তরাধিকারীকে এককালীন প্রদান করা হবে। একই সঙ্গে মৃত্যুর তারিখে অবশিষ্ট ঋণস্থিতি (সার্ভিস চার্জ ব্যতীত) গ্রাহক কল্যাণ তহবিল হতে মওকুফ করা হবে এবং মুনাফাসহ সঞ্চয়ের অর্থ ফেরত দেওয়া হবে।
+                        </p>
+                    </div>
+                )}
+
                 {/* Declaration (only in Part 1) */}
                 {showDeclaration && (
                     <div className="mb-4 p-3 bg-gray-50 border rounded">
                         <p className="text-sm leading-relaxed">
-                            <strong>ঘোষণা:</strong> আমরা এই মর্মে ঘোষণা করছি যে, উপরিল্লিখিত সকল তথ্য সঠিক ও সত্য। আমরা ঋণঝুঁকি তহবিলের সকল নিয়মাবলি ও শর্তাবলি মেনে এবং বুঝে স্বাক্ষর করছি। অনুগ্রহপূর্বক আমাদেরকে ঋণঝুঁকি তহবিলের সদস্য হিসেবে অর্ন্তভুক্ত করলে বাধিত হব।
+                            <strong>ঘোষণা:</strong> আমরা এই মর্মে ঘোষণা করছি যে, উপরিল্লিখিত সকল তথ্য সঠিক ও সত্য। আমরা {isWelfare ? 'গ্রাহক কল্যাণ' : 'ঋণঝুঁকি'} তহবিলের সকল নিয়মাবলি ও শর্তাবলি মেনে এবং বুঝে স্বাক্ষর করছি। অনুগ্রহপূর্বক আমাদেরকে {isWelfare ? 'গ্রাহক কল্যাণ' : 'ঋণঝুঁকি'} তহবিলের সদস্য হিসেবে অর্ন্তভুক্ত করলে বাধিত হব।
                         </p>
                     </div>
                 )}
@@ -1539,9 +1611,12 @@ export default function DeathRiskFund({
         );
     };
 
+    const isPageWelfare = isCustomerWelfareFundEffective(data.date, data.loan_sanction_date);
+    const pageFormTitle = isPageWelfare ? 'গ্রাহক কল্যান তহবিলে অন্তর্ভুক্তির আবেদনপত্র' : 'মৃত্যুজনিত ঋণঝুঁকি তহবিলে অন্তর্ভুক্তির আবেদন পত্র';
+
     const pageContent = (
         <>
-            <Head title="মৃত্যুজনিত ঋণঝুঁকি তহবিলে অন্তর্ভুক্তির আবেদন পত্র">
+            <Head title={pageFormTitle}>
                 <style>{`
                     @media print {
                         @page {
@@ -1595,7 +1670,7 @@ export default function DeathRiskFund({
             <div className="max-w-[1600px] mx-auto p-4">
                 {inWizard && (
                     <div className="bg-emerald-50 border border-emerald-200 rounded-xl p-3.5 mb-4 print:hidden">
-                        <p className="text-sm font-bold text-emerald-900">বিতরণের ধাপ ২/২ — মৃত্যুঝুঁকি ফর্ম</p>
+                        <p className="text-sm font-bold text-emerald-900">বিতরণের ধাপ ২/২ — {isPageWelfare ? 'গ্রাহক কল্যাণ তহবিল' : 'মৃত্যুঝুঁকি'} ফর্ম</p>
                         <p className="text-xs text-emerald-800 mt-0.5">
                             আবশ্যক ঘর পূরণ করে <strong>বিতরণ</strong> চাপুন। এই ফর্ম সেভ হবে, তারপর অর্থ বিতরণ নিশ্চিত করা যাবে।
                         </p>
@@ -1634,7 +1709,7 @@ export default function DeathRiskFund({
                             Back
                         </button>
                         <div>
-                            <h1 className="text-lg font-bold">মৃত্যুজনিত ঋণঝুঁকি তহবিলে অন্তর্ভুক্তির আবেদন পত্র</h1>
+                            <h1 className="text-lg font-bold">{pageFormTitle}</h1>
                             <p className="text-xs text-gray-600">Form পূরণ করুন এবং সংরক্ষণ করুন।</p>
                             {existingApplication && (
                                 <p className="text-xs text-blue-600 mt-1">

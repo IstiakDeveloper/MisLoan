@@ -37,11 +37,11 @@ const forms = [
     },
     {
         id: 3,
-        name_bn: 'মৃত্যুজনিত ঋণঝুঁকি তহবিলে অন্তর্ভুক্তির আবেদন পত্র',
-        name_en: 'Death Risk Fund Application',
+        name_bn: 'গ্রাহক কল্যান তহবিলে অন্তর্ভুক্তির আবেদনপত্র',
+        name_en: 'Customer Welfare Fund Application',
         route: 'death-risk-fund',
         required: true,
-        description: 'মৃত্যুজনিত ঝুঁকি তহবিলে অন্তর্ভুক্তির আবেদন'
+        description: 'গ্রাহক কল্যান তহবিলে অন্তর্ভুক্তির আবেদনপত্র (পূর্বে মৃত্যুজনিত ঋণঝুঁকি)'
     },
     {
         id: 4,
