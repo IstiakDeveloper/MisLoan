@@ -3,7 +3,6 @@
 use Illuminate\Database\Migrations\Migration;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\Schema;
-use Illuminate\Support\Facades\DB;
 
 return new class extends Migration
 {
@@ -17,11 +16,13 @@ return new class extends Migration
             // Note: We'll use raw SQL to modify the enum
             if (Schema::hasColumn('loan_members', 'status')) {
                 // Drop and recreate the column with the new enum values
-                DB::statement("ALTER TABLE loan_members MODIFY COLUMN status ENUM('pending', 'approved', 'rejected', 'issue') DEFAULT 'pending'");
+                Schema::table('loan_members', function (Blueprint $table) {
+                    $table->enum('status', ['pending', 'approved', 'rejected', 'issue'])->nullable()->default('pending')->change();
+                });
             }
 
             // Add rejection_reason column if it doesn't exist
-            if (!Schema::hasColumn('loan_members', 'rejection_reason')) {
+            if (! Schema::hasColumn('loan_members', 'rejection_reason')) {
                 $table->text('rejection_reason')->nullable()->after('status');
             }
         });
@@ -39,7 +40,9 @@ return new class extends Migration
 
             // Revert status column to original enum values
             if (Schema::hasColumn('loan_members', 'status')) {
-                DB::statement("ALTER TABLE loan_members MODIFY COLUMN status ENUM('pending', 'approved', 'rejected') DEFAULT 'pending'");
+                Schema::table('loan_members', function (Blueprint $table) {
+                    $table->enum('status', ['pending', 'approved', 'rejected'])->nullable()->default('pending')->change();
+                });
             }
         });
     }

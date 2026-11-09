@@ -1,5 +1,6 @@
+import { useFlatForm } from '@/hooks/use-flat-form';
 import React, { useState, useEffect, useRef, useMemo } from 'react';
-import { Head, useForm, router, usePage } from '@inertiajs/react';
+import { Head, router, usePage } from '@inertiajs/react';
 import AdminLayout from '@/layouts/admin-layout';
 import { Save, Eye, ArrowLeft, X, Minimize2, Printer, AlertCircle } from 'lucide-react';
 import { useIsMobile } from '@/hooks/use-mobile';
@@ -276,7 +277,7 @@ export default function ApprovalForm({
         ? [secondGuarantor.guarantor_village, secondGuarantor.guarantor_post_office, secondGuarantor.guarantor_upazila, secondGuarantor.guarantor_district].filter(Boolean).join(', ')
         : '';
 
-    const { data, setData, processing } = useForm<LoanApplicationApprovalData>(withLiveMemberCode({
+    const { data, setData, processing } = useFlatForm<LoanApplicationApprovalData>(withLiveMemberCode({
         branch_name: branch?.name || branch?.branch_name || member?.branch?.name || (savedData as any)?.branch_name || '',
         branch_address: branch?.address || member?.branch?.address || (savedData as any)?.branch_address || '',
         application_date: todayIsoDate(),
@@ -320,8 +321,6 @@ export default function ApprovalForm({
         project_manpower_family: '',
         project_manpower_outside: '',
         project_manpower_trained: '',
-        project_income_1_2_yr: '',
-        project_expense_1_2_yr: '',
         capital_total: '',
         capital_own: '',
         capital_applied_loan: requestedAmount ? String(requestedAmount) : '',
@@ -376,22 +375,7 @@ export default function ApprovalForm({
         est_other_exp_2_desc: '', est_other_exp_2_amount: '',
         est_other_exp_3_desc: '', est_other_exp_3_amount: '',
         est_main_income_desc: projectNameFromAdmission,
-        est_main_income_amount: durationIncomeFromAdmission || '',
         est_other_income_desc: '', est_other_income_amount: '',
-        installment_type: computedInstallment.installment_type,
-        installment_principal: computedInstallment.installment_principal,
-        installment_service_charge: computedInstallment.installment_service_charge,
-        installment_total: computedInstallment.installment_total,
-        number_of_installments: computedInstallment.number_of_installments
-            || (loanProduct?.number_of_installments
-                ? String(loanProduct.number_of_installments)
-                : (loanProduct?.duration_months ? String(loanProduct.duration_months) : '')),
-        last_installment_amount: computedInstallment.last_installment_amount,
-        last_installment_principal: computedInstallment.last_installment_principal,
-        last_installment_service_charge: computedInstallment.last_installment_service_charge,
-        total_principal: computedInstallment.total_principal,
-        total_service_charge: computedInstallment.total_service_charge,
-        total_payable: computedInstallment.total_payable,
         guarantor_1_name: firstGuarantor?.guarantor_name || member?.guarantor_name || '',
         guarantor_1_address: firstGuarantorAddr || '',
         guarantor_1_mobile: firstGuarantor?.guarantor_mobile || member?.guarantor_mobile || '',
@@ -550,7 +534,7 @@ export default function ApprovalForm({
             delete (restored as any).zonal_manager_comments;
             delete (restored as any).final_approver_comments;
             delete (restored as any).final_approver_remarks;
-            setData((prev) => {
+            setData((prev: LoanApplicationApprovalData) => {
                 const merged = { ...prev, ...restored };
                 return withLiveMemberCode({
                     ...merged,
@@ -659,7 +643,7 @@ export default function ApprovalForm({
         }
 
         if (Object.keys(updates).length > 0) {
-            setData((prev) => ({ ...prev, ...updates }));
+            setData((prev: LoanApplicationApprovalData) => ({ ...prev, ...updates }));
         }
     }, [
         data.est_emp_salary,
@@ -697,7 +681,7 @@ export default function ApprovalForm({
 
     useEffect(() => {
         if (savedData && Object.keys(savedData).length > 0) {
-            setData((prev) => ({
+            setData((prev: LoanApplicationApprovalData) => ({
                 ...prev,
                 branch_manager_post_inspection_comments:
                     (savedData as any).branch_manager_post_inspection_comments ?? prev.branch_manager_post_inspection_comments,

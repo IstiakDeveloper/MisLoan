@@ -1,8 +1,6 @@
 <?php
 
 use Illuminate\Database\Migrations\Migration;
-use Illuminate\Database\Schema\Blueprint;
-use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Facades\DB;
 
 return new class extends Migration
@@ -12,6 +10,10 @@ return new class extends Migration
      */
     public function up(): void
     {
+        if (DB::getDriverName() !== 'mysql') {
+            return; // SQLite stores Unicode natively and has no charset conversion DDL.
+        }
+
         // Update charset and collation for loan_members table to support Bangla text
         DB::statement('ALTER TABLE loan_members CONVERT TO CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci');
 

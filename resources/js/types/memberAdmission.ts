@@ -178,10 +178,13 @@ export interface MemberAdmission {
     other_assets?: OtherAsset[];
     approvals?: Array<{
         id: number;
-        user: { id: number; name: string };
+        user: { id: number; name: string; role?: { name: string } };
         level: string;
         status: string;
         approver_signature?: string;
+        comments?: string | null;
+        approver_pin?: string | null;
+        updated_at?: string;
         approved_at?: string;
     }>;
 }

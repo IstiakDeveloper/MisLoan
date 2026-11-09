@@ -6,6 +6,12 @@ import { formatDate } from '@/utils/dateUtils';
 import { formatCurrency } from '@/utils/formatAmount';
 
 interface LoanMember {
+    approved_by_name?: string;
+    approved_by_designation?: string;
+    approval_date?: string;
+    guarantor_name?: string;
+    guarantor_relation?: string;
+    disbursement_date?: string;
     id: number;
     serial_no: string;
     member_name: string;

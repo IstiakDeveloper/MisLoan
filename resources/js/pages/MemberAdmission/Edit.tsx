@@ -1,3 +1,4 @@
+import { useFlatForm } from '@/hooks/use-flat-form';
 import bangladeshData from '@/data/bangladeshAddresses.json';
 import AdminLayout from '@/layouts/admin-layout';
 import {
@@ -12,7 +13,7 @@ import {
     handleNumericPaste,
 } from '@/utils/numericInput';
 import { toEnglishDigits } from '@/utils/memberCodeUtils';
-import { Head, Link, router, useForm, usePage } from '@inertiajs/react';
+import { Head, Link, router, usePage } from '@inertiajs/react';
 import { AlertCircle, ArrowLeft, Save, Send, Sparkles, X } from 'lucide-react';
 import React, { useEffect, useState } from 'react';
 
@@ -208,7 +209,7 @@ export default function Edit({
     };
 
     const { data, setData, errors } =
-        useForm<any>({
+        useFlatForm<any>({
             application_no: admission.application_no || '',
             branch_id: admission.branch_id || 0,
             samity_id: admission.samity_id || 0,
@@ -368,13 +369,13 @@ export default function Edit({
                 'সদস্যের ধরণ "নতুন সদস্য" তে পরিবর্তন করতে চান? ঋণের দফা মুছে যাবে এবং নতুন সদস্য হিসেবে সংরক্ষিত হবে। চালিয়ে যাবেন?'
             );
             if (!ok) return;
-            setData((prev) => ({ ...prev, is_legacy: false, loan_dofa: '' }));
+            setData((prev: Record<string, any>) => ({ ...prev, is_legacy: false, loan_dofa: '' }));
         } else {
             const ok = window.confirm(
                 'সদস্যের ধরণ "পুরাতন সদস্য" তে পরিবর্তন করতে চান? ঋণের দফা দিতে হবে। চালিয়ে যাবেন?'
             );
             if (!ok) return;
-            setData((prev) => ({ ...prev, is_legacy: true, loan_dofa: prev.loan_dofa || 1 }));
+            setData((prev: Record<string, any>) => ({ ...prev, is_legacy: true, loan_dofa: prev.loan_dofa || 1 }));
         }
     };
 
@@ -393,7 +394,7 @@ export default function Edit({
 
     // Keep default «নিজ» row first and synced with applicant personal info
     useEffect(() => {
-        setData((prev) => {
+        setData((prev: Record<string, any>) => {
             const members = [...(prev.family_members || [])];
             let selfIdx = members.findIndex((m) => m.relation_with_head === 'নিজ');
             const name = prev.applicant_name_bn || prev.applicant_name_en || '';
@@ -763,7 +764,7 @@ export default function Edit({
             );
             return;
         }
-        const newMembers = data.family_members!.filter((_, i) => i !== index);
+        const newMembers = data.family_members!.filter((_: unknown, i: number) => i !== index);
         setData('family_members', newMembers);
     };
 
@@ -804,7 +805,7 @@ export default function Edit({
     };
 
     const removeOtherAsset = (index: number) => {
-        const newAssets = data.other_assets!.filter((_, i) => i !== index);
+        const newAssets = data.other_assets!.filter((_: unknown, i: number) => i !== index);
         setData('other_assets', newAssets);
     };
 

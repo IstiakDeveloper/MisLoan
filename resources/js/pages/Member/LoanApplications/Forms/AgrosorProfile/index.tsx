@@ -1,5 +1,6 @@
+import { useFlatForm } from '@/hooks/use-flat-form';
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { Head, router, useForm, usePage } from '@inertiajs/react';
+import { Head, router, usePage } from '@inertiajs/react';
 import AdminLayout from '@/layouts/admin-layout';
 import { AlertCircle, ArrowLeft, Eye, Printer, Save, X } from 'lucide-react';
 import {
@@ -510,7 +511,7 @@ export default function AgrosorProfile({
     const previewContentRef = useRef<HTMLDivElement>(null);
     const [previewFit, setPreviewFit] = useState({ scale: 1, height: 0 });
 
-    const { data, setData, processing } = useForm<AgrosorProfileData>(
+    const { data, setData, processing } = useFlatForm<AgrosorProfileData>(
         buildInitialData(member, loanProduct, loanCategory, requestedAmount, branch, isLegacy, savedData),
     );
 
@@ -588,7 +589,7 @@ export default function AgrosorProfile({
             delete (merged as any).zonal_manager_comments;
             delete (merged as any).final_approver_comments;
             delete (merged as any).final_approver_remarks;
-            setData((prev) => withLiveMemberCode({ ...prev, ...merged }, member));
+            setData((prev: AgrosorProfileData) => withLiveMemberCode({ ...prev, ...merged }, member));
             setLocalRestored(true);
         }
         const t = setTimeout(() => {
@@ -610,7 +611,7 @@ export default function AgrosorProfile({
 
     useEffect(() => {
         if (savedData && Object.keys(savedData).length > 0) {
-            setData((prev) => ({
+            setData((prev: AgrosorProfileData) => ({
                 ...prev,
                 branch_manager_post_inspection_comments:
                     str((savedData as any).branch_manager_post_inspection_comments) ||

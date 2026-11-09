@@ -11,6 +11,7 @@ export interface ApprovalFormProps {
     existingApplication?: any;
     savedData?: LoanApplicationApprovalData;
     onlyPreview?: boolean;
+    embedded?: boolean;
     savingsProducts?: Array<{ id: number; product_code: string; product_name: string; product_name_bn: string | null }>;
     loanRound?: number;
     isLegacy?: boolean;

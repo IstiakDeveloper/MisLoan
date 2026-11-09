@@ -19,7 +19,7 @@ interface SmartDateInputProps {
     value: string | null | undefined;
     onChange: (value: string) => void;
     className?: string;
-    error?: boolean | string;
+    error?: boolean | string | null;
     disabled?: boolean;
     placeholder?: string;
 }

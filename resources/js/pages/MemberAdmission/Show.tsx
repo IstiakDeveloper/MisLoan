@@ -66,10 +66,10 @@ interface Props {
             id: number;
             level: string;
             status: string;
-            comments?: string;
+            comments?: string | null;
             approved_at?: string;
             updated_at?: string;
-            approver_pin?: string;
+            approver_pin?: string | null;
             user?: {
                 id: number;
                 name: string;
@@ -145,7 +145,7 @@ export default function Show({ admission, cycleSurveys = [], can_update_samity =
         level?: string;
         userName?: string;
         roleName?: string;
-        comments?: string;
+        comments?: string | null;
     } | null>(null);
     const [commentInput, setCommentInput] = useState('');
     const [savingComment, setSavingComment] = useState(false);
@@ -450,7 +450,7 @@ export default function Show({ admission, cycleSurveys = [], can_update_samity =
                                 </div>
                                 <p className="text-[11px] sm:text-xs text-slate-500 mt-1 font-medium break-words flex items-center gap-1.5 flex-wrap">
                                     <span>আবেদন নং / মেম্বার কোড: <span className="font-mono font-bold text-blue-700">{toBanglaDigits(admission.application_no)}</span></span>
-                                    {admission.status !== 'disbursed' && !hasDisbursedLoan && (
+                                    {!hasDisbursedLoan && (
                                         <button
                                             type="button"
                                             onClick={() => {

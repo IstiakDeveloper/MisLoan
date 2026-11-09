@@ -1,7 +1,8 @@
 <?php
 
 use Illuminate\Database\Migrations\Migration;
-use Illuminate\Support\Facades\DB;
+use Illuminate\Database\Schema\Blueprint;
+use Illuminate\Support\Facades\Schema;
 
 return new class extends Migration
 {
@@ -11,11 +12,21 @@ return new class extends Migration
      */
     public function up(): void
     {
-        DB::statement('ALTER TABLE savings_applications MODIFY applicant_photo LONGTEXT NULL');
-        DB::statement('ALTER TABLE savings_applications MODIFY applicant_signature LONGTEXT NULL');
-        DB::statement('ALTER TABLE savings_applications MODIFY officer_signature LONGTEXT NULL');
-        DB::statement('ALTER TABLE savings_applications MODIFY accountant_signature LONGTEXT NULL');
-        DB::statement('ALTER TABLE savings_applications MODIFY branch_manager_signature LONGTEXT NULL');
+        Schema::table('savings_applications', function (Blueprint $table) {
+            $table->longText('applicant_photo')->nullable()->change();
+        });
+        Schema::table('savings_applications', function (Blueprint $table) {
+            $table->longText('applicant_signature')->nullable()->change();
+        });
+        Schema::table('savings_applications', function (Blueprint $table) {
+            $table->longText('officer_signature')->nullable()->change();
+        });
+        Schema::table('savings_applications', function (Blueprint $table) {
+            $table->longText('accountant_signature')->nullable()->change();
+        });
+        Schema::table('savings_applications', function (Blueprint $table) {
+            $table->longText('branch_manager_signature')->nullable()->change();
+        });
     }
 
     /**
@@ -23,10 +34,20 @@ return new class extends Migration
      */
     public function down(): void
     {
-        DB::statement('ALTER TABLE savings_applications MODIFY applicant_photo VARCHAR(255) NULL');
-        DB::statement('ALTER TABLE savings_applications MODIFY applicant_signature VARCHAR(255) NULL');
-        DB::statement('ALTER TABLE savings_applications MODIFY officer_signature VARCHAR(255) NULL');
-        DB::statement('ALTER TABLE savings_applications MODIFY accountant_signature VARCHAR(255) NULL');
-        DB::statement('ALTER TABLE savings_applications MODIFY branch_manager_signature VARCHAR(255) NULL');
+        Schema::table('savings_applications', function (Blueprint $table) {
+            $table->string('applicant_photo', 255)->nullable()->change();
+        });
+        Schema::table('savings_applications', function (Blueprint $table) {
+            $table->string('applicant_signature', 255)->nullable()->change();
+        });
+        Schema::table('savings_applications', function (Blueprint $table) {
+            $table->string('officer_signature', 255)->nullable()->change();
+        });
+        Schema::table('savings_applications', function (Blueprint $table) {
+            $table->string('accountant_signature', 255)->nullable()->change();
+        });
+        Schema::table('savings_applications', function (Blueprint $table) {
+            $table->string('branch_manager_signature', 255)->nullable()->change();
+        });
     }
 };

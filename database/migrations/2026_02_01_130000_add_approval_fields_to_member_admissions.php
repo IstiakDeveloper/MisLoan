@@ -19,7 +19,9 @@ return new class extends Migration
         // Update member_admission_approvals to support return action
         Schema::table('member_admission_approvals', function (Blueprint $table) {
             // Add 'returned' to status enum
-            DB::statement("ALTER TABLE member_admission_approvals MODIFY COLUMN status ENUM('pending', 'approved', 'rejected', 'returned') DEFAULT 'pending'");
+            Schema::table('member_admission_approvals', function (Blueprint $table) {
+                $table->enum('status', ['pending', 'approved', 'rejected', 'returned'])->nullable()->default('pending')->change();
+            });
         });
     }
 
@@ -31,7 +33,9 @@ return new class extends Migration
         });
 
         Schema::table('member_admission_approvals', function (Blueprint $table) {
-            DB::statement("ALTER TABLE member_admission_approvals MODIFY COLUMN status ENUM('pending', 'approved', 'rejected') DEFAULT 'pending'");
+            Schema::table('member_admission_approvals', function (Blueprint $table) {
+                $table->enum('status', ['pending', 'approved', 'rejected'])->nullable()->default('pending')->change();
+            });
         });
     }
 };

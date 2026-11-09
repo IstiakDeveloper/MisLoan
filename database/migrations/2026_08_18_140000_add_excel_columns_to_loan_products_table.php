@@ -3,7 +3,6 @@
 use Illuminate\Database\Migrations\Migration;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\Schema;
-use Illuminate\Support\Facades\DB;
 
 return new class extends Migration
 {
@@ -21,11 +20,9 @@ return new class extends Migration
         });
 
         // Update interest_calculation_type enum to include 'housing'
-        try {
-            DB::statement("ALTER TABLE loan_products MODIFY COLUMN interest_calculation_type ENUM('flat', 'reducing', 'compound', 'housing') DEFAULT 'flat'");
-        } catch (\Exception $e) {
-            // In case of sqlite or test environments where ALTER TABLE MODIFY COLUMN is not supported
-        }
+        Schema::table('loan_products', function (Blueprint $table) {
+            $table->enum('interest_calculation_type', ['flat', 'reducing', 'compound', 'housing'])->nullable()->default('flat')->change();
+        });
     }
 
     /**
@@ -43,9 +40,8 @@ return new class extends Migration
             ]);
         });
 
-        try {
-            DB::statement("ALTER TABLE loan_products MODIFY COLUMN interest_calculation_type ENUM('flat', 'reducing', 'compound') DEFAULT 'flat'");
-        } catch (\Exception $e) {
-        }
+        Schema::table('loan_products', function (Blueprint $table) {
+            $table->enum('interest_calculation_type', ['flat', 'reducing', 'compound'])->nullable()->default('flat')->change();
+        });
     }
 };

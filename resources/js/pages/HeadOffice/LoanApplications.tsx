@@ -361,7 +361,7 @@ export default function LoanApplications({ loans, filters, stats, zones, areas, 
             const doReload = () => {
                 if (!reloaded) {
                     reloaded = true;
-                    router.reload(keepListFilters);
+                    router.reload();
                     window.removeEventListener('focus', doReload);
                 }
             };

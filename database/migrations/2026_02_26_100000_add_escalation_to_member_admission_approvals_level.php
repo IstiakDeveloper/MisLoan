@@ -1,17 +1,22 @@
 <?php
 
 use Illuminate\Database\Migrations\Migration;
-use Illuminate\Support\Facades\DB;
+use Illuminate\Database\Schema\Blueprint;
+use Illuminate\Support\Facades\Schema;
 
 return new class extends Migration
 {
     public function up(): void
     {
-        DB::statement("ALTER TABLE member_admission_approvals MODIFY COLUMN level ENUM('branch', 'area', 'zone', 'head_office', 'escalation') NOT NULL");
+        Schema::table('member_admission_approvals', function (Blueprint $table) {
+            $table->enum('level', ['branch', 'area', 'zone', 'head_office', 'escalation'])->change();
+        });
     }
 
     public function down(): void
     {
-        DB::statement("ALTER TABLE member_admission_approvals MODIFY COLUMN level ENUM('branch', 'area', 'zone', 'head_office') NOT NULL");
+        Schema::table('member_admission_approvals', function (Blueprint $table) {
+            $table->enum('level', ['branch', 'area', 'zone', 'head_office'])->change();
+        });
     }
 };

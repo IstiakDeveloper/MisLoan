@@ -58,6 +58,9 @@ final class JournalService
                         || DB::table('journal_entries')->where('reversal_of', $reversalOf)->exists()) {
                         throw ValidationException::withMessages(['reversal' => 'This entry cannot be reversed.']);
                     }
+                    if ($date < $original->business_date) {
+                        throw ValidationException::withMessages(['business_date' => 'A reversal cannot precede its original transaction.']);
+                    }
                     $expected = DB::table('journal_lines')->where('journal_entry_id', $reversalOf)->get()
                         ->map(fn ($line) => ['account_id' => (int) $line->ledger_account_id, 'debit_paisa' => (int) $line->credit_paisa, 'credit_paisa' => (int) $line->debit_paisa])->all();
                     if ($this->normalize($expected) !== $lines) {
@@ -92,6 +95,9 @@ final class JournalService
         $entry = DB::table('journal_entries')->find($entryId);
         abort_unless($entry, 404);
         $this->authorize($actor, $entry->branch_id);
+        if (($entry->source_type ?? 'manual') !== 'manual') {
+            throw ValidationException::withMessages(['reversal' => 'Reverse this transaction through its source ledger to preserve account balances.']);
+        }
         $lines = DB::table('journal_lines')->where('journal_entry_id', $entryId)->get()
             ->map(fn ($line) => ['account_id' => (int) $line->ledger_account_id, 'debit_paisa' => (int) $line->credit_paisa, 'credit_paisa' => (int) $line->debit_paisa])->all();
 

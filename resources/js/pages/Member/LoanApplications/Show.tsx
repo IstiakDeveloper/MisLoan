@@ -61,6 +61,8 @@ import EditApprovalCommentModal from './Components/EditApprovalCommentModal';
 import EditLoanDetailsModal from './Components/EditLoanDetailsModal';
 
 interface LoanApplication {
+    updated_at?: string;
+    approvals?: Array<{ id: number; comments?: string | null }>;
     id: number;
     application_no: string;
     form_type: number | string;
@@ -107,6 +109,12 @@ interface LoanApplication {
         role_name?: string;
     }>;
     member_admission: {
+        guarantor_name?: string;
+        guarantor_mobile?: string;
+        present_post_code?: string;
+        present_upazila?: string;
+        present_district?: string;
+        loan_dofa?: number | null;
         id: number;
         application_no: string;
         samity_id?: number | null;
@@ -340,6 +348,7 @@ export default function Show({ application, routes, categories = [], can_update_
         userName?: string;
         roleName?: string;
         comments?: string;
+        currentComment?: string;
     } | null>(null);
     const [commentInput, setCommentInput] = useState('');
     const [savingComment, setSavingComment] = useState(false);
@@ -2019,7 +2028,7 @@ export default function Show({ application, routes, categories = [], can_update_
                             <Button 
                                 size="sm" 
                                 className="w-full sm:w-auto bg-amber-600 hover:bg-amber-700 text-white shrink-0 rounded-lg text-xs"
-                                onClick={() => setActiveTab('issues')}
+                                onClick={() => setActiveTab('approvals')}
                             >
                                 সমস্যা সমাধান করুন ({pendingIssues.length})
                             </Button>

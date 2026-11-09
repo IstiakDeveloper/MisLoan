@@ -1,7 +1,8 @@
 <?php
 
-use App\Http\Controllers\ApprovalController;
+use App\Http\Controllers\AccountingController;
 use App\Http\Controllers\AppRegistrationController;
+use App\Http\Controllers\ApprovalController;
 use App\Http\Controllers\ClusterHandoverController;
 use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\HeadOffice\ApproverLoanApprovalReportController;
@@ -20,6 +21,7 @@ use App\Http\Controllers\IssueProcessingController;
 use App\Http\Controllers\LoanApplicationController;
 use App\Http\Controllers\LoanCategoryController;
 use App\Http\Controllers\LoanProductController;
+use App\Http\Controllers\LoanQuoteController;
 use App\Http\Controllers\MaintenanceController;
 use App\Http\Controllers\Member\CycleOverrideController;
 use App\Http\Controllers\Member\MemberCycleHubController;
@@ -32,6 +34,7 @@ use App\Http\Controllers\PortfolioHandoverController;
 use App\Http\Controllers\ProfileController;
 use App\Http\Controllers\RoleController;
 use App\Http\Controllers\SamityController;
+use App\Http\Controllers\Savings\SavingsLedgerController;
 use App\Http\Controllers\SavingsCategoryController;
 use App\Http\Controllers\SavingsProductController;
 use App\Http\Controllers\TeamBasedApprovalController;
@@ -54,15 +57,25 @@ Route::get('/', function () {
 Route::middleware(['auth', 'verified'])->group(function () {
     Route::get('dashboard', [DashboardController::class, 'index'])->name('dashboard');
 
-    Route::get('loan-products/{loanProduct}/quote', \App\Http\Controllers\LoanQuoteController::class)->name('loan-products.quote');
+    Route::get('loan-products/{loanProduct}/quote', LoanQuoteController::class)->name('loan-products.quote');
+
+    Route::prefix('savings-ledger')->name('savings-ledger.')->controller(SavingsLedgerController::class)->group(function () {
+        Route::get('/', 'index')->name('index');
+        Route::post('accounts', 'open')->name('open');
+        Route::post('accounts/{account}/transactions', 'transact')->name('transact');
+        Route::post('transactions/{transaction}/reverse', 'reverse')->name('reverse');
+        Route::post('accounts/{account}/holds', 'hold')->name('hold');
+        Route::post('holds/{hold}/release', 'release')->name('release');
+        Route::post('accounts/{account}/close', 'close')->name('close');
+    });
 
     Route::prefix('accounting')->name('accounting.')->group(function () {
-        Route::get('/', [\App\Http\Controllers\AccountingController::class, 'index'])->name('index');
-        Route::post('accounts', [\App\Http\Controllers\AccountingController::class, 'account'])->name('accounts.store');
-        Route::post('periods', [\App\Http\Controllers\AccountingController::class, 'period'])->name('periods.store');
-        Route::post('journals', [\App\Http\Controllers\AccountingController::class, 'post'])->name('journals.store');
-        Route::post('journals/{entry}/reverse', [\App\Http\Controllers\AccountingController::class, 'reverse'])->name('journals.reverse');
-        Route::post('periods/{period}/close', [\App\Http\Controllers\AccountingController::class, 'close'])->name('periods.close');
+        Route::get('/', [AccountingController::class, 'index'])->name('index');
+        Route::post('accounts', [AccountingController::class, 'account'])->name('accounts.store');
+        Route::post('periods', [AccountingController::class, 'period'])->name('periods.store');
+        Route::post('journals', [AccountingController::class, 'post'])->name('journals.store');
+        Route::post('journals/{entry}/reverse', [AccountingController::class, 'reverse'])->name('journals.reverse');
+        Route::post('periods/{period}/close', [AccountingController::class, 'close'])->name('periods.close');
     });
 
     // Portfolio handover (allowed while locked; middleware whitelists these routes)

@@ -13,7 +13,9 @@ interface Counts {
     [key: string]: number;
 }
 
-interface ReportRow extends Counts {
+interface ReportRow {
+    [key: string]: string | number | null | undefined;
+    total: number;
     serial: number;
     branch_id: number;
     branch_name: string;

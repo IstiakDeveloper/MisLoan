@@ -11,12 +11,22 @@ use App\Services\MemberCodeService;
 use App\Support\SavingsFormVisibility;
 use Carbon\Carbon;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Schema;
 use Inertia\Inertia;
 
 class HeadOfficeSavingsController extends Controller
 {
     use Concerns\RequiresSuperAdminDeletePin;
     use Concerns\ScopesToAccessibleBranches;
+
+    private function ensureNoFinancialLedger(array $applicationIds): void
+    {
+        if (Schema::hasTable('savings_accounts')
+            && DB::table('savings_accounts')->whereIn('savings_application_id', $applicationIds)->exists()) {
+            abort(422, 'Savings applications with financial ledgers cannot be deleted.');
+        }
+    }
 
     /**
      * Display savings applications (all for HO; assigned zone/area for approvers/managers).
@@ -232,6 +242,7 @@ class HeadOfficeSavingsController extends Controller
         $application = SavingsApplication::findOrFail($id);
         $this->ensureCanAccessBranch($application->branch_id);
 
+        $this->ensureNoFinancialLedger([(int) $application->id]);
         RecentDeletion::recordSavingsDeletion($application, $request->user(), $request);
         $application->forceDelete();
 
@@ -260,6 +271,7 @@ class HeadOfficeSavingsController extends Controller
         $this->applyAccessibleBranchScope($query);
         $applications = $query->get();
         $count = $applications->count();
+        $this->ensureNoFinancialLedger($applications->pluck('id')->all());
 
         foreach ($applications as $app) {
             RecentDeletion::recordSavingsDeletion($app, $request->user(), $request);

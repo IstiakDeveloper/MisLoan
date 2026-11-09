@@ -59,6 +59,7 @@ function roundAmountField(val: number | string | null | undefined): string | num
 }
 
 interface ItemRow {
+    loan_application_id?: number | null;
     id?: number;
     serial_no: number;
     member_name: string;
@@ -199,6 +200,7 @@ interface Props {
     stats: {
         total: number;
         pending: number;
+        waiting?: number;
         approved: number;
         rejected: number;
         forwarded: number;

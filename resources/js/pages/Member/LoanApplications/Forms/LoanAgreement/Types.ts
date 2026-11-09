@@ -14,6 +14,7 @@ export interface LoanAgreementData {
     upazila: string;
     district: string;
     loan_amount: number;
+    loan_amount_words?: string;
     loan_category_name: string;
     loan_product_name: string;
     loan_purpose: string;
@@ -99,5 +100,6 @@ export interface LoanAgreementProps {
     existingApplication?: any;
     savedData?: any;
     onlyPreview?: boolean;
+    embedded?: boolean;
     isLegacy?: boolean;
 }

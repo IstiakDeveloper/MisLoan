@@ -2,8 +2,8 @@
 
 use Illuminate\Database\Migrations\Migration;
 use Illuminate\Database\Schema\Blueprint;
-use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Schema;
 
 return new class extends Migration
 {
@@ -19,7 +19,9 @@ return new class extends Migration
     public function up(): void
     {
         // Update loan_members status enum only
-        DB::statement("ALTER TABLE loan_members MODIFY COLUMN status ENUM('pending', 'issue', 'approved', 'rejected') DEFAULT 'pending'");
+        Schema::table('loan_members', function (Blueprint $table) {
+            $table->enum('status', ['pending', 'issue', 'approved', 'rejected'])->nullable()->default('pending')->change();
+        });
     }
 
     /**
@@ -31,6 +33,8 @@ return new class extends Migration
         DB::table('loan_members')->where('status', 'issue')->update(['status' => 'pending']);
 
         // Revert enum
-        DB::statement("ALTER TABLE loan_members MODIFY COLUMN status ENUM('pending', 'approved', 'rejected') DEFAULT 'pending'");
+        Schema::table('loan_members', function (Blueprint $table) {
+            $table->enum('status', ['pending', 'approved', 'rejected'])->nullable()->default('pending')->change();
+        });
     }
 };

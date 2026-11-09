@@ -300,7 +300,7 @@ export default function CycleOverrideModal({
                 alert(data.message || 'সদস্য ভর্তি ও ঋণের তথ্য সফলভাবে আপডেট এবং সিঙ্ক করা হয়েছে!');
                 onClose();
                 // Reload Inertia page preserving scroll to show updated dossier
-                router.reload({ preserveScroll: true });
+                router.reload();
             } else {
                 setErrorMessage(data.message || 'আপডেট সম্পন্ন করতে ব্যর্থ হয়েছে।');
             }

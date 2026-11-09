@@ -59,7 +59,7 @@ test('the profit savings form takes signatures by hand and one nominee row by de
     expect($form)
         ->not->toContain('applicant_signature')
         ->not->toContain('officer_signature')
-        ->toContain('সব স্বাক্ষর ও সিল ছাপানো ফর্মে হাতে নেওয়া হবে')
+        ->toContain('মুদ্রিত ফর্মে হাতে স্বাক্ষর করা হবে')
         ->toContain('Math.max(nominees.length, 1)')
         ->toContain('alt={`নমিনি ${idx + 1}`}');
 });

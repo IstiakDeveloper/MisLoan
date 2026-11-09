@@ -17,12 +17,14 @@ use App\Services\MemberCodeService;
 use App\Support\SavingsFormVisibility;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Facades\Storage;
 use Inertia\Inertia;
 
 class SavingsApplicationController extends Controller
 {
     use RequiresSuperAdminDeletePin;
+
     private function ensureApplicationAccessible(SavingsApplication $application): void
     {
         $user = request()->user();
@@ -733,6 +735,10 @@ class SavingsApplicationController extends Controller
         $user = $request->user();
         $application = SavingsApplication::findOrFail($id);
         $this->ensureApplicationAccessible($application);
+        if (Schema::hasTable('savings_accounts')
+            && DB::table('savings_accounts')->where('savings_application_id', $application->id)->exists()) {
+            abort(422, 'This application has a financial ledger. Use Savings Ledger for settlement; its history cannot be deleted.');
+        }
 
         abort_unless(in_array($application->status, ['active', 'matured'], true), 422, 'Only active or matured savings accounts can be settled.');
 
@@ -783,6 +789,10 @@ class SavingsApplicationController extends Controller
     {
         $application = SavingsApplication::findOrFail($id);
         $this->ensureApplicationAccessible($application);
+        if (Schema::hasTable('savings_accounts')
+            && DB::table('savings_accounts')->where('savings_application_id', $application->id)->exists()) {
+            abort(422, 'This application has a financial ledger. Use Savings Ledger for settlement; its history cannot be deleted.');
+        }
         $user = $request->user();
 
         if ($user && $user->canHeadOfficeDeleteOrEdit()) {

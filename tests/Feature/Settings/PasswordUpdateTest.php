@@ -32,7 +32,9 @@ test('password can be updated', function () {
 
     $response
         ->assertSessionHasNoErrors()
-        ->assertRedirect(route('user-password.edit'));
+        ->assertRedirect(route('login'));
+
+    $this->assertGuest();
 
     expect(Hash::check('new-password', $user->refresh()->password))->toBeTrue();
 });
@@ -68,7 +70,9 @@ test('branch account password change updates the branch login pin', function () 
 
     $response
         ->assertSessionHasNoErrors()
-        ->assertRedirect(route('user-password.edit'));
+        ->assertRedirect(route('login'));
+
+    $this->assertGuest();
 
     $branch->refresh();
     expect($branch->verifyLoginPin('87654321'))->toBeTrue()
@@ -90,7 +94,9 @@ test('branch account pin change from profile updates the branch login pin', func
 
     $response
         ->assertSessionHasNoErrors()
-        ->assertRedirect(route('profile.edit'));
+        ->assertRedirect(route('login'));
+
+    $this->assertGuest();
 
     expect($branch->refresh()->verifyLoginPin('998877'))->toBeTrue();
 });

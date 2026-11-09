@@ -53,3 +53,5 @@ export interface User {
 declare global {
     function route(name: string, params?: any): string;
 }
+
+export type PageProps<T extends Record<string, unknown> = Record<string, unknown>> = SharedData & T;

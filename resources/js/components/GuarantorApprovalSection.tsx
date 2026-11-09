@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { ShieldCheck, AlertTriangle, Edit3, CheckCircle2, UserCheck, ChevronDown, ChevronUp } from 'lucide-react';
 
 export interface GuarantorFormState {
+    [key: string]: string;
     guarantor_name: string;
     guarantor_father_or_spouse: string;
     guarantor_nid: string;

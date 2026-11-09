@@ -383,7 +383,7 @@ export default function AdmissionMembers({
         router.get(
             '/head-office/admission-members',
             filterPayload({ per_page: String(size), page: '1' }),
-            { preserveState: true, preserveScroll: true },
+            { preserveScroll: true },
         );
     };
 
@@ -399,7 +399,7 @@ export default function AdmissionMembers({
             const doReload = () => {
                 if (!reloaded) {
                     reloaded = true;
-                    router.reload(keepListFilters);
+                    router.reload();
                     window.removeEventListener('focus', doReload);
                 }
             };

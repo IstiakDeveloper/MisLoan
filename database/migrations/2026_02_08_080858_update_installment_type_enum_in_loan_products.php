@@ -11,7 +11,9 @@ return new class extends Migration
      */
     public function up(): void
     {
-        \DB::statement("ALTER TABLE loan_products MODIFY COLUMN installment_type ENUM('weekly', 'monthly', 'lump_sum') DEFAULT 'monthly'");
+        Schema::table('loan_products', function (Blueprint $table) {
+            $table->enum('installment_type', ['weekly', 'monthly', 'lump_sum'])->nullable()->default('monthly')->change();
+        });
     }
 
     /**
@@ -19,6 +21,8 @@ return new class extends Migration
      */
     public function down(): void
     {
-        \DB::statement("ALTER TABLE loan_products MODIFY COLUMN installment_type ENUM('weekly', 'monthly') DEFAULT 'monthly'");
+        Schema::table('loan_products', function (Blueprint $table) {
+            $table->enum('installment_type', ['weekly', 'monthly'])->nullable()->default('monthly')->change();
+        });
     }
 };

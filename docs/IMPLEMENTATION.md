@@ -1,6 +1,6 @@
 # MisLoan implementation status
 
-This release implements the accounting/security foundation of the approved microfinance roadmap. It is **not the completed end-to-end MFI system**. Each institution continues to run its own installation and database. Existing application data is not converted into posted financial balances.
+This branch implements the accounting/security foundation and the first transactional savings-ledger increment of the approved microfinance roadmap. It is **not the completed end-to-end MFI system**. Each institution continues to run its own installation and database. Existing application data is not converted into posted financial balances.
 
 ## Delivered
 
@@ -11,7 +11,15 @@ This release implements the accounting/security foundation of the approved micro
 - Super-admin accounting workspace at `/accounting`: chart accounts, non-overlapping branch periods, balanced journal posting, exact paisa amounts, reversal, period close, trial balance and paginated journal list.
 - Posted journal service validates account activity, open period, branch access, personal identity, balanced lines, amount bounds and unique request identity. Entries retain actor, business date, timestamp and reversal reference. No posted entry edit/delete endpoints exist.
 - Exact product quote service and authenticated `GET /loan-products/{loanProduct}/quote?amount=50000.00` endpoint. Amount is a decimal string; returned monetary amounts are integer paisa. Uses existing product tariffs and factors; includes a snapshot of the pricing fields. Last installment reconciles exactly to total payable and reports differences from the configured last-installment tariff.
-- CI gates deployment on the foundation regression suite, dependency audit, frontend build, full test suite and TypeScript checks. Legacy diagnostics are uploaded as artifacts. The existing full-suite/type failures currently block automatic deployment.
+- CI gates deployment on the foundation regression suite, dependency audit, frontend build, full test suite and TypeScript checks. Verification diagnostics are uploaded as artifacts. A MySQL 8.4 feature-test job is also required; pushes to feature branches run verification without deploying production.
+
+### Transactional savings ledger
+
+Personal active super-admins can use Configuration → Savings Ledger (`/savings-ledger`). An active savings application is linked to one financial account with a fixed product/maturity snapshot. An explicit opening amount and verification reference are required; a nonzero opening requires an equity offset and a matching journal. The application's form amount is never treated as cash already received.
+
+Deposits, withdrawals, manually approved profit and reversals post to the account ledger and GL atomically. Requests are idempotent; row locks serialize account operations. Holds reduce available funds; release is audited. Withdrawals cannot overdraw current or historical daily balances. Source journals cannot be reversed independently in the manual accounting screen. Account closure requires zero balance and no active holds. Legacy settlement/deletion paths reject applications that already have a financial ledger.
+
+A branch control-account comparison shows savings subledger liability, GL liability and any difference, including unmatched manual GL adjustments. This is not a full cash/bank reconciliation system. Profit calculation/accrual, premature-withdrawal penalty settlement, automatic maturity and member passbook/PDF delivery remain pending. A product that disallows early withdrawals is enforced from the saved snapshot; a premature withdrawal requiring a penalty is blocked until that settlement workflow is implemented.
 
 ### Reducing product pricing
 
@@ -28,17 +36,19 @@ Reducing-loan EMI creation and disbursement service-charge/regular/final install
 5. A personal active super-admin can open Configuration → Accounting. Create the institution's approved chart and branch accounting periods before posting.
 6. Existing branches with known default PINs must be rotated separately; new code deliberately does not disable live users silently.
 
-The new service is a manual administrative ledger. Do not treat its trial balance as the institution's full financial position until audited opening balances and all transaction integrations have been migrated. Period close currently provides a posting lock; the full end-of-day cash/subledger reconciliation workflow is not implemented. There is no period reopen endpoint. Reversal requires another open period/date and preserves the original.
+The accounting workspace is a manual administrative ledger; savings posted through the new savings workspace also updates it automatically. Do not treat its trial balance as the institution's full financial position until audited opening balances and all transaction integrations have been migrated. Period close currently provides a posting lock; the full end-of-day cash/subledger reconciliation workflow is not implemented. There is no period reopen endpoint. Reversal requires another open period/date and preserves the original.
 
 ## Verification and limitations
 
+Latest verification: **438 PHP tests passed (2,355 assertions)** on SQLite; **53 feature tests passed (199 assertions)** on MySQL 8.4. `npm run types` and the production build pass. Chromium exercised opening, deposit, hold, rejected overdraft, release, withdrawal and control-account reconciliation with no JavaScript errors. These checks do not replace production-data upgrade rehearsal or financial UAT.
+
 Affected PHP dependencies were updated within the existing version constraints (including Laravel 12.71 and PhpSpreadsheet 5.11). Composer reported no remaining security vulnerability advisories after the update. This is a dependency-audit result, not a security certification.
 
-- Foundation suite: **32 passed, 527 assertions**. Covers accounting balance/idempotency, reversal, period closure, exact money, product tariff examples, HTTP validation/authorization, savings branch isolation, maintenance route removal and PWA update behavior.
+- Foundation regression tests cover accounting balance/idempotency, reversal, period closure, exact money, product tariff examples, HTTP validation/authorization, savings branch isolation, maintenance route removal and PWA update behavior.
 - Chromium smoke test exercised account/period setup, a 105.01 taka journal, reversal, trial balance and offline privacy. No page JavaScript exceptions. The browser used an isolated synthetic SQLite fixture, not a production database upgrade.
 - `npm run build` succeeds; existing large-chunk warnings remain.
-- Full suite after the security updates: **378 passed, 49 failed**. Project-wide TypeScript checks also have pre-existing failures. In particular, several old migrations issue MySQL `ALTER ... MODIFY ... ENUM` against the SQLite test database; stale form assertions and missing types also remain. They are tracked as follow-up work rather than hidden by changing those test expectations.
-- Concurrent MySQL posting, complete MySQL migration/upgrade, load targets, production restore drills and institution-specific UAT have not yet been verified.
+- The earlier migration/test/type blockers have been repaired. Enum and text-column changes now use the database schema grammar; MySQL-only Unicode conversion is skipped on SQLite. Upgrade tests preserve existing admissions, dependent documents and Bangla text. Fixtures now include required user identity/roles and valid forms; disabled public registration/email verification remain disabled. Password-change tests assert session logout. Legacy configurable forms use a top-level typed form adapter, and missing response fields/types are declared explicitly.
+- Fresh MySQL 8.4 migration and feature tests have been exercised. Concurrent stress tests, upgrades of a production database copy, load targets, production restore drills and institution-specific UAT have not yet been verified.
 - Service-level immutability does not prevent a privileged database administrator changing tables directly. Production database permissions, append-only external audit retention and maker/checker journal approval remain pending.
 
 ## Remaining roadmap
@@ -46,12 +56,12 @@ Affected PHP dependencies were updated within the existing version constraints (
 | Workstream | Next deliverable |
 | --- | --- |
 | Security | MFA enforcement, private-document delivery, activation links instead of password emails, full authorization audit, dependency remediation |
-| Data compatibility | Full MySQL migration rehearsal; legacy SQLite migration repair; fix existing test/type failures |
+| Data compatibility | Upgrade rehearsal using an audited production database copy; legacy-data reconciliation |
 | Member identity | Permanent member master and admission/cycle mapping; duplicate identity reconciliation |
 | Products | Persist versioned product policies and unify all frontend/backend pricing paths with golden examples |
 | Accounting | Fiscal years, projects/funds, maker/checker vouchers, cash/bank books, reconciliation, financial statements, period-close controls |
 | Loans | Separate loan accounts, persisted reducing schedules, disbursement posting, collection allocation, arrears/PAR, rebate/reschedule/write-off |
-| Savings | Separate savings accounts and transaction ledger, deposits/withdrawals, holds, profit accrual and maturity settlement |
+| Savings | Automatic profit accrual, penalty-aware early settlement, maturity processing and passbook/PDF delivery (account/transaction ledger, holds and GL posting are implemented) |
 | Collections | Cashier settlement and handover, receipt lifecycle, field assignment |
 | Android | Flutter client, encrypted local database, device authentication, idempotent offline collection sync and exception queue |
 | Integrations | Payment adapters, verified callbacks, settlement statements, reconciliation and SMS |

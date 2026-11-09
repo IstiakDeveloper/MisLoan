@@ -9,6 +9,7 @@ import { useAutoFitPrint, triggerPrintWithAutoFit } from '@/hooks/useAutoFitPrin
 import { withLiveMemberCode } from '@/utils/memberCodeUtils';
 
 interface FieldInvestigationData {
+    recommended_loan_amount: number;
     branch_name: string;
     branch_address: string;
     field_visit_date: string;
@@ -74,6 +75,7 @@ interface Props {
     existingApplication?: any;
     savedData?: FieldInvestigationData;
     onlyPreview?: boolean;
+    embedded?: boolean;
     savingsProducts?: Array<{ id: number; product_code: string; product_name: string; product_name_bn: string | null }>;
     loanRound?: number;
     isLegacy?: boolean;
@@ -371,6 +373,7 @@ function buildFieldInvestigationDefaults(
     loanRound = 1,
 ): FieldInvestigationData {
     return {
+        recommended_loan_amount: requestedAmount || 0,
         branch_name: branch?.name || '',
         branch_address: branch?.address || '',
         field_visit_date: todayIsoDate(),
@@ -523,6 +526,7 @@ export default function FieldInvestigation({
     );
 
     const { data, setData, processing } = useForm<FieldInvestigationData>({
+        recommended_loan_amount: requestedAmount || 0,
         branch_name: branch?.name || '',
         branch_address: branch?.address || '',
         field_visit_date: todayIsoDate(),

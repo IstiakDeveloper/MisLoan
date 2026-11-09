@@ -203,10 +203,12 @@ export function EmptyState({
     icon: Icon,
     title,
     description,
+    action,
 }: {
     icon: LucideIcon;
     title: string;
     description?: string;
+    action?: ReactNode;
 }) {
     return (
         <div className="flex flex-col items-center justify-center px-6 py-14 text-center">
@@ -217,6 +219,7 @@ export function EmptyState({
             {description && (
                 <p className="mt-1 text-sm text-slate-500">{description}</p>
             )}
+            {action && <div className="mt-4">{action}</div>}
         </div>
     );
 }

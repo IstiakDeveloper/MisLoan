@@ -336,7 +336,7 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
     ];
 
     const headOfficeSetupItems = [
-        ...(isSuperAdmin ? [{ name: 'Accounting', href: '/accounting', icon: Landmark }] : []),
+        ...(isSuperAdmin ? [{ name: 'Accounting', href: '/accounting', icon: Landmark }, { name: 'Savings Ledger', href: '/savings-ledger', icon: Wallet }] : []),
         { name: 'Recent Deletions (7 Days)', href: '/head-office/recent-deletions', icon: Trash2 },
         { name: 'CSO Duty Roster', href: '/head-office/cso-duty-roster', icon: CalendarDays },
         { name: 'Send Deadline', href: '/head-office/send-cutoff', icon: Clock },
@@ -463,7 +463,7 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
                 branchMenuItems.find(m => m.href === '/member/loan-applications') || branchMenuItems[2],
                 branchMenuItems.find(m => m.href === '/member/savings-applications'),
                 branchMenuItems.find(m => m.href === '/verifications'),
-            ].filter(Boolean);
+            ].filter((item): item is NonNullable<typeof item> => Boolean(item));
         }
 
         if (isBranchRole) {
@@ -472,7 +472,7 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
                 branchMenuItems.find(m => m.href === '/member-admissions') || branchMenuItems[1],
                 branchMenuItems.find(m => m.href === '/member/loan-applications') || branchMenuItems[2],
                 pendingApprovalItem,
-            ].filter(Boolean);
+            ].filter((item): item is NonNullable<typeof item> => Boolean(item));
         }
 
         if (isTeamApproverRole || isEdRole) {
@@ -482,7 +482,7 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
                 pendingApprovalItem,
                 ...(teamItem ? [teamItem] : []),
                 approverOperationsItems[0],
-            ].slice(0, 4).filter(Boolean);
+            ].slice(0, 4).filter((item): item is NonNullable<typeof item> => Boolean(item));
         }
 
         // Head office / super admin / default — no Pending Approvals (they do not approve)
@@ -492,7 +492,7 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
             headOfficeMainItems.find(m => m.href === '/head-office/admission-members') || headOfficeMainItems[1],
             headOfficeMainItems.find(m => m.href === '/head-office/loan-applications') || headOfficeMainItems[2],
             ...(hoTeamItem ? [hoTeamItem] : []),
-        ].slice(0, 4).filter(Boolean);
+        ].slice(0, 4).filter((item): item is NonNullable<typeof item> => Boolean(item));
     }, [isFieldOfficer, isBranchRole, isTeamApproverRole, isEdRole, branchMenuItems, approverMenuItems, approverOperationsItems, headOfficeMainItems, badgeCounts.pendingApprovals]);
 
     const showReportSection = headOfficeReportItems.length > 0;

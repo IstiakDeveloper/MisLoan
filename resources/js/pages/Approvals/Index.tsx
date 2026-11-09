@@ -931,7 +931,7 @@ export default function Index({
             return: `/approvals/${selectedApproval.id}/return-to-branch`,
         };
 
-        const payload: Record<string, unknown> = { comments };
+        const payload: Record<string, import('@inertiajs/core').FormDataConvertible> = { comments };
         if (action === 'reject') {
             payload.push_to_block_list = pushToBlockList;
             if (pushToBlockList) {
@@ -1344,7 +1344,7 @@ export default function Index({
             return;
         }
 
-        const payload: Record<string, unknown> = {
+        const payload: Record<string, import('@inertiajs/core').FormDataConvertible> = {
             comments: loanComments,
             guarantor_data: loanGuarantorForm,
             mark_guarantor_verified: loanGuarantorVerifiedMark,

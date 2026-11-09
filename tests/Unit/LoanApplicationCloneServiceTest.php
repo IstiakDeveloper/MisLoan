@@ -69,6 +69,7 @@ it('does not clone the previous sufolon agreement onto a new agrosor loan', func
 
 it('reuses the saved agreement when the next loan is the same sufolon product', function () {
     [$member, $sufolonProduct, $sufolonCategory] = makeCloneServiceContext();
+    $member->loan_dofa = 2; // Only repeat members may inherit earlier loan forms.
 
     $previous = LoanApplication::create([
         'status' => LoanApplication::STATUS_REPAID,
@@ -106,6 +107,7 @@ it('reuses the saved agreement when the next loan is the same sufolon product', 
 
 it('reuses the saved application form when the next loan is the same agrosor product', function () {
     [$member, , , $agrosorProduct, $agrosorCategory] = makeCloneServiceContext();
+    $member->loan_dofa = 2; // Only repeat members may inherit earlier loan forms.
 
     $previous = LoanApplication::create([
         'status' => LoanApplication::STATUS_REPAID,

@@ -330,7 +330,11 @@ it('lets a field officer submit a loan before member admission is approved', fun
         'submitted_by' => $ctx['fo']->id,
         'status' => LoanApplication::STATUS_DRAFT,
         'requested_amount' => 15000,
-        'loan_agreement_data' => ['agreement_text' => 'weekly agreement filled'],
+        'loan_agreement_data' => [
+            'agreement_text' => 'weekly agreement filled',
+            'village' => 'গ্রাম', 'union' => 'ইউনিয়ন',
+            'upazila' => 'উপজেলা', 'district' => 'জেলা',
+        ],
     ]);
 
     $this->actingAs($ctx['fo'])

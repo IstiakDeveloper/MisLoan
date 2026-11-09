@@ -87,6 +87,7 @@ interface LoanApplicationIssue {
 }
 
 interface LoanApplication {
+    proposed_amount?: number | null;
     id: number;
     application_no: string;
     status: string;
@@ -259,6 +260,7 @@ interface ActiveLoan {
 }
 
 interface Member {
+    previous_admission_id?: number | null;
     id: number;
     applicant_name_en: string;
     applicant_name_bn: string;

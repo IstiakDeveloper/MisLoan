@@ -42,7 +42,7 @@ interface Props {
     guardianPhoto: File | string | null;
     guardianNidPhoto: File | string | null;
     applicantSignature: File | string | null;
-    onFieldChange: (field: string, value: string | File | boolean | null) => void;
+    onFieldChange: (field: string, value: string | number | File | boolean | null) => void;
     errors: any;
 }
 
