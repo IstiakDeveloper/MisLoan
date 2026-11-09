@@ -1027,7 +1027,8 @@ export default function VerificationIndex({ items, stats, filters, permissions, 
                                 ) : (
                                     (items?.data ?? []).map((item, index) => {
                                         const isAdmission = item.item_type === 'admission';
-                                        const isApproved = item.status === 'approved' || item.status === 'pending_disbursement' || item.status === 'disbursed';
+                                        const isAwaitingTakeupOrCancelled = item.status === 'awaiting_takeup' || item.status === 'pending_cancellation' || item.status === 'cancelled';
+                                        const isApproved = item.status === 'approved' || item.status === 'pending_disbursement' || item.status === 'disbursed' || isAwaitingTakeupOrCancelled;
                                         const isRejected = item.status === 'rejected';
                                         const isSelected = selectedIds.includes(item.id);
                                         const isActionReady = item.is_zm_approved && !isApproved && !isRejected;

@@ -877,7 +877,8 @@ class HeadOfficeLoanController extends Controller
         ]);
 
         $ids = $validated['ids'];
-        $query = LoanApplication::whereIn('id', $ids);
+        $query = LoanApplication::whereIn('id', $ids)
+            ->where('status', LoanApplication::STATUS_PENDING_HEAD_OFFICE);
         $this->applyAccessibleBranchScope($query);
         $loans = $query->get();
 
@@ -887,6 +888,12 @@ class HeadOfficeLoanController extends Controller
         DB::beginTransaction();
         try {
             foreach ($loans as $loan) {
+                if ($loan->status !== LoanApplication::STATUS_PENDING_HEAD_OFFICE) {
+                    $skippedCount++;
+
+                    continue;
+                }
+
                 if ($loan->issues()->whereNull('zm_approved_at')->exists()) {
                     $skippedCount++;
 
@@ -1009,6 +1016,12 @@ class HeadOfficeLoanController extends Controller
             $skippedCount = 0;
 
             foreach ($loans as $loan) {
+                if ($loan->status !== LoanApplication::STATUS_PENDING_HEAD_OFFICE) {
+                    $skippedCount++;
+
+                    continue;
+                }
+
                 if ($loan->issues()->where(function ($q) {
                     $q->where('status', 'pending')
                         ->orWhereNull('zm_approved_at');

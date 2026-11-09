@@ -94,7 +94,11 @@ class HeadOfficeVerificationController extends Controller
         $loanQuery = LoanApplication::where(function ($q) {
             $q->whereHas('issues')
                 ->orWhere('status', LoanApplication::STATUS_NEEDS_CORRECTION);
-        });
+        })->whereNotIn('status', [
+            LoanApplication::STATUS_AWAITING_TAKEUP,
+            LoanApplication::STATUS_PENDING_CANCELLATION,
+            LoanApplication::STATUS_CANCELLED,
+        ]);
 
         $this->applyAccessibleBranchScope($loanQuery);
 
@@ -300,15 +304,25 @@ class HeadOfficeVerificationController extends Controller
             });
         }
 
+        $completedStatuses = [
+            'approved',
+            'pending_disbursement',
+            'disbursed',
+            'rejected',
+            LoanApplication::STATUS_AWAITING_TAKEUP,
+            LoanApplication::STATUS_PENDING_CANCELLATION,
+            LoanApplication::STATUS_CANCELLED,
+        ];
+
         // Calculate statistics across all active items for the tabs
         $stats = [
             'total' => $summaryItems->count(),
-            'pending_action' => $summaryItems->filter(fn ($i) => ! in_array($i['status'], ['approved', 'pending_disbursement', 'disbursed', 'rejected'], true))->count(),
+            'pending_action' => $summaryItems->filter(fn ($i) => ! in_array($i['status'], $completedStatuses, true))->count(),
             'admission_count' => $summaryItems->where('item_type', 'admission')->count(),
             'loan_count' => $summaryItems->where('item_type', 'loan')->count(),
-            'pending_issues' => $summaryItems->filter(fn ($i) => $i['has_pending_issue'] && ! $i['has_replied'] && ! in_array($i['status'], ['approved', 'pending_disbursement', 'disbursed', 'rejected'], true))->count(),
-            'branch_replied' => $summaryItems->filter(fn ($i) => $i['has_replied'] && ! $i['is_zm_approved'] && ! in_array($i['status'], ['approved', 'pending_disbursement', 'disbursed', 'rejected'], true))->count(),
-            'zm_approved' => $summaryItems->filter(fn ($i) => $i['is_zm_approved'] && ! in_array($i['status'], ['approved', 'pending_disbursement', 'disbursed', 'rejected'], true))->count(),
+            'pending_issues' => $summaryItems->filter(fn ($i) => $i['has_pending_issue'] && ! $i['has_replied'] && ! in_array($i['status'], $completedStatuses, true))->count(),
+            'branch_replied' => $summaryItems->filter(fn ($i) => $i['has_replied'] && ! $i['is_zm_approved'] && ! in_array($i['status'], $completedStatuses, true))->count(),
+            'zm_approved' => $summaryItems->filter(fn ($i) => $i['is_zm_approved'] && ! in_array($i['status'], $completedStatuses, true))->count(),
             'approved' => $summaryItems->whereIn('status', ['approved', 'pending_disbursement', 'disbursed'])->count(),
             'rejected' => $summaryItems->where('status', 'rejected')->count(),
         ];
@@ -316,13 +330,13 @@ class HeadOfficeVerificationController extends Controller
         // Apply issue status filter
         $filteredItems = $summaryItems;
         if ($issueStatus === 'pending_action') {
-            $filteredItems = $summaryItems->filter(fn ($i) => ! in_array($i['status'], ['approved', 'pending_disbursement', 'disbursed', 'rejected'], true));
+            $filteredItems = $summaryItems->filter(fn ($i) => ! in_array($i['status'], $completedStatuses, true));
         } elseif ($issueStatus === 'zm_approved') {
-            $filteredItems = $summaryItems->filter(fn ($i) => $i['is_zm_approved'] && ! in_array($i['status'], ['approved', 'pending_disbursement', 'disbursed', 'rejected'], true));
+            $filteredItems = $summaryItems->filter(fn ($i) => $i['is_zm_approved'] && ! in_array($i['status'], $completedStatuses, true));
         } elseif ($issueStatus === 'branch_replied') {
-            $filteredItems = $summaryItems->filter(fn ($i) => $i['has_replied'] && ! $i['is_zm_approved'] && ! in_array($i['status'], ['approved', 'pending_disbursement', 'disbursed', 'rejected'], true));
+            $filteredItems = $summaryItems->filter(fn ($i) => $i['has_replied'] && ! $i['is_zm_approved'] && ! in_array($i['status'], $completedStatuses, true));
         } elseif ($issueStatus === 'pending') {
-            $filteredItems = $summaryItems->filter(fn ($i) => $i['has_pending_issue'] && ! $i['has_replied'] && ! in_array($i['status'], ['approved', 'pending_disbursement', 'disbursed', 'rejected'], true));
+            $filteredItems = $summaryItems->filter(fn ($i) => $i['has_pending_issue'] && ! $i['has_replied'] && ! in_array($i['status'], $completedStatuses, true));
         } elseif ($issueStatus === 'approved') {
             $filteredItems = $summaryItems->filter(fn ($i) => in_array($i['status'], ['approved', 'pending_disbursement', 'disbursed'], true));
         } elseif ($issueStatus === 'rejected') {
@@ -1050,7 +1064,15 @@ class HeadOfficeVerificationController extends Controller
                     $approvedCount++;
                 } else {
                     $loan = LoanApplication::find($itemData['raw_id']);
-                    if (! $loan || in_array($loan->status, [LoanApplication::STATUS_APPROVED, LoanApplication::STATUS_PENDING_DISBURSEMENT, LoanApplication::STATUS_DISBURSED, LoanApplication::STATUS_REJECTED], true)) {
+                    if (! $loan || in_array($loan->status, [
+                        LoanApplication::STATUS_APPROVED,
+                        LoanApplication::STATUS_PENDING_DISBURSEMENT,
+                        LoanApplication::STATUS_AWAITING_TAKEUP,
+                        LoanApplication::STATUS_PENDING_CANCELLATION,
+                        LoanApplication::STATUS_CANCELLED,
+                        LoanApplication::STATUS_DISBURSED,
+                        LoanApplication::STATUS_REJECTED,
+                    ], true)) {
                         continue;
                     }
                     $this->ensureCanAccessBranch($loan->branch_id);
@@ -1155,6 +1177,10 @@ class HeadOfficeVerificationController extends Controller
             return back()->with('error', 'শুধুমাত্র হেড অফিস কর্মকর্তা বা সুপার অ্যাডমিন চূড়ান্ত অনুমোদন করতে পারবেন।');
         }
 
+        if (in_array($admission->status, ['approved', 'rejected'], true)) {
+            return back()->with('error', 'এই অবস্থার সদস্য ভর্তি আবেদন অনুমোদন করা যাবে না।');
+        }
+
         // Must have issues and all issues must be approved by ZM
         $hasUnapprovedIssue = $admission->issues()->doesntExist() || $admission->issues()->whereNull('zm_approved_at')->exists();
         if ($hasUnapprovedIssue) {
@@ -1238,6 +1264,18 @@ class HeadOfficeVerificationController extends Controller
 
         if (! $canApprove) {
             return back()->with('error', 'শুধুমাত্র হেড অফিস কর্মকর্তা বা সুপার অ্যাডমিন চূড়ান্ত অনুমোদন করতে পারবেন।');
+        }
+
+        if (in_array($loanApplication->status, [
+            LoanApplication::STATUS_APPROVED,
+            LoanApplication::STATUS_PENDING_DISBURSEMENT,
+            LoanApplication::STATUS_AWAITING_TAKEUP,
+            LoanApplication::STATUS_PENDING_CANCELLATION,
+            LoanApplication::STATUS_CANCELLED,
+            LoanApplication::STATUS_DISBURSED,
+            LoanApplication::STATUS_REJECTED,
+        ], true)) {
+            return back()->with('error', 'এই অবস্থার ঋণ আবেদন অনুমোদন করা যাবে না।');
         }
 
         // Must have issues and all issues must be approved by ZM

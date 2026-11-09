@@ -11,6 +11,9 @@ use Illuminate\Support\Facades\Schema;
 
 function createAwaitingTakeupTables(): void
 {
+    Schema::dropIfExists('loan_categories');
+    Schema::dropIfExists('member_other_assets');
+    Schema::dropIfExists('member_family_members');
     Schema::dropIfExists('loan_application_approvals');
     Schema::dropIfExists('member_admission_approvals');
     Schema::dropIfExists('loan_application_issues');
@@ -121,6 +124,14 @@ function createAwaitingTakeupTables(): void
         $table->timestamps();
     });
 
+    Schema::create('loan_categories', function (Blueprint $table) {
+        $table->id();
+        $table->string('name')->nullable();
+        $table->boolean('is_active')->default(true);
+        $table->integer('display_order')->default(0);
+        $table->timestamps();
+    });
+
     Schema::create('loan_products', function (Blueprint $table) {
         $table->id();
         $table->string('product_name')->nullable();
@@ -142,6 +153,22 @@ function createAwaitingTakeupTables(): void
         $table->string('status')->default('approved');
         $table->timestamps();
         $table->softDeletes();
+    });
+
+    Schema::create('member_family_members', function (Blueprint $table) {
+        $table->id();
+        $table->unsignedBigInteger('member_admission_id');
+        $table->string('name')->nullable();
+        $table->integer('sl_no')->default(1);
+        $table->timestamps();
+    });
+
+    Schema::create('member_other_assets', function (Blueprint $table) {
+        $table->id();
+        $table->unsignedBigInteger('member_admission_id');
+        $table->string('asset_name')->nullable();
+        $table->integer('sl_no')->default(1);
+        $table->timestamps();
     });
 
     Schema::create('member_admission_issues', function (Blueprint $table) {
@@ -171,6 +198,13 @@ function createAwaitingTakeupTables(): void
         $table->timestamp('awaiting_takeup_at')->nullable();
         $table->unsignedBigInteger('awaiting_takeup_by')->nullable();
         $table->string('awaiting_note', 500)->nullable();
+        $table->timestamp('reviewed_at')->nullable();
+        $table->unsignedBigInteger('reviewed_by')->nullable();
+        $table->string('form_type')->nullable();
+        $table->text('guarantor_info')->nullable();
+        $table->text('nominee_info')->nullable();
+        $table->text('asset_info')->nullable();
+        $table->text('business_plan')->nullable();
         $table->timestamps();
         $table->softDeletes();
     });
@@ -347,7 +381,11 @@ it('rejects head office send and disbursement while awaiting takeup', function (
 
     $this->actingAs($user)
         ->from('/member/loan-applications')
-        ->patch(route('member.loan-applications.disburse', $loan->id))
+        ->patch(route('member.loan-applications.disburse', $loan->id), [
+            'disbursed_amount' => 20000,
+            'disbursement_date' => now()->toDateString(),
+            'disbursement_method' => 'cash',
+        ])
         ->assertRedirect()
         ->assertSessionHasErrors('error');
 
@@ -374,4 +412,89 @@ it('keeps a sister loan form blocked while awaiting takeup', function () {
         ->and($admission->existingLoanForm()?->id)->toBe($loan->id)
         ->and(MemberAdmission::alreadyLoanFormMessage($loan))->toContain('Already Loan Form আছে')
         ->and($admission->mustUseCycleHubForNextLoan())->toBeFalse();
+});
+
+it('forbids non-branch-user roles from marking ready-from-awaiting', function (string $roleName) {
+    [$user, $branch, $admission] = createAwaitingBranchContext($roleName);
+    $loan = createAwaitingLoan($admission, $branch, LoanApplication::STATUS_AWAITING_TAKEUP);
+
+    $this->actingAs($user)
+        ->from('/member/loan-applications')
+        ->patch(route('member.loan-applications.ready-from-awaiting', $loan->id))
+        ->assertForbidden();
+
+    expect($loan->fresh()->status)->toBe(LoanApplication::STATUS_AWAITING_TAKEUP);
+})->with([
+    Role::BRANCH_MANAGER,
+    Role::FIELD_OFFICER,
+    Role::HEAD_OFFICE,
+    Role::SUPER_ADMIN,
+]);
+
+it('ensures show routes include readyFromAwaiting and deferTakeup for branch user', function () {
+    [$branchUser, $branch, $admission] = createAwaitingBranchContext(Role::BRANCH_USER);
+    $loan = createAwaitingLoan($admission, $branch, LoanApplication::STATUS_AWAITING_TAKEUP);
+
+    $branchRes = $this->actingAs($branchUser)->get(route('member.loan-applications.show', $loan->id));
+    $branchRes->assertOk();
+    $branchRoutes = $branchRes->original->getData()['page']['props']['routes'] ?? [];
+    expect($branchRoutes['readyFromAwaiting'])->not->toBeNull()
+        ->and($branchRoutes['deferTakeup'])->not->toBeNull();
+});
+
+it('ensures show routes exclude readyFromAwaiting and deferTakeup for non-branch-user', function () {
+    [$bmUser, $branch, $admission] = createAwaitingBranchContext(Role::BRANCH_MANAGER);
+    $loan = createAwaitingLoan($admission, $branch, LoanApplication::STATUS_AWAITING_TAKEUP);
+
+    $bmRes = $this->actingAs($bmUser)->get(route('member.loan-applications.show', $loan->id));
+    $bmRes->assertOk();
+    $bmRoutes = $bmRes->original->getData()['page']['props']['routes'] ?? [];
+    expect($bmRoutes['readyFromAwaiting'])->toBeNull()
+        ->and($bmRoutes['deferTakeup'])->toBeNull();
+});
+
+it('skips awaiting takeup loans in head office approveBulk', function () {
+    [$hoUser, $branch, $admission] = createAwaitingBranchContext(Role::HEAD_OFFICE);
+    $awaitingLoan = createAwaitingLoan($admission, $branch, LoanApplication::STATUS_AWAITING_TAKEUP);
+    $pendingHoLoan = createAwaitingLoan($admission, $branch, LoanApplication::STATUS_PENDING_HEAD_OFFICE);
+
+    $this->actingAs($hoUser)
+        ->post(route('head-office.loans.approve-bulk'), [
+            'ids' => [$awaitingLoan->id, $pendingHoLoan->id],
+        ])
+        ->assertRedirect();
+
+    // The awaiting takeup loan MUST NOT be touched
+    expect($awaitingLoan->fresh()->status)->toBe(LoanApplication::STATUS_AWAITING_TAKEUP)
+        // Only pending_head_office should be approved to pending_disbursement
+        ->and($pendingHoLoan->fresh()->status)->toBe(LoanApplication::STATUS_PENDING_DISBURSEMENT);
+});
+
+it('excludes awaiting takeup loans with issues from head office verification index', function () {
+    [$hoUser, $branch, $admission] = createAwaitingBranchContext(Role::HEAD_OFFICE);
+    $awaitingLoan = createAwaitingLoan($admission, $branch, LoanApplication::STATUS_AWAITING_TAKEUP);
+    \App\Models\LoanApplicationIssue::create([
+        'loan_application_id' => $awaitingLoan->id,
+        'reported_by' => $hoUser->id,
+        'issue_description' => 'Test objection',
+        'status' => 'resolved',
+        'zm_approved_at' => now(),
+    ]);
+
+    $pendingHoLoan = createAwaitingLoan($admission, $branch, LoanApplication::STATUS_PENDING_HEAD_OFFICE);
+    \App\Models\LoanApplicationIssue::create([
+        'loan_application_id' => $pendingHoLoan->id,
+        'reported_by' => $hoUser->id,
+        'issue_description' => 'Active objection',
+        'status' => 'pending',
+    ]);
+
+    $res = $this->actingAs($hoUser)->get(route('verifications.index'));
+    $res->assertOk();
+
+    $items = collect($res->original->getData()['page']['props']['items']['data'] ?? []);
+    $loanIds = $items->where('item_type', 'loan')->pluck('raw_id')->all();
+
+    expect($loanIds)->toContain($pendingHoLoan->id)
+        ->and($loanIds)->not->toContain($awaitingLoan->id);
 });

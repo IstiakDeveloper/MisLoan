@@ -65,6 +65,10 @@ class LoanApplicationController extends Controller
 
     private function isBranchUserRole($user): bool
     {
+        if (! $user) {
+            return false;
+        }
+
         $user->loadMissing('role');
 
         return $user->role?->name === Role::BRANCH_USER;
@@ -1679,8 +1683,8 @@ class LoanApplicationController extends Controller
                 'print' => route('member.loan-applications.print', $application->id),
                 'submit' => route('member.loan-applications.submit', $application->id),
                 'disburse' => route('member.loan-applications.disburse', $application->id),
-                'deferTakeup' => route('member.loan-applications.defer-takeup', $application->id),
-                'readyFromAwaiting' => route('member.loan-applications.ready-from-awaiting', $application->id),
+                'deferTakeup' => $this->isBranchUserRole($user) ? route('member.loan-applications.defer-takeup', $application->id) : null,
+                'readyFromAwaiting' => $this->isBranchUserRole($user) ? route('member.loan-applications.ready-from-awaiting', $application->id) : null,
                 'requestAmountChange' => route('member.loan-applications.request-amount-change', $application->id),
                 'requestCancellation' => route('member.loan-applications.request-cancellation', $application->id),
                 'updateLoanProduct' => route('member.loan-applications.update-loan-product', $application->id),
