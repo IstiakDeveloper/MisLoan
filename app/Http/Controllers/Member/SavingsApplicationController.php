@@ -23,6 +23,13 @@ use Inertia\Inertia;
 class SavingsApplicationController extends Controller
 {
     use RequiresSuperAdminDeletePin;
+    private function ensureApplicationAccessible(SavingsApplication $application): void
+    {
+        $user = request()->user();
+        abort_unless($user && $user->is_active && $application->branch_id
+            && $user->canAccessBranch((int) $application->branch_id), 403);
+    }
+
     /**
      * If value is a base64 data URL, save to storage and return the stored path (fits in VARCHAR).
      * Otherwise return the value as-is (existing path or empty).
@@ -541,6 +548,7 @@ class SavingsApplicationController extends Controller
     public function saveForm(Request $request, $id)
     {
         $application = SavingsApplication::findOrFail($id);
+        $this->ensureApplicationAccessible($application);
         $user = $request->user();
         $isHeadOfficeUser = $user && $user->canHeadOfficeDeleteOrEdit();
         $isUnlocked = $isHeadOfficeUser && $this->isSavingsEditUnlocked((int) $application->id);
@@ -607,6 +615,7 @@ class SavingsApplicationController extends Controller
             'branch.area',
             'samity',
         ])->findOrFail($id);
+        $this->ensureApplicationAccessible($application);
 
         $app = $application->toArray();
         $app['savings_product'] = $application->savingsProduct;
@@ -641,6 +650,7 @@ class SavingsApplicationController extends Controller
     public function submit($id)
     {
         $application = SavingsApplication::findOrFail($id);
+        $this->ensureApplicationAccessible($application);
         if (! $application->canBeEdited()) {
             return back()->withErrors(['error' => 'এই আবেদন জমা দেওয়া যাবে না।']);
         }
@@ -658,6 +668,7 @@ class SavingsApplicationController extends Controller
     {
         $user = request()->user();
         $application = SavingsApplication::findOrFail($id);
+        $this->ensureApplicationAccessible($application);
         if ($application->branch_id !== $user->branch_id) {
             return back()->withErrors(['error' => 'শুধুমাত্র আপনার শাখার আবেদন অনুমোদন করতে পারবেন।']);
         }
@@ -682,6 +693,7 @@ class SavingsApplicationController extends Controller
     {
         $user = $request->user();
         $application = SavingsApplication::findOrFail($id);
+        $this->ensureApplicationAccessible($application);
         if ($application->branch_id !== $user->branch_id) {
             return back()->withErrors(['error' => 'শুধুমাত্র আপনার শাখার আবেদন প্রত্যাখ্যান করতে পারবেন।']);
         }
@@ -703,6 +715,8 @@ class SavingsApplicationController extends Controller
     {
         $user = request()->user();
         $application = SavingsApplication::findOrFail($id);
+        $this->ensureApplicationAccessible($application);
+        abort_unless($application->canBeActivated(), 422, 'Only approved savings applications can be activated.');
         $application->update([
             'status' => 'active',
             'activated_by' => $user->id,
@@ -718,6 +732,9 @@ class SavingsApplicationController extends Controller
     {
         $user = $request->user();
         $application = SavingsApplication::findOrFail($id);
+        $this->ensureApplicationAccessible($application);
+
+        abort_unless(in_array($application->status, ['active', 'matured'], true), 422, 'Only active or matured savings accounts can be settled.');
 
         $validated = $request->validate([
             'withdrawal_date' => 'required|date',
@@ -765,6 +782,7 @@ class SavingsApplicationController extends Controller
     public function destroy(Request $request, $id)
     {
         $application = SavingsApplication::findOrFail($id);
+        $this->ensureApplicationAccessible($application);
         $user = $request->user();
 
         if ($user && $user->canHeadOfficeDeleteOrEdit()) {
@@ -797,6 +815,7 @@ class SavingsApplicationController extends Controller
             'branch.area',
             'samity',
         ])->findOrFail($id);
+        $this->ensureApplicationAccessible($application);
 
         $isHeadOfficeUser = $user && $user->canHeadOfficeDeleteOrEdit();
         $isUnlocked = $isHeadOfficeUser && $this->isSavingsEditUnlocked((int) $application->id);
@@ -844,6 +863,7 @@ class SavingsApplicationController extends Controller
     public function unlockEdit(Request $request, $id)
     {
         $application = SavingsApplication::findOrFail($id);
+        $this->ensureApplicationAccessible($application);
         $user = $request->user();
         if (! $user || ! $user->canHeadOfficeDeleteOrEdit()) {
             abort(403, 'শুধুমাত্র হেড অফিস ও সুপার অ্যাডমিন এডিট আনলক করতে পারবেন।');

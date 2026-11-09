@@ -290,7 +290,7 @@ export default function BranchModal({ isOpen, onClose, branch, zones, areas }: P
                             value={data.login_pin}
                             onChange={(e) => setData('login_pin', e.target.value.replace(/\D/g, ''))}
                             className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
-                            placeholder={branch ? 'Leave blank to keep current PIN' : '4–12 digit PIN (default 12345678 if empty)'}
+                            placeholder={branch ? 'Leave blank to keep current PIN' : '4–12 digit PIN (leave empty to disable branch login)'}
                         />
                         {errors.login_pin && <p className="text-red-500 text-sm mt-1">{errors.login_pin}</p>}
                     </div>

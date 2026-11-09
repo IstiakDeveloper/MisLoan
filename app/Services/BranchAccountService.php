@@ -59,7 +59,7 @@ class BranchAccountService
         ]);
 
         if (! $user->exists || ! filled($user->password)) {
-            $user->password = '12345678';
+            $user->password = Str::random(64);
         }
 
         $user->save();

@@ -101,8 +101,18 @@ class LoanProduct extends Model
             return ($loanAmount + $interest) / $this->number_of_installments;
         }
 
-        // Add other calculation types as needed
-        return 0;
+        if ($this->interest_calculation_type === 'reducing') {
+            $quote = app(\App\Services\Loans\ProductLoanPricing::class)->quote(
+                $this,
+                number_format((float) $loanAmount, 2, '.', ''),
+            );
+
+            return (float) \App\Services\Accounting\Money::format($quote['installment_paisa']);
+        }
+
+        throw \Illuminate\Validation\ValidationException::withMessages([
+            'loan_product_id' => 'This product calculation method has not been configured.',
+        ]);
     }
 
     /**

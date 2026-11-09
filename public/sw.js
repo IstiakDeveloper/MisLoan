@@ -1,4 +1,4 @@
-const CACHE_NAME = 'mis-loan-v6';
+const CACHE_NAME = 'mis-loan-v7';
 
 const offlinePage = () =>
   new Response(
@@ -57,28 +57,12 @@ function isNavigation(req) {
   return req.mode === 'navigate' || (req.method === 'GET' && req.destination === 'document');
 }
 
-/** Never cache auth pages — stale CSRF tokens cause 419 Page Expired. */
-function shouldSkipNavigationCache(url) {
-  try {
-    const path = new URL(url).pathname;
-    return path === '/login' || path.startsWith('/auth/');
-  } catch (_) {
-    return false;
-  }
-}
-
-function cachePut(cache, req, res) {
-  if (!res || res.status !== 200 || res.type !== 'basic' || !req.url.startsWith(self.location.origin)) {
-    return;
-  }
-
-  try {
-    const path = new URL(req.url).pathname;
-    if (path === '/sw.js' || path === '/manifest.webmanifest') {
-      return;
-    }
-    cache.put(req, res.clone());
-  } catch (_) {}
+// Cache only public, versioned assets. Authenticated HTML and API responses
+// must never survive logout or become visible to another user of this device.
+function isPublicAsset(req) {
+  const url = new URL(req.url);
+  return url.origin === self.location.origin &&
+    (url.pathname.startsWith('/build/assets/') || url.pathname.startsWith('/icons/'));
 }
 
 self.addEventListener('fetch', (event) => {
@@ -86,31 +70,19 @@ self.addEventListener('fetch', (event) => {
   if (request.method !== 'GET') return;
 
   if (isNavigation(request)) {
-    if (shouldSkipNavigationCache(request.url)) {
-      event.respondWith(fetch(request));
-      return;
-    }
-
-    event.respondWith(
-      fetch(request)
-        .then((response) => {
-          caches.open(CACHE_NAME).then((cache) => cachePut(cache, request, response));
-          return response;
-        })
-        .catch(() =>
-          caches.match(request).then((cached) => cached || offlinePage())
-        )
-    );
+    event.respondWith(fetch(request).catch(() => offlinePage()));
     return;
   }
 
+  if (!isPublicAsset(request)) return;
   event.respondWith(
-    fetch(request)
-      .then((response) => {
-        caches.open(CACHE_NAME).then((cache) => cachePut(cache, request, response));
-        return response;
-      })
-      .catch(() => caches.match(request))
+    fetch(request).then(async (response) => {
+      if (response.ok && response.type === 'basic') {
+        const cache = await caches.open(CACHE_NAME);
+        await cache.put(request, response.clone());
+      }
+      return response;
+    }).catch(async () => (await caches.match(request)) || Response.error())
   );
 });
 

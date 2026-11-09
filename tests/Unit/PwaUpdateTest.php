@@ -4,11 +4,11 @@ test('the service worker waits for an update confirmation after the first instal
     $sw = (string) file_get_contents(public_path('sw.js'));
 
     expect($sw)
-        ->toContain("CACHE_NAME = 'mis-loan-v6'")
+        ->toContain("CACHE_NAME = 'mis-loan-v7'")
         ->toContain("event.data.type === 'SKIP_WAITING'")
         ->toContain('self.skipWaiting()')
-        ->toContain("path === '/sw.js'")
-        ->toContain("path === '/manifest.webmanifest'");
+        ->toContain("url.pathname.startsWith('/build/assets/')")
+        ->toContain("url.pathname.startsWith('/icons/')");
 });
 
 test('the app registers a pwa update banner and checks for updates on launch', function () {

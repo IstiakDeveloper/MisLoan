@@ -395,3 +395,32 @@ it('ends the loan one day before the disbursement anniversary', function () {
         ->and($lump->lastInstallmentDateFrom('2026-08-20'))->toBe('2027-02-19')
         ->and($lump->repaymentDateFrom('2026-08-20'))->toBe('2027-02-19');
 });
+
+it('uses reducing product tariffs for regular and final installments at disbursement', function () {
+    Schema::table('loan_products', function (Blueprint $table) {
+        $table->string('interest_calculation_type')->nullable();
+        $table->decimal('installment_amount_per_thousand', 10, 2)->default(0);
+        $table->decimal('last_installment_per_thousand', 10, 2)->default(0);
+    });
+    [$user, , $loan] = createPendingDisbursementLoan();
+    $loan->loanProduct->update([
+        'interest_calculation_type' => 'reducing',
+        'interest_rate' => '23.92',
+        'service_charge_per_thousand' => '127',
+        'installment_amount_per_thousand' => '25',
+        'last_installment_per_thousand' => '2',
+        'installment_type' => 'weekly',
+        'number_of_installments' => 46,
+    ]);
+    $loan->update(['requested_amount' => 50000, 'approved_amount' => 50000, 'number_of_installments' => 46]);
+    $this->actingAs($user)->patch(route('member.loan-applications.disburse', $loan->id), [
+        'disbursed_amount' => 50000,
+        'disbursement_date' => '2026-09-15',
+        'disbursement_method' => 'cash',
+    ])->assertRedirect()->assertSessionHas('success');
+    $loan->refresh();
+    expect((float) $loan->installment_amount)->toBe(1250.0)
+        ->and((float) $loan->loan_agreement_data['service_charge'])->toBe(6350.0)
+        ->and((float) $loan->loan_agreement_data['last_installment_amount'])->toBe(100.0)
+        ->and((float) $loan->loan_agreement_data['total_amount'])->toBe(56350.0);
+});

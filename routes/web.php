@@ -38,7 +38,6 @@ use App\Http\Controllers\TeamBasedApprovalController;
 use App\Http\Controllers\TeamBasedApprovalPrintController;
 use App\Http\Controllers\UserController;
 use App\Http\Controllers\UserSessionController;
-use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\Redirect;
 use Illuminate\Support\Facades\Route;
 use Inertia\Inertia;
@@ -54,6 +53,17 @@ Route::get('/', function () {
 
 Route::middleware(['auth', 'verified'])->group(function () {
     Route::get('dashboard', [DashboardController::class, 'index'])->name('dashboard');
+
+    Route::get('loan-products/{loanProduct}/quote', \App\Http\Controllers\LoanQuoteController::class)->name('loan-products.quote');
+
+    Route::prefix('accounting')->name('accounting.')->group(function () {
+        Route::get('/', [\App\Http\Controllers\AccountingController::class, 'index'])->name('index');
+        Route::post('accounts', [\App\Http\Controllers\AccountingController::class, 'account'])->name('accounts.store');
+        Route::post('periods', [\App\Http\Controllers\AccountingController::class, 'period'])->name('periods.store');
+        Route::post('journals', [\App\Http\Controllers\AccountingController::class, 'post'])->name('journals.store');
+        Route::post('journals/{entry}/reverse', [\App\Http\Controllers\AccountingController::class, 'reverse'])->name('journals.reverse');
+        Route::post('periods/{period}/close', [\App\Http\Controllers\AccountingController::class, 'close'])->name('periods.close');
+    });
 
     // Portfolio handover (allowed while locked; middleware whitelists these routes)
     Route::get('portfolio-handover', [PortfolioHandoverController::class, 'index'])->name('portfolio-handover.index');
@@ -575,67 +585,5 @@ Route::middleware(['auth', 'verified'])->group(function () {
         Route::post('member/{member}/reject-issue', [LoanApplicationController::class, 'memberRejectIssue'])->name('member.reject-issue');
     });
 });
-
-Route::get('/storage-link', function () {
-    try {
-        Artisan::call('storage:link');
-
-        return response()->json([
-            'success' => true,
-            'message' => 'Storage link created successfully!',
-            'output' => Artisan::output(),
-        ]);
-    } catch (Exception $e) {
-        return response()->json([
-            'success' => false,
-            'message' => 'Failed to create storage link',
-            'error' => $e->getMessage(),
-        ], 500);
-    }
-})->name('utility.storage-link');
-
-Route::get('/migrate', function () {
-    try {
-        Artisan::call('migrate', ['--force' => true]);
-
-        return response()->json([
-            'success' => true,
-            'message' => 'Migration completed successfully!',
-            'output' => Artisan::output(),
-        ]);
-    } catch (Exception $e) {
-        return response()->json([
-            'success' => false,
-            'message' => 'Migration failed',
-            'error' => $e->getMessage(),
-        ], 500);
-    }
-})->name('utility.migrate');
-
-Route::get('/clear', function () {
-    try {
-        $output = [];
-        Artisan::call('config:clear');
-        $output['config'] = trim(Artisan::output());
-        Artisan::call('cache:clear');
-        $output['cache'] = trim(Artisan::output());
-        Artisan::call('view:clear');
-        $output['view'] = trim(Artisan::output());
-        Artisan::call('route:clear');
-        $output['route'] = trim(Artisan::output());
-
-        return response()->json([
-            'success' => true,
-            'message' => 'Config, cache, view & route cleared successfully.',
-            'output' => $output,
-        ]);
-    } catch (Exception $e) {
-        return response()->json([
-            'success' => false,
-            'message' => 'Clear failed',
-            'error' => $e->getMessage(),
-        ], 500);
-    }
-})->name('utility.clear');
 
 require __DIR__.'/settings.php';

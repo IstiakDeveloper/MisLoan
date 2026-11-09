@@ -182,10 +182,6 @@ class OrganizationController extends Controller
         }
 
         $branch = Branch::create($validated);
-        if (! $branch->login_pin) {
-            $branch->login_pin = \Illuminate\Support\Facades\Hash::make('12345678');
-            $branch->saveQuietly();
-        }
         app(\App\Services\BranchAccountService::class)->ensureForBranch($branch->fresh(['area']));
 
         return redirect()->route('organizations.index')

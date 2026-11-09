@@ -2271,6 +2271,14 @@ class LoanApplicationController extends Controller
             return 0;
         }
 
+        if ($loanProduct->interest_calculation_type === 'reducing') {
+            $quote = app(\App\Services\Loans\ProductLoanPricing::class)->quote(
+                $loanProduct, number_format($amount, 2, '.', ''), $customMonths,
+            );
+
+            return (float) \App\Services\Accounting\Money::format($quote['service_charge_paisa']);
+        }
+
         $scPerThousand = (float) ($loanProduct->service_charge_per_thousand ?? 0);
         if ($scPerThousand > 0) {
             return round(($amount / 1000) * $scPerThousand);
@@ -2354,6 +2362,15 @@ class LoanApplicationController extends Controller
             $newInstallmentAmount = round($totalRepayable / $application->number_of_installments, 2);
         }
 
+        $lastInstallmentAmount = $newInstallmentAmount;
+        if ($loanProduct?->interest_calculation_type === 'reducing') {
+            $quote = app(\App\Services\Loans\ProductLoanPricing::class)->quote(
+                $loanProduct, number_format($disbursedAmount, 2, '.', ''),
+            );
+            $newInstallmentAmount = (float) \App\Services\Accounting\Money::format($quote['installment_paisa']);
+            $lastInstallmentAmount = (float) \App\Services\Accounting\Money::format($quote['last_installment_paisa']);
+        }
+
         // Auto-synchronize all forms with the final disbursed amount
         $wordsDisbursed = NumberToWordsBangla::convert($disbursedAmount);
         $totServiceCharge = $this->calculateTotalServiceCharge($disbursedAmount, $loanProduct);
@@ -2367,7 +2384,7 @@ class LoanApplicationController extends Controller
             $agreementData['service_charge'] = $totServiceCharge;
             $agreementData['total_amount'] = $totalRepayable;
             $agreementData['installment_amount'] = $newInstallmentAmount;
-            $agreementData['last_installment_amount'] = $newInstallmentAmount;
+            $agreementData['last_installment_amount'] = $lastInstallmentAmount;
         }
 
         // 2. Form 2: Guarantor Commitment (loan_amount with service charge)

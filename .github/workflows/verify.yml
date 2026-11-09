@@ -1,0 +1,50 @@
+name: Verify
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_call:
+
+permissions:
+  contents: read
+
+jobs:
+  foundation:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.4'
+          extensions: mbstring, sqlite3, pdo_sqlite, xml, dom, zip, gd
+          coverage: none
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - run: cp .env.example .env
+      - run: composer install --prefer-dist --no-interaction
+      - run: composer audit --locked
+      - run: php artisan key:generate
+      - run: npm ci
+      - name: Accounting and security regressions
+        run: php artisan test tests/Unit/AccountingFoundationTest.php tests/Unit/ProductLoanPricingTest.php tests/Unit/LoanDisbursementDateTest.php tests/Unit/LoanAmountChangeReapprovalTest.php tests/Unit/MaintenanceRouteSecurityTest.php tests/Unit/SavingsAccessSecurityTest.php tests/Unit/PwaUpdateTest.php
+      - run: npm run build
+      - name: Legacy full-suite diagnostics
+        id: legacy
+        run: php artisan test --log-junit legacy-tests.xml
+      - name: Legacy TypeScript diagnostics
+        if: always()
+        id: types
+        run: npm run types > legacy-types.log 2>&1
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: legacy-diagnostics
+          path: |
+            legacy-tests.xml
+            legacy-types.log
+      - name: Report remaining legacy gates
+        if: always() && (steps.legacy.outcome == 'failure' || steps.types.outcome == 'failure')
+        run: echo 'Legacy test/type failures remain. Deployment is blocked until all required checks pass.' >> "$GITHUB_STEP_SUMMARY"

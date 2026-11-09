@@ -336,6 +336,7 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
     ];
 
     const headOfficeSetupItems = [
+        ...(isSuperAdmin ? [{ name: 'Accounting', href: '/accounting', icon: Landmark }] : []),
         { name: 'Recent Deletions (7 Days)', href: '/head-office/recent-deletions', icon: Trash2 },
         { name: 'CSO Duty Roster', href: '/head-office/cso-duty-roster', icon: CalendarDays },
         { name: 'Send Deadline', href: '/head-office/send-cutoff', icon: Clock },
