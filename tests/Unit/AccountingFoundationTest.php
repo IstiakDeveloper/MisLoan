@@ -158,3 +158,10 @@ it('denies accounting HTTP access to non-administrators', function () {
     $this->actingAs($this->actor)->getJson('/accounting')->assertForbidden();
     $this->postJson('/accounting/accounts', ['code' => '200', 'name' => 'Test', 'type' => 'asset'])->assertForbidden();
 });
+
+it('does not restate a closed later period by posting into an earlier open period', function () {
+    DB::table('accounting_periods')->insert(['branch_id' => 1, 'starts_on' => '2025-01-01', 'ends_on' => '2025-12-31', 'created_at' => now(), 'updated_at' => now()]);
+    $this->journals->closePeriod($this->actor, 1);
+    expect(fn () => $this->journals->post($this->actor, 1, '2025-11-09', 'historic-001', 'Cannot restate closed reporting', $this->lines))->toThrow(ValidationException::class);
+    expect(DB::table('journal_entries')->count())->toBe(0);
+});

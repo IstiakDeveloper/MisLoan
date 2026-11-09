@@ -39,12 +39,15 @@ final class JournalService
 
         try {
             return DB::transaction(function () use ($actor, $branchId, $date, $key, $description, $lines, $hash, $reversalOf) {
+                // Serialize period creation/closure and financial posting for this branch.
+                abort_unless(DB::table('branches')->where('id', $branchId)->lockForUpdate()->first(), 404);
                 $periods = DB::table('accounting_periods')->where('branch_id', $branchId)
                     ->where('starts_on', '<=', $date)->where('ends_on', '>=', $date)->lockForUpdate()->get();
                 if ($existing = DB::table('journal_entries')->where('branch_id', $branchId)->where('idempotency_key', $key)->first()) {
                     return $this->replay($existing, $hash);
                 }
-                if ($periods->count() !== 1 || $periods->first()->closed_at !== null) {
+                if ($periods->count() !== 1 || $periods->first()->closed_at !== null
+                    || DB::table('accounting_periods')->where('branch_id', $branchId)->whereNotNull('closed_at')->where('ends_on', '>=', $date)->exists()) {
                     throw ValidationException::withMessages(['business_date' => 'Exactly one open accounting period must cover this date.']);
                 }
                 $ids = array_unique(array_column($lines, 'account_id'));
@@ -107,6 +110,9 @@ final class JournalService
     public function closePeriod(User $actor, int $periodId): void
     {
         DB::transaction(function () use ($actor, $periodId) {
+            $period = DB::table('accounting_periods')->find($periodId);
+            abort_unless($period, 404);
+            DB::table('branches')->where('id', $period->branch_id)->lockForUpdate()->first();
             $period = DB::table('accounting_periods')->where('id', $periodId)->lockForUpdate()->first();
             abort_unless($period, 404);
             $this->authorize($actor, $period->branch_id);
