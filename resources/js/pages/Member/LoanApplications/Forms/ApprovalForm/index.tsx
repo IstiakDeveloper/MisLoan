@@ -262,6 +262,20 @@ export default function ApprovalForm({
         loanCategory,
     );
 
+    const appGuarantorInfo = (existingApplication as any)?.guarantor_info || {};
+    const appGuarantorsList: any[] = Array.isArray(appGuarantorInfo.guarantors) && appGuarantorInfo.guarantors.length > 0
+        ? appGuarantorInfo.guarantors
+        : (appGuarantorInfo.guarantor_name ? [appGuarantorInfo] : []);
+
+    const firstGuarantor = appGuarantorsList[0];
+    const secondGuarantor = appGuarantorsList[1];
+    const firstGuarantorAddr = firstGuarantor
+        ? [firstGuarantor.guarantor_village, firstGuarantor.guarantor_post_office, firstGuarantor.guarantor_upazila, firstGuarantor.guarantor_district].filter(Boolean).join(', ')
+        : '';
+    const secondGuarantorAddr = secondGuarantor
+        ? [secondGuarantor.guarantor_village, secondGuarantor.guarantor_post_office, secondGuarantor.guarantor_upazila, secondGuarantor.guarantor_district].filter(Boolean).join(', ')
+        : '';
+
     const { data, setData, processing } = useForm<LoanApplicationApprovalData>(withLiveMemberCode({
         branch_name: branch?.name || branch?.branch_name || member?.branch?.name || (savedData as any)?.branch_name || '',
         branch_address: branch?.address || member?.branch?.address || (savedData as any)?.branch_address || '',
@@ -378,8 +392,26 @@ export default function ApprovalForm({
         total_principal: computedInstallment.total_principal,
         total_service_charge: computedInstallment.total_service_charge,
         total_payable: computedInstallment.total_payable,
-        guarantor_1_name: member?.guarantor_name || '', guarantor_1_address: '', guarantor_1_mobile: member?.guarantor_mobile || '', guarantor_1_relation: '', guarantor_1_profession: '', guarantor_1_monthly_income: '', guarantor_1_assets_amount: '', guarantor_1_potential_value: '', guarantor_1_interviewer_name: '', guarantor_1_interviewer_designation: '',
-        guarantor_2_name: '', guarantor_2_address: '', guarantor_2_mobile: '', guarantor_2_relation: '', guarantor_2_profession: '', guarantor_2_monthly_income: '', guarantor_2_assets_amount: '', guarantor_2_potential_value: '', guarantor_2_interviewer_name: '', guarantor_2_interviewer_designation: '',
+        guarantor_1_name: firstGuarantor?.guarantor_name || member?.guarantor_name || '',
+        guarantor_1_address: firstGuarantorAddr || '',
+        guarantor_1_mobile: firstGuarantor?.guarantor_mobile || member?.guarantor_mobile || '',
+        guarantor_1_relation: '',
+        guarantor_1_profession: '',
+        guarantor_1_monthly_income: '',
+        guarantor_1_assets_amount: '',
+        guarantor_1_potential_value: '',
+        guarantor_1_interviewer_name: '',
+        guarantor_1_interviewer_designation: '',
+        guarantor_2_name: secondGuarantor?.guarantor_name || '',
+        guarantor_2_address: secondGuarantorAddr || '',
+        guarantor_2_mobile: secondGuarantor?.guarantor_mobile || '',
+        guarantor_2_relation: '',
+        guarantor_2_profession: '',
+        guarantor_2_monthly_income: '',
+        guarantor_2_assets_amount: '',
+        guarantor_2_potential_value: '',
+        guarantor_2_interviewer_name: '',
+        guarantor_2_interviewer_designation: '',
         
         informant_1_name: '', informant_1_address: '', informant_1_mobile: '', informant_1_relation: '', informant_1_profession: '', informant_1_loan_info: '', informant_1_asset_info: '', informant_1_overall_comment: '',
         informant_2_name: '', informant_2_address: '', informant_2_mobile: '', informant_2_relation: '', informant_2_profession: '', informant_2_loan_info: '', informant_2_asset_info: '', informant_2_overall_comment: '',

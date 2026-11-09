@@ -380,7 +380,21 @@ class GuarantorInformantReportController extends Controller
 
         // 2. From guarantor_info (Guarantor Commitment - Form 2)
         $gi = is_array($loan->guarantor_info) ? $loan->guarantor_info : [];
-        if (! empty($gi['guarantor_name'])) {
+        if (! empty($gi['guarantors']) && is_array($gi['guarantors'])) {
+            foreach ($gi['guarantors'] as $idx => $g) {
+                if (! empty($g['guarantor_name'])) {
+                    $ordinals = ['১ম', '২য়', '৩য়', '৪র্থ', '৫ম', '৬ষ্ঠ', '৭ম', '৮ম', '৯ম', '১০ম'];
+                    $ord = $ordinals[$idx] ?? (($idx + 1) . 'তম');
+                    $list[] = [
+                        'name' => trim((string) $g['guarantor_name']),
+                        'mobile' => trim((string) ($g['guarantor_mobile'] ?? '')),
+                        'relation' => trim((string) ($g['guarantor_relation'] ?? '')),
+                        'nid' => trim((string) ($g['guarantor_nid'] ?? '')),
+                        'source' => 'জামিনদার অঙ্গীকারনামা (' . $ord . ' জামিনদার)',
+                    ];
+                }
+            }
+        } elseif (! empty($gi['guarantor_name'])) {
             $list[] = [
                 'name' => trim((string) $gi['guarantor_name']),
                 'mobile' => trim((string) ($gi['guarantor_mobile'] ?? ($gi['phone'] ?? ''))),

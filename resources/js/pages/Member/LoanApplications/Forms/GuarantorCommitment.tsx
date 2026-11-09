@@ -3,17 +3,14 @@ import { Head, useForm, router } from '@inertiajs/react';
 import AdminLayout from '@/layouts/admin-layout';
 import { formatDateBangla, todayIsoDate } from '@/utils/dateUtils';
 import { calculateTotalServiceCharge } from '@/utils/loanInterest';
-import { Save, Printer, Eye, ArrowLeft, ShieldCheck, UserCheck, CreditCard, FileText, CheckCircle2 } from 'lucide-react';
+import { Save, Printer, Eye, ArrowLeft, ShieldCheck, UserCheck, CreditCard, FileText, CheckCircle2, Plus, Trash2, Users } from 'lucide-react';
 import { numberToWordsBangla } from './ApprovalForm/PrintPreview';
 import { afterLoanFormSaveUrl, continueDisburseWizardUrl, disburseWizardParamsFromContext, isDisburseWizardSearch, loanDisburseShowUrl } from '@/utils/loanFormNavigation';
 import { useAutoFitPrint } from '@/hooks/useAutoFitPrint';
 import { withLiveMemberCode, liveMemberIdentityNumber, liveMemberMobile } from '@/utils/memberCodeUtils';
 
-interface GuarantorCommitmentData {
-    branch_name: string;
-    branch_address: string;
-
-    // Guarantor Info
+export interface SingleGuarantor {
+    id?: string;
     guarantor_name: string;
     guarantor_father_or_spouse: string;
     guarantor_nid: string;
@@ -23,6 +20,59 @@ interface GuarantorCommitmentData {
     guarantor_upazila: string;
     guarantor_district: string;
     guarantor_signature_image: string | null;
+}
+
+export function toBanglaOrdinal(index: number): string {
+    const ordinals = ['১ম', '২য়', '৩য়', '৪র্থ', '৫ম', '৬ষ্ঠ', '৭ম', '৮ম', '৯ম', '১০ম'];
+    return ordinals[index] || `${index + 1}তম`;
+}
+
+export function extractGuarantorsList(d: any): SingleGuarantor[] {
+    if (Array.isArray(d?.guarantors) && d.guarantors.length > 0) {
+        return d.guarantors.map((g: any, idx: number) => ({
+            id: g.id || `g_${idx + 1}`,
+            guarantor_name: g.guarantor_name || '',
+            guarantor_father_or_spouse: g.guarantor_father_or_spouse || '',
+            guarantor_nid: g.guarantor_nid || '',
+            guarantor_mobile: g.guarantor_mobile || '',
+            guarantor_village: g.guarantor_village || '',
+            guarantor_post_office: g.guarantor_post_office || '',
+            guarantor_upazila: g.guarantor_upazila || '',
+            guarantor_district: g.guarantor_district || '',
+            guarantor_signature_image: g.guarantor_signature_image || null,
+        }));
+    }
+    return [{
+        id: 'g_1',
+        guarantor_name: d?.guarantor_name || '',
+        guarantor_father_or_spouse: d?.guarantor_father_or_spouse || '',
+        guarantor_nid: d?.guarantor_nid || '',
+        guarantor_mobile: d?.guarantor_mobile || '',
+        guarantor_village: d?.guarantor_village || '',
+        guarantor_post_office: d?.guarantor_post_office || '',
+        guarantor_upazila: d?.guarantor_upazila || '',
+        guarantor_district: d?.guarantor_district || '',
+        guarantor_signature_image: d?.guarantor_signature_image || null,
+    }];
+}
+
+interface GuarantorCommitmentData {
+    branch_name: string;
+    branch_address: string;
+
+    // Guarantor Info (Primary / First guarantor)
+    guarantor_name: string;
+    guarantor_father_or_spouse: string;
+    guarantor_nid: string;
+    guarantor_mobile: string;
+    guarantor_village: string;
+    guarantor_post_office: string;
+    guarantor_upazila: string;
+    guarantor_district: string;
+    guarantor_signature_image: string | null;
+
+    // All Guarantors (Unlimited)
+    guarantors?: SingleGuarantor[];
 
     // Member/Loan Applicant Info
     member_name: string;
@@ -131,9 +181,8 @@ function buildGuarantorCommitmentDefaults(
     const baseLoanAmount = Number(requestedAmount) || 0;
     const loanAmount = calcLoanAmountWithServiceCharge(baseLoanAmount, loanProduct);
     const words = loanAmount > 0 ? numberToWordsBangla(loanAmount) : '';
-    return {
-        branch_name: branch?.name || '',
-        branch_address: branch?.address || '',
+    const initialGuarantor: SingleGuarantor = {
+        id: 'g_1',
         guarantor_name: member?.guarantor_name || '',
         guarantor_father_or_spouse: '',
         guarantor_nid: '',
@@ -143,6 +192,20 @@ function buildGuarantorCommitmentDefaults(
         guarantor_upazila: member?.present_upazila || member?.permanent_upazila || '',
         guarantor_district: member?.present_district || member?.permanent_district || '',
         guarantor_signature_image: null,
+    };
+    return {
+        branch_name: branch?.name || '',
+        branch_address: branch?.address || '',
+        guarantor_name: initialGuarantor.guarantor_name,
+        guarantor_father_or_spouse: initialGuarantor.guarantor_father_or_spouse,
+        guarantor_nid: initialGuarantor.guarantor_nid,
+        guarantor_mobile: initialGuarantor.guarantor_mobile,
+        guarantor_village: initialGuarantor.guarantor_village,
+        guarantor_post_office: initialGuarantor.guarantor_post_office,
+        guarantor_upazila: initialGuarantor.guarantor_upazila,
+        guarantor_district: initialGuarantor.guarantor_district,
+        guarantor_signature_image: initialGuarantor.guarantor_signature_image,
+        guarantors: [initialGuarantor],
         member_name: member?.applicant_name_bn || member?.applicant_name_en || '',
         member_father_or_spouse: member?.father_name_bn || member?.spouse_name_bn || member?.father_name_en || '',
         member_nid: member?.nid_number || member?.smart_card_number || '',
@@ -180,11 +243,37 @@ function GuarantorCommitmentOnlyPreview({ member, loanProduct, requestedAmount, 
         member,
     );
 
+    const guarantorsList: SingleGuarantor[] = extractGuarantorsList(previewData);
+
     useAutoFitPrint([previewData], '.guarantor-commitment-sheet');
 
     return (
-        <div className="print-container w-full max-w-[210mm] mx-auto">
-            <GuarantorCommitmentPrintView data={previewData} />
+        <div className="print-container w-full max-w-[210mm] mx-auto space-y-6 print:space-y-0">
+            {guarantorsList.map((g, idx) => {
+                const mergedData = {
+                    ...previewData,
+                    ...g,
+                };
+                return (
+                    <div
+                        key={g.id || idx}
+                        className={idx > 0 ? 'page-break-before-always print:break-before-page' : ''}
+                    >
+                        {idx > 0 && (
+                            <div className="print:hidden border-t-2 border-dashed border-gray-300 my-4 text-center">
+                                <span className="bg-indigo-50 border border-indigo-200 text-indigo-700 px-3 py-1 text-xs rounded-full font-bold">
+                                    📄 {toBanglaOrdinal(idx)} জামিনদারের অঙ্গীকার নামা পাতা
+                                </span>
+                            </div>
+                        )}
+                        <GuarantorCommitmentPrintView
+                            data={mergedData}
+                            guarantorIndex={idx + 1}
+                            totalGuarantors={guarantorsList.length}
+                        />
+                    </div>
+                );
+            })}
         </div>
     );
 }
@@ -226,11 +315,8 @@ export default function GuarantorCommitment({
 
     useAutoFitPrint([baseLoanAmount, member, loanProduct], '.guarantor-commitment-sheet');
 
-    const { data, setData, processing } = useForm<GuarantorCommitmentData>(withLiveMemberCode({
-        branch_name: branch?.name || '',
-        branch_address: branch?.address || '',
-
-        // Guarantor Info (auto-filled from MemberAdmission)
+    const initialGuarantor: SingleGuarantor = {
+        id: 'g_1',
         guarantor_name: member?.guarantor_name || '',
         guarantor_father_or_spouse: '',
         guarantor_nid: '',
@@ -240,6 +326,24 @@ export default function GuarantorCommitment({
         guarantor_upazila: member?.present_upazila || member?.permanent_upazila || '',
         guarantor_district: member?.present_district || member?.permanent_district || '',
         guarantor_signature_image: null,
+    };
+
+    const { data, setData, processing } = useForm<GuarantorCommitmentData>(withLiveMemberCode({
+        branch_name: branch?.name || '',
+        branch_address: branch?.address || '',
+
+        // Guarantor Info (auto-filled from MemberAdmission)
+        guarantor_name: initialGuarantor.guarantor_name,
+        guarantor_father_or_spouse: initialGuarantor.guarantor_father_or_spouse,
+        guarantor_nid: initialGuarantor.guarantor_nid,
+        guarantor_mobile: initialGuarantor.guarantor_mobile,
+        guarantor_village: initialGuarantor.guarantor_village,
+        guarantor_post_office: initialGuarantor.guarantor_post_office,
+        guarantor_upazila: initialGuarantor.guarantor_upazila,
+        guarantor_district: initialGuarantor.guarantor_district,
+        guarantor_signature_image: initialGuarantor.guarantor_signature_image,
+
+        guarantors: [initialGuarantor],
 
         // Member Info (auto-filled from member admission)
         member_name: member?.applicant_name_bn || member?.applicant_name_en || '',
@@ -264,6 +368,80 @@ export default function GuarantorCommitment({
         witness2_signature_image: null,
         witness3_signature_image: null,
     }, member));
+
+    const [activeGuarantorIndex, setActiveGuarantorIndex] = useState(0);
+
+    const guarantorsList: SingleGuarantor[] =
+        Array.isArray(data.guarantors) && data.guarantors.length > 0
+            ? data.guarantors
+            : extractGuarantorsList(data);
+
+    const safeActiveIndex = Math.min(Math.max(0, activeGuarantorIndex), Math.max(0, guarantorsList.length - 1));
+    const currentGuarantor = guarantorsList[safeActiveIndex] || guarantorsList[0];
+
+    const handleGuarantorFieldChange = (field: keyof SingleGuarantor, value: any) => {
+        const nextList = guarantorsList.map((g, idx) => {
+            if (idx === safeActiveIndex) {
+                return {
+                    ...g,
+                    [field]: value,
+                };
+            }
+            return g;
+        });
+
+        setData((prev) => {
+            const updated: any = {
+                ...prev,
+                guarantors: nextList,
+            };
+            if (safeActiveIndex === 0) {
+                updated[field] = value;
+            }
+            return updated;
+        });
+
+        clearFieldError(`guarantor_${safeActiveIndex}_${field}`);
+        clearFieldError(field);
+    };
+
+    const handleAddGuarantor = () => {
+        const nextIndex = guarantorsList.length;
+        const newG: SingleGuarantor = {
+            id: `g_${Date.now()}`,
+            guarantor_name: '',
+            guarantor_father_or_spouse: '',
+            guarantor_nid: '',
+            guarantor_mobile: '',
+            guarantor_village: data.member_village || '',
+            guarantor_post_office: data.member_post_office || '',
+            guarantor_upazila: data.member_upazila || '',
+            guarantor_district: data.member_district || '',
+            guarantor_signature_image: null,
+        };
+        const nextList = [...guarantorsList, newG];
+        setData((prev) => ({
+            ...prev,
+            guarantors: nextList,
+        }));
+        setActiveGuarantorIndex(nextIndex);
+    };
+
+    const handleRemoveGuarantor = (idxToRemove: number) => {
+        if (idxToRemove === 0) {
+            alert('১ম (ডিফল্ট) জামিনদার ফরম মুছে ফেলা যাবে না।');
+            return;
+        }
+        if (!confirm(`${toBanglaOrdinal(idxToRemove)} জামিনদারের ফরম মুছে ফেলতে চান?`)) {
+            return;
+        }
+        const nextList = guarantorsList.filter((_, i) => i !== idxToRemove);
+        setData((prev) => ({
+            ...prev,
+            guarantors: nextList,
+        }));
+        setActiveGuarantorIndex((prev) => (prev >= idxToRemove ? Math.max(0, prev - 1) : prev));
+    };
 
     // Auto-update loan amount with service charge when product/requested amount changes
     useEffect(() => {
@@ -291,9 +469,11 @@ export default function GuarantorCommitment({
         if (savedData) {
             const calculated = baseLoanAmount > 0 ? calcLoanAmountWithServiceCharge(baseLoanAmount, loanProduct) : (savedData.loan_amount || 0);
             const words = calculated > 0 ? numberToWordsBangla(calculated) + ' টাকা' : (savedData.loan_amount_words || '');
+            const loadedGuarantors = extractGuarantorsList(savedData);
             setData(prev => withLiveMemberCode({
                 ...prev,
                 ...savedData,
+                guarantors: loadedGuarantors,
                 ...(baseLoanAmount > 0 ? {
                     loan_amount: calculated,
                     loan_amount_words: words,
@@ -305,27 +485,33 @@ export default function GuarantorCommitment({
 
     const collectFieldErrors = (): Record<string, string> => {
         const next: Record<string, string> = {};
-        if (!data.guarantor_name?.trim()) {
-            next.guarantor_name = 'জামিনদারের নাম';
-        }
-        if (!data.guarantor_nid?.trim()) {
-            next.guarantor_nid = 'জামিনদারের NID';
-        }
-        if (!data.guarantor_mobile?.trim()) {
-            next.guarantor_mobile = 'জামিনদারের মোবাইল';
-        }
-        if (!data.guarantor_village?.trim()) {
-            next.guarantor_village = 'জামিনদারের গ্রাম/রাস্তা';
-        }
-        if (!data.guarantor_post_office?.trim()) {
-            next.guarantor_post_office = 'জামিনদারের ডাকঘর';
-        }
-        if (!data.guarantor_upazila?.trim()) {
-            next.guarantor_upazila = 'জামিনদারের উপজেলা';
-        }
-        if (!data.guarantor_district?.trim()) {
-            next.guarantor_district = 'জামিনদারের জেলা';
-        }
+
+        guarantorsList.forEach((g, idx) => {
+            const ord = toBanglaOrdinal(idx);
+            const labelPrefix = guarantorsList.length > 1 ? `${ord} জামিনদারের ` : 'জামিনদারের ';
+            if (!g.guarantor_name?.trim()) {
+                next[`guarantor_${idx}_guarantor_name`] = `${labelPrefix}নাম`;
+            }
+            if (!g.guarantor_nid?.trim()) {
+                next[`guarantor_${idx}_guarantor_nid`] = `${labelPrefix}NID`;
+            }
+            if (!g.guarantor_mobile?.trim()) {
+                next[`guarantor_${idx}_guarantor_mobile`] = `${labelPrefix}মোবাইল`;
+            }
+            if (!g.guarantor_village?.trim()) {
+                next[`guarantor_${idx}_guarantor_village`] = `${labelPrefix}গ্রাম/রাস্তা`;
+            }
+            if (!g.guarantor_post_office?.trim()) {
+                next[`guarantor_${idx}_guarantor_post_office`] = `${labelPrefix}ডাকঘর`;
+            }
+            if (!g.guarantor_upazila?.trim()) {
+                next[`guarantor_${idx}_guarantor_upazila`] = `${labelPrefix}উপজেলা`;
+            }
+            if (!g.guarantor_district?.trim()) {
+                next[`guarantor_${idx}_guarantor_district`] = `${labelPrefix}জেলা`;
+            }
+        });
+
         if (!data.loan_date?.trim()) {
             next.loan_date = 'ঋণের তারিখ';
         }
@@ -358,6 +544,13 @@ export default function GuarantorCommitment({
             const nextErrors = collectFieldErrors();
             setFieldErrors(nextErrors);
             if (Object.keys(nextErrors).length > 0) {
+                const firstGError = Object.keys(nextErrors).find(k => k.startsWith('guarantor_'));
+                if (firstGError) {
+                    const match = firstGError.match(/^guarantor_(\d+)_/);
+                    if (match) {
+                        setActiveGuarantorIndex(Number(match[1]));
+                    }
+                }
                 requestAnimationFrame(() => {
                     missingBannerRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
                 });
@@ -367,7 +560,27 @@ export default function GuarantorCommitment({
         }
 
         const inDisburseWizard = !embedded && isDisburseWizardSearch();
-        const payload: any = { loan_product_id: loanProduct.id, loan_category_id: loanCategory.id, requested_amount: requestedAmount, agreement_data: data };
+        const firstG = guarantorsList[0] || {};
+        const payloadAgreementData: any = {
+            ...data,
+            guarantors: guarantorsList,
+            guarantor_name: firstG.guarantor_name || '',
+            guarantor_father_or_spouse: firstG.guarantor_father_or_spouse || '',
+            guarantor_nid: firstG.guarantor_nid || '',
+            guarantor_mobile: firstG.guarantor_mobile || '',
+            guarantor_village: firstG.guarantor_village || '',
+            guarantor_post_office: firstG.guarantor_post_office || '',
+            guarantor_upazila: firstG.guarantor_upazila || '',
+            guarantor_district: firstG.guarantor_district || '',
+            guarantor_signature_image: firstG.guarantor_signature_image || null,
+        };
+
+        const payload: any = {
+            loan_product_id: loanProduct.id,
+            loan_category_id: loanCategory.id,
+            requested_amount: requestedAmount,
+            agreement_data: payloadAgreementData,
+        };
         if (isLegacy) payload.legacy = 1; else payload.member_id = member?.id;
         if (existingApplication?.id) payload.application_id = existingApplication.id;
         if (inDisburseWizard) {
@@ -452,6 +665,11 @@ export default function GuarantorCommitment({
                             page-break-inside: avoid !important;
                             break-inside: avoid !important;
                             box-sizing: border-box !important;
+                        }
+
+                        .page-break-before-always {
+                            page-break-before: always !important;
+                            break-before: page !important;
                         }
 
                         p, span, td, th, div {
@@ -566,133 +784,195 @@ export default function GuarantorCommitment({
                     <div className="space-y-5 print:hidden">
                         {/* 1. Guarantor Info */}
                         <div className="bg-white rounded-xl shadow-sm p-4 md:p-5 border border-gray-200 space-y-4">
-                            <h3 className="text-sm font-bold flex items-center gap-2 text-gray-800 border-b pb-2">
-                                <span className="w-6 h-6 bg-indigo-100 text-indigo-600 rounded-full flex items-center justify-center text-xs font-bold">১</span>
-                                <UserCheck className="w-4 h-4 text-indigo-600" />
-                                <span>জামিনদার/দায়িত্ব গ্রহণকারীর তথ্য</span>
-                            </h3>
-                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                                <div>
-                                    <label className="block text-xs font-semibold text-gray-700 mb-1">জামিনদারের নাম (মো./মোছা./শ্রী.) *</label>
-                                    <input
-                                        type="text"
-                                        value={data.guarantor_name}
-                                        onChange={(e) => {
-                                            setData('guarantor_name', e.target.value);
-                                            clearFieldError('guarantor_name');
-                                        }}
-                                        placeholder="জামিনদারের নাম লিখুন"
-                                        className={fieldInputClass('guarantor_name')}
-                                    />
-                                    {fieldErrors.guarantor_name && (
-                                        <p className="text-xs text-red-600 mt-0.5">{fieldErrors.guarantor_name} পূরণ করুন</p>
+                            <div className="flex flex-wrap items-center justify-between gap-2 border-b pb-3">
+                                <h3 className="text-sm font-bold flex items-center gap-2 text-gray-800">
+                                    <span className="w-6 h-6 bg-indigo-100 text-indigo-600 rounded-full flex items-center justify-center text-xs font-bold">১</span>
+                                    <UserCheck className="w-4 h-4 text-indigo-600" />
+                                    <span>জামিনদার/দায়িত্ব গ্রহণকারীর তথ্য</span>
+                                    <span className="text-xs bg-indigo-50 text-indigo-700 font-bold px-2 py-0.5 rounded-full border border-indigo-200">
+                                        মোট {guarantorsList.length} জন
+                                    </span>
+                                </h3>
+                                <button
+                                    type="button"
+                                    onClick={handleAddGuarantor}
+                                    className="flex items-center gap-1.5 px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold rounded-lg shadow-xs transition-colors"
+                                >
+                                    <Plus className="w-3.5 h-3.5" />
+                                    <span>+ আরও জামিনদার যোগ করুন</span>
+                                </button>
+                            </div>
+
+                            {/* Guarantor Tabs Switcher */}
+                            <div className="flex flex-wrap gap-1.5 p-1.5 bg-slate-50 border border-slate-200 rounded-xl">
+                                {guarantorsList.map((g, idx) => {
+                                    const isActive = idx === safeActiveIndex;
+                                    const hasError = Object.keys(fieldErrors).some(k => k.startsWith(`guarantor_${idx}_`));
+                                    const nameSnippet = g.guarantor_name?.trim() ? ` (${g.guarantor_name.slice(0, 10)}${g.guarantor_name.length > 10 ? '..' : ''})` : '';
+                                    return (
+                                        <div
+                                            key={g.id || idx}
+                                            className={`inline-flex items-center rounded-lg border text-xs font-bold transition-all ${
+                                                isActive
+                                                    ? 'bg-indigo-600 text-white border-indigo-700 shadow-xs'
+                                                    : hasError
+                                                      ? 'bg-red-50 text-red-700 border-red-300 hover:bg-red-100'
+                                                      : 'bg-white text-gray-700 border-gray-200 hover:bg-gray-100'
+                                            }`}
+                                        >
+                                            <button
+                                                type="button"
+                                                onClick={() => setActiveGuarantorIndex(idx)}
+                                                className="px-2.5 py-1.5 text-left flex items-center gap-1"
+                                            >
+                                                <span>{toBanglaOrdinal(idx)} জামিনদার{nameSnippet}</span>
+                                                {idx === 0 && (
+                                                    <span className={`text-[9px] px-1 py-0.2 rounded font-semibold ${isActive ? 'bg-indigo-700 text-indigo-100' : 'bg-gray-200 text-gray-600'}`}>
+                                                        ডিফল্ট
+                                                    </span>
+                                                )}
+                                            </button>
+                                            {idx > 0 && (
+                                                <button
+                                                    type="button"
+                                                    onClick={(e) => {
+                                                        e.stopPropagation();
+                                                        handleRemoveGuarantor(idx);
+                                                    }}
+                                                    title="এই জামিনদার ফরমটি মুছে ফেলুন"
+                                                    className={`px-1.5 py-1.5 transition-colors ${
+                                                        isActive ? 'text-indigo-200 hover:text-white' : 'text-gray-400 hover:text-red-600'
+                                                    }`}
+                                                >
+                                                    <Trash2 className="w-3.5 h-3.5" />
+                                                </button>
+                                            )}
+                                        </div>
+                                    );
+                                })}
+                            </div>
+
+                            {/* Active Guarantor Details */}
+                            <div className="bg-slate-50/50 p-3 rounded-lg border border-slate-200/80">
+                                <div className="flex items-center justify-between mb-2.5">
+                                    <p className="text-xs font-bold text-indigo-900 flex items-center gap-1.5">
+                                        <ShieldCheck className="w-3.5 h-3.5 text-indigo-600" />
+                                        <span>{toBanglaOrdinal(safeActiveIndex)} জামিনদারের বিস্তারিত তথ্য {safeActiveIndex === 0 ? '(প্রাথমিক/ডিফল্ট)' : ''}</span>
+                                    </p>
+                                    {safeActiveIndex > 0 && (
+                                        <button
+                                            type="button"
+                                            onClick={() => handleRemoveGuarantor(safeActiveIndex)}
+                                            className="text-[11px] text-red-600 hover:text-red-700 hover:underline flex items-center gap-1 font-semibold"
+                                        >
+                                            <Trash2 className="w-3 h-3" />
+                                            <span>এই ফরমটি মুছে ফেলুন</span>
+                                        </button>
                                     )}
                                 </div>
-                                <div>
-                                    <label className="block text-xs font-semibold text-gray-700 mb-1">স্বামী/পিতা</label>
-                                    <input
-                                        type="text"
-                                        value={data.guarantor_father_or_spouse}
-                                        onChange={(e) => setData('guarantor_father_or_spouse', e.target.value)}
-                                        placeholder="স্বামী/পিতার নাম"
-                                        className={inputClass}
-                                    />
-                                </div>
-                                <div>
-                                    <label className="block text-xs font-semibold text-gray-700 mb-1">জাতীয় পরিচয়পত্র (NID) নং *</label>
-                                    <input
-                                        type="text"
-                                        value={data.guarantor_nid}
-                                        onChange={(e) => {
-                                            setData('guarantor_nid', e.target.value);
-                                            clearFieldError('guarantor_nid');
-                                        }}
-                                        placeholder="NID নম্বর"
-                                        className={fieldInputClass('guarantor_nid')}
-                                    />
-                                    {fieldErrors.guarantor_nid && (
-                                        <p className="text-xs text-red-600 mt-0.5">{fieldErrors.guarantor_nid} পূরণ করুন</p>
-                                    )}
-                                </div>
-                                <div>
-                                    <label className="block text-xs font-semibold text-gray-700 mb-1">মোবাইল নং *</label>
-                                    <input
-                                        type="text"
-                                        value={data.guarantor_mobile}
-                                        onChange={(e) => {
-                                            setData('guarantor_mobile', e.target.value);
-                                            clearFieldError('guarantor_mobile');
-                                        }}
-                                        placeholder="মোবাইল নম্বর"
-                                        className={fieldInputClass('guarantor_mobile')}
-                                    />
-                                    {fieldErrors.guarantor_mobile && (
-                                        <p className="text-xs text-red-600 mt-0.5">{fieldErrors.guarantor_mobile} পূরণ করুন</p>
-                                    )}
-                                </div>
-                                <div>
-                                    <label className="block text-xs font-semibold text-gray-700 mb-1">গ্রাম/রাস্তা *</label>
-                                    <input
-                                        type="text"
-                                        value={data.guarantor_village}
-                                        onChange={(e) => {
-                                            setData('guarantor_village', e.target.value);
-                                            clearFieldError('guarantor_village');
-                                        }}
-                                        placeholder="গ্রাম"
-                                        className={fieldInputClass('guarantor_village')}
-                                    />
-                                    {fieldErrors.guarantor_village && (
-                                        <p className="text-xs text-red-600 mt-0.5">{fieldErrors.guarantor_village} পূরণ করুন</p>
-                                    )}
-                                </div>
-                                <div>
-                                    <label className="block text-xs font-semibold text-gray-700 mb-1">ডাকঘর *</label>
-                                    <input
-                                        type="text"
-                                        value={data.guarantor_post_office}
-                                        onChange={(e) => {
-                                            setData('guarantor_post_office', e.target.value);
-                                            clearFieldError('guarantor_post_office');
-                                        }}
-                                        placeholder="ডাকঘর"
-                                        className={fieldInputClass('guarantor_post_office')}
-                                    />
-                                    {fieldErrors.guarantor_post_office && (
-                                        <p className="text-xs text-red-600 mt-0.5">{fieldErrors.guarantor_post_office} পূরণ করুন</p>
-                                    )}
-                                </div>
-                                <div>
-                                    <label className="block text-xs font-semibold text-gray-700 mb-1">উপজেলা *</label>
-                                    <input
-                                        type="text"
-                                        value={data.guarantor_upazila}
-                                        onChange={(e) => {
-                                            setData('guarantor_upazila', e.target.value);
-                                            clearFieldError('guarantor_upazila');
-                                        }}
-                                        placeholder="উপজেলা"
-                                        className={fieldInputClass('guarantor_upazila')}
-                                    />
-                                    {fieldErrors.guarantor_upazila && (
-                                        <p className="text-xs text-red-600 mt-0.5">{fieldErrors.guarantor_upazila} পূরণ করুন</p>
-                                    )}
-                                </div>
-                                <div>
-                                    <label className="block text-xs font-semibold text-gray-700 mb-1">জেলা *</label>
-                                    <input
-                                        type="text"
-                                        value={data.guarantor_district}
-                                        onChange={(e) => {
-                                            setData('guarantor_district', e.target.value);
-                                            clearFieldError('guarantor_district');
-                                        }}
-                                        placeholder="জেলা"
-                                        className={fieldInputClass('guarantor_district')}
-                                    />
-                                    {fieldErrors.guarantor_district && (
-                                        <p className="text-xs text-red-600 mt-0.5">{fieldErrors.guarantor_district} পূরণ করুন</p>
-                                    )}
+
+                                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                                    <div>
+                                        <label className="block text-xs font-semibold text-gray-700 mb-1">জামিনদারের নাম (মো./মোছা./শ্রী.) *</label>
+                                        <input
+                                            type="text"
+                                            value={currentGuarantor.guarantor_name}
+                                            onChange={(e) => handleGuarantorFieldChange('guarantor_name', e.target.value)}
+                                            placeholder="জামিনদারের নাম লিখুন"
+                                            className={fieldInputClass(`guarantor_${safeActiveIndex}_guarantor_name`)}
+                                        />
+                                        {fieldErrors[`guarantor_${safeActiveIndex}_guarantor_name`] && (
+                                            <p className="text-xs text-red-600 mt-0.5">{fieldErrors[`guarantor_${safeActiveIndex}_guarantor_name`]} পূরণ করুন</p>
+                                        )}
+                                    </div>
+                                    <div>
+                                        <label className="block text-xs font-semibold text-gray-700 mb-1">স্বামী/পিতা</label>
+                                        <input
+                                            type="text"
+                                            value={currentGuarantor.guarantor_father_or_spouse}
+                                            onChange={(e) => handleGuarantorFieldChange('guarantor_father_or_spouse', e.target.value)}
+                                            placeholder="স্বামী/পিতার নাম"
+                                            className={inputClass}
+                                        />
+                                    </div>
+                                    <div>
+                                        <label className="block text-xs font-semibold text-gray-700 mb-1">জাতীয় পরিচয়পত্র (NID) নং *</label>
+                                        <input
+                                            type="text"
+                                            value={currentGuarantor.guarantor_nid}
+                                            onChange={(e) => handleGuarantorFieldChange('guarantor_nid', e.target.value)}
+                                            placeholder="NID নম্বর"
+                                            className={fieldInputClass(`guarantor_${safeActiveIndex}_guarantor_nid`)}
+                                        />
+                                        {fieldErrors[`guarantor_${safeActiveIndex}_guarantor_nid`] && (
+                                            <p className="text-xs text-red-600 mt-0.5">{fieldErrors[`guarantor_${safeActiveIndex}_guarantor_nid`]} পূরণ করুন</p>
+                                        )}
+                                    </div>
+                                    <div>
+                                        <label className="block text-xs font-semibold text-gray-700 mb-1">মোবাইল নং *</label>
+                                        <input
+                                            type="text"
+                                            value={currentGuarantor.guarantor_mobile}
+                                            onChange={(e) => handleGuarantorFieldChange('guarantor_mobile', e.target.value)}
+                                            placeholder="মোবাইল নম্বর"
+                                            className={fieldInputClass(`guarantor_${safeActiveIndex}_guarantor_mobile`)}
+                                        />
+                                        {fieldErrors[`guarantor_${safeActiveIndex}_guarantor_mobile`] && (
+                                            <p className="text-xs text-red-600 mt-0.5">{fieldErrors[`guarantor_${safeActiveIndex}_guarantor_mobile`]} পূরণ করুন</p>
+                                        )}
+                                    </div>
+                                    <div>
+                                        <label className="block text-xs font-semibold text-gray-700 mb-1">গ্রাম/রাস্তা *</label>
+                                        <input
+                                            type="text"
+                                            value={currentGuarantor.guarantor_village}
+                                            onChange={(e) => handleGuarantorFieldChange('guarantor_village', e.target.value)}
+                                            placeholder="গ্রাম"
+                                            className={fieldInputClass(`guarantor_${safeActiveIndex}_guarantor_village`)}
+                                        />
+                                        {fieldErrors[`guarantor_${safeActiveIndex}_guarantor_village`] && (
+                                            <p className="text-xs text-red-600 mt-0.5">{fieldErrors[`guarantor_${safeActiveIndex}_guarantor_village`]} পূরণ করুন</p>
+                                        )}
+                                    </div>
+                                    <div>
+                                        <label className="block text-xs font-semibold text-gray-700 mb-1">ডাকঘর *</label>
+                                        <input
+                                            type="text"
+                                            value={currentGuarantor.guarantor_post_office}
+                                            onChange={(e) => handleGuarantorFieldChange('guarantor_post_office', e.target.value)}
+                                            placeholder="ডাকঘর"
+                                            className={fieldInputClass(`guarantor_${safeActiveIndex}_guarantor_post_office`)}
+                                        />
+                                        {fieldErrors[`guarantor_${safeActiveIndex}_guarantor_post_office`] && (
+                                            <p className="text-xs text-red-600 mt-0.5">{fieldErrors[`guarantor_${safeActiveIndex}_guarantor_post_office`]} পূরণ করুন</p>
+                                        )}
+                                    </div>
+                                    <div>
+                                        <label className="block text-xs font-semibold text-gray-700 mb-1">উপজেলা *</label>
+                                        <input
+                                            type="text"
+                                            value={currentGuarantor.guarantor_upazila}
+                                            onChange={(e) => handleGuarantorFieldChange('guarantor_upazila', e.target.value)}
+                                            placeholder="উপজেলা"
+                                            className={fieldInputClass(`guarantor_${safeActiveIndex}_guarantor_upazila`)}
+                                        />
+                                        {fieldErrors[`guarantor_${safeActiveIndex}_guarantor_upazila`] && (
+                                            <p className="text-xs text-red-600 mt-0.5">{fieldErrors[`guarantor_${safeActiveIndex}_guarantor_upazila`]} পূরণ করুন</p>
+                                        )}
+                                    </div>
+                                    <div>
+                                        <label className="block text-xs font-semibold text-gray-700 mb-1">জেলা *</label>
+                                        <input
+                                            type="text"
+                                            value={currentGuarantor.guarantor_district}
+                                            onChange={(e) => handleGuarantorFieldChange('guarantor_district', e.target.value)}
+                                            placeholder="জেলা"
+                                            className={fieldInputClass(`guarantor_${safeActiveIndex}_guarantor_district`)}
+                                        />
+                                        {fieldErrors[`guarantor_${safeActiveIndex}_guarantor_district`] && (
+                                            <p className="text-xs text-red-600 mt-0.5">{fieldErrors[`guarantor_${safeActiveIndex}_guarantor_district`]} পূরণ করুন</p>
+                                        )}
+                                    </div>
                                 </div>
                             </div>
                         </div>
@@ -861,7 +1141,33 @@ export default function GuarantorCommitment({
                                             প্রিন্ট
                                         </button>
                                     </div>
-                                    <GuarantorCommitmentPrintView data={data} />
+                                    <div className="space-y-6 print:space-y-0 p-2 sm:p-4">
+                                        {guarantorsList.map((g, idx) => {
+                                            const mergedData = {
+                                                ...data,
+                                                ...g,
+                                            };
+                                            return (
+                                                <div
+                                                    key={g.id || idx}
+                                                    className={idx > 0 ? 'page-break-before-always print:break-before-page pt-4 border-t-2 border-dashed border-gray-300 print:border-none print:pt-0' : ''}
+                                                >
+                                                    {idx > 0 && (
+                                                        <div className="print:hidden text-center mb-3">
+                                                            <span className="bg-indigo-50 border border-indigo-200 text-indigo-700 px-3 py-1 text-xs rounded-full font-bold">
+                                                                📄 {toBanglaOrdinal(idx)} জামিনদারের অঙ্গীকার নামা পাতা
+                                                            </span>
+                                                        </div>
+                                                    )}
+                                                    <GuarantorCommitmentPrintView
+                                                        data={mergedData}
+                                                        guarantorIndex={idx + 1}
+                                                        totalGuarantors={guarantorsList.length}
+                                                    />
+                                                </div>
+                                            );
+                                        })}
+                                    </div>
                                 </div>
                             </div>
                         ) : (
@@ -892,9 +1198,49 @@ export default function GuarantorCommitment({
 }
 
 /** Show/Print view - 1 Page A4 Print Optimized */
-export function GuarantorCommitmentPrintView({ data }: { data: any }) {
+export function GuarantorCommitmentPrintView({
+    data,
+    guarantorIndex,
+    totalGuarantors,
+}: {
+    data: any;
+    guarantorIndex?: number;
+    totalGuarantors?: number;
+}) {
+    // If multiple guarantors are present in data and caller did not supply guarantorIndex, render all pages
+    if (guarantorIndex === undefined && Array.isArray(data?.guarantors) && data.guarantors.length > 1) {
+        return (
+            <div className="space-y-6 print:space-y-0">
+                {data.guarantors.map((g: SingleGuarantor, idx: number) => {
+                    const mergedData = { ...data, ...g };
+                    return (
+                        <div
+                            key={g.id || idx}
+                            className={idx > 0 ? 'page-break-before-always print:break-before-page pt-4 border-t-2 border-dashed border-gray-300 print:border-none print:pt-0' : ''}
+                        >
+                            {idx > 0 && (
+                                <div className="print:hidden text-center mb-3">
+                                    <span className="bg-indigo-50 border border-indigo-200 text-indigo-700 px-3 py-1 text-xs rounded-full font-bold">
+                                        📄 {toBanglaOrdinal(idx)} জামিনদারের অঙ্গীকার নামা পাতা
+                                    </span>
+                                </div>
+                            )}
+                            <GuarantorCommitmentPrintView
+                                data={mergedData}
+                                guarantorIndex={idx + 1}
+                                totalGuarantors={data.guarantors.length}
+                            />
+                        </div>
+                    );
+                })}
+            </div>
+        );
+    }
+
     const d = data || {};
     const fmt = formatDateBangla;
+    const isMulti = !!(totalGuarantors && totalGuarantors > 1 && guarantorIndex != null);
+    const ordinal = isMulti && guarantorIndex != null ? toBanglaOrdinal(guarantorIndex - 1) : '';
 
     return (
         <div
@@ -922,7 +1268,7 @@ export function GuarantorCommitmentPrintView({ data }: { data: any }) {
                     </p>
                     <div className="mt-1.5">
                         <span className="border-2 border-black px-5 py-0.5 rounded-full font-bold text-[13.5px] inline-block tracking-wide">
-                            ঋণের জামিনদার/দায়িত্ব গ্রহণকারীর অঙ্গীকার নামা
+                            ঋণের জামিনদার/দায়িত্ব গ্রহণকারীর অঙ্গীকার নামা{isMulti ? ` (${ordinal} জামিনদার)` : ''}
                         </span>
                     </div>
                 </div>
@@ -1005,7 +1351,9 @@ export function GuarantorCommitmentPrintView({ data }: { data: any }) {
 
                     {/* Guarantor Signature */}
                     <div className="flex-1 text-right space-y-2">
-                        <p className="font-bold text-[13px] text-black">ঋণের জামিনদার/দায়িত্ব গ্রহণকারীর স্বাক্ষর</p>
+                        <p className="font-bold text-[13px] text-black">
+                            {isMulti ? `${ordinal} ` : ''}ঋণের জামিনদার/দায়িত্ব গ্রহণকারীর স্বাক্ষর
+                        </p>
                         <div className="pt-8 pb-1">
                             <span className="border-b border-dotted border-gray-800 inline-block min-w-[220px] h-[36px]">
                                 {d.guarantor_signature_image && (
