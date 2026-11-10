@@ -315,7 +315,7 @@ export default function Index({
     };
 
     const handleSendCredentials = (id: number, name: string) => {
-        if (confirm(`"${name}" এর login credentials ইমেইল করা হবে. নিশ্চিত?`)) {
+        if (confirm(`"${name}" এর নিজস্ব ইমেইলে password setup link পাঠানো হবে. নিশ্চিত?`)) {
             router.post(`/users/${id}/send-credentials`);
         }
     };
@@ -1342,7 +1342,7 @@ export default function Index({
                                                                 )
                                                             }
                                                             className="flex size-8 items-center justify-center rounded-lg text-indigo-600 transition-colors hover:bg-indigo-50"
-                                                            title="Send Credentials Email"
+                                                            title="Send Password Setup Link"
                                                         >
                                                             <Send className="size-4" />
                                                         </button>
@@ -1450,7 +1450,7 @@ export default function Index({
                             <div className="flex items-center gap-2">
                                 <Mail className="size-5 text-blue-600" />
                                 <h3 className="font-semibold text-slate-900">
-                                    Bulk Mail – Send Credentials
+                                    Bulk Mail – Send Password Setup Links
                                 </h3>
                             </div>
                             <button

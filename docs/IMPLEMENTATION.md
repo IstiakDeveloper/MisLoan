@@ -47,6 +47,18 @@ Historical reports aggregate immutable transactions up to the selected business 
 
 Summary/detail are read in one database transaction. Branch-filtered aggregates scope receipt/schedule queries to that branch, SQL window totals identify earliest unpaid dues, and detail is paginated. Monetary totals and percentages use integer/string arithmetic. This is a live operational report; production-scale query performance, immutable report snapshots, export, and approved MRA/PKSF mappings remain pending.
 
+### Posted financial reports, statement delivery and integrity checks
+
+Configuration → Financial Reports (`/accounting/reports`) provides branch/all-branch and date filters, opening/period/closing trial balances, period income/expense, cumulative balance sheet with the unclosed income/expense result, and paginated account ledger. Running balances include opening and prior pages; inactive accounts keep their history. SQL window sums and decimal casts preserve exact running totals above JavaScript's safe-integer range. CSV exports use a consistent database transaction, exact decimal amounts and formula-safe text fields.
+
+Loan/Savings Ledger workspaces include printable statements (browser Print / Save as PDF) and full CSV downloads. Statements use business-date transactions and source references/reversals, validate verified-opening limits, escape printed content and return private/no-store responses. Print is limited to 2,000 rows with an explicit truncation notice; its closing balance and full CSV include all entries. Historical savings holds and available funds are not fabricated. These are administrative statements, not approved passbook/receipt forms or member self-service delivery.
+
+`php artisan misloan:check-ledgers --json` performs read-only control-account, journal-balance, source-journal and current loan-coverage checks. It exits nonzero on detected differences; a pass is not production approval. The complete remaining technical/policy/rollout gates are tracked in [RELEASE_READINESS.md](RELEASE_READINESS.md).
+
+### Password setup email hardening
+
+The existing credential-dispatch endpoints now send Laravel's expiring, single-use password-reset/setup links to active personal users' own email addresses. Existing passwords are not changed by dispatch. Only active personal super-admins can dispatch single/bulk links; branch/inactive accounts are skipped, role exclusions are validated, broker throttling is retained, and failures return a generic message with metadata-only logs. Branch summary emails contain no password, PIN or reset token. The unused plaintext-credential mailable/template were removed; the existing notification-pruning command still recognises the retired credential-mail name in legacy queue payloads. The legacy branch-account migration refuses a shared `--default-pin`, preserves configured PINs and leaves login unavailable where no PIN exists. Existing deployed shared passwords/PINs still require a separately managed rotation; this does not complete onboarding/MFA/security auditing.
+
 ### Reducing product pricing
 
 The user's confirmed policy is to use existing Loan Product / Savings Product settings; loans use reducing pricing. The seeded products encode both an annual reducing percentage and an approved total service-charge tariff per thousand. The annual percentage is not itself a flat service charge. The new quote prioritizes the configured per-thousand tariff, then the approved installment factor for reducing products. A reducing product with only an annual rate is rejected until its amortization convention/tariff is supplied.
@@ -66,7 +78,7 @@ The accounting workspace is a manual administrative ledger; savings and loan tra
 
 ## Verification and limitations
 
-Latest verification: **468 PHP tests passed (2,518 assertions)** on SQLite. **82 feature tests passed (353 assertions)** on MySQL 8.4, including the loan receipt correction request/approval workflow. `npm run types` and the production build pass. Chromium exercised savings opening, deposit, hold, rejected overdraft, release, withdrawal and control-account reconciliation, plus loan contract preview, audited opening, split collection, FIFO dues, principal GL reconciliation and receipt reversal, with no JavaScript errors. The portfolio screen also exercises branch/date filtering and pre-opening coverage exclusion. These checks do not replace production-data upgrade rehearsal or financial UAT.
+Latest verification: **483 PHP tests passed (2,613 assertions)** on SQLite. **96 feature tests passed (440 assertions)** on MySQL 8.4 plus the additional period-income/expense regression (5 assertions), covering correction approvals, financial reports/exports, statements and password-setup security. `npm run types` and the production build pass. Chromium exercised savings opening, deposit, hold, rejected overdraft, release, withdrawal and control-account reconciliation, plus loan contract preview, audited opening, split collection, FIFO dues, principal GL reconciliation and receipt reversal, with no JavaScript errors. The portfolio screen also exercises branch/date filtering and pre-opening coverage exclusion. Financial-report Chromium checks also cover trial/balance-sheet agreement, account ledger, CSV download and loan/savings statement delivery. These checks do not replace production-data upgrade rehearsal or financial UAT.
 
 Affected PHP dependencies were updated within the existing version constraints (including Laravel 12.71 and PhpSpreadsheet 5.11). Composer reported no remaining security vulnerability advisories after the update. This is a dependency-audit result, not a security certification.
 
@@ -81,18 +93,18 @@ Affected PHP dependencies were updated within the existing version constraints (
 
 | Workstream | Next deliverable |
 | --- | --- |
-| Security | MFA enforcement, private-document delivery, activation links instead of password emails, full authorization audit, dependency remediation |
+| Security | MFA enforcement, private-document delivery, full onboarding/authorization audit, dependency remediation (credential emails use expiring personal setup links) |
 | Data compatibility | Upgrade rehearsal using an audited production database copy; legacy-data reconciliation |
 | Member identity | Permanent member master and admission/cycle mapping; duplicate identity reconciliation |
 | Products | Persist versioned product policies and unify all frontend/backend pricing paths with golden examples |
-| Accounting | Fiscal years, projects/funds, maker/checker vouchers, cash/bank books, reconciliation, financial statements, period-close controls |
+| Accounting | Fiscal years, projects/funds, maker/checker vouchers, cashier/cash-bank reconciliation, approved financial statement mappings and period-close sign-off (posted GL reports/account ledger implemented) |
 | Loans | Approved automatic principal/charge allocation, reducing amortization conventions, holiday calendars, approved provisioning, rebate/reschedule/write-off (account, contractual total schedule, explicit split collection, GL posting, receipt reversal and operational portfolio/PAR reporting are implemented) |
 | Savings | Automatic profit accrual, penalty-aware early settlement, maturity processing and passbook/PDF delivery (account/transaction ledger, holds and GL posting are implemented) |
 | Collections | Cashier settlement and handover, receipt lifecycle, field assignment |
 | Android | Flutter client, encrypted local database, device authentication, idempotent offline collection sync and exception queue |
 | Integrations | Payment adapters, verified callbacks, settlement statements, reconciliation and SMS |
 | Members | Self-service statements, receipts, payment and complaints portal |
-| Reporting | Portfolio/financial reports and signed-off MRA/PKSF/donor mappings |
+| Reporting | Signed-off MRA/PKSF/donor mappings, immutable report snapshots and official forms (operational portfolio and posted GL reports implemented) |
 | Migration | Audited opening balances, historical mappings and branch control totals; no fabricated repayment history |
 | Operations | Isolated institution deployment automation, outbox/queues, monitoring, encrypted off-site PITR backup and measured RPO/RTO |
 | Rollout | 2–3 branch pilot, full month-end UAT, production performance and staged branch rollout |

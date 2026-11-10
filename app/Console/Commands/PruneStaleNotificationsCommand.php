@@ -41,6 +41,8 @@ class PruneStaleNotificationsCommand extends Command
 
         $names = collect(File::files(app_path('Mail')))
             ->map(fn ($file) => $file->getFilenameWithoutExtension())
+            // Retired credential mail can still exist in old queue payloads.
+            ->push('UserCredentialsMail')
             ->filter()
             ->values();
 

@@ -3,7 +3,6 @@
 namespace App\Http\Controllers;
 
 use App\Mail\BranchUsersSummaryMail;
-use App\Mail\UserCredentialsMail;
 use App\Models\Area;
 use App\Models\Branch;
 use App\Models\Role;
@@ -15,8 +14,11 @@ use App\Services\ImageCompressionService;
 use Illuminate\Http\Request;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Mail;
+use Illuminate\Support\Facades\Password as PasswordBroker;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Validation\Rules\Password;
 use Inertia\Inertia;
@@ -60,7 +62,7 @@ class UserController extends Controller
             });
 
         $activeCutoff = now()->subMinutes((int) config('session.lifetime', 120))->timestamp;
-        $onlineUserIds = \Illuminate\Support\Facades\DB::table('sessions')
+        $onlineUserIds = DB::table('sessions')
             ->whereNotNull('user_id')
             ->where('last_activity', '>=', $activeCutoff)
             ->pluck('user_id')
@@ -275,7 +277,7 @@ class UserController extends Controller
             return back()->with('error', 'Cannot delete your own account.');
         }
 
-        \Illuminate\Support\Facades\DB::table('sessions')->where('user_id', $user->id)->delete();
+        DB::table('sessions')->where('user_id', $user->id)->delete();
         $user->delete();
 
         return redirect()->route('users.index')
@@ -291,7 +293,7 @@ class UserController extends Controller
         $user->update(['is_active' => ! $user->is_active]);
 
         if (! $user->is_active) {
-            \Illuminate\Support\Facades\DB::table('sessions')->where('user_id', $user->id)->delete();
+            DB::table('sessions')->where('user_id', $user->id)->delete();
         }
 
         return back()->with('success', 'User status updated successfully.');
@@ -328,53 +330,45 @@ class UserController extends Controller
 
     public function sendCredentials(User $user)
     {
-        if (! $user->email) {
-            return back()->with('error', 'User does not have an email address.');
+        abort_unless(request()->user()?->is_active && ! request()->user()->isBranchAccount() && request()->user()->isSuperAdmin(), 403);
+        if (! $user->is_active || $user->isBranchAccount() || ! $user->email) {
+            return back()->with('error', 'Only active personal accounts with email can receive password setup links. Branch PINs must be managed separately.');
         }
-
-        $plainPassword = '12345678';
-
         try {
-            Mail::to($user->email)->send(new UserCredentialsMail($user, $plainPassword));
+            $status = PasswordBroker::sendResetLink(['email' => $user->email]);
 
-            return back()->with('success', 'Login credentials email sent.');
+            return back()->with($status === PasswordBroker::RESET_LINK_SENT ? 'success' : 'error', __($status));
         } catch (\Throwable $e) {
-            return back()->with('error', 'Mail failed: '.$e->getMessage());
+            Log::warning('Password setup email failed', ['user_id' => $user->id, 'exception_type' => get_class($e)]);
+
+            return back()->with('error', 'The password setup email could not be sent. Check the mail configuration.');
         }
     }
 
     public function sendCredentialsToAll(Request $request)
     {
-        $plainPassword = '12345678';
-
-        $query = User::whereNotNull('email')->where('is_active', true);
-
-        $excludeRoleIds = $request->input('exclude_role_ids', []);
-        if (! empty($excludeRoleIds)) {
-            $query->whereNotIn('role_id', $excludeRoleIds);
-        }
-
-        $users = $query->get();
+        abort_unless($request->user()?->is_active && ! $request->user()->isBranchAccount() && $request->user()->isSuperAdmin(), 403);
+        $data = $request->validate(['exclude_role_ids' => ['sometimes', 'array'], 'exclude_role_ids.*' => ['integer', 'exists:roles,id']]);
         $sent = 0;
-        $lastError = null;
+        $skipped = 0;
+        User::query()->whereNotNull('email')->where('is_active', true)->where(fn ($q) => $q->whereNull('account_type')->orWhere('account_type', '!=', 'branch'))
+            ->when(! empty($data['exclude_role_ids']), fn ($q) => $q->whereNotIn('role_id', $data['exclude_role_ids']))
+            ->chunkById(100, function ($users) use (&$sent, &$skipped) {
+                foreach ($users as $user) {
+                    try {
+                        if (PasswordBroker::sendResetLink(['email' => $user->email]) === PasswordBroker::RESET_LINK_SENT) {
+                            $sent++;
+                        } else {
+                            $skipped++;
+                        }
+                    } catch (\Throwable $e) {
+                        $skipped++;
+                        Log::warning('Password setup email failed', ['user_id' => $user->id, 'exception_type' => get_class($e)]);
+                    }
+                }
+            });
 
-        foreach ($users as $user) {
-            try {
-                Mail::to($user->email)->send(new UserCredentialsMail($user, $plainPassword));
-                $sent++;
-            } catch (\Throwable $e) {
-                $lastError = $e->getMessage();
-            }
-        }
-
-        if ($sent === $users->count()) {
-            return back()->with('success', "Login credentials sent to {$sent} user(s).");
-        }
-        if ($sent > 0) {
-            return back()->with('error', "Sent to {$sent}/{$users->count()} users. Last error: ".($lastError ?? 'unknown'));
-        }
-
-        return back()->with('error', 'No mail sent. Error: '.($lastError ?? 'Check MAIL_* in .env and /clear'));
+        return back()->with($sent > 0 ? 'success' : 'error', "Password setup links sent: {$sent}. Skipped/failed/throttled: {$skipped}. Existing passwords were not changed.");
     }
 
     public function sendBranchSummary(Request $request)

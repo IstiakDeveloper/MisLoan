@@ -47,7 +47,7 @@
                     <td style="padding:18px 24px 10px;">
                         <p style="margin:0 0 10px;font-size:14px;color:#111827;">
                             নিচের টেবিলে সংশ্লিষ্ট শাখার Branch User, Branch Manager এবং Field Officer দের
-                            Name, Username এবং Password দেওয়া হলো (কমন পাসওয়ার্ড: <span style="font-weight:600;color:#b91c1c;">12345678</span>).
+                            Name, Username এবং নিজস্ব ইমেইলে password setup link নেওয়ার নির্দেশনা দেওয়া হলো। Password বা branch PIN ইমেইলে পাঠানো হয় না।
                         </p>
 
                         <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="border-collapse:collapse;font-size:13px;color:#111827;border-radius:10px;overflow:hidden;border:1px solid #e5e7eb;">
@@ -56,7 +56,7 @@
                                 <th align="left" style="padding:10px 12px;border-bottom:1px solid #e5e7eb;font-weight:600;color:#374151;">Name</th>
                                 <th align="left" style="padding:10px 12px;border-bottom:1px solid #e5e7eb;font-weight:600;color:#374151;">Role</th>
                                 <th align="left" style="padding:10px 12px;border-bottom:1px solid #e5e7eb;font-weight:600;color:#374151;">Username</th>
-                                <th align="left" style="padding:10px 12px;border-bottom:1px solid #e5e7eb;font-weight:600;color:#374151;">Password</th>
+                                <th align="left" style="padding:10px 12px;border-bottom:1px solid #e5e7eb;font-weight:600;color:#374151;">Password setup</th>
                             </tr>
                             </thead>
                             <tbody>
@@ -78,7 +78,7 @@
                                     </td>
                                     <td style="padding:8px 12px;border-top:1px solid #e5e7eb;">
                                         <span style="display:inline-block;padding:4px 8px;border-radius:999px;border:1px solid #fecaca;background-color:#fef2f2;font-family:ui-monospace,Menlo,Monaco,Consolas,'Liberation Mono','Courier New',monospace;font-size:12px;font-weight:600;color:#b91c1c;">
-                                            12345678
+                                            {{ $user->isBranchAccount() ? 'Branch PIN managed separately' : 'Use your own password-reset email link' }}
                                         </span>
                                     </td>
                                 </tr>
