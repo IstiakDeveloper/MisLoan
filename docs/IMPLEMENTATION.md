@@ -31,6 +31,14 @@ Collections require explicit principal and service-charge amounts pending instit
 
 Principal movements, cash and collected charge income post atomically to the GL with immutable source receipts and idempotent retries. Only a source-ledger receipt reversal can offset the receipt and GL together; opening/disbursement correction is not supported here. Full collection closes the account and marks the source loan repaid; reversing it reopens both. Linked source financial terms/status/deletion and legacy manual settlement are guarded. Historical statements, total dues/overdue and current branch principal control-account reconciliation are available. Permissions currently restrict this workspace to personal active super-admins; branch cashier roles and maker/checker approval remain pending.
 
+### Loan portfolio and delinquency
+
+Configuration → Loan Portfolio (`/loan-portfolio`) provides an operational as-of-date report for personal active super-admins. It includes branch filters, outstanding principal/contractual charge, overdue total installments, earliest unpaid due and days past due, principal-at-risk buckets (1–30, 31–60, 61–90, 91+ days), and PAR >30 / >90. The PAR numerator is the entire outstanding principal of affected loans; its denominator is outstanding principal across the selected financial ledgers. A zero denominator is displayed as not applicable. Due today is not overdue; exactly 30/90 days does not enter the respective >30/>90 ratio.
+
+Historical reports aggregate immutable transactions up to the selected business date, including reversals on their correction date. Current closed status does not erase prior balances. Paid credit covers earliest dues first, including explicitly declared pre-opening paid credit. Accounts before their audited opening are excluded. Current disbursed applications without any financial ledger and accounts opened after the selected date are counted separately to disclose incomplete coverage; the current unlinked count is not a reconstructed historical population. There is no claim of institution-wide completeness or regulator-approved provision classification.
+
+Summary/detail are read in one database transaction. Branch-filtered aggregates scope receipt/schedule queries to that branch, SQL window totals identify earliest unpaid dues, and detail is paginated. Monetary totals and percentages use integer/string arithmetic. This is a live operational report; production-scale query performance, immutable report snapshots, export, and approved MRA/PKSF mappings remain pending.
+
 ### Reducing product pricing
 
 The user's confirmed policy is to use existing Loan Product / Savings Product settings; loans use reducing pricing. The seeded products encode both an annual reducing percentage and an approved total service-charge tariff per thousand. The annual percentage is not itself a flat service charge. The new quote prioritizes the configured per-thousand tariff, then the approved installment factor for reducing products. A reducing product with only an annual rate is rejected until its amortization convention/tariff is supplied.
@@ -50,7 +58,7 @@ The accounting workspace is a manual administrative ledger; savings and loan tra
 
 ## Verification and limitations
 
-Latest verification: **458 PHP tests passed (2,439 assertions)** on SQLite and **72 feature tests passed (276 assertions)** on MySQL 8.4. `npm run types` and the production build pass. Chromium exercised savings opening, deposit, hold, rejected overdraft, release, withdrawal and control-account reconciliation, plus loan contract preview, audited opening, split collection, FIFO dues, principal GL reconciliation and receipt reversal, with no JavaScript errors. These checks do not replace production-data upgrade rehearsal or financial UAT.
+Latest verification: **464 PHP tests passed (2,493 assertions)** on SQLite; **77 feature tests passed (325 assertions)** on MySQL 8.4, with the additional multi-branch aggregation regression checked separately. `npm run types` and the production build pass. Chromium exercised savings opening, deposit, hold, rejected overdraft, release, withdrawal and control-account reconciliation, plus loan contract preview, audited opening, split collection, FIFO dues, principal GL reconciliation and receipt reversal, with no JavaScript errors. The portfolio screen also exercises branch/date filtering and pre-opening coverage exclusion. These checks do not replace production-data upgrade rehearsal or financial UAT.
 
 Affected PHP dependencies were updated within the existing version constraints (including Laravel 12.71 and PhpSpreadsheet 5.11). Composer reported no remaining security vulnerability advisories after the update. This is a dependency-audit result, not a security certification.
 
@@ -70,7 +78,7 @@ Affected PHP dependencies were updated within the existing version constraints (
 | Member identity | Permanent member master and admission/cycle mapping; duplicate identity reconciliation |
 | Products | Persist versioned product policies and unify all frontend/backend pricing paths with golden examples |
 | Accounting | Fiscal years, projects/funds, maker/checker vouchers, cash/bank books, reconciliation, financial statements, period-close controls |
-| Loans | Approved automatic principal/charge allocation, reducing amortization conventions, holiday calendars, PAR reporting, rebate/reschedule/write-off (account, contractual total schedule, explicit split collection, GL posting and receipt reversal are implemented) |
+| Loans | Approved automatic principal/charge allocation, reducing amortization conventions, holiday calendars, approved provisioning, rebate/reschedule/write-off (account, contractual total schedule, explicit split collection, GL posting, receipt reversal and operational portfolio/PAR reporting are implemented) |
 | Savings | Automatic profit accrual, penalty-aware early settlement, maturity processing and passbook/PDF delivery (account/transaction ledger, holds and GL posting are implemented) |
 | Collections | Cashier settlement and handover, receipt lifecycle, field assignment |
 | Android | Flutter client, encrypted local database, device authentication, idempotent offline collection sync and exception queue |

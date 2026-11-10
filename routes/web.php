@@ -21,6 +21,7 @@ use App\Http\Controllers\IssueProcessingController;
 use App\Http\Controllers\LoanApplicationController;
 use App\Http\Controllers\LoanCategoryController;
 use App\Http\Controllers\LoanLedgerController;
+use App\Http\Controllers\LoanPortfolioController;
 use App\Http\Controllers\LoanProductController;
 use App\Http\Controllers\LoanQuoteController;
 use App\Http\Controllers\MaintenanceController;
@@ -59,6 +60,8 @@ Route::middleware(['auth', 'verified'])->group(function () {
     Route::get('dashboard', [DashboardController::class, 'index'])->name('dashboard');
 
     Route::get('loan-products/{loanProduct}/quote', LoanQuoteController::class)->name('loan-products.quote');
+
+    Route::get('loan-portfolio', LoanPortfolioController::class)->name('loan-portfolio.index');
 
     Route::prefix('loan-ledger')->name('loan-ledger.')->controller(LoanLedgerController::class)->group(function () {
         Route::get('/', 'index')->name('index');

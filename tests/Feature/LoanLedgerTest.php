@@ -11,6 +11,8 @@ use App\Models\Zone;
 use App\Services\Accounting\JournalService;
 use App\Services\Loans\LoanContract;
 use App\Services\Loans\LoanLedger;
+use App\Services\Loans\LoanPortfolio;
+use Carbon\CarbonImmutable;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
 use Inertia\Testing\AssertableInertia;
@@ -158,4 +160,78 @@ it('posts collection and reversal through authenticated HTTP endpoints', functio
     expect($receipt)->not->toBeNull();
     $this->post('/loan-ledger/transactions/'.$receipt->id.'/reverse', ['business_date' => $this->date, 'idempotency_key' => 'http-reverse', 'reason' => 'Correct HTTP receipt'])->assertSessionHasNoErrors()->assertRedirect();
     expect($this->ledger->balances($a->id)['total_paisa'])->toBe(5635000);
+});
+
+it('reports historical portfolio even after a loan is settled today', function () {
+    $a = ($this->open)();
+    $this->ledger->repay($this->actor, $a->id, '50000', '6350', 2, today()->toDateString(), 'portfolio-paid', 'Settlement');
+    $portfolio = app(LoanPortfolio::class);
+    $report = $portfolio->summary($portfolio->accounts($this->actor, $this->date), $this->date);
+    expect($report['totals']['principal_paisa'])->toBe('5000000')->and($report['totals']['overdue_paisa'])->toBe('0');
+    $current = $portfolio->summary($portfolio->accounts($this->actor, today()->toDateString()), today()->toDateString());
+    expect($current['totals']['principal_paisa'])->toBe('0')->and($current['totals']['outstanding_count'])->toBe(0);
+});
+
+it('uses the entire outstanding principal for PAR and respects exact aging boundaries', function () {
+    $date = today()->subDays(100)->toDateString();
+    $this->application->update(['disbursed_at' => $date]);
+    $a = $this->ledger->open($this->actor, $this->application->id, 1, 3, 2, 'disbursement', $date, $date, '50000', '6350', 'PAR fixture');
+    $portfolio = app(LoanPortfolio::class);
+    foreach ([30 => '0', 31 => '5000000', 90 => '5000000', 91 => '5000000'] as $days => $expected) {
+        $asOf = CarbonImmutable::parse($date)->addDays($days)->toDateString();
+        $summary = $portfolio->summary($portfolio->accounts($this->actor, $asOf), $asOf)['totals'];
+        expect($summary['par30_paisa'])->toBe($expected)->and($summary['par90_paisa'])->toBe($days > 90 ? '5000000' : '0');
+    }
+    $this->ledger->repay($this->actor, $a->id, '1000', '250', 2, $date, 'portfolio-pay', 'First due');
+    $asOf = CarbonImmutable::parse($date)->addDays(31)->toDateString();
+    $summary = $portfolio->summary($portfolio->accounts($this->actor, $asOf), $asOf)['totals'];
+    expect($summary['par30_paisa'])->toBe('0')->and($summary['principal_paisa'])->toBe('4900000')->and($summary['aged_1_30_paisa'])->toBe('4900000');
+});
+
+it('excludes accounts before audited opening and isolates branch filters', function () {
+    ($this->open)('40000', '5000', 'opening_balance');
+    $portfolio = app(LoanPortfolio::class);
+    $before = today()->subDays(11)->toDateString();
+    expect($portfolio->summary($portfolio->accounts($this->actor, $before), $before)['totals']['account_count'])->toBe(0);
+    expect($portfolio->summary($portfolio->accounts($this->actor, $this->date, $this->branch->id), $this->date)['totals']['principal_paisa'])->toBe('4000000');
+    expect($portfolio->summary($portfolio->accounts($this->actor, $this->date, $this->branch->id + 999), $this->date)['totals']['account_count'])->toBe(0);
+});
+
+it('restores portfolio arrears after receipt reversal', function () {
+    $a = ($this->open)();
+    $t = $this->ledger->repay($this->actor, $a->id, '1000', '250', 2, $this->date, 'portfolio-pay', 'First due');
+    $portfolio = app(LoanPortfolio::class);
+    $today = today()->toDateString();
+    $before = $portfolio->summary($portfolio->accounts($this->actor, $today), $today)['totals'];
+    $this->ledger->reverse($this->actor, $t->id, $today, 'portfolio-reverse', 'Reverse');
+    $after = $portfolio->summary($portfolio->accounts($this->actor, $today), $today)['totals'];
+    expect((int) $after['overdue_paisa'] - (int) $before['overdue_paisa'])->toBe(125000);
+});
+
+it('reports incomplete coverage and validates portfolio HTTP filters', function () {
+    $this->withoutVite();
+    $this->actingAs($this->actor)->get('/loan-portfolio')->assertOk()->assertInertia(fn (AssertableInertia $p) => $p->component('LoanPortfolio/Index')->where('unlinkedDisbursedCount', 1)->where('totals.account_count', 0));
+    ($this->open)();
+    $this->get('/loan-portfolio?branch_id='.$this->branch->id)->assertOk()->assertInertia(fn (AssertableInertia $p) => $p->where('unlinkedDisbursedCount', 0)->where('totals.account_count', 1));
+    $this->get('/loan-portfolio?as_of=2099-01-01')->assertSessionHasErrors('as_of');
+    $this->actor->update(['is_active' => false]);
+    $this->get('/loan-portfolio')->assertForbidden();
+});
+
+it('combines branches without multiplying balances by installment rows', function () {
+    ($this->open)();
+    $branch = Branch::create(['name' => 'Second branch', 'code' => '0002', 'area_id' => $this->branch->area_id]);
+    $samity = Samity::create(['samity_code' => 'S2', 'samity_name' => 'Second', 'branch_id' => $branch->id]);
+    $member = MemberAdmission::create(['application_no' => '0002000001', 'branch_id' => $branch->id, 'samity_id' => $samity->id, 'status' => 'draft']);
+    $loan = $this->application->replicate();
+    $loan->fill(['application_no' => 'LOAN-002', 'branch_id' => $branch->id, 'samity_id' => $samity->id, 'member_admission_id' => $member->id]);
+    $loan->save();
+    DB::table('accounting_periods')->insert(['branch_id' => $branch->id, 'starts_on' => today()->subYear()->toDateString(), 'ends_on' => today()->addYear()->toDateString(), 'created_at' => now(), 'updated_at' => now()]);
+    $this->ledger->open($this->actor, $loan->id, 1, 3, 4, 'opening_balance', $this->date, $this->date, '40000', '5000', 'Second branch audited opening');
+    $portfolio = app(LoanPortfolio::class);
+    $date = today()->toDateString();
+    $all = $portfolio->summary($portfolio->accounts($this->actor, $date), $date);
+    $single = $portfolio->summary($portfolio->accounts($this->actor, $date, $branch->id), $date);
+    expect($all['totals']['principal_paisa'])->toBe('9000000')->and($all['totals']['account_count'])->toBe(2)
+        ->and($all['branches'])->toHaveCount(2)->and($single['totals']['principal_paisa'])->toBe('4000000');
 });
